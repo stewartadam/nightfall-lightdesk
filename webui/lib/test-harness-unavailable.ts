@@ -7,8 +7,9 @@
  */
 
 /**
- * Stands in for the e2e harness registry in shipped builds, which `vite.config.ts`
- * aliases here so no harness chunk is emitted.
+ * Stands in for the e2e harness registry in shipped builds, where
+ * `vite.config.ts` resolves every import of the registry here so no harness
+ * chunk is emitted.
  */
 export function loadHarness(_name: string): Promise<never> {
   return Promise.reject(

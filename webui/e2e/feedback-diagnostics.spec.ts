@@ -84,7 +84,9 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   await page
     .getByRole("button", { name: "Troubleshooting", exact: true })
     .click();
+  // The seeded uncaught error raises a toast with its own Collect Diagnostics action.
   await page
+    .getByRole("menu", { name: "Troubleshooting" })
     .getByRole("button", { name: "Collect Diagnostics", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Collect Diagnostics" });

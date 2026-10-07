@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { posix, resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
+import MagicString from "magic-string";
 import {
   defineConfig,
   type HttpProxy,
@@ -286,17 +287,62 @@ function loggerModuleNamesPlugin(): Plugin {
   return {
     name: "nightfall:logger-module-names",
     apply: "build",
-    /** Replaces `getLogger(import.meta.url)` with the module's dev server path. */
+    /**
+     * Replaces `getLogger(import.meta.url)` with the module's dev server path,
+     * returning a source map so later columns on the same line stay accurate.
+     */
     transform(code, id) {
       const source = webuiSourcePath(id);
       if (!source || !code.includes("getLogger(import.meta.url)")) return null;
+      const output = new MagicString(code);
+      output.replaceAll(
+        "getLogger(import.meta.url)",
+        `getLogger(${JSON.stringify(`/${source}`)})`,
+      );
       return {
-        code: code.replaceAll(
-          "getLogger(import.meta.url)",
-          `getLogger(${JSON.stringify(`/${source}`)})`,
-        ),
-        map: null,
+        code: output.toString(),
+        map: output.generateMap({ hires: "boundary", source: id }),
       };
+    },
+  };
+}
+
+const harnessRegistryModule = `${webuiRoot}/e2e/harness/registry.ts`;
+const harnessStubModule = `${webuiRoot}/lib/test-harness-unavailable.ts`;
+
+/**
+ * Keeps e2e harnesses out of shipped builds. Any import that resolves to the
+ * harness registry, whatever its specifier, loads a stub instead, and the
+ * build fails if another module under `webui/e2e/` still reaches the bundle.
+ */
+function e2eHarnessExclusionPlugin(): Plugin {
+  return {
+    name: "nightfall:e2e-harness-exclusion",
+    apply: (_config, { command, mode }) =>
+      command === "build" && mode !== E2E_MODE,
+    enforce: "pre",
+    /** Redirects resolutions of the harness registry to the stub module. */
+    async resolveId(specifier, importer, options) {
+      if (!specifier.includes("registry")) return null;
+      const resolved = await this.resolve(specifier, importer, {
+        ...options,
+        skipSelf: true,
+      });
+      return resolved && normalizePath(resolved.id) === harnessRegistryModule
+        ? harnessStubModule
+        : null;
+    },
+    /** Fails the build when a chunk still bundles an e2e module. */
+    generateBundle(_options, bundle) {
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type !== "chunk") continue;
+        const leaked = chunk.moduleIds.find((id) =>
+          webuiSourcePath(id)?.startsWith("e2e/"),
+        );
+        if (leaked) {
+          this.error(`Shipped build bundles e2e module ${leaked}`);
+        }
+      }
     },
   };
 }
@@ -360,19 +406,6 @@ export default defineConfig(({ mode, command }) => {
               : "webui/lib/engine-runtime-worker.ts",
           )}?worker`,
         },
-        // Shipped builds swap the test hooks' harness registry for a stub, so
-        // they emit no e2e harness chunks.
-        ...(command === "build" && mode !== E2E_MODE
-          ? [
-              {
-                find: /^\.\.\/e2e\/harness\/registry$/,
-                replacement: resolve(
-                  projectRoot,
-                  "webui/lib/test-harness-unavailable.ts",
-                ),
-              },
-            ]
-          : []),
       ],
     },
     // Desktop connection settings come from native runtime configuration.
@@ -412,6 +445,7 @@ export default defineConfig(({ mode, command }) => {
       solidPlugin(),
       distributionNoticesPlugin(),
       loggerModuleNamesPlugin(),
+      e2eHarnessExclusionPlugin(),
       {
         name: "startup-build-metadata",
         /** Inserts escaped build metadata into the pre-JavaScript splash. */

@@ -308,6 +308,9 @@ importers:
       knip:
         specifier: ^6.38.0
         version: 6.38.0
+      magic-string:
+        specifier: ^0.30.21
+        version: 0.30.21
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
