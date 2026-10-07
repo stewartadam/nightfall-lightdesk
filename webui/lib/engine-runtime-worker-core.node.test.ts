@@ -278,3 +278,105 @@ test("pulls deliver command results with the newest staged snapshot", (t) => {
     "a snapshot staged encoded is dropped on pull when its layout is not the latest",
   );
 });
+
+/** Minimal browser WebSocket stand-in whose open and close the test drives. */
+class FakeSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static instances: FakeSocket[] = [];
+  readyState = FakeSocket.CONNECTING;
+  binaryType = "";
+  sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+
+  /** Registers the socket so the test can open or close it. */
+  constructor(readonly url: string) {
+    FakeSocket.instances.push(this);
+  }
+
+  /** Records a frame the worker sends, leaving out its own heartbeats. */
+  send(data: string): void {
+    if (!data.includes('"WebSocketHeartbeat"')) this.sent.push(data);
+  }
+
+  /** Finishes the handshake the way a browser socket does. */
+  open(): void {
+    this.readyState = FakeSocket.OPEN;
+    this.onopen?.();
+  }
+
+  /** Closes the socket the way a browser does after a failed or ended connection. */
+  close(): void {
+    this.readyState = 3;
+    this.onclose?.();
+  }
+}
+
+/** Installs `FakeSocket` as the global WebSocket and stops reconnect timers for one test. */
+function installFakeSocket(t: TestContext): void {
+  FakeSocket.instances = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
+  Object.defineProperty(globalThis, "WebSocket", {
+    configurable: true,
+    value: FakeSocket,
+  });
+  t.mock.method(
+    globalThis,
+    "setTimeout",
+    () => 1 as unknown as ReturnType<typeof setTimeout>,
+  );
+  /** Restores the platform WebSocket. */
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, "WebSocket", previous);
+    else Reflect.deleteProperty(globalThis, "WebSocket");
+  });
+}
+
+/** Commands submitted while the socket is still opening reach the backend, in order, once it opens. */
+test("submits sent while connecting are delivered when the socket opens", (t) => {
+  const worker = workerHarness(t);
+  installFakeSocket(t);
+  startEngineRuntimeWorker();
+  worker.send({
+    type: "start",
+    config: { mode: "remote", websocketUrl: "ws://backend/ws" },
+  });
+  const socket = FakeSocket.instances[0];
+  worker.send({ type: "submit", data: { command_id: "first" } });
+  worker.send({ type: "submit", data: { command_id: "second" } });
+  assert.deepEqual(socket.sent, []);
+
+  socket.open();
+
+  assert.deepEqual(socket.sent, [
+    JSON.stringify({ command_id: "first" }),
+    JSON.stringify({ command_id: "second" }),
+  ]);
+  worker.send({ type: "stop" });
+});
+
+/** A socket that closes before opening drops its waiting submits instead of replaying them on the next connection. */
+test("submits waiting on a socket that closes are not sent on reconnect", (t) => {
+  const worker = workerHarness(t);
+  installFakeSocket(t);
+  startEngineRuntimeWorker();
+  worker.send({
+    type: "start",
+    config: { mode: "remote", websocketUrl: "ws://backend/ws" },
+  });
+  worker.send({ type: "submit", data: { command_id: "lost" } });
+  FakeSocket.instances[0].close();
+  worker.send({
+    type: "start",
+    config: { mode: "remote", websocketUrl: "ws://backend/ws" },
+  });
+  const reconnected = FakeSocket.instances.at(-1)!;
+
+  reconnected.open();
+
+  assert.deepEqual(reconnected.sent, []);
+  worker.send({ type: "stop" });
+});

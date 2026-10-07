@@ -223,3 +223,51 @@ test("instrumentation gates pacing, resolution scales and GPU passes behind diag
     }
   }
 });
+
+/** A renderer drawing about one frame per second publishes after its second frame, then keeps publishing as frames land. */
+test("instrumentation publishes slow renderers without waiting for the frame interval", () => {
+  const instrumentation = new Instrumentation({ renderMode: "worker" });
+  const publishedStats: VisualizerStats[] = [];
+  instrumentation.setStatsCallback((stats) => {
+    if (stats) publishedStats.push(stats);
+  });
+
+  instrumentation.recordFrame(1_000, { updateMs: 1, renderMs: 2 });
+  assert.equal(publishedStats.length, 0);
+  instrumentation.recordFrame(2_000, { updateMs: 1, renderMs: 2 });
+  assert.equal(publishedStats.length, 1);
+  assert.ok(Math.abs(publishedStats[0].fps - 1) < 0.001);
+  instrumentation.recordFrame(3_000, { updateMs: 1, renderMs: 2 });
+  assert.equal(publishedStats.length, 2);
+});
+
+/** Fast renderers keep publishing once every ten frames rather than on every slow-path check. */
+test("instrumentation publishes fast renderers every ten frames", () => {
+  const instrumentation = new Instrumentation({ renderMode: "main-thread" });
+  const publishedStats: VisualizerStats[] = [];
+  instrumentation.setStatsCallback((stats) => {
+    if (stats) publishedStats.push(stats);
+  });
+
+  recordSteadyFrames(instrumentation, 1_000, 30);
+
+  assert.equal(publishedStats.length, 3);
+});
+
+/** Resuming restarts the publish interval, so the first frames after a pause do not publish from pre-pause counts. */
+test("instrumentation restarts the publish interval on resume", () => {
+  const instrumentation = new Instrumentation({ renderMode: "main-thread" });
+  const publishedStats: VisualizerStats[] = [];
+  instrumentation.setStatsCallback((stats) => {
+    if (stats) publishedStats.push(stats);
+  });
+
+  recordSteadyFrames(instrumentation, 1_000, 9);
+  instrumentation.pause();
+  instrumentation.resume();
+  const publishedBeforeResume = publishedStats.length;
+  recordSteadyFrames(instrumentation, 5_000, 9);
+  assert.equal(publishedStats.length, publishedBeforeResume);
+  recordSteadyFrames(instrumentation, 5_000 + 9 * FRAME_INTERVAL_MS, 1);
+  assert.equal(publishedStats.length, publishedBeforeResume + 1);
+});

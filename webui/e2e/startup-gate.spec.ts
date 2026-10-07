@@ -402,7 +402,10 @@ test("startup splash stays visible for at least one second", async ({
 }) => {
   await disableE2eStartupAutoOpen(page);
   await installFakeWebsocketWorker(page, "Initialized");
+  // Paused, the hold only advances through `runFor`, however long the page
+  // takes to load on a busy machine.
   await page.clock.install({ time: 0 });
+  await page.clock.pauseAt(1_000);
   await routeShowfileDiscovery(page, async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -413,14 +416,16 @@ test("startup splash stays visible for at least one second", async ({
   await page.goto("/?startup:draftRecovery=true&e2e=1");
   const splash = page.getByTestId("startup-splash");
   await expect(splash).toBeVisible();
+  // Lets the fake worker's zero-delay connection timer fire.
+  await page.clock.runFor(1);
   await expect(
     page.getByRole("dialog", { name: "Open Showfile" }),
   ).toBeVisible();
 
-  await page.clock.runFor(999);
+  await page.clock.runFor(998);
   await expect(splash).toBeVisible();
 
-  await page.clock.runFor(301);
+  await page.clock.runFor(400);
   await expect(splash).toBeHidden();
 });
 
