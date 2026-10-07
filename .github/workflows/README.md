@@ -39,6 +39,7 @@ scripts never execute in the credentialed acquisition job.
 | Desktop installer tooling | No (packaging compiles only) | Yes | No |
 | Browser runtime or browser packaging tooling | No | No | Yes |
 | Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
+| Draft PR (any changes) | As above | No | As above |
 | Main push | No (packaging compiles only) | Yes | Yes |
 | Develop push | No | No | No |
 | Release tag | No (packaging compiles only) | Yes | No |
@@ -59,6 +60,8 @@ Desktop checks link test binaries but do not validate the release build or
 installers. Full main-branch and
 release builds remain the cross-platform packaging backstop. Use manual dispatch
 with `desktop`, `browser`, or `all` when an artifact is needed before merging.
+Draft PRs never build desktop installers; marking a PR ready for review re-runs CI
+and builds them if its changes select packaging.
 Lockfile selection remains conservative; an ordinary lockfile update selects
 both distributions. Release-note-only changes do not select packaging.
 

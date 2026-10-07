@@ -174,6 +174,30 @@ test("browser previews require a configured target and a same-repository PR", ()
   }
 });
 
+/** Draft PRs defer installers until ready for review but keep checks and previews. */
+test("draft PRs skip desktop installers only", () => {
+  /** Select a PR touching shared packaging, desktop shell, and browser inputs. */
+  const select = (draft) =>
+    selectScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: ["Cargo.lock", "desktop/app-tauri/src/main.rs"],
+      previewTarget: true,
+      sameRepository: true,
+      draft,
+    });
+  assert.deepEqual(select(false), {
+    ...both,
+    desktop_check: true,
+    browser_preview: true,
+  });
+  assert.deepEqual(select(true), {
+    ...browser,
+    desktop_check: true,
+    browser_preview: true,
+  });
+});
+
 /** NUL-delimited paths preserve unusual names without interpreting them as script or shell input. */
 test("changed paths preserve whitespace and newlines", () => {
   assert.deepEqual(readChangedPaths("a b\0line\nbreak\0"), [

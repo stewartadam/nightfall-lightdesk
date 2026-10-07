@@ -54,6 +54,9 @@ const browserPackaging = [
  *
  * Browser previews build the demo for every same-repository PR once a preview target is
  * configured. Fork PRs never receive the deployment credential, so they never select one.
+ *
+ * Draft PRs skip desktop installers; marking the PR ready for review re-runs selection and
+ * packages them then.
  */
 export function selectScope({
   event,
@@ -62,6 +65,7 @@ export function selectScope({
   distribution = "all",
   previewTarget = false,
   sameRepository = false,
+  draft = false,
 }) {
   let desktopPackage = false;
   let browserPackage = false;
@@ -90,6 +94,7 @@ export function selectScope({
       if (desktopChecks.some((pattern) => pattern.test(path)))
         desktopCheck = true;
     }
+    if (draft) desktopPackage = false;
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
   }
@@ -119,6 +124,7 @@ if (
     sameRepository:
       Boolean(process.env.HEAD_REPOSITORY) &&
       process.env.HEAD_REPOSITORY === process.env.GITHUB_REPOSITORY,
+    draft: process.env.PR_DRAFT === "true",
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,

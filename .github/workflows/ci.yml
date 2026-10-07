@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+    # ready_for_review builds the desktop installers that draft PRs skip.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - main
@@ -100,6 +102,7 @@ jobs:
         env:
           DISTRIBUTION: ${{ inputs.distribution }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
           # Dependabot PRs cannot read Actions secrets, so they never deploy a preview.
           PREVIEW_WORKER: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PREVIEW_WORKER || '' }}
         run: |
