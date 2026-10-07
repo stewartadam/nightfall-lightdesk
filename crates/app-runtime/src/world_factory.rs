@@ -15,6 +15,7 @@ use nightfall_desk::{
 };
 use nightfall_engine::prelude::AppState;
 use nightfall_io::TransportRuntimePolicy;
+use nightfall_websocket::prelude::SharedWebUiAssets;
 
 use crate::{
     composition::{ClientTransport, init_bevy_with_transport_policy},
@@ -99,6 +100,13 @@ impl WorldFactory {
             runtime_config,
             client_transport: ClientTransport::default(),
         }
+    }
+
+    /// Serves the built web UI from the backend port of every world this factory builds.
+    #[must_use]
+    pub fn with_web_ui(mut self, assets: SharedWebUiAssets) -> Self {
+        self.client_transport = self.client_transport.with_web_ui(assets);
+        self
     }
 
     /// Create a fresh Bevy app and bootstrap it from empty, sample, or showfile data.

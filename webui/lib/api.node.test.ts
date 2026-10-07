@@ -44,6 +44,14 @@ test("resolveBackendPort ignores baked NIGHTFALL_PORT outside dev", () => {
   assert.equal(resolveBackendPort(false, "5172"), 3030);
 });
 
+/** A production bundle loaded from the backend reaches it on the page's own port. */
+test("resolveBackendPort uses the serving port for production browser pages", () => {
+  assert.equal(resolveBackendPort(false, "5172", undefined, "4000"), 4000);
+  assert.equal(resolveBackendPort(false, undefined, undefined, ""), 3030);
+  assert.equal(resolveBackendPort(false, undefined, 3891, "4000"), 3891);
+  assert.equal(resolveBackendPort(true, "5172", undefined, "3031"), 5172);
+});
+
 test("resolveBackendUrl uses same-origin backend in browser Vite dev", () => {
   assert.equal(
     resolveBackendUrl({

@@ -10,6 +10,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod desktop_shell;
+mod web_ui;
 
 /// Starts the desktop shell and retains the logging guard until shutdown.
 fn main() {

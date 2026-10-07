@@ -321,6 +321,7 @@ pub(crate) fn create_axum_task(
     update_json_tx: ClientSender<UpdateJsonEnvelope>,
     plugin_routes: Router,
     stateful_plugin_routes: Router<AxumAppState>,
+    web_ui: Option<crate::SharedWebUiAssets>,
 ) -> (tokio::task::JoinHandle<()>, SwappableRoutes) {
     let crate::external_control::ListenerTaskConfig {
         port,
@@ -336,7 +337,7 @@ pub(crate) fn create_axum_task(
         clients: clients.clone(),
         remote_generation: remote_generation.clone(),
     };
-    let routes = SwappableRoutes::new(state.clone(), plugin_routes, stateful_plugin_routes);
+    let routes = SwappableRoutes::new(state.clone(), web_ui, plugin_routes, stateful_plugin_routes);
     let axum_app = websocket_router(state, routes.clone());
 
     // Byte-oriented broadcast task for plugin-owned serialization
@@ -463,9 +464,13 @@ pub(crate) fn create_axum_task(
 ///
 /// Plugin routes capture world-owned state (fixture archives, showfile storage),
 /// so each world installs its own routes when it attaches to a running server.
+///
+/// The built web UI, when the host supplies it, answers whatever the plugin routes do not,
+/// so it stays reachable across world replacement.
 #[derive(Clone)]
 pub struct SwappableRoutes {
     state: AxumAppState,
+    web_ui: Option<crate::SharedWebUiAssets>,
     current: Arc<RwLock<Router>>,
 }
 
@@ -473,31 +478,53 @@ impl SwappableRoutes {
     /// Build the route set for one world, binding stateful routes to the server state.
     fn new(
         state: AxumAppState,
+        web_ui: Option<crate::SharedWebUiAssets>,
         plugin_routes: Router,
         stateful_plugin_routes: Router<AxumAppState>,
     ) -> Self {
         let current = Arc::new(RwLock::new(Self::combine(
             &state,
+            web_ui.as_ref(),
             plugin_routes,
             stateful_plugin_routes,
         )));
-        Self { state, current }
+        Self {
+            state,
+            web_ui,
+            current,
+        }
     }
 
-    /// Merge stateless and stateful plugin routes into one servable router.
+    /// Merge stateless and stateful plugin routes into one servable router, falling back to
+    /// the web UI files when they are available.
     fn combine(
         state: &AxumAppState,
+        web_ui: Option<&crate::SharedWebUiAssets>,
         plugin_routes: Router,
         stateful_plugin_routes: Router<AxumAppState>,
     ) -> Router {
-        stateful_plugin_routes
+        let routes = stateful_plugin_routes
             .with_state(state.clone())
-            .merge(plugin_routes)
+            .merge(plugin_routes);
+        match web_ui {
+            Some(assets) => {
+                let assets = assets.clone();
+                routes.fallback(move |request: Request| {
+                    crate::web_ui::serve_web_ui(assets.clone(), request)
+                })
+            }
+            None => routes,
+        }
     }
 
     /// Replace the served plugin routes with those registered by a newly active world.
     pub fn replace(&self, plugin_routes: Router, stateful_plugin_routes: Router<AxumAppState>) {
-        let routes = Self::combine(&self.state, plugin_routes, stateful_plugin_routes);
+        let routes = Self::combine(
+            &self.state,
+            self.web_ui.as_ref(),
+            plugin_routes,
+            stateful_plugin_routes,
+        );
         *self
             .current
             .write()
@@ -587,6 +614,7 @@ mod tests {
             update_tx,
             Router::new(),
             Router::new(),
+            None,
         );
         tokio::time::timeout(Duration::from_secs(5), status.changed())
             .await
@@ -824,7 +852,7 @@ mod tests {
             clients: Default::default(),
             remote_generation: Default::default(),
         };
-        let routes = SwappableRoutes::new(state.clone(), Router::new(), Router::new());
+        let routes = SwappableRoutes::new(state.clone(), None, Router::new(), Router::new());
         let app = websocket_router(state, routes).layer(Extension(0_u64));
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -903,5 +931,57 @@ mod tests {
             }
         }
         server.abort();
+    }
+
+    /// Plugin routes win over the web UI fallback, and the UI keeps serving after a world
+    /// replaces the plugin routes.
+    #[tokio::test]
+    async fn web_ui_answers_only_unclaimed_paths_across_route_swaps() {
+        use std::borrow::Cow;
+
+        use axum::body::{Body, to_bytes};
+
+        /// Build output holding only an entry document.
+        struct IndexOnly;
+
+        impl crate::WebUiAssets for IndexOnly {
+            /// Returns the entry document for its exact path only.
+            fn get(&self, path: &str) -> Option<Cow<'static, [u8]>> {
+                (path == "index.html").then_some(Cow::Borrowed(b"ui".as_slice()))
+            }
+        }
+
+        let (command_tx, _command_rx) = async_channel::unbounded();
+        let (update_json_tx, _update_rx) = async_channel::unbounded();
+        let state = AxumAppState {
+            command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
+            update_json_tx,
+            clients: Default::default(),
+            remote_generation: Default::default(),
+        };
+        let plugin_route = |marker: &'static str| {
+            Router::new().route("/api/marker", get(move || async move { marker }))
+        };
+        let routes = SwappableRoutes::new(
+            state,
+            Some(Arc::new(IndexOnly)),
+            plugin_route("first"),
+            Router::new(),
+        );
+        let body_of = |path: &'static str| {
+            let routes = routes.clone();
+            async move {
+                let request = Request::builder().uri(path).body(Body::empty()).unwrap();
+                let response = routes.call(request).await;
+                let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                String::from_utf8(bytes.to_vec()).unwrap()
+            }
+        };
+
+        assert_eq!(body_of("/api/marker").await, "first");
+        assert_eq!(body_of("/").await, "ui");
+        routes.replace(plugin_route("second"), Router::new());
+        assert_eq!(body_of("/api/marker").await, "second");
+        assert_eq!(body_of("/cues").await, "ui");
     }
 }

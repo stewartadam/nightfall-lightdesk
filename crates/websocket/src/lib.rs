@@ -26,13 +26,16 @@ use crate::websocket::create_axum_task;
 mod external_control;
 mod origin;
 pub mod routes;
+mod web_ui;
 pub mod websocket;
+
+pub use web_ui::{SharedWebUiAssets, WebUiAssets};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::routes::HttpRouteRegistry;
     pub use crate::websocket::AxumAppState;
-    pub use crate::{WebsocketHost, WebsocketPlugin};
+    pub use crate::{SharedWebUiAssets, WebUiAssets, WebsocketHost, WebsocketPlugin};
 }
 
 /// Resource used to signal axum task shutdown once we receive an AppExit event.
@@ -63,6 +66,7 @@ struct AxumTaskConfig {
 pub struct WebsocketHost {
     shutdown_tx: BroadcastSender<()>,
     running: Arc<Mutex<Option<RunningServer>>>,
+    web_ui: Option<SharedWebUiAssets>,
 }
 
 impl Default for WebsocketHost {
@@ -71,7 +75,19 @@ impl Default for WebsocketHost {
         Self {
             shutdown_tx,
             running: Arc::default(),
+            web_ui: None,
         }
+    }
+}
+
+impl WebsocketHost {
+    /// Serves the built web UI from the backend port for requests no backend route claims.
+    ///
+    /// Takes effect when the first world starts the server, so set it before building worlds.
+    #[must_use]
+    pub fn with_web_ui(mut self, assets: SharedWebUiAssets) -> Self {
+        self.web_ui = Some(assets);
+        self
     }
 }
 
@@ -170,6 +186,7 @@ fn start_or_attach_axum_task(
         client_bridge.update_sender(),
         plugin_routes,
         stateful_plugin_routes,
+        host.web_ui.clone(),
     );
     *running = Some(RunningServer {
         routes,

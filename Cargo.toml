@@ -31,11 +31,13 @@ futures-util = "0.3.34"
 gdtf = "0.3.0"
 jiff = "0.2.37"
 minicbor-serde = { version = "0.7", features = ["alloc"] }
+mime_guess = { version = "2.0.5", default-features = false }
 moonshine-kind = "0.5"
 netdev = "0.46"
 netwatcher = "0.8"
 notify = "8.2"
 orx-parallel = "4.1.1"
+percent-encoding = "2.3.2"
 partially = { version = "0.2.1", features = ["derive"] }
 rosc = "0.11.4"
 rustc-hash = "2.1.3"

@@ -8,9 +8,12 @@
 
 //! Browser diagnostics downloads using the same archive writer as the desktop shell.
 
+use std::net::SocketAddr;
+
 use axum::{
     Json,
     body::Body,
+    extract::ConnectInfo,
     http::{StatusCode, header},
     response::Response,
     routing::post,
@@ -33,9 +36,20 @@ struct BrowserBundleOptions {
 }
 
 /// Captures selected show content and streams a finalized temporary archive that is removed after download.
+///
+/// The archive holds logs, local paths and optionally the show, so only clients on the
+/// engine machine itself may request it; devices reaching the backend over the network
+/// are refused.
 async fn export_diagnostics(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(options): Json<BrowserBundleOptions>,
 ) -> Result<Response, (StatusCode, String)> {
+    if !peer.ip().is_loopback() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Diagnostics can only be collected on the computer running Nightfall.".to_string(),
+        ));
+    }
     let app_data = nightfall::nightfall_data_dir().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -78,4 +92,28 @@ async fn export_diagnostics(
         .header("x-diagnostic-export-warnings", warnings.len().to_string())
         .body(Body::from_stream(stream))
         .expect("diagnostic export response should be valid"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    use axum::{Json, extract::ConnectInfo, http::StatusCode};
+
+    use super::{BrowserBundleOptions, export_diagnostics};
+    use crate::diagnostic_bundle::ShowfileMode;
+
+    /// Devices reaching the backend over the network cannot pull logs or the show.
+    #[tokio::test]
+    async fn refuses_network_peers() {
+        let peer = SocketAddr::from((Ipv4Addr::new(192, 168, 1, 20), 50_000));
+        let options = BrowserBundleOptions {
+            system_info: String::new(),
+            showfile_mode: ShowfileMode::None,
+        };
+        let Err((status, _)) = export_diagnostics(ConnectInfo(peer), Json(options)).await else {
+            panic!("a network peer exported diagnostics");
+        };
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
 }
