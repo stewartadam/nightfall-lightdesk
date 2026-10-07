@@ -55,8 +55,8 @@ const browserPackaging = [
  * Browser previews build the demo for every same-repository PR once a preview target is
  * configured. Fork PRs never receive the deployment credential, so they never select one.
  *
- * Draft PRs skip desktop installers; marking the PR ready for review re-runs selection and
- * packages them then.
+ * Draft PRs skip desktop installers and Chromium product flows; marking the PR ready for review
+ * re-runs selection and runs them then.
  */
 export function selectScope({
   event,
@@ -94,15 +94,15 @@ export function selectScope({
       if (desktopChecks.some((pattern) => pattern.test(path)))
         desktopCheck = true;
     }
-    if (draft) desktopPackage = false;
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
   }
   return {
     desktop_check: desktopCheck,
-    desktop_package: desktopPackage,
+    desktop_package: desktopPackage && !draft,
     browser_package: browserPackage,
     browser_preview: browserPreview,
+    product_flows: !draft,
   };
 }
 

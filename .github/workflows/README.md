@@ -60,8 +60,9 @@ Desktop checks link test binaries but do not validate the release build or
 installers. Full main-branch and
 release builds remain the cross-platform packaging backstop. Use manual dispatch
 with `desktop`, `browser`, or `all` when an artifact is needed before merging.
-Draft PRs never build desktop installers; marking a PR ready for review re-runs CI
-and builds them if its changes select packaging.
+Draft PRs never build desktop installers or run the Chromium product flows (the
+smoke job and the browser demo's packaged-artifact flows); marking a PR ready for
+review re-runs CI with them.
 Lockfile selection remains conservative; an ordinary lockfile update selects
 both distributions. Release-note-only changes do not select packaging.
 

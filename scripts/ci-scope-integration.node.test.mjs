@@ -82,7 +82,7 @@ test("workflow connects independent validation outputs", () => {
   );
   assert.match(
     jobs["browser-demo"].with["product-flows"],
-    /^\$\{\{ needs\.selection\.outputs\.browser_package == 'true' \}\}$/,
+    /^\$\{\{ needs\.selection\.outputs\.browser_package == 'true' && needs\.selection\.outputs\.product_flows == 'true' \}\}$/,
   );
   assert.deepEqual(jobs.selection.permissions ?? {}, {});
 });

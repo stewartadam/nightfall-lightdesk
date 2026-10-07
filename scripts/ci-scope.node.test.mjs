@@ -15,6 +15,7 @@ const none = {
   desktop_package: false,
   browser_package: false,
   browser_preview: false,
+  product_flows: true,
 };
 const desktop = { ...none, desktop_package: true };
 const browser = { ...none, browser_package: true };
@@ -174,8 +175,8 @@ test("browser previews require a configured target and a same-repository PR", ()
   }
 });
 
-/** Draft PRs defer installers until ready for review but keep checks and previews. */
-test("draft PRs skip desktop installers only", () => {
+/** Draft PRs defer installers and product flows until ready for review but keep checks and previews. */
+test("draft PRs skip desktop installers and product flows", () => {
   /** Select a PR touching shared packaging, desktop shell, and browser inputs. */
   const select = (draft) =>
     selectScope({
@@ -195,6 +196,7 @@ test("draft PRs skip desktop installers only", () => {
     ...browser,
     desktop_check: true,
     browser_preview: true,
+    product_flows: false,
   });
 });
 

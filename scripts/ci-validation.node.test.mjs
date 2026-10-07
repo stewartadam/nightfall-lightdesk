@@ -27,11 +27,18 @@ test("validation jobs wait only for their preparation prerequisites", () => {
   ]);
   assert.deepEqual(jobs["browser-smoke"].needs, [
     "scope",
+    "selection",
     "native",
     "wasm-bridge",
   ]);
-  for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
+  assert.equal(
+    jobs["browser-smoke"].if,
+    `\${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.product_flows == 'true' }}`,
+  );
+  for (const id of ["source-checks", "native", "webui"]) {
     assert.equal(jobs[id].if, `\${{ !startsWith(github.ref, 'refs/tags/') }}`);
+  }
+  for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
     assert.ok(
       jobs.gate.needs.includes(id),
       `${id} must contribute to the required check`,
@@ -50,12 +57,16 @@ test("the required check accepts only successful prerequisite results", () => {
     jobs.gate.needs.map((id) => [id, { result: "success" }]),
   );
   /** Run the workflow shell against a controlled collection of dependency outcomes. */
-  function runGuard(outcomes) {
+  function runGuard(outcomes, productFlows = "true") {
     const result = spawnSync(
       "bash",
       ["-e", "-o", "pipefail", "-c", guard.run],
       {
-        env: { ...process.env, JOB_RESULTS: JSON.stringify(outcomes) },
+        env: {
+          ...process.env,
+          JOB_RESULTS: JSON.stringify(outcomes),
+          PRODUCT_FLOWS: productFlows,
+        },
         encoding: "utf8",
       },
     );
@@ -72,4 +83,16 @@ test("the required check accepts only successful prerequisite results", () => {
       );
     }
   }
+  assert.equal(
+    guard.env.PRODUCT_FLOWS,
+    `\${{ needs.selection.outputs.product_flows }}`,
+  );
+  const draft = { ...results, "browser-smoke": { result: "skipped" } };
+  assert.equal(runGuard(draft, "false"), 0, "draft skips product flows");
+  assert.notEqual(runGuard(draft, ""), 0, "missing selection stays strict");
+  assert.notEqual(
+    runGuard({ ...draft, native: { result: "failure" } }, "false"),
+    0,
+    "draft still requires other jobs",
+  );
 });
