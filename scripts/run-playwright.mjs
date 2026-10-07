@@ -90,6 +90,21 @@ function buildE2eFrontend() {
   );
 }
 
+/**
+ * Rebuilds the dev WASM bridge and browser demo runtime before the frontend
+ * starts, since day-to-day dev setup only refreshes the bridge while many
+ * specs run against the embedded demo engine. CI restores both packages from
+ * its own cached builds, so the step is skipped there.
+ */
+function buildTestWasm() {
+  if (process.env.CI) return Promise.resolve({ code: 0 });
+  return runOwnedCommand(
+    process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+    ["run", "--silent", "wasm-build:dev"],
+    { spawnOptions: { stdio: "inherit" } },
+  );
+}
+
 const { browser, dataDir, playwrightArgs, rustLog, target, viteMode } =
   extractPlaywrightCliOptions(process.argv.slice(2));
 const sandboxError = playwrightSandboxError(playwrightArgs);
@@ -122,13 +137,19 @@ try {
   // Each run builds into its own directory, so concurrent runs in one
   // worktree never replace the bundle another run's preview server serves.
   if (runRoot) process.env.NIGHTFALL_E2E_OUT_DIR = join(runRoot, "e2e-build");
+  const wasmOutcome = isTestRun ? await buildTestWasm() : undefined;
+  if (wasmOutcome && (wasmOutcome.code !== 0 || wasmOutcome.signal)) {
+    outcome = wasmOutcome;
+  }
   // The e2e bundle builds while Cargo checks the backend.
   const frontendBuild =
-    isTestRun && process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "e2e"
+    !outcome &&
+    isTestRun &&
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "e2e"
       ? buildE2eFrontend()
       : undefined;
   let backendExecutable;
-  if (needsBackend) {
+  if (!outcome && needsBackend) {
     const preparedBackend = process.env.NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE;
     const buildOutcome = preparedBackend
       ? { code: 0 }

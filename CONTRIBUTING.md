@@ -149,6 +149,14 @@ pnpm run wasm-build:dev
 cargo build --tests --locked
 ```
 
+`wasm-build:dev` builds both WASM packages. Day-to-day, the dev server only
+needs the bridge (`pnpm run wasm-build:bridge:dev`), which is what the
+post-merge hook, worktree setup and the dashboard's `wasm` service rebuild.
+Build the embedded demo engine with `pnpm run wasm-build:browser-demo:dev`
+when trying demo mode in the dev server, or after changing its exported API,
+since `pnpm run typecheck` reads its generated declarations. The Playwright
+wrapper rebuilds both packages before every local test run.
+
 Production web and Tauri builds generate dependency notices. Install their
 pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
 See [distribution notices](docs/src/developer-reference/distribution-notices.md)
@@ -495,7 +503,7 @@ cargo nextest run --tests autocomplete::
 
 Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file becomes its own executable. The main reason is macOS: without the [Developer Tools setting](#macos), macOS scans each newly built executable the first time it runs, so every extra test binary adds to each test run after a rebuild (74 integration-test binaries became 20). Each binary also links its own copy of Bevy and the workspace; the link-time saving is smaller and has not been measured separately on Linux. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.
 
-After changing Rust command parsing or shared types, regenerate with `pnpm run typeshare` and `pnpm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
+After changing Rust command parsing or shared types, regenerate with `pnpm run typeshare` and `pnpm run wasm-build:bridge:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
 
 CI runs prek hooks and script tests independently of native compilation and
 WASM builds. TypeScript and WebUI Node checks wait for the WASM assets. Chromium
