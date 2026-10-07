@@ -179,6 +179,12 @@ export function startEngineRuntimeWorker(
   }
 
   let socket: WebSocket | null = null;
+  /**
+   * Submits that arrive while `socket` is still opening. They are sent in order
+   * once it opens and discarded if it closes first, when the main thread
+   * rejects their result waiters on the disconnected status.
+   */
+  let submitsAwaitingOpen: string[] = [];
   let url = "";
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -502,15 +508,19 @@ export function startEngineRuntimeWorker(
       socket.close();
       socket = null;
     }
+    submitsAwaitingOpen = [];
 
     postStatus(Status.Connecting);
     // A new connection may reach a different backend world, whose layouts restart.
     parameterLayoutId = null;
 
-    socket = new WebSocket(url);
+    const opened = new WebSocket(url);
+    socket = opened;
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => {
+      for (const submit of submitsAwaitingOpen) opened.send(submit);
+      submitsAwaitingOpen = [];
       postStatus(Status.Connected);
       startHeartbeatTimer();
       // Signal main thread to send resync
@@ -519,6 +529,7 @@ export function startEngineRuntimeWorker(
 
     socket.onclose = () => {
       stopHeartbeatTimer();
+      submitsAwaitingOpen = [];
       postStatus(Status.Disconnected);
       socket = null;
       scheduleReconnect();
@@ -587,6 +598,8 @@ export function startEngineRuntimeWorker(
           embeddedRuntime?.submit(msg.data);
         } else if (socket?.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify(msg.data));
+        } else if (socket?.readyState === WebSocket.CONNECTING) {
+          submitsAwaitingOpen.push(JSON.stringify(msg.data));
         }
         break;
 
@@ -601,6 +614,7 @@ export function startEngineRuntimeWorker(
           socket.close();
           socket = null;
         }
+        submitsAwaitingOpen = [];
         break;
 
       case "pullFrame":
