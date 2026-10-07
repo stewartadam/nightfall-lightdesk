@@ -84,6 +84,35 @@ export function getBackendPort(): number {
 }
 
 /**
+ * Returns the port another device should open to load this UI.
+ *
+ * The UI is served from wherever this page came from: Vite in development
+ * (browser or `tauri:dev`), the backend for a built bundle in a browser. The
+ * packaged desktop app loads its pages through the webview's own protocol,
+ * which has no usable port, and the backend serves the same files over HTTP.
+ */
+export function resolveShareablePort(
+  backendPort: number,
+  pageProtocol?: string,
+  pagePort?: string,
+): number {
+  if (pageProtocol === "http:" || pageProtocol === "https:") {
+    const served = pagePort ? Number.parseInt(pagePort, 10) : Number.NaN;
+    if (Number.isFinite(served)) return served;
+  }
+  return backendPort;
+}
+
+/** Returns the port another device should open to load this UI. */
+export function getShareablePort(): number {
+  return resolveShareablePort(
+    getBackendPort(),
+    globalThis.location?.protocol,
+    globalThis.location?.port,
+  );
+}
+
+/**
  * Returns the host that runs the backend when the UI connects to it directly.
  * The web server that served the UI runs beside the backend, so a browser
  * reaches the backend through the page's own hostname and a phone on the LAN
