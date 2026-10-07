@@ -68,6 +68,21 @@ pub(crate) async fn reject_foreign_origins(request: Request, next: Next) -> Resp
     (StatusCode::FORBIDDEN, "Origin not allowed").into_response()
 }
 
+/// Returns whether a request comes from a browser or tool on the computer running Nightfall.
+///
+/// The peer must be loopback, and the browser must also have addressed this machine by a
+/// loopback name. A local proxy such as the Vite dev server relays other devices from a
+/// loopback address but reports the LAN address they used in `X-Forwarded-Host`, so a phone
+/// browsing through it still counts as remote. A request without peer information counts as
+/// remote, so a missing extension never grants local trust.
+pub(crate) fn is_local_client(peer: Option<SocketAddr>, headers: &HeaderMap, uri: &Uri) -> bool {
+    peer.is_some_and(|peer| peer.ip().is_loopback())
+        && request_host(headers, uri, true).is_none_or(|host| {
+            host.parse::<Authority>()
+                .is_ok_and(|authority| is_loopback_name(authority.host()))
+        })
+}
+
 /// Returns whether an addressed `host[:port]` names this machine or its local network.
 fn addresses_local_name(host: &str) -> bool {
     host.parse::<Authority>().is_ok_and(|authority| {
@@ -226,6 +241,37 @@ mod tests {
         for host in ["rebind.evil.example:3030", "evil.:3030", "not a host"] {
             assert!(!addresses_local_name(host), "{host}");
         }
+    }
+
+    /// Only loopback peers that addressed a loopback name are local; devices relayed by a
+    /// local proxy, network peers and requests without peer info are not.
+    #[test]
+    fn local_clients_are_loopback_peers_addressing_loopback() {
+        let loopback = Some(SocketAddr::from(([127, 0, 0, 1], 50000)));
+        let phone = Some(SocketAddr::from(([192, 168, 1, 50], 50000)));
+        let headers = |pairs: &[(&'static str, &'static str)]| {
+            let mut headers = HeaderMap::new();
+            for (name, value) in pairs {
+                headers.insert(*name, value.parse().unwrap());
+            }
+            headers
+        };
+        let uri = Uri::from_static("/ws");
+        let direct = headers(&[("host", "localhost:3030")]);
+        let proxied_local = headers(&[
+            ("host", "localhost:3030"),
+            ("x-forwarded-host", "127.0.0.1:3031"),
+        ]);
+        let proxied_phone = headers(&[
+            ("host", "localhost:3030"),
+            ("x-forwarded-host", "192.168.1.20:3031"),
+        ]);
+        assert!(is_local_client(loopback, &direct, &uri));
+        assert!(is_local_client(loopback, &proxied_local, &uri));
+        assert!(is_local_client(loopback, &HeaderMap::new(), &uri));
+        assert!(!is_local_client(loopback, &proxied_phone, &uri));
+        assert!(!is_local_client(phone, &direct, &uri));
+        assert!(!is_local_client(None, &direct, &uri));
     }
 
     /// Prefers the proxy's forwarded host only when the proxy connects over loopback.
