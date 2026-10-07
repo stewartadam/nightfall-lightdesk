@@ -68,7 +68,7 @@ impl Plugin for OutputArtnetPlugin {
         app.insert_resource(artnet_service.client());
         app.insert_resource(artnet_service.recent_frames());
         app.add_systems(
-            Update,
+            Render,
             output_artnet::output
                 .after(nightfall_fixtures::output_frames::compose_output_frames)
                 .in_set(DmxOutput),

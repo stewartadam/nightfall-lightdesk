@@ -58,6 +58,7 @@ pub struct TimelineSeekPipeline<'w, 's> {
 /// Coordinates ordered timeline reconstruction stages for explicit seeks and action mutations.
 pub fn handle_timeline_seek_system(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
+    mut action_cursors: Query<&mut TimelineActionCursor>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
     mut reconstruction_events: TimelineReconstructionEvents,
     pipeline: TimelineSeekPipeline,
@@ -85,15 +86,38 @@ pub fn handle_timeline_seek_system(
     );
     for (timeline_entity, request) in reconstruction_requests {
         if let Ok((_, mut timeline)) = timeline_query.get_mut(timeline_entity) {
+            let seek_behavior = timeline.timeline.seek_behavior;
             if matches!(request.reason, TimelineReconstructionReason::Seek)
-                && timeline.timeline.seek_behavior == TimelineSeekBehavior::MovePlayheadOnly
+                && seek_behavior != TimelineSeekBehavior::MovePlayheadOnly
+                && !timeline.is_active
+            {
+                // Activate the timeline when seeking (if not already active).
+                timeline.activate();
+            }
+            // Live action triggering resumes from the seek target, or re-evaluates every action
+            // after an edit.
+            if timeline.is_active
+                && let Ok(mut cursor) = action_cursors.get_mut(timeline_entity)
+            {
+                match request.reason {
+                    TimelineReconstructionReason::Seek => cursor.seek_to(
+                        request
+                            .timecode_position
+                            .saturating_sub(timeline.timeline.timecode_start),
+                    ),
+                    // A seek handled since the last render keeps precedence over a later edit,
+                    // as it does when both arrive together, unless the seek only moved the
+                    // playhead.
+                    TimelineReconstructionReason::ActionsChanged
+                        if cursor.seek_pending()
+                            && seek_behavior != TimelineSeekBehavior::MovePlayheadOnly => {}
+                    TimelineReconstructionReason::ActionsChanged => cursor.rewind(),
+                }
+            }
+            if matches!(request.reason, TimelineReconstructionReason::Seek)
+                && seek_behavior == TimelineSeekBehavior::MovePlayheadOnly
             {
                 continue;
-            }
-
-            // Activate the timeline when seeking (if not already active).
-            if matches!(request.reason, TimelineReconstructionReason::Seek) && !timeline.is_active {
-                timeline.activate();
             }
             // Calculate the timeline seek position (offset by timecode start)
             let timeline_position = if request.timecode_position >= timeline.timeline.timecode_start

@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
+use nightfall_engine::prelude::FrameWaker;
 use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
 
 /// Raw MIDI event emitted by the process-lifetime MIDI service.
@@ -32,16 +33,25 @@ pub struct MidiInputClient {
     device_names: Arc<Mutex<Vec<String>>>,
 }
 
-const BRIDGE_IDLE_SLEEP: Duration = Duration::from_millis(5);
+/// How long the bridge thread sleeps when no MIDI event is waiting. It bounds the latency the
+/// bridge adds to each event.
+const BRIDGE_IDLE_SLEEP: Duration = Duration::from_millis(1);
 
 impl MidiInputClient {
     /// Subscribe to MIDI input events.
-    pub fn subscribe(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<MidiInputEvent>> {
-        self.subscribe_with_bridge_done_signal(None)
+    ///
+    /// Each forwarded event wakes `waker`, so the engine handles it without waiting for the next
+    /// render.
+    pub fn subscribe(
+        &self,
+        waker: Option<FrameWaker>,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<MidiInputEvent>> {
+        self.subscribe_with_bridge_done_signal(waker, None)
     }
 
     fn subscribe_with_bridge_done_signal(
         &self,
+        waker: Option<FrameWaker>,
         bridge_done_tx: Option<std::sync::mpsc::Sender<()>>,
     ) -> Option<tokio::sync::mpsc::UnboundedReceiver<MidiInputEvent>> {
         let event_tx = self
@@ -62,6 +72,9 @@ impl MidiInputClient {
                         Ok(event) => {
                             if event_mpsc_tx.send(event).is_err() {
                                 break;
+                            }
+                            if let Some(waker) = &waker {
+                                waker.wake();
                             }
                         }
                         Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
@@ -87,7 +100,7 @@ impl MidiInputClient {
         std::sync::mpsc::Receiver<()>,
     )> {
         let (bridge_done_tx, bridge_done_rx) = std::sync::mpsc::channel();
-        let event_mpsc_rx = self.subscribe_with_bridge_done_signal(Some(bridge_done_tx))?;
+        let event_mpsc_rx = self.subscribe_with_bridge_done_signal(None, Some(bridge_done_tx))?;
         Some((event_mpsc_rx, bridge_done_rx))
     }
 

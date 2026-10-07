@@ -48,7 +48,7 @@ use nightfall_selection::filter_existing_selection;
 use nightfall_timecode::prelude::*;
 use uuid::Uuid;
 
-use crate::components::{MaterializedTimeline, SpawnedEntityType};
+use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
 use crate::planner::{TimelinePlanningAction, TimelinePlaybackSourceResolver, plan_timeline_at};
 use crate::prelude::{
     ActionKind, ParameterType, TimelineAction, TimelineCommand, TimelineLookaheadMode,

@@ -151,16 +151,19 @@ pub fn send_instances_on_change(
     materialized_clips: Query<&MaterializedClip>,
     clips: Query<&Clip>,
     added_instances: Query<&InstanceId, Added<InstanceId>>,
-    removed_instances: RemovedComponents<InstanceId>,
+    mut removed_instances: RemovedComponents<InstanceId>,
     added_release_markers: Query<(), (With<InstanceId>, Added<ReleaseMarker>)>,
     changed_controls: Query<&InstanceControls, Changed<InstanceControls>>,
     changed_metadata: Query<&InstanceMetadata, Changed<InstanceMetadata>>,
     changed_step_fx_previews: Query<(), Changed<PreviewStepFxDefinition>>,
     broadcaster: Res<ClientEventSink>,
 ) {
+    // Consume every removal, so one removal does not trigger a send in the next update too.
+    let instances_removed = !removed_instances.is_empty();
+    removed_instances.clear();
     // Send if any instances were added, removed, stopped, or had metadata/control changes.
     if added_instances.is_empty()
-        && removed_instances.is_empty()
+        && !instances_removed
         && added_release_markers.is_empty()
         && changed_controls.is_empty()
         && changed_metadata.is_empty()
@@ -185,8 +188,9 @@ pub fn send_controls_on_change(
     controls_query: Query<&InstanceControls>,
     broadcaster: Res<ClientEventSink>,
 ) {
-    let materialized_changed =
-        !added_materialized_clips.is_empty() || removed_materialized_clips.read().next().is_some();
+    let materialized_removed = !removed_materialized_clips.is_empty();
+    removed_materialized_clips.clear();
+    let materialized_changed = !added_materialized_clips.is_empty() || materialized_removed;
 
     if !controls.is_changed()
         && !masters.is_changed()

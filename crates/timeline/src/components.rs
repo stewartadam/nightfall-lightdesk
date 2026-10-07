@@ -30,8 +30,53 @@ pub enum SpawnedEntityType {
     Instance,
 }
 
+/// Position up to which live playback has triggered a timeline's actions.
+///
+/// Render passes advance it as playback moves. Seeks and action edits move it when they are
+/// handled, so the next render scans actions from the right place.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TimelineActionCursor {
+    /// Timeline position the last live action scan reached.
+    position: Duration,
+    /// Skips the next live scan, so the render after a seek does not trigger actions that the
+    /// seek reconstruction already applied.
+    skip_next_scan: bool,
+}
+
+impl TimelineActionCursor {
+    /// Moves the cursor to a seek target and skips the next scan.
+    pub fn seek_to(&mut self, position: Duration) {
+        self.position = position;
+        self.skip_next_scan = true;
+    }
+
+    /// Moves the cursor to the timeline start, so the next scan re-evaluates every action up to
+    /// the playback position.
+    pub fn rewind(&mut self) {
+        self.position = Duration::ZERO;
+        self.skip_next_scan = false;
+    }
+
+    /// Returns whether a seek is waiting for the next scan to be skipped.
+    pub fn seek_pending(&self) -> bool {
+        self.skip_next_scan
+    }
+
+    /// Returns the start of the next live scan, or `None` when this scan is skipped. Clears the
+    /// skip.
+    pub fn take_scan_start(&mut self) -> Option<Duration> {
+        (!std::mem::take(&mut self.skip_next_scan)).then_some(self.position)
+    }
+
+    /// Records that a live scan reached `position`.
+    pub fn advance_to(&mut self, position: Duration) {
+        self.position = position;
+    }
+}
+
 /// Component for an active timeline in the ECS
 #[derive(Component, Debug, Clone)]
+#[require(TimelineActionCursor)]
 pub struct MaterializedTimeline {
     /// Unique ID for this materialized timeline
     pub owner_uuid: Uuid,

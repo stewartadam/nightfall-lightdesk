@@ -4304,6 +4304,7 @@ fn wrapped_zero_duration_cue_tracks_through_autonomous_catch_up() {
         ..Default::default()
     };
     app.init_resource::<nightfall_compositor::prelude::FinalLayerAttributedAssertions>();
+    nightfall_compositor::prelude::add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_systems(
         Update,
         (

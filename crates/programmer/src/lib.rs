@@ -67,14 +67,8 @@ impl Plugin for ProgrammerPlugin {
         register_command_deserializer::<UserCommand>(app, websocket::deserialize_user_command);
 
         app.add_systems(
-            Update,
-            websocket::forward_programmer_commands
-                .in_set(ClientOutput)
-                .after(events::handle_programmer_events)
-                .after(nightfall_desk::systems::event_handlers::blueprint_events::crud_events)
-                .after(nightfall_desk::systems::event_handlers::blueprint_events::action_events)
-                .after(events::handle_undo_events)
-                .after(events::handle_remove_instruction_events),
+            PostUpdate,
+            websocket::forward_programmer_commands.in_set(ClientFeedback),
         );
 
         app.add_systems(
@@ -135,11 +129,12 @@ impl Plugin for ProgrammerPlugin {
                     events::handle_remove_instruction_events,
                 )
                     .in_set(EventHandling),
-                events::finish_programmer_action_workflows
-                    .after(EventHandling)
-                    .before(ClockUpdate),
-                painter::materialize_and_paint_programmer.in_set(LayerGeneration),
+                events::finish_programmer_action_workflows.after(EventHandling),
             ),
+        );
+        app.add_systems(
+            Render,
+            painter::materialize_and_paint_programmer.in_set(LayerGeneration),
         );
     }
 }

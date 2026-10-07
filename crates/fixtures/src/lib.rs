@@ -205,7 +205,7 @@ impl Plugin for FixturePlugin {
         );
 
         app.add_systems(
-            Update,
+            Render,
             (
                 binding_resolution::resolve_output_bindings,
                 output_frames::update_input_routing,
@@ -219,10 +219,17 @@ impl Plugin for FixturePlugin {
 
         // WebSocket forwarding and sends owned by fixtures plugin
         app.add_systems(
-            Update,
+            PostUpdate,
             (
                 websocket::forward_fixture_commands,
+                // Reads the snapshot suppression messages written by fixture commands.
                 websocket::send_fixtures_on_change,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
+            (
                 websocket::send_dmx_universes.after(DmxOutput),
                 websocket::send_bindings_on_change,
                 websocket::send_color_path_defaults_on_change,

@@ -38,6 +38,7 @@ const UNPATCHED_UNIVERSE: u16 = 9;
 /// observe whether fixture output resumes after a manual override is released.
 fn setup_app() -> App {
     let mut app = App::new();
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<CommandTracker>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();

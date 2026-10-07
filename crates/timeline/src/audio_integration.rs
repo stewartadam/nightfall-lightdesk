@@ -80,12 +80,11 @@ pub fn add_event_handling_systems(app: &mut App) {
             crate::systems::detach_stopped_timeline_release_clocks,
         )
             .chain()
-            .after(EventHandling)
-            .before(ClockUpdate),
+            .after(EventHandling),
     );
 
     app.add_systems(
-        Update,
+        Render,
         (
             (
                 crate::diagnostics::start_timeline_layer_generation_diagnostic,
@@ -135,7 +134,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        Render,
         crate::systems::sync_timeline_paused_instance_controls_system
             .after(ClockUpdate)
             .before(LayerGeneration),
@@ -210,12 +209,11 @@ pub fn add_event_handling_systems(app: &mut App) {
             crate::systems::detach_stopped_timeline_release_clocks,
         )
             .chain()
-            .after(EventHandling)
-            .before(ClockUpdate),
+            .after(EventHandling),
     );
 
     app.add_systems(
-        Update,
+        Render,
         (
             (
                 crate::diagnostics::start_timeline_layer_generation_diagnostic,
@@ -258,7 +256,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        Render,
         crate::systems::sync_timeline_paused_instance_controls_system
             .after(ClockUpdate)
             .before(LayerGeneration),

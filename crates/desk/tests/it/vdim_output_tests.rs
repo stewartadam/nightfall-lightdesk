@@ -63,6 +63,7 @@ fn spawn_parameter(world: &mut World, metadata: ParameterMetadata) -> Instance<P
 #[test]
 fn virtual_intensity_scales_higher_priority_color_output() {
     let mut app = App::new();
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ConsoleDmxUniverses>();
@@ -252,6 +253,7 @@ fn virtual_intensity_scales_higher_priority_color_output() {
 #[test]
 fn virtual_intensity_above_full_is_capped_before_scaling_color_output() {
     let mut app = App::new();
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ConsoleDmxUniverses>();

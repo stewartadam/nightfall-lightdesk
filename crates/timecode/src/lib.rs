@@ -59,7 +59,7 @@ impl Plugin for TimecodePlugin {
             .register::<TimecodeCommand>();
 
         app.add_systems(
-            Update,
+            Render,
             (systems::update_timecode_system).in_set(ClockUpdate),
         );
         app.add_systems(
@@ -72,7 +72,7 @@ impl Plugin for TimecodePlugin {
                 .in_set(EventHandling),
         );
         // WebSocket sends owned by timecode plugin
-        app.add_systems(Update, websocket::send_timecodes.in_set(ClientOutput));
+        app.add_systems(Render, websocket::send_timecodes.in_set(ClientOutput));
 
         app.add_systems(
             Update,

@@ -88,7 +88,7 @@ impl Plugin for OutputSacnPlugin {
         app.add_systems(Update, sync_sacn_output_identity.in_set(InputHandling));
         app.add_systems(Update, sync_sacn_output_binding.after(EventHandling));
         app.add_systems(
-            Update,
+            Render,
             output_sacn::output
                 .after(nightfall_fixtures::output_frames::compose_output_frames)
                 .in_set(DmxOutput),

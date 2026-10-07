@@ -13,7 +13,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::RunSystemOnce;
 use nightfall_compositor::types::Layer;
 use nightfall_dmx::prelude::{DmxValueResolution, MAX_CHANNELS_PER_UNIVERSE, ParameterValue};
-use nightfall_engine::{Compositing, LayerGeneration};
+use nightfall_engine::prelude::{Compositing, LayerGeneration, Render, add_render_schedule};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::{input_apply::TransportInputPlugin, prelude::*};
 use nightfall_io::{
@@ -64,6 +64,7 @@ fn make_frame(universe: u16, channels: &[(u16, u8)]) -> AcceptedDmxFrame {
 #[test]
 fn accepted_input_records_frames_without_transport_bindings() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
     app.init_resource::<ResolvedInputBindings>();
@@ -93,6 +94,7 @@ fn accepted_input_records_frames_without_transport_bindings() {
 #[test]
 fn accepted_input_applies_only_bound_channels() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
     app.init_resource::<ResolvedInputBindings>();
@@ -147,6 +149,7 @@ fn accepted_input_applies_only_bound_channels() {
 #[test]
 fn accepted_input_sets_console_channels_for_transport_console_mapping() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
     app.init_resource::<ResolvedInputBindings>();
@@ -187,6 +190,7 @@ fn accepted_input_sets_console_channels_for_transport_console_mapping() {
 #[test]
 fn accepted_input_sets_transport_channels_for_transport_mapping() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
     app.init_resource::<ResolvedInputBindings>();
@@ -263,13 +267,14 @@ fn observe_compositing(input: Res<InputDmxUniverses>, mut observed: ResMut<Compo
 #[test]
 fn mixed_protocol_ingress_is_applied_before_compositing_without_retimestamping() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
-    app.configure_sets(Update, Compositing.after(LayerGeneration));
+    app.configure_sets(Render, Compositing.after(LayerGeneration));
     app.add_systems(
-        Update,
+        Render,
         (publish_artnet, publish_sacn).in_set(DmxInputSet::Ingress),
     );
-    app.add_systems(Update, observe_compositing.in_set(Compositing));
+    app.add_systems(Render, observe_compositing.in_set(Compositing));
     app.init_resource::<CompositingInput>();
     let received_at = Instant::now() - std::time::Duration::from_millis(500);
     let first = make_frame(1, &[(1, 10)]);
@@ -305,6 +310,7 @@ fn mixed_protocol_ingress_is_applied_before_compositing_without_retimestamping()
 #[test]
 fn routing_preserves_binding_precedence_and_consumes_each_frame_once() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
     let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
     let input_layer = spawn_transport_input_layer(&mut app);
@@ -402,6 +408,7 @@ fn single_layer_value(app: &App, input_layer: Entity) -> ParameterValue {
 fn fixture_target_keeps_highest_priority_source_across_frames() {
     for arrival_order in [[(1, 42), (2, 99)], [(2, 99), (1, 42)]] {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
         let input_layer = spawn_transport_input_layer(&mut app);
@@ -431,6 +438,7 @@ fn fixture_target_keeps_highest_priority_source_across_frames() {
 #[test]
 fn fixture_target_falls_back_to_lower_priority_source_after_owner_goes_stale() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
     let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
     let input_layer = spawn_transport_input_layer(&mut app);
@@ -475,6 +483,7 @@ fn fixture_target_falls_back_to_lower_priority_source_after_owner_goes_stale() {
 #[test]
 fn console_target_falls_back_to_lower_priority_source_after_owner_binding_removed() {
     let mut app = App::new();
+    add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
     app.world_mut()
         .resource_mut::<ResolvedInputBindings>()
@@ -507,6 +516,7 @@ fn console_target_falls_back_to_lower_priority_source_after_owner_binding_remove
 fn console_target_keeps_highest_priority_source_across_frames() {
     for arrival_order in [[(1, 17), (2, 66)], [(2, 66), (1, 17)]] {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         app.world_mut()
             .resource_mut::<ResolvedInputBindings>()

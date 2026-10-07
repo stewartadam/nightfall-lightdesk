@@ -47,10 +47,12 @@
 //!           60 fps                           limited to 10 fps
 //! ```
 //!
-//! Regular frames start on the shared tick grid from [`nightfall_service_host::tick_grid`], which
-//! the DMX output workers also transmit on. A [`FrameWaker`] wake (sent when a command arrives)
-//! ends the sleep early so the command is handled without waiting for the next tick. Early frames
-//! leave the grid unchanged, and DMX output keeps its own fixed rate, so they only cost CPU time.
+//! Render frames start a short lead before each tick of the shared grid from
+//! [`nightfall_service_host::tick_grid`], which the DMX output workers transmit on, so each
+//! transmission carries the render that just finished. The lead follows recent render times. A
+//! [`FrameWaker`] wake (sent when a command or control input arrives) ends the sleep early and
+//! starts an input-only frame (see [`RenderPass`]): it handles the input and acknowledges it
+//! without rendering, and leaves the pending render tick in place.
 
 #![warn(missing_docs)]
 
@@ -176,11 +178,45 @@ impl std::fmt::Display for Limiter {
 #[derive(Debug, Default, Clone, Resource)]
 pub struct FrametimeLimit(pub Arc<Mutex<Duration>>);
 
-/// Earliest an early (command-woken) frame may start after the previous frame started.
+/// Earliest an early (input-only) frame may start after the previous frame started.
 ///
-/// Bounds what a burst of commands can cost to a few extra frames per tick.
+/// Bounds what a burst of input can cost to a few extra frames per tick. Input-only frames skip
+/// rendering, so they are short and this can be small.
 #[cfg(not(target_arch = "wasm32"))]
-const EARLY_FRAME_MIN_INTERVAL: Duration = Duration::from_millis(5);
+const EARLY_FRAME_MIN_INTERVAL: Duration = Duration::from_millis(2);
+
+/// A wake closer than this to the next render start waits for the render instead of starting an
+/// input-only frame.
+#[cfg(not(target_arch = "wasm32"))]
+const INPUT_FRAME_CUTOFF: Duration = Duration::from_millis(3);
+
+/// Shortest time a render frame starts before its grid tick.
+#[cfg(not(target_arch = "wasm32"))]
+const MIN_RENDER_LEAD: Duration = Duration::from_millis(2);
+
+/// Margin added to the recent render time when choosing how early a render frame starts.
+#[cfg(not(target_arch = "wasm32"))]
+const RENDER_LEAD_MARGIN: Duration = Duration::from_millis(1);
+
+/// Returns how long before its grid tick a render frame starts, so it usually finishes before
+/// the DMX output workers send on that tick.
+///
+/// Twice the recent render time plus [`RENDER_LEAD_MARGIN`] absorbs normal variation; a render
+/// that still runs past the tick goes out on the following one. The lead is kept between
+/// [`MIN_RENDER_LEAD`] and half the frame period.
+#[cfg(not(target_arch = "wasm32"))]
+fn render_lead(frame_target: Duration, recent_render_time: Duration) -> Duration {
+    (recent_render_time * 2 + RENDER_LEAD_MARGIN)
+        .max(MIN_RENDER_LEAD)
+        .min(frame_target / 2)
+}
+
+/// Returns the first render start strictly after `after`: a grid tick of `period`, less `lead`.
+#[cfg(not(target_arch = "wasm32"))]
+fn next_render_start(period: Duration, after: Instant, lead: Duration) -> Instant {
+    let tick = next_grid_tick(period, after + lead);
+    tick.checked_sub(lead).unwrap_or(tick)
+}
 
 /// Final stretch before a tick that is slept with `spin_sleep`, so regular frames start
 /// precisely on the tick. A wake arriving inside it waits for the tick.
@@ -201,14 +237,20 @@ const PRECISE_TAIL: Duration = SPIN_TAIL;
 #[cfg(not(target_arch = "wasm32"))]
 const WAKE_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
-/// Tracks when the current frame started and which tick the next regular frame starts on.
+/// Tracks when the current frame started and when the next render frame starts.
 #[derive(Debug, Clone, Resource)]
 pub struct FrameTimer {
     /// When the current frame started, after the previous limiter sleep.
     frame_start: Instant,
-    /// The grid tick the next regular frame starts on, with the period it was computed for.
+    /// When the next render frame starts, with the period it was computed for.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     next_tick: Option<(Instant, Duration)>,
+    /// Whether the current frame renders.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    rendering: bool,
+    /// Moving average of render frame durations, which sets the render lead.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    render_time: Duration,
     /// [`FrameWaker`] generation observed when the current frame started. A newer generation
     /// means a command arrived since, so the next frame starts early. `None` until the first
     /// frame, so wakes from before this world existed do not start an early frame.
@@ -219,6 +261,8 @@ impl Default for FrameTimer {
         FrameTimer {
             frame_start: Instant::now(),
             next_tick: None,
+            rendering: true,
+            render_time: Duration::ZERO,
             seen_wake: None,
         }
     }
@@ -279,16 +323,19 @@ impl FramePaceStats {
 /// remainder. The dependency is however not WASM compatible, which is fine, because frame limiting
 /// should not be used in a browser; this would compete with the browser's frame limiter.
 ///
-/// Regular frames start on the tick grid shared with DMX output (see
-/// [`nightfall_service_host::tick_grid`]). A [`FrameWaker`] wake newer than the one observed at the
-/// start of this frame starts the next frame early, no sooner than [`EARLY_FRAME_MIN_INTERVAL`]
-/// after this one started, and leaves the pending tick in place.
+/// Render frames start [`render_lead`] before each tick of the grid shared with DMX output (see
+/// [`nightfall_service_host::tick_grid`]). A [`FrameWaker`] wake newer than the one observed at
+/// the start of this frame starts an input-only frame early, no sooner than
+/// [`EARLY_FRAME_MIN_INTERVAL`] after this one started, and leaves the pending render start in
+/// place. The kind of the next frame is recorded in [`RenderPass`]; without a limit every frame
+/// renders.
 #[allow(unused_variables, unused_mut)]
 fn framerate_limiter(
     mut timer: ResMut<FrameTimer>,
     stats: Res<FramePaceStats>,
     settings: Res<FramepaceSettings>,
     waker: Option<Res<FrameWaker>>,
+    render_pass: Option<ResMut<RenderPass>>,
 ) {
     let frame_target = match settings.limiter {
         Limiter::Manual(target) => target,
@@ -297,11 +344,17 @@ fn framerate_limiter(
 
     let frame_time = timer.frame_start.elapsed();
     let mut oversleep = Duration::ZERO;
+    let mut next_renders = true;
     #[cfg(not(target_arch = "wasm32"))]
     if settings.limiter.is_enabled() {
+        if timer.rendering {
+            // Moving average with alpha = 1/8, so one slow render does not move the lead much.
+            timer.render_time = (timer.render_time * 7 + frame_time) / 8;
+        }
+        let lead = render_lead(frame_target, timer.render_time);
         let tick = match timer.next_tick {
             Some((tick, period)) if period == frame_target => tick,
-            _ => next_grid_tick(frame_target, timer.frame_start),
+            _ => next_render_start(frame_target, timer.frame_start, lead),
         };
 
         // Read EMA of previous sleep error (ns). We'll treat negative avg as zero compensation.
@@ -326,11 +379,12 @@ fn framerate_limiter(
         );
         let after_sleep = Instant::now();
 
+        next_renders = !woke_early;
         if woke_early {
             timer.next_tick = Some((tick, frame_target));
         } else {
             timer.next_tick = Some((
-                next_grid_tick(frame_target, tick.max(after_sleep)),
+                next_render_start(frame_target, tick.max(after_sleep), lead),
                 frame_target,
             ));
             if before_sleep < wake_at {
@@ -355,13 +409,27 @@ fn framerate_limiter(
         );
     }
 
+    let rendered = timer.rendering;
     timer.frame_start = Instant::now();
-    timer.seen_wake = waker.as_deref().map(FrameWaker::generation);
-    if let Ok(mut frametime) = stats.frametime.try_lock() {
-        *frametime = frame_time;
+    // Only the limiter's own changes are written, so hosts without a limit can drive
+    // `RenderPass` themselves.
+    if next_renders != timer.rendering
+        && let Some(mut render_pass) = render_pass
+    {
+        render_pass.set_renders(next_renders);
     }
+    timer.rendering = next_renders;
+    timer.seen_wake = waker.as_deref().map(FrameWaker::generation);
     if let Ok(mut stat) = stats.oversleep.try_lock() {
         *stat = oversleep;
+    }
+    // Frame time and overrun describe render frames, so short input-only frames do not hide the
+    // render cost.
+    if !rendered {
+        return;
+    }
+    if let Ok(mut frametime) = stats.frametime.try_lock() {
+        *frametime = frame_time;
     }
     if let Ok(mut overrun) = stats.overrun.try_lock() {
         *overrun = if settings.limiter.is_enabled() {
@@ -392,11 +460,15 @@ fn sleep_until_tick_or_wake(
             return false;
         }
         let woken = waker.is_some_and(|waker| waker.generation() != seen);
-        if woken && now >= earliest_early {
+        // A wake just before the render start waits for the render, which handles input too, so
+        // an input-only frame cannot push the render past its DMX tick.
+        let early_allowed = woken
+            && wake_at.saturating_duration_since(now.max(earliest_early)) > INPUT_FRAME_CUTOFF;
+        if early_allowed && now >= earliest_early {
             return true;
         }
 
-        let until = if woken {
+        let until = if early_allowed {
             earliest_early.min(wake_at)
         } else {
             wake_at
@@ -570,23 +642,57 @@ mod tests {
         );
     }
 
-    /// Verifies that regular frames start on the shared grid so they stay in phase with DMX output.
+    /// Verifies that the limiter plans each render frame to start the render lead before a tick
+    /// of the shared grid, so it finishes before DMX output sends on that tick.
     ///
-    /// The limiter wakes up to its sleep-error compensation before the tick, so the frame may
-    /// start just before or just after a grid tick.
+    /// The planned start is checked rather than the time the frame actually started, which
+    /// depends on how promptly the OS resumes the thread.
     #[test]
-    fn regular_frames_start_on_grid_ticks() {
+    fn render_frames_start_a_lead_before_grid_ticks() {
         let mut app = limited_app(50.0, Duration::ZERO);
         app.update();
         app.update();
 
         let period = Duration::from_millis(20);
-        let since_epoch = Instant::now().saturating_duration_since(grid_epoch());
-        let phase = Duration::from_nanos((since_epoch.as_nanos() % period.as_nanos()) as u64);
-        let distance = phase.min(period - phase);
-        assert!(
-            distance < Duration::from_millis(3),
-            "a frame should start next to a grid tick, got phase {phase:?}"
+        let timer = app.world().resource::<FrameTimer>();
+        let (start, planned_period) = timer.next_tick.expect("limiter should plan a render");
+        assert_eq!(planned_period, period);
+        let lead = render_lead(period, timer.render_time);
+        assert!(lead >= MIN_RENDER_LEAD);
+        let since_epoch = (start + lead).saturating_duration_since(grid_epoch());
+        assert_eq!(
+            since_epoch.as_nanos() % period.as_nanos(),
+            0,
+            "a render frame should start {lead:?} before a grid tick"
         );
+    }
+
+    /// Verifies that the render lead follows recent render times within its bounds.
+    #[test]
+    fn render_lead_tracks_render_time_within_bounds() {
+        let period = Duration::from_millis(20);
+        assert_eq!(render_lead(period, Duration::ZERO), MIN_RENDER_LEAD);
+        assert_eq!(
+            render_lead(period, Duration::from_millis(3)),
+            Duration::from_millis(7)
+        );
+        assert_eq!(render_lead(period, Duration::from_millis(30)), period / 2);
+    }
+
+    /// Verifies that a woken frame only handles input and that the following frame on the grid
+    /// renders again.
+    #[test]
+    fn woken_frames_skip_rendering() {
+        let (mut app, waker) = wakeable_app(10.0);
+        app.init_resource::<RenderPass>();
+        app.update();
+        assert!(app.world().resource::<RenderPass>().renders());
+
+        waker.wake();
+        app.update();
+        assert!(!app.world().resource::<RenderPass>().renders());
+
+        app.update();
+        assert!(app.world().resource::<RenderPass>().renders());
     }
 }
