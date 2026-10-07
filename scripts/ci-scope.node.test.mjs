@@ -15,6 +15,7 @@ const none = {
   desktop_package: false,
   browser_package: false,
   browser_preview: false,
+  product_flows: true,
 };
 const desktop = { ...none, desktop_package: true };
 const browser = { ...none, browser_package: true };
@@ -172,6 +173,31 @@ test("browser previews require a configured target and a same-repository PR", ()
       event,
     );
   }
+});
+
+/** Draft PRs defer installers and product flows until ready for review but keep checks and previews. */
+test("draft PRs skip desktop installers and product flows", () => {
+  /** Select a PR touching shared packaging, desktop shell, and browser inputs. */
+  const select = (draft) =>
+    selectScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: ["Cargo.lock", "desktop/app-tauri/src/main.rs"],
+      previewTarget: true,
+      sameRepository: true,
+      draft,
+    });
+  assert.deepEqual(select(false), {
+    ...both,
+    desktop_check: true,
+    browser_preview: true,
+  });
+  assert.deepEqual(select(true), {
+    ...browser,
+    desktop_check: true,
+    browser_preview: true,
+    product_flows: false,
+  });
 });
 
 /** NUL-delimited paths preserve unusual names without interpreting them as script or shell input. */

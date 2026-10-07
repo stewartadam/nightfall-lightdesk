@@ -54,6 +54,9 @@ const browserPackaging = [
  *
  * Browser previews build the demo for every same-repository PR once a preview target is
  * configured. Fork PRs never receive the deployment credential, so they never select one.
+ *
+ * Draft PRs skip desktop installers and Chromium product flows; marking the PR ready for review
+ * re-runs selection and runs them then.
  */
 export function selectScope({
   event,
@@ -62,6 +65,7 @@ export function selectScope({
   distribution = "all",
   previewTarget = false,
   sameRepository = false,
+  draft = false,
 }) {
   let desktopPackage = false;
   let browserPackage = false;
@@ -95,9 +99,10 @@ export function selectScope({
   }
   return {
     desktop_check: desktopCheck,
-    desktop_package: desktopPackage,
+    desktop_package: desktopPackage && !draft,
     browser_package: browserPackage,
     browser_preview: browserPreview,
+    product_flows: !draft,
   };
 }
 
@@ -119,6 +124,7 @@ if (
     sameRepository:
       Boolean(process.env.HEAD_REPOSITORY) &&
       process.env.HEAD_REPOSITORY === process.env.GITHUB_REPOSITORY,
+    draft: process.env.PR_DRAFT === "true",
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,
