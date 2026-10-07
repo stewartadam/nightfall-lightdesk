@@ -26,6 +26,9 @@ tauri = { version = "2", features = [] }
 # The shared tracing bridge handles plugin records without the plugin's tracing feature.
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
+# Selects the unicode-rs IDNA backend for url instead of ICU4X, which removes ~15 crates from the
+# desktop build. See https://docs.rs/crate/idna_adapter/latest
+idna_adapter = "~1.1"
 tokio.workspace = true
 tracing.workspace = true
 
