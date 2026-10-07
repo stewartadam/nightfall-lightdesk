@@ -16,7 +16,7 @@ import {
   $externalControlState,
 } from "../../../state/settings";
 import type { ExternalControlSettings as ControlSettings } from "../../../types";
-import { RemotePairingPin } from "./remote-pairing-pin";
+import { RemoteAccess } from "./remote-access";
 
 /** Edits host-scoped remote access and displays listener configuration errors. */
 export function ExternalControlSettings() {
@@ -90,7 +90,7 @@ export function ExternalControlSettings() {
           once per app session.
         </p>
         <Show when={state().settings.enabled}>
-          <RemotePairingPin />
+          <RemoteAccess />
         </Show>
         <Show when={state().error}>
           {(error) => (

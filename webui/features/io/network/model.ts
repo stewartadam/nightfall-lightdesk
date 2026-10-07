@@ -116,3 +116,38 @@ export function networkInterfaceIsListening(
     ),
   );
 }
+
+/**
+ * Returns the IPv4 hosts another device can use to reach this computer, one
+ * per listening address. Loopback listeners are skipped, and the All binding
+ * (`0.0.0.0`) expands to every interface's non-loopback address.
+ */
+export function shareableHosts(
+  listeningAddresses: string[],
+  interfaces: types.NetworkInterfaceInfo[],
+): string[] {
+  const hosts = new Set<string>();
+  for (const listener of listeningAddresses) {
+    const host = listener.slice(0, listener.lastIndexOf(":"));
+    if (host === "0.0.0.0") {
+      for (const iface of interfaces) {
+        for (const address of iface.addresses) {
+          if (!address.startsWith("127.")) hosts.add(address);
+        }
+      }
+    } else if (host && !host.startsWith("127.") && !host.startsWith("[")) {
+      hosts.add(host);
+    }
+  }
+  return [...hosts];
+}
+
+/**
+ * Builds the link another device opens to load this UI. The PIN rides in the
+ * fragment, which browsers never send to the server, so opening the link pairs
+ * the device without typing.
+ */
+export function shareableUrl(host: string, port: number, pin?: string): string {
+  const base = `http://${host}:${port}/`;
+  return pin ? `${base}#pin=${encodeURIComponent(pin)}` : base;
+}

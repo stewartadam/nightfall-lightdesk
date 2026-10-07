@@ -14,7 +14,36 @@ import {
   deliveryModeValidForProtocol,
   networkInterfaceAddressSummary,
   networkInterfaceDisplayName,
+  shareableHosts,
+  shareableUrl,
 } from "./model";
+
+/** Share links skip loopback listeners and expand the All binding to each interface address. */
+test("shareableHosts lists the addresses other devices can reach", () => {
+  const interfaces: types.NetworkInterfaceInfo[] = [
+    { name: "lo", addresses: ["127.0.0.1"] },
+    { name: "eth0", addresses: ["192.168.1.20"] },
+    { name: "wlan0", addresses: ["10.0.0.5", "192.168.1.20"] },
+  ];
+  assert.deepEqual(shareableHosts(["0.0.0.0:3030"], interfaces), [
+    "192.168.1.20",
+    "10.0.0.5",
+  ]);
+  assert.deepEqual(
+    shareableHosts(["192.168.1.20:3030", "127.0.0.1:3030"], interfaces),
+    ["192.168.1.20"],
+  );
+  assert.deepEqual(shareableHosts(["127.0.0.1:3030"], interfaces), []);
+});
+
+/** The PIN travels in the fragment so the server never receives it. */
+test("shareableUrl carries the PIN in the fragment", () => {
+  assert.equal(shareableUrl("192.168.1.20", 3030), "http://192.168.1.20:3030/");
+  assert.equal(
+    shareableUrl("192.168.1.20", 3031, "042000"),
+    "http://192.168.1.20:3031/#pin=042000",
+  );
+});
 
 /** Verifies delivery mode projection follows the selected network protocol. */
 test("network transport delivery projection preserves unicast and protocol defaults", () => {

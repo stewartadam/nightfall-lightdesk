@@ -16,6 +16,12 @@ Art-Net and sACN targets are destinations for DMX data. Connect them to the appr
 
 Changes apply immediately and connected clients may reconnect. If a selected adapter is missing, the engine stays accessible locally and shows an error instead of opening every interface. These are settings for this computer, separate from the showfile, so loading a show does not enable external control. Enable remote access only on a trusted network.
 
+### Open on another device
+
+While External control is on, the section lists a link for each network address another device can use, such as `http://192.168.1.20:3030/`. Select a link to copy it. Point at the QR code button, or select it on a touch screen, to show a QR code. Scanning it opens Nightfall on the phone or tablet and pairs it in one step, because the code also carries the PIN. A copied link leaves the PIN out, so whoever opens it still has to enter the PIN.
+
+When developing Nightfall, the link points at the Vite dev server, which only accepts other devices when started with `--host`.
+
 ### Pairing PIN
 
 A phone, tablet or other computer must enter the **Pairing PIN** shown under External control before it can control the show. The computer running Nightfall never needs it. Each device enters the PIN once: it stays paired, and reconnects on its own after a network drop, until Nightfall restarts. The PIN stays the same until Nightfall restarts or you select **New PIN**, which also signs out every paired device. After five wrong PINs, a device must wait before trying again, and the wait grows with each further miss.

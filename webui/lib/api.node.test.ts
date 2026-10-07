@@ -14,6 +14,7 @@ import {
   getWebSocketUrl,
   resolveBackendPort,
   resolveBackendUrl,
+  resolveShareablePort,
   resolveWebSocketUrl,
 } from "./api";
 
@@ -50,6 +51,15 @@ test("resolveBackendPort uses the serving port for production browser pages", ()
   assert.equal(resolveBackendPort(false, undefined, undefined, ""), 3030);
   assert.equal(resolveBackendPort(false, undefined, 3891, "4000"), 3891);
   assert.equal(resolveBackendPort(true, "5172", undefined, "3031"), 5172);
+});
+
+/** Share links point at the server that served this page, or the backend for the desktop protocol. */
+test("resolveShareablePort follows the page's server", () => {
+  assert.equal(resolveShareablePort(3030, "http:", "3031"), 3031);
+  assert.equal(resolveShareablePort(3030, "http:", "3030"), 3030);
+  assert.equal(resolveShareablePort(3891, "tauri:", ""), 3891);
+  assert.equal(resolveShareablePort(3891, "http:", ""), 3891);
+  assert.equal(resolveShareablePort(3030), 3030);
 });
 
 test("resolveBackendUrl uses same-origin backend in browser Vite dev", () => {

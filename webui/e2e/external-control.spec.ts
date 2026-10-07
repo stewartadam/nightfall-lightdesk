@@ -88,6 +88,27 @@ test("external control binds All and a selected interface, then returns to local
     await expect(pin).not.toHaveText(firstPin ?? "");
     await expect(pin).toHaveText(/^\d{3} \d{3}$/);
 
+    // Each LAN address gets a link whose QR code carries the PIN.
+    const qrButtons = section.getByRole("button", { name: /^Show QR code/ });
+    const lanAddresses = await page.evaluate(
+      () =>
+        (window as any).appStores.availableNetworkInterfaces
+          .get()
+          .flatMap((item: { addresses: string[] }) => item.addresses)
+          .filter((address: string) => !address.startsWith("127.")).length,
+    );
+    if (lanAddresses > 0) {
+      await expect(qrButtons.first()).toBeVisible();
+      await qrButtons.first().click();
+      await expect(
+        page.getByRole("img", { name: /^QR code to open http:\/\// }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath("external-control-share-link.png"),
+      });
+      await qrButtons.first().click();
+    }
+
     const choices = await selector
       .locator("option")
       .evaluateAll((options) =>
