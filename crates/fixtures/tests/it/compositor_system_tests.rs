@@ -119,7 +119,7 @@ fn count_changed_parameters(
 #[test]
 fn compositor_publishes_final_computed_output_layer() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<FinalLayerOutput>();
     app.add_systems(Update, compositor::<Parameter>);
@@ -177,7 +177,7 @@ fn update_running_fixture_effect_layers(
 #[test]
 fn compositor_skips_unchanged_parameter_writes() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ChangedParameterCount>();
     app.add_systems(
@@ -202,7 +202,7 @@ fn compositor_skips_unchanged_parameter_writes() {
 #[test]
 fn compositor_recomputes_when_layer_assertion_changes() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ChangedParameterCount>();
     app.add_systems(
@@ -258,7 +258,7 @@ fn compositor_recomputes_when_layer_assertion_changes() {
 #[test]
 fn compositor_recomputes_when_layer_count_changes() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ChangedParameterCount>();
     app.add_systems(
@@ -328,7 +328,7 @@ fn compositor_recomputes_when_layer_count_changes() {
 #[test]
 fn compositor_recomputes_when_layer_is_replaced_at_same_count() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ChangedParameterCount>();
     app.add_systems(
@@ -373,7 +373,7 @@ fn compositor_recomputes_when_layer_is_replaced_at_same_count() {
 #[test]
 fn compositor_recomputes_when_layer_compositing_context_changes() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ChangedParameterCount>();
@@ -453,7 +453,7 @@ fn compositor_recomputes_when_layer_compositing_context_changes() {
 #[test]
 fn compositor_recomputes_when_release_marker_is_removed() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<FinalLayerOutput>();
     app.add_systems(Update, compositor::<Parameter>);
@@ -501,7 +501,7 @@ fn compositor_recomputes_when_release_marker_is_removed() {
 #[test]
 fn compositor_recomputes_when_layer_compositing_context_is_removed() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<FinalLayerOutput>();
     app.add_systems(Update, compositor::<Parameter>);
@@ -564,7 +564,7 @@ fn compositor_recomputes_when_layer_compositing_context_is_removed() {
 #[test]
 fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     init_command_lifecycle(&mut app);
     app.add_message::<EngineActionEnvelope<RestoreFixtureSnapshot>>();
     app.init_resource::<FixtureDataProviderExt>();
@@ -685,7 +685,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
 fn test_compositor_merges_layers_by_priority() {
     // Initialize a new Bevy app with the compositor system
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     let data_provider = FixtureDataProviderExt::default();
     app.insert_resource(data_provider);
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -783,7 +783,7 @@ fn test_compositor_merges_layers_by_priority() {
 #[test]
 fn compositor_uses_layer_compositing_context_for_release_elapsed() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
 
@@ -853,7 +853,7 @@ fn compositor_uses_layer_compositing_context_for_release_elapsed() {
 #[test]
 fn test_compositor_same_priority_htp_highest_value_wins() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     let data_provider = FixtureDataProviderExt::default();
     app.insert_resource(data_provider);
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -951,7 +951,7 @@ fn test_compositor_same_priority_ltp_activation_order_wins() {
     use std::time::Duration;
 
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     let data_provider = FixtureDataProviderExt::default();
     app.insert_resource(data_provider);
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -1050,7 +1050,7 @@ fn test_compositor_same_priority_ltp_activation_order_wins() {
 #[test]
 fn test_compositor_priority_takes_precedence_over_htp() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     let data_provider = FixtureDataProviderExt::default();
     app.insert_resource(data_provider);
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -1147,7 +1147,7 @@ fn test_compositor_priority_takes_precedence_over_htp() {
 #[test]
 fn test_compositor_priority_takes_precedence_over_ltp() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     let data_provider = FixtureDataProviderExt::default();
     app.insert_resource(data_provider);
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -1243,7 +1243,7 @@ fn test_compositor_priority_takes_precedence_over_ltp() {
 #[test]
 fn test_compositor_handles_ltp_merge_strategy() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     let data_provider = FixtureDataProviderExt::default();
     app.insert_resource(data_provider);
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -1337,7 +1337,7 @@ fn test_compositor_handles_ltp_merge_strategy() {
 #[test]
 fn test_compositor_handles_missing_parameters_gracefully() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
 
@@ -1355,7 +1355,7 @@ fn test_compositor_handles_missing_parameters_gracefully() {
 #[test]
 fn test_compositor_resets_to_default_after_layer_removal() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     let data_provider = FixtureDataProviderExt::default();
     app.insert_resource(data_provider);
     app.init_resource::<FinalLayerAttributedAssertions>();
@@ -1457,7 +1457,7 @@ fn test_compositor_resets_to_default_after_layer_removal() {
 #[test]
 fn test_compositor_resets_inverted_parameter_to_logical_default() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
 
@@ -1504,7 +1504,7 @@ fn test_compositor_resets_inverted_parameter_to_logical_default() {
 /// the parameter entity. `components` supply the parameter's resolved console/wire addresses.
 fn manual_channel_app(value: f32, components: impl Bundle) -> (App, Entity) {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_message::<CommandEnvelope<FixtureCommand>>();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
     app.add_message::<EngineActionEnvelope<DmxAction>>();
@@ -1702,7 +1702,7 @@ fn test_manual_dmx_channel_falls_back_to_wire_address_for_direct_patch() {
 #[test]
 fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_message::<CommandEnvelope<FixtureCommand>>();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
     app.add_message::<EngineActionEnvelope<DmxAction>>();

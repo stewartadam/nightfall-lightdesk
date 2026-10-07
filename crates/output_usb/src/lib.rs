@@ -222,7 +222,7 @@ impl Plugin for OutputUdmxUsbPlugin {
             refresh_available_usb_dmx_devices.in_set(EventHandling),
         );
         app.add_systems(
-            Update,
+            Render,
             udmx::output
                 .after(nightfall_fixtures::output_frames::compose_output_frames)
                 .in_set(DmxOutput),

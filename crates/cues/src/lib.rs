@@ -129,7 +129,7 @@ impl Plugin for CuePlugin {
         );
 
         app.add_systems(
-            Update,
+            PostUpdate,
             (
                 websocket::forward_commands,
                 websocket::send_cue_definition_changes,
@@ -138,7 +138,7 @@ impl Plugin for CuePlugin {
                 .in_set(ClientFeedback),
         );
         app.add_systems(
-            Update,
+            Render,
             (
                 websocket::send_cues_on_change,
                 websocket::send_color_paths_on_change,
@@ -173,7 +173,7 @@ impl Plugin for CuePlugin {
                 .after(events::handle_sequence_playback_actions),
         );
         app.add_systems(
-            Update,
+            Render,
             (
                 (
                     materialized_sequence::advance_sequences,

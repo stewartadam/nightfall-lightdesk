@@ -100,13 +100,13 @@ impl Plugin for FixtureLibraryPlugin {
                 .in_set(EventHandling),
         );
         app.add_systems(
-            Update,
-            crate::websocket::send_available_fixtures_on_change.in_set(ClientOutput),
+            PostUpdate,
+            crate::websocket::send_available_fixtures_on_change.in_set(ClientFeedback),
         );
 
         // Register geometry provider so fixtures crate can access geometry
         app.add_systems(Startup, register_geometry_provider);
-        app.add_systems(Update, register_geometry_provider.before(ClientOutput));
+        app.add_systems(Update, register_geometry_provider);
     }
 }
 

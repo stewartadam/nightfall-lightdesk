@@ -87,9 +87,10 @@ pub fn send_clips_on_change(
     exec_query: Query<&Clip>,
     materialized_clips: Query<&MaterializedClip>,
     added_materialized: Query<&MaterializedClip, Added<MaterializedClip>>,
-    mut removed_materialized: MessageReader<ComponentRemoved<MaterializedClip>>,
+    mut removed_materialized: RemovedComponents<MaterializedClip>,
     broadcaster: Res<ClientEventSink>,
 ) {
+    // Consume every removal, so one removal does not trigger a send in the next update too.
     let materialized_removed = !removed_materialized.is_empty();
     removed_materialized.clear();
     // Trigger when any MaterializedClip is added or removed

@@ -36,8 +36,5 @@ tokio = { workspace = true, features = ["sync"] }
 default = []
 debug = []
 
-[dev-dependencies]
-bevy_time.workspace = true
-
 [lints]
 workspace = true

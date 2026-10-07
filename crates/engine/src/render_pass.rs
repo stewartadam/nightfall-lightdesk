@@ -6,28 +6,36 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Input-only and render engine updates.
+//! Input updates and render passes.
 //!
-//! Every engine update runs the input sets ([`InputHandling`](crate::InputHandling),
-//! [`EventHandling`](crate::EventHandling), [`ResyncHandling`](crate::ResyncHandling) and
-//! [`ClientFeedback`](crate::ClientFeedback)) so commands are handled and acknowledged as soon as
-//! they arrive. Only render updates also run the render sets, from
+//! Every engine update runs [`Update`], whose input sets ([`InputHandling`](crate::InputHandling),
+//! [`EventHandling`](crate::EventHandling) and [`ResyncHandling`](crate::ResyncHandling)) apply
+//! commands and input to world state as soon as they arrive, and [`PostUpdate`], whose
+//! [`ClientFeedback`](crate::ClientFeedback) set acknowledges them. Only updates the frame limiter
+//! marks as render passes in [`RenderPass`] also run the [`Render`] schedule, from
 //! [`ClockUpdate`](crate::ClockUpdate) through [`DmxOutput`](crate::DmxOutput) and
-//! [`ClientOutput`](crate::ClientOutput). The frame limiter decides which kind the next update is
-//! and records it in [`RenderPass`]: updates on the render grid render, updates started early by
-//! a [`FrameWaker`](crate::frame_waker::FrameWaker) wake only handle input.
+//! [`ClientOutput`](crate::ClientOutput). Updates started early by a
+//! [`FrameWaker`](crate::frame_waker::FrameWaker) wake only handle input.
 //!
-//! Messages and component removals written in input-only updates must survive until the next
-//! render reads them, so message buffers are only swapped after render updates (see
-//! [`gate_message_updates`]) and removals that render systems need are re-published as
-//! [`ComponentRemoved`] messages (see [`add_removal_messages`]).
+//! Render systems read world state, never input messages or [`RemovedComponents`]. Messages
+//! expire after two buffer swaps (with `bevy_time`, two fixed-timestep ticks) and removals after
+//! two updates, and any number of input-only updates can run between two render passes. Input
+//! that render systems depend on is applied to components or resources in the input sets
+//! instead, and removals are handled by observers when they happen.
 
-use std::marker::PhantomData;
+use bevy_app::{MainScheduleOrder, prelude::*};
+use bevy_ecs::{prelude::*, schedule::ScheduleLabel};
 
-use bevy_app::prelude::*;
-use bevy_ecs::lifecycle::Remove;
-use bevy_ecs::message::{MessageRegistry, ShouldUpdateMessages};
-use bevy_ecs::prelude::*;
+/// Schedule of render passes: clocks, layer generation, compositing, virtual dimming and output.
+///
+/// Runs after [`Update`] and before [`PostUpdate`] in updates that render. Systems in it must only
+/// read world state; see the [module docs](self).
+#[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Render;
+
+/// Main-schedule step that runs [`Render`] when the current update renders.
+#[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+struct RunRender;
 
 /// Whether the current engine update renders, or only handles input.
 ///
@@ -45,165 +53,101 @@ impl Default for RenderPass {
 }
 
 impl RenderPass {
-    /// Returns whether the current update runs the render sets.
+    /// Returns whether the current update runs the [`Render`] schedule.
     pub fn renders(&self) -> bool {
         self.renders
     }
 
-    /// Marks whether the update about to start runs the render sets.
+    /// Marks whether the update about to start runs the [`Render`] schedule.
     pub fn set_renders(&mut self, renders: bool) {
         self.renders = renders;
     }
 }
 
-/// Run condition for systems that only run in render updates.
-pub fn render_due(pass: Option<Res<RenderPass>>) -> bool {
-    pass.is_none_or(|pass| pass.renders)
-}
-
-/// Lets message buffers swap only once a render update has run.
+/// Adds the [`Render`] schedule to the main schedule order, right after [`Update`].
 ///
-/// Bevy swaps message buffers at the start of an update when [`MessageRegistry::should_update`]
-/// allows it, so a message lives for two swaps. Swapping only after render updates keeps every
-/// message written in an input-only update readable until the next render, however many
-/// input-only updates come first. Readers in input sets run on every update and keep their own
-/// cursor, so they still see each message exactly once.
-///
-/// Runs in [`PostUpdate`], after `bevy_time`'s fixed-timestep signal, which it replaces, and
-/// before the frame limiter decides what the next update is.
-pub fn gate_message_updates(
-    pass: Option<Res<RenderPass>>,
-    registry: Option<ResMut<MessageRegistry>>,
-) {
-    let Some(mut registry) = registry else {
-        return;
-    };
-    registry.should_update = if render_due(pass) {
-        ShouldUpdateMessages::Ready
-    } else {
-        ShouldUpdateMessages::Waiting
-    };
-}
-
-/// Message published when component `C` is removed from an entity or the entity is despawned.
-///
-/// Unlike [`RemovedComponents`], which drops removals after two updates, these messages follow
-/// [`gate_message_updates`], so systems in render sets see removals made in input-only updates.
-#[derive(Message, Debug, Clone, Copy)]
-pub struct ComponentRemoved<C: Component> {
-    /// Entity the component was removed from.
-    pub entity: Entity,
-    _component: PhantomData<fn() -> C>,
-}
-
-impl<C: Component> ComponentRemoved<C> {
-    /// Creates a removal message for `entity`.
-    pub fn new(entity: Entity) -> Self {
-        Self {
-            entity,
-            _component: PhantomData,
-        }
-    }
-}
-
-/// Publishes a [`ComponentRemoved<C>`] message whenever `C` is removed.
-///
-/// Safe to call from several plugins for the same component; only the first call registers the
-/// observer.
-pub fn add_removal_messages<C: Component>(app: &mut App) {
+/// [`EnginePlugin`](crate::EnginePlugin) calls this; apps built without it, such as plugin tests,
+/// call it so their render systems run. Calling it again has no effect.
+pub fn add_render_schedule(app: &mut App) {
     if app
         .world()
-        .contains_resource::<Messages<ComponentRemoved<C>>>()
+        .resource::<MainScheduleOrder>()
+        .labels
+        .contains(&RunRender.intern())
     {
         return;
     }
-    app.add_message::<ComponentRemoved<C>>();
-    app.add_observer(
-        |removed: On<Remove, C>, mut messages: MessageWriter<ComponentRemoved<C>>| {
-            messages.write(ComponentRemoved::new(removed.entity));
-        },
-    );
+    app.init_resource::<RenderPass>();
+    app.init_schedule(Render);
+    app.init_schedule(RunRender);
+    app.world_mut()
+        .resource_mut::<MainScheduleOrder>()
+        .insert_after(Update, RunRender);
+    app.add_systems(RunRender, run_render);
+}
+
+/// Runs the [`Render`] schedule unless the frame limiter marked this update as input-only.
+fn run_render(world: &mut World) {
+    if world
+        .get_resource::<RenderPass>()
+        .is_none_or(RenderPass::renders)
+    {
+        world.run_schedule(Render);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[derive(Message)]
-    struct Ping;
-
-    #[derive(Component)]
-    struct Marker;
-
+    /// Counts how often each schedule ran.
     #[derive(Resource, Default)]
-    struct Seen {
-        pings: usize,
-        removals: usize,
+    struct Runs {
+        update: usize,
+        render: usize,
+        post_update_saw_render: usize,
     }
 
-    /// Builds an app whose render-gated reader counts pings and `Marker` removals.
-    fn gated_app() -> App {
+    /// Builds an app that counts runs of [`Update`] and [`Render`], and records whether
+    /// [`PostUpdate`] ran after the render in the same update.
+    fn counting_app() -> App {
         let mut app = App::new();
-        app.add_plugins(bevy_time::TimePlugin);
-        app.init_resource::<RenderPass>();
-        app.init_resource::<Seen>();
-        app.add_message::<Ping>();
-        add_removal_messages::<Marker>(&mut app);
-        app.add_systems(PostUpdate, gate_message_updates);
+        add_render_schedule(&mut app);
+        app.init_resource::<Runs>();
+        app.add_systems(Update, |mut runs: ResMut<Runs>| runs.update += 1);
+        app.add_systems(Render, |mut runs: ResMut<Runs>| runs.render += 1);
         app.add_systems(
-            Update,
-            (|mut pings: MessageReader<Ping>,
-              mut removals: MessageReader<ComponentRemoved<Marker>>,
-              mut seen: ResMut<Seen>| {
-                seen.pings += pings.read().count();
-                seen.removals += removals.read().count();
-            })
-            .run_if(render_due),
+            PostUpdate,
+            |mut runs: ResMut<Runs>, mut last_render: Local<usize>| {
+                if runs.render != *last_render {
+                    runs.post_update_saw_render += 1;
+                    *last_render = runs.render;
+                }
+            },
         );
         app
     }
 
-    /// Runs one update as a render or input-only update.
-    fn run(app: &mut App, renders: bool) {
+    /// Input-only updates skip the render schedule, and render updates run it between `Update`
+    /// and `PostUpdate`.
+    #[test]
+    fn render_schedule_runs_only_in_render_updates() {
+        let mut app = counting_app();
+        app.update();
+        for _ in 0..3 {
+            app.world_mut()
+                .resource_mut::<RenderPass>()
+                .set_renders(false);
+            app.update();
+        }
         app.world_mut()
             .resource_mut::<RenderPass>()
-            .set_renders(renders);
+            .set_renders(true);
         app.update();
-    }
 
-    /// Messages and removals from input-only updates reach a render reader after many input-only
-    /// updates, and are not seen twice.
-    #[test]
-    fn input_only_updates_keep_messages_for_the_next_render() {
-        let mut app = gated_app();
-        run(&mut app, true);
-
-        app.world_mut().write_message(Ping);
-        let entity = app.world_mut().spawn(Marker).id();
-        app.world_mut().entity_mut(entity).remove::<Marker>();
-        for _ in 0..10 {
-            run(&mut app, false);
-        }
-        run(&mut app, true);
-        run(&mut app, true);
-
-        let seen = app.world().resource::<Seen>();
-        assert_eq!(seen.pings, 1);
-        assert_eq!(seen.removals, 1);
-    }
-
-    /// Render updates swap message buffers, so old messages are dropped after two renders.
-    #[test]
-    fn render_updates_drop_messages_after_two_swaps() {
-        let mut app = gated_app();
-        run(&mut app, false);
-        app.world_mut().write_message(Ping);
-        run(&mut app, false);
-        run(&mut app, true);
-        run(&mut app, true);
-        run(&mut app, true);
-
-        let messages = app.world().resource::<Messages<Ping>>();
-        assert!(messages.is_empty());
+        let runs = app.world().resource::<Runs>();
+        assert_eq!(runs.update, 5);
+        assert_eq!(runs.render, 2);
+        assert_eq!(runs.post_update_saw_render, 2);
     }
 }

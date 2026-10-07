@@ -77,7 +77,7 @@ fn red_slot() -> DmxSlots {
 /// output at slot 1, checking it stays stable across frames.
 fn slot_one_output(channels: Vec<Channel>) -> u8 {
     let mut app = App::new();
-    add_compositor_removal_messages::<Parameter>(&mut app);
+    add_compositor_removal_observers::<Parameter>(&mut app);
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.init_resource::<ConsoleDmxUniverses>();

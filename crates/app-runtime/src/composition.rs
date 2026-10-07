@@ -198,12 +198,19 @@ pub(super) fn init_bevy_with_transport_policy(
             EventHandling.run_if(in_state(CommandProcessingState::Running)),
             ShowfileHandling
                 .run_if(in_state(CommandProcessingState::Running))
-                .after(EventHandling)
-                .before(ClockUpdate),
+                .after(EventHandling),
+        ),
+    );
+    app.configure_sets(
+        Render,
+        (
             ClientOutput.run_if(in_state(RuntimeOutputState::Running)),
-            ClientFeedback.run_if(in_state(RuntimeOutputState::Running)),
             DmxOutput.run_if(in_state(RuntimeOutputState::Running)),
         ),
+    );
+    app.configure_sets(
+        PostUpdate,
+        ClientFeedback.run_if(in_state(RuntimeOutputState::Running)),
     );
 
     {

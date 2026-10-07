@@ -131,7 +131,7 @@ pub fn send_fx_on_change(fx_provider: Res<DataProvider<Fx>>, broadcaster: Res<Cl
 pub fn send_step_fx_on_change(
     step_fx_query: Query<&StepFx>,
     changed_step_fx_query: Query<(), Changed<StepFx>>,
-    mut removed_step_fx: MessageReader<ComponentRemoved<StepFx>>,
+    mut removed_step_fx: RemovedComponents<StepFx>,
     broadcaster: Res<ClientEventSink>,
 ) {
     let step_fx_removed = !removed_step_fx.is_empty();

@@ -151,13 +151,14 @@ pub fn send_instances_on_change(
     materialized_clips: Query<&MaterializedClip>,
     clips: Query<&Clip>,
     added_instances: Query<&InstanceId, Added<InstanceId>>,
-    mut removed_instances: MessageReader<ComponentRemoved<InstanceId>>,
+    mut removed_instances: RemovedComponents<InstanceId>,
     added_release_markers: Query<(), (With<InstanceId>, Added<ReleaseMarker>)>,
     changed_controls: Query<&InstanceControls, Changed<InstanceControls>>,
     changed_metadata: Query<&InstanceMetadata, Changed<InstanceMetadata>>,
     changed_step_fx_previews: Query<(), Changed<PreviewStepFxDefinition>>,
     broadcaster: Res<ClientEventSink>,
 ) {
+    // Consume every removal, so one removal does not trigger a send in the next update too.
     let instances_removed = !removed_instances.is_empty();
     removed_instances.clear();
     // Send if any instances were added, removed, stopped, or had metadata/control changes.
@@ -181,7 +182,7 @@ pub fn send_controls_on_change(
     masters: Res<DataProvider<Master>>,
     materialized_clips: Query<&MaterializedClip>,
     added_materialized_clips: Query<(), Added<MaterializedClip>>,
-    mut removed_materialized_clips: MessageReader<ComponentRemoved<MaterializedClip>>,
+    mut removed_materialized_clips: RemovedComponents<MaterializedClip>,
     instance_index: Res<InstanceIndex>,
     changed_instance_controls: Query<(), Changed<InstanceControls>>,
     controls_query: Query<&InstanceControls>,

@@ -309,19 +309,19 @@ impl Plugin for FxModulePlugin {
                 .in_set(EventHandling),
         );
         app.add_systems(
-            Update,
+            PostUpdate,
             websocket::forward_fx_module_commands.in_set(ClientFeedback),
         );
         app.add_systems(
-            Update,
+            Render,
             websocket::send_fx_module_on_change.in_set(ClientOutput),
         );
         app.add_systems(
-            Update,
+            Render,
             instances::evaluate_fx_module.in_set(LayerGeneration),
         );
         app.add_systems(
-            Update,
+            Render,
             instances::evaluate_preview_fx_module.in_set(LayerGeneration),
         );
         app.add_systems(

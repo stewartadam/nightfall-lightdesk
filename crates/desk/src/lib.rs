@@ -118,7 +118,7 @@ impl Plugin for DeskPlugin {
         app.add_message::<UiNotification>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
         app.add_systems(
-            Update,
+            PostUpdate,
             event_handlers::forward_io_runtime_notifications
                 .in_set(ClientFeedback)
                 .before(websocket::forward_ui_notifications),
@@ -228,7 +228,7 @@ impl Plugin for DeskPlugin {
         );
 
         app.add_systems(
-            Update,
+            Render,
             (
                 instances::add_missing_instance_clocks,
                 ApplyDeferred,
@@ -318,26 +318,24 @@ impl Plugin for DeskPlugin {
                 .in_set(EventHandling),
         );
 
+        // Attachments come from input handlers and from FX module evaluation in render passes, so
+        // they are applied after both, in every update.
         app.add_systems(
-            Update,
-            event_handlers::clip_events::handle_clip_playback_attachments
+            PostUpdate,
+            event_handlers::clip_events::handle_clip_playback_attachments.before(ClientFeedback),
+        );
+
+        // Apply per-playback intensity scaling to the generated layers before compositing.
+        app.add_systems(
+            Render,
+            systems::instance_controls::apply_playback_intensity
                 .after(LayerGeneration)
                 .before(Compositing),
         );
 
-        // Apply per-playback intensity scaling before compositing. It scales the layers generated
-        // in this render, so it must not run again in input-only updates.
-        app.add_systems(
-            Update,
-            systems::instance_controls::apply_playback_intensity
-                .after(LayerGeneration)
-                .before(Compositing)
-                .run_if(render_due),
-        );
-
         // apply virtual dimmer scaling and virtual relation masters after compositing
         app.add_systems(
-            Update,
+            Render,
             (
                 masters::apply_master_inhibition,
                 systems::vdim::apply_vdim,
@@ -360,30 +358,29 @@ impl Plugin for DeskPlugin {
         // WebSocket forwarding systems owned by the desk plugin
         app.add_systems(Update, controls::sync_control_state.after(EventHandling));
 
-        add_removal_messages::<nightfall_instances::InstanceId>(app);
-        add_removal_messages::<nightfall_clips::MaterializedClip>(app);
         app.add_systems(
-            Update,
+            PostUpdate,
             (
                 websocket::forward_group_commands,
                 websocket::forward_clip_commands,
                 websocket::forward_blueprint_commands,
                 websocket::forward_desk_commands,
                 websocket::forward_ui_notifications,
+                // These read removals, which only last two updates.
+                websocket::send_clips_on_change,
+                websocket::send_instances_on_change,
+                websocket::send_controls_on_change,
             )
                 .in_set(ClientFeedback),
         );
         app.add_systems(
-            Update,
+            Render,
             (
                 websocket::send_groups_on_change,
                 websocket::send_masters_on_change,
                 websocket::send_blueprints_on_change,
                 websocket::send_blueprint_dependencies_on_change,
-                websocket::send_clips_on_change,
                 websocket::send_clips_on_clip_change,
-                websocket::send_instances_on_change,
-                websocket::send_controls_on_change,
                 websocket::send_undo_state_on_change,
                 websocket::send_settings_on_change,
                 websocket::send_io_settings_on_change,

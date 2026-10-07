@@ -48,7 +48,7 @@ pub mod prelude {
     pub use crate::TimelinePlugin;
     pub use crate::beatgrid_detection::{BeatgridDetector, DetectedBeat, DetectedBeatgrid};
     pub use crate::browser_audio::{TimelineAudioDirective, TimelineAudioLoopRange};
-    pub use crate::components::{MaterializedTimeline, SpawnedEntityType};
+    pub use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
     pub use crate::recording::{
         TimelineRecordingPreview, TimelineRecordingState, TimelineRecordingStates,
     };
@@ -172,7 +172,7 @@ impl Plugin for TimelinePlugin {
         audio_integration::add_event_handling_systems(app);
         if self.browser_audio_enabled {
             app.add_systems(
-                Update,
+                Render,
                 browser_audio::emit_browser_audio_directives
                     .after(systems::update_timeline_system)
                     .in_set(LayerGeneration),
@@ -180,9 +180,9 @@ impl Plugin for TimelinePlugin {
         }
 
         // Recording runs in every update right after event handling, so actions are recorded
-        // against the timeline state at the moment they happen. It runs before clock update, so
-        // the origins timeline playback marks in a render's layer generation are still set when
-        // the following update records those clip actions, and are cleared after it.
+        // against the timeline state at the moment they happen. The origins timeline playback
+        // marks in a render's layer generation are still set when the following update records
+        // those clip actions, and are cleared after it.
         app.add_systems(
             Update,
             (
@@ -191,17 +191,16 @@ impl Plugin for TimelinePlugin {
                 recording::clear_timeline_command_origins,
             )
                 .chain()
-                .after(EventHandling)
-                .before(ClockUpdate),
+                .after(EventHandling),
         );
 
         // WebSocket forwarding and sends owned by timeline plugin
         app.add_systems(
-            Update,
+            PostUpdate,
             websocket::forward_timeline_commands.in_set(ClientFeedback),
         );
         app.add_systems(
-            Update,
+            Render,
             (
                 websocket::send_timelines_on_change,
                 websocket::send_timeline_recording_states_on_change,

@@ -115,9 +115,7 @@ pub mod prelude {
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
     pub use crate::register_update_deserializer;
-    pub use crate::render_pass::{
-        ComponentRemoved, RenderPass, add_removal_messages, gate_message_updates, render_due,
-    };
+    pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
         RuntimeMode, TimelineAudioCapability,
@@ -143,25 +141,27 @@ impl Plugin for EnginePlugin {
         app.init_state::<AppState>();
         app.init_resource::<StartupFrameCounter>();
         app.init_resource::<RuntimeCapabilities>();
-        app.init_resource::<RenderPass>();
+        render_pass::add_render_schedule(app);
         app.configure_sets(
             Update,
             (
                 InputHandling,
                 EventHandling.after(InputHandling),
-                ResyncHandling.after(EventHandling).before(ClockUpdate),
-                ClockUpdate.after(EventHandling).run_if(render_due),
-                LayerGeneration.after(ClockUpdate).run_if(render_due),
-                Compositing.after(LayerGeneration).run_if(render_due),
-                VdimProcessing.after(Compositing).run_if(render_due),
-                ClientOutput.after(VdimProcessing).run_if(render_due),
-                DmxOutput.after(VdimProcessing).run_if(render_due),
-                // Ordered after the render sets so it follows every input-side system; in
-                // input-only updates those sets are skipped and it runs right after them.
-                ClientFeedback.after(VdimProcessing),
+                ResyncHandling.after(EventHandling),
             ),
         );
-        app.add_systems(PostUpdate, render_pass::gate_message_updates);
+        app.configure_sets(
+            Render,
+            (
+                ClockUpdate,
+                LayerGeneration.after(ClockUpdate),
+                Compositing.after(LayerGeneration),
+                VdimProcessing.after(Compositing),
+                ClientOutput.after(VdimProcessing),
+                DmxOutput.after(VdimProcessing),
+            ),
+        );
+        app.configure_sets(PostUpdate, ClientFeedback.before(CommandFeedbackEgress));
         app.init_resource::<CommandDeserializerRegistry>();
         app.init_resource::<UpdateDeserializerRegistry>();
         app.init_resource::<CommandTracker>();
@@ -187,11 +187,12 @@ impl Plugin for EnginePlugin {
                 broadcast_app_state_on_resync.before(ResyncHandling),
                 send_runtime_capabilities_on_resync.before(ResyncHandling),
                 send_attribute_metadata_on_resync.before(ResyncHandling),
-                broadcast_app_state_on_change.in_set(ClientOutput),
-                send_resync_complete
-                    .after(ResyncHandling)
-                    .before(ClockUpdate),
+                send_resync_complete.after(ResyncHandling),
             ),
+        );
+        app.add_systems(
+            PostUpdate,
+            broadcast_app_state_on_change.in_set(ClientFeedback),
         );
 
         register_ingress_command::<EngineCommand>(app);
@@ -212,30 +213,29 @@ pub struct InputHandling;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventHandling;
 
-/// System set for advancing clocks before producing frame layers.
+/// [`Render`] system set for advancing clocks before producing frame layers.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClockUpdate;
 
-/// System set for producing layer outputs before compositing.
+/// [`Render`] system set for producing layer outputs before compositing.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LayerGeneration;
 
-/// System set for combining generated layers into fixture output values.
+/// [`Render`] system set for combining generated layers into fixture output values.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Compositing;
 
-/// System set for applying virtual dimmer processing after compositing.
+/// [`Render`] system set for applying virtual dimmer processing after compositing.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VdimProcessing;
 
-/// System set for publishing render-derived engine state to attached clients.
-///
-/// Runs only in render updates (see [`render_pass`]).
+/// [`Render`] system set for publishing render-derived engine state to attached clients.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientOutput;
 
-/// System set for forwarding input-derived client messages, such as command echoes and
-/// notifications, in every update so they do not wait for the next render.
+/// [`PostUpdate`] system set for forwarding input-derived client messages, such as command echoes,
+/// notifications and state changes made by commands, in every update so they do not wait for the
+/// next render. Runs after [`Render`], so it also sees changes made by a render pass.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientFeedback;
 
@@ -250,7 +250,7 @@ pub struct CommandFeedbackEgress;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResyncHandling;
 
-/// System set for sending finalized DMX frames to output transports.
+/// [`Render`] system set for sending finalized DMX frames to output transports.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DmxOutput;
 
@@ -594,7 +594,7 @@ mod tests {
         app.init_resource::<ResyncCompleteBeforeClock>();
         app.add_plugins(EnginePlugin);
         app.add_systems(
-            Update,
+            Render,
             record_resync_complete_before_clock.in_set(ClockUpdate),
         );
         app.world_mut()

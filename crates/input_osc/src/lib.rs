@@ -92,9 +92,9 @@ impl Plugin for InputOscPlugin {
             Update,
             (forward_external_command_invocations, handle_osc_crud).in_set(EventHandling),
         );
-        app.add_systems(Update, websocket::send_osc_state.in_set(ClientOutput));
+        app.add_systems(Render, websocket::send_osc_state.in_set(ClientOutput));
         app.add_systems(
-            Update,
+            PostUpdate,
             websocket::send_external_evals.in_set(ClientFeedback),
         );
         app.add_systems(

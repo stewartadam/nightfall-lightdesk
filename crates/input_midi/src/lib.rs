@@ -81,7 +81,7 @@ impl Plugin for InputMidiPlugin {
 
         app.add_systems(Update, handle_midi_crud.in_set(EventHandling));
 
-        app.add_systems(Update, websocket::send_midi_state.in_set(ClientOutput));
+        app.add_systems(Render, websocket::send_midi_state.in_set(ClientOutput));
 
         app.add_systems(
             Update,

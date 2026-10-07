@@ -124,7 +124,7 @@ impl Plugin for FxPlugin {
                 .run_if(in_state(AppState::Ready)),
         );
         app.add_systems(
-            Update,
+            Render,
             (
                 systems::evaluate_step_fx,
                 materialized_fx::paint_materialized_fx,
@@ -133,18 +133,14 @@ impl Plugin for FxPlugin {
         );
 
         // WebSocket forwarding and sends owned by fx plugin
-        add_removal_messages::<step_fx::StepFx>(app);
         app.add_systems(
-            Update,
-            websocket::forward_fx_commands.in_set(ClientFeedback),
-        );
-        app.add_systems(
-            Update,
+            PostUpdate,
             (
+                websocket::forward_fx_commands,
                 websocket::send_fx_on_change,
                 websocket::send_step_fx_on_change,
             )
-                .in_set(ClientOutput),
+                .in_set(ClientFeedback),
         );
 
         app.add_systems(

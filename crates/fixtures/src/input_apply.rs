@@ -15,7 +15,7 @@ use bevy_ecs::{prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
 use nightfall_compositor::types::Layer;
 use nightfall_dmx::prelude::{MAX_CHANNELS_PER_UNIVERSE, ParameterDmxValue, ParameterValue};
-use nightfall_engine::LayerGeneration;
+use nightfall_engine::prelude::{LayerGeneration, Render};
 use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use nightfall_io::{AcceptedDmxFrame, DmxInputSet};
@@ -37,16 +37,15 @@ impl Plugin for TransportInputPlugin {
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
         app.configure_sets(
-            Update,
+            Render,
             (DmxInputSet::Ingress, DmxInputSet::Apply)
                 .chain()
                 .in_set(LayerGeneration),
         );
         app.add_systems(
-            Update,
+            Render,
             apply_accepted_frames
                 .in_set(DmxInputSet::Apply)
-                .after(crate::binding_resolution::resolve_input_bindings)
                 .after(crate::compositor::clear_unbound_transport_input_assertions),
         );
     }

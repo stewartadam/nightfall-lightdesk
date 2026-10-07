@@ -123,7 +123,7 @@ impl Plugin for InputSacnPlugin {
         app.insert_resource(SacnEventReceiver(sacn_rx));
         app.add_systems(Update, sync_sacn_input_binding.after(EventHandling));
         app.add_systems(
-            Update,
+            Render,
             sacn_event_system
                 .in_set(DmxInputSet::Ingress)
                 .in_set(LayerGeneration),
@@ -318,6 +318,7 @@ mod tests {
     #[test]
     fn sacn_input_ignores_frames_from_local_sacn_output_source() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawSacnFrame>();
 
@@ -349,7 +350,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, sacn_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, sacn_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(make_frame_with_source_cid(2, &[(1, 99)], Some(local_cid)))
             .expect("failed to enqueue frame");
@@ -363,6 +364,7 @@ mod tests {
     #[test]
     fn sacn_input_accepts_frames_from_local_sacn_output_source_in_all_detected_mode() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawSacnFrame>();
 
@@ -395,7 +397,7 @@ mod tests {
             },
         }];
 
-        app.add_systems(Update, sacn_event_system.in_set(DmxInputSet::Ingress));
+        app.add_systems(Render, sacn_event_system.in_set(DmxInputSet::Ingress));
 
         tx.send(make_frame_with_source_cid(2, &[(1, 99)], Some(local_cid)))
             .expect("failed to enqueue frame");
@@ -414,15 +416,9 @@ mod tests {
     #[test]
     fn sacn_input_runs_in_layer_generation_before_dmx_output() {
         let mut app = App::new();
+        add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
-        app.configure_sets(
-            Update,
-            (
-                InputHandling,
-                LayerGeneration.after(InputHandling),
-                DmxOutput.after(LayerGeneration),
-            ),
-        );
+        app.configure_sets(Render, DmxOutput.after(LayerGeneration));
         app.add_plugins(InputSacnPlugin {
             network_input_enabled: false,
         });

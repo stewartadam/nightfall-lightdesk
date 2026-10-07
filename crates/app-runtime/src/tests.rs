@@ -10,7 +10,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use bevy::prelude::{App, AppExit, IntoScheduleConfigs, MessageWriter, Messages, Update};
+use bevy::ecs::{
+    component::ComponentId,
+    schedule::{Schedule, ScheduleLabel, Schedules},
+    system::System,
+    world::World,
+};
+use bevy::prelude::{
+    App, AppExit, IntoScheduleConfigs, MessageWriter, Messages, PostUpdate, Update,
+};
 use bevy_state::{
     app::{AppExtStates, StatesPlugin},
     prelude::State,
@@ -32,10 +40,10 @@ use nightfall_desk::{
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    AppState, ClientEventSink, ClientOutput, ClockUpdate, CommandEnvelope, CommandNotice,
+    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNotice,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
     DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
-    EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, RenderPass,
+    EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, Render, RenderPass,
     ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
@@ -1437,14 +1445,6 @@ fn staged_world_keeps_runtime_states_paused_until_commit() {
     assert_eq!(*output_state.get(), RuntimeOutputState::Paused);
 }
 
-/// Test resource used to verify client output systems obey runtime pause state.
-#[derive(bevy::prelude::Resource, Default)]
-struct ClientOutputTickCounter(usize);
-
-fn tick_client_output_counter(mut counter: bevy::prelude::ResMut<ClientOutputTickCounter>) {
-    counter.0 += 1;
-}
-
 /// Test resource that records system-set execution order within one update.
 #[derive(bevy::prelude::Resource, Default)]
 struct HandlingOrderLog(Vec<&'static str>);
@@ -1486,8 +1486,7 @@ fn showfile_handling_runs_after_event_handling() {
                 .run_if(bevy_state::condition::in_state(
                     super::CommandProcessingState::Running,
                 ))
-                .after(EventHandling)
-                .before(ClockUpdate),
+                .after(EventHandling),
         ),
     );
     app.add_systems(
@@ -1510,58 +1509,58 @@ fn showfile_handling_runs_after_event_handling() {
     assert_eq!(log.0, vec!["event", "showfile"]);
 }
 
-#[test]
-fn client_output_set_respects_runtime_output_state() {
-    let mut app = App::new();
-    app.add_plugins(StatesPlugin);
-    app.insert_state(CommandProcessingState::Running);
-    app.insert_state(RuntimeOutputState::Paused);
-    app.insert_resource(ClientOutputTickCounter::default());
-    app.configure_sets(
-        Update,
-        ClientOutput.run_if(bevy_state::condition::in_state(RuntimeOutputState::Running)),
-    );
-    app.add_systems(Update, tick_client_output_counter.in_set(ClientOutput));
-
-    app.update();
-    let counter = app.world().resource::<ClientOutputTickCounter>();
-    assert_eq!(counter.0, 0);
-
-    app.insert_state(RuntimeOutputState::Running);
-    app.update();
-    let counter = app.world().resource::<ClientOutputTickCounter>();
-    assert_eq!(counter.0, 1);
-}
-
-/// Test resource used to verify DMX output systems obey runtime pause state.
+/// Test resource counting runs of client output, client feedback and DMX output systems.
 #[derive(bevy::prelude::Resource, Default)]
-struct DmxTickCounter(usize);
-
-fn tick_dmx_counter(mut counter: bevy::prelude::ResMut<DmxTickCounter>) {
-    counter.0 += 1;
+struct OutputTickCounter {
+    client_output: usize,
+    client_feedback: usize,
+    dmx_output: usize,
 }
 
-#[test]
-fn dmx_output_set_respects_runtime_output_state() {
-    let mut app = App::new();
-    app.add_plugins(StatesPlugin);
-    app.insert_state(CommandProcessingState::Running);
-    app.insert_state(RuntimeOutputState::Paused);
-    app.insert_resource(DmxTickCounter::default());
-    app.configure_sets(
-        Update,
-        DmxOutput.run_if(bevy_state::condition::in_state(RuntimeOutputState::Running)),
+/// Verifies the backend's client output, client feedback and DMX output sets stop while runtime
+/// output is paused and resume when it runs again.
+#[tokio::test]
+async fn output_sets_respect_runtime_output_state() {
+    let mut app = build_empty_backend_app();
+    app.insert_resource(OutputTickCounter::default());
+    app.add_systems(
+        Render,
+        (
+            (|mut counter: bevy::prelude::ResMut<OutputTickCounter>| counter.client_output += 1)
+                .in_set(ClientOutput),
+            (|mut counter: bevy::prelude::ResMut<OutputTickCounter>| counter.dmx_output += 1)
+                .in_set(DmxOutput),
+        ),
     );
-    app.add_systems(Update, tick_dmx_counter.in_set(DmxOutput));
+    app.add_systems(
+        PostUpdate,
+        (|mut counter: bevy::prelude::ResMut<OutputTickCounter>| counter.client_feedback += 1)
+            .in_set(ClientFeedback),
+    );
 
+    app.insert_state(RuntimeOutputState::Paused);
     app.update();
-    let counter = app.world().resource::<DmxTickCounter>();
-    assert_eq!(counter.0, 0);
+    let counter = app.world().resource::<OutputTickCounter>();
+    assert_eq!(
+        (
+            counter.client_output,
+            counter.client_feedback,
+            counter.dmx_output
+        ),
+        (0, 0, 0)
+    );
 
     app.insert_state(RuntimeOutputState::Running);
     app.update();
-    let counter = app.world().resource::<DmxTickCounter>();
-    assert_eq!(counter.0, 1);
+    let counter = app.world().resource::<OutputTickCounter>();
+    assert_eq!(
+        (
+            counter.client_output,
+            counter.client_feedback,
+            counter.dmx_output
+        ),
+        (1, 1, 1)
+    );
 }
 
 /// Ensures the default rig contains the six built-in fixture families and serializable layouts.
@@ -2130,4 +2129,109 @@ async fn world_factory_sample_lofi_timeline_flashes_phrase_endings() {
         flash < top && top < bottom,
         "flash {flash:?}, top {top:?}, bottom {bottom:?}"
     );
+}
+
+/// Returns the names of the message types each system in `schedule` reads without writing, and
+/// of the message types it writes, keyed by system name.
+fn schedule_message_access(
+    world: &mut World,
+    schedule: &mut Schedule,
+    message_ids: &[(ComponentId, String)],
+) -> Vec<(String, Vec<String>, Vec<String>)> {
+    let graph = schedule.graph_mut();
+    let keys: Vec<_> = graph.systems.iter().map(|(key, _, _)| key).collect();
+    keys.into_iter()
+        .filter_map(|key| {
+            let system = graph.systems.get_mut(key)?;
+            let name = system.name().to_string();
+            let access = system.initialize(world);
+            let access = access.combined_access();
+            if access.has_read_all() {
+                return None;
+            }
+            let reads = message_ids
+                .iter()
+                .filter(|(id, _)| access.has_read(*id) && !access.has_write(*id))
+                .map(|(_, message)| message.clone())
+                .collect();
+            let writes = message_ids
+                .iter()
+                .filter(|(id, _)| access.has_write(*id))
+                .map(|(_, message)| message.clone())
+                .collect();
+            Some((name, reads, writes))
+        })
+        .collect()
+}
+
+/// Verifies render systems only read messages written by other render systems.
+///
+/// Input-only updates can run between two render passes, and messages expire after two buffer
+/// swaps, so a render system reading a message written outside the render schedule can miss it.
+/// Input that render systems depend on must be applied to world state in the input sets instead.
+///
+/// Exclusive systems are skipped because their access covers the whole world, and the order of
+/// writers and readers inside the render schedule is not checked.
+#[test]
+fn render_systems_only_read_messages_written_in_render() {
+    let mut app = build_empty_backend_app();
+    let world = app.world_mut();
+    let message_ids: Vec<_> = world
+        .components()
+        .iter_registered()
+        .map(|info| (info.id(), info.name().to_string()))
+        .filter(|(_, name)| name.starts_with("bevy_ecs::message::messages::Messages<"))
+        .collect();
+    assert!(
+        !message_ids.is_empty(),
+        "message resources should be registered"
+    );
+
+    let mut schedules = world
+        .remove_resource::<Schedules>()
+        .expect("app should have schedules");
+    let mut render_access = Vec::new();
+    let mut other_writers: HashMap<String, Vec<String>> = HashMap::new();
+    for (_, schedule) in schedules.iter_mut() {
+        let is_render = schedule.label() == Render.intern();
+        let access = schedule_message_access(world, schedule, &message_ids);
+        if is_render {
+            render_access = access;
+        } else {
+            for (system, _, writes) in access {
+                for message in writes {
+                    other_writers
+                        .entry(message)
+                        .or_default()
+                        .push(system.clone());
+                }
+            }
+        }
+    }
+    world.insert_resource(schedules);
+    assert!(
+        !render_access.is_empty(),
+        "render schedule should have systems"
+    );
+
+    let render_writes: std::collections::HashSet<_> = render_access
+        .iter()
+        .flat_map(|(_, _, writes)| writes.iter().cloned())
+        .collect();
+    let violations: Vec<_> = render_access
+        .iter()
+        .flat_map(|(system, reads, _)| reads.iter().map(move |message| (system, message)))
+        .filter(|(_, message)| {
+            !render_writes.contains(*message) || other_writers.contains_key(*message)
+        })
+        .map(|(system, message)| match other_writers.get(message) {
+            Some(writers) => {
+                format!(
+                    "{system} reads {message}, written outside the render schedule by {writers:?}"
+                )
+            }
+            None => format!("{system} reads {message}, which no render system writes"),
+        })
+        .collect();
+    assert!(violations.is_empty(), "{}", violations.join("\n"));
 }
