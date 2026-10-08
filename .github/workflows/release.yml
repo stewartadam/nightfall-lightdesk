@@ -102,18 +102,27 @@ jobs:
           keychain="$RUNNER_TEMP/nightfall-signing.keychain-db"
           certificate="$RUNNER_TEMP/nightfall-signing.p12"
           keychain_password=$(openssl rand -hex 32)
+          original_keychains=()
+          while IFS= read -r entry; do
+            entry="${entry#"${entry%%[![:space:]]*}"}"
+            original_keychains+=("${entry//\"/}")
+          done < <(security list-keychains -d user)
           # Remove the imported identity and certificate even when signing/notarization fails.
           cleanup() {
+            security list-keychains -d user -s "${original_keychains[@]}" || true
             security delete-keychain "$keychain" || true
             rm -f "$certificate"
           }
           trap cleanup EXIT
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
           security create-keychain -p "$keychain_password" "$keychain"
+          # codesign resolves the identity's private key through the user search list, even with --keychain.
+          security list-keychains -d user -s "$keychain" "${original_keychains[@]}"
           security set-keychain-settings -lut 3600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
           security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          security find-identity -v -p codesigning "$keychain"
           xcrun notarytool store-credentials nightfall --keychain "$keychain" \
             --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID"
 
