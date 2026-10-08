@@ -29,7 +29,7 @@ const BEST_EFFORT_REQUEST_TIMEOUT_MS = 5000;
 const USAGE = `Usage: wt [-C <worktree>] service <command> [options]
 
 Manages this worktree's services through the worktree dashboard API
-(pnpm run worktree:dashboard). Use wt -C <path> to target another worktree.
+(pnpm run dashboard). Use wt -C <path> to target another worktree.
 
 Commands:
   list                   List worktrees with their ports and service status

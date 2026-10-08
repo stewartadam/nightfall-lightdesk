@@ -100,7 +100,7 @@ function buildTestWasm() {
   if (process.env.CI) return Promise.resolve({ code: 0 });
   return runOwnedCommand(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-    ["run", "--silent", "wasm-build:dev"],
+    ["run", "--silent", "wasm", "--dev"],
     { spawnOptions: { stdio: "inherit" } },
   );
 }

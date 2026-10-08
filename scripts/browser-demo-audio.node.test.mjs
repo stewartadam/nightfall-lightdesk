@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createSampleWav, writeTimelineAudio } from "./browser-demo-audio.mjs";
+import { copyTimelineAudio } from "./browser-demo-audio.mjs";
 
 /** Creates a disposable showfile directory whose timelines reference the given audio paths. */
 function createDemo(audioPaths) {
@@ -37,8 +37,8 @@ function createDemo(audioPaths) {
   return { root, showDir, showfilePath, sampleAudioDir };
 }
 
-/** Every referenced timeline gets audio, so the size report never finds a missing file. */
-test("writes audio for every timeline, copying bundled samples by file name", () => {
+/** Every referenced timeline gets its sample track once, matched by file name. */
+test("copies the bundled sample track for every timeline", () => {
   const demo = createDemo([
     "timeline-audio/a/lofi.mp3",
     "timeline-audio/b/rap.mp3",
@@ -46,39 +46,43 @@ test("writes audio for every timeline, copying bundled samples by file name", ()
   ]);
   try {
     writeFileSync(join(demo.sampleAudioDir, "lofi.mp3"), "real lofi bytes");
-    const written = writeTimelineAudio(demo);
-    assert.deepEqual(
-      written.map(({ source }) => source),
-      ["sample", "generated"],
-    );
+    writeFileSync(join(demo.sampleAudioDir, "rap.mp3"), "real rap bytes");
+    const written = copyTimelineAudio(demo);
+    assert.equal(written.length, 2);
     assert.equal(
       readFileSync(join(demo.showDir, "timeline-audio/a/lofi.mp3"), "utf8"),
       "real lofi bytes",
     );
-    assert.deepEqual(
-      new Uint8Array(
-        readFileSync(join(demo.showDir, "timeline-audio/b/rap.mp3")),
-      ),
-      createSampleWav(),
+    assert.equal(
+      readFileSync(join(demo.showDir, "timeline-audio/b/rap.mp3"), "utf8"),
+      "real rap bytes",
     );
   } finally {
     rmSync(demo.root, { recursive: true, force: true });
   }
 });
 
-/** An unfetched LFS pointer must not be shipped as audio; the generated track replaces it. */
-test("falls back to generated audio when the sample is an LFS pointer", () => {
+/** An unfetched LFS pointer must never ship as audio, so packaging stops with a fix. */
+test("rejects a sample track that is still an LFS pointer", () => {
   const demo = createDemo(["timeline-audio/a/lofi.mp3"]);
   try {
     writeFileSync(
       join(demo.sampleAudioDir, "lofi.mp3"),
       "version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 1\n",
     );
-    const [written] = writeTimelineAudio(demo);
-    assert.equal(written.source, "generated");
-    assert.deepEqual(
-      new Uint8Array(readFileSync(written.path)),
-      createSampleWav(),
+    assert.throws(() => copyTimelineAudio(demo), /git lfs pull/);
+  } finally {
+    rmSync(demo.root, { recursive: true, force: true });
+  }
+});
+
+/** A timeline whose audio has no bundled track is a packaging error. */
+test("rejects a timeline without a bundled sample track", () => {
+  const demo = createDemo(["timeline-audio/a/unknown.mp3"]);
+  try {
+    assert.throws(
+      () => copyTimelineAudio(demo),
+      /No bundled sample track for timeline-audio\/a\/unknown\.mp3/,
     );
   } finally {
     rmSync(demo.root, { recursive: true, force: true });
@@ -90,7 +94,7 @@ test("rejects a showfile that references no timeline audio", () => {
   const demo = createDemo([]);
   try {
     assert.throws(
-      () => writeTimelineAudio(demo),
+      () => copyTimelineAudio(demo),
       /does not reference timeline audio/,
     );
   } finally {

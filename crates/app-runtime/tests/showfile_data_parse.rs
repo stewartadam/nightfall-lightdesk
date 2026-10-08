@@ -74,6 +74,9 @@ fn assert_showfile_collections_are_populated(value: &serde_json::Value) {
 }
 
 /// Verify that procedural showfile parser data parses through the runtime loader path.
+///
+/// Regenerate the fixture after a showfile format change with
+/// `cargo run -p app-runtime --bin sample-data-showfile-parse-data`.
 #[test]
 fn parses_procedural_showfile_test_data() {
     let showfile_path = Path::new(env!("CARGO_MANIFEST_DIR"))

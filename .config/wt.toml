@@ -16,7 +16,7 @@ copy-assets = "cp -a {{ primary_worktree_path }}/webui/assets webui"
 
 [[post-start]]
 build = "cargo build --tests --bin nightfall-headless"
-wasm-build = "pnpm run wasm-build:bridge:dev"
+wasm-build = "pnpm run wasm:bridge --dev"
 
 [pre-remove]
 stop-services = "wt -C {{ worktree_path }} --yes service stop -s all --best-effort"

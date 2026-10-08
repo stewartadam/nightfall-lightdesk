@@ -14,6 +14,8 @@ use nightfall_fixture_model::prelude::*;
 pub mod gdtf;
 #[cfg(test)]
 mod gdtf_bench_tests;
+#[cfg(test)]
+mod gdtf_corpus_tests;
 mod gdtf_functions;
 #[cfg(test)]
 mod gdtf_joint_tests;
@@ -21,8 +23,6 @@ mod gdtf_joint_tests;
 mod gdtf_link_tests;
 mod gdtf_links;
 pub mod gdtf_resolve;
-#[cfg(test)]
-mod gdtf_sweep_tests;
 #[cfg(test)]
 mod gdtf_wire_tests;
 pub mod ofl;

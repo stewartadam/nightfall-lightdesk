@@ -8,14 +8,14 @@
 
 import { resolve } from "node:path";
 
-import { writeTimelineAudio } from "./browser-demo-audio.mjs";
+import { copyTimelineAudio } from "./browser-demo-audio.mjs";
 
-const written = writeTimelineAudio({
+const written = copyTimelineAudio({
   showfilePath: resolve(
     "webui/public/nightfall-demo.nightfall-show/showfile.json",
   ),
   sampleAudioDir: resolve("crates/app-runtime/assets/sample-audio"),
 });
-for (const { path, source } of written) {
-  process.stdout.write(`${path} (${source})\n`);
+for (const path of written) {
+  process.stdout.write(`${path}\n`);
 }

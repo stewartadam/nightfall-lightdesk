@@ -27,7 +27,7 @@ export const shareApi = "https://gdtf-share.com/apis/public";
  * Returns the command-line usage text for the bench fetcher.
  */
 function usage() {
-  return `usage: pnpm run gdtf-bench:fetch
+  return `usage: pnpm run gdtf:fetch
 
 Downloads the curated GDTF bench archives listed in
 crates/fixture-library/tests/gdtf-bench/manifest.json from GDTF Share into
