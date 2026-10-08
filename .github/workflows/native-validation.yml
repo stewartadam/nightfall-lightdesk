@@ -34,13 +34,12 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      # selecting a toolchain either by action or manual `rustup` calls should happen
-      # before the plugin, as the cache uses the current rustc version as its cache key
+      # Install the pinned toolchain before the cache action, which keys on its rustc version.
       - name: Show Rust toolchain
         run: rustup show
 
       - name: Cache native dependencies and tools
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: ./.github/actions/rust-cache
         with:
           # A stable key lets develop pushes warm caches that PRs restore from their base
           # branch. The action already hashes manifests and the lockfile, and falls back

@@ -44,7 +44,7 @@ jobs:
       # Native validation already runs the browser runtime's tests; this job only
       # caches its installed Cargo tools.
       - name: Cache Cargo tools
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: ./.github/actions/rust-cache
         with:
           key: browser-demo-tools
           cache-targets: false

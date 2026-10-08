@@ -1,0 +1,61 @@
+name: Rust cache
+description: Restore and save Cargo caches keyed on the pinned toolchain, and report cache reuse in the job summary.
+
+inputs:
+  key:
+    description: Per-job cache key (rust-cache's key input).
+    required: false
+    default: ''
+  shared-key:
+    description: Cache key shared across jobs (rust-cache's shared-key input).
+    required: false
+    default: ''
+  cache-targets:
+    description: Whether to cache compiled artifacts in addition to Cargo's registry and installed tools.
+    required: false
+    default: 'true'
+  cache-on-failure:
+    description: Save the cache even when the job fails.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    # rust-cache hashes every installed toolchain into its key. Hosted runner images
+    # preinstall a stable Rust that changes as new images roll out, so jobs on
+    # different images would miss each other's caches despite using the same
+    # pinned nightly. Run after the step that installs the pinned toolchain.
+    # A failure here only costs cache hits, so it warns instead of failing the job.
+    - name: Remove toolchains other than the pinned one
+      shell: bash
+      run: |
+        active=$(rustup show active-toolchain | tr -d '\r' | cut -d ' ' -f 1)
+        if [[ -z "$active" ]]; then
+          echo "::error::No active Rust toolchain; install the pinned toolchain first"
+          exit 1
+        fi
+        # Keep commands run outside the checkout from reinstalling the old default.
+        rustup default "$active" || echo "::warning::Could not make $active the default toolchain"
+        rustup toolchain list --quiet | tr -d '\r' | cut -d ' ' -f 1 | while read -r toolchain; do
+          if [[ -n "$toolchain" && "$toolchain" != "$active" ]]; then
+            rustup toolchain uninstall "$toolchain" \
+              || echo "::warning::Could not remove $toolchain; Rust caches may miss across runner images"
+          fi
+        done
+
+    - name: Restore Cargo cache
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        key: ${{ inputs.key }}
+        shared-key: ${{ inputs.shared-key }}
+        cache-targets: ${{ inputs.cache-targets }}
+        cache-on-failure: ${{ inputs.cache-on-failure }}
+
+    - name: Track Cargo cache reuse
+      uses: ./.github/actions/rust-cache/report
+      with:
+        label: ${{ inputs.shared-key || inputs.key }}
+        restored: ${{ steps.cache.outputs.cache-hit }}
+        targets: ${{ inputs.cache-targets }}
