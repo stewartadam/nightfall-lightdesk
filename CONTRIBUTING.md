@@ -145,9 +145,17 @@ rustup show
 pnpm install --frozen-lockfile
 node scripts/setup-env.mjs
 pnpm run typeshare
-pnpm run wasm-build:dev
+pnpm run wasm --dev
 cargo build --tests --locked
 ```
+
+`wasm` builds both WASM packages. Day-to-day, the dev server only needs the
+bridge (`pnpm run wasm:bridge --dev`), which is what the post-merge hook,
+worktree setup and the dashboard's `wasm` service rebuild. Build the embedded
+demo engine with `pnpm run wasm:demo --dev`
+when trying demo mode in the dev server, or after changing its exported API,
+since `pnpm run typecheck` reads its generated declarations. The Playwright
+wrapper rebuilds both packages before every local test run.
 
 Production web and Tauri builds generate dependency notices. Install their
 pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
@@ -358,19 +366,16 @@ pnpm run test:webui-playwright --data-dir /tmp/nightfall-sample-blueprints webui
 If you run multiple git worktrees in parallel, start the dashboard API with:
 
 ```sh
-pnpm run worktree:dashboard
+pnpm run dashboard
 ```
 
-For API hot-reload while editing `worktree-dashboard/worktree-dashboard.mjs`, use:
-
-```sh
-pnpm run worktree:dashboard:watch
-```
+The API has no hot reload: restarting it stops every service it started, so
+restart it by hand after editing `worktree-dashboard/worktree-dashboard.mjs`.
 
 Then start the Solid/Vite dashboard UI (with HMR) in a separate shell:
 
 ```sh
-pnpm run worktree:dashboard:ui
+pnpm run dashboard:ui
 ```
 
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
@@ -383,7 +388,7 @@ and applies them over the environment inherited when the dashboard started.
 An exported value provides a fallback for worktrees that do not configure it:
 
 ```sh
-NIGHTFALL_CARGO_COMMAND=mbx pnpm run worktree:dashboard
+NIGHTFALL_CARGO_COMMAND=mbx pnpm run dashboard
 ```
 
 The default is `cargo` (`cargo.exe` on Windows). The value must be one executable
@@ -429,10 +434,10 @@ server described below.
 Agents can also manage their own worktree lifecycle through MCP (for example, from Codex/Claude) by running:
 
 ```sh
-pnpm run worktree:mcp
+pnpm run dashboard:mcp
 ```
 
-The MCP server talks to the dashboard API, so keep `pnpm run worktree:dashboard` running while agents are connected.
+The MCP server talks to the dashboard API, so keep `pnpm run dashboard` running while agents are connected.
 It targets dashboard address `http://127.0.0.1:4780` by default.
 You can override with:
 
@@ -457,7 +462,7 @@ Example MCP config:
   "mcpServers": {
     "nightfall-worktree-dashboard": {
       "command": "pnpm",
-      "args": ["run", "worktree:mcp"],
+      "args": ["run", "dashboard:mcp"],
       "cwd": "/absolute/path/to/your/main-repo"
     }
   }
@@ -467,8 +472,44 @@ Example MCP config:
 To start the desktop application with Tauri:
 
 ```sh
-pnpm run tauri-dev
+pnpm tauri dev
 ```
+
+### Package scripts
+
+Run these with `pnpm run <script>`; arguments after the script name are passed
+through. Commands for the whole repository use a plain verb; the rest are named
+`<area>:<action>`. Keep this table in sync with `package.json`.
+
+| Script | What it does |
+| --- | --- |
+| `dev` | Start the Vite dev server for the web UI. |
+| `build` | Build the production web UI and check that it bundles only the WASM bridge. |
+| `tauri` | Run the Tauri CLI, for example `pnpm tauri dev`, `pnpm tauri build [-d]` or `pnpm tauri bundle`. |
+| `wasm`, `wasm:bridge`, `wasm:demo` | Build both WASM packages, only the bridge the web UI needs, or only the embedded demo engine. Release by default; pass `--dev` for a faster debug build. |
+| `typeshare` | Regenerate `webui/types/index.ts` from the Rust types. |
+| `lint` | Run Biome lints on the web UI. |
+| `typecheck` | Type-check the TypeScript projects. |
+| `autofix`, `autofix:ts`, `autofix:rs` | Apply Biome, rustfmt and Clippy fixes. |
+| `knip` | Report unused files, exports and dependencies. |
+| `check:command-architecture`, `check:crate-boundaries`, `check:browser-demo-dependencies` | Architecture checks also run by the git hooks or CI. |
+| `test` | Run the script tests and the web UI Node tests. |
+| `test:scripts`, `test:webui-node` | Run either half of `test`. |
+| `test:webui-playwright` | Run Playwright specs through the wrapper. Pass `--headed`, `--ui`, `--target embedded-demo` or spec paths. |
+| `test:webui-smoke`, `test:webui-hmr` | Run the CI smoke specs, or the dev-server hot-reload specs. |
+| `playwright:install` | Install the Playwright browsers into the shared cache. |
+| `demo:build` | Build the WASM packages, then `demo:bundle`. |
+| `demo:bundle` | Package the browser demo from WASM that is already built; CI uses this. |
+| `demo:test` | Run the browser demo and notice specs against the packaged demo. Run `demo:build` first. |
+| `demo:soak` | Loop the demo timeline for five minutes against the packaged demo and check that errors, the engine queue and WASM memory stay bounded. Run `demo:build` first. |
+| `visualizer:perf` | Run the optical playback performance benchmark (needs WebGPU). |
+| `dashboard`, `dashboard:ui`, `dashboard:mcp` | Start the worktree dashboard API, its web UI, or its MCP server. |
+| `gdtf:fetch` | Download the pinned GDTF bench archives from GDTF Share. |
+| `gdtf:bench` | Check the pinned bench archives against their committed expectations. |
+| `gdtf:corpus` | Check that every GDTF file in `NIGHTFALL_GDTF_CORPUS_DIR` converts or is rejected cleanly. |
+| `fx-module:install` | Build an FX module and install it into the application data directory. |
+| `package:notices` | Generate dependency notices for a desktop target triple. |
+| `package:sample-audio` | Copy the sample tracks next to a standalone backend executable. |
 
 ### Quality checks and browser tests
 
@@ -495,7 +536,7 @@ cargo nextest run --tests autocomplete::
 
 Each crate links its integration tests into a single `tests/it` binary, because every separate `tests/*.rs` file becomes its own executable. The main reason is macOS: without the [Developer Tools setting](#macos), macOS scans each newly built executable the first time it runs, so every extra test binary adds to each test run after a rebuild (74 integration-test binaries became 20). Each binary also links its own copy of Bevy and the workspace; the link-time saving is smaller and has not been measured separately on Linux. Add new integration tests as a module under `tests/it/` and declare it in `tests/it/main.rs`; shared helpers live in sibling modules and are imported through `crate::`. Only tests that need a custom harness (`harness = false`) get their own target; helpers that such a target shares with `tests/it` live under `tests/support/` and are included by both with `#[path]`.
 
-After changing Rust command parsing or shared types, regenerate with `pnpm run typeshare` and `pnpm run wasm-build:dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
+After changing Rust command parsing or shared types, regenerate with `pnpm run typeshare` and `pnpm run wasm:bridge --dev` before browser validation. Commit and push hooks also run applicable checks and may take several minutes; let them finish and correct failures before retrying.
 
 CI runs prek hooks and script tests independently of native compilation and
 WASM builds. TypeScript and WebUI Node checks wait for the WASM assets. Chromium
@@ -537,7 +578,7 @@ They share `webui/e2e/optics-harness.ts` (Node side) and `webui/e2e/fixtures/opt
 
 Performance specs are opt-in because their timings depend on the machine. `optical-playback-perf.spec.ts` and `visualizer-playback-perf.spec.ts` fail on the percentile and ratio budgets in `webui/e2e/perf-budgets.ts` (p99 frame interval, share of skipped, late or dropped frames) rather than on single outliers. They measure the display's refresh interval first and count a frame as skipped when its interval exceeds 1.5 refreshes. The production visualizer caps its own rendering at 60 FPS, so `visualizer-playback-perf.spec.ts` budgets the renderer's frames at the slower of 60 Hz and the display. Its frame-pacing counters keep their fixed 25 ms and 60 Hz thresholds. Every performance spec attaches its measurements.
 
-- `pnpm run test:visualizer-perf` runs the synthetic workload of 300 moving optical sources (`optical-playback-perf.spec.ts`) through the High preset's fog, surface, shadow and bloom passes on the embedded-demo target, and checks both its own frame pacing and a Chromium presentation trace over twelve seconds at the display's measured refresh rate. It requires WebGPU: it is skipped when the browser exposes no adapter and fails if the renderer falls back to WebGL.
+- `pnpm run visualizer:perf` runs the synthetic workload of 300 moving optical sources (`optical-playback-perf.spec.ts`) through the High preset's fog, surface, shadow and bloom passes on the embedded-demo target, and checks both its own frame pacing and a Chromium presentation trace over twelve seconds at the display's measured refresh rate. It requires WebGPU: it is skipped when the browser exposes no adapter and fails if the renderer falls back to WebGL.
 - `gdtf-bench-argo-perf.spec.ts` measures the Ayrton Argo 6 FX close-up (337 beams) at High quality in both renderer modes on the native target and records its frame rate; it only fails if rendering stops. It needs the curated GDTF bench (see [GDTF regression testing](docs/src/developer-reference/gdtf-regression-testing.md)); never copy or commit the archives into this repository:
 
   ```sh
@@ -556,7 +597,7 @@ Performance specs are opt-in because their timings depend on the machine. `optic
 | `NIGHTFALL_VISUALIZER_ANTIALIAS_SWEEP=1` | Run the full backend × DPR × quality matrix of the antialias motion test instead of DPR 2 with the Medium and High presets. |
 | `NIGHTFALL_GDTF_BENCH_DIR` | Directory holding the GDTF bench archives. `gdtf-bench-visual`, `gdtf-bench-evaluation` and `gdtf-bench-argo-perf` are skipped without it. |
 | `NIGHTFALL_GDTF_BENCH_SCREENSHOTS=1` | Compare the unlit `gdtf-bench-visual` captures with the reviewed per-platform baselines. |
-| `NIGHTFALL_OPTICAL_PLAYBACK_PERF=1` | Enable `optical-playback-perf.spec.ts` (set by `pnpm run test:visualizer-perf`). |
+| `NIGHTFALL_OPTICAL_PLAYBACK_PERF=1` | Enable `optical-playback-perf.spec.ts` (set by `pnpm run visualizer:perf`). |
 | `NIGHTFALL_VISUALIZER_PERF=1` | Enable `gdtf-bench-argo-perf.spec.ts`, together with `NIGHTFALL_GDTF_BENCH_DIR`. |
 | `NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1` | Enable `visualizer-playback-perf.spec.ts`. |
 | `NIGHTFALL_VISUALIZER_RENDER_MODE=worker` | Render the playback benchmark in the OffscreenCanvas worker instead of the main thread. |

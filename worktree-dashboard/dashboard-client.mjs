@@ -360,7 +360,7 @@ async function fetchDashboard(
     }
     if (error?.cause?.code === "ECONNREFUSED") {
       throw new DashboardUnreachableError(
-        `No worktree dashboard is running at ${DASHBOARD_BASE_URL}. Start it with: pnpm run worktree:dashboard`,
+        `No worktree dashboard is running at ${DASHBOARD_BASE_URL}. Start it with: pnpm run dashboard`,
         { cause: error },
       );
     }

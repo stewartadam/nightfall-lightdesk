@@ -351,7 +351,7 @@ function e2eHarnessExclusionPlugin(): Plugin {
  * Decides whether the engine worker bundles the embedded demo runtime.
  *
  * Demo builds always include it. The dev server includes it only when
- * `pnpm run wasm-build:browser-demo` output exists, so native-backend sessions
+ * `pnpm run wasm:demo --dev` output exists, so native-backend sessions
  * and CI smoke tests do not depend on the demo engine build; without it, the
  * worker reports that the build lacks the embedded demo engine.
  */
@@ -360,7 +360,7 @@ function includesEmbeddedRuntime(command: string, mode: string): boolean {
   if (command !== "serve" && mode !== E2E_MODE) return false;
   if (existsSync(embeddedRuntimeModule)) return true;
   console.warn(
-    "Embedded demo engine not found; the dev server serves the native-only worker. Run `pnpm run wasm-build:browser-demo` to enable demo mode.",
+    "Embedded demo engine not found; the dev server serves the native-only worker. Run `pnpm run wasm:demo --dev` to enable demo mode.",
   );
   return false;
 }

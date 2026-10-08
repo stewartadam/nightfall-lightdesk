@@ -50,7 +50,7 @@ const SERVICE_DEFINITIONS = {
   },
   wasm: {
     command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-    args: ["run", "wasm-build:dev"],
+    args: ["run", "wasm:bridge", "--dev"],
   },
   "artnet-sender": {
     cargo: true,

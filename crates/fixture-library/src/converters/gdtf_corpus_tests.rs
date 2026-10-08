@@ -6,16 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Stateless sweep over a whole GDTF collection.
+//! Stateless check of a whole GDTF collection.
 //!
 //! Every archive and mode must end in one of two acceptable outcomes: the
 //! importer rejects it with a stage-tagged error, or it converts and the
 //! result satisfies every structural invariant. A panic, a timeout, or an
-//! accepted mode that breaks an invariant fails the sweep. The outcome does
+//! accepted mode that breaks an invariant fails the corpus check. The outcome does
 //! not depend on previous runs; the per-stage report written to
 //! NIGHTFALL_GDTF_CORPUS_REPORT is informational only.
 //!
-//! Run with `NIGHTFALL_GDTF_CORPUS_DIR=<dirs> pnpm run test:gdtf-sweep`
+//! Run with `NIGHTFALL_GDTF_CORPUS_DIR=<dirs> pnpm run gdtf:corpus`
 //! (a platform path list; directories are searched recursively).
 
 use std::collections::BTreeMap;
@@ -33,7 +33,7 @@ use crate::testing::invariants::check_invariants;
 /// Wall-clock budget for importing every mode of one archive.
 const ARCHIVE_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Result of sweeping one archive.
+/// Result of checking one archive.
 #[derive(Debug, Serialize)]
 #[serde(tag = "stage", rename_all = "snake_case")]
 enum ArchiveOutcome {
@@ -59,16 +59,16 @@ enum ArchiveOutcome {
     /// Import exceeded [`ARCHIVE_TIMEOUT`] (failure).
     TimedOut,
     /// Not started because another archive timed out first. The timed-out
-    /// archive already fails the sweep, and its conversion thread cannot be
-    /// stopped, so the sweep winds down instead of competing with it.
-    NotSwept,
+    /// archive already fails the corpus check, and its conversion thread cannot be
+    /// stopped, so the corpus check winds down instead of competing with it.
+    NotChecked,
 }
 
 impl ArchiveOutcome {
-    /// Returns whether this outcome fails the sweep.
+    /// Returns whether this outcome fails the corpus check.
     fn is_failure(&self) -> bool {
         match self {
-            Self::RejectedArchive { .. } | Self::NotSwept => false,
+            Self::RejectedArchive { .. } | Self::NotChecked => false,
             Self::Imported { violations, .. } => !violations.is_empty(),
             Self::Panicked { .. } | Self::TimedOut => true,
         }
@@ -77,7 +77,7 @@ impl ArchiveOutcome {
 
 /// Informational per-stage summary.
 #[derive(Debug, Default, Serialize)]
-struct SweepReport {
+struct CorpusReport {
     archives: usize,
     rejected_archives: usize,
     modes_accepted: usize,
@@ -86,8 +86,8 @@ struct SweepReport {
     panics: usize,
     timeouts: usize,
     /// Archives not started because an earlier archive timed out.
-    not_swept: usize,
-    /// Directories or entries that could not be read, with the error; their archives were not swept.
+    not_checked: usize,
+    /// Directories or entries that could not be read, with the error; their archives were not checked.
     unreadable_paths: Vec<String>,
     /// Rejection reasons with occurrence counts, most common first.
     rejection_reasons: Vec<(String, usize)>,
@@ -96,7 +96,7 @@ struct SweepReport {
 }
 
 /// Imports every mode of one archive and checks invariants.
-fn sweep_archive(path: &Path) -> ArchiveOutcome {
+fn check_archive(path: &Path) -> ArchiveOutcome {
     let metadata = match GdtfMetadata::from_file(path) {
         Ok(metadata) => metadata,
         Err(error) => {
@@ -144,11 +144,11 @@ fn sweep_archive(path: &Path) -> ArchiveOutcome {
     }
 }
 
-/// Runs [`sweep_archive`] on a worker thread, converting panics and timeouts into outcomes.
-fn sweep_archive_guarded(path: PathBuf) -> ArchiveOutcome {
+/// Runs [`check_archive`] on a worker thread, converting panics and timeouts into outcomes.
+fn check_archive_guarded(path: PathBuf) -> ArchiveOutcome {
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
-        let outcome = std::panic::catch_unwind(|| sweep_archive(&path)).unwrap_or_else(|panic| {
+        let outcome = std::panic::catch_unwind(|| check_archive(&path)).unwrap_or_else(|panic| {
             ArchiveOutcome::Panicked {
                 message: panic
                     .downcast_ref::<String>()
@@ -167,11 +167,11 @@ fn sweep_archive_guarded(path: PathBuf) -> ArchiveOutcome {
 /// Recursively collects `.gdtf` files under a directory in a stable order.
 ///
 /// A directory or entry that cannot be read is logged as a warning and
-/// recorded in `unreadable` so the sweep reports what it skipped, and the
+/// recorded in `unreadable` so the corpus check reports what it skipped, and the
 /// walk continues with the rest of the collection.
 fn collect_archives(dir: &Path, archives: &mut Vec<PathBuf>, unreadable: &mut Vec<String>) {
     let mut skip = |path: &Path, error: std::io::Error| {
-        tracing::warn!(path = %path.display(), %error, "gdtf_sweep_path_unreadable");
+        tracing::warn!(path = %path.display(), %error, "gdtf_corpus_path_unreadable");
         eprintln!("warning: skipping unreadable {}: {error}", path.display());
         unreadable.push(format!("{}: {error}", path.display()));
     };
@@ -202,10 +202,10 @@ fn collect_archives(dir: &Path, archives: &mut Vec<PathBuf>, unreadable: &mut Ve
     }
 }
 
-/// Sweeps every archive under NIGHTFALL_GDTF_CORPUS_DIR.
+/// Checks every archive under NIGHTFALL_GDTF_CORPUS_DIR.
 #[test]
 #[ignore = "requires NIGHTFALL_GDTF_CORPUS_DIR"]
-fn gdtf_corpus_sweep() {
+fn gdtf_corpus() {
     let dirs = std::env::var_os("NIGHTFALL_GDTF_CORPUS_DIR")
         .expect("NIGHTFALL_GDTF_CORPUS_DIR must list GDTF collection directories");
     let mut archives = Vec::new();
@@ -233,9 +233,9 @@ fn gdtf_corpus_sweep() {
                         .iter()
                         .map(|path| {
                             if timed_out.load(Ordering::Relaxed) {
-                                return (path.clone(), ArchiveOutcome::NotSwept);
+                                return (path.clone(), ArchiveOutcome::NotChecked);
                             }
-                            let outcome = sweep_archive_guarded(path.clone());
+                            let outcome = check_archive_guarded(path.clone());
                             if matches!(outcome, ArchiveOutcome::TimedOut) {
                                 timed_out.store(true, Ordering::Relaxed);
                             }
@@ -246,12 +246,12 @@ fn gdtf_corpus_sweep() {
             })
             .collect::<Vec<_>>()
             .into_iter()
-            .flat_map(|handle| handle.join().expect("sweep worker"))
+            .flat_map(|handle| handle.join().expect("corpus worker"))
             .collect()
     });
     let _ = std::panic::take_hook();
 
-    let mut report = SweepReport {
+    let mut report = CorpusReport {
         archives: results.len(),
         unreadable_paths,
         ..Default::default()
@@ -282,7 +282,7 @@ fn gdtf_corpus_sweep() {
             }
             ArchiveOutcome::Panicked { .. } => report.panics += 1,
             ArchiveOutcome::TimedOut => report.timeouts += 1,
-            ArchiveOutcome::NotSwept => report.not_swept += 1,
+            ArchiveOutcome::NotChecked => report.not_checked += 1,
         }
         if outcome.is_failure() {
             failures.push(format!("{name}: {outcome:?}"));
@@ -296,10 +296,10 @@ fn gdtf_corpus_sweep() {
 
     if let Some(path) = std::env::var_os("NIGHTFALL_GDTF_CORPUS_REPORT") {
         std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
-            .expect("write sweep report");
+            .expect("write corpus report");
     }
     println!(
-        "GDTF sweep: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} panics, {} timeouts, {} not swept after a timeout, {} unreadable paths skipped",
+        "GDTF corpus: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} panics, {} timeouts, {} not checked after a timeout, {} unreadable paths skipped",
         report.archives,
         report.rejected_archives,
         report.modes_accepted,
@@ -307,12 +307,12 @@ fn gdtf_corpus_sweep() {
         report.modes_with_violations,
         report.panics,
         report.timeouts,
-        report.not_swept,
+        report.not_checked,
         report.unreadable_paths.len()
     );
     assert!(
         failures.is_empty(),
-        "{} archives failed the sweep:\n{}",
+        "{} archives failed the corpus check:\n{}",
         failures.len(),
         failures.join("\n")
     );

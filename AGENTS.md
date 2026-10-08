@@ -72,7 +72,10 @@ The backend is accessible on NIGHTFALL_PORT and frontend at http://localhost:{NI
 - `pnpm run lint` - run biome lints
 - `pnpm run typecheck` - run tsc to validate typescript
 - `pnpm run typeshare` - export typeshare types from Rust to TS
-- `pnpm run wasm-build:dev` - rebuild WASM binaries (in particular after adjusting command parsing)
+- `pnpm run wasm:bridge --dev` - rebuild the WASM bridge the web UI needs (in particular after adjusting command parsing)
+- `pnpm run wasm:demo --dev` - rebuild the embedded browser demo engine; the Playwright wrapper rebuilds both packages before each run
+- `pnpm run wasm --dev` - rebuild both WASM packages
+- See the package scripts table in `CONTRIBUTING.md` for the other scripts
 
 ## Comments
 

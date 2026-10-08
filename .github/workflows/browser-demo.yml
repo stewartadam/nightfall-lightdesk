@@ -82,15 +82,15 @@ jobs:
         run: pnpm test
 
       - name: Build and package the release artifact
-        run: pnpm run build:browser-demo:prepared
+        run: pnpm run demo:bundle
 
       - name: Run the Chromium product flow
         if: inputs.product-flows
-        run: pnpm run test:browser-demo-artifact --browser chromium
+        run: pnpm run demo:test --browser chromium
 
       - name: Run the Firefox product flow
         if: inputs.product-flows
-        run: pnpm run test:browser-demo-artifact --browser firefox
+        run: pnpm run demo:test --browser firefox
 
       - name: Upload the immutable demo artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

@@ -8,12 +8,12 @@ results from earlier runs.
 | Layer | What it proves | Runs |
 | --- | --- | --- |
 | Synthetic archives | Each edge case (references, breaks, sparse fine bytes, virtual channels, functions, wheels, emitters) converts as specified | Every PR (`cargo test`) |
-| Structural invariants | No two parameters share a slot, footprints fit a universe, the geometry is a well-formed tree, beams and joints bind to real elements | Every PR, bench and sweep |
+| Structural invariants | No two parameters share a slot, footprints fit a universe, the geometry is a well-formed tree, beams and joints bind to real elements | Every PR, bench and corpus check |
 | Reference decoder | Bytes the engine writes land where the GDTF file says, checked by an independent decoder | Every PR (synthetic and 64 random layouts), bench |
 | Scene-graph tests | World-space beam directions and pivots for rest poses, nested pan/tilt, independent heads, mounting and smoothing | Every PR (`pnpm run test:webui-node`) |
 | Curated bench | 18 pinned archives: every mode converts, invariants and reference decoder agree, channel charts match | On demand |
 | Visual bench | Real archives render with loaded meshes; unlit bodies match reviewed baselines | On demand |
-| Corpus sweep | Every archive in a collection is rejected cleanly or converts without violations | On demand |
+| Corpus check | Every archive in a collection is rejected cleanly or converts without violations | On demand |
 
 ## Synthetic archives
 
@@ -36,8 +36,8 @@ The archives are not redistributed with the repository. Fetch them from
 
 ```sh
 export NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench
-GDTF_SHARE_USER=<user> GDTF_SHARE_PASSWORD=<password> pnpm run gdtf-bench:fetch
-pnpm run test:gdtf-bench
+GDTF_SHARE_USER=<user> GDTF_SHARE_PASSWORD=<password> pnpm run gdtf:fetch
+pnpm run gdtf:bench
 ```
 
 The fetcher matches each archive to GDTF Share revisions of the same
@@ -79,23 +79,23 @@ check channel semantics numerically: console output of relation followers
 (virtual dimmer chains) and the emitter colors the visualizer derives from
 it. Shared bench setup lives in `webui/e2e/gdtf-bench-support.ts`.
 
-## Corpus sweep
+## Corpus check
 
 ```sh
 NIGHTFALL_GDTF_CORPUS_DIR=/path/to/collection \
-NIGHTFALL_GDTF_CORPUS_REPORT=sweep.json \
-pnpm run test:gdtf-sweep
+NIGHTFALL_GDTF_CORPUS_REPORT=corpus.json \
+pnpm run gdtf:corpus
 ```
 
 `NIGHTFALL_GDTF_CORPUS_DIR` is a platform path list searched recursively. Each
 archive must either be rejected with an error or convert every mode without
 invariant violations; panics, timeouts and violations fail. After the first
-timeout the sweep starts no further archives, since the hung conversion cannot
-be stopped; the rest are reported as not swept. Directories that cannot be read
+timeout the check starts no further archives, since the hung conversion cannot
+be stopped; the rest are reported as not checked. Directories that cannot be read
 are skipped with a warning and listed in the report. The JSON report
 (per-stage counts, rejection reasons, per-archive outcomes) is informational
-and never compared between runs. To guard a behavior found in the sweep, add a
-synthetic test or a bench archive rather than recording sweep results.
+and never compared between runs. To guard a behavior found in the corpus check, add a
+synthetic test or a bench archive rather than recording corpus results.
 
 Conversion diagnostics (`GdtfDiagnostic`) record faults the converter
 tolerates: unreachable channels, dangling or cyclic references, duplicate
@@ -113,7 +113,7 @@ be removed once `gdtf-rs` reads those constructs.
 
 ## Continuous integration
 
-No CI workflow runs the bench, visual bench or sweep yet. They need
+No CI workflow runs the bench, visual bench or corpus check yet. They need
 manufacturer archives that cannot be redistributed, and CI policy
 (`scripts/ci-security.node.test.mjs`) keeps secrets and repository
 permissions out of build and test jobs. Workflow artifacts on this public

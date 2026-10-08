@@ -142,7 +142,7 @@ repos:
 
     - id: wasm-build-after-git-update
       name: Build Wasm
-      entry: pnpm run wasm-build:dev
+      entry: pnpm run wasm:bridge --dev
       language: system
       stages: [post-merge, post-rewrite]
       always_run: true
