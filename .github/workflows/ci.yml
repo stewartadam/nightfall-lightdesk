@@ -68,7 +68,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" | jq 'add' > "$RUNNER_TEMP/releases.json"
+        run: gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" | jq 'add // []' > "$RUNNER_TEMP/releases.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         with:
