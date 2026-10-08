@@ -11,16 +11,23 @@ import type { Page } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-const SOAK_DURATION_MS = 15 * 60 * 1_000;
+const SOAK_DURATION_MS = 5 * 60 * 1_000;
 const SAMPLE_INTERVAL_MS = 5_000;
-const ACTIVITY_INTERVAL_MS = 60_000;
 const MAX_WASM_GROWTH_BYTES = 32 * 1024 * 1024;
+/** Lo-fi timeline in the generated sample show, the one the demo opens with. */
+const DEMO_TIMELINE_LABEL = "Lo-fi";
 
 interface SoakSample {
   elapsedMs: number;
   jsHeapBytes: number | null;
+  positionMs: number;
   queueDepth: number;
   wasmMemoryBytes: number;
+}
+
+interface DemoTimeline {
+  uid: string;
+  contentEndMs: number;
 }
 
 /** Return the URL for either embedded-demo development or deployment mode. */
@@ -30,59 +37,140 @@ function demoPath(): string {
     : "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1";
 }
 
-/** Open the seeded timeline panel and return its visible timeline surface. */
-async function openDemoTimeline(page: Page) {
+/**
+ * Open the seeded timeline in a panel unless the demo layout already shows it,
+ * and return the timeline with the time its last action ends, which is where
+ * the loop range wraps playback.
+ */
+async function openDemoTimeline(page: Page): Promise<DemoTimeline> {
   await waitForDockviewApp(page);
-  const timelineUid = await page.evaluate(() => {
+  const timeline = await page.evaluate((label) => {
     const stores = (window as any).appStores;
-    const timeline = Object.values(stores.timelines.get()).find(
-      (candidate: any) => candidate.identifiers.label === "Nightfall Demo",
+    const durationMs = (duration: { secs: number; nanos: number }) =>
+      duration.secs * 1_000 + duration.nanos / 1_000_000;
+    const entry = Object.values(stores.timelines.get()).find(
+      (candidate: any) => candidate.identifiers.label === label,
     ) as any;
-    if (!timeline) throw new Error("Seeded demo timeline was unavailable");
-    stores.dockApi.get().addPanel({
-      id: `browser-demo-soak-${timeline.identifiers.uid}`,
-      component: "Timeline",
-      title: "Nightfall Demo Timeline",
-      params: { initialTimelineUid: timeline.identifiers.uid },
-      position: {
-        referencePanel: "panel-FixtureGrid",
-        direction: "within",
-      },
-    });
-    return timeline.identifiers.uid;
-  });
-  const surface = page.locator(
-    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
-  );
-  await expect(surface).toBeVisible();
-  return surface;
+    if (!entry) throw new Error("Seeded demo timeline was unavailable");
+    const alreadyOpen = document.querySelector(
+      `[data-timeline-surface="true"][data-timeline-uid="${entry.identifiers.uid}"]`,
+    );
+    if (!alreadyOpen) {
+      stores.dockApi.get().addPanel({
+        id: `browser-demo-soak-${entry.identifiers.uid}`,
+        component: "Timeline",
+        title: `${label} Timeline`,
+        params: { initialTimelineUid: entry.identifiers.uid },
+        position: {
+          referencePanel: "panel-FixtureGrid",
+          direction: "within",
+        },
+      });
+    }
+    const actionEnds = entry.tracks.flatMap((track: any) =>
+      track.actions.map(
+        (action: any) =>
+          durationMs(action.position) + durationMs(action.duration),
+      ),
+    );
+    return {
+      uid: entry.identifiers.uid as string,
+      contentEndMs: Math.max(...actionEnds),
+    };
+  }, DEMO_TIMELINE_LABEL);
+  await expect(timelineSurface(page, timeline.uid)).toBeVisible();
+  return timeline;
 }
 
-/** Capture live worker queue, WASM allocation, and optional Chromium heap metrics. */
+/** Locate the first editing surface showing one timeline. */
+function timelineSurface(page: Page, timelineUid: string) {
+  return page
+    .locator(
+      `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+    )
+    .first();
+}
+
+/**
+ * Enable a loop range covering every action, so the engine wraps playback to
+ * the start instead of playing on past the last cue.
+ */
+async function loopWholeTimeline(page: Page, timeline: DemoTimeline) {
+  await page.evaluate(
+    async ({ uid, endMs }) => {
+      const stores = (window as any).appStores;
+      const entry = stores.timelines.get()[uid];
+      const result = await stores.sendAndAwait({
+        module: "TimelineCommand",
+        command: {
+          type: "SetTimelineLoopRange",
+          data: {
+            timeline_id: entry.identifiers.id,
+            loop_range: {
+              start: { secs: 0, nanos: 0 },
+              end: {
+                secs: Math.floor(endMs / 1_000),
+                nanos: Math.round((endMs % 1_000) * 1_000_000),
+              },
+              enabled: true,
+            },
+          },
+        },
+      });
+      if (result.outcome.type !== "Succeeded") {
+        throw new Error(
+          `Unable to loop demo timeline: ${JSON.stringify(result)}`,
+        );
+      }
+    },
+    { uid: timeline.uid, endMs: Math.ceil(timeline.contentEndMs) },
+  );
+  await expect(
+    timelineSurface(page, timeline.uid).locator(
+      '[data-timeline-loop-overlay="true"]',
+    ),
+  ).toBeVisible();
+}
+
+/**
+ * Capture the playhead, live worker queue, WASM allocation, and optional
+ * Chromium heap metrics.
+ */
 async function sampleRuntime(
   page: Page,
+  timelineUid: string,
   elapsedMs: number,
 ): Promise<SoakSample> {
-  return page.evaluate((elapsed) => {
-    const stores = (window as any).appStores;
-    const runtime = stores.browserDemoRuntimeInfo.get();
-    const stats = stores.wsStats.get();
-    const memory = (
-      performance as Performance & {
-        memory?: { usedJSHeapSize: number };
-      }
-    ).memory;
-    return {
-      elapsedMs: elapsed,
-      jsHeapBytes: memory?.usedJSHeapSize ?? null,
-      queueDepth: stats?.aggregate?.queueDepth ?? 0,
-      wasmMemoryBytes: runtime?.wasmMemoryBytes ?? 0,
-    };
-  }, elapsedMs);
+  return page.evaluate(
+    ({ elapsed, uid }) => {
+      const stores = (window as any).appStores;
+      const timeline = stores.timelines.get()[uid];
+      const position = stores.timecodes.get()[timeline.timecode_uid]?.[1]
+        ?.current_time ?? { secs: 0, nanos: 0 };
+      const runtime = stores.browserDemoRuntimeInfo.get();
+      const stats = stores.wsStats.get();
+      const memory = (
+        performance as Performance & {
+          memory?: { usedJSHeapSize: number };
+        }
+      ).memory;
+      return {
+        elapsedMs: elapsed,
+        jsHeapBytes: memory?.usedJSHeapSize ?? null,
+        positionMs: position.secs * 1_000 + position.nanos / 1_000_000,
+        queueDepth: stats?.aggregate?.queueDepth ?? 0,
+        wasmMemoryBytes: runtime?.wasmMemoryBytes ?? 0,
+      };
+    },
+    { elapsed: elapsedMs, uid: timelineUid },
+  );
 }
 
-/** Exercise playback over fifteen minutes and assert bounded runtime resource use. */
-test("embedded demo remains stable during a fifteen-minute playback soak", async ({
+/**
+ * Loop the whole demo timeline for five minutes, then assert that playback
+ * kept wrapping and that runtime resource use stayed bounded.
+ */
+test("embedded demo remains stable while looping a timeline for five minutes", async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -112,21 +200,19 @@ test("embedded demo remains stable during a fifteen-minute playback soak", async
     )
     .toBe(true);
 
-  const surface = await openDemoTimeline(page);
+  const timeline = await openDemoTimeline(page);
+  const surface = timelineSurface(page, timeline.uid);
+  await loopWholeTimeline(page, timeline);
   const samples: SoakSample[] = [];
   const startedAt = Date.now();
   const finishesAt = startedAt + SOAK_DURATION_MS;
-  let nextActivityAt = startedAt;
 
   try {
+    await surface.getByRole("button", { name: "Play timeline" }).click();
     while (Date.now() < finishesAt) {
-      if (Date.now() >= nextActivityAt) {
-        await surface.getByRole("button", { name: "Play timeline" }).click();
-        await page.waitForTimeout(1_500);
-        await surface.getByRole("button", { name: "Stop timeline" }).click();
-        nextActivityAt += ACTIVITY_INTERVAL_MS;
-      }
-      samples.push(await sampleRuntime(page, Date.now() - startedAt));
+      samples.push(
+        await sampleRuntime(page, timeline.uid, Date.now() - startedAt),
+      );
       await page.waitForTimeout(
         Math.min(SAMPLE_INTERVAL_MS, Math.max(0, finishesAt - Date.now())),
       );
@@ -143,6 +229,17 @@ test("embedded demo remains stable during a fifteen-minute playback soak", async
     JSON.stringify({ durationMs: Date.now() - startedAt, samples }, null, 2),
   );
 
+  const positions = samples.map((sample) => sample.positionMs);
+  const wraps = positions.filter(
+    (position, index) => index > 0 && position < positions[index - 1],
+  ).length;
+  // Allow for wraps that land between samples or near the run's edges.
+  expect(wraps).toBeGreaterThanOrEqual(
+    Math.floor(SOAK_DURATION_MS / timeline.contentEndMs / 2),
+  );
+  expect(Math.max(...positions)).toBeLessThanOrEqual(
+    timeline.contentEndMs + 1_000,
+  );
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
   expect(Math.max(...samples.map((sample) => sample.queueDepth))).toBeLessThan(
