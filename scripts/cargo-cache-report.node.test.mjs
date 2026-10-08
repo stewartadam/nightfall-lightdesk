@@ -123,6 +123,15 @@ test("renders the job summary", () => {
     /Rebuilt \*\*1\*\* dependency units \(2 packages\) and \*\*5\*\* workspace units\./,
   );
   assert.match(markdown, /Rebuilt dependencies: `alpha`, and 1 more\./);
+  assert.match(markdown, /exact-hit cache was missing these units/);
+  assert.doesNotMatch(
+    renderReport({
+      label: "native",
+      restore: "partial hit (older cache)",
+      summary,
+    }),
+    /exact-hit cache was missing/,
+  );
 
   const toolsOnly = renderReport({
     label: "source-tools",

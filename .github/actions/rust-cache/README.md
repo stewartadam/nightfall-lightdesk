@@ -14,6 +14,16 @@ uninstalls every toolchain except the active one from `rust-toolchain.toml` firs
 The key then follows the pinned compiler's `rustc -vV` output (release and commit
 hash), so it stays correct even if the pin ever becomes a floating channel.
 
+## Cancelled jobs never save
+
+`rust-cache` skips saving after an exact key match, so whatever is saved first
+under a key stays until the lockfile or toolchain changes. With
+`cache-on-failure: true`, a job cancelled mid-build (for example by a newer push)
+would save a partial cache that every later run restores as an exact hit and then
+partly rebuilds. When `cache-on-failure` is on, the action adds a post step that
+runs only on cancellation and clears `CACHE_ON_FAILURE`, which `rust-cache`'s own
+post condition reads, so failed jobs still save and cancelled ones do not.
+
 ## Cache report
 
 Each job summary gets a "Rust cache" section:
@@ -23,7 +33,8 @@ Each job summary gets a "Rust cache" section:
   only whether the key matched exactly.
 - For caches with compiled artifacts, a table counts Cargo units reused from the
   cache and units rebuilt by the job, split into dependencies and workspace
-  crates, and lists rebuilt dependencies.
+  crates, and lists rebuilt dependencies. Rebuilt dependencies after an exact hit
+  mean the saved cache was incomplete.
 
 A unit counts as rebuilt when Cargo wrote its fingerprint after the cache was
 restored, so the report covers every Cargo invocation in the job, including

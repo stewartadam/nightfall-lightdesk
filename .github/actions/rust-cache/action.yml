@@ -15,7 +15,7 @@ inputs:
     required: false
     default: 'true'
   cache-on-failure:
-    description: Save the cache even when the job fails.
+    description: Save the cache even when the job fails. Cancelled jobs never save.
     required: false
     default: 'false'
 
@@ -59,3 +59,8 @@ runs:
         label: ${{ inputs.shared-key || inputs.key }}
         restored: ${{ steps.cache.outputs.cache-hit }}
         targets: ${{ inputs.cache-targets }}
+
+    # Must come after the cache step so its post step runs before rust-cache saves.
+    - name: Skip the Cargo cache save if the job is cancelled
+      if: inputs.cache-on-failure == 'true'
+      uses: ./.github/actions/rust-cache/skip-cancelled-save

@@ -97,6 +97,11 @@ export function renderReport({
         ? `, and ${names.length - shown.length} more`
         : "";
     lines.push("", `Rebuilt dependencies: ${shown.join(", ")}${more}.`);
+    if (restore === "exact hit")
+      lines.push(
+        "",
+        "The exact-hit cache was missing these units, so a cancelled or failed run probably saved it mid-build. rust-cache never re-saves an exact hit; it is replaced when the lockfile or toolchain changes.",
+      );
   }
   return `${lines.join("\n")}\n`;
 }
