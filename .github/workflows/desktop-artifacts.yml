@@ -58,7 +58,7 @@ jobs:
           path: ${{ runner.temp }}/commits.json
           if-no-files-found: error
           retention-days: 7
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust-cache
         with:
           key: desktop-web
           cache-on-failure: true
@@ -133,7 +133,7 @@ jobs:
           cache: pnpm
       - name: Load the repository Rust toolchain
         run: rustup target add ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust-cache
         with:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true

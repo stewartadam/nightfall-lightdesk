@@ -116,7 +116,11 @@ and Node hooks run once in the downstream WebUI job after the shared WASM assets
 are available. The browser demo job does not compile native Rust, because the
 browser runtime is a default member and its tests already run here.
 
-The native job uses a stable `Swatinem/rust-cache` shared key, `native`. The key
+Jobs cache Cargo state through the [Rust cache action](../actions/rust-cache/README.md),
+which wraps `Swatinem/rust-cache`, keys caches on the pinned compiler only, and
+reports reused and rebuilt crates in each job summary.
+
+The native job uses a stable shared key, `native`. The key
 deliberately omits a manifest hash so a version bump or profile change restores
 the newest native cache instead of starting cold.
 The action adds runner architecture/OS, toolchain, compiler environment and
@@ -139,5 +143,5 @@ pinned toolchain.
 
 Validate syntax with `pnpm exec prek run actionlint --all-files`. On the first hosted
 run, confirm that a failure in any native step fails the downstream check. After a
-successful base-branch run, a PR with unchanged Rust inputs should report a restored
-native cache and avoid rebuilding unchanged dependencies.
+successful base-branch run, a PR with unchanged Rust inputs should report an exact or
+partial cache hit with no rebuilt dependencies in its job summary.

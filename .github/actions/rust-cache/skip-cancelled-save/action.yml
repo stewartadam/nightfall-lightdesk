@@ -1,0 +1,10 @@
+name: Skip Rust cache save on cancellation
+description: Stop rust-cache from saving when the job was cancelled, while still saving after failures.
+
+runs:
+  using: node24
+  main: arm.mjs
+  # Post steps run in reverse order, so this runs before rust-cache's own post step,
+  # whose post-if reads CACHE_ON_FAILURE.
+  post: disarm-save.mjs
+  post-if: cancelled()
