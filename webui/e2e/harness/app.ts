@@ -20,6 +20,7 @@ export * as propertyInspectorContext from "../../features/property-inspector/con
 export * as timelineJump from "../../features/timeline/model/timeline-jump";
 export * as visualizerContext from "../../features/visualizer/context/visualizer-context";
 export * as visualizerSettings from "../../features/visualizer/state/settings";
+export * as welcomeGuideLessons from "../../features/welcome-guide/lessons";
 export * as api from "../../lib/api";
 export * as dockviewActiveLayout from "../../lib/dockview-active-layout";
 export * as dockviewLayout from "../../lib/dockview-layout";

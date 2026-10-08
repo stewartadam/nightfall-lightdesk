@@ -7,6 +7,7 @@
  */
 
 import { utimes } from "node:fs/promises";
+import { REQUIRES_DEV_SERVER, servesE2eBuild } from "./app-hooks";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -443,11 +444,11 @@ test("guide content waits for prerequisites and renders text after actions", asy
 }, testInfo) => {
   await openSample(page);
   await page.evaluate(async () => {
-    const path = "/features/welcome-guide/lessons.ts";
-    const { GUIDE_LESSONS } = await import(path);
+    const { GUIDE_LESSONS } = (await window.__nightfallHarness.load("app"))
+      .welcomeGuideLessons;
     const intensity = GUIDE_LESSONS.find(
-      (lesson: any) => lesson.id === "welcome",
-    ).steps.find((step: any) => step.id === "intensity");
+      (lesson) => lesson.id === "welcome",
+    )!.steps.find((step) => step.id === "intensity")!;
     intensity.content.push({
       type: "text",
       text: "Text after the action callout.",
@@ -1061,6 +1062,7 @@ for (const platform of ["MacIntel", "Win32"]) {
 test("lesson hot reload preserves the guide and Dockview layout", async ({
   page,
 }, testInfo) => {
+  test.skip(servesE2eBuild, REQUIRES_DEV_SERVER);
   // Worker CSS HMR currently throws in Vite's client (nightfall-lightdesk-bbg).
   await openSample(page, false);
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
@@ -2296,8 +2298,8 @@ test("lesson end clears the programmer in one press", async ({ page }) => {
 test("lessons never take over a user layout named Lesson", async ({ page }) => {
   await openSample(page);
   await page.evaluate(async () => {
-    const path = "/lib/layout-management.ts";
-    const { createNamedLayout } = await import(path);
+    const { createNamedLayout } = (await window.__nightfallHarness.load("app"))
+      .layoutManagement;
     await createNamedLayout((window as any).appStores.dockApi.get(), "Lesson", {
       blank: true,
     });
