@@ -11,7 +11,7 @@ Install the pinned Rust license collector before building web or desktop assets:
 cargo install cargo-about --locked --version 0.8.4
 ```
 
-`pnpm run build` and `pnpm run build:browser-demo` generate these files in
+`pnpm run build` and `pnpm run demo:build` generate these files in
 `webui/dist/notices/`:
 
 - `THIRD-PARTY-NOTICES.json`: the searchable About dialog's inventory.
@@ -33,7 +33,7 @@ the native application graph with the features in `tauri.conf.json`. CI builds
 the shared web assets once, then runs this on each packaging runner:
 
 ```sh
-pnpm run notices:desktop aarch64-apple-darwin
+pnpm run package:notices aarch64-apple-darwin
 ```
 
 Use the actual installer target. The Tauri resource map includes the notices

@@ -6,13 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 
 const SAMPLE_RATE_HZ = 8_000;
@@ -26,7 +20,7 @@ function writeAscii(view, offset, text) {
   }
 }
 
-/** Build a deterministic mono PCM click track without external media inputs. */
+/** Build a deterministic mono PCM click track for specs that need audio without external media. */
 export function createSampleWav() {
   const sampleCount = SAMPLE_RATE_HZ * SAMPLE_DURATION_SECONDS;
   const buffer = new ArrayBuffer(44 + sampleCount);
@@ -57,18 +51,16 @@ export function createSampleWav() {
 
 /** Report whether a file holds real media rather than an unfetched Git LFS pointer. */
 function isFetchedMedia(path) {
-  if (!existsSync(path)) return false;
   const head = readFileSync(path).subarray(0, LFS_POINTER_PREFIX.length);
   return head.toString("utf8") !== LFS_POINTER_PREFIX;
 }
 
 /**
- * Write audio for every timeline the demo showfile references.
- * Bundled sample tracks with a matching file name are copied as-is; any other
- * path, or a sample whose LFS object was not fetched, receives the generated click track.
- * Returns each written path with the source used.
+ * Copy the bundled sample track for every timeline the demo showfile
+ * references, matched by file name. A missing track, or one whose Git LFS
+ * object was never fetched, is a packaging error. Returns each written path.
  */
-export function writeTimelineAudio({ showfilePath, sampleAudioDir }) {
+export function copyTimelineAudio({ showfilePath, sampleAudioDir }) {
   const showfile = JSON.parse(readFileSync(showfilePath, "utf8"));
   const audioPaths = [
     ...new Set(
@@ -83,12 +75,18 @@ export function writeTimelineAudio({ showfilePath, sampleAudioDir }) {
   return audioPaths.map((audioPath) => {
     const outputPath = resolve(dirname(showfilePath), audioPath);
     const samplePath = resolve(sampleAudioDir, basename(audioPath));
-    mkdirSync(dirname(outputPath), { recursive: true });
-    if (isFetchedMedia(samplePath)) {
-      copyFileSync(samplePath, outputPath);
-      return { path: outputPath, source: "sample" };
+    if (!existsSync(samplePath)) {
+      throw new Error(
+        `No bundled sample track for ${audioPath} (${samplePath})`,
+      );
     }
-    writeFileSync(outputPath, createSampleWav());
-    return { path: outputPath, source: "generated" };
+    if (!isFetchedMedia(samplePath)) {
+      throw new Error(
+        `${samplePath} is a Git LFS pointer; run \`git lfs pull\` first`,
+      );
+    }
+    mkdirSync(dirname(outputPath), { recursive: true });
+    copyFileSync(samplePath, outputPath);
+    return outputPath;
   });
 }

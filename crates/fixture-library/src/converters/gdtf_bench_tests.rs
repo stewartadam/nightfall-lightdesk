@@ -10,7 +10,7 @@
 //!
 //! The archives cannot be redistributed with the repository, so these tests
 //! are ignored by default and run with
-//! `NIGHTFALL_GDTF_BENCH_DIR=<dir> pnpm run test:gdtf-bench`. Once requested,
+//! `NIGHTFALL_GDTF_BENCH_DIR=<dir> pnpm run gdtf:bench`. Once requested,
 //! a missing directory, missing archive or changed hash fails the run instead
 //! of skipping.
 //!

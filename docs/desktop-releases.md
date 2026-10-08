@@ -78,8 +78,8 @@ missing files, empty files, and unresolved LFS pointers. New sample shows copy
 these files into their own timeline-audio folders; existing shows retain their
 own copies when application resources change.
 
-After an initial `pnpm run tauri-build`, audio-only changes can be repackaged with
-`pnpm run tauri-bundle --bundles <formats>` (add `--target <triple>` or `--debug`
+After an initial `pnpm tauri build`, audio-only changes can be repackaged with
+`pnpm tauri bundle --bundles <formats>` (add `--target <triple>` or `--debug`
 to match the original build). This runs the resource validation and bundler without
 Cargo compilation. Normal `tauri build` may still rerun Tauri's resource staging
 when resources change; use the bundle-only command for audio-only updates.

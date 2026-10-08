@@ -1,5 +1,5 @@
 {
-  "description": "Curated GDTF bench. Archives come from GDTF Share; they are not redistributed with the repository; fetch them with `pnpm run gdtf-bench:fetch`. Hashes pin the exact revisions; mode names are exact, including significant whitespace.",
+  "description": "Curated GDTF bench. Archives come from GDTF Share; they are not redistributed with the repository; fetch them with `pnpm run gdtf:fetch`. Hashes pin the exact revisions; mode names are exact, including significant whitespace.",
   "source": "GDTF Share collection, 2025-12-30; mac-viper, magicpanel, volero, magicblade and argo-6-fx re-pinned 2026-09-29 after GDTF Share replaced the earlier revisions",
   "archives": [
     {

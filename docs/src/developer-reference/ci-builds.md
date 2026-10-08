@@ -15,8 +15,8 @@ execution and release authority in separate jobs, not just separate steps. See
 the repository's [CI trust-boundary design](https://github.com/stewartadam/nightfall-lightdesk/blob/main/docs/ci-security.md)
 for the threat model, source handoff, and artifact validation rules.
 
-`pnpm run build:browser-demo` builds WASM before packaging for local use.
-`pnpm run build:browser-demo:prepared` requires both generated WASM packages in
+`pnpm run demo:build` builds WASM before packaging for local use.
+`pnpm run demo:bundle` requires both generated WASM packages in
 `webui/assets`; CI uses it after downloading the same-run artifact. Development
 WASM and a redundant wasm32 check are not needed in the release pipeline. The
 precommit workflow also consumes the shared release WASM artifacts.
