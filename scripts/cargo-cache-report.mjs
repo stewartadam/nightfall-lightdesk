@@ -101,48 +101,75 @@ export function renderReport({
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * Lists the `.fingerprint` directory of every profile under a target directory:
- * host profiles (`target/<profile>`) and cross-compiled ones
- * (`target/<triple>/<profile>`). Other trees such as `target/doc` are not walked.
- */
-export function findFingerprintDirectories(targetDir) {
-  const found = [];
-  /** Records profile directories below `directory`, looking one level deeper when `nested`. */
-  function visit(directory, nested) {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const entryPath = path.join(directory, entry.name);
-      const fingerprints = path.join(entryPath, ".fingerprint");
-      if (existsSync(fingerprints)) found.push(fingerprints);
-      else if (nested) visit(entryPath, false);
-    }
-  }
-  if (existsSync(targetDir)) visit(targetDir, true);
-  return found;
+/** Lists the names of a directory's subdirectories. */
+function subdirectories(directory) {
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 }
 
-/** Reads each unit under the given fingerprint directories with the newest mtime of its files. */
-export function readUnits(fingerprintDirectories) {
+/**
+ * Lists every compilation unit's fingerprint directory under a build directory,
+ * for host profiles (`<dir>/<profile>`) and cross-compiled ones
+ * (`<dir>/<triple>/<profile>`). Handles Cargo's classic layout
+ * (`<profile>/.fingerprint/<package>-<hash>`) and the newer per-package layout
+ * (`<profile>/build/<package>/<hash>/fingerprint`). Other trees such as `doc`
+ * are not walked.
+ */
+export function findUnitDirectories(buildDir) {
   const units = [];
-  for (const directory of fingerprintDirectories) {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const unitPath = path.join(directory, entry.name);
-      let modifiedMs = 0;
-      for (const file of readdirSync(unitPath)) {
-        modifiedMs = Math.max(
-          modifiedMs,
-          statSync(path.join(unitPath, file)).mtimeMs,
-        );
+  /** Records the units of one profile directory, if it is one. */
+  function visitProfile(profileDir) {
+    let isProfile = false;
+    const classic = path.join(profileDir, ".fingerprint");
+    if (existsSync(classic)) {
+      isProfile = true;
+      for (const name of subdirectories(classic)) {
+        units.push({
+          package: unitPackage(name),
+          directory: path.join(classic, name),
+        });
       }
-      units.push({ package: unitPackage(entry.name), modifiedMs });
+    }
+    const perPackage = path.join(profileDir, "build");
+    if (existsSync(perPackage)) {
+      isProfile = true;
+      for (const name of subdirectories(perPackage)) {
+        for (const hash of subdirectories(path.join(perPackage, name))) {
+          const fingerprint = path.join(perPackage, name, hash, "fingerprint");
+          if (existsSync(fingerprint))
+            units.push({ package: name, directory: fingerprint });
+        }
+      }
+    }
+    return isProfile;
+  }
+  if (!existsSync(buildDir)) return units;
+  for (const name of subdirectories(buildDir)) {
+    const entryPath = path.join(buildDir, name);
+    if (!visitProfile(entryPath)) {
+      for (const profile of subdirectories(entryPath))
+        visitProfile(path.join(entryPath, profile));
     }
   }
   return units;
 }
 
-/** Asks Cargo for the workspace target directory and member package names, without touching the network. */
+/** Reads each unit's package name and the newest mtime of its fingerprint files. */
+export function readUnits(unitDirectories) {
+  return unitDirectories.map(({ package: name, directory }) => {
+    let modifiedMs = 0;
+    for (const file of readdirSync(directory)) {
+      modifiedMs = Math.max(
+        modifiedMs,
+        statSync(path.join(directory, file)).mtimeMs,
+      );
+    }
+    return { package: name, modifiedMs };
+  });
+}
+
+/** Asks Cargo for the workspace build directory and member package names, without touching the network. */
 function workspaceMetadata() {
   const output = execFileSync(
     "cargo",
@@ -154,7 +181,7 @@ function workspaceMetadata() {
   );
   const metadata = JSON.parse(output);
   return {
-    targetDir: metadata.target_directory,
+    buildDir: metadata.build_directory ?? metadata.target_directory,
     packages: new Set(metadata.packages.map((pkg) => pkg.name)),
   };
 }
@@ -174,9 +201,7 @@ export async function begin() {
   const restoredAtMs = Math.floor(Date.now() / 1000) * 1000;
   const artifactsPresent =
     process.env.INPUT_TARGETS !== "false" &&
-    findFingerprintDirectories(workspaceMetadata().targetDir).some(
-      (directory) => readdirSync(directory).length > 0,
-    );
+    findUnitDirectories(workspaceMetadata().buildDir).length > 0;
   await appendCommandFile("GITHUB_STATE", `restored_at=${restoredAtMs}`);
   await appendCommandFile(
     "GITHUB_STATE",
@@ -201,9 +226,9 @@ export async function report() {
   });
   let summary;
   if (targetsCached) {
-    const { targetDir, packages } = workspaceMetadata();
+    const { buildDir, packages } = workspaceMetadata();
     summary = summarizeUnits(
-      readUnits(findFingerprintDirectories(targetDir)),
+      readUnits(findUnitDirectories(buildDir)),
       packages,
       restoredAtMs,
     );

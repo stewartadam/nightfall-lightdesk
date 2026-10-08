@@ -20,7 +20,7 @@ import { test } from "node:test";
 
 import {
   describeRestore,
-  findFingerprintDirectories,
+  findUnitDirectories,
   readUnits,
   renderReport,
   summarizeUnits,
@@ -134,13 +134,13 @@ test("renders the job summary", () => {
   );
 });
 
-/** Fingerprints are found for host and per-target-triple profiles, using each unit's newest file. */
-test("reads units from host and cross-target profiles", () => {
+/** Units are found in both Cargo layouts, for host and per-target-triple profiles, using each unit's newest file. */
+test("reads units from classic and per-package layouts", () => {
   const root = mkdtempSync(join(tmpdir(), "cargo-cache-report-"));
   try {
-    /** Create one fingerprint unit whose files carry the given modification times in seconds. */
-    function unit(profile, name, mtimes) {
-      const directory = join(root, profile, ".fingerprint", name);
+    /** Create one fingerprint directory whose files carry the given modification times in seconds. */
+    function fingerprint(relativePath, mtimes) {
+      const directory = join(root, relativePath);
       mkdirSync(directory, { recursive: true });
       mtimes.forEach((mtime, index) => {
         const file = join(directory, `file-${index}`);
@@ -148,29 +148,28 @@ test("reads units from host and cross-target profiles", () => {
         utimesSync(file, mtime, mtime);
       });
     }
-    unit("release", "proc-macro2-8c620669baf7394b", [100]);
-    unit(
-      "x86_64-pc-windows-msvc/release",
-      "serde-0123456789abcdef",
+    fingerprint("debug/.fingerprint/proc-macro2-8c620669baf7394b", [100]);
+    fingerprint(
+      "x86_64-pc-windows-msvc/release/build/serde/0123456789abcdef/fingerprint",
       [100, 300],
     );
-    mkdirSync(join(root, "release", "deps", ".fingerprint"), {
-      recursive: true,
-    });
+    fingerprint("release/build/syn/fedcba9876543210/fingerprint", [200]);
+    // Classic build-script output directories and non-profile trees hold no units.
+    mkdirSync(
+      join(root, "debug", "build", "proc-macro2-8c620669baf7394b", "out"),
+      { recursive: true },
+    );
+    mkdirSync(join(root, "doc", "serde"), { recursive: true });
 
-    const directories = findFingerprintDirectories(root).sort();
-    assert.deepEqual(directories, [
-      join(root, "release", ".fingerprint"),
-      join(root, "x86_64-pc-windows-msvc", "release", ".fingerprint"),
-    ]);
-    const units = readUnits(directories).sort((a, b) =>
+    const units = readUnits(findUnitDirectories(root)).sort((a, b) =>
       a.package.localeCompare(b.package),
     );
     assert.deepEqual(units, [
       { package: "proc-macro2", modifiedMs: 100_000 },
       { package: "serde", modifiedMs: 300_000 },
+      { package: "syn", modifiedMs: 200_000 },
     ]);
-    assert.deepEqual(findFingerprintDirectories(join(root, "missing")), []);
+    assert.deepEqual(findUnitDirectories(join(root, "missing")), []);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
