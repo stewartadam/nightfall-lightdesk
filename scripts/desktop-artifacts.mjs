@@ -23,7 +23,7 @@ export const desktopTargets = [
   {
     runner: "macos-15",
     target: "aarch64-apple-darwin",
-    bundles: "dmg",
+    bundles: "app,dmg",
     extensions: [".dmg"],
   },
   {

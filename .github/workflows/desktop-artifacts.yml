@@ -262,7 +262,7 @@ jobs:
           mkdir -p release-metadata/commits
           while IFS= read -r sha; do
             gh api --paginate --slurp "repos/$GH_REPO/commits/$sha/pulls?per_page=100" \
-              | jq 'add' > "release-metadata/commits/$sha.json"
+              | jq 'add // []' > "release-metadata/commits/$sha.json"
           done < "$RUNNER_TEMP/commits"
           # Keep an artifact even when the release range contains no commits.
           cp requests/commits.json release-metadata/commits.json
