@@ -72,7 +72,18 @@ test("parameter deltas keep the UI exact", async ({ page }, testInfo) => {
   expect(stats.gaps).toBe(0);
   expect(stats.driftedKeyframes).toBe(0);
 
-  const rebuilt = await outputSnapshot(page);
+  // Fades keep changing output after the last command, so compare only once it has settled.
+  let rebuilt = await outputSnapshot(page);
+  await expect
+    .poll(
+      async () => {
+        const previous = rebuilt;
+        rebuilt = await outputSnapshot(page);
+        return rebuilt === previous;
+      },
+      { intervals: [500], timeout: 15_000 },
+    )
+    .toBe(true);
   await page.evaluate(() =>
     (
       window as any
@@ -87,4 +98,65 @@ test("parameter deltas keep the UI exact", async ({ page }, testInfo) => {
     body: JSON.stringify(await streamStats(page), null, 2),
     contentType: "application/json",
   });
+});
+
+/**
+ * Verifies the Network settings toggle switches the engine to sending every value in full each
+ * frame, so the UI receives keyframes and no deltas while values change, and that turning it back
+ * on resumes deltas.
+ */
+test("keyframes-only setting sends full frames", async ({ page }, testInfo) => {
+  testInfo.setTimeout(60_000);
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await expect.poll(() => streamStats(page)).toBeDefined();
+
+  await page.keyboard.press("ControlOrMeta+,");
+  const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  await dialog.getByRole("tab", { name: "Network", exact: true }).click();
+  const changedOnly = dialog.getByRole("checkbox", {
+    name: "Send only changed values",
+  });
+  await expect(changedOnly).toBeChecked();
+  await changedOnly.uncheck();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.settings.get().parameter_keyframes_only,
+      ),
+    )
+    .toBe(true);
+  await expect(changedOnly).not.toBeChecked();
+  await dialog.screenshot({
+    path: testInfo.outputPath("keyframes-only-setting.png"),
+  });
+  await page.keyboard.press("Escape");
+
+  const before = await streamStats(page);
+  for (let step = 1; step <= 6; step++) {
+    await submitCommand(page, `fix 601 int @ ${(step * 37) % 100}`);
+    await page.waitForTimeout(200);
+  }
+  const during = await streamStats(page);
+  expect(during.deltas).toBe(before.deltas);
+  expect(during.keyframes).toBeGreaterThan(before.keyframes);
+  expect(during.gaps).toBe(0);
+  expect(during.driftedKeyframes).toBe(0);
+
+  await page.keyboard.press("ControlOrMeta+,");
+  await dialog.getByRole("tab", { name: "Network", exact: true }).click();
+  await changedOnly.check();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.settings.get().parameter_keyframes_only,
+      ),
+    )
+    .toBe(false);
+  await page.keyboard.press("Escape");
+  for (let step = 1; step <= 6; step++) {
+    await submitCommand(page, `fix 601 int @ ${(step * 53) % 100}`);
+    await page.waitForTimeout(200);
+  }
+  expect((await streamStats(page)).deltas).toBeGreaterThan(during.deltas);
 });

@@ -108,6 +108,10 @@ pub struct DeskSettings {
     /// Number of timestamped showfile backups to retain after each save; 0 means unlimited.
     #[serde(default = "default_showfile_backup_retention")]
     pub showfile_backup_retention: u32,
+    /// Sends clients every parameter value each frame instead of only the changed ones, a
+    /// fallback for when the UI shows values that do not match the output.
+    #[serde(default)]
+    pub parameter_keyframes_only: bool,
     /// Showfile-scoped named UI panel layouts.
     #[serde(default)]
     pub panel_layouts: Vec<StoredPanelLayout>,
@@ -126,6 +130,7 @@ impl Default for DeskSettings {
             time_display_preference: TimeDisplayPreference::default(),
             timeline_placement_preference: TimelinePlacementPreference::default(),
             showfile_backup_retention: DEFAULT_SHOWFILE_BACKUP_RETENTION,
+            parameter_keyframes_only: false,
             panel_layouts: Vec::new(),
             active_panel_layout: None,
         }
@@ -237,6 +242,8 @@ pub enum SettingsCommand {
     SetTimelinePlacementPreference(TimelinePlacementPreference),
     /// Set number of timestamped showfile backups to retain; 0 means unlimited
     SetShowfileBackupRetention(u32),
+    /// Set whether clients receive every parameter value each frame instead of only changes
+    SetParameterKeyframesOnly(bool),
     /// Set showfile-scoped named UI panel layouts
     SetPanelLayouts(Vec<StoredPanelLayout>),
     /// Set showfile-scoped active UI panel layout

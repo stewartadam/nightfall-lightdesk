@@ -197,6 +197,7 @@ pub struct ParameterStateProjection {
     seq: u32,
     keyframe_pending: bool,
     last_keyframe: Option<Instant>,
+    keyframes_only: bool,
 }
 
 impl ParameterStateProjection {
@@ -205,6 +206,17 @@ impl ParameterStateProjection {
     pub fn request_layout(&mut self) {
         self.layout_pending = true;
         self.keyframe_pending = true;
+    }
+
+    /// Chooses between sending only changed slots between keyframes, the default, and sending a
+    /// keyframe every frame as a fallback for clients that cannot keep up with deltas.
+    pub fn set_keyframes_only(&mut self, keyframes_only: bool) {
+        self.keyframes_only = keyframes_only;
+    }
+
+    /// Whether every frame is sent as a keyframe rather than as changes between keyframes.
+    pub fn keyframes_only(&self) -> bool {
+        self.keyframes_only
     }
 
     /// Makes the next published frame a keyframe, for a client that missed part of the stream.
@@ -349,12 +361,14 @@ impl ParameterStateProjection {
     /// Numbers and returns the next frame of the stream from the last [`Self::fill_values`] call,
     /// or `None` when it would be a delta with nothing in it.
     ///
-    /// The frame is a keyframe when one was requested or the layout changed, when [`KEYFRAME_INTERVAL`] has passed since the last one, or when a non-empty delta
+    /// The frame is a keyframe in keyframes-only mode, when one was requested or the layout
+    /// changed, when [`KEYFRAME_INTERVAL`] has passed since the last one, or when a non-empty delta
     /// would be no smaller than a keyframe.
     pub fn publish_frame(&mut self, now: Instant) -> Option<ParameterStateFrame<'_>> {
         let delta_bytes = self.changed_slots.len() + self.changed_values.len();
         let assertions_changed = self.assertions != self.previous_assertions;
-        let keyframe = self.keyframe_pending
+        let keyframe = self.keyframes_only
+            || self.keyframe_pending
             || self
                 .last_keyframe
                 .is_none_or(|at| now.duration_since(at) >= KEYFRAME_INTERVAL)
@@ -370,8 +384,8 @@ impl ParameterStateProjection {
         }
         let assertions_included = keyframe || assertions_changed;
         // Listing the changes costs a keyframe 4 bytes per changed slot, so only keyframes that
-        // stand in for a small delta carry them.
-        let verifiable = keyframe && delta_bytes < self.output.len();
+        // stand in for a small delta carry them, which keyframes-only mode never does.
+        let verifiable = keyframe && !self.keyframes_only && delta_bytes < self.output.len();
         let included = |bytes| WireBytes(if assertions_included { bytes } else { &[] });
         Some(ParameterStateFrame {
             layout_id: self.layout.layout_id,
@@ -651,6 +665,32 @@ mod tests {
         let first = step(&mut app, start).expect("the first frame should be published");
         assert!(first.keyframe, "the stream opens with a keyframe");
         (app, parameters, first)
+    }
+
+    /// Verifies every frame is a numbered, unverifiable keyframe in keyframes-only mode, even when
+    /// nothing changed, and that leaving the mode resumes skipping unchanged frames.
+    #[test]
+    fn keyframes_only_sends_a_keyframe_every_frame() {
+        let start = Instant::now();
+        let (mut app, _, first) = delta_app(2, start);
+        app.world_mut()
+            .resource_mut::<ParameterStateProjection>()
+            .set_keyframes_only(true);
+        let frames: Vec<OwnedFrame> = (0..3)
+            .map(|_| step(&mut app, start).expect("every frame should be published"))
+            .collect();
+        for (index, frame) in frames.iter().enumerate() {
+            assert!(frame.keyframe);
+            assert_eq!(frame.seq, first.seq + index as u32 + 1);
+            assert!(!frame.verifiable && frame.changed_slots.is_empty());
+            assert_eq!(frame.output, projection_output(&app));
+            assert!(frame.assertions.is_some());
+        }
+
+        app.world_mut()
+            .resource_mut::<ParameterStateProjection>()
+            .set_keyframes_only(false);
+        assert!(step(&mut app, start).is_none());
     }
 
     /// Verifies a delta carries exactly the slots whose output changed, with their new values,

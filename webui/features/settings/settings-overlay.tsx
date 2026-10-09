@@ -203,6 +203,14 @@ export function SettingsOverlay() {
     });
   };
 
+  /** Chooses whether clients receive only changed parameter values or every value each frame. */
+  const setParameterKeyframesOnly = (value: boolean) => {
+    engineRuntime.sendCommand({
+      module: "SettingsCommand",
+      command: { type: "SetParameterKeyframesOnly", data: value },
+    });
+  };
+
   const setNetworkInterface = (value: string | null) => {
     engineRuntime.sendCommand({
       module: "SettingsCommand",
@@ -710,6 +718,25 @@ export function SettingsOverlay() {
                   />
                 </label>
               </div>
+            </section>
+            <section>
+              <h3 class="text-sm font-medium text-gray-300 mb-3">UI updates</h3>
+              <label class="flex items-center justify-between">
+                <span class="text-sm text-gray-400">
+                  Send only changed values
+                </span>
+                <Checkbox
+                  checked={!settings().parameter_keyframes_only}
+                  onChange={(e) =>
+                    setParameterKeyframesOnly(!e.currentTarget.checked)
+                  }
+                />
+              </label>
+              <p class="mt-1 text-xs text-gray-500">
+                Turn off to send every value in full each frame if a screen
+                shows values that do not match the output. Uses more network
+                bandwidth.
+              </p>
             </section>
           </Show>
 

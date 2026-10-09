@@ -279,6 +279,7 @@ impl Plugin for DeskPlugin {
                 event_handlers::settings_events::finish_commands,
                 event_handlers::settings_events::sync_network_dmx_outputs_from_settings,
                 event_handlers::settings_events::sync_input_stale_timeout_from_settings,
+                event_handlers::settings_events::sync_parameter_stream_from_settings,
             )
                 .chain()
                 .in_set(EventHandling),
