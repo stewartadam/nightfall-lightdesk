@@ -65,13 +65,18 @@ import {
   useBindableActionCatalog,
 } from "../../actions";
 import { BehaviorSelect } from "../components/behavior-select";
-import { actionBehaviors } from "../model/binding-behaviors";
+import {
+  actionBehaviors,
+  actionSupportsBehavior,
+  behaviorCell,
+  behaviorFilterText,
+  editedBehavior,
+} from "../model/binding-behaviors";
 import {
   formatBehavior,
   type OscGesture,
   oscBindingProblem,
   oscMappingFromGesture,
-  parseBehavior,
   trackOscGesture,
 } from "../model/controller-mapping-builders";
 import {
@@ -162,8 +167,10 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
   {
     title: "Behavior",
     id: "behavior",
-    width: 90,
-    filter: { value: (row) => formatBehavior(row.mapping.behavior) },
+    width: 130,
+    filter: {
+      value: (row) => behaviorFilterText(formatBehavior(row.mapping.behavior)),
+    },
     ...columnVisibilityMeta("Binding", "Behavior"),
   },
   {
@@ -260,10 +267,6 @@ function editedMapping(
         value,
       );
       return edit.ok ? { ...mapping, range: edit.range } : edit;
-    }
-    case "behavior": {
-      const behavior = parseBehavior(value);
-      return behavior === undefined ? undefined : { ...mapping, behavior };
     }
     default:
       return undefined;
@@ -408,12 +411,10 @@ export default function OscInputPanel(props: OscInputPanelProps) {
             };
           }
           case "behavior":
-            return {
-              kind: GridCellKind.Text,
-              allowOverlay: true,
-              displayData: formatBehavior(rowData.behavior),
-              data: formatBehavior(rowData.behavior),
-            };
+            return behaviorCell(
+              formatBehavior(rowData.behavior),
+              findCatalogEntry($actionCatalog(), rowData.action.id),
+            );
           case "action": {
             const actionStr = formatActionReference(
               rowData.action,
@@ -440,12 +441,20 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     }),
   );
 
-  /** Applies one edited text cell to every targeted mapping and upserts each result. */
+  /**
+   * Applies one edited cell, a Behavior dropdown or a text cell, to every targeted mapping
+   * and upserts each result. A behavior skips rows whose action does not support it.
+   */
   const handleCellEdited = (cell: Item, newValue: GridCell) => {
     const [col, row] = cell;
     const colId = displayColumns()[col]?.id;
     const visibleRows = displayRows();
-    if (row >= visibleRows.length || newValue.kind !== GridCellKind.Text) {
+    const behavior =
+      colId === "behavior" ? editedBehavior(newValue) : undefined;
+    if (
+      row >= visibleRows.length ||
+      (newValue.kind !== GridCellKind.Text && behavior === undefined)
+    ) {
       return;
     }
 
@@ -455,11 +464,16 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       row,
       visibleRows.length,
     );
-    const value = String(newValue.data ?? "");
+    const value =
+      newValue.kind === GridCellKind.Text ? String(newValue.data ?? "") : "";
     for (const targetRow of rowsToEdit) {
       const mapping = visibleRows[targetRow]?.mapping;
       if (!mapping) continue;
-      const edited = editedMapping(mapping, colId, value);
+      const entry = findCatalogEntry($actionCatalog(), mapping.action.id);
+      if (behavior && !actionSupportsBehavior(entry, behavior)) continue;
+      const edited = behavior
+        ? { ...mapping, behavior }
+        : editedMapping(mapping, colId, value);
       if (!edited) continue;
       if ("error" in edited) {
         pushToast("error", edited.error);
