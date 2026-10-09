@@ -57,6 +57,7 @@ nightfall-undo = { path = "../undo" }
 nightfall-waveform = { path = "../waveform" }
 nightfall-websocket = { path = "../websocket" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"], optional = true }
+sentry = { version = "0.49.3", default-features = false, features = ["backtrace", "contexts", "panic", "tracing"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["signal", "sync"] }
@@ -75,7 +76,7 @@ nightfall-fixture-model = { path = "../fixture-model" }
 gdt-cpus = "0.2606.1"
 
 [features]
-default = ["full", "beat-detection"]
+default = ["full", "beat-detection", "telemetry"]
 full = ["audio", "midi", "osc", "artnet", "sacn", "usb", "fixture-library", "object-library"]
 minimal = []
 audio = ["dep:nightfall-audio", "dep:nightfall-desk-audio", "nightfall-timeline/audio"]
@@ -88,6 +89,7 @@ usb = ["dep:nightfall-output-usb"]
 fixture-library = ["dep:nightfall-fixture-library"]
 object-library = ["dep:nightfall-object-library"]
 debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
+telemetry = ["dep:sentry", "dep:reqwest"]
 
 [dev-dependencies]
 async-channel.workspace = true

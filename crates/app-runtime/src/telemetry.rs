@@ -10,7 +10,7 @@
 
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use bevy::prelude::*;
@@ -50,11 +50,16 @@ pub(crate) struct TelemetryHost {
 }
 
 impl TelemetryHost {
-    /// Loads the host's preferences from its data directory, or returns `None` when the
-    /// directory cannot be resolved.
+    /// Returns the process's preferences, reading them from the data directory on first use, or
+    /// `None` when the directory cannot be resolved. Every caller shares one host, so error
+    /// reporting and each world see the same choice.
     pub(crate) fn load() -> Option<Self> {
-        let path = nightfall::nightfall_data_dir()?.join(TELEMETRY_FILE_NAME);
-        Some(Self::load_from(path))
+        static HOST: OnceLock<Option<TelemetryHost>> = OnceLock::new();
+        HOST.get_or_init(|| {
+            nightfall::nightfall_data_dir()
+                .map(|dir| Self::load_from(dir.join(TELEMETRY_FILE_NAME)))
+        })
+        .clone()
     }
 
     /// Loads preferences from `path`. Nothing is written until the operator changes a choice,
@@ -85,7 +90,7 @@ impl TelemetryHost {
     }
 
     /// Returns the session's current telemetry state.
-    fn snapshot(&self) -> TelemetryState {
+    pub(crate) fn snapshot(&self) -> TelemetryState {
         self.state
             .lock()
             .expect("telemetry host lock should not be poisoned")
@@ -133,11 +138,13 @@ fn load_telemetry_state(host: Res<TelemetryHost>, mut state: ResMut<TelemetrySta
     *state = host.snapshot();
 }
 
-/// Saves consent or identifier changes as soon as a command applies them.
+/// Saves consent or identifier changes as soon as a command applies them. Error reporting
+/// follows the new choice even when saving fails, so turning reports off always takes effect.
 fn persist_telemetry_state(host: Res<TelemetryHost>, mut state: ResMut<TelemetryState>) {
     if !state.is_changed() || state.is_added() {
         return;
     }
+    crate::error_reports::apply_consent(&state);
     let error = host.save(&state);
     if state.error != error {
         state.error = error;
@@ -207,6 +214,9 @@ mod tests {
     /// Worlds built after a change start from the saved choice, and the plugin persists commands.
     #[test]
     fn plugin_shares_choices_across_worlds() {
+        let _consent = crate::error_reports::CONSENT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let directory = tempfile::tempdir().unwrap();
         let host = TelemetryHost::load_from(directory.path().join(TELEMETRY_FILE_NAME));
         let build_world = || {
@@ -225,5 +235,6 @@ mod tests {
             second.world().resource::<TelemetryState>().consent,
             chosen_consent()
         );
+        crate::error_reports::apply_consent(&TelemetryState::default());
     }
 }

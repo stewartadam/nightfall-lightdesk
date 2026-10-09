@@ -45,6 +45,7 @@ const EXPERIMENTAL_FLOWS_ENV: &str = "NIGHTFALL_EXPERIMENTAL_FLOWS";
 const TIMELINE_AUDIO_ENABLED_ENV: &str = "NIGHTFALL_TIMELINE_AUDIO_ENABLED";
 const FATAL_SHUTDOWN_GRACE_ENV: &str = "NIGHTFALL_FATAL_SHUTDOWN_GRACE_MS";
 const DISABLE_WATCHDOG_ENV: &str = "NIGHTFALL_DISABLE_FATAL_SHUTDOWN_WATCHDOG";
+const ERROR_REPORTS_DSN_ENV: &str = "NIGHTFALL_ERROR_REPORTS_DSN";
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
 /// Fully resolved startup configuration consumed by Nightfall binaries.
@@ -72,6 +73,10 @@ pub struct RuntimeConfig {
     pub shutdown: ShutdownConfig,
     /// Optional tracing filter sourced from `RUST_LOG`.
     pub log_filter: Option<String>,
+    /// Error service that replaces the one built into the binary; an empty value turns error
+    /// reporting off. `None` keeps the built-in service. Test harnesses and forks use it so
+    /// their failures never reach the project's service.
+    pub error_reports_dsn: Option<String>,
 }
 
 impl Default for RuntimeConfig {
@@ -142,6 +147,7 @@ impl RuntimeConfig {
                 watchdog_disabled: layer.watchdog_disabled.unwrap_or(false),
             },
             log_filter: normalize_optional_string(layer.log_filter),
+            error_reports_dsn: layer.error_reports_dsn,
         }
     }
 }
@@ -206,6 +212,8 @@ pub struct RuntimeConfigOverrides {
     pub watchdog_disabled: Option<bool>,
     /// Overrides the tracing filter when present.
     pub log_filter: Option<String>,
+    /// Overrides the error report service when present; empty turns reporting off.
+    pub error_reports_dsn: Option<String>,
 }
 
 /// Loads dotenv and inherited environment values without modifying the process environment.
@@ -313,6 +321,7 @@ struct ConfigLayer {
     fatal_shutdown_grace: Option<Duration>,
     watchdog_disabled: Option<bool>,
     log_filter: Option<String>,
+    error_reports_dsn: Option<String>,
 }
 
 impl ConfigLayer {
@@ -344,6 +353,9 @@ impl ConfigLayer {
             .map(Duration::from_millis),
             watchdog_disabled: parse_optional_bool(values, DISABLE_WATCHDOG_ENV)?,
             log_filter: optional_string(values, RUST_LOG_ENV),
+            error_reports_dsn: values
+                .get(ERROR_REPORTS_DSN_ENV)
+                .map(|value| value.trim().to_string()),
         })
     }
 
@@ -375,6 +387,7 @@ impl ConfigLayer {
         );
         apply_override(&mut self.watchdog_disabled, overrides.watchdog_disabled);
         apply_override(&mut self.log_filter, overrides.log_filter);
+        apply_override(&mut self.error_reports_dsn, overrides.error_reports_dsn);
     }
 }
 
@@ -494,6 +507,28 @@ mod tests {
         assert!(
             RuntimeConfig::from_values([(EXPERIMENTAL_FLOWS_ENV, "maybe")], Default::default())
                 .is_err()
+        );
+    }
+
+    /// An unset error service keeps the built-in one, while an empty value is kept so it can
+    /// turn reporting off.
+    #[test]
+    fn error_reports_dsn_distinguishes_unset_from_empty() {
+        let unset =
+            RuntimeConfig::from_values(std::iter::empty::<(&str, &str)>(), Default::default())
+                .unwrap();
+        assert_eq!(unset.error_reports_dsn, None);
+        let empty =
+            RuntimeConfig::from_values([(ERROR_REPORTS_DSN_ENV, " ")], Default::default()).unwrap();
+        assert_eq!(empty.error_reports_dsn.as_deref(), Some(""));
+        let custom = RuntimeConfig::from_values(
+            [(ERROR_REPORTS_DSN_ENV, "https://key@errors.example/1")],
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            custom.error_reports_dsn.as_deref(),
+            Some("https://key@errors.example/1")
         );
     }
 

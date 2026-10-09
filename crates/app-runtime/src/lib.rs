@@ -18,6 +18,8 @@ mod diagnostic_http;
 mod diagnostic_logs;
 mod diagnostic_showfile;
 mod engine_log_time;
+#[cfg_attr(not(feature = "telemetry"), path = "error_reports_disabled.rs")]
+mod error_reports;
 mod feature_integration;
 mod logging;
 mod plugin_groups;
@@ -43,7 +45,7 @@ pub use diagnostic_bundle::{BundleOptions, BundleResult, ShowfileMode, write_bun
 pub use diagnostic_logs::{DiagnosticLogMode, DiagnosticLogPage, collect_diagnostic_logs};
 pub use diagnostic_showfile::{DiagnosticShowfile, capture_showfile};
 pub use engine_log_time::EngineLogTimer;
-pub use logging::initialize;
+pub use logging::{RuntimeGuard, initialize};
 pub use runtime_config::load_runtime_config;
 pub use session::{run_bevy_session, run_headless};
 pub use shutdown::install_panic_shutdown_hook;

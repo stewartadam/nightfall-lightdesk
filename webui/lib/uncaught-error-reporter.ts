@@ -194,12 +194,34 @@ function presentFatalError(
   });
 }
 
+/**
+ * Hands a failure to automatic error reporting; `fatal` marks failures that
+ * left the application unusable.
+ */
+export type UncaughtErrorForwarder = (
+  report: UncaughtErrorReport,
+  fatal: boolean,
+) => void;
+
+let uncaughtErrorForwarder: UncaughtErrorForwarder | undefined;
+
+/**
+ * Registers where failures go for automatic error reporting. The page entry
+ * registers it, keeping this module free of network code for worker bundles.
+ */
+export function setUncaughtErrorForwarder(
+  forwarder: UncaughtErrorForwarder,
+): void {
+  uncaughtErrorForwarder = forwarder;
+}
+
 /** Reports a failure from the page or one of its workers to the user. */
 export const reportUncaughtError = createUncaughtErrorReporter({
-  present: (report) =>
-    workspaceVisible
-      ? presentUncaughtError(report)
-      : presentFatalError(report, true),
+  present: (report) => {
+    uncaughtErrorForwarder?.(report, false);
+    if (workspaceVisible) presentUncaughtError(report);
+    else presentFatalError(report, true);
+  },
 });
 
 /**
@@ -209,7 +231,9 @@ export const reportUncaughtError = createUncaughtErrorReporter({
 export function reportFatalError(source: string, error: unknown): void {
   const details = describeUncaughtError(error, "error");
   log.error(`Fatal error in ${source}`, { error: details });
-  presentFatalError({ ...details, source }, false);
+  const report = { ...details, source };
+  uncaughtErrorForwarder?.(report, true);
+  presentFatalError(report, false);
 }
 
 /** Shows uncaught exceptions and unhandled rejections from the page itself. */

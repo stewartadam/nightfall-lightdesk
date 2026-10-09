@@ -106,3 +106,27 @@ test("declining the telemetry prompt shares nothing", async ({
     });
   await expect(prompt).toHaveCount(0);
 });
+
+/** Verifies uncaught page failures reach the engine, which decides whether to report them. */
+test("uncaught page errors are forwarded to the engine", async ({ page }) => {
+  await openApp(page);
+  const forwarded = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" &&
+      request.url().endsWith("/api/telemetry/client-error"),
+  );
+  await page.evaluate(() =>
+    setTimeout(() => {
+      throw new TypeError("Forwarded test failure");
+    }),
+  );
+  const request = await forwarded;
+  expect(request.postDataJSON()).toMatchObject({
+    source: "app",
+    kind: "error",
+    name: "TypeError",
+    message: "Forwarded test failure",
+    fatal: false,
+  });
+  expect((await request.response())?.status()).toBe(204);
+});

@@ -78,6 +78,7 @@ fn init_logging(log_filter: Option<&str>) -> (LogConfig, Option<WorkerGuard>) {
                 .with_writer(file_writer)
                 .with_ansi(false),
         )
+        .with(crate::error_reports::tracing_layer())
         .init();
 
     let tracing_target = Arc::new(RwLock::new(initial_tracing_target));
@@ -91,20 +92,36 @@ fn init_logging(log_filter: Option<&str>) -> (LogConfig, Option<WorkerGuard>) {
     (log_config, file_guard)
 }
 
-/// Resolves configuration and installs shared logging and panic shutdown handling.
-pub fn initialize() -> (
-    LogConfig,
-    nightfall_config::RuntimeConfig,
-    Option<WorkerGuard>,
-) {
+/// Process-wide services that must outlive the application: dropping it flushes buffered log
+/// records and writes pending error reports to disk.
+pub struct RuntimeGuard {
+    _error_reports: crate::error_reports::ErrorReportsGuard,
+    _log_file: Option<WorkerGuard>,
+}
+
+/// Resolves configuration and installs shared logging, error reporting, and panic shutdown
+/// handling. Error reports start before logging so the logging layer can feed them, and before
+/// the shutdown hook so a panic is reported before shutdown begins.
+pub fn initialize() -> (LogConfig, nightfall_config::RuntimeConfig, RuntimeGuard) {
     let runtime_config = crate::load_runtime_config().unwrap_or_else(|error| {
         eprintln!("Failed to load startup configuration: {error}");
         std::process::exit(2);
     });
     set_nightfall_data_dir(runtime_config.data_dir.clone());
-    let (log_config, guard) = init_logging(runtime_config.log_filter.as_deref());
+    let error_reports = crate::error_reports::init(runtime_config.error_reports_dsn.as_deref());
+    let (log_config, log_file) = init_logging(runtime_config.log_filter.as_deref());
+    if let Some(telemetry) = crate::telemetry::TelemetryHost::load() {
+        crate::error_reports::apply_consent(&telemetry.snapshot());
+    }
     crate::install_panic_shutdown_hook(&runtime_config.shutdown);
-    (log_config, runtime_config, guard)
+    (
+        log_config,
+        runtime_config,
+        RuntimeGuard {
+            _error_reports: error_reports,
+            _log_file: log_file,
+        },
+    )
 }
 
 #[cfg(test)]

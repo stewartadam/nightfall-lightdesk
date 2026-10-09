@@ -169,6 +169,11 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
+    crate::error_reports::register_routes(
+        &mut app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+    );
     app.add_plugins(plugin_groups::DeskPlugins { log_config });
     app.add_plugins(plugin_groups::FxPlugins);
     app.add_plugins(plugin_groups::TimecodePlugins {
