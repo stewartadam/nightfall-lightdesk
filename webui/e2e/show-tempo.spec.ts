@@ -84,9 +84,13 @@ test("status bar tempo responds to taps, the menu and the command line", async (
   await page.screenshot({
     path: "test-results/playwright/show-tempo-menu.png",
   });
+  await page.getByRole("button", { name: "Increase tempo" }).click();
+  await page.getByRole("button", { name: "Increase tempo" }).click();
+  await expect(bpmInput).toHaveValue("92");
+  await expect.poll(() => targetBpm(page)).toBe(92);
   await page.getByRole("button", { name: "Double time" }).click();
-  await expect.poll(() => targetBpm(page)).toBe(180);
-  await expect(bpm).toHaveText("180", { timeout: 5_000 });
+  await expect.poll(() => targetBpm(page)).toBe(184);
+  await expect(bpm).toHaveText("184", { timeout: 5_000 });
 
   await runCommand(page, "tempo 128");
   await expect.poll(() => targetBpm(page)).toBe(128);

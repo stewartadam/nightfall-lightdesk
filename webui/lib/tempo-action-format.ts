@@ -14,12 +14,24 @@ const TRIGGER_ACTIONS = {
   ResyncTempo: "tempo.resync",
 } as const;
 
-/** Text names for tempo actions with one numeric argument, with the argument's key. */
+/**
+ * Text names for tempo actions with one numeric argument, with the argument's
+ * key and whether the engine requires it to be positive.
+ */
 const NUMERIC_ACTIONS = {
-  SetTempo: { id: "tempo.set", argument: "bpm" },
-  MultiplyTempo: { id: "tempo.multiply", argument: "factor" },
-  NudgeTempo: { id: "tempo.nudge", argument: "beats" },
+  SetTempo: { id: "tempo.set", argument: "bpm", positive: true },
+  MultiplyTempo: { id: "tempo.multiply", argument: "factor", positive: true },
+  NudgeTempo: { id: "tempo.nudge", argument: "beats", positive: false },
 } as const;
+
+/**
+ * Formats an action argument as plain decimal text the parser accepts back,
+ * never in exponent notation, keeping up to six decimals.
+ */
+function formatArgument(value: number): string {
+  const fixed = value.toFixed(6).replace(/\.?0+$/, "");
+  return fixed === "-0" ? "0" : fixed;
+}
 
 /**
  * Formats a tempo action reference as mapping-table text, or returns
@@ -34,7 +46,9 @@ export function formatTempoAction(action: ActionReference): string | undefined {
     const value = (action.arguments as Record<string, unknown> | null)?.[
       spec.argument
     ];
-    return typeof value === "number" ? `${name}(${value})` : action.id;
+    return typeof value === "number" && Number.isFinite(value)
+      ? `${name}(${formatArgument(value)})`
+      : action.id;
   }
   return undefined;
 }
@@ -54,5 +68,7 @@ export function parseTempoAction(text: string): ActionReference | undefined {
   const match = trimmed.match(/^(\w+)\((-?\d+(?:\.\d+)?)\)$/);
   if (!match || !(match[1] in NUMERIC_ACTIONS)) return undefined;
   const spec = NUMERIC_ACTIONS[match[1] as keyof typeof NUMERIC_ACTIONS];
-  return { id: spec.id, arguments: { [spec.argument]: Number(match[2]) } };
+  const value = Number(match[2]);
+  if (spec.positive && value <= 0) return undefined;
+  return { id: spec.id, arguments: { [spec.argument]: value } };
 }

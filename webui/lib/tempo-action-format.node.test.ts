@@ -46,3 +46,22 @@ test("tempo formatting ignores other actions", () => {
     undefined,
   );
 });
+
+/** Verifies tempos and multipliers must be positive, while nudges may go either way. */
+test("parseTempoAction rejects non-positive tempos and multipliers", () => {
+  assert.equal(parseTempoAction("SetTempo(0)"), undefined);
+  assert.equal(parseTempoAction("MultiplyTempo(-2)"), undefined);
+  assert.ok(parseTempoAction("NudgeTempo(-0.25)"));
+});
+
+/** Verifies tiny or long arguments format as decimals the parser reads back. */
+test("formatTempoAction never emits exponent notation", () => {
+  assert.equal(
+    formatTempoAction({ id: "tempo.nudge", arguments: { beats: 1e-7 } }),
+    "NudgeTempo(0)",
+  );
+  assert.equal(
+    formatTempoAction({ id: "tempo.set", arguments: { bpm: 1 / 3 } }),
+    "SetTempo(0.333333)",
+  );
+});

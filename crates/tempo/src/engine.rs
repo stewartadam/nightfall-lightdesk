@@ -34,8 +34,9 @@ const MIN_CORRECTION_RATE: f64 = 0.02;
 const PHASE_EPSILON: f64 = 1e-6;
 /// Tempo difference below which easing snaps to its target.
 const BPM_EPSILON: f64 = 1e-3;
-/// Idle time after which the next tap starts a new tap sequence on the downbeat.
-const TAP_RESET_SECS: f64 = 2.0;
+/// Idle time after which the next tap starts a new tap sequence on the downbeat; just longer
+/// than one beat at the slowest tempo, so slow tempos can still be tapped.
+const TAP_RESET_SECS: f64 = 60.0 / MIN_BPM + 0.5;
 /// Relative deviation from the fitted interval that marks a tap as an outlier.
 const TAP_OUTLIER_RATIO: f64 = 0.4;
 /// Number of recent taps used to fit tempo and phase.
@@ -47,24 +48,49 @@ const TAP_HISTORY: usize = 8;
 pub struct TempoSnapshot {
     /// Current, possibly still easing, tempo in beats per minute.
     pub bpm: f64,
+    /// Rate the beat counter is actually advancing at, in beats per minute, including any
+    /// phase correction in progress. Clients extrapolate the counter at this rate.
+    pub effective_bpm: f64,
     /// Tempo the engine is easing toward.
     pub target_bpm: f64,
     /// Number of beats in one bar.
     pub beats_per_bar: u8,
-    /// Monotonic beat counter; whole numbers are beats and multiples of
-    /// `beats_per_bar` are downbeats.
+    /// Monotonic beat counter; whole numbers are beats.
     pub beat_position: f64,
+    /// Beat position of a reference downbeat; downbeats fall every `beats_per_bar` beats
+    /// from here. It moves when the bar length changes so the current bar is not re-based.
+    pub bar_origin: f64,
+    /// Number of bars completed before `bar_origin`, so bar numbers keep counting up across
+    /// bar length changes.
+    pub bars_before_origin: u32,
 }
 
 impl TempoSnapshot {
+    /// Returns the bar length as a float, never less than one beat.
+    fn bar_length(&self) -> f64 {
+        f64::from(self.beats_per_bar.max(1))
+    }
+
+    /// Returns the zero-based beat index within the bar containing `beat_position`.
+    pub fn beat_in_bar_at(&self, beat_position: f64) -> u32 {
+        let since_origin = (beat_position - self.bar_origin).max(0.0).floor();
+        (since_origin % self.bar_length()) as u32
+    }
+
+    /// Returns the zero-based index of the bar containing `beat_position`.
+    pub fn bar_at(&self, beat_position: f64) -> u64 {
+        let since_origin = (beat_position - self.bar_origin).max(0.0);
+        u64::from(self.bars_before_origin) + (since_origin / self.bar_length()).floor() as u64
+    }
+
     /// Returns the zero-based beat index within the current bar.
     pub fn beat_in_bar(&self) -> u32 {
-        (self.beat_position.floor() as u64 % u64::from(self.beats_per_bar.max(1))) as u32
+        self.beat_in_bar_at(self.beat_position)
     }
 
     /// Returns the zero-based index of the current bar.
     pub fn bar(&self) -> u64 {
-        (self.beat_position / f64::from(self.beats_per_bar.max(1))).floor() as u64
+        self.bar_at(self.beat_position)
     }
 
     /// Returns progress through the current beat in `0.0..1.0`.
@@ -171,6 +197,12 @@ pub struct TempoEngine {
     beats_per_bar: u8,
     /// Monotonic beat counter at `last_time`.
     beat_position: f64,
+    /// Rate the counter advanced at over the last frame, in beats per minute.
+    effective_bpm: f64,
+    /// Whole-beat position of a reference downbeat.
+    bar_origin: f64,
+    /// Bars completed before `bar_origin`.
+    bars_before_origin: u32,
     /// Phase error in beats still to be absorbed; positive runs ahead, negative holds back.
     pending_phase: f64,
     /// Share of nominal speed used to absorb `pending_phase`.
@@ -182,6 +214,7 @@ pub struct TempoEngine {
 }
 
 impl Default for TempoEngine {
+    /// Starts a 4/4 grid at the default tempo with the beat counter and clock at zero.
     fn default() -> Self {
         Self {
             bpm: DEFAULT_BPM,
@@ -189,6 +222,9 @@ impl Default for TempoEngine {
             bpm_slew: 0.0,
             beats_per_bar: DEFAULT_BEATS_PER_BAR,
             beat_position: 0.0,
+            effective_bpm: DEFAULT_BPM,
+            bar_origin: 0.0,
+            bars_before_origin: 0,
             pending_phase: 0.0,
             correction_rate: 0.0,
             last_time: None,
@@ -202,9 +238,12 @@ impl TempoEngine {
     pub fn snapshot(&self) -> TempoSnapshot {
         TempoSnapshot {
             bpm: self.bpm,
+            effective_bpm: self.effective_bpm,
             target_bpm: self.target_bpm,
             beats_per_bar: self.beats_per_bar,
             beat_position: self.beat_position,
+            bar_origin: self.bar_origin,
+            bars_before_origin: self.bars_before_origin,
         }
     }
 
@@ -244,6 +283,7 @@ impl TempoEngine {
             self.pending_phase = 0.0;
         }
         self.beat_position += nominal + correction;
+        self.effective_bpm = (nominal + correction) / dt * 60.0;
     }
 
     /// Sets the tempo target, clamped to the supported range; non-finite values are ignored.
@@ -262,8 +302,20 @@ impl TempoEngine {
     }
 
     /// Sets the number of beats per bar, clamped to `1..=MAX_BEATS_PER_BAR`.
+    ///
+    /// The bar in progress keeps its downbeat and the bar count keeps going, so changing the
+    /// bar length does not re-base the current beat onto a different grid.
     pub fn set_beats_per_bar(&mut self, beats_per_bar: u8) {
-        self.beats_per_bar = beats_per_bar.clamp(1, MAX_BEATS_PER_BAR);
+        let beats_per_bar = beats_per_bar.clamp(1, MAX_BEATS_PER_BAR);
+        if beats_per_bar == self.beats_per_bar {
+            return;
+        }
+        let snapshot = self.snapshot();
+        let bar = snapshot.bar();
+        self.bar_origin +=
+            (bar - u64::from(self.bars_before_origin)) as f64 * snapshot.bar_length();
+        self.bars_before_origin = u32::try_from(bar).unwrap_or(u32::MAX);
+        self.beats_per_bar = beats_per_bar;
     }
 
     /// Shifts the phase by a signed number of beats, eased like any other correction.
@@ -275,7 +327,7 @@ impl TempoEngine {
 
     /// Eases the phase so that `now` becomes the nearest downbeat.
     pub fn resync(&mut self, now: f64) {
-        self.align(now, 0.0, f64::from(self.beats_per_bar));
+        self.align(now, self.bar_origin, f64::from(self.beats_per_bar));
     }
 
     /// Jumps forward to the next downbeat at `now`, discarding any pending correction.
@@ -285,7 +337,8 @@ impl TempoEngine {
     pub fn snap(&mut self, now: f64) {
         let bar = f64::from(self.beats_per_bar);
         let elapsed = self.beats_since_advance(now);
-        let next_downbeat = ((self.beat_position + elapsed) / bar).ceil() * bar;
+        let since_origin = self.beat_position + elapsed - self.bar_origin;
+        let next_downbeat = self.bar_origin + (since_origin / bar).ceil() * bar;
         self.beat_position = (next_downbeat - elapsed).max(self.beat_position);
         self.pending_phase = 0.0;
     }
@@ -520,12 +573,51 @@ mod tests {
     fn snapshot_reports_bar_position() {
         let snapshot = TempoSnapshot {
             bpm: 120.0,
+            effective_bpm: 120.0,
             target_bpm: 120.0,
             beats_per_bar: 4,
             beat_position: 9.25,
+            bar_origin: 0.0,
+            bars_before_origin: 0,
         };
         assert_eq!(snapshot.beat_in_bar(), 1);
         assert_eq!(snapshot.bar(), 2);
         assert!((snapshot.beat_phase() - 0.25).abs() < 1e-12);
+    }
+
+    /// Verifies changing the bar length keeps the current bar's downbeat and keeps counting
+    /// bars instead of re-basing the beat onto a new grid.
+    #[test]
+    fn bar_length_change_keeps_current_bar() {
+        let mut engine = TempoEngine::default();
+        engine.advance_to(0.0);
+        run(&mut engine, 0.0, 4.6);
+        let before = engine.snapshot();
+        assert_eq!((before.bar(), before.beat_in_bar()), (2, 1));
+
+        engine.set_beats_per_bar(3);
+        let after = engine.snapshot();
+        assert_eq!((after.bar(), after.beat_in_bar()), (2, 1));
+
+        run(&mut engine, 4.6, 5.6);
+        let later = engine.snapshot();
+        assert_eq!((later.bar(), later.beat_in_bar()), (3, 0));
+
+        engine.advance_to(6.0);
+        engine.snap(6.0);
+        let snapped = engine.snapshot();
+        assert_eq!((snapped.bar(), snapped.beat_in_bar()), (4, 0));
+        assert_eq!(snapped.beat_position.fract(), 0.0);
+    }
+
+    /// Verifies the reported effective rate includes a phase correction in progress.
+    #[test]
+    fn effective_rate_reflects_phase_correction() {
+        let mut engine = TempoEngine::default();
+        engine.advance_to(0.0);
+        engine.nudge(-1.0);
+        engine.advance_to(FRAME);
+        let snapshot = engine.snapshot();
+        assert!((snapshot.effective_bpm - 120.0 * (1.0 - MAX_CORRECTION_RATE)).abs() < 1e-6);
     }
 }

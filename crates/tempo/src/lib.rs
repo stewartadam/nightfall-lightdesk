@@ -36,6 +36,8 @@ pub mod prelude {
 pub struct TempoPlugin;
 
 impl Plugin for TempoPlugin {
+    /// Registers the show tempo resource, its client and command-line commands, the tempo
+    /// actions, and the systems that advance it each frame and broadcast it to clients.
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering TempoPlugin");
         app.init_resource::<ShowTempo>();
@@ -118,6 +120,7 @@ pub struct ShowTempo {
 }
 
 impl Default for ShowTempo {
+    /// Creates a default tempo whose engine time starts now.
     fn default() -> Self {
         Self {
             engine: TempoEngine::default(),

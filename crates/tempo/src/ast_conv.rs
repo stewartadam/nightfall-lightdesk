@@ -17,6 +17,8 @@ use crate::TempoCommand;
 pub struct TempoAstConverter;
 
 impl AstConvert for TempoAstConverter {
+    /// Maps a parsed `tempo` command line to one validated engine command; other commands
+    /// are left for their own converters.
     fn convert(ast: &ast::CommandAst) -> Result<Vec<DynEnginePayload>, DispatchError> {
         let ast::CommandAst::Tempo(tempo) = ast else {
             return Err(DispatchError::NotApplicable);

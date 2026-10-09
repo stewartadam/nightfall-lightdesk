@@ -27,6 +27,9 @@ use crate::{ShowTempo, TempoCommand};
 const SETTLING_INTERVAL: Duration = Duration::from_millis(100);
 /// Interval between state messages while the tempo is steady.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
+/// Distance in beats between the engine's counter and what clients extrapolate from the last
+/// message beyond which the state is resent at once, e.g. after a snap.
+const JUMP_TOLERANCE_BEATS: f64 = 0.02;
 
 /// Outbound tempo messages.
 #[derive(Serialize)]
@@ -78,7 +81,10 @@ fn tempo_send_due(
     let since = now.saturating_duration_since(sent_at);
     let targets_changed =
         sent.target_bpm != current.target_bpm || sent.beats_per_bar != current.beats_per_bar;
+    let client_estimate = sent.beat_position + since.as_secs_f64() * sent.effective_bpm / 60.0;
+    let jumped = (current.beat_position - client_estimate).abs() > JUMP_TOLERANCE_BEATS;
     targets_changed
+        || jumped
         || (settling && since >= SETTLING_INTERVAL)
         || (sent.bpm != current.bpm && since >= SETTLING_INTERVAL)
         || since >= HEARTBEAT_INTERVAL
@@ -122,13 +128,24 @@ pub fn handle_resync_state(
 mod tests {
     use super::*;
 
-    /// Builds a steady snapshot at the given tempo.
-    fn snapshot(bpm: f64) -> TempoSnapshot {
+    /// Builds a steady 120 BPM snapshot with the beat counter at `beat_position`.
+    fn snapshot_at(beat_position: f64) -> TempoSnapshot {
         TempoSnapshot {
-            bpm,
-            target_bpm: bpm,
+            bpm: 120.0,
+            effective_bpm: 120.0,
+            target_bpm: 120.0,
             beats_per_bar: 4,
-            beat_position: 0.0,
+            beat_position,
+            bar_origin: 0.0,
+            bars_before_origin: 0,
+        }
+    }
+
+    /// Returns a send record for a snapshot sent at `sent_at`.
+    fn sent(sent_at: Instant, snapshot: TempoSnapshot) -> LastTempoSend {
+        LastTempoSend {
+            sent_at: Some(sent_at),
+            snapshot: Some(snapshot),
         }
     }
 
@@ -136,19 +153,23 @@ mod tests {
     #[test]
     fn steady_tempo_sends_on_heartbeat_only() {
         let start = Instant::now();
-        let mut last = LastTempoSend::default();
-        assert!(tempo_send_due(&last, &snapshot(120.0), false, start));
-        last.sent_at = Some(start);
-        last.snapshot = Some(snapshot(120.0));
+        assert!(tempo_send_due(
+            &LastTempoSend::default(),
+            &snapshot_at(0.0),
+            false,
+            start
+        ));
+        let last = sent(start, snapshot_at(0.0));
+        let half_second = start + Duration::from_millis(500);
         assert!(!tempo_send_due(
             &last,
-            &snapshot(120.0),
+            &snapshot_at(1.0),
             false,
-            start + Duration::from_millis(500)
+            half_second
         ));
         assert!(tempo_send_due(
             &last,
-            &snapshot(120.0),
+            &snapshot_at(2.0),
             false,
             start + HEARTBEAT_INTERVAL
         ));
@@ -158,25 +179,31 @@ mod tests {
     #[test]
     fn changes_and_easing_send_promptly() {
         let start = Instant::now();
-        let last = LastTempoSend {
-            sent_at: Some(start),
-            snapshot: Some(snapshot(120.0)),
-        };
-        let mut retargeted = snapshot(120.0);
+        let last = sent(start, snapshot_at(0.0));
+        let mut retargeted = snapshot_at(0.0);
         retargeted.target_bpm = 128.0;
         assert!(tempo_send_due(&last, &retargeted, true, start));
         assert!(!tempo_send_due(
             &last,
-            &snapshot(120.0),
+            &snapshot_at(0.1),
             true,
             start + Duration::from_millis(50)
         ));
         assert!(tempo_send_due(
             &last,
-            &snapshot(120.0),
+            &snapshot_at(0.2),
             true,
             start + SETTLING_INTERVAL
         ));
+    }
+
+    /// Verifies a jump of the beat counter, such as a snap, is sent without waiting.
+    #[test]
+    fn counter_jump_sends_immediately() {
+        let start = Instant::now();
+        let last = sent(start, snapshot_at(1.0));
+        let shortly = start + Duration::from_millis(10);
+        assert!(tempo_send_due(&last, &snapshot_at(4.0), false, shortly));
     }
 
     /// Verifies client commands are queued with their command identity.

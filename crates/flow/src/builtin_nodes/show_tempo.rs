@@ -44,6 +44,7 @@ fn output_port(port_id: FlowPortId, name: &str, port_type: FlowPortType) -> Flow
 }
 
 impl FlowNodeFactory for ShowTempoFactory {
+    /// Describes a source node with tempo, bar position and beat/bar trigger outputs.
     fn descriptor(&self) -> FlowNodeDescriptor {
         FlowNodeDescriptor {
             kind: SHOW_TEMPO_KIND.to_string(),
@@ -60,6 +61,7 @@ impl FlowNodeFactory for ShowTempoFactory {
         }
     }
 
+    /// Creates a node that has not yet seen a beat, so its first evaluation fires nothing.
     fn create(&self) -> Box<dyn FlowNode> {
         Box::new(ShowTempoNode::default())
     }
@@ -68,8 +70,8 @@ impl FlowNodeFactory for ShowTempoFactory {
 /// A node that follows the show tempo and fires triggers as beats and bars pass.
 #[derive(Default)]
 pub struct ShowTempoNode {
-    /// Whole beat counter seen on the previous evaluation, if any.
-    last_beat: Option<u64>,
+    /// Whole beat counter and bar index seen on the previous evaluation, if any.
+    last: Option<(u64, u64)>,
 }
 
 /// Adds `count` events to an output trigger port.
@@ -86,6 +88,9 @@ fn fire(output_triggers: &mut crate::nodes::FlowTriggerValues, port_id: FlowPort
 }
 
 impl FlowNode for ShowTempoNode {
+    /// Publishes the current tempo and bar position, and fires one trigger event for each
+    /// beat and downbeat crossed since the previous evaluation. Bars are counted on the
+    /// engine's bar grid, so a bar-length change mid-show keeps downbeats where they are.
     fn execute(
         &mut self,
         _inputs: &crate::nodes::FlowPortValues,
@@ -98,18 +103,18 @@ impl FlowNode for ShowTempoNode {
             return Ok(());
         };
         let beat = tempo.beat_position.floor() as u64;
-        let beats_per_bar = u64::from(tempo.beats_per_bar.max(1));
-        if let Some(last_beat) = self.last_beat
+        let bar = tempo.bar();
+        if let Some((last_beat, last_bar)) = self.last
             && beat > last_beat
         {
             fire(output_triggers, SHOW_TEMPO_OUT_ON_BEAT, beat - last_beat);
             fire(
                 output_triggers,
                 SHOW_TEMPO_OUT_ON_BAR,
-                beat / beats_per_bar - last_beat / beats_per_bar,
+                bar.saturating_sub(last_bar),
             );
         }
-        self.last_beat = Some(beat);
+        self.last = Some((beat, bar));
 
         outputs.insert(SHOW_TEMPO_OUT_BPM, FlowValue::Number(tempo.bpm as f32));
         outputs.insert(
@@ -127,12 +132,15 @@ impl FlowNode for ShowTempoNode {
         Ok(())
     }
 
+    /// Reports the node as impure because its output follows the live tempo, not its inputs.
     fn is_pure(&self) -> bool {
         false
     }
 
+    /// Forgets the last seen beat so a restarted flow does not fire for beats that passed
+    /// while it was stopped.
     fn reset(&mut self, _ctx: &FlowNodeContext) {
-        self.last_beat = None;
+        self.last = None;
     }
 }
 
@@ -152,9 +160,12 @@ mod tests {
             frame_delta: Duration::ZERO,
             tempo: Some(TempoSnapshot {
                 bpm: 128.0,
+                effective_bpm: 128.0,
                 target_bpm: 128.0,
                 beats_per_bar: 4,
                 beat_position,
+                bar_origin: 0.0,
+                bars_before_origin: 0,
             }),
         }
     }

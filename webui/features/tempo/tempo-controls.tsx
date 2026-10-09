@@ -7,6 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { debounce } from "@solid-primitives/scheduled";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { FastForwardIcon } from "@squidlab/phosphor-solid/fast-forward";
 import { RewindIcon } from "@squidlab/phosphor-solid/rewind";
@@ -35,8 +36,12 @@ import type { TempoCommand } from "../../types";
 import {
   beatInBar,
   extrapolateBeatPosition,
+  FIELD_COMMIT_DELAY_MS,
   formatBpm,
   MAX_BEAT_DOTS,
+  MAX_BEATS_PER_BAR,
+  MAX_BPM,
+  MIN_BPM,
   parseBpmInput,
 } from "./model";
 import "./tempo-controls.css";
@@ -72,7 +77,7 @@ export function TempoControls(props: { placement: "above" | "below" }) {
         state.receivedAtMs,
         performance.now(),
       );
-      setBeat(beatInBar(position, state.snapshot.beats_per_bar));
+      setBeat(beatInBar(state.snapshot, position));
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -93,19 +98,34 @@ export function TempoControls(props: { placement: "above" | "below" }) {
     }),
   );
 
-  /** Sends the drafted tempo when it is a valid positive number. */
+  /**
+   * Sends the drafted tempo when it lies in the engine's range, so a partly
+   * typed number such as the "1" of "128" is never applied.
+   */
   const commitBpm = () => {
+    scheduleBpmCommit.clear();
     const bpm = parseBpmInput(bpmDraft());
-    if (bpm !== undefined) sendTempoCommand({ type: "SetBpm", data: bpm });
+    if (bpm !== undefined && bpm >= MIN_BPM && bpm <= MAX_BPM) {
+      sendTempoCommand({ type: "SetBpm", data: bpm });
+    }
   };
 
-  /** Sends the drafted bar length when it is a whole number of beats. */
+  /** Sends the drafted bar length when it is a whole number of beats in range. */
   const commitBeatsPerBar = () => {
+    scheduleBeatsPerBarCommit.clear();
     const beats = Number(beatsPerBarDraft());
-    if (Number.isInteger(beats) && beats >= 1 && beats <= 16) {
+    if (Number.isInteger(beats) && beats >= 1 && beats <= MAX_BEATS_PER_BAR) {
       sendTempoCommand({ type: "SetBeatsPerBar", data: beats });
     }
   };
+
+  /** Applies stepper presses and typing once the operator pauses. */
+  const scheduleBpmCommit = debounce(commitBpm, FIELD_COMMIT_DELAY_MS);
+  /** Applies bar-length edits once the operator pauses. */
+  const scheduleBeatsPerBarCommit = debounce(
+    commitBeatsPerBar,
+    FIELD_COMMIT_DELAY_MS,
+  );
 
   /** Number of beat dots to draw for the current bar length. */
   const dotCount = () => tempo()?.snapshot.beats_per_bar ?? 4;
@@ -166,11 +186,14 @@ export function TempoControls(props: { placement: "above" | "below" }) {
                   aria-label="Tempo in BPM"
                   data-testid="tempo-bpm-input"
                   density="compact"
-                  min={20}
-                  max={300}
+                  min={MIN_BPM}
+                  max={MAX_BPM}
                   step="any"
                   value={bpmDraft()}
-                  onValueChange={setBpmDraft}
+                  onValueChange={(value) => {
+                    setBpmDraft(value);
+                    scheduleBpmCommit();
+                  }}
                   onBlur={commitBpm}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") commitBpm();
@@ -185,12 +208,16 @@ export function TempoControls(props: { placement: "above" | "below" }) {
                   aria-label="Beats per bar"
                   density="compact"
                   min={1}
-                  max={16}
+                  max={MAX_BEATS_PER_BAR}
                   step={1}
                   value={beatsPerBarDraft()}
                   onValueChange={(value) => {
                     setBeatsPerBarDraft(value);
-                    commitBeatsPerBar();
+                    scheduleBeatsPerBarCommit();
+                  }}
+                  onBlur={commitBeatsPerBar}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") commitBeatsPerBar();
                   }}
                   decreaseLabel="Fewer beats per bar"
                   increaseLabel="More beats per bar"
