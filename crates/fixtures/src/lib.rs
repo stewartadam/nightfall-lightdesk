@@ -388,7 +388,7 @@ pub enum FixtureCommand {
         target: BindingEndpoint,
         /// Binding priority (lower runs first)
         priority: i32,
-        /// Clone source address across target range
+        /// Give every fixture the same address instead of packing them one after another
         clone: bool,
     },
 

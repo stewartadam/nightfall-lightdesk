@@ -340,7 +340,9 @@ fn output_protocol_for_transport(transport: &OutputTransport) -> BindingTranspor
 /// Orders output bindings lowest precedence first: ascending priority, and among equal
 /// priorities the earliest-authored binding last. Consumers where a later binding replaces an
 /// earlier one therefore leave the highest-priority, earliest-authored binding in effect.
-fn output_bindings_in_overlay_order(output_bindings: &OutputBindings) -> Vec<&OutputBinding> {
+pub(crate) fn output_bindings_in_overlay_order(
+    output_bindings: &OutputBindings,
+) -> Vec<&OutputBinding> {
     let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
         output_bindings.bindings.iter().enumerate().collect();
     bindings_with_index
