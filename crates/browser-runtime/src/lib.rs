@@ -45,8 +45,8 @@ const MAX_TICK_DELTA_MS: f64 = 100.0;
 #[cfg(test)]
 const TEST_SAMPLE_ID: &str = "nightfall-demo-v1";
 #[cfg(test)]
-const TEST_SHOWFILE_JSON: &str =
-    include_str!("../../../webui/public/nightfall-demo.nightfall-show/showfile.json");
+const TEST_SHOWFILE_GZ: &[u8] =
+    include_bytes!("../../../webui/public/nightfall-demo.nightfall-show/showfile.json.gz");
 #[cfg(target_arch = "wasm32")]
 static CONSTRUCTION_STAGE: AtomicU8 = AtomicU8::new(0);
 
@@ -316,14 +316,30 @@ fn settle_loaded_runtime(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+    use std::sync::OnceLock;
+
+    use flate2::read::GzDecoder;
     use serde_json::{Value, json};
     use uuid::Uuid;
 
     use super::*;
 
+    /// Inflate the packaged gzip demo show once and share its JSON text across tests.
+    pub(crate) fn test_showfile_json() -> &'static str {
+        static JSON: OnceLock<String> = OnceLock::new();
+        JSON.get_or_init(|| {
+            let mut json = String::new();
+            GzDecoder::new(TEST_SHOWFILE_GZ)
+                .read_to_string(&mut json)
+                .expect("demo showfile should be valid gzip-compressed UTF-8");
+            json
+        })
+    }
+
     /// Build the packaged demo show through the canonical JSON load boundary.
     pub(crate) fn sample_engine() -> BrowserEngine {
-        BrowserEngine::create_core(TEST_SAMPLE_ID.to_owned(), TEST_SHOWFILE_JSON)
+        BrowserEngine::create_core(TEST_SAMPLE_ID.to_owned(), test_showfile_json())
             .expect("runtime should initialize from the demo showfile")
     }
 
@@ -391,7 +407,7 @@ mod tests {
             .and_then(|message| message["data"].as_array())
             .expect("fixture snapshot should be an array");
         let showfile: Value =
-            serde_json::from_str(TEST_SHOWFILE_JSON).expect("demo showfile should be JSON");
+            serde_json::from_str(test_showfile_json()).expect("demo showfile should be JSON");
         let showfile_len = |key: &str| showfile[key].as_array().map(Vec::len);
         assert_eq!(Some(fixtures.len()), showfile_len("fixtures"));
         let timelines = messages

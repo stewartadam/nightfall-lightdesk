@@ -4842,6 +4842,7 @@ dependencies = [
  "bevy_platform",
  "bevy_state",
  "bevy_time",
+ "flate2",
  "js-sys",
  "minicbor-serde",
  "moonshine-kind",

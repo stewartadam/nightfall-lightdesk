@@ -6,14 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
+
+import { readShowfileJson } from "./browser-demo-audio.mjs";
 
 const artifactDirectory = resolve("webui/dist");
 const assetsDirectory = resolve("webui/dist/assets");
 const showfilePath = resolve(
   artifactDirectory,
-  "nightfall-demo.nightfall-show/showfile.json",
+  "nightfall-demo.nightfall-show/showfile.json.gz",
 );
 
 /** Return emitted files matching one browser-demo artifact expression. */
@@ -37,7 +39,7 @@ function measure(files) {
 
 /** Return the deployed files referenced by timeline audio paths in one showfile. */
 function showfileTimelineAudioFiles(path) {
-  const showfile = JSON.parse(readFileSync(path, "utf8"));
+  const showfile = readShowfileJson(path);
   const audioPaths = (showfile.timelines ?? [])
     .map((timeline) => timeline.audio_path)
     .filter((audioPath) => typeof audioPath === "string" && audioPath);

@@ -7,6 +7,7 @@
  */
 
 import type { Page } from "@playwright/test";
+import { DEMO_SHOWFILE_ROUTE, parseDemoShowfile } from "./demo-showfile";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import {
   dockFixturesInMainGrid,
@@ -152,18 +153,15 @@ test("panel definitions constrain grid and edge groups", async ({
   });
   // A showfile's active layout takes precedence over the browser session
   // layout on load, so persist the undersized edge through the demo showfile.
-  await page.route(
-    "**/nightfall-demo.nightfall-show/showfile.json",
-    async (route) => {
-      const showfile = await (await route.fetch()).json();
-      showfile.settings.active_panel_layout = {
-        ...saved,
-        layoutId: showfile.settings.active_panel_layout?.layoutId,
-        updatedAt: Date.now(),
-      };
-      await route.fulfill({ json: showfile });
-    },
-  );
+  await page.route(DEMO_SHOWFILE_ROUTE, async (route) => {
+    const showfile = parseDemoShowfile(await (await route.fetch()).body());
+    showfile.settings.active_panel_layout = {
+      ...saved,
+      layoutId: showfile.settings.active_panel_layout?.layoutId,
+      updatedAt: Date.now(),
+    };
+    await route.fulfill({ json: showfile });
+  });
   await page.reload();
   await waitForDockviewApp(page);
   await expect
