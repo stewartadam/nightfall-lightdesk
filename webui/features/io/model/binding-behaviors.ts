@@ -6,6 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { type GridCell, GridCellKind } from "../../../lib/data-grid-types";
+import {
+  type DropdownGridCell,
+  isDropdownCell,
+} from "../../../lib/tanstack-dropdown-cell";
 import * as types from "../../../types";
 
 /** Behaviors offered when an action is missing from the catalog, such as a stale binding. */
@@ -61,6 +66,68 @@ export function behaviorLabel(
     case types.ControlBehavior.Flash:
       return "Flash to full";
   }
+}
+
+/**
+ * Builds a mapping table's Behavior cell as a dropdown of the behaviors the bound action
+ * supports, labeled as the mapping popover labels them. A stored behavior the action no
+ * longer supports stays listed so the cell still shows what the mapping does.
+ */
+export function behaviorCell(
+  behavior: types.ControlBehavior,
+  entry: types.ActionCatalogEntry | undefined,
+): DropdownGridCell {
+  const supported = actionBehaviors(entry);
+  const offered = supported.includes(behavior)
+    ? supported
+    : [behavior, ...supported];
+  const inputKind = entry?.descriptor.input;
+  return {
+    kind: GridCellKind.Custom,
+    data: {
+      kind: "dropdown-cell",
+      value: behavior,
+      allowedValues: offered.map((option) => ({
+        value: option,
+        label: behaviorLabel(option, inputKind),
+      })),
+    },
+    // The raw behavior pastes into any row, whatever its action labels that behavior.
+    copyData: behavior,
+    allowOverlay: true,
+  };
+}
+
+/**
+ * Returns the text a Behavior column filter matches: the behavior's name and every label
+ * the cell may show for it, so filtering on "held" or "fader" finds what the table shows.
+ */
+export function behaviorFilterText(behavior: types.ControlBehavior): string {
+  const labels = Object.values(types.ActionInputKind).map((inputKind) =>
+    behaviorLabel(behavior, inputKind),
+  );
+  return [...new Set([behavior, ...labels])].join(" ");
+}
+
+/**
+ * Returns whether a behavior chosen on one row can apply to another row's action, so an
+ * edit across several selected rows skips rows whose action does not support it.
+ */
+export function actionSupportsBehavior(
+  entry: types.ActionCatalogEntry | undefined,
+  behavior: types.ControlBehavior,
+): boolean {
+  return actionBehaviors(entry).includes(behavior);
+}
+
+/** Returns the behavior chosen in an edited Behavior cell, or undefined for other cells. */
+export function editedBehavior(
+  cell: GridCell,
+): types.ControlBehavior | undefined {
+  if (!isDropdownCell(cell)) return undefined;
+  return Object.values(types.ControlBehavior).find(
+    (behavior) => behavior === cell.data.value,
+  );
 }
 
 /** Names used to describe one binding in a sentence. */

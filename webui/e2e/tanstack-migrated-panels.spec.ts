@@ -155,6 +155,28 @@ async function editCellText(cell: Locator, value: string) {
 }
 
 /**
+ * Opens a selected dropdown cell's editor from the keyboard and picks an option by label,
+ * checking the options it offers first.
+ */
+async function chooseCellOption(
+  page: Page,
+  cell: Locator,
+  offered: string[],
+  label: string,
+) {
+  await cell.click();
+  await page.keyboard.press("Enter");
+  const dropdown = page.locator("[data-hs-select-dropdown].opened");
+  await expect(dropdown).toBeVisible();
+  await expect(dropdown.locator("[data-value]")).toHaveText(offered);
+  await dropdown
+    .locator("[data-value]")
+    .getByText(label, { exact: true })
+    .click();
+  await expect(dropdown).toBeHidden();
+}
+
+/**
  * Records awaited command submissions and answers them as succeeded.
  *
  * Mapping edits are backend commands and store-seeded apps have no backend, so the tests
@@ -196,6 +218,21 @@ async function latestUpsertedMapping(
 async function seedMappingStores(page: Page) {
   await page.evaluate(() => {
     const stores = (window as any).appStores;
+    stores.midiDevices.set([{ name: "E2E Pad" }]);
+    stores.actionCatalog.set(
+      ["clip.start", "clip.stop", "clip.go"].map((id) => ({
+        descriptor: {
+          id,
+          label: id,
+          category: "Clips",
+          input: "trigger",
+          parameters: [],
+          surfaces: ["midi", "osc"],
+        },
+        capabilities: [],
+        behaviors: ["Press", "Release", "Hold"],
+      })),
+    );
     stores.midiMappings.set([
       {
         id: "00000000000000000000000000000001",
@@ -445,7 +482,7 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
   const midiGrid = gridContaining(page, "E2E Controller");
   await expect(midiGrid).toBeVisible();
   await expect(midiGrid.locator("#tanstack-cell-0-0")).toHaveText(
-    "E2E Controller",
+    "E2E Controller (not connected)",
   );
   await midiGrid.locator("#tanstack-cell-0-0").click();
   await expect(
@@ -455,13 +492,37 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
   await expect(
     page.getByRole("button", { name: /Delete/ }).last(),
   ).toContainText("2");
-  await editCellText(midiGrid.locator("#tanstack-cell-0-0"), "E2E Pad");
+  await chooseCellOption(
+    page,
+    midiGrid.locator("#tanstack-cell-0-0"),
+    ["E2E Controller (not connected)", "E2E Pad"],
+    "E2E Pad",
+  );
   await expect
     .poll(
       async () =>
         (await latestUpsertedMapping(page, "MidiCommand"))?.device_name,
     )
     .toBe("E2E Pad");
+  const midiBehavior = gridCellByRowIndex(midiGrid, {
+    columnKey: "behavior",
+    rowIndex: 1,
+  });
+  await expect(midiBehavior).toHaveText("On release");
+  await chooseCellOption(
+    page,
+    midiBehavior,
+    ["On press", "On release", "While held"],
+    "While held",
+  );
+  await expect
+    .poll(
+      async () => (await latestUpsertedMapping(page, "MidiCommand"))?.behavior,
+    )
+    .toBe("Hold");
+  await midiGrid.screenshot({
+    path: test.info().outputPath("midi-mapping-dropdowns.png"),
+  });
 
   await addPanel(page, {
     id: "panel-OscInput-tanstack-e2e",
@@ -489,6 +550,17 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
       async () => (await latestUpsertedMapping(page, "OscCommand"))?.address,
     )
     .toBe("/e2e/stop");
+  await chooseCellOption(
+    page,
+    gridCellByRowIndex(oscGrid, { columnKey: "behavior", rowIndex: 0 }),
+    ["On press", "On release", "While held"],
+    "On release",
+  );
+  await expect
+    .poll(
+      async () => (await latestUpsertedMapping(page, "OscCommand"))?.behavior,
+    )
+    .toBe("Release");
 });
 
 test("TanStack migrated scene and library panels render rows and row-marker selection", async ({

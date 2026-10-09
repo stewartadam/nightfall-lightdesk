@@ -8,8 +8,13 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GridCellKind } from "../../../lib/data-grid-types";
 import * as types from "../../../types";
-import { recommendedBinding } from "./binding-behaviors";
+import {
+  behaviorCell,
+  editedBehavior,
+  recommendedBinding,
+} from "./binding-behaviors";
 
 const { Press, Release, Hold, Flash } = types.ControlBehavior;
 const { Absolute, Trigger } = types.ActionInputKind;
@@ -40,4 +45,52 @@ test("recommendedBinding falls back when the preferred kind is missing", () => {
   const releaseOnly = [{ behavior: Release, inputKind: Trigger }];
   assert.deepEqual(recommendedBinding(releaseOnly, false), releaseOnly[0]);
   assert.equal(recommendedBinding([], false), undefined);
+});
+
+/** Builds a catalog entry for a trigger action that supports the given behaviors. */
+function triggerEntry(
+  behaviors: types.ControlBehavior[],
+): types.ActionCatalogEntry {
+  return {
+    descriptor: { input: Trigger },
+    behaviors,
+  } as unknown as types.ActionCatalogEntry;
+}
+
+/**
+ * Verifies the Behavior dropdown offers the action's behaviors with popover labels, keeps a
+ * stored behavior the action no longer supports, and reads a chosen behavior back.
+ */
+test("behaviorCell offers supported behaviors and editedBehavior reads the choice", () => {
+  const cell = behaviorCell(Press, triggerEntry([Press, Release, Hold]));
+  assert.deepEqual(cell.data.allowedValues, [
+    { value: Press, label: "On press" },
+    { value: Release, label: "On release" },
+    { value: Hold, label: "While held" },
+  ]);
+  assert.equal(cell.copyData, Press);
+
+  const stale = behaviorCell(Flash, triggerEntry([Press]));
+  assert.deepEqual(stale.data.allowedValues, [
+    { value: Flash, label: "Flash to full" },
+    { value: Press, label: "On press" },
+  ]);
+
+  assert.equal(
+    editedBehavior({ ...cell, data: { ...cell.data, value: Hold } }),
+    Hold,
+  );
+  assert.equal(
+    editedBehavior({ ...cell, data: { ...cell.data, value: "Sometimes" } }),
+    undefined,
+  );
+  assert.equal(
+    editedBehavior({
+      kind: GridCellKind.Text,
+      data: "Hold",
+      displayData: "Hold",
+      allowOverlay: true,
+    }),
+    undefined,
+  );
 });

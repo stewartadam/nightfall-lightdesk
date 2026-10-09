@@ -8,15 +8,17 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GridCellKind } from "../../../lib/data-grid-types";
 import * as types from "../../../types";
 import { describeBinding } from "./binding-behaviors";
 import {
+  editedMidiDevice,
+  midiDeviceCell,
   midiMappingFromEvent,
   type OscGesture,
   oscBindingProblem,
   oscMappingFromGesture,
   oscMappingReportsRelease,
-  parseBehavior,
   trackOscGesture,
 } from "./controller-mapping-builders";
 
@@ -171,8 +173,6 @@ test("MIDI mappings carry the chosen behavior", () => {
     Hold,
   );
   assert.equal(mapping?.behavior, Hold);
-  assert.equal(parseBehavior(" flash "), Flash);
-  assert.equal(parseBehavior("sometimes"), undefined);
 });
 
 /** Binding previews spell out both halves of Hold and Flash. */
@@ -235,4 +235,36 @@ test("OSC binding problems describe what the control sent", () => {
     "OSC /go sent no value, so there is no way to tell when it is released. Send a value on press and another on release, such as 1 then 0.",
   );
   assert.equal(problem(gestureOf(ONE, ZERO), Trigger, Hold), undefined);
+});
+
+/**
+ * Verifies the Device dropdown lists the mapping's device first, then connected devices and
+ * devices other mappings use, marks unplugged ones, and reads the chosen device.
+ */
+test("midiDeviceCell offers connected and mapped devices", () => {
+  const connected = midiDeviceCell("Pad", ["Pad", "Keys"], ["Pad"]);
+  assert.deepEqual(connected.data.allowedValues, [
+    { value: "Pad", label: "Pad" },
+    { value: "Keys", label: "Keys" },
+  ]);
+
+  const missing = midiDeviceCell("Old Pad", ["Pad"], ["Old Pad", "Fader Box"]);
+  assert.deepEqual(missing.data.allowedValues, [
+    { value: "Old Pad", label: "Old Pad (not connected)" },
+    { value: "Pad", label: "Pad" },
+    { value: "Fader Box", label: "Fader Box (not connected)" },
+  ]);
+  assert.equal(
+    editedMidiDevice({ ...missing, data: { ...missing.data, value: "Pad" } }),
+    "Pad",
+  );
+  assert.equal(
+    editedMidiDevice({
+      kind: GridCellKind.Text,
+      data: "Pad",
+      displayData: "Pad",
+      allowOverlay: true,
+    }),
+    undefined,
+  );
 });
