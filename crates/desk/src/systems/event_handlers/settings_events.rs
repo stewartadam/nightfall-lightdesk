@@ -16,6 +16,7 @@ use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{
     BindingValidationSettings, InputDmxUniverses, InputUniverseStaleTimeout,
+    ParameterStateProjection,
 };
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, InputUniverseVisibilityMode, IoRuntimeSettings,
@@ -236,6 +237,11 @@ pub fn handle_events(
                 tracing::debug!("Showfile backup retention set to: {}", value);
                 SettingsCommandSuccess::Applied
             }
+            SettingsCommand::SetParameterKeyframesOnly(value) => {
+                params.settings.parameter_keyframes_only = *value;
+                tracing::debug!("Parameter keyframes-only set to: {}", value);
+                SettingsCommandSuccess::Applied
+            }
             SettingsCommand::SetPanelLayouts(value) => {
                 params.settings.panel_layouts = value.clone();
                 tracing::debug!(count = value.len(), "Panel layouts updated");
@@ -332,6 +338,17 @@ pub fn sync_network_dmx_outputs_from_settings(
     let sanitized_usb_outputs = settings.usb_dmx_outputs.sanitized();
     if *usb_dmx_outputs != sanitized_usb_outputs {
         *usb_dmx_outputs = sanitized_usb_outputs;
+    }
+}
+
+/// Applies the showfile's parameter stream mode to the client projection whenever desk settings
+/// change, whether from a settings command or a loaded showfile.
+pub fn sync_parameter_stream_from_settings(
+    settings: Res<DeskSettings>,
+    mut projection: ResMut<ParameterStateProjection>,
+) {
+    if settings.is_changed() {
+        projection.set_keyframes_only(settings.parameter_keyframes_only);
     }
 }
 
@@ -535,6 +552,38 @@ mod command_tests {
         let result = take_result(&mut app);
         assert_eq!(result.command_id, command_id);
         assert_eq!(result.outcome, CommandOutcome::succeeded());
+    }
+
+    /// Verifies the keyframes-only setting reaches the parameter projection after the command
+    /// applies, and again when settings are replaced wholesale as a showfile load does.
+    #[test]
+    fn parameter_keyframes_only_reaches_the_projection() {
+        let mut app = settings_command_app();
+        app.init_resource::<ParameterStateProjection>();
+        app.add_systems(
+            Update,
+            sync_parameter_stream_from_settings.after(finish_commands),
+        );
+        submit_command(&mut app, SettingsCommand::SetParameterKeyframesOnly(true));
+        app.update();
+        assert!(
+            app.world()
+                .resource::<DeskSettings>()
+                .parameter_keyframes_only
+        );
+        assert!(
+            app.world()
+                .resource::<ParameterStateProjection>()
+                .keyframes_only()
+        );
+
+        app.insert_resource(DeskSettings::default());
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<ParameterStateProjection>()
+                .keyframes_only()
+        );
     }
 
     /// Verifies device enumeration data is carried by the terminal command result.

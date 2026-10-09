@@ -197,7 +197,7 @@ pub struct ParameterStateProjection {
     seq: u32,
     keyframe_pending: bool,
     last_keyframe: Option<Instant>,
-    deltas_enabled: bool,
+    keyframes_only: bool,
 }
 
 impl ParameterStateProjection {
@@ -208,15 +208,20 @@ impl ParameterStateProjection {
         self.keyframe_pending = true;
     }
 
+    /// Chooses between sending only changed slots between keyframes, the default, and sending a
+    /// keyframe every frame as a fallback for clients that cannot keep up with deltas.
+    pub fn set_keyframes_only(&mut self, keyframes_only: bool) {
+        self.keyframes_only = keyframes_only;
+    }
+
+    /// Whether every frame is sent as a keyframe rather than as changes between keyframes.
+    pub fn keyframes_only(&self) -> bool {
+        self.keyframes_only
+    }
+
     /// Makes the next published frame a keyframe, for a client that missed part of the stream.
     pub fn request_keyframe(&mut self) {
         self.keyframe_pending = true;
-    }
-
-    /// Chooses between sending only changed slots between keyframes and sending a keyframe every
-    /// frame.
-    pub fn set_deltas_enabled(&mut self, enabled: bool) {
-        self.deltas_enabled = enabled;
     }
 
     /// Rebuilds the slot layout when the patch may have changed since it was last built.
@@ -356,13 +361,13 @@ impl ParameterStateProjection {
     /// Numbers and returns the next frame of the stream from the last [`Self::fill_values`] call,
     /// or `None` when it would be a delta with nothing in it.
     ///
-    /// The frame is a keyframe when deltas are disabled, when one was requested or the layout
+    /// The frame is a keyframe in keyframes-only mode, when one was requested or the layout
     /// changed, when [`KEYFRAME_INTERVAL`] has passed since the last one, or when a non-empty delta
     /// would be no smaller than a keyframe.
     pub fn publish_frame(&mut self, now: Instant) -> Option<ParameterStateFrame<'_>> {
         let delta_bytes = self.changed_slots.len() + self.changed_values.len();
         let assertions_changed = self.assertions != self.previous_assertions;
-        let keyframe = !self.deltas_enabled
+        let keyframe = self.keyframes_only
             || self.keyframe_pending
             || self
                 .last_keyframe
@@ -379,8 +384,8 @@ impl ParameterStateProjection {
         }
         let assertions_included = keyframe || assertions_changed;
         // Listing the changes costs a keyframe 4 bytes per changed slot, so only keyframes that
-        // stand in for a small delta carry them; while deltas are off nobody could verify anyway.
-        let verifiable = keyframe && self.deltas_enabled && delta_bytes < self.output.len();
+        // stand in for a small delta carry them, which keyframes-only mode never does.
+        let verifiable = keyframe && !self.keyframes_only && delta_bytes < self.output.len();
         let included = |bytes| WireBytes(if assertions_included { bytes } else { &[] });
         Some(ParameterStateFrame {
             layout_id: self.layout.layout_id,
@@ -653,34 +658,39 @@ mod tests {
         )
     }
 
-    /// Builds a delta-enabled projection over `fixture_count` bench fixtures and publishes its
-    /// opening keyframe at `start`.
+    /// Builds a projection over `fixture_count` bench fixtures and publishes its opening keyframe
+    /// at `start`.
     fn delta_app(fixture_count: usize, start: Instant) -> (App, Vec<BenchParameter>, OwnedFrame) {
         let (mut app, parameters, _receiver) = projection_app(fixture_count);
-        app.world_mut()
-            .resource_mut::<ParameterStateProjection>()
-            .set_deltas_enabled(true);
         let first = step(&mut app, start).expect("the first frame should be published");
         assert!(first.keyframe, "the stream opens with a keyframe");
         (app, parameters, first)
     }
 
-    /// Verifies every frame is a numbered keyframe while deltas are disabled, even when nothing
-    /// changed.
+    /// Verifies every frame is a numbered, unverifiable keyframe in keyframes-only mode, even when
+    /// nothing changed, and that leaving the mode resumes skipping unchanged frames.
     #[test]
-    fn disabled_deltas_send_a_keyframe_every_frame() {
-        let (mut app, _, _receiver) = projection_app(2);
-        let now = Instant::now();
+    fn keyframes_only_sends_a_keyframe_every_frame() {
+        let start = Instant::now();
+        let (mut app, _, first) = delta_app(2, start);
+        app.world_mut()
+            .resource_mut::<ParameterStateProjection>()
+            .set_keyframes_only(true);
         let frames: Vec<OwnedFrame> = (0..3)
-            .map(|_| step(&mut app, now).expect("every frame should be published"))
+            .map(|_| step(&mut app, start).expect("every frame should be published"))
             .collect();
         for (index, frame) in frames.iter().enumerate() {
             assert!(frame.keyframe);
-            assert_eq!(frame.seq, index as u32 + 1);
+            assert_eq!(frame.seq, first.seq + index as u32 + 1);
             assert!(!frame.verifiable && frame.changed_slots.is_empty());
             assert_eq!(frame.output, projection_output(&app));
             assert!(frame.assertions.is_some());
         }
+
+        app.world_mut()
+            .resource_mut::<ParameterStateProjection>()
+            .set_keyframes_only(false);
+        assert!(step(&mut app, start).is_none());
     }
 
     /// Verifies a delta carries exactly the slots whose output changed, with their new values,

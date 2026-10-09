@@ -114,6 +114,8 @@ test("captures live color output cadence during audio discovery", async ({
   // sampled fixture's first Red output from the most recent layout.
   let layoutId: number | null = null;
   let redSlot: number | null = null;
+  // Red output rebuilt from keyframes and the deltas that change it.
+  let currentRed: number | null = null;
   /**
    * Requests a resync so the backend publishes the layout to this observer too.
    * The resync is broadcast to the page as well, but it lands in the first
@@ -145,6 +147,7 @@ test("captures live color output cadence during audio discovery", async ({
       const message = decode(bytes.subarray(1)) as any;
       layoutId = message.data.layout_id;
       redSlot = null;
+      currentRed = null;
       let slot = 0;
       for (const fixture of message.data.fixtures) {
         for (const attributes of fixture.elements) {
@@ -161,22 +164,34 @@ test("captures live color output cadence during audio discovery", async ({
       }
       return;
     }
-    if (!header.includes(parameterStateTag) || time - started < 3_000) return;
-    let red: number | null = null;
-    if (samples.length % 5 === 0) {
-      const message = decode(bytes.subarray(1)) as any;
-      if (message.type !== "ParameterState")
-        throw new Error("Unexpected parameter frame header");
-      const output: Uint8Array = message.data.output;
-      if (message.data.layout_id === layoutId && redSlot !== null) {
-        red = new DataView(
-          output.buffer,
-          output.byteOffset,
-          output.byteLength,
-        ).getFloat32(redSlot * 4, true);
+    if (!header.includes(parameterStateTag)) return;
+    // Every frame is decoded, since deltas only carry the slots that changed.
+    const message = decode(bytes.subarray(1)) as any;
+    if (message.type !== "ParameterState")
+      throw new Error("Unexpected parameter frame header");
+    const frame = message.data;
+    if (frame.layout_id === layoutId && redSlot !== null) {
+      const output = new DataView(
+        frame.output.buffer,
+        frame.output.byteOffset,
+        frame.output.byteLength,
+      );
+      if (frame.keyframe) {
+        currentRed = output.getFloat32(redSlot * 4, true);
+      } else {
+        const slots = new DataView(
+          frame.changed_slots.buffer,
+          frame.changed_slots.byteOffset,
+          frame.changed_slots.byteLength,
+        );
+        for (let i = 0; i < slots.byteLength / 4; i++) {
+          if (slots.getUint32(i * 4, true) === redSlot)
+            currentRed = output.getFloat32(i * 4, true);
+        }
       }
     }
-    samples.push({ time, red });
+    if (time - started < 3_000) return;
+    samples.push({ time, red: currentRed });
   });
 
   try {

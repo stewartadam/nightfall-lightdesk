@@ -17,7 +17,7 @@ use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
 use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::{ClientEventSink, OutboundFrame};
 use nightfall_fixtures::prelude::{
-    ConsoleDmxUniverses, FixtureDataProviderExt, ParameterStateProjection,
+    ConsoleDmxUniverses, FixtureDataProviderExt, Parameter, ParameterStateProjection,
 };
 use nightfall_fixtures::testing::{
     BENCH_FIXTURE_PARAMETERS, BenchParameter, bench_universe_count, patch_bench_fixtures,
@@ -66,12 +66,11 @@ fn bench_dmx_packing(c: &mut Criterion) {
             let (mut app, _) = fixture_app(fixture_count, transport);
             app.add_systems(Update, dmx_universes);
             app.update();
-            assert_eq!(
-                app.world()
-                    .resource::<ConsoleDmxUniverses>()
-                    .universe_ids()
-                    .count(),
-                bench_universe_count(fixture_count),
+            let output_transport = transport.transport();
+            let universes = app.world().resource::<ConsoleDmxUniverses>();
+            assert!(
+                (1..=bench_universe_count(fixture_count) as u16)
+                    .all(|universe| universes.has_output_universe(&output_transport, universe)),
                 "every patched universe should be packed"
             );
 
@@ -87,16 +86,21 @@ fn bench_dmx_packing(c: &mut Criterion) {
     group.finish();
 }
 
+/// Shares of parameters, in percent, that change between parameter-state frames.
+const CHANGED_PERCENTS: &[usize] = &[0, 1, 10, 100];
+
 /// Registers the parameter-state build and encode benchmark group.
+///
+/// Every frame changes the output of a fixed share of the parameters, so the group measures how
+/// the cost and the size of a frame scale with how much of the rig moves. A keyframe of the same
+/// rig is printed alongside each delta size for comparison.
 fn bench_parameter_state(c: &mut Criterion) {
     let mut group = c.benchmark_group("parameter_state_broadcast");
     for fixture_count in fixture_counts() {
         group.throughput(Throughput::Elements(parameter_count(fixture_count)));
-        for asserted in [false, true] {
+        for &changed_percent in CHANGED_PERCENTS {
             let (mut app, parameters) = fixture_app(fixture_count, TransportShape::ArtNet);
-            if asserted {
-                assert_every_parameter(&mut app, &parameters);
-            }
+            assert_every_parameter(&mut app, &parameters);
             let receiver = install_client_sink(&mut app);
             app.add_plugins(DiagnosticsPlugin);
             register_fixture_websocket_diagnostics(&mut app);
@@ -107,18 +111,25 @@ fn bench_parameter_state(c: &mut Criterion) {
                 drain_bytes(&receiver) > 0,
                 "the first frame should publish the layout and values"
             );
+            let changed = &parameters[..parameters.len() * changed_percent / 100];
+            let mut generation = 0;
+            change_outputs(&mut app, changed, &mut generation);
             app.update();
-            let message_bytes = drain_bytes(&receiver);
-            assert!(message_bytes > 0, "parameter state should be published");
+            let frame_bytes = drain_bytes(&receiver);
+            app.world_mut()
+                .resource_mut::<ParameterStateProjection>()
+                .request_keyframe();
+            app.update();
+            let keyframe_bytes = drain_bytes(&receiver);
             println!(
-                "parameter_state_broadcast fixtures={fixture_count} asserted={asserted}: \
-                 {message_bytes} bytes per frame"
+                "parameter_state_broadcast fixtures={fixture_count} changed={changed_percent}%: \
+                 {frame_bytes} bytes per frame, {keyframe_bytes} bytes per keyframe"
             );
 
-            let assertions = if asserted { "absolute" } else { "defaults" };
-            let id = format!("{assertions}/fixtures={fixture_count}");
+            let id = format!("changed={changed_percent}%/fixtures={fixture_count}");
             group.bench_function(BenchmarkId::from_parameter(id), |b| {
                 b.iter(|| {
+                    change_outputs(&mut app, changed, &mut generation);
                     app.update();
                     black_box(drain_bytes(&receiver));
                 });
@@ -126,6 +137,19 @@ fn bench_parameter_state(c: &mut Criterion) {
         }
     }
     group.finish();
+}
+
+/// Gives every parameter in `changed` a new output value, advancing `generation` so the next call
+/// differs again.
+fn change_outputs(app: &mut App, changed: &[BenchParameter], generation: &mut u32) {
+    *generation = generation.wrapping_add(1);
+    let value = (*generation % 256) as f32;
+    for parameter in changed {
+        app.world_mut()
+            .get_mut::<Parameter>(parameter.instance.entity())
+            .expect("benchmark parameters should exist")
+            .set_raw_value(value);
+    }
 }
 
 /// Registers the fixture parameter lookup benchmark group.
