@@ -109,8 +109,8 @@ async function generateShowfile(
             fixtures: ids.map((id) => ({ id })),
           },
         });
-        // One binding per universe: patch validation packs a multi-universe binding's
-        // fixtures into each universe in turn and overflows past 65,535 channels.
+        // One binding per universe: a binding spanning a universe range places one fixture
+        // per universe, so packing several fixtures into a universe needs its own binding.
         for (
           let chunk = 0;
           chunk * group.fixturesPerUniverse < ids.length;
