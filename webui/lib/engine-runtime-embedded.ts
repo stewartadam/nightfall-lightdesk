@@ -8,6 +8,7 @@
 
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 import type { EmbeddedRuntimeFactory } from "./engine-runtime-worker-core";
+import { inflateGzipBounded } from "./gzip-bounded";
 
 interface EmbeddedBrowserEngine {
   /** Release the WASM-owned engine allocation. */
@@ -110,7 +111,11 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
     }
   }
 
-  /** Fetch and bound the immutable showfile selected by the browser-demo release config. */
+  /**
+   * Fetch the immutable gzip-compressed showfile selected by the browser-demo
+   * release config and return its JSON text. The byte limit applies to both
+   * the transferred body and the unpacked snapshot.
+   */
   async function fetchEmbeddedShowfile(showfileUrl: string): Promise<string> {
     const response = await fetch(showfileUrl, { cache: "force-cache" });
     if (!response.ok) {
@@ -127,16 +132,11 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
         `showfile exceeds ${MAX_EMBEDDED_SHOWFILE_BYTES} byte limit`,
       );
     }
-    const showfileJson = await response.text();
-    if (
-      new TextEncoder().encode(showfileJson).byteLength >
-      MAX_EMBEDDED_SHOWFILE_BYTES
-    ) {
-      throw new Error(
-        `showfile exceeds ${MAX_EMBEDDED_SHOWFILE_BYTES} byte limit`,
-      );
-    }
-    return showfileJson;
+    const showfileBytes = await inflateGzipBounded(
+      new Uint8Array(await response.arrayBuffer()),
+      MAX_EMBEDDED_SHOWFILE_BYTES,
+    );
+    return new TextDecoder().decode(showfileBytes);
   }
 
   /** Load and start the worker-local WASM engine adapter. */

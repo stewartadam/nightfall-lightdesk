@@ -47,6 +47,7 @@ uuid = { workspace = true, features = ["js"] }
 web-sys = { version = "0.3", features = ["DedicatedWorkerGlobalScope"] }
 
 [dev-dependencies]
+flate2 = "1.1"
 minicbor-serde.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

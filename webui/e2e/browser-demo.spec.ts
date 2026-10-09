@@ -7,8 +7,13 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
+import {
+  DEMO_SHOWFILE_PATH,
+  parseDemoShowfile,
+  readCheckedInDemoShowfile,
+} from "./demo-showfile";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -30,15 +35,7 @@ test.describe.configure({ timeout: 90_000 });
 
 /** Read the domain collection sizes the embedded runtime should load from the demo showfile. */
 async function readDemoShowfileCounts() {
-  const showfile = JSON.parse(
-    await readFile(
-      new URL(
-        "../public/nightfall-demo.nightfall-show/showfile.json",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-  );
+  const showfile = await readCheckedInDemoShowfile();
   const timeline = showfile.timelines.find(
     (entry: any) => entry.identifiers.label === DEMO_TIMELINE_LABEL,
   );
@@ -78,7 +75,7 @@ async function prepareEmbeddedPage(page: Page): Promise<{
     ) {
       backendRequests.push(request.url());
     }
-    if (url.pathname.endsWith("/nightfall-demo.nightfall-show/showfile.json")) {
+    if (url.pathname.endsWith(`/${DEMO_SHOWFILE_PATH}`)) {
       showfileRequests.push(request.url());
     }
     if (request.resourceType() === "media") {
@@ -914,11 +911,10 @@ test.describe("packaged demo show", () => {
       "/demo/app/?startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
     );
     await waitForDemoShow(page);
-    const showfileUrl = new URL(
-      "nightfall-demo.nightfall-show/showfile.json",
-      page.url(),
+    const showfileUrl = new URL(DEMO_SHOWFILE_PATH, page.url());
+    const showfile = parseDemoShowfile(
+      await (await page.request.get(showfileUrl.href)).body(),
     );
-    const showfile = await (await page.request.get(showfileUrl.href)).json();
     const audioPaths = referencedAudioPaths(showfile);
     expect(showfile.fixtures.length).toBeGreaterThan(0);
     expect(audioPaths.length).toBeGreaterThan(0);

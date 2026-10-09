@@ -19,6 +19,7 @@ import {
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 
@@ -54,10 +55,15 @@ test("browser packaging preserves integrity and reports only packaged byte sizes
     write("webui/dist/assets/nightfall_browser_runtime_bg-test.wasm", wasm);
     write("webui/dist/assets/engine-runtime-worker-test.js", "worker");
     write(
-      "webui/dist/nightfall-demo.nightfall-show/showfile.json",
-      JSON.stringify({
-        timelines: [{ audio_path: "sample.wav" }, { audio_path: "sample.wav" }],
-      }),
+      "webui/dist/nightfall-demo.nightfall-show/showfile.json.gz",
+      gzipSync(
+        JSON.stringify({
+          timelines: [
+            { audio_path: "sample.wav" },
+            { audio_path: "sample.wav" },
+          ],
+        }),
+      ),
     );
     write("webui/dist/nightfall-demo.nightfall-show/sample.wav", "audio");
     write(

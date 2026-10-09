@@ -12,7 +12,7 @@ import { copyTimelineAudio } from "./browser-demo-audio.mjs";
 
 const written = copyTimelineAudio({
   showfilePath: resolve(
-    "webui/public/nightfall-demo.nightfall-show/showfile.json",
+    "webui/public/nightfall-demo.nightfall-show/showfile.json.gz",
   ),
   sampleAudioDir: resolve("crates/app-runtime/assets/sample-audio"),
 });
