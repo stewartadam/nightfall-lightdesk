@@ -15,7 +15,9 @@ use bevy_ecs::prelude::{Resource, World};
 use serde::de::DeserializeOwned;
 
 use crate::descriptor::{ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind};
-use crate::invocation::{ActionInvocation, ActionReference, InvocationDispatch, InvocationError};
+use crate::invocation::{
+    ActionInvocation, ActionReference, ClientActionInvocation, InvocationDispatch, InvocationError,
+};
 
 /// ID prefix reserved for actions hosted by connected Web UI clients.
 pub const CLIENT_ACTION_PREFIX: &str = "ui.";
@@ -47,6 +49,11 @@ struct RegisteredAction {
 #[derive(Default, Resource)]
 pub struct ActionRegistry {
     actions: BTreeMap<ActionId, RegisteredAction>,
+}
+
+/// Returns whether an action ID is reserved for actions hosted by connected clients.
+pub fn is_client_action(id: &ActionId) -> bool {
+    id.as_str().starts_with(CLIENT_ACTION_PREFIX)
 }
 
 /// Decodes persisted action arguments into the owning domain's typed argument struct.
@@ -207,6 +214,18 @@ impl ActionRegistry {
         world: &mut World,
         invocation: &ActionInvocation,
     ) -> Result<InvocationDispatch, InvocationError> {
+        if is_client_action(&invocation.action.id) {
+            let Some(input) = invocation.input.resolve_for(ActionInputKind::Trigger)? else {
+                return Ok(InvocationDispatch::Ignored);
+            };
+            world.write_message(ClientActionInvocation {
+                action: invocation.action.clone(),
+                input,
+                surface: invocation.surface,
+                source: invocation.source_label(),
+            });
+            return Ok(InvocationDispatch::Accepted);
+        }
         let registered = self.registered(&invocation.action.id)?;
         let Some(input) = invocation.input.resolve_for(registered.descriptor.input)? else {
             return Ok(InvocationDispatch::Ignored);
@@ -228,7 +247,7 @@ impl ActionRegistry {
         action: &ActionReference,
         can_drive: impl Fn(ActionInputKind) -> bool,
     ) -> Result<(), InvocationError> {
-        if action.id.as_str().starts_with(CLIENT_ACTION_PREFIX) {
+        if is_client_action(&action.id) {
             return Ok(());
         }
         let descriptor = &self.registered(&action.id)?.descriptor;
@@ -261,7 +280,12 @@ impl ActionRegistry {
     }
 
     /// Returns the input kind of a registered action, if any.
+    ///
+    /// Client-hosted `ui.*` actions are triggers.
     pub fn input_kind(&self, id: &ActionId) -> Option<ActionInputKind> {
+        if is_client_action(id) {
+            return Some(ActionInputKind::Trigger);
+        }
         self.get(id).map(|descriptor| descriptor.input)
     }
 

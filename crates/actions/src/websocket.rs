@@ -13,6 +13,7 @@ use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, Re
 use serde::Serialize;
 
 use crate::descriptor::ActionCatalogEntry;
+use crate::invocation::ClientActionInvocation;
 use crate::registry::ActionRegistry;
 
 /// Websocket messages emitted by the actions plugin.
@@ -22,6 +23,8 @@ use crate::registry::ActionRegistry;
 pub enum ActionsWsMessage<'a> {
     /// Every registered action with its descriptor and capability names.
     ActionCatalog(&'a [ActionCatalogEntry]),
+    /// Request for opted-in clients to run a client-hosted `ui.*` action.
+    ClientActionInvocation(&'a ClientActionInvocation),
 }
 
 /// Broadcasts the catalog whenever registrations change.
@@ -55,4 +58,21 @@ fn send_catalog(registry: &ActionRegistry, sink: &ClientEventSink) {
         DISCRIMINATOR_NON_DROPPABLE,
         &ActionsWsMessage::ActionCatalog(&registry.catalog()),
     );
+}
+
+/// Broadcasts client-hosted action invocations to connected Web UI clients.
+pub fn send_client_action_invocations(
+    mut invocations: MessageReader<ClientActionInvocation>,
+    sink: Option<Res<ClientEventSink>>,
+) {
+    let Some(sink) = sink else {
+        invocations.clear();
+        return;
+    };
+    for invocation in invocations.read() {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ActionsWsMessage::ClientActionInvocation(invocation),
+        );
+    }
 }
