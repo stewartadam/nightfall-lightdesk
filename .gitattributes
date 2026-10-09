@@ -13,4 +13,5 @@ Dockerfile text eol=lf
 # Bundled sample media is stored outside Git object history.
 crates/app-runtime/assets/sample-audio/*.mp3 filter=lfs diff=lfs merge=lfs -text
 # The browser demo showfile is stored gzip-compressed in plain Git; keep it binary.
+# Regenerate it reproducibly with `gzip -9 -n showfile.json`.
 webui/public/nightfall-demo.nightfall-show/showfile.json.gz binary

@@ -8,6 +8,7 @@
 
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 import type { EmbeddedRuntimeFactory } from "./engine-runtime-worker-core";
+import { inflateGzipBounded } from "./gzip-bounded";
 
 interface EmbeddedBrowserEngine {
   /** Release the WASM-owned engine allocation. */
@@ -30,43 +31,6 @@ const Status = {
   Connecting: "connecting",
   Connected: "connected",
 } as const;
-
-/** Report whether a byte buffer starts with the gzip member header. */
-function isGzip(bytes: Uint8Array): boolean {
-  return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
-}
-
-/**
- * Inflate one gzip buffer, aborting as soon as the unpacked size passes the
- * embedded showfile limit instead of materializing an oversized snapshot.
- */
-async function gunzipBounded(compressed: Uint8Array): Promise<Uint8Array> {
-  const reader = new Blob([compressed as Uint8Array<ArrayBuffer>])
-    .stream()
-    .pipeThrough(new DecompressionStream("gzip"))
-    .getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalBytes += value.byteLength;
-    if (totalBytes > MAX_EMBEDDED_SHOWFILE_BYTES) {
-      await reader.cancel();
-      throw new Error(
-        `showfile exceeds ${MAX_EMBEDDED_SHOWFILE_BYTES} byte limit when unpacked`,
-      );
-    }
-    chunks.push(value);
-  }
-  const unpacked = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    unpacked.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return unpacked;
-}
 
 /** Create the demo-only WASM engine adapter using the worker's shared delivery callbacks. */
 export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
@@ -150,9 +114,7 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
   /**
    * Fetch the immutable gzip-compressed showfile selected by the browser-demo
    * release config and return its JSON text. The byte limit applies to both
-   * the transferred body and the unpacked snapshot so a small archive cannot
-   * expand without bound. A body the host already decoded (served with
-   * `Content-Encoding: gzip`) arrives without the gzip header and is used as is.
+   * the transferred body and the unpacked snapshot.
    */
   async function fetchEmbeddedShowfile(showfileUrl: string): Promise<string> {
     const response = await fetch(showfileUrl, { cache: "force-cache" });
@@ -170,13 +132,10 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
         `showfile exceeds ${MAX_EMBEDDED_SHOWFILE_BYTES} byte limit`,
       );
     }
-    const body = new Uint8Array(await response.arrayBuffer());
-    if (body.byteLength > MAX_EMBEDDED_SHOWFILE_BYTES) {
-      throw new Error(
-        `showfile exceeds ${MAX_EMBEDDED_SHOWFILE_BYTES} byte limit`,
-      );
-    }
-    const showfileBytes = isGzip(body) ? await gunzipBounded(body) : body;
+    const showfileBytes = await inflateGzipBounded(
+      new Uint8Array(await response.arrayBuffer()),
+      MAX_EMBEDDED_SHOWFILE_BYTES,
+    );
     return new TextDecoder().decode(showfileBytes);
   }
 
