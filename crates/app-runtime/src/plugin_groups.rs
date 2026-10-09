@@ -20,6 +20,7 @@ use nightfall_fx::prelude::*;
 use nightfall_fx_module::prelude::*;
 use nightfall_programmer::prelude::*;
 use nightfall_scene_objects::prelude::*;
+use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use nightfall_undo::prelude::*;
@@ -73,6 +74,7 @@ pub struct FxPlugins;
 impl PluginGroup for FxPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
+            .add(TempoPlugin)
             .add(FxPlugin)
             .add(FxModulePlugin)
             .add(FlowPlugin)

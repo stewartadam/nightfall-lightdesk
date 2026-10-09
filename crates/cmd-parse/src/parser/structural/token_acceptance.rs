@@ -153,6 +153,10 @@ pub(in crate::parser) fn slot_accepts_initial_fill(slot: SlotId, token: &LexerTo
     if slot == SlotId::PatchClone {
         return token.text.eq_ignore_ascii_case("/clone");
     }
+    if slot == SlotId::TempoAction {
+        return token.kind == LexerTokenKind::Number
+            || token_id.is_some_and(|token_id| slot_accepts_token(slot, token_id));
+    }
     if matches!(slot, SlotId::ClipAction | SlotId::FlowAction) {
         return token_id_for_text(token.text.as_str())
             .is_some_and(|token_id| slot_accepts_token(slot, token_id));

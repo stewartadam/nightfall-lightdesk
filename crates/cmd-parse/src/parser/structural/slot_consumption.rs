@@ -309,6 +309,8 @@ pub(in crate::parser) fn consume_slot<'i>(
             is_complete_decimal_value,
         )
         .or_else(|| filled_value_for_slot(slot.slot, token))?
+    } else if slot_id == SlotId::TempoAction && existing_fills > 0 {
+        filled_value_for_tempo_followup(slot.slot, &slot_fills, token)?
     } else if slot_id == SlotId::SetAttrValue && existing_fills > 0 {
         filled_value_for_set_attr_value_followup(slot.slot, &slot_fills, token)?
     } else if matches!(

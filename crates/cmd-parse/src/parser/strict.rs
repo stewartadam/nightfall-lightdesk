@@ -55,9 +55,9 @@ use crate::ast::{
     SimpleIdentifierExpressionAst, SimpleOpTermAst, SimpleRangeAst, SimpleTermAst, SingleIdAst,
     SleepCommandAst, SpanFieldNameAst, SpanFieldValueAst, StartStopAst, StoreColorPathCommandAst,
     StoreCueCommandAst, StoreCueModeAst, StoreCueTargetAst, StoreGroupCommandAst, TargetAst,
-    TermAst, TimecodeActionAst, TimecodeCommandAst, TimecodeKeyword, TimelineCommandAst,
-    TimelineKeyword, TransportEndpointAst, TransportNameAst, UndoCommandAst, UniverseRangeAst,
-    ValueAst, WordAst,
+    TempoActionAst, TempoCommandAst, TermAst, TimecodeActionAst, TimecodeCommandAst,
+    TimecodeKeyword, TimelineCommandAst, TimelineKeyword, TransportEndpointAst, TransportNameAst,
+    UndoCommandAst, UniverseRangeAst, ValueAst, WordAst,
 };
 use crate::ast::{BlueprintKeyword, FlowActionAst, FlowCommandAst, QuotedStringAst};
 use crate::ast::{
@@ -1753,6 +1753,7 @@ fn dispatch_structural_branch<'i>(
         StructuralAstDispatchKind::Debug => general::materialize_general_object_ast(ctx),
         StructuralAstDispatchKind::Sleep => general::materialize_sleep_ast(ctx),
         StructuralAstDispatchKind::Fps => general::materialize_fps_ast(ctx),
+        StructuralAstDispatchKind::Tempo => general::materialize_tempo_ast(ctx),
     }
 }
 

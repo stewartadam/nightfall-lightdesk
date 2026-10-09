@@ -43,6 +43,7 @@ import {
 
 const GENERATOR_NODE_KINDS = new Set([
   "metronome",
+  "show_tempo",
   "selection",
   "color_picker",
 ]);

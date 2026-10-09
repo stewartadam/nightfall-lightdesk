@@ -82,6 +82,7 @@ const ATTRIBUTE_RESERVED_HEADS: &[&str] = &[
     "release",
     "debug",
     "fps",
+    "tempo",
     "log",
     "undo",
     "redo",

@@ -442,6 +442,13 @@ export const inputContributionTrace = atom<types.OutboundInputContribution[]>(
   [],
 );
 
+/** Last show tempo received from the engine, with its local receive time for extrapolation. */
+export interface ShowTempoState {
+  snapshot: types.TempoSnapshot;
+  receivedAtMs: number;
+}
+export const showTempo = atom<ShowTempoState | undefined>(undefined);
+
 // Undo/Redo state
 export const undoState = atom<UndoState>({
   can_undo: false,
@@ -1073,6 +1080,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     inputContributionTrace,
     activeInstances,
     controls,
+    showTempo,
     undoState,
     engineMetrics,
     smoothedEngineMetrics,

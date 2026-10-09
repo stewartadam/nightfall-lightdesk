@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use bevy_ecs::prelude::Resource;
+use nightfall_tempo::prelude::TempoSnapshot;
 use serde::{Deserialize, Serialize};
 
 use crate::runtime::FlowTriggerState;
@@ -53,6 +54,8 @@ pub struct FlowNodeContext {
     pub position: Duration,
     /// Delta since previous frame.
     pub frame_delta: Duration,
+    /// Show tempo for this frame, when the app runs a tempo engine.
+    pub tempo: Option<TempoSnapshot>,
 }
 
 /// Port values keyed by port id.

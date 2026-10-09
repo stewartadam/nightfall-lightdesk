@@ -763,6 +763,7 @@ fn command_head_token_from_lexeme(raw: &str) -> Option<TokenId> {
         "debug" => Some(TokenId::Debug),
         "sleep" => Some(TokenId::Sleep),
         "fps" => Some(TokenId::Fps),
+        "tempo" => Some(TokenId::Tempo),
         _ => None,
     }
 }
@@ -829,6 +830,7 @@ fn completion_group_anchor_clauses(group_id: CompletionGroupId) -> &'static [Cla
         CompletionGroupId::DebugObject => &[ClauseId::Debug],
         CompletionGroupId::SleepDuration => &[ClauseId::Sleep],
         CompletionGroupId::FpsValue => &[ClauseId::Fps],
+        CompletionGroupId::TempoAction => &[ClauseId::Tempo],
     }
 }
 
@@ -887,6 +889,7 @@ fn completion_group_matches_command_head(group_id: CompletionGroupId, head: Toke
         CompletionGroupId::DebugObject => head == TokenId::Debug,
         CompletionGroupId::SleepDuration => head == TokenId::Sleep,
         CompletionGroupId::FpsValue => head == TokenId::Fps,
+        CompletionGroupId::TempoAction => head == TokenId::Tempo,
     }
 }
 

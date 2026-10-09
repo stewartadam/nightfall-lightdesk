@@ -114,6 +114,7 @@ export type AnyCommand =
   | types.SettingsCommand
   | types.ControlCommand
   | types.StepFxCommand
+  | types.TempoCommand
   | types.TimecodeCommand
   | types.TimelineCommand
   | types.UndoCommand;
@@ -134,6 +135,7 @@ export type AnyWsMessage =
   | StepFxDefinitionsWsMessage
   | types.FxWsMessage
   | types.FxModuleWsMessage
+  | types.TempoWsMessage
   | types.TimecodeWsMessage
   | types.TimelineWsMessage
   | types.MidiWsMessage

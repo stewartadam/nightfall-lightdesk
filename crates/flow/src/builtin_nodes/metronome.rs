@@ -155,6 +155,7 @@ mod tests {
             &FlowNodeContext {
                 position: start + Duration::from_secs(3),
                 frame_delta: Duration::from_secs(3),
+                tempo: None,
             },
         )
         .expect("metronome should execute");
@@ -164,6 +165,7 @@ mod tests {
         node.reset(&FlowNodeContext {
             position: restart,
             frame_delta: Duration::ZERO,
+            tempo: None,
         });
 
         outputs.clear();
@@ -176,6 +178,7 @@ mod tests {
             &FlowNodeContext {
                 position: restart,
                 frame_delta: Duration::ZERO,
+                tempo: None,
             },
         )
         .expect("metronome should execute after reset");

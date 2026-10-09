@@ -817,6 +817,59 @@ fn complete_command_surfaces_raw_frontier_tokens_for_recall_sleep_and_fps() {
     assert!(has_candidate_insert(&fps, "-"));
 }
 
+/// Tempo offers its operation keywords and a BPM value, then each operation's own operand.
+#[test]
+fn complete_command_surfaces_tempo_operations_and_operands() {
+    let tempo = complete_command("tempo ", "tempo ".len());
+    for keyword in [
+        "tap", "resync", "snap", "half", "double", "nudge", "bar", "0..9",
+    ] {
+        assert!(has_candidate_insert(&tempo, keyword), "missing {keyword}");
+    }
+    assert!(!has_candidate_insert(&tempo, "-"));
+    let action = group_by_id(&tempo, CompletionGroupId::TempoAction);
+    assert!(
+        action
+            .candidates
+            .contains(&ExpectedToken::Token(TokenId::Nudge))
+    );
+    assert!(
+        action
+            .candidates
+            .contains(&ExpectedToken::Placeholder(ValueKind::NumericDigit))
+    );
+
+    let partial = complete_command("tempo n", "tempo n".len());
+    assert!(has_candidate_insert(&partial, "nudge"));
+    assert!(!has_candidate_insert(&partial, "tap"));
+
+    let nudge = complete_command("tempo nudge ", "tempo nudge ".len());
+    for token in ["0..9", "+", "-"] {
+        assert!(has_candidate_insert(&nudge, token), "missing {token}");
+    }
+    assert!(!has_candidate_insert(&nudge, "tap"));
+
+    let bar = complete_command("tempo bar ", "tempo bar ".len());
+    assert!(has_candidate_insert(&bar, "0..9"));
+    assert!(!has_candidate_insert(&bar, "-"));
+
+    let bpm = complete_command("tempo 128", "tempo 128".len());
+    assert!(has_candidate_insert(&bpm, "."));
+    assert!(!has_candidate_insert(&bpm, "tap"));
+
+    for input in [
+        "tempo tap ",
+        "tempo 128.5 ",
+        "tempo nudge -0.1 ",
+        "tempo bar 4 ",
+    ] {
+        assert!(
+            complete_command(input, input.len()).candidates.is_empty(),
+            "{input:?}"
+        );
+    }
+}
+
 #[test]
 fn complete_command_prefers_family_action_tokens_for_partial_action_prefixes() {
     let flow = complete_command("flow 1 st", "flow 1 st".len());

@@ -400,7 +400,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
               <h3 class="text-sm font-medium text-gray-300">MIDI Mappings</h3>
               <p class="truncate text-xs text-gray-500">
                 Edit cells to configure. Action format: StartClip(1),
-                StopClip(2), etc.
+                StopClip(2), TapTempo, SetTempo(128), etc.
               </p>
             </div>
           }

@@ -446,8 +446,8 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               <h3 class="text-sm font-medium text-gray-300">OSC Mappings</h3>
               <p class="truncate text-xs text-gray-500">
                 Leave Source blank to match any sender. Action format:
-                StartClip(1), StopClip(2), GoClip(3), SetControl(1), Eval(clip 1
-                go)
+                StartClip(1), StopClip(2), GoClip(3), SetControl(1), TapTempo,
+                Eval(clip 1 go)
               </p>
             </div>
           }

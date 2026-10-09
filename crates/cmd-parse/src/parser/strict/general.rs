@@ -174,6 +174,44 @@ pub(super) fn materialize_fps_ast<'i>(ctx: StrictBranchContext<'i, '_>) -> Optio
     )))
 }
 
+/// Builds a live tempo command from the operation keyword or BPM value captured by the tempo slot.
+///
+/// A leading number sets the BPM and must be an unsigned decimal; `nudge` requires a signed
+/// decimal operand, `bar` requires one integer operand, and the remaining keywords stand alone.
+pub(super) fn materialize_tempo_ast<'i>(
+    ctx: StrictBranchContext<'i, '_>,
+) -> Option<CommandAst<'i>> {
+    let tokens = slot_tokens(
+        ctx.tokens,
+        ctx.branch,
+        crate::slots::contracts::SlotId::TempoAction,
+    );
+    let (first, operand) = tokens.split_first()?;
+    let action = if first.kind == LexerTokenKind::Number {
+        let bpm = parse_decimal_value_from_tokens(ctx.command_str, &tokens)?;
+        TempoActionAst::SetBpm(bpm)
+    } else {
+        let keyword = crate::lexicon::tokens::token_id_for_text(first.text.as_str())?;
+        match (keyword, operand) {
+            (TokenId::Tap, []) => TempoActionAst::Tap,
+            (TokenId::Resync, []) => TempoActionAst::Resync,
+            (TokenId::Snap, []) => TempoActionAst::Snap,
+            (TokenId::Half, []) => TempoActionAst::Half,
+            (TokenId::Double, []) => TempoActionAst::Double,
+            (TokenId::Nudge, [_, ..]) => {
+                TempoActionAst::Nudge(parse_decimal_value_from_tokens(ctx.command_str, operand)?)
+            }
+            (TokenId::Bar, [count]) if count.kind == LexerTokenKind::Number => {
+                TempoActionAst::BeatsPerBar(IntegerAst(
+                    &ctx.command_str[count.span.start..count.span.end],
+                ))
+            }
+            _ => return None,
+        }
+    };
+    Some(CommandAst::Tempo(TempoCommandAst { action }))
+}
+
 pub(super) fn materialize_sleep_ast<'i>(
     ctx: StrictBranchContext<'i, '_>,
 ) -> Option<CommandAst<'i>> {

@@ -122,6 +122,8 @@ pub enum SlotId {
     DebugObjectIdentifier,
     SleepDuration,
     FpsValue,
+    /// Tempo operation keyword or BPM value, including any numeric operand that follows it.
+    TempoAction,
 }
 
 /// Stable identifier for a command grammar clause.
@@ -201,6 +203,7 @@ pub enum ClauseId {
     Debug,
     Sleep,
     Fps,
+    Tempo,
 }
 
 /// Parse-time flag that records whether a clause supplied optional timing data.
@@ -321,6 +324,7 @@ pub enum ClauseHookId {
     Debug,
     Sleep,
     Fps,
+    Tempo,
 }
 
 const EMPTY_CHILDREN: &[ClauseChildSpec] = &[];
@@ -351,6 +355,7 @@ const RECALL_HEADS: &[TokenId] = &[TokenId::Recall];
 const DEBUG_HEADS: &[TokenId] = &[TokenId::Debug];
 const SLEEP_HEADS: &[TokenId] = &[TokenId::Sleep];
 const FPS_HEADS: &[TokenId] = &[TokenId::Fps];
+const TEMPO_HEADS: &[TokenId] = &[TokenId::Tempo];
 
 const PROGRAMMER_CHILDREN: &[ClauseChildSpec] = &[
     ClauseChildSpec {
@@ -964,6 +969,10 @@ const FPS_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
     slot: SlotId::FpsValue,
     cardinality: SlotCardinality::Required,
 }];
+const TEMPO_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
+    slot: SlotId::TempoAction,
+    cardinality: SlotCardinality::Required,
+}];
 
 const ROOT_CLAUSES: &[ClauseId] = &[
     ClauseId::ObjectProperty,
@@ -991,6 +1000,7 @@ const ROOT_CLAUSES: &[ClauseId] = &[
     ClauseId::Debug,
     ClauseId::Sleep,
     ClauseId::Fps,
+    ClauseId::Tempo,
 ];
 
 const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
@@ -1505,6 +1515,14 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         entry: ClauseEntryKind::RootCommandHead(FPS_HEADS),
     },
     ClauseSchema {
+        id: ClauseId::Tempo,
+        label: "Tempo",
+        parent: None,
+        children: EMPTY_CHILDREN,
+        slots: TEMPO_SLOTS,
+        entry: ClauseEntryKind::RootCommandHead(TEMPO_HEADS),
+    },
+    ClauseSchema {
         id: ClauseId::StoreFxModule,
         label: "FX Module",
         parent: Some(ClauseId::Store),
@@ -1763,6 +1781,7 @@ pub fn clause_hook_id(clause: ClauseId) -> Option<ClauseHookId> {
         ClauseId::Debug => ClauseHookId::Debug,
         ClauseId::Sleep => ClauseHookId::Sleep,
         ClauseId::Fps => ClauseHookId::Fps,
+        ClauseId::Tempo => ClauseHookId::Tempo,
         _ => return None,
     })
 }
@@ -1793,6 +1812,7 @@ pub fn clause_trace_label(clause: ClauseId) -> String {
             ClauseId::Debug => "DebugCommand".to_owned(),
             ClauseId::Sleep => "SleepCommand".to_owned(),
             ClauseId::Fps => "FpsCommand".to_owned(),
+            ClauseId::Tempo => "TempoCommand".to_owned(),
             _ => format!("{clause:?}Command"),
         };
     }
@@ -1940,5 +1960,6 @@ pub const fn all_slot_ids() -> &'static [SlotId] {
         SlotId::DebugObjectIdentifier,
         SlotId::SleepDuration,
         SlotId::FpsValue,
+        SlotId::TempoAction,
     ]
 }

@@ -28,6 +28,7 @@
       "nightfall-framepace",
       "nightfall-lookahead",
       "nightfall-service-host",
+      "nightfall-tempo",
       "nightfall-timecode",
       "nightfall-undo",
       "nightfall-websocket"

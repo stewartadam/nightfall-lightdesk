@@ -20,8 +20,8 @@ use crate::ast::{
     ClearTargetAst, CommandAst, DmxChannelTermAst, FlowActionAst, FxActionAst, GeneralCommandAst,
     LogCommandAst, LogFilterCommandAst, ObjectTypeAst, PatchEndpointAst, PlaybackActionAst,
     QuotedStringAst, ReleaseDmxChannelTermAst, ReleaseTargetAst, RotationActionAst,
-    RotationValueAst, SelectionTypeAst, SetOperatorAst, SimpleTermAst, StartStopAst, TermAst,
-    TimecodeActionAst, TimingDirectionAst,
+    RotationValueAst, SelectionTypeAst, SetOperatorAst, SimpleTermAst, StartStopAst,
+    TempoActionAst, TempoCommandAst, TermAst, TimecodeActionAst, TimingDirectionAst,
 };
 
 #[test]
@@ -1642,6 +1642,89 @@ fn strict_parser_handles_block_and_unblock_cue_targets() {
     assert!(parse_strict("block cue 1.5p2 /overwrite").is_ok());
     assert!(parse_strict("unblock cue 1.5").is_ok());
     assert!(parse_strict("unblock cue 1.5p2").is_ok());
+}
+
+/// Verifies every `tempo` operation materializes the matching action, case-insensitively.
+#[test]
+fn strict_parser_handles_tempo_actions() {
+    assert!(matches!(
+        parse_strict("tempo 128"),
+        Ok(CommandAst::Tempo(TempoCommandAst { action: TempoActionAst::SetBpm(bpm) }))
+            if bpm.0 == "128"
+    ));
+    assert!(matches!(
+        parse_strict("TEMPO 128.5"),
+        Ok(CommandAst::Tempo(TempoCommandAst { action: TempoActionAst::SetBpm(bpm) }))
+            if bpm.0 == "128.5"
+    ));
+    for (input, expected) in [
+        ("tempo tap", TempoActionAst::Tap),
+        ("tempo resync", TempoActionAst::Resync),
+        ("tempo snap", TempoActionAst::Snap),
+        ("tempo half", TempoActionAst::Half),
+        ("Tempo Double", TempoActionAst::Double),
+    ] {
+        assert_eq!(
+            parse_strict(input).ok(),
+            Some(CommandAst::Tempo(TempoCommandAst { action: expected })),
+            "{input}"
+        );
+    }
+    for (input, offset) in [
+        ("tempo nudge 0.1", "0.1"),
+        ("tempo nudge -0.1", "-0.1"),
+        ("tempo nudge +2", "+2"),
+    ] {
+        assert!(
+            matches!(
+                parse_strict(input),
+                Ok(CommandAst::Tempo(TempoCommandAst { action: TempoActionAst::Nudge(value) }))
+                    if value.0 == offset
+            ),
+            "{input}"
+        );
+    }
+    assert!(matches!(
+        parse_strict("tempo bar 3"),
+        Ok(CommandAst::Tempo(TempoCommandAst { action: TempoActionAst::BeatsPerBar(count) }))
+            if count.0 == "3"
+    ));
+}
+
+/// Verifies malformed `tempo` commands are rejected instead of guessing an operation.
+#[test]
+fn strict_parser_rejects_malformed_tempo_commands() {
+    for input in [
+        "tempo",
+        "tempo -5",
+        "tempo +5",
+        "tempo .5",
+        "tempo 128.",
+        "tempo 128 .5",
+        "tempo 128 5",
+        "tempo nudge",
+        "tempo nudge -",
+        "tempo nudge - 0.1",
+        "tempo nudge 0.",
+        "tempo bar",
+        "tempo bar 2.5",
+        "tempo bar -3",
+        "tempo tap 1",
+        "tempo half double",
+        "tempo bogus",
+    ] {
+        assert!(parse_strict(input).is_err(), "{input}");
+    }
+}
+
+/// Verifies structural dispatch routes the tempo root clause to its materializer.
+#[test]
+fn strict_structural_dispatch_handles_tempo_branch() {
+    assert!(matches!(
+        super::materialize_strict_ast_from_structural_dispatch("tempo nudge -0.25"),
+        Some(CommandAst::Tempo(TempoCommandAst { action: TempoActionAst::Nudge(value) }))
+            if value.0 == "-0.25"
+    ));
 }
 
 /// Verifies cue tracking marker words are valid attribute value targets.

@@ -6,6 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  formatTempoAction,
+  parseTempoAction,
+} from "../../../../lib/tempo-action-format";
 import type { ActionReference } from "../../../../types";
 
 const CLIP_START_ACTION_ID = "clip.start";
@@ -55,6 +59,8 @@ function controlIndex(argumentsValue: unknown): number | undefined {
 }
 
 export function formatMidiAction(action: ActionReference): string {
+  const tempoAction = formatTempoAction(action);
+  if (tempoAction !== undefined) return tempoAction;
   const name = actionNameById[action.id];
   if (!name) return action.id;
   const clip = clipId(action.arguments);
@@ -69,6 +75,8 @@ export function formatMidiAction(action: ActionReference): string {
 }
 
 export function parseMidiAction(str: string): ActionReference | null {
+  const tempoAction = parseTempoAction(str);
+  if (tempoAction) return tempoAction;
   const match = str.match(/^(StartClip|StopClip|GoClip|SetControl)\((\d+)\)$/);
   if (!match) return null;
   const name = match[1] as MidiActionName;

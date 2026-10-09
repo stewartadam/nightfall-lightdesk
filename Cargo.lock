@@ -268,6 +268,7 @@ dependencies = [
  "nightfall-scene-objects",
  "nightfall-selection",
  "nightfall-showfile",
+ "nightfall-tempo",
  "nightfall-timecode",
  "nightfall-timeline",
  "nightfall-undo",
@@ -5025,6 +5026,7 @@ dependencies = [
  "nightfall-programmer",
  "nightfall-scene-objects",
  "nightfall-showfile",
+ "nightfall-tempo",
  "nightfall-timecode",
  "nightfall-timeline",
  "nightfall-undo",
@@ -5374,6 +5376,7 @@ dependencies = [
  "nightfall-instances",
  "nightfall-playback-planner",
  "nightfall-selection",
+ "nightfall-tempo",
  "nightfall-timecode",
  "nightfall-waveform",
  "nightfall-workspace-hack",
@@ -5793,6 +5796,23 @@ dependencies = [
  "serde_json",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "nightfall-tempo"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "nightfall-actions",
+ "nightfall-cmd-parse",
+ "nightfall-engine",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "tracing",
+ "typeshare",
+ "web-time",
 ]
 
 [[package]]

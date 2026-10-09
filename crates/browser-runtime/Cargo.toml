@@ -31,6 +31,7 @@ nightfall-instances = { path = "../instances" }
 nightfall-programmer = { path = "../programmer" }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-showfile = { path = "../showfile" }
+nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-timeline = { path = "../timeline", default-features = false }
 nightfall-undo = { path = "../undo" }

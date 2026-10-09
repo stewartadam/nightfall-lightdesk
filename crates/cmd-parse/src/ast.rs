@@ -88,6 +88,7 @@ pub enum CommandAst<'i> {
     Clip(ClipCommandAst),
     Timecode(TimecodeCommandAst),
     Timeline(TimelineCommandAst),
+    Tempo(TempoCommandAst<'i>),
     Channel(ChannelCommandAst<'i>),
     PatchAdd(PatchAddCommandAst<'i>),
     RmPatch(RmPatchCommandAst<'i>),
@@ -625,6 +626,33 @@ pub struct TimecodeCommandAst {
     pub _timecode: TimecodeKeyword,
     pub timecode_id: SimpleIdentifierExpressionAst,
     pub action: TimecodeActionAst,
+}
+
+/// Tempo command targeting the show-wide live tempo engine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TempoCommandAst<'i> {
+    pub action: TempoActionAst<'i>,
+}
+
+/// Operation requested by a `tempo` command.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TempoActionAst<'i> {
+    /// Sets the tempo to an unsigned decimal BPM, such as `tempo 128.5`.
+    SetBpm(ValueAst<'i>),
+    /// Registers one tap for tap-tempo detection.
+    Tap,
+    /// Eases the downbeat phase so the next beat lands on the current instant.
+    Resync,
+    /// Jumps the phase directly to the next downbeat.
+    Snap,
+    /// Halves the current BPM.
+    Half,
+    /// Doubles the current BPM.
+    Double,
+    /// Shifts the beat phase by a signed decimal number of beats.
+    Nudge(ValueAst<'i>),
+    /// Sets the number of beats in one bar.
+    BeatsPerBar(IntegerAst<'i>),
 }
 
 /// Timeline start or stop command targeting one or more timeline ids.

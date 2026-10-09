@@ -98,6 +98,7 @@ pub(in crate::parser) fn root_rule_for_clause(clause: ClauseId) -> GrammarRuleId
         ClauseId::Recall => GrammarRuleId::RecallCueCommand,
         ClauseId::Sleep => GrammarRuleId::SleepCommand,
         ClauseId::Fps => GrammarRuleId::SetFpsCommand,
+        ClauseId::Tempo => GrammarRuleId::TempoCommand,
         _ => GrammarRuleId::Command,
     }
 }
@@ -175,6 +176,7 @@ pub(in crate::parser) fn grammar_rule_for_slot(
         SlotId::FlowAction => GrammarRuleId::FlowActions,
         SlotId::TimecodeAction => GrammarRuleId::TimecodeActions,
         SlotId::TimelineAction => GrammarRuleId::TimelineActions,
+        SlotId::TempoAction => GrammarRuleId::TempoActions,
         SlotId::LogLevel => GrammarRuleId::LogCommands,
         _ => root_rule_for_clause(fallback_clause),
     }

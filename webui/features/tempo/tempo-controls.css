@@ -1,0 +1,90 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-tempo-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.nf-tempo-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  color: var(--color-gray-300, #d1d5db);
+}
+
+.nf-tempo-trigger:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.nf-tempo-beats {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+}
+
+.nf-tempo-beat {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: var(--color-gray-600, #4b5563);
+}
+
+.nf-tempo-beat[data-downbeat] {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.nf-tempo-beat[data-active] {
+  background: var(--accent);
+  box-shadow: 0 0 0.375rem var(--accent);
+}
+
+.nf-tempo-beat-counter {
+  min-width: 2.5rem;
+  color: var(--accent);
+}
+
+.nf-tempo-bpm {
+  min-width: 2.25rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nf-tempo-unit {
+  color: var(--color-gray-500, #6b7280);
+}
+
+.nf-tempo-tap {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  touch-action: manipulation;
+}
+
+.nf-tempo-menu-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.nf-tempo-field {
+  display: grid;
+  grid-template-columns: 1fr 8.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-gray-400, #9ca3af);
+}

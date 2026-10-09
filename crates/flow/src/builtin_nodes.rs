@@ -19,6 +19,7 @@ pub mod metronome;
 pub mod oscillator;
 pub mod random_number;
 pub mod render_layer;
+pub mod show_tempo;
 pub mod timecode_action;
 pub mod toggle_selection;
 pub mod waveform;
@@ -41,6 +42,7 @@ pub fn register_builtin_nodes(registry: &mut FlowNodeRegistry) -> Result<(), Str
     registry.register(Box::new(clip_action::ClipActionFactory))?;
     registry.register(Box::new(timecode_action::TimecodeActionFactory))?;
     registry.register(Box::new(metronome::MetronomeFactory))?;
+    registry.register(Box::new(show_tempo::ShowTempoFactory))?;
     registry.register(Box::new(color_picker::ColorPickerFactory))?;
     registry.register(Box::new(render_layer::RenderLayerFactory))?;
     Ok(())

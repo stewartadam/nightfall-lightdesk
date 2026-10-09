@@ -59,6 +59,49 @@ fn fps_integer_frontier_matches_strict_consumption() {
     }
 }
 
+/// Tempo completion only offers edits that keep the command a prefix the strict parser accepts.
+#[test]
+fn tempo_frontier_matches_strict_consumption() {
+    for input in [
+        "tempo ",
+        "tempo 12",
+        "tempo 128.",
+        "tempo nudge ",
+        "tempo nudge -",
+        "tempo nudge 0",
+        "tempo bar ",
+    ] {
+        let response = complete_command(input, input.len());
+        assert!(!response.candidates.is_empty(), "{input:?}");
+        for candidate in response
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.completable)
+        {
+            let edited = format!(
+                "{}{}{}",
+                &input[..candidate.replace.start],
+                candidate.apply_text,
+                &input[candidate.replace.end..]
+            );
+            let next = complete_command(&edited, edited.len());
+            assert_eq!(next.parse.furthest_pos, edited.len(), "{edited:?}");
+        }
+    }
+    for input in [
+        "tempo 128",
+        "tempo 128.5",
+        "tempo tap",
+        "tempo nudge -0.1",
+        "tempo bar 3",
+    ] {
+        assert!(nightfall_cmd_parse::generate_ast(input).is_ok(), "{input}");
+    }
+    for input in ["tempo", "tempo -5", "tempo nudge", "tempo bar", "tempo 1 2"] {
+        assert!(nightfall_cmd_parse::generate_ast(input).is_err(), "{input}");
+    }
+}
+
 /// Replacing a custom attribute with a target keyword retains the pre-token branch's own facts.
 #[test]
 fn replacement_alternatives_do_not_borrow_committed_branch_fills() {
