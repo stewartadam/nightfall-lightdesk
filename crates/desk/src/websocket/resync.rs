@@ -16,6 +16,7 @@ pub(crate) struct ResyncSettingsParams<'w> {
     settings: Res<'w, crate::settings::DeskSettings>,
     io_settings: Res<'w, IoRuntimeSettings>,
     external_control: Res<'w, ExternalControlState>,
+    telemetry: Res<'w, crate::settings::TelemetryState>,
     available_audio_devices: Res<'w, AvailableAudioDevices>,
     available_usb_dmx_devices: Res<'w, AvailableUsbDmxDevices>,
     network_interface_state: Res<'w, NetworkInterfaceState>,
@@ -72,6 +73,7 @@ pub(crate) fn handle_resync_state(
     send_settings(&resync_settings.settings, &broadcaster);
     send_io_settings(&resync_settings.io_settings, &broadcaster);
     send_external_control_state(&resync_settings.external_control, &broadcaster);
+    send_telemetry_state(&resync_settings.telemetry, &broadcaster);
     send_network_interface_state(
         &resync_settings.io_settings,
         &resync_settings.network_interface_state,

@@ -69,7 +69,7 @@ pub mod prelude {
     pub use crate::settings::{
         ActivePanelLayout, AvailableAudioDevices, DeskSettings, SelectionFlattenPolicy,
         SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
-        TimeDisplayPreference, TimelinePlacementPreference,
+        TelemetryConsent, TelemetryState, TimeDisplayPreference, TimelinePlacementPreference,
     };
     pub use crate::systems::relations::apply_virtual_relations;
     pub use crate::systems::vdim::{
@@ -170,6 +170,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<DeskSettings>();
         app.init_resource::<IoRuntimeSettings>();
         app.init_resource::<nightfall_io::ExternalControlState>();
+        app.init_resource::<crate::settings::TelemetryState>();
         app.init_resource::<AvailableAudioDevices>();
         app.init_resource::<AvailableUsbDmxDevices>();
         app.init_resource::<Controls>();

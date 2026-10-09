@@ -9,7 +9,6 @@
 //! Host-scoped listener preferences, persistence, and interface resolution.
 
 use std::{
-    io::Write,
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
 };
@@ -17,6 +16,8 @@ use std::{
 use bevy_ecs::prelude::*;
 use nightfall_io::{ExternalControlSettings, ExternalControlState, NetworkInterfaceState};
 use tokio::sync::watch;
+
+use crate::host_preferences::{LoadedPreferences, load_preferences, save_preferences};
 
 /// Listener configuration passed from the engine to its native host task.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,20 +133,10 @@ pub(crate) fn load_settings(path: Option<&Path>) -> (ExternalControlSettings, Op
     let Some(path) = path else {
         return (ExternalControlSettings::default(), None);
     };
-    match std::fs::read(path) {
-        Ok(bytes) => match serde_json::from_slice(&bytes) {
-            Ok(settings) => (settings, None),
-            Err(error) => (
-                ExternalControlSettings::default(),
-                Some(format!(
-                    "Could not read external control preferences: {error}"
-                )),
-            ),
-        },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            (ExternalControlSettings::default(), None)
-        }
-        Err(error) => (
+    match load_preferences(path) {
+        LoadedPreferences::Loaded(settings) => (settings, None),
+        LoadedPreferences::Missing => (ExternalControlSettings::default(), None),
+        LoadedPreferences::Unreadable(error) => (
             ExternalControlSettings::default(),
             Some(format!(
                 "Could not read external control preferences: {error}"
@@ -160,18 +151,7 @@ pub(crate) fn save_settings(
     settings: &ExternalControlSettings,
 ) -> Result<(), String> {
     let path = path.ok_or("Host data directory is unavailable")?;
-    let parent = path
-        .parent()
-        .ok_or("Host preference path has no directory")?;
-    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
-    serde_json::to_writer_pretty(&mut file, settings).map_err(|error| error.to_string())?;
-    file.flush().map_err(|error| error.to_string())?;
-    file.as_file()
-        .sync_all()
-        .map_err(|error| error.to_string())?;
-    file.persist(path).map_err(|error| error.to_string())?;
-    Ok(())
+    save_preferences(path, settings)
 }
 
 /// Applies changed preferences/interface addresses and publishes matching listener results.

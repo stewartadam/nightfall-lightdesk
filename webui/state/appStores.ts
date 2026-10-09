@@ -41,6 +41,7 @@ import {
   $ioSettings,
   $networkInterfaceStatus,
   $settings,
+  $telemetryState,
 } from "./settings";
 
 // Local type definitions for types not yet exported from backend
@@ -1000,6 +1001,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     ioSettings: $ioSettings,
     availableNetworkInterfaces: $availableNetworkInterfaces,
     externalControlState: $externalControlState,
+    telemetryState: $telemetryState,
     availableUsbDmxDevices: $availableUsbDmxDevices,
     networkInterfaceStatus: $networkInterfaceStatus,
     serverVersion,

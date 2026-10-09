@@ -11,7 +11,11 @@ import { Show } from "solid-js";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
-import { AboutDialog, SettingsOverlay } from "../../../features/settings";
+import {
+  AboutDialog,
+  SettingsOverlay,
+  TelemetryConsentPrompt,
+} from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
@@ -45,6 +49,7 @@ function ShellRuntime() {
       <ShowfileDialogs />
       <AboutDialog />
       <SettingsOverlay />
+      <TelemetryConsentPrompt />
       <SelectionFlattenConfirmModal />
     </>
   );

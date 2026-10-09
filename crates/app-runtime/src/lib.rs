@@ -33,6 +33,7 @@ mod shutdown;
 mod startup_commands;
 mod swap_orchestrator;
 mod systems;
+mod telemetry;
 #[cfg(test)]
 mod tests;
 mod world_factory;

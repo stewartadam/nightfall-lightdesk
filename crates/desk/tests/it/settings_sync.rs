@@ -53,6 +53,7 @@ fn settings_command_app() -> (App, Receiver<OutboundFrame>) {
     app.init_resource::<DeskSettings>();
     app.init_resource::<IoRuntimeSettings>();
     app.init_resource::<ExternalControlState>();
+    app.init_resource::<nightfall_desk::prelude::TelemetryState>();
     app.init_resource::<BindingValidationSettings>();
     app.init_resource::<InputUniverseVisibilityMode>();
     app.init_resource::<InputUniverseStaleTimeout>();

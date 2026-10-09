@@ -59,6 +59,9 @@ pub struct WorldFactory {
     pub(super) transport_policy: TransportRuntimePolicy,
     pub(super) runtime_config: RuntimeConfig,
     pub(super) client_transport: ClientTransport,
+    /// Host telemetry preferences shared by every world; `None` for tests and offline tools,
+    /// which must never read or write the operator's real choices.
+    pub(super) telemetry: Option<crate::telemetry::TelemetryHost>,
 }
 
 impl WorldFactory {
@@ -73,6 +76,7 @@ impl WorldFactory {
             ),
             runtime_config,
             client_transport: ClientTransport::default(),
+            telemetry: crate::telemetry::TelemetryHost::load(),
         }
     }
 
@@ -99,6 +103,7 @@ impl WorldFactory {
             ),
             runtime_config,
             client_transport: ClientTransport::default(),
+            telemetry: None,
         }
     }
 
@@ -117,6 +122,9 @@ impl WorldFactory {
             &self.runtime_config,
             &self.client_transport,
         );
+        if let Some(host) = &self.telemetry {
+            bevy_app.add_plugins(crate::telemetry::TelemetryPlugin { host: host.clone() });
+        }
 
         let clean_hash_result: Result<(), String> = match bootstrap {
             WorldBootstrap::Empty { showfile_name } => finalize_new_world(

@@ -42,6 +42,8 @@ type TestFixtures = {
    * seed lacks the stable E2E showfiles, so startup draft and showfile prompts run.
    */
   emptyStartupWorld: boolean;
+  /** Leaves telemetry consent unanswered so the first-run prompt appears. */
+  telemetryUndecided: boolean;
   backendSlot: BackendSlot;
 };
 
@@ -62,6 +64,7 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   experimentalFlows: [false, { option: true }],
   sampleDataOnly: [false, { option: true }],
   emptyStartupWorld: [false, { option: true }],
+  telemetryUndecided: [false, { option: true }],
   /** Claims a fixed backend port for a Playwright worker on the run's shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -83,7 +86,13 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   /** Gives each test a freshly seeded backend and destroys it afterward. */
   backendSlot: [
     async (
-      { workerSlot, experimentalFlows, sampleDataOnly, emptyStartupWorld },
+      {
+        workerSlot,
+        experimentalFlows,
+        sampleDataOnly,
+        emptyStartupWorld,
+        telemetryUndecided,
+      },
       use,
       testInfo,
     ) => {
@@ -100,6 +109,7 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
         const backendSlot = await startPlaywrightTestBackend({
           emptyStartupWorld,
           experimentalFlows,
+          telemetryUndecided,
           seedDataDir:
             emptySeed ??
             requiredEnvironment("NIGHTFALL_PLAYWRIGHT_SEED_DATA_DIR"),

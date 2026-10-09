@@ -9,3 +9,4 @@
 export { AboutDialog } from "./about-dialog";
 export { DiagnosticsDialog } from "./diagnostics-dialog";
 export { SettingsOverlay } from "./settings-overlay";
+export { TelemetryConsentPrompt } from "./telemetry-consent-prompt";

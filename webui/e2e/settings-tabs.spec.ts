@@ -19,7 +19,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });
-  await expect(tablist.getByRole("tab")).toHaveCount(5);
+  await expect(tablist.getByRole("tab")).toHaveCount(6);
   const general = tablist.getByRole("tab", { name: "General", exact: true });
   await expect(general).toHaveAttribute("aria-selected", "true");
   await expect(dialog.getByRole("tabpanel", { name: "General" })).toBeVisible();
@@ -60,7 +60,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await expect(dialog.getByLabel("Input signal loss policy")).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 780 });
-  await network.press("End");
+  await network.press("ArrowRight");
   const visualizer = tablist.getByRole("tab", { name: "Visualizer" });
   await expect(visualizer).toBeFocused();
   await expect(visualizer).toBeInViewport({ ratio: 1 });
@@ -105,12 +105,21 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await page.screenshot({
     path: testInfo.outputPath("settings-segmented-narrow.png"),
   });
-  await visualizer.press("ArrowRight");
+  await visualizer.press("End");
+  const privacy = tablist.getByRole("tab", { name: "Privacy" });
+  await expect(privacy).toBeFocused();
+  await expect(privacy).toBeInViewport({ ratio: 1 });
+  await expect(
+    dialog.getByText(
+      "Anonymous reports are not available in this version of Nightfall.",
+    ),
+  ).toBeVisible();
+  await privacy.press("ArrowRight");
   await expect(general).toBeFocused();
   await expect(general).toBeInViewport({ ratio: 1 });
   await general.press("ArrowLeft");
-  await expect(visualizer).toBeFocused();
-  await visualizer.press("Home");
+  await expect(privacy).toBeFocused();
+  await privacy.press("Home");
   await expect(general).toBeFocused();
   await expect(tablist.locator('[tabindex="0"]')).toHaveCount(1);
   await expect
