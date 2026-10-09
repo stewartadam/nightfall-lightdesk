@@ -42,13 +42,21 @@ export async function openMappingApp(
     .toBeGreaterThan(0);
 }
 
-/** Opens a panel through the command palette. */
-export async function openPanel(page: Page, panelName: string): Promise<void> {
+/** Opens the command palette from the header, types a query, and runs the top entry. */
+export async function runPaletteEntry(
+  page: Page,
+  query: string,
+): Promise<void> {
   await page.getByRole("button", { name: "Open command palette" }).click();
   const commandInput = page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER);
   await expect(commandInput).toBeVisible();
-  await commandInput.fill(`Open ${panelName}`);
+  await commandInput.fill(query);
   await page.keyboard.press("Enter");
+}
+
+/** Opens a panel through the command palette. */
+export async function openPanel(page: Page, panelName: string): Promise<void> {
+  await runPaletteEntry(page, `Open ${panelName}`);
 }
 
 /** Enters mapping mode and waits until the backend confirms controller actions are paused. */

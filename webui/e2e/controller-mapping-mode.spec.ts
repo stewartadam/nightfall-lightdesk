@@ -14,6 +14,7 @@ import {
   onlyMaster,
   openMappingApp,
   openPanel,
+  runPaletteEntry,
 } from "./controller-mapping";
 import { gridCellByKey } from "./data-grid-selectors";
 import { expect, type Page, test } from "./playwright-fixtures";
@@ -957,4 +958,40 @@ test("palette entries run normally until a control is armed", async ({
     0,
   );
   await leaveMapping(page);
+});
+
+/**
+ * Verifies a phone-width layout, whose header has no mapping toggle, enters and leaves
+ * mapping mode from the command palette, and that leaving works even with a control armed
+ * rather than binding the armed control to the toggle.
+ */
+test("the command palette toggles mapping mode at phone width", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole("button", { name: "Controller mapping mode" }),
+  ).toHaveCount(0);
+
+  await runPaletteEntry(page, "Toggle Controller Mapping Mode");
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await expect(banner.locator("[data-mapping-pause]")).toHaveText(
+    "MIDI and OSC actions are paused.",
+  );
+  await sendOsc(port, "/e2e/map/phone", [0.4]);
+  await expect(banner).toContainText("/e2e/map/phone");
+  await page.screenshot({
+    path: test.info().outputPath("phone-mapping-armed.png"),
+  });
+
+  await runPaletteEntry(page, "Toggle Controller Mapping Mode");
+  await expect(banner).toBeHidden();
+  await expect.poll(() => mappingClients(page)).toBe(0);
+  const oscMappings = await page.evaluate(
+    () => (window as any).appStores.oscMappings.get() as unknown[],
+  );
+  expect(oscMappings).toHaveLength(0);
 });
