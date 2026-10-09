@@ -22,6 +22,7 @@ let publishQueued = false;
 function queuePublish(): void {
   if (publishQueued) return;
   publishQueued = true;
+  /** Publishes the watched keys unless they equal what the store already holds. */
   queueMicrotask(() => {
     publishQueued = false;
     const universes = Array.from(watchers.values(), (entry) => entry.key);

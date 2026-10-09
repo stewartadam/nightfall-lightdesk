@@ -1390,7 +1390,8 @@ function dispatchMessage(raw: AnyWsMessage) {
     case "ResyncComplete": {
       setResyncComplete(true);
       setResyncGeneration(resyncGeneration() + 1);
-      // The backend keys watches by connection and world, so a resync starts with none.
+      // Watches belong to one connection and one backend world, so a resync after a reconnect
+      // or world swap starts without ours; re-sending also gets fresh values at once.
       sendDmxUniverseWatch(dmxUniverseWatch.get());
       break;
     }

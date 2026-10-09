@@ -20,7 +20,7 @@
 //! A large rig has hundreds of universes while a DMX panel shows one, so sending every universe's
 //! channels to every client would cost far more than the panel needs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
@@ -41,6 +41,9 @@ pub const DMX_UNIVERSE_WATCH_MODULE: &str = "DmxUniverseWatch";
 
 /// Shortest time between two publications of unchanged watches.
 pub const STREAM_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Most universes one client can watch at once.
+pub const MAX_WATCHED_UNIVERSES: usize = 64;
 
 /// Label of the numbering space for console-space output universes.
 pub const CONSOLE_SPACE_LABEL: &str = "Console";
@@ -135,7 +138,12 @@ pub struct DmxUniverseStream {
 
 impl DmxUniverseStream {
     /// Replaces the universes `audience` watches, so its next message follows without waiting.
-    pub fn watch(&mut self, audience: Audience, universes: Vec<DmxUniverseKey>) {
+    /// Duplicate keys are dropped and at most [`MAX_WATCHED_UNIVERSES`] are kept, so a client's
+    /// request cannot grow the per-frame work without bound.
+    pub fn watch(&mut self, audience: Audience, mut universes: Vec<DmxUniverseKey>) {
+        let mut seen = HashSet::new();
+        universes.retain(|key| seen.insert(key.clone()));
+        universes.truncate(MAX_WATCHED_UNIVERSES);
         if universes.is_empty() {
             self.watchers.remove(&audience);
             return;
@@ -447,9 +455,11 @@ mod tests {
             struct BytesVisitor;
             impl serde::de::Visitor<'_> for BytesVisitor {
                 type Value = Bytes;
+                /// Names the expected input in decode errors.
                 fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                     formatter.write_str("a byte string")
                 }
+                /// Copies the byte string.
                 fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Bytes, E> {
                     Ok(Bytes(bytes.to_vec()))
                 }
@@ -664,6 +674,24 @@ mod tests {
                 .watchers
                 .is_empty()
         );
+    }
+
+    /// A watch keeps each universe once and no more than the limit.
+    #[test]
+    fn watch_drops_duplicates_and_caps_its_size() {
+        let mut stream = DmxUniverseStream::default();
+        let watcher = Audience::Client(ClientId(1));
+        let mut keys: Vec<_> = (1..=MAX_WATCHED_UNIVERSES as u16 + 10)
+            .map(console_key)
+            .collect();
+        keys.insert(1, console_key(1));
+
+        stream.watch(watcher, keys);
+
+        let watched = &stream.watchers[&watcher].universes;
+        assert_eq!(watched.len(), MAX_WATCHED_UNIVERSES);
+        assert_eq!(watched[0], console_key(1));
+        assert_eq!(watched[1], console_key(2));
     }
 
     /// The watch update reaches the stream under the sender's identity.
