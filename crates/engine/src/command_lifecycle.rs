@@ -156,19 +156,21 @@ impl CommandTracker {
     /// Wraps a typed payload in the context its ingress adapter registered for `command_id`.
     ///
     /// Domain deserializers run after ingress registered the command, so the tracker holds the
-    /// origin and reply target the transport assigned. An untracked command falls back to a
-    /// broadcast Web UI context.
+    /// origin and reply target the transport assigned. An untracked command is logged and falls
+    /// back to a broadcast Web UI context.
     pub fn admitted_envelope<T>(
         &self,
         command_id: CommandId,
         undo_id: UndoId,
         command: T,
     ) -> CommandEnvelope<T> {
-        let (origin, reply_target) = self
-            .active
-            .get(&command_id)
-            .map(|active| (active.origin.clone(), active.reply_target.clone()))
-            .unwrap_or((CommandOrigin::WebUi, ReplyTarget::ClientBroadcast));
+        let (origin, reply_target) = match self.active.get(&command_id) {
+            Some(active) => (active.origin.clone(), active.reply_target.clone()),
+            None => {
+                tracing::warn!(%command_id, "untracked_command_envelope_broadcasts_feedback");
+                (CommandOrigin::WebUi, ReplyTarget::ClientBroadcast)
+            }
+        };
         CommandEnvelope::with_context(command_id, undo_id, origin, reply_target, command)
     }
 
@@ -495,11 +497,7 @@ impl CommandResponder<'_> {
         message: impl Into<String>,
     ) -> Result<(), CommandLifecycleError> {
         self.tracker.verify_active(command_id)?;
-        let reply_target = self
-            .tracker
-            .active_command(command_id)
-            .map(|active| active.reply_target.clone())
-            .unwrap_or(ReplyTarget::ClientBroadcast);
+        let reply_target = self.tracker.active[&command_id].reply_target.clone();
         self.notices.write(CommandNoticeReply {
             notice: CommandNotice {
                 command_id,
@@ -542,7 +540,7 @@ mod tests {
     use bevy_ecs::system::SystemState;
 
     use super::*;
-    use crate::prelude::{CommandError, CommandOrigin, ReplyTarget};
+    use crate::prelude::{ClientId, CommandError, CommandOrigin, ReplyTarget};
 
     /// Creates a representative tracked Web UI command for lifecycle tests.
     fn command() -> CommandEnvelope<&'static str> {
@@ -800,6 +798,44 @@ mod tests {
                 .next()
                 .is_none()
         );
+    }
+
+    /// Verifies notices carry the reply target their command was registered with, so the
+    /// bridge can deliver them to the submitting client only.
+    #[test]
+    fn responder_notice_carries_command_reply_target() {
+        let mut world = World::new();
+        world.init_resource::<CommandTracker>();
+        world.init_resource::<Messages<CommandResult>>();
+        world.init_resource::<Messages<CommandReply>>();
+        world.init_resource::<Messages<FinishedCommand>>();
+        world.init_resource::<Messages<CommandNoticeReply>>();
+        let command_id = CommandId::new();
+        world
+            .resource_mut::<CommandTracker>()
+            .register_context(
+                command_id,
+                command_id.into(),
+                CommandOrigin::WebUi,
+                ReplyTarget::Client(ClientId(5)),
+            )
+            .unwrap();
+        let mut state = SystemState::<CommandResponder>::new(&mut world);
+
+        state
+            .get_mut(&mut world)
+            .unwrap()
+            .notice(command_id, NoticeLevel::Warning, "Partial store")
+            .unwrap();
+        state.apply(&mut world);
+
+        let replies: Vec<_> = world
+            .resource_mut::<Messages<CommandNoticeReply>>()
+            .drain()
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].reply_target, ReplyTarget::Client(ClientId(5)));
+        assert_eq!(replies[0].notice.command_id, command_id);
     }
 
     /// Verifies that responder completion updates the tracker before publishing a result.
