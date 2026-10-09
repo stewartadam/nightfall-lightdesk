@@ -167,14 +167,9 @@ async function seedDmxUniverseColorState(page: Page) {
     channels[1] = 96;
     channels[2] = 128;
     channels[3] = 42;
-    stores.dmxUniverseData.set([
-      {
-        universe_id: 1,
-        channels,
-        transport: "sACN",
-        io_mode: "output",
-      },
-    ]);
+    const universe = { universe_id: 1, transport: "sACN", io_mode: "output" };
+    stores.dmxUniverseList.set([universe]);
+    stores.dmxUniverseChannels.set([{ ...universe, channels }]);
   }, FIXTURE_UID);
 }
 
@@ -308,19 +303,20 @@ async function seedDmxUniverseJumpState(page: Page) {
       universeTwoChannels[499] = 60;
       universeTwoChannels[510] = 64;
       universeTwoChannels[511] = 65;
-      stores.dmxUniverseData.set([
-        {
-          universe_id: 1,
-          channels: universeOneChannels,
-          transport: "sACN",
-          io_mode: "output",
-        },
-        {
-          universe_id: 2,
-          channels: universeTwoChannels,
-          transport: "sACN",
-          io_mode: "output",
-        },
+      const universeOne = {
+        universe_id: 1,
+        transport: "sACN",
+        io_mode: "output",
+      };
+      const universeTwo = {
+        universe_id: 2,
+        transport: "sACN",
+        io_mode: "output",
+      };
+      stores.dmxUniverseList.set([universeOne, universeTwo]);
+      stores.dmxUniverseChannels.set([
+        { ...universeOne, channels: universeOneChannels },
+        { ...universeTwo, channels: universeTwoChannels },
       ]);
     },
     {
@@ -401,8 +397,8 @@ test("dmx universe buttons keep single-line labels in narrow panels", async ({
   await seedDmxUniverseColorState(page);
   await page.evaluate(() => {
     const stores = (window as any).appStores;
-    const universe = stores.dmxUniverseData.get()[0];
-    stores.dmxUniverseData.set(
+    const universe = stores.dmxUniverseList.get()[0];
+    stores.dmxUniverseList.set(
       Array.from({ length: 16 }, (_, id) => ({ ...universe, universe_id: id })),
     );
   });

@@ -76,11 +76,11 @@ pub mod prelude {
         BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
     };
     pub use crate::client_bridge::{
-        Audience, ClientBridgeHost, ClientBridgePlugin, ClientEventSink, ClientPresenceSender,
-        CommandDeserializerRegistry, CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DELTA,
-        DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE, EncodedClientMessage,
-        LastClientDisconnected, OutboundFrame, SharedClientBridge, UpdateDeserializerRegistry,
-        UpdateJsonEnvelope,
+        Audience, ClientBridgeHost, ClientBridgePlugin, ClientDisconnectReport, ClientDisconnected,
+        ClientEventSink, ClientPresenceSender, CommandDeserializerRegistry, CommandJsonEnvelope,
+        CommandSender, DISCRIMINATOR_DELTA, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
+        EncodedClientMessage, LastClientDisconnected, OutboundFrame, SharedClientBridge,
+        UpdateDeserializerRegistry, UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -117,7 +117,6 @@ pub mod prelude {
     };
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
-    pub use crate::register_update_deserializer;
     pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
@@ -130,6 +129,7 @@ pub mod prelude {
         StartupFrameCounter, VdimProcessing,
     };
     pub use crate::{EngineCommand, ResyncRequested, register_engine_action};
+    pub use crate::{register_client_update_deserializer, register_update_deserializer};
 }
 
 /// Plugin for fixtures
@@ -310,6 +310,20 @@ pub fn register_update_deserializer(
     app: &mut App,
     module: &'static str,
     deserializer: fn(&mut World, serde_json::Value) -> Result<(), String>,
+) {
+    app.world_mut()
+        .resource_mut::<UpdateDeserializerRegistry>()
+        .register(module, move |world, update, _sender| {
+            deserializer(world, update)
+        });
+}
+
+/// Registers an untracked update deserializer that also receives the clients that sent the
+/// update, for domains that keep per-session state such as subscriptions.
+pub fn register_client_update_deserializer(
+    app: &mut App,
+    module: &'static str,
+    deserializer: fn(&mut World, serde_json::Value, Audience) -> Result<(), String>,
 ) {
     app.world_mut()
         .resource_mut::<UpdateDeserializerRegistry>()

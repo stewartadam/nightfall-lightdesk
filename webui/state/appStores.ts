@@ -434,9 +434,12 @@ export const oscMappings = atom<types.OscMapping[]>([]);
 export const oscLastEvent = atom<types.OscLastEvent | null>(null);
 export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
 
-// DMX Universe data for raw channel visualization (input + output)
-export type DmxUniverseMap = types.OutboundDmxUniverse[];
-export const dmxUniverseData = atom<DmxUniverseMap>([]);
+// Every output and input DMX universe, without channel values
+export const dmxUniverseList = atom<types.DmxUniverseSummary[]>([]);
+// Channel values of the universes this client watches (see lib/dmx-universe-watch.ts)
+export const dmxUniverseChannels = atom<types.DmxUniverseChannels[]>([]);
+// Universes whose channel values this client asks the backend for
+export const dmxUniverseWatch = atom<types.DmxUniverseKey[]>([]);
 export const inputContributionTrace = atom<types.OutboundInputContribution[]>(
   [],
 );
@@ -1068,7 +1071,9 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     layerObjectNavigationRequest,
     sequenceNavigationRequest,
     sceneObjectNavigationRequest,
-    dmxUniverseData,
+    dmxUniverseList,
+    dmxUniverseChannels,
+    dmxUniverseWatch,
     inputContributionTrace,
     activeInstances,
     controls,

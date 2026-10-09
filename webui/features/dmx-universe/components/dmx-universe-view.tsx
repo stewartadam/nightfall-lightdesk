@@ -12,7 +12,10 @@ import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import Tooltip from "../../../components/ui/tooltip";
-import { getInputFreshness } from "../../../lib/dmx-universe-data";
+import {
+  type DmxUniverseSnapshot,
+  getInputFreshness,
+} from "../../../lib/dmx-universe-data";
 import type * as types from "../../../types";
 import { DmxIoMode, InputUniverseVisibilityMode } from "../../../types";
 import type { ChannelInfo } from "../model/dmx-universe-model";
@@ -29,12 +32,12 @@ export type DmxUniverseViewProps = {
   selectedTransport: string;
   universeIds: number[];
   selectedUniverse: number | null;
-  currentUniverse: types.OutboundDmxUniverse | undefined;
+  currentUniverse: DmxUniverseSnapshot | undefined;
   fixtures: Record<string, types.Fixture>;
   fixtureJumpActive: boolean;
   fixtureJumpText: string;
   fixtureJumpHighlight: FixtureJumpHighlight | undefined;
-  universeForId: (id: number) => types.OutboundDmxUniverse | undefined;
+  universeForId: (id: number) => types.DmxUniverseSummary | undefined;
   channelInfo: (address: number) => ChannelInfo | undefined;
   channelIsSelected: (address: number) => boolean;
   channelValueColor: (address: number, value: number) => string;
@@ -194,9 +197,7 @@ function DmxUniverseTabs(props: DmxUniverseViewProps & { contentId: string }) {
 }
 
 /** Renders freshness metadata above an input universe channel grid. */
-function InputUniverseFreshness(props: {
-  universe: types.OutboundDmxUniverse;
-}) {
+function InputUniverseFreshness(props: { universe: DmxUniverseSnapshot }) {
   /** Projects input freshness for the visible universe. */
   const freshness = () => getInputFreshness(props.universe);
 
@@ -228,7 +229,7 @@ function InputUniverseFreshness(props: {
 /** Renders the address/value cell grid for one DMX universe. */
 function DmxChannelGrid(
   props: DmxUniverseViewProps & {
-    universe: types.OutboundDmxUniverse;
+    universe: DmxUniverseSnapshot;
   },
 ) {
   return (

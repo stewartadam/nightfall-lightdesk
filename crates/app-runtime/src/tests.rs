@@ -619,7 +619,7 @@ async fn last_client_disconnect_saves_dirty_draft() {
     app.world()
         .resource::<nightfall_engine::prelude::ClientBridgeHost>()
         .presence_sender()
-        .last_client_disconnected();
+        .client_disconnected(nightfall_engine::prelude::ClientId(1), true);
     app.update();
     assert_ne!(
         std::fs::read(&draft_snapshot).expect("read draft after last disconnect"),
