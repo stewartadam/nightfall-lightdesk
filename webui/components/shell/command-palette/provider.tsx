@@ -17,7 +17,11 @@ import { actionAllowsSurface } from "../../../features/actions";
 import { $mappingMode, bindArmedSource } from "../../../features/io";
 import { invokeBoundAction } from "../../../features/keybindings";
 import { actionCatalog } from "../../../state/appStores";
-import { ActionInputKind, ActionSurface } from "../../../types";
+import {
+  ActionInputKind,
+  type ActionReference,
+  ActionSurface,
+} from "../../../types";
 import {
   $uiActions,
   CommandPaletteContext,
@@ -50,8 +54,8 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
    * Returns UI actions plus argument-free backend trigger actions for the palette.
    *
    * While a MIDI or OSC control is armed in controller mapping mode, choosing an entry binds
-   * the control to it instead of running it. Before a control is armed, entries run as
-   * usual, so panels can still be opened and mapping mode left from the palette.
+   * the control to it instead of running it, except entries that steer mapping mode itself.
+   * Before a control is armed, entries run as usual, so panels can still be opened.
    */
   const paletteEntries = createMemo<UiAction[]>(() => {
     const backendEntries = $backendCatalog()
@@ -61,7 +65,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
           actionAllowsSurface(entry, ActionSurface.CommandPalette) &&
           entry.descriptor.parameters.every((parameter) => !parameter.required),
       )
-      .map((entry) => ({
+      .map((entry): UiAction & { reference: ActionReference } => ({
         id: `action:${entry.descriptor.id}`,
         name: entry.descriptor.label,
         description: entry.descriptor.description,
@@ -78,7 +82,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
       reference: { id: uiActionId(command), arguments: {} },
     }));
     return [...uiEntries, ...backendEntries].map(({ reference, ...entry }) =>
-      $mode().armed
+      $mode().armed && !entry.runsWhileArmed
         ? {
             ...entry,
             execute: () => {

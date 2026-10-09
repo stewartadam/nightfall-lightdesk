@@ -161,6 +161,7 @@ export function MappingModeController() {
     icon: PlugsConnectedIcon,
     category: "I/O",
     execute: toggleMappingMode,
+    runsWhileArmed: true,
   });
 
   useKeyboardShortcut(
