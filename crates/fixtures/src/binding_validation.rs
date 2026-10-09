@@ -33,7 +33,7 @@ use crate::prelude::DisabledBindings;
 use crate::wire_layout::WireLayout;
 
 /// Last channel of a DMX universe, as an absolute 1-based address.
-const UNIVERSE_SIZE: u32 = MAX_CHANNELS_PER_UNIVERSE as u32;
+const LAST_CHANNEL: u32 = MAX_CHANNELS_PER_UNIVERSE as u32;
 
 /// Validation mode for binding overlaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,11 +116,11 @@ pub fn validate_bindings(
         input_bindings,
         data_provider,
     ));
-    issues.extend(validate_console_address_uniqueness(
+    issues.extend(validate_console_patch(output_bindings, data_provider));
+    issues.extend(validate_transport_universe_bounds(
         output_bindings,
         data_provider,
     ));
-    issues.extend(validate_universe_bounds(output_bindings, data_provider));
 
     if settings.mode == BindingValidationMode::Strict {
         issues.extend(validate_input_transport_console_priorities(input_bindings));
@@ -276,43 +276,83 @@ fn validate_fixture_to_fixture_shapes(
     issues
 }
 
-/// Reports console addresses claimed by more than one fixture.
+/// Validates the console patch: addresses claimed by more than one fixture parameter, and
+/// fixtures that run past the last channel of a console universe.
 ///
 /// Only the addresses output actually uses are checked: a fixture parameter patched to the
 /// console by several bindings keeps just the address of the winning binding, and bytes past
-/// the end of a universe are left to [`validate_universe_bounds`].
-fn validate_console_address_uniqueness(
+/// the end of a universe are reported as an overrun rather than as overlaps.
+fn validate_console_patch(
     output_bindings: &OutputBindings,
     data_provider: &FixtureDataProviderExt,
 ) -> Vec<BindingValidationIssue> {
     let (placements, mut issues) = effective_console_placements(output_bindings, data_provider);
-    let mut occupancy: HashMap<(u16, u32), Uuid> = HashMap::new();
+    let mut occupancy: HashMap<(u16, u32), &ConsoleParameterPlacement> = HashMap::new();
+    let mut overruns: Vec<(Uuid, u32, u16, RangeInclusive<u32>)> = Vec::new();
+    let mut overrun_index: HashMap<(Uuid, u16), usize> = HashMap::new();
 
     for placement in &placements {
-        for &addr in placement
-            .addresses
-            .iter()
-            .filter(|addr| **addr <= UNIVERSE_SIZE)
-        {
-            match occupancy.entry((placement.universe, addr)) {
-                Entry::Occupied(existing) if *existing.get() != placement.fixture => {
-                    let existing_uid = *existing.get();
-                    issues.push(BindingValidationIssue::for_fixtures(
-                        format!(
-                            "Console address overlap at universe {} address {} (fixtures {} and {})",
-                            placement.universe, addr, existing_uid, placement.fixture
-                        ),
-                        [existing_uid, placement.fixture],
-                    ));
+        for &addr in &placement.addresses {
+            if addr > LAST_CHANNEL {
+                let key = (placement.fixture, placement.universe);
+                match overrun_index.entry(key) {
+                    Entry::Occupied(index) => {
+                        let span = &mut overruns[*index.get()].3;
+                        *span = (*span.start()).min(*placement.channels.start())
+                            ..=(*span.end()).max(*placement.channels.end());
+                    }
+                    Entry::Vacant(slot) => {
+                        slot.insert(overruns.len());
+                        overruns.push((
+                            placement.fixture,
+                            placement.fixture_id,
+                            placement.universe,
+                            placement.channels.clone(),
+                        ));
+                    }
                 }
-                Entry::Occupied(_) => {}
+                continue;
+            }
+            match occupancy.entry((placement.universe, addr)) {
+                Entry::Occupied(existing) => {
+                    let existing = *existing.get();
+                    if existing.fixture != placement.fixture {
+                        issues.push(BindingValidationIssue::for_fixtures(
+                            format!(
+                                "Console address overlap at universe {} address {} (fixtures {} and {})",
+                                placement.universe, addr, existing.fixture, placement.fixture
+                            ),
+                            [existing.fixture, placement.fixture],
+                        ));
+                    } else if existing.parameter != placement.parameter {
+                        issues.push(BindingValidationIssue::for_fixtures(
+                            format!(
+                                "Console address overlap at universe {} address {} (two parameters of fixture {})",
+                                placement.universe, addr, placement.fixture_id
+                            ),
+                            [placement.fixture],
+                        ));
+                    }
+                }
                 Entry::Vacant(slot) => {
-                    slot.insert(placement.fixture);
+                    slot.insert(placement);
                 }
             }
         }
     }
 
+    issues.extend(
+        overruns
+            .into_iter()
+            .map(|(fixture, fixture_id, universe, channels)| {
+                universe_overrun_issue(
+                    fixture,
+                    fixture_id,
+                    &format!("console universe {universe}"),
+                    &channels,
+                )
+            }),
+    );
     issues
 }
 
@@ -321,13 +361,14 @@ fn validate_console_address_uniqueness(
 struct ConsoleParameterPlacement {
     fixture: Uuid,
     fixture_id: u32,
+    /// Fixture element index and parameter index of the placed parameter.
+    parameter: (usize, usize),
     universe: u16,
     /// Absolute addresses of the parameter's bytes, which may run past the universe.
     addresses: Vec<u32>,
     /// Channels spanned by the whole selection the winning binding placed with it.
     channels: RangeInclusive<u32>,
 }
-
 /// Resolves the console address of every fixture parameter the way output does.
 ///
 /// Fixture→console bindings apply in overlay order and a later binding replaces the address
@@ -371,6 +412,7 @@ fn effective_console_placements(
                 let placement = ConsoleParameterPlacement {
                     fixture: placed.uid,
                     fixture_id: placed.fixture_id,
+                    parameter: (element, index),
                     universe: placed.universe,
                     addresses: parameter
                         .slots
@@ -391,37 +433,15 @@ fn effective_console_placements(
     (placements.into_iter().flatten().collect(), issues)
 }
 
-/// Reports fixtures whose patch runs past the last channel of a universe.
+/// Reports fixtures whose transport patch runs past the last channel of a universe.
 ///
 /// Output has nowhere to put those bytes, which typically happens when a binding packs more
 /// fixtures into the last universe of its range than fit there.
-fn validate_universe_bounds(
+fn validate_transport_universe_bounds(
     output_bindings: &OutputBindings,
     data_provider: &FixtureDataProviderExt,
 ) -> Vec<BindingValidationIssue> {
     let mut issues = Vec::new();
-
-    let (placements, _) = effective_console_placements(output_bindings, data_provider);
-    let mut overruns: Vec<&ConsoleParameterPlacement> = Vec::new();
-    for placement in placements
-        .iter()
-        .filter(|placement| placement.addresses.iter().any(|addr| *addr > UNIVERSE_SIZE))
-    {
-        let reported = overruns.iter().any(|overrun| {
-            overrun.fixture == placement.fixture && overrun.universe == placement.universe
-        });
-        if !reported {
-            overruns.push(placement);
-        }
-    }
-    for overrun in overruns {
-        issues.push(universe_overrun_issue(
-            overrun.fixture,
-            overrun.fixture_id,
-            &format!("console universe {}", overrun.universe),
-            &overrun.channels,
-        ));
-    }
 
     for binding in &output_bindings.bindings {
         let OutputTarget::Transport {
@@ -445,7 +465,7 @@ fn validate_universe_bounds(
         .into_iter()
         .flatten()
         {
-            if placed.end() > UNIVERSE_SIZE {
+            if placed.end() > LAST_CHANNEL {
                 issues.push(universe_overrun_issue(
                     placed.uid,
                     placed.fixture_id,
@@ -473,7 +493,7 @@ fn universe_overrun_issue(
             universe_label,
             channels.start(),
             channels.end(),
-            UNIVERSE_SIZE
+            LAST_CHANNEL
         ),
         [fixture],
     )
@@ -838,12 +858,12 @@ fn collect_transport_spans(
                 .into_iter()
                 .flatten()
                 {
-                    // Bytes past the end of the universe never reach the wire; validate_universe_bounds
-                    // reports them.
-                    if placed.start > UNIVERSE_SIZE {
+                    // Bytes past the end of the universe never reach the wire;
+                    // validate_transport_universe_bounds reports them.
+                    if placed.start > LAST_CHANNEL {
                         continue;
                     }
-                    let end = placed.end().min(UNIVERSE_SIZE);
+                    let end = placed.end().min(LAST_CHANNEL);
                     spans.push(TransportSpan {
                         transport: target.clone(),
                         universe: placed.universe..=placed.universe,
@@ -1009,17 +1029,12 @@ fn fixture_shape(
         let element = &fixture.elements[idx];
         let selected: Vec<usize> = if let Some(param_name) = param {
             let attribute = attribute_from_param(param_name);
-            let position = element
+            element
                 .parameters
                 .iter()
                 .position(|param| param.attribute == attribute)
-                .ok_or_else(|| {
-                    BindingValidationIssue::new(format!(
-                        "Fixture {} missing parameter {:?}",
-                        fixture.identifiers.uid, attribute
-                    ))
-                })?;
-            vec![position]
+                .into_iter()
+                .collect()
         } else {
             (0..element.parameters.len()).collect()
         };
@@ -1035,6 +1050,18 @@ fn fixture_shape(
                 .map(|position| (idx, position))
                 .collect(),
         );
+    }
+
+    // A parameter selection patches the elements that have the parameter, like output; it is
+    // only an error when no selected element has it.
+    if let Some(param_name) = param
+        && elements.iter().all(Vec::is_empty)
+    {
+        return Err(BindingValidationIssue::new(format!(
+            "Fixture {} missing parameter {:?}",
+            fixture.identifiers.uid,
+            attribute_from_param(param_name)
+        )));
     }
 
     Ok(FixtureShape {
@@ -1186,7 +1213,7 @@ mod tests {
             ],
         };
 
-        let issues = validate_console_address_uniqueness(&output_bindings, &provider);
+        let issues = validate_console_patch(&output_bindings, &provider);
         assert!(!issues.is_empty());
     }
 
@@ -1258,7 +1285,7 @@ mod tests {
             ],
         };
 
-        let console_issues = validate_console_address_uniqueness(&output_bindings, &provider);
+        let console_issues = validate_console_patch(&output_bindings, &provider);
         assert!(console_issues.is_empty(), "{console_issues:?}");
         let transport_issues = validate_transport_address_uniqueness(
             &InputBindings::default(),
@@ -1295,13 +1322,13 @@ mod tests {
         let clear = OutputBindings {
             bindings: vec![ranged.clone(), at(uids[3], 1, 2)],
         };
-        let issues = validate_console_address_uniqueness(&clear, &provider);
+        let issues = validate_console_patch(&clear, &provider);
         assert!(issues.is_empty(), "{issues:?}");
 
         let overlapping = OutputBindings {
             bindings: vec![ranged, at(uids[4], 2, 2)],
         };
-        let issues = validate_console_address_uniqueness(&overlapping, &provider);
+        let issues = validate_console_patch(&overlapping, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].involves_fixture(uids[2]) && issues[0].involves_fixture(uids[4]));
     }
@@ -1334,7 +1361,7 @@ mod tests {
         let bindings = OutputBindings {
             bindings: vec![cloned, neighbour],
         };
-        let issues = validate_console_address_uniqueness(&bindings, &provider);
+        let issues = validate_console_patch(&bindings, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].message.contains("universe 2 address 8"));
         assert!(issues[0].involves_fixture(uids[1]) && issues[0].involves_fixture(uids[2]));
@@ -1387,7 +1414,10 @@ mod tests {
             ],
         };
 
-        let issues = validate_universe_bounds(&bindings, &provider);
+        let issues: Vec<_> = validate_console_patch(&bindings, &provider)
+            .into_iter()
+            .chain(validate_transport_universe_bounds(&bindings, &provider))
+            .collect();
         let messages: Vec<&str> = issues.iter().map(|issue| issue.message.as_str()).collect();
         assert_eq!(
             messages,
@@ -1397,8 +1427,6 @@ mod tests {
             ]
         );
         assert!(issues.iter().all(|issue| issue.involves_fixture(uids[5])));
-        let console_issues = validate_console_address_uniqueness(&bindings, &provider);
-        assert!(console_issues.is_empty(), "{console_issues:?}");
         let transport_issues =
             validate_transport_address_uniqueness(&InputBindings::default(), &bindings, &provider);
         assert!(transport_issues.is_empty(), "{transport_issues:?}");
@@ -1414,10 +1442,18 @@ mod tests {
             bindings: vec![console_binding(uids, 101, 1, 0)],
         };
 
-        let console_issues = validate_console_address_uniqueness(&bindings, &provider);
-        assert!(console_issues.is_empty(), "{console_issues:?}");
-        let bound_issues = validate_universe_bounds(&bindings, &provider);
-        assert_eq!(bound_issues.len(), 596, "fixtures 5..=600 do not fit");
+        let issues = validate_console_patch(&bindings, &provider);
+        assert_eq!(
+            issues.len(),
+            596,
+            "fixtures 5..=600 do not fit: {:?}",
+            &issues[..3]
+        );
+        assert!(
+            issues
+                .iter()
+                .all(|issue| issue.message.contains("runs past the end"))
+        );
     }
 
     /// When one fixture is patched to the console twice, only the winning binding's address
@@ -1436,7 +1472,7 @@ mod tests {
                 console_binding(vec![other], 1, 1, 0),
             ],
         };
-        let issues = validate_console_address_uniqueness(&higher_priority_move, &provider);
+        let issues = validate_console_patch(&higher_priority_move, &provider);
         assert!(issues.is_empty(), "{issues:?}");
 
         let equal_priority_move = OutputBindings {
@@ -1446,7 +1482,7 @@ mod tests {
                 console_binding(vec![other], 1, 1, 0),
             ],
         };
-        let issues = validate_console_address_uniqueness(&equal_priority_move, &provider);
+        let issues = validate_console_patch(&equal_priority_move, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].involves_fixture(moved) && issues[0].involves_fixture(other));
     }
@@ -1483,11 +1519,77 @@ mod tests {
         };
 
         // Wiring order 1, 13..=2, 14..=37 puts element 2 on channel 13 of the whole fixture.
-        let issues = validate_console_address_uniqueness(&with_other_at(13), &provider);
+        let issues = validate_console_patch(&with_other_at(13), &provider);
         assert!(issues.is_empty(), "{issues:?}");
-        let issues = validate_console_address_uniqueness(&with_other_at(2), &provider);
+        let issues = validate_console_patch(&with_other_at(2), &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].message.contains("universe 1 address 2"));
+    }
+
+    /// A partial binding that moves one parameter onto an address another parameter of the
+    /// same fixture still uses is reported, since both write the same channel.
+    #[test]
+    fn partial_binding_onto_its_own_fixture_overlaps() {
+        let mut provider = FixtureDataProviderExt::default();
+        let fixture = Uuid::new_v4();
+        provider
+            .inner
+            .add(make_fixture(
+                fixture,
+                100,
+                vec![param(Attribute::Intensity), param(Attribute::Red)],
+            ))
+            .unwrap();
+        let red_onto_intensity = OutputBinding {
+            source: OutputSource::Fixture {
+                uids: vec![fixture],
+                element: None,
+                param: Some("Red".to_string()),
+            },
+            ..console_binding(vec![fixture], 1, 1, 5)
+        };
+        let bindings = OutputBindings {
+            bindings: vec![console_binding(vec![fixture], 1, 1, 0), red_onto_intensity],
+        };
+
+        let issues = validate_console_patch(&bindings, &provider);
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].message.contains("two parameters of fixture 100"));
+    }
+
+    /// A parameter binding across a whole fixture patches the elements that have that
+    /// parameter and skips the rest, as output does, instead of rejecting the fixture.
+    #[test]
+    fn parameter_binding_skips_elements_without_the_parameter() {
+        let mut provider = FixtureDataProviderExt::default();
+        let head = Uuid::new_v4();
+        provider
+            .inner
+            .add(make_fixture_with_elements(
+                head,
+                100,
+                vec![
+                    vec![param(Attribute::Pan), param(Attribute::Intensity)],
+                    vec![param(Attribute::Intensity)],
+                ],
+            ))
+            .unwrap();
+        let other = add_fixtures_with_footprint(&mut provider, 1, 1)[0];
+        let pan = OutputBinding {
+            source: OutputSource::Fixture {
+                uids: vec![head],
+                element: None,
+                param: Some("Pan".to_string()),
+            },
+            ..console_binding(vec![head], 1, 1, 0)
+        };
+        let bindings = OutputBindings {
+            bindings: vec![pan, console_binding(vec![other], 1, 1, 0)],
+        };
+
+        let issues = validate_console_patch(&bindings, &provider);
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].involves_fixture(head) && issues[0].involves_fixture(other));
     }
 
     #[test]
