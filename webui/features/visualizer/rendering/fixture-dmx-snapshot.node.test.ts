@@ -171,3 +171,42 @@ test("cached DMX permits strobes to advance between engine messages", () => {
   );
   assert.ok(intensities.includes(0));
 });
+
+/**
+ * A new engine snapshot that keeps a fixture's output array keeps that fixture's records, while a
+ * fixture with a replaced output array or definition is converted again.
+ */
+test("DMX snapshots reconvert only fixtures whose output or definition changed", () => {
+  const cache = new FixtureDmxSnapshot();
+  const fixtures = {
+    a: { elements: [element()] },
+    b: { elements: [element()] },
+  };
+  const aOutputs = [{ Red: 0.2 }];
+  const first = new Map(
+    cache.read(
+      new Map([
+        ["a", aOutputs],
+        ["b", [{ Red: 0.4 }]],
+      ]),
+      fixtures,
+    ),
+  );
+
+  const second = cache.read(
+    new Map([
+      ["a", aOutputs],
+      ["b", [{ Red: 0.6 }]],
+    ]),
+    fixtures,
+  );
+  assert.equal(second.get("a"), first.get("a"));
+  assert.notEqual(second.get("b"), first.get("b"));
+  const intensity = second.get("b")?.get("Cell")?.intensity ?? 0;
+  assert.ok(Math.abs(intensity - 0.6) < 1e-6, `intensity ${intensity}`);
+
+  const redefined = { ...fixtures, a: { elements: [element("Renamed")] } };
+  const third = cache.read(new Map([["a", aOutputs]]), redefined);
+  assert.deepEqual([...third.get("a")!.keys()], ["Renamed"]);
+  assert.equal(third.has("b"), false);
+});
