@@ -19,6 +19,7 @@ mod failures;
 mod flash;
 mod invocation;
 mod lowering;
+mod mapping_mode;
 mod registry;
 mod source;
 mod targets;
@@ -43,9 +44,10 @@ pub use invocation::{
     InvocationId, InvocationOutcome, InvocationResult,
 };
 pub use lowering::{ActionAppExt, submit_command};
+pub use mapping_mode::{ControllerMappingMode, ControllerMappingModeState};
 use nightfall_engine::prelude::{
-    ClientFeedback, CommandDeserializerRegistry, CommandIngressRouter, EventHandling,
-    InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
+    ClientDisconnected, ClientFeedback, CommandDeserializerRegistry, CommandIngressRouter,
+    EventHandling, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
     register_command_deserializer, register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
@@ -68,6 +70,8 @@ impl Plugin for ActionsPlugin {
         app.init_resource::<SourceEdgeStates>();
         app.init_resource::<InvocationFailureThrottle>();
         app.init_resource::<ActionTargets>();
+        app.init_resource::<ControllerMappingMode>();
+        app.add_message::<ClientDisconnected>();
         app.add_message::<ActionInvocation>();
         app.add_message::<InvocationResult>();
         app.add_message::<ActionInvocationFailure>();
@@ -87,7 +91,10 @@ impl Plugin for ActionsPlugin {
         );
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            (
+                websocket::handle_resync_state.in_set(ResyncHandling),
+                mapping_mode::release_disconnected_mapping_clients.in_set(EventHandling),
+            ),
         );
         // Client publications run in ClientFeedback so they pause while a staged world is swapped in.
         app.add_systems(
@@ -96,6 +103,7 @@ impl Plugin for ActionsPlugin {
                 websocket::send_action_catalog_on_change,
                 websocket::send_client_action_invocations,
                 websocket::send_action_invocation_failures,
+                websocket::send_mapping_mode_on_change,
             )
                 .in_set(ClientFeedback),
         );
@@ -113,7 +121,9 @@ impl Plugin for ActionsPlugin {
             );
             app.add_systems(
                 Update,
-                command::handle_action_commands.in_set(EventHandling),
+                command::handle_action_commands
+                    .in_set(EventHandling)
+                    .before(mapping_mode::release_disconnected_mapping_clients),
             );
         }
     }

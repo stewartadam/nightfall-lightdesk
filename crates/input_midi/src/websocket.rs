@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use crate::command::{MidiCommand, MidiLastEvent, MidiMapping};
 use crate::mapping::MidiMappings;
-use crate::{LastMidiEvent, MidiDevices, MidiMappingDiagnostics};
+use crate::{LastMidiEvent, MidiControlTouches, MidiDevices, MidiMappingDiagnostics};
 
 /// MIDI device information sent to the UI
 #[derive(Debug, Clone, Serialize)]
@@ -45,6 +45,11 @@ enum MidiWsMessage<'a> {
     MidiLastEvent(&'a MidiLastEvent),
     /// MIDI mappings that cannot currently invoke their action, and why
     MidiMappingDiagnostics(&'a [BindingDiagnostic]),
+    /// Controls touched in one frame while controller mapping mode is active, in order.
+    ///
+    /// Unlike `MidiLastEvent`, these are never dropped or coalesced across controls, so a
+    /// mapping client reliably arms the control that was touched.
+    MidiControlTouched(&'a [MidiLastEvent]),
 }
 
 /// Deserialize and dispatch MidiCommand from JSON
@@ -94,8 +99,17 @@ pub fn send_midi_state(
     mappings: Res<MidiMappings>,
     diagnostics: Res<MidiMappingDiagnostics>,
     last_event: Res<LastMidiEvent>,
+    mut touches: ResMut<MidiControlTouches>,
     broadcaster: Res<ClientEventSink>,
 ) {
+    if !touches.0.is_empty() {
+        broadcaster.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &MidiWsMessage::MidiControlTouched(&touches.0),
+        );
+        touches.0.clear();
+    }
+
     // Only send if resources have changed
     if devices.is_changed() {
         send_device_list(&devices, &broadcaster);

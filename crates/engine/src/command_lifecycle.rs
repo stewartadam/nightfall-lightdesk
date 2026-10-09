@@ -16,8 +16,8 @@ use thiserror::Error;
 use web_time::Instant;
 
 use crate::prelude::{
-    CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin, CommandOutcome,
-    CommandOutput, CommandResult, NoticeLevel, ReplyTarget, UndoId,
+    ClientId, CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin,
+    CommandOutcome, CommandOutput, CommandResult, NoticeLevel, ReplyTarget, UndoId,
 };
 
 /// Context retained while one accepted command is active.
@@ -187,6 +187,16 @@ impl CommandTracker {
     /// Returns active command context for workflow diagnostics.
     pub fn active_command(&self, command_id: CommandId) -> Option<&ActiveCommand> {
         self.active.get(&command_id)
+    }
+
+    /// Returns the client session that submitted an active command, read from the reply
+    /// target its host adapter assigned, so handlers of session-owned state can tell which
+    /// client a command came from.
+    pub fn connection(&self, command_id: CommandId) -> Option<ClientId> {
+        match self.active.get(&command_id)?.reply_target {
+            ReplyTarget::Client(client) => Some(client),
+            _ => None,
+        }
     }
 
     /// Sets how many delegated operation outcomes complete one accepted command.
@@ -412,6 +422,11 @@ impl CommandResponder<'_> {
     /// Returns whether a command is currently awaiting a terminal outcome.
     pub fn is_active(&self, command_id: CommandId) -> bool {
         self.tracker.is_active(command_id)
+    }
+
+    /// Returns the client session that submitted an active command, if one was identified.
+    pub fn connection(&self, command_id: CommandId) -> Option<ClientId> {
+        self.tracker.connection(command_id)
     }
 
     /// Declares how many delegated outcomes must be joined before completion.

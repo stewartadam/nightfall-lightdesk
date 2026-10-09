@@ -63,6 +63,48 @@ export function toggleMappingMode(): void {
   }
 }
 
+/**
+ * Builds the backend command that enters or leaves controller mapping mode.
+ *
+ * The backend pauses MIDI and OSC actions while any client holds mapping mode, and releases
+ * this client's hold when it disconnects. Entering again is harmless, so the command is
+ * re-sent after reconnecting.
+ */
+export function mappingModeCommand(active: boolean): {
+  module: "ActionCommand";
+  command: types.ActionCommand;
+} {
+  return {
+    module: "ActionCommand",
+    command: {
+      type: active
+        ? "EnterControllerMappingMode"
+        : "LeaveControllerMappingMode",
+    },
+  };
+}
+
+/**
+ * Describes why controller actions are paused, or `undefined` when they are not.
+ *
+ * `mappingClients` counts every client in mapping mode, including this one once the backend
+ * confirms it, so the text names only the other clients. Until the backend confirms, this
+ * client's touches neither arm nor pause, which the text says.
+ */
+export function describeMappingPause(
+  mappingClients: number,
+  localActive: boolean,
+): string | undefined {
+  const others = mappingClients - (localActive ? 1 : 0);
+  if (localActive) {
+    if (mappingClients <= 0) return "Pausing MIDI and OSC actions…";
+    if (others <= 0) return "MIDI and OSC actions are paused.";
+    return `MIDI and OSC actions are paused; ${others} other ${others === 1 ? "client is" : "clients are"} also mapping.`;
+  }
+  if (mappingClients <= 0) return undefined;
+  return `Controller actions paused while ${mappingClients} ${mappingClients === 1 ? "client is" : "clients are"} mapping MIDI and OSC controls.`;
+}
+
 /** Records a MIDI control that the next mappable click binds, when mapping mode is active. */
 export function armMidiSource(event: types.MidiLastEvent): void {
   const state = $mappingMode.get();
@@ -85,6 +127,27 @@ export function armOscSource(event: types.OscLastEvent): void {
     ...state,
     armed: { kind: "osc", ...trackOscGesture(current, event) },
   });
+}
+
+/**
+ * Arms from one frame of MIDI controls the backend reported touched in mapping mode.
+ *
+ * Touches arrive reliably and in order, so the last mappable control touched wins.
+ */
+export function armMidiTouches(events: readonly types.MidiLastEvent[]): void {
+  for (const event of events) {
+    if (event.source) armMidiSource(event);
+  }
+}
+
+/**
+ * Folds one frame of OSC messages the backend reported in mapping mode into the armed touch.
+ *
+ * Messages are applied in order, so a press and its release in the same frame still record
+ * both values of the gesture.
+ */
+export function armOscTouches(events: readonly types.OscLastEvent[]): void {
+  for (const event of events) armOscSource(event);
 }
 
 /** Identifies the physical control behind an armed source. */

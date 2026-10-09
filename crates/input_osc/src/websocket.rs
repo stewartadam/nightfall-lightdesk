@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use crate::command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
 use crate::mapping::OscMappings;
-use crate::{LastOscEvent, OscMappingDiagnostics, OscRuntimeStatus, OscSources};
+use crate::{LastOscEvent, OscControlTouches, OscMappingDiagnostics, OscRuntimeStatus, OscSources};
 
 /// OSC source info for UI display.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -44,6 +44,11 @@ pub enum OscWsMessage<'a> {
     OscExternalEval(&'a OscExternalEval),
     /// OSC mappings that cannot currently invoke their action, and why.
     OscMappingDiagnostics(&'a [BindingDiagnostic]),
+    /// Messages received in one frame while controller mapping mode is active, in order.
+    ///
+    /// Unlike `OscLastEvent`, these are never dropped or coalesced to one message per frame,
+    /// so a mapping client reliably arms the touched address with its press and release.
+    OscControlTouched(&'a [OscLastEvent]),
 }
 
 /// Deserialize and dispatch `OscCommand` from JSON.
@@ -96,8 +101,16 @@ pub fn send_osc_state(
     diagnostics: Res<OscMappingDiagnostics>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
+    mut touches: ResMut<OscControlTouches>,
     broadcaster: Res<ClientEventSink>,
 ) {
+    if !touches.0.is_empty() {
+        broadcaster.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscControlTouched(&touches.0),
+        );
+        touches.0.clear();
+    }
     if sources.is_changed() {
         send_sources(&sources, &broadcaster);
     }
