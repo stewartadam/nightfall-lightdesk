@@ -19,6 +19,7 @@ jiff.workspace = true
 nightfall = { path = "../../crates/common" }
 nightfall-config = { path = "../../crates/config" }
 nightfall-desk = { path = "../../crates/desk", default-features = false }
+nightfall-engine = { path = "../../crates/engine" }
 nightfall-websocket = { path = "../../crates/websocket" }
 serde.workspace = true
 serde_json.workspace = true

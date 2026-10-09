@@ -11,9 +11,9 @@ use std::sync::Once;
 use bevy::prelude::{AppExit, Local, MessageWriter, Res, ResMut};
 use nightfall_config::ShutdownConfig;
 use nightfall_engine::prelude::{
-    DebugPanicTarget, init_process_shutdown, is_process_shutdown_requested,
-    maybe_trigger_debug_worker_panic, process_shutdown_grace_period, process_shutdown_reason,
-    request_process_shutdown, subscribe_process_shutdown,
+    DebugPanicTarget, init_process_shutdown, is_graceful_exit_requested,
+    is_process_shutdown_requested, maybe_trigger_debug_worker_panic, process_shutdown_grace_period,
+    process_shutdown_reason, request_process_shutdown, subscribe_process_shutdown,
 };
 
 use crate::systems;
@@ -96,7 +96,10 @@ pub(super) async fn handle_bevy_task_result(result: Result<(), tokio::task::Join
     }
 }
 
-/// Persist dirty state and request one graceful Bevy exit after fatal process shutdown.
+/// Persist dirty state and request one Bevy exit once the backend is asked to stop.
+///
+/// Covers both a fatal process shutdown and a graceful exit requested by the desktop shell
+/// or a termination signal, so unsaved work reaches the draft however the backend closes.
 pub(super) fn handle_process_shutdown_request(
     mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
     current_showfile: Res<systems::showfile_events::CurrentShowfile>,
@@ -106,14 +109,19 @@ pub(super) fn handle_process_shutdown_request(
 ) {
     maybe_trigger_debug_worker_panic(DebugPanicTarget::BevyMain);
 
-    if *sent || !is_process_shutdown_requested() {
+    if *sent {
         return;
     }
-
-    tracing::error!(
-        reason = ?process_shutdown_reason(),
-        "Process shutdown requested; signaling AppExit for graceful teardown"
-    );
+    if is_process_shutdown_requested() {
+        tracing::error!(
+            reason = ?process_shutdown_reason(),
+            "Process shutdown requested; signaling AppExit for graceful teardown"
+        );
+    } else if is_graceful_exit_requested() {
+        tracing::info!("Backend exit requested; saving the draft before exiting");
+    } else {
+        return;
+    }
     if let Err(error) = systems::showfile_events::save_draft_showfile_if_dirty(
         &mut showfile_save_state,
         current_showfile.name(),

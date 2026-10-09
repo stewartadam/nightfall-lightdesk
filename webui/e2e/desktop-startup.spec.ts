@@ -68,16 +68,6 @@ test("desktop startup can access a backend on another origin", async ({
   const results = await page.evaluate(async (baseUrl) => {
     const draft = await fetch(`${baseUrl}/api/showfiles/default/draft`);
     const draftBody = await draft.json();
-    const save = await fetch(`${baseUrl}/api/showfiles/current/draft`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    const invalidSave = await fetch(`${baseUrl}/api/showfiles/current/draft`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "invalid JSON",
-    });
     // The snapshot is decoded from gzip and always returned whole, so ranged
     // reads target a plain file that every saved showfile carries.
     const resource = await fetch(
@@ -92,8 +82,6 @@ test("desktop startup can access a backend on another origin", async ({
     return {
       draftStatus: draft.status,
       hasDraftMetadata: "draft" in draftBody,
-      saveStatus: save.status,
-      invalidSaveStatus: invalidSave.status,
       resourceStatus: resource.status,
       contentRange: resource.headers.get("Content-Range"),
       resourceLength: (await resource.arrayBuffer()).byteLength,
@@ -103,8 +91,6 @@ test("desktop startup can access a backend on another origin", async ({
   expect(results).toEqual({
     draftStatus: 200,
     hasDraftMetadata: true,
-    saveStatus: 202,
-    invalidSaveStatus: 400,
     resourceStatus: 206,
     contentRange: expect.stringMatching(/^bytes 0-31\/\d+$/),
     resourceLength: 32,

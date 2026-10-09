@@ -221,11 +221,59 @@ impl CommandSender {
     }
 }
 
+/// Written once the last connected client session closes.
+///
+/// With no client left, nobody can save the show from a UI anymore, so the
+/// backend reacts by protecting unsaved work itself.
+#[derive(Message, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LastClientDisconnected;
+
+/// Lets a host transport report that its last client session closed.
+///
+/// Every report also wakes the frame limiter, so the engine reacts on its next
+/// frame instead of waiting for the next tick.
+#[derive(Clone)]
+pub struct ClientPresenceSender {
+    tx: Sender<LastClientDisconnected>,
+    waker: FrameWaker,
+}
+
+impl ClientPresenceSender {
+    /// Wraps a presence channel so every report also wakes `waker`.
+    pub fn new(tx: Sender<LastClientDisconnected>, waker: FrameWaker) -> Self {
+        Self { tx, waker }
+    }
+
+    /// Reports that no client session remains connected to the host.
+    pub fn last_client_disconnected(&self) {
+        if let Err(error) = self.tx.try_send(LastClientDisconnected) {
+            tracing::warn!(%error, "last_client_disconnected_report_failed");
+            return;
+        }
+        self.waker.wake();
+    }
+}
+
+/// Engine-side end of the host's client presence reports.
+#[derive(Resource)]
+struct ClientPresenceReceiver(Receiver<LastClientDisconnected>);
+
+/// Turns host presence reports into [`LastClientDisconnected`] messages for this frame.
+fn forward_client_presence(
+    receiver: Res<ClientPresenceReceiver>,
+    mut disconnected: MessageWriter<LastClientDisconnected>,
+) {
+    while let Ok(report) = receiver.0.try_recv() {
+        disconnected.write(report);
+    }
+}
+
 /// Host-owned handles for submitting ingress and receiving encoded engine events.
 #[derive(Resource)]
 pub struct ClientBridgeHost {
     command_tx: CommandSender,
     update_tx: Sender<UpdateJsonEnvelope>,
+    presence_tx: ClientPresenceSender,
     output_rx: Option<Receiver<OutboundFrame>>,
 }
 
@@ -238,6 +286,11 @@ impl ClientBridgeHost {
     /// Clone the sender used to submit high-frequency untracked updates.
     pub fn update_sender(&self) -> Sender<UpdateJsonEnvelope> {
         self.update_tx.clone()
+    }
+
+    /// Clone the sender used to report that the last client session closed.
+    pub fn presence_sender(&self) -> ClientPresenceSender {
+        self.presence_tx.clone()
     }
 
     /// Take exclusive ownership of the encoded engine event receiver.
@@ -260,22 +313,27 @@ pub struct SharedClientBridge {
     command_rx: Receiver<CommandJsonEnvelope>,
     update_tx: Sender<UpdateJsonEnvelope>,
     update_rx: Receiver<UpdateJsonEnvelope>,
+    presence_tx: Sender<LastClientDisconnected>,
+    presence_rx: Receiver<LastClientDisconnected>,
     output_tx: Sender<OutboundFrame>,
     output_rx: Receiver<OutboundFrame>,
     frame_waker: FrameWaker,
 }
 
 impl SharedClientBridge {
-    /// Create unbounded command, update, and output channels and a fresh frame waker.
+    /// Create unbounded command, update, presence, and output channels and a fresh frame waker.
     pub fn new() -> Self {
         let (command_tx, command_rx) = async_channel::unbounded();
         let (update_tx, update_rx) = async_channel::unbounded();
+        let (presence_tx, presence_rx) = async_channel::unbounded();
         let (output_tx, output_rx) = async_channel::unbounded();
         Self {
             command_tx,
             command_rx,
             update_tx,
             update_rx,
+            presence_tx,
+            presence_rx,
             output_tx,
             output_rx,
             frame_waker: FrameWaker::default(),
@@ -309,6 +367,8 @@ impl Plugin for ClientBridgePlugin {
             command_rx,
             update_tx,
             update_rx,
+            presence_tx,
+            presence_rx,
             output_tx,
             output_rx,
             frame_waker,
@@ -321,16 +381,20 @@ impl Plugin for ClientBridgePlugin {
         app.insert_resource(ClientEventSink::new(output_tx));
         app.insert_resource(CommandJsonEnvelopeReceiver(command_rx));
         app.insert_resource(UpdateJsonEnvelopeReceiver(update_rx));
+        app.insert_resource(ClientPresenceReceiver(presence_rx));
         app.insert_resource(frame_waker.clone());
         app.insert_resource(ClientBridgeHost {
-            command_tx: CommandSender::new(command_tx, frame_waker),
+            command_tx: CommandSender::new(command_tx, frame_waker.clone()),
             update_tx,
+            presence_tx: ClientPresenceSender::new(presence_tx, frame_waker),
             output_rx: Some(output_rx),
         });
         app.init_resource::<CommandFeedbackCursors>();
+        app.add_message::<LastClientDisconnected>();
         app.add_systems(
             Update,
             (
+                forward_client_presence,
                 process_json_envelopes,
                 process_update_json_envelopes,
                 forward_command_feedback,
@@ -654,6 +718,23 @@ mod client_bridge_tests {
                 112, 108, 101, 116, 101,
             ]
         );
+    }
+
+    /// Verifies a host's last-client report surfaces as one engine message on the next frame.
+    #[test]
+    fn last_client_report_becomes_an_engine_message() {
+        let (mut app, _output) = bridge_app();
+        let presence = app.world().resource::<ClientBridgeHost>().presence_sender();
+
+        presence.last_client_disconnected();
+        app.update();
+
+        let reports = app
+            .world_mut()
+            .resource_mut::<Messages<LastClientDisconnected>>()
+            .drain()
+            .collect::<Vec<_>>();
+        assert_eq!(reports, vec![LastClientDisconnected]);
     }
 
     /// Verifies notices preserve ordering ahead of same-frame terminal results.

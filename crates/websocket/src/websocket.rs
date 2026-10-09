@@ -90,6 +90,8 @@ pub struct AxumAppState {
     pub command_json_tx: CommandSender,
     /// Channel for sending untracked JSON update envelopes from Axum.
     pub update_json_tx: ClientSender<UpdateJsonEnvelope>,
+    /// Tells the engine when the last session closes so it can protect unsaved work.
+    pub client_presence: ClientPresenceSender,
     /// Maintains references the message channels of connected client
     pub clients: Arc<Mutex<Vec<ConnectedClient>>>,
     /// Source of unique identities for sessions, never reused while the server runs.
@@ -202,8 +204,8 @@ async fn client_ws(
 
     // Task: client → backend
     let recv_task = tokio::spawn({
-        let clients = clients.clone();
         let outbox = outbox.clone();
+        let cancellation = cancellation.clone();
         async move {
             while let Some(Ok(msg)) = ws_receiver.next().await {
                 if let Message::Text(text) = msg {
@@ -241,13 +243,6 @@ async fn client_ws(
                     }
                 }
             }
-
-            // Stop tracking this client, then drop the reference to the guard
-            // Required to that this async fn is Send-compatible
-            {
-                let mut guard = clients.lock().unwrap();
-                guard.retain(|c| !Arc::ptr_eq(&c.outbox, &outbox));
-            }
         }
     });
 
@@ -257,8 +252,20 @@ async fn client_ws(
         coalesced = outbox.coalesced_count(),
         "WebSocket client disconnected"
     );
+    if forget_client(&clients, &outbox) {
+        tracing::info!(%client_id, "Last websocket client disconnected");
+        state.client_presence.last_client_disconnected();
+    }
+}
+
+/// Removes a closed session from the registry and returns whether no session remains.
+///
+/// Every registered session passes through here exactly once when it ends, whichever path
+/// closed it first, so the session that leaves the registry empty is the one that reports it.
+fn forget_client(clients: &Mutex<Vec<ConnectedClient>>, outbox: &Arc<ClientOutbox>) -> bool {
     let mut guard = clients.lock().unwrap();
-    guard.retain(|c| !Arc::ptr_eq(&c.outbox, &outbox));
+    guard.retain(|c| !Arc::ptr_eq(&c.outbox, outbox));
+    guard.is_empty()
 }
 
 /// Cancels both socket directions on revocation even when either task is blocked on I/O.
@@ -408,6 +415,7 @@ pub(crate) fn create_axum_task(
     ws_broadcast_rx: ClientReceiver<OutboundFrame>,
     command_json_tx: CommandSender,
     update_json_tx: ClientSender<UpdateJsonEnvelope>,
+    client_presence: ClientPresenceSender,
     plugin_routes: Router,
     stateful_plugin_routes: Router<AxumAppState>,
     web_ui: Option<crate::SharedWebUiAssets>,
@@ -423,6 +431,7 @@ pub(crate) fn create_axum_task(
     let state = AxumAppState {
         command_json_tx,
         update_json_tx,
+        client_presence,
         clients: clients.clone(),
         next_client_id: Default::default(),
         remote_generation: remote_generation.clone(),
@@ -710,6 +719,7 @@ mod tests {
             broadcast_rx,
             CommandSender::new(command_tx, FrameWaker::default()),
             update_tx,
+            ClientPresenceSender::new(async_channel::unbounded().0, FrameWaker::default()),
             Router::new(),
             Router::new(),
             None,
@@ -780,6 +790,65 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+    }
+
+    /// Verifies the engine hears about disconnects only once the final session closes, so a
+    /// tab closing while another stays open does not trigger backend work.
+    #[tokio::test]
+    async fn only_the_last_disconnect_is_reported() {
+        let (command_tx, _command_rx) = async_channel::unbounded();
+        let (update_json_tx, _update_rx) = async_channel::unbounded();
+        let (presence_tx, presence_rx) = async_channel::unbounded();
+        let state = AxumAppState {
+            command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
+            update_json_tx,
+            client_presence: ClientPresenceSender::new(presence_tx, FrameWaker::default()),
+            clients: Default::default(),
+            next_client_id: Default::default(),
+            remote_generation: Default::default(),
+            pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
+        };
+        let clients = state.clients.clone();
+        let routes = SwappableRoutes::new(state.clone(), None, Router::new(), Router::new());
+        let app = websocket_router(state, routes).layer(Extension(0_u64));
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+        });
+        let registered = |count: usize| {
+            let clients = clients.clone();
+            async move {
+                while clients.lock().unwrap().len() != count {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        };
+
+        let (mut first, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let (mut second, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), registered(2))
+            .await
+            .unwrap();
+
+        first.close(None).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), registered(1))
+            .await
+            .unwrap();
+        assert!(presence_rx.try_recv().is_err());
+
+        second.close(None).await.unwrap();
+        let report = tokio::time::timeout(Duration::from_secs(5), presence_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(report, LastClientDisconnected);
+        assert!(presence_rx.try_recv().is_err());
+        server.abort();
     }
 
     /// Verifies direct native encoding matches the transport-neutral bridge bytes.
@@ -990,6 +1059,10 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
             next_client_id: Default::default(),
             remote_generation: Default::default(),
@@ -1091,6 +1164,10 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
             next_client_id: Default::default(),
             remote_generation: Default::default(),
@@ -1229,6 +1306,10 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
             next_client_id: Default::default(),
             remote_generation: Default::default(),
@@ -1350,6 +1431,10 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
             next_client_id: Default::default(),
             remote_generation: Default::default(),

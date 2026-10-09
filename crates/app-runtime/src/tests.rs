@@ -582,6 +582,56 @@ fn world_factory_named_empty_bootstrap_persists_initial_draft() {
     nightfall::set_nightfall_data_dir(None);
 }
 
+/// Verifies unsaved work reaches the draft once the last client disconnects, and not before.
+#[tokio::test]
+async fn last_client_disconnect_saves_dirty_draft() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("tour".to_string()),
+        })
+        .expect("named empty world factory build");
+    let draft_snapshot = root
+        .path()
+        .join("drafts")
+        .join("tour.nightfall-show")
+        .join("showfile.json.gz");
+    let initial_draft = std::fs::read(&draft_snapshot).expect("read initial draft");
+
+    app.world()
+        .resource::<nightfall_engine::prelude::GlobalVariables>()
+        .set(
+            "unsaved",
+            nightfall::prelude::VariableValue::String("kept".to_string()),
+        );
+    app.update();
+    assert_eq!(
+        std::fs::read(&draft_snapshot).expect("read draft while clients remain"),
+        initial_draft,
+        "the draft should not change while a client is still connected"
+    );
+
+    app.world()
+        .resource::<nightfall_engine::prelude::ClientBridgeHost>()
+        .presence_sender()
+        .last_client_disconnected();
+    app.update();
+    assert_ne!(
+        std::fs::read(&draft_snapshot).expect("read draft after last disconnect"),
+        initial_draft,
+        "the last disconnect should save the unsaved change into the draft"
+    );
+
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
 /// Verifies new-show UI notifications use the normalized active showfile name.
 #[test]
 fn new_showfile_current_showfile_notification_uses_normalized_name() {

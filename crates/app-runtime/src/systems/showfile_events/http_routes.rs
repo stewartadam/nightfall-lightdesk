@@ -13,14 +13,13 @@ use std::path::{Component, Path, PathBuf};
 use axum::{
     Json,
     body::Body,
-    extract::{Path as AxumPath, Query, Request, State},
+    extract::{Path as AxumPath, Query, Request},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use nightfall_desk::prelude::ShowfileSaveOptions;
-use nightfall_engine::prelude::{CommandId, CommandJsonEnvelope, ReplyTarget};
-use nightfall_websocket::prelude::{AxumAppState, HttpRouteRegistry};
+use nightfall_websocket::prelude::HttpRouteRegistry;
 use tower_http::services::ServeFile;
 
 use super::{
@@ -47,10 +46,6 @@ pub(crate) fn register_showfile_http_routes(registry: &mut HttpRouteRegistry) {
     registry.register(
         "/api/showfiles/{showfile_name}/draft",
         get(get_available_showfile_draft),
-    );
-    registry.register_stateful(
-        "/api/showfiles/current/draft",
-        post(save_current_showfile_draft),
     );
 }
 
@@ -314,48 +309,6 @@ async fn get_available_showfile_draft(AxumPath(showfile_name): AxumPath<String>)
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "available showfile draft task failed",
-            )
-                .into_response()
-        }
-    }
-}
-
-/// Enqueue a backend-owned draft check from browser lifecycle-safe close handling.
-///
-/// This RPC intentionally exists as an HTTP endpoint instead of a websocket
-/// command because browser unload handling can start `sendBeacon` or
-/// `fetch(..., { keepalive: true })` HTTP requests, but cannot reliably keep the
-/// document alive long enough for a websocket command/response round trip. The
-/// endpoint gives tab-close handling a browser lifecycle-compatible way to ask
-/// the backend to hash the current showfile state, save a draft when it differs
-/// from the saved baseline, or skip writing when the mounted draft is already
-/// clean. Clean drafts remain mounted because the backend can outlive the
-/// browser tab that triggered this endpoint.
-async fn save_current_showfile_draft(
-    State(state): State<AxumAppState>,
-    options: Option<Json<ShowfileSaveOptions>>,
-) -> Response {
-    let save_options = options.map(|Json(options)| options).unwrap_or_default();
-    let command_id = CommandId::new();
-    let envelope = CommandJsonEnvelope {
-        command_id,
-        undo_id: Some(command_id.into()),
-        module: "DeskCommand".to_string(),
-        command: serde_json::json!({
-            "type": "SaveDraftShowfile",
-            "data": save_options,
-        }),
-        // The closing tab cannot receive the outcome, and other clients did not ask for it.
-        reply_target: ReplyTarget::Detached,
-    };
-
-    match state.command_json_tx.send(envelope).await {
-        Ok(()) => StatusCode::ACCEPTED.into_response(),
-        Err(error) => {
-            tracing::warn!("Failed to enqueue draft showfile save: {}", error);
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "failed to enqueue draft showfile save",
             )
                 .into_response()
         }

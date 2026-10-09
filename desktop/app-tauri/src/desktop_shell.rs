@@ -7,12 +7,18 @@
  */
 
 use std::path::Path;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
 use std::{collections::HashSet, process::Command};
 
 use app_runtime::{monitor_bevy_session, run_bevy_session};
 use nightfall::constants::APP_LOG_FILE_NAME;
 use nightfall_config::RuntimeConfig;
 use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::prelude::request_graceful_exit;
 use tauri::{
     Emitter, EventTarget, Manager, Runtime, WebviewWindow, WebviewWindowBuilder,
     menu::{HELP_SUBMENU_ID, MenuItem, SubmenuBuilder, WINDOW_SUBMENU_ID},
@@ -797,8 +803,34 @@ pub(super) fn dispatch_menu_action<R: Runtime + 'static>(
     }
 }
 
+/// How long quitting waits for the backend to save the draft and stop before closing anyway.
+const BACKEND_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Holds a quit, or the last window closing, until the backend has saved and stopped.
+///
+/// The first exit request asks the backend to save the draft and stop; the backend thread
+/// then exits the app itself. If the backend does not stop in time, the app exits anyway.
+fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &AtomicBool) {
+    let tauri::RunEvent::ExitRequested { api, .. } = event else {
+        return;
+    };
+    if backend_stopped.load(Ordering::Acquire) {
+        return;
+    }
+    api.prevent_exit();
+    if request_graceful_exit("desktop app quit") {
+        std::thread::spawn(|| {
+            std::thread::sleep(BACKEND_EXIT_TIMEOUT);
+            tracing::error!("Backend did not stop in time after quit; exiting anyway");
+            std::process::exit(1);
+        });
+    }
+}
+
 /// Launch the Tauri shell and run the Bevy backend on a dedicated worker thread.
 pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
+    let backend_stopped = Arc::new(AtomicBool::new(false));
+    let backend_stopped_for_setup = backend_stopped.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().skip_logger().build())
         .plugin(tauri_plugin_dialog::init())
@@ -857,12 +889,14 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
                     monitor_bevy_session(bevy_task).await
                 });
 
+                backend_stopped_for_setup.store(true, Ordering::Release);
                 app_handle.exit(exit_code);
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("Error building the tauri application");
+        .build(tauri::generate_context!())
+        .expect("Error building the tauri application")
+        .run(move |_app, event| defer_exit_until_backend_stops(event, &backend_stopped));
 }
 
 #[cfg(test)]

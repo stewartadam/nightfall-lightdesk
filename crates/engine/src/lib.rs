@@ -76,10 +76,10 @@ pub mod prelude {
         BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
     };
     pub use crate::client_bridge::{
-        Audience, ClientBridgeHost, ClientBridgePlugin, ClientEventSink,
+        Audience, ClientBridgeHost, ClientBridgePlugin, ClientEventSink, ClientPresenceSender,
         CommandDeserializerRegistry, CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DROPPABLE,
-        DISCRIMINATOR_NON_DROPPABLE, EncodedClientMessage, OutboundFrame, SharedClientBridge,
-        UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        DISCRIMINATOR_NON_DROPPABLE, EncodedClientMessage, LastClientDisconnected, OutboundFrame,
+        SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -94,8 +94,9 @@ pub mod prelude {
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{
         DebugPanicTarget, debug_panic_target_names, init_process_shutdown,
-        is_process_shutdown_requested, maybe_trigger_debug_worker_panic, parse_debug_panic_target,
-        process_shutdown_grace_period, process_shutdown_reason, request_debug_worker_panic,
+        is_graceful_exit_requested, is_process_shutdown_requested,
+        maybe_trigger_debug_worker_panic, parse_debug_panic_target, process_shutdown_grace_period,
+        process_shutdown_reason, request_debug_worker_panic, request_graceful_exit,
         request_process_shutdown, subscribe_process_shutdown,
     };
     pub use crate::protocol::client::EngineClientMessage;
