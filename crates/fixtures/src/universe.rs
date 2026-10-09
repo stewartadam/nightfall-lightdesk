@@ -464,6 +464,15 @@ impl ConsoleDmxUniverses {
         self.universes.keys()
     }
 
+    /// Iterates every console universe with its channel values, without copying them.
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (u16, &[ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE])> {
+        self.universes
+            .iter()
+            .map(|(universe_id, universe)| (*universe_id, &universe.values))
+    }
+
     /// Clears all console universe buffers and ownership metadata.
     pub fn clear(&mut self) {
         self.universes.clear();

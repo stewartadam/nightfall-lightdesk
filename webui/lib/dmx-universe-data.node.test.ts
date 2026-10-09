@@ -8,64 +8,79 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DmxIoMode, type OutboundDmxUniverse } from "../types/index";
+import { DmxIoMode, type DmxUniverseSummary } from "../types/index";
 import {
+  dmxUniverseKeyId,
+  dmxUniverseSnapshot,
   formatFrameAgeMs,
   getInputFreshness,
-  normalizeDmxUniverseData,
 } from "./dmx-universe-data";
 
-test("normalizeDmxUniverseData preserves freshness metadata for input universes", () => {
-  const raw: OutboundDmxUniverse[] = [
+/** Returns a listed input universe on sACN with the given number. */
+function inputSummary(universeId: number): DmxUniverseSummary {
+  return {
+    universe_id: universeId,
+    io_mode: DmxIoMode.Input,
+    transport: "sACN",
+    output_transport: undefined,
+    is_stale: false,
+    is_self: true,
+  };
+}
+
+/** Pairs a listed universe only with channel values sent for the same key. */
+test("dmxUniverseSnapshot merges the matching channel values", () => {
+  const summary = inputSummary(2);
+  const channels = [
     {
-      universe_id: 1,
-      channels: [0, 0],
+      universe_id: 2,
       io_mode: DmxIoMode.Output,
-      transport: undefined,
+      transport: "sACN",
+      channels: new Uint8Array([9]),
       frame_age_ms: undefined,
-      is_stale: undefined,
-      is_self: undefined,
     },
     {
       universe_id: 2,
-      channels: [255, 0],
       io_mode: DmxIoMode.Input,
       transport: "sACN",
+      channels: new Uint8Array([255, 0]),
       frame_age_ms: 123,
-      is_stale: false,
-      is_self: true,
     },
   ];
 
-  const normalized = normalizeDmxUniverseData(raw);
-  assert.equal(normalized.length, 2);
-  assert.equal(normalized[1].frame_age_ms, 123);
-  assert.equal(normalized[1].is_stale, false);
-  assert.equal(normalized[1].is_self, true);
+  const snapshot = dmxUniverseSnapshot(summary, channels);
+
+  assert.deepEqual(snapshot?.channels, [255, 0]);
+  assert.equal(snapshot?.frame_age_ms, 123);
+  assert.equal(snapshot?.is_self, true);
+  assert.equal(dmxUniverseSnapshot(inputSummary(3), channels), undefined);
+});
+
+/** Key ids distinguish I/O mode, numbering space and universe number. */
+test("dmxUniverseKeyId separates mode, transport and number", () => {
+  const ids = new Set([
+    dmxUniverseKeyId(inputSummary(1)),
+    dmxUniverseKeyId({ ...inputSummary(1), io_mode: DmxIoMode.Output }),
+    dmxUniverseKeyId({ ...inputSummary(1), transport: "Art-Net" }),
+    dmxUniverseKeyId(inputSummary(2)),
+  ]);
+  assert.equal(ids.size, 4);
 });
 
 test("getInputFreshness returns live/stale status for input universes", () => {
   const live = getInputFreshness({
-    universe_id: 2,
-    channels: [0],
     io_mode: DmxIoMode.Input,
-    transport: "sACN",
     frame_age_ms: 120,
     is_stale: false,
-    is_self: false,
   });
   assert.equal(live.dot, "live");
   assert.equal(live.badgeLabel, "Live");
   assert.equal(live.ageLabel, "120 ms");
 
   const stale = getInputFreshness({
-    universe_id: 3,
-    channels: [0],
     io_mode: DmxIoMode.Input,
-    transport: "sACN",
     frame_age_ms: 2300,
     is_stale: true,
-    is_self: false,
   });
   assert.equal(stale.dot, "stale");
   assert.equal(stale.badgeLabel, "Stale");

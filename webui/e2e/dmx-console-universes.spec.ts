@@ -20,13 +20,6 @@ test.setTimeout(90_000);
 
 const PANEL_ID = "panel-DmxConsoleUniverses-e2e";
 
-/** Output universe summary read from the live DMX universe store. */
-interface OutputUniverseSummary {
-  transport: string | undefined;
-  universeId: number;
-  channels: number[];
-}
-
 /** Submits one operator command through the header command line and waits for its result. */
 async function runCommandLine(page: Page, command: string): Promise<void> {
   const result = await page.evaluate(async (commandText) => {
@@ -125,29 +118,33 @@ async function openDmxUniversePanel(page: Page): Promise<Locator> {
   return panel;
 }
 
-/** Reads output universe views reported by the engine. */
-async function outputUniverses(page: Page): Promise<OutputUniverseSummary[]> {
-  return page.evaluate(() =>
-    ((window as any).appStores.dmxUniverseData.get() as any[])
-      .filter((universe) => universe.io_mode === "output")
-      .map((universe) => ({
-        transport: universe.transport,
-        universeId: universe.universe_id,
-        channels: universe.channels,
-      })),
-  );
-}
-
-/** Returns the channel values of one reported output universe view. */
+/**
+ * Returns the channel values of one reported output universe, asking the engine for them first.
+ * Returns undefined until the engine lists the universe and sends its values.
+ */
 async function outputChannels(
   page: Page,
   transport: string,
   universeId: number,
 ): Promise<number[] | undefined> {
-  return (await outputUniverses(page)).find(
-    (universe) =>
-      universe.transport === transport && universe.universeId === universeId,
-  )?.channels;
+  return page.evaluate(
+    ([label, id]) => {
+      const stores = (window as any).appStores;
+      const key = { universe_id: id, io_mode: "output", transport: label };
+      /** Returns whether an entry names the requested universe. */
+      const matches = (candidate: typeof key) =>
+        candidate.io_mode === key.io_mode &&
+        candidate.transport === key.transport &&
+        candidate.universe_id === key.universe_id;
+      const watched = stores.dmxUniverseWatch.get() as (typeof key)[];
+      if (!watched.some(matches)) {
+        stores.dmxUniverseWatch.set([...watched, key]);
+      }
+      const entry = (stores.dmxUniverseChannels.get() as any[]).find(matches);
+      return entry ? (Array.from(entry.channels) as number[]) : undefined;
+    },
+    [transport, universeId] as const,
+  );
 }
 
 /** Locates the universe tab list within the panel. */
@@ -225,10 +222,17 @@ test("console DMX panel reports console-space and remapped wire universes", asyn
   await expect(channelTile(panel, 121)).toContainText("#311.1");
   await panel.screenshot({ path: testInfo.outputPath("sacn-wire.png") });
 
-  const consoleChannels = await outputChannels(page, "Console", 2);
-  expect(consoleChannels?.slice(0, 240)).toEqual(
-    (await outputChannels(page, "sACN", 10))?.slice(0, 240),
-  );
+  await expect
+    .poll(async () => {
+      const consoleChannels = await outputChannels(page, "Console", 2);
+      const wireChannels = await outputChannels(page, "sACN", 10);
+      return (
+        consoleChannels !== undefined &&
+        JSON.stringify(consoleChannels.slice(0, 240)) ===
+          JSON.stringify(wireChannels?.slice(0, 240))
+      );
+    })
+    .toBe(true);
 });
 
 /**
