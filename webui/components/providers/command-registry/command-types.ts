@@ -27,6 +27,11 @@ export interface UiAction {
   icon?: AppIcon;
   execute: (context?: UiActionExecutionContext) => void;
   category?: string;
+  /**
+   * Runs from the command palette even while a controller is armed in mapping mode, instead
+   * of binding the armed control to it. Set for actions that steer mapping mode itself.
+   */
+  runsWhileArmed?: boolean;
 }
 
 export interface CommandPaletteContextType {
