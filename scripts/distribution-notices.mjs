@@ -239,9 +239,14 @@ export function developmentNotices() {
   );
 }
 
-/** Returns a crate manifest's path relative to the repository root, with forward slashes. */
-function repositoryManifestPath(pkg) {
-  return relative(projectRoot, pkg.manifest_path).replaceAll("\\", "/");
+/**
+ * Returns where a crate's packaged source can be downloaded: the exact commit for git
+ * dependencies (such as `[patch]` forks), otherwise the crates.io archive.
+ */
+function crateSource(pkg) {
+  const git = pkg.source?.match(/^git\+([^?#]+)(?:\?[^#]*)?#([0-9a-f]+)$/);
+  if (git) return `${git[1].replace(/\.git$/, "")}/tree/${git[2]}`;
+  return `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download`;
 }
 
 /** Adapt cargo-about's selected license texts, retaining ancillary and vendored notices. */
@@ -249,15 +254,13 @@ export function rustNotices(report) {
   const reviewed = supplements();
   return report.crates
     .filter(({ package: pkg }) => {
-      const path = repositoryManifestPath(pkg);
+      const path = relative(projectRoot, pkg.manifest_path).replaceAll(
+        "\\",
+        "/",
+      );
       return !path.startsWith("crates/") && !path.startsWith("desktop/");
     })
     .map(({ package: pkg, license: expression }) => {
-      const vendored = repositoryManifestPath(pkg).startsWith("vendor/");
-      if (vendored && !pkg.repository)
-        throw new Error(
-          `Vendored crate ${pkg.name}@${pkg.version} needs a repository field for its notice source`,
-        );
       const selected = report.licenses.filter(({ used_by }) =>
         used_by.some(({ crate }) => crate.id === pkg.id),
       );
@@ -308,10 +311,7 @@ export function rustNotices(report) {
         ]
           .sort()
           .join(" AND "),
-        // Patched copies under vendor/ no longer match the registry archive, so point at upstream.
-        source: vendored
-          ? `${pkg.repository} (modified copy of ${pkg.version} in the Nightfall repository)`
-          : `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download`,
+        source: crateSource(pkg),
         text: combineTexts(files),
       };
     });

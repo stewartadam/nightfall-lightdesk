@@ -5,8 +5,8 @@ repos:
     - id: insert-license
       name: MPL headers (source)
       files: \.(rs|[cm]?[jt]sx?|wit)$
-      # Imported bevy_framepace code and vendored crates retain their upstream licenses.
-      exclude: ^(crates/framepace/src/lib\.rs|vendor/.*)$
+      # Imported bevy_framepace code retains its upstream MIT license.
+      exclude: ^crates/framepace/src/lib\.rs$
       args: [--license-filepath, config/license-headers/source.txt, --comment-style, '']
       stages: [pre-commit]
     - id: insert-license

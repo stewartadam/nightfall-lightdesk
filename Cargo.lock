@@ -4725,6 +4725,7 @@ dependencies = [
 [[package]]
 name = "moonshine-kind"
 version = "0.5.1"
+source = "git+https://github.com/stewartadam/moonshine_kind?rev=067615a57073b8af310ef235a027dc11a64dcc7f#067615a57073b8af310ef235a027dc11a64dcc7f"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
