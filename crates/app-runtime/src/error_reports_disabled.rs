@@ -25,6 +25,9 @@ pub(crate) fn init(_configured_dsn: Option<&str>) -> ErrorReportsGuard {
     ErrorReportsGuard
 }
 
+/// There are no queued reports to write.
+pub fn flush_error_reports() {}
+
 /// Consent has no effect without an error-report client.
 pub(crate) fn apply_consent(_state: &TelemetryState) {}
 

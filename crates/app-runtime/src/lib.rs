@@ -45,6 +45,7 @@ pub use diagnostic_bundle::{BundleOptions, BundleResult, ShowfileMode, write_bun
 pub use diagnostic_logs::{DiagnosticLogMode, DiagnosticLogPage, collect_diagnostic_logs};
 pub use diagnostic_showfile::{DiagnosticShowfile, capture_showfile};
 pub use engine_log_time::EngineLogTimer;
+pub use error_reports::flush_error_reports;
 pub use logging::{RuntimeGuard, initialize};
 pub use runtime_config::load_runtime_config;
 pub use session::{run_bevy_session, run_headless};

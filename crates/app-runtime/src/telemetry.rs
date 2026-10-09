@@ -97,9 +97,10 @@ impl TelemetryHost {
             .clone()
     }
 
-    /// Persists a world's changed choices and records them as the session's state. Returns the
-    /// error to show the operator: `None` after a successful save, which also clears any earlier
-    /// read or save failure.
+    /// Persists a world's changed choices and records them as the session's state, even when
+    /// saving fails, so later worlds keep honoring the choice error reporting already follows.
+    /// Returns the error to show the operator: `None` after a successful save, which also clears
+    /// any earlier read or save failure.
     fn save(&self, state: &TelemetryState) -> Option<String> {
         let mut current = self
             .state
@@ -111,9 +112,7 @@ impl TelemetryHost {
         let error = save_preferences(&self.path, &StoredTelemetry::from_state(state))
             .err()
             .map(|error| format!("Could not save telemetry preferences: {error}"));
-        if error.is_none() {
-            *current = state.clone();
-        }
+        *current = state.clone();
         current.error = error.clone();
         error
     }

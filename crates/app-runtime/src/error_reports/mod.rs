@@ -33,7 +33,7 @@ use scrub::Scrubber;
 use sentry::{
     ClientOptions,
     integrations::tracing::EventFilter,
-    protocol::{Event, User},
+    protocol::{Breadcrumb, Event, User},
     types::Dsn,
 };
 use tracing::{Level, Metadata, Subscriber, callsite::Identifier};
@@ -51,6 +51,8 @@ const PANIC_FIELD: &str = "panic";
 const REPEAT_WINDOW: Duration = Duration::from_secs(60);
 /// Breadcrumbs kept for the next report.
 const MAX_BREADCRUMBS: usize = 30;
+/// Longest wait for queued reports to reach disk when a shell exits without dropping the guard.
+const FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Whether the operator currently shares error reports.
 static ENABLED: AtomicBool = AtomicBool::new(false);
@@ -123,12 +125,14 @@ pub(crate) fn init(configured_dsn: Option<&str>) -> ErrorReportsGuard {
             "production"
         })
         .user_agent(USER_AGENT)
-        .attach_stacktrace(true)
+        // Capturing and symbolicating a backtrace for a logged error would stall the thread
+        // that logged it, often the frame loop; panics still carry their own stack trace.
+        .attach_stacktrace(false)
         .send_default_pii(false)
         .max_breadcrumbs(MAX_BREADCRUMBS)
         .in_app_include(["nightfall", "app_runtime", "app_tauri"])
         .before_send(prepare_event)
-        .before_breadcrumb(|breadcrumb| reports_enabled().then_some(breadcrumb))
+        .before_breadcrumb(prepare_breadcrumb)
         .transport(Arc::new(outbox));
     let client = sentry::init((dsn, options));
     ErrorReportsGuard {
@@ -151,8 +155,26 @@ fn prepare_event(mut event: Event<'static>) -> Option<Event<'static>> {
     Some(event)
 }
 
-/// Applies the operator's current choice: starts uploading when reports are shared, and deletes
-/// queued reports as soon as sharing is turned off.
+/// Keeps a breadcrumb only while reports are shared, scrubbed against the show open when it was
+/// logged, since a later show swap would leave the earlier show's name unmasked.
+fn prepare_breadcrumb(mut breadcrumb: Breadcrumb) -> Option<Breadcrumb> {
+    if !reports_enabled() {
+        return None;
+    }
+    Scrubber::for_host().breadcrumb(&mut breadcrumb);
+    Some(breadcrumb)
+}
+
+/// Writes reports still waiting in memory to disk, for shells that exit the process without
+/// dropping the [`ErrorReportsGuard`].
+pub fn flush_error_reports() {
+    if let Some(client) = sentry::Hub::main().client() {
+        client.flush(Some(FLUSH_TIMEOUT));
+    }
+}
+
+/// Applies the operator's current choice: starts uploading when reports are shared. While they
+/// are not, anything queued is deleted, including reports left by an earlier session.
 pub(crate) fn apply_consent(state: &TelemetryState) {
     let enabled = state.available && state.consent.share_errors;
     if let Ok(mut install_id) = INSTALL_ID.write()
@@ -164,10 +186,10 @@ pub(crate) fn apply_consent(state: &TelemetryState) {
     let Some(outbox) = OUTBOX.get() else {
         return;
     };
-    if enabled && !was_enabled {
-        outbox.wake();
-    } else if !enabled && was_enabled {
+    if !enabled {
         outbox.purge();
+    } else if !was_enabled {
+        outbox.wake();
     }
 }
 

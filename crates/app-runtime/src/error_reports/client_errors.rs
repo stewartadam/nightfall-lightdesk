@@ -9,10 +9,19 @@
 //! Uncaught web UI errors forwarded through the engine, so browsers and LAN devices without
 //! internet access share the engine's consent check and offline queue.
 
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+    time::Instant,
+};
+
 use axum::{Json, http::StatusCode, routing::post};
 use nightfall_websocket::prelude::HttpRouteRegistry;
 use sentry::protocol::{Event, Exception, Frame, Level, Mechanism, Stacktrace};
 
+/// Most web UI reports accepted per session, leaving the rest of the session budget for the
+/// engine's own failures.
+const MAX_CLIENT_REPORTS_PER_SESSION: usize = 20;
 /// Longest error message kept from a client report.
 const MAX_MESSAGE_CHARS: usize = 2_000;
 /// Longest error name kept from a client report.
@@ -46,10 +55,52 @@ struct ClientError {
 /// Captures a web UI failure as an error report. Always answers `204`, since the web UI has
 /// nothing to do differently when reports are off.
 async fn report_client_error(Json(error): Json<ClientError>) -> StatusCode {
-    if super::reports_enabled() {
+    if super::reports_enabled() && CLIENT_LIMITER.admit(&error, Instant::now()) {
         sentry::capture_event(client_error_event(error));
     }
     StatusCode::NO_CONTENT
+}
+
+/// Limits web UI reports across every connected device, so several devices or a failure whose
+/// message keeps changing cannot use up the session's report budget before an engine crash.
+struct ClientErrorLimiter {
+    state: Mutex<LimiterState>,
+}
+
+/// Reports admitted so far and when each distinct failure was last admitted.
+#[derive(Default)]
+struct LimiterState {
+    admitted: usize,
+    recent: HashMap<(String, String), Instant>,
+}
+
+/// Shared limiter for the client-error endpoint.
+static CLIENT_LIMITER: LazyLock<ClientErrorLimiter> = LazyLock::new(|| ClientErrorLimiter {
+    state: Mutex::new(LimiterState::default()),
+});
+
+impl ClientErrorLimiter {
+    /// Admits a failure unless the session's web UI budget is spent or the same failure was
+    /// admitted within the repeat window.
+    fn admit(&self, error: &ClientError, now: Instant) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if state.admitted >= MAX_CLIENT_REPORTS_PER_SESSION {
+            return false;
+        }
+        let key = (error.name.clone(), error.message.clone());
+        if state
+            .recent
+            .get(&key)
+            .is_some_and(|last| now.duration_since(*last) < super::REPEAT_WINDOW)
+        {
+            return false;
+        }
+        state.recent.insert(key, now);
+        state.admitted += 1;
+        true
+    }
 }
 
 /// Builds the report for a web UI failure, parsing its stack so the error service can group
@@ -177,6 +228,31 @@ mod tests {
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[1].function.as_deref(), Some("render"));
         assert_eq!(frames[0].function, None);
+    }
+
+    /// Repeats of one failure are admitted once per window, and the session budget caps the
+    /// total across distinct failures.
+    #[test]
+    fn limits_repeated_and_excess_client_errors() {
+        let limiter = ClientErrorLimiter {
+            state: Mutex::new(LimiterState::default()),
+        };
+        let error = |message: &str| ClientError {
+            source: "app".into(),
+            kind: "error".into(),
+            name: "TypeError".into(),
+            message: message.into(),
+            stack: None,
+            fatal: false,
+        };
+        let now = Instant::now();
+        assert!(limiter.admit(&error("a"), now));
+        assert!(!limiter.admit(&error("a"), now));
+        assert!(limiter.admit(&error("a"), now + super::super::REPEAT_WINDOW));
+        for index in 0..MAX_CLIENT_REPORTS_PER_SESSION {
+            limiter.admit(&error(&index.to_string()), now);
+        }
+        assert!(!limiter.admit(&error("new"), now));
     }
 
     /// The report keeps the error's type, message, and origin, and marks fatal failures.

@@ -10,7 +10,12 @@
 
 use std::path::Path;
 
-use sentry::protocol::{Breadcrumb, Context, Event, Stacktrace, Value};
+use sentry::protocol::{Breadcrumb, Context, Event, Map, Stacktrace, Value};
+
+/// Context in which the tracing integration stores a log record's structured fields.
+const TRACING_FIELDS_CONTEXT: &str = "Rust Tracing Fields";
+/// Structured log fields kept in reports, since they carry the failure itself.
+const ERROR_FIELDS: &[&str] = &["error", "err", "reason", "panic"];
 
 /// Extension of showfile directories; any name ending in it is replaced.
 const SHOWFILE_EXTENSION: &str = ".nightfall-show";
@@ -20,6 +25,8 @@ const SHOWFILE_PLACEHOLDER: &str = "<showfile>";
 const HOME_PLACEHOLDER: &str = "~";
 /// Placeholder that replaces the Nightfall data directory.
 const DATA_DIR_PLACEHOLDER: &str = "<data>";
+/// Placeholder that replaces a bare IP address and its port.
+const IP_PLACEHOLDER: &str = "<ip>";
 /// Placeholder that replaces the host and port of a web address.
 const HOST_PLACEHOLDER: &str = "<host>";
 /// Show names shorter than this are not replaced on their own, since they would also match
@@ -92,7 +99,7 @@ impl Scrubber {
                 text = text.replace(value.as_str(), placeholder);
             }
         }
-        mask_url_hosts(&mask_showfile_names(&text))
+        mask_ip_addresses(&mask_url_hosts(&mask_showfile_names(&text)))
     }
 
     /// Scrubs an optional string in place.
@@ -126,6 +133,7 @@ impl Scrubber {
         self.option(&mut event.transaction);
         self.stacktrace(&mut event.stacktrace);
         for exception in &mut event.exception.values {
+            exception.ty = self.text(&exception.ty);
             self.option(&mut exception.value);
             self.stacktrace(&mut exception.stacktrace);
         }
@@ -134,8 +142,11 @@ impl Scrubber {
             self.stacktrace(&mut thread.stacktrace);
         }
         event.extra.values_mut().for_each(|value| self.value(value));
-        for context in event.contexts.values_mut() {
+        for (name, context) in event.contexts.iter_mut() {
             if let Context::Other(fields) = context {
+                if name == TRACING_FIELDS_CONTEXT {
+                    keep_error_fields(fields);
+                }
                 fields.values_mut().for_each(|value| self.value(value));
             }
         }
@@ -159,14 +170,22 @@ impl Scrubber {
         }
     }
 
-    /// Scrubs a breadcrumb's message and fields.
+    /// Scrubs a breadcrumb's message and keeps only its error fields.
     pub(super) fn breadcrumb(&self, breadcrumb: &mut Breadcrumb) {
         self.option(&mut breadcrumb.message);
+        keep_error_fields(&mut breadcrumb.data);
         breadcrumb
             .data
             .values_mut()
             .for_each(|value| self.value(value));
     }
+}
+
+/// Keeps only the structured log fields that describe a failure. Other fields often hold
+/// operator-typed names or addresses (cue labels, bind addresses), so they are dropped rather
+/// than trusted to the text scrubber.
+fn keep_error_fields(fields: &mut Map<String, Value>) {
+    fields.retain(|name, _| ERROR_FIELDS.contains(&name.as_str()));
 }
 
 /// Replaces the name in front of every showfile extension, keeping the extension so readers can
@@ -224,6 +243,68 @@ fn mask_url_hosts(text: &str) -> String {
     }
     masked.push_str(rest);
     masked
+}
+
+/// Replaces bare IPv4 and IPv6 addresses, with any port, such as those of consoles and nodes on
+/// the venue network.
+fn mask_ip_addresses(text: &str) -> String {
+    /// Characters that can appear in an address with its port.
+    fn address_char(character: char) -> bool {
+        character.is_ascii_hexdigit() || matches!(character, ':' | '.' | '[' | ']' | '%')
+    }
+    let mut masked = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find(address_char) {
+        masked.push_str(&rest[..start]);
+        rest = &rest[start..];
+        let mut end = rest.find(|c: char| !address_char(c)).unwrap_or(rest.len());
+        if rest[..end].contains('%') {
+            // An IPv6 zone such as `%en0` names an interface.
+            end += rest[end..]
+                .find(|c: char| !c.is_ascii_alphanumeric())
+                .unwrap_or(rest.len() - end);
+        }
+        let run = &rest[..end];
+        // A run glued to a preceding word character is part of an identifier, not an address.
+        let glued = masked
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        let candidate = run.trim_end_matches(['.', ':']);
+        if !glued && is_ip_address(candidate) {
+            masked.push_str(IP_PLACEHOLDER);
+            masked.push_str(&run[candidate.len()..]);
+        } else {
+            masked.push_str(run);
+        }
+        rest = &rest[end..];
+    }
+    masked.push_str(rest);
+    masked
+}
+
+/// Returns whether `candidate` is an IPv4 address (optionally with a port) or an IPv6 address
+/// (optionally bracketed, with a zone or port).
+fn is_ip_address(candidate: &str) -> bool {
+    let without_port = |value: &str| -> String {
+        match value.rsplit_once(':') {
+            Some((address, port)) if !port.is_empty() && port.parse::<u16>().is_ok() => {
+                address.to_owned()
+            }
+            _ => value.to_owned(),
+        }
+    };
+    let ipv4 = without_port(candidate);
+    if ipv4.parse::<std::net::Ipv4Addr>().is_ok() {
+        return true;
+    }
+    let bracketed = candidate
+        .strip_prefix('[')
+        .and_then(|value| value.split_once(']'))
+        .map(|(address, _)| address);
+    let ipv6 = bracketed.unwrap_or(candidate);
+    let ipv6 = ipv6.split('%').next().unwrap_or(ipv6);
+    ipv6.contains(':') && ipv6.parse::<std::net::Ipv6Addr>().is_ok()
 }
 
 #[cfg(test)]
@@ -294,6 +375,41 @@ mod tests {
             scrubber.text("socket wss://desk.local:7700 closed; see file:///tmp/x"),
             "socket wss://<host> closed; see file:///tmp/x"
         );
+    }
+
+    /// Bare IPv4 and IPv6 addresses lose their value, while times, versions with fewer parts,
+    /// and Rust paths stay readable.
+    #[test]
+    fn masks_bare_ip_addresses() {
+        let scrubber = Scrubber::default();
+        assert_eq!(
+            scrubber.text("bind 192.168.1.20:8000 failed; peer 10.0.0.7."),
+            "bind <ip> failed; peer <ip>."
+        );
+        assert_eq!(
+            scrubber.text("node fe80::1%en0 and [2001:db8::5]:6454 down"),
+            "node <ip> and <ip> down"
+        );
+        assert_eq!(
+            scrubber.text("at 12:30:45 in nightfall::dmx v0.49.3 x1.2.3.4"),
+            "at 12:30:45 in nightfall::dmx v0.49.3 x1.2.3.4"
+        );
+    }
+
+    /// Only fields that describe the failure survive in breadcrumbs.
+    #[test]
+    fn breadcrumbs_keep_only_error_fields() {
+        let mut breadcrumb = Breadcrumb {
+            message: Some("bind failed".into()),
+            data: [
+                ("error".to_owned(), Value::from("address in use")),
+                ("cue_label".to_owned(), Value::from("Bride entrance")),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        Scrubber::default().breadcrumb(&mut breadcrumb);
+        assert_eq!(breadcrumb.data.keys().collect::<Vec<_>>(), ["error"]);
     }
 
     /// Windows paths are matched in both separator spellings.

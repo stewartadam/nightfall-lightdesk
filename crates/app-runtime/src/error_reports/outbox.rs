@@ -74,10 +74,11 @@ impl OutboxStore {
     }
 
     /// Writes one envelope atomically under a name that sorts after every earlier one, then
-    /// drops the oldest envelopes beyond the queue limits.
-    pub(super) fn write(&self, bytes: &[u8]) -> std::io::Result<()> {
+    /// drops the oldest envelopes beyond the queue limits. Returns the new file, or `None` when
+    /// the envelope was too large to keep.
+    pub(super) fn write(&self, bytes: &[u8]) -> std::io::Result<Option<PathBuf>> {
         if bytes.len() > MAX_ENVELOPE_BYTES {
-            return Ok(());
+            return Ok(None);
         }
         std::fs::create_dir_all(&self.dir)?;
         let millis = SystemTime::now()
@@ -92,9 +93,10 @@ impl OutboxStore {
         let mut file = tempfile::NamedTempFile::new_in(&self.dir)?;
         file.write_all(bytes)?;
         file.as_file().sync_all()?;
-        file.persist(self.dir.join(name))?;
+        let path = self.dir.join(name);
+        file.persist(&path)?;
         self.trim();
-        Ok(())
+        Ok(Some(path))
     }
 
     /// Lists queued envelopes, oldest first.
@@ -133,10 +135,27 @@ impl OutboxStore {
         }
     }
 
-    /// Deletes every queued envelope.
+    /// Deletes every queued envelope, along with temporary files a crash left mid-write.
     pub(super) fn purge(&self) {
-        for path in self.pending() {
-            let _ = std::fs::remove_file(path);
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            if entry.file_type().is_ok_and(|kind| kind.is_file()) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+
+    /// Writes an envelope captured while reports were shared, deleting it again if sharing was
+    /// turned off during the write so a revoked report never waits for the next agreement.
+    fn persist(&self, bytes: &[u8]) {
+        match self.write(bytes) {
+            Ok(Some(path)) if !super::reports_enabled() => {
+                let _ = std::fs::remove_file(path);
+            }
+            Ok(_) => {}
+            Err(error) => tracing::debug!(%error, "Could not queue an error report"),
         }
     }
 }
@@ -229,10 +248,13 @@ impl Outbox {
 
 impl Transport for Outbox {
     /// Queues an envelope for the background thread. While the process is panicking it is
-    /// written to disk directly, since the process may stop before the thread runs again.
+    /// written to disk directly, since the process may stop before the thread runs again, and
+    /// it does not count against the session budget, so earlier errors cannot crowd out a crash.
     fn send_envelope(&self, envelope: Envelope) {
+        let panicking = std::thread::panicking();
         if !super::reports_enabled()
-            || self.shared.accepted.fetch_add(1, Ordering::Relaxed) >= MAX_REPORTS_PER_SESSION
+            || (!panicking
+                && self.shared.accepted.fetch_add(1, Ordering::Relaxed) >= MAX_REPORTS_PER_SESSION)
         {
             return;
         }
@@ -240,8 +262,8 @@ impl Transport for Outbox {
         if envelope.to_writer(&mut bytes).is_err() {
             return;
         }
-        if std::thread::panicking() {
-            let _ = self.shared.store.write(&bytes);
+        if panicking {
+            self.shared.store.persist(&bytes);
             self.wake();
             return;
         }
@@ -251,9 +273,12 @@ impl Transport for Outbox {
     }
 
     /// Waits until every envelope handed over so far is on disk. Uploads are not awaited, since
-    /// the service may be unreachable for days.
+    /// the service may be unreachable for days. A panicking thread has already written its report
+    /// itself, so it does not wait behind an upload in progress.
     fn flush(&self, timeout: Duration) -> bool {
-        if self.shared.worker.get() == Some(&std::thread::current().id()) {
+        if std::thread::panicking()
+            || self.shared.worker.get() == Some(&std::thread::current().id())
+        {
             return true;
         }
         let (ack, done) = mpsc::sync_channel(1);
@@ -298,9 +323,7 @@ impl Worker {
             match command {
                 Ok(Command::Store(_)) if !super::reports_enabled() => continue,
                 Ok(Command::Store(bytes)) => {
-                    if let Err(error) = self.store.write(&bytes) {
-                        tracing::debug!(%error, "Could not queue an error report");
-                    }
+                    self.store.persist(&bytes);
                     self.next_attempt.get_or_insert_with(Instant::now);
                 }
                 Ok(Command::Wake) => {
