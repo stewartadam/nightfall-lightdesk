@@ -2,6 +2,7 @@
 members = ["crates/*", "desktop/app-tauri"]
 # Plain cargo commands select the runtime crates; the Tauri desktop shell builds only with -p app-tauri.
 default-members = ["crates/*"]
+exclude = ["vendor"]
 resolver = "3" # default for rust 2024
 
 [workspace.package]
@@ -14,14 +15,14 @@ artnet_protocol = "0.4"
 async-channel = "2.5"
 axum = { version = "0.8.9", features = ["ws"] }
 base64 = "0.23"
-bevy = { version = "0.19", default-features = false, features = ["debug"] }
-bevy_app = { version = "0.19" }
-bevy_diagnostic = { version = "0.19" }
-bevy_ecs = { version = "0.19" }
-bevy_platform = { version = "0.19" }
-bevy_reflect = { version = "0.19" }
-bevy_state = { version = "0.19" }
-bevy_time = { version = "0.19" }
+bevy = { version = "0.20", default-features = false, features = ["debug"] }
+bevy_app = { version = "0.20" }
+bevy_diagnostic = { version = "0.20" }
+bevy_ecs = { version = "0.20" }
+bevy_platform = { version = "0.20" }
+bevy_reflect = { version = "0.20" }
+bevy_state = { version = "0.20" }
+bevy_time = { version = "0.20" }
 bimap = "0.6.3"
 criterion = "0.8"
 dashmap = { version = "6.2.1", features = ["serde"] }
@@ -29,7 +30,7 @@ dotenv = { package = "dotenv-ng", version = "1" }
 enum_dispatch = "0.3.13"
 futures-util = "0.3.34"
 gdtf = "0.3.0"
-jiff = "0.2.37"
+jiff = "0.2.38"
 minicbor = "2.3"
 minicbor-serde = { version = "0.7", features = ["alloc"] }
 mime_guess = { version = "2.0.5", default-features = false }
@@ -51,7 +52,7 @@ socket2 = { version = "0.6.5", features = ["all"] }
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27"
 thiserror = "2.0"
-tokio = { version = "1.53.1", features = ["sync", "rt-multi-thread", "macros"] }
+tokio = { version = "1.53.2", features = ["sync", "rt-multi-thread", "macros"] }
 tower-http = { version = "0.7.1", default-features = false }
 tower-service = "0.3.3"
 tracing = "0.1.44"
@@ -60,6 +61,10 @@ typeshare = "1.0.5"
 uuid = { version = "1.27", features = ["serde", "v4", "v5"] }
 web-time = { version = "1.1", features = ["serde"] }
 wit-component = "0.261"
+
+[patch.crates-io]
+# Bevy 0.20 port of moonshine-kind 0.5.1; drop once upstream publishes a Bevy 0.20 release.
+moonshine-kind = { path = "vendor/moonshine-kind" }
 
 [profile.dev]
 incremental = true            # Improve consecutive recompile performance

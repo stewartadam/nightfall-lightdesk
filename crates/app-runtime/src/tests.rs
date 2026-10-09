@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use bevy::ecs::{
     component::ComponentId,
     schedule::{Schedule, ScheduleLabel, Schedules},
-    system::System,
+    system::{System, SystemAccess},
     world::World,
 };
 use bevy::prelude::{
@@ -2194,7 +2194,9 @@ fn schedule_message_access(
         .filter_map(|key| {
             let system = graph.systems.get_mut(key)?;
             let name = system.name().to_string();
-            let access = system.initialize(world);
+            let SystemAccess::Shared(access) = system.initialize(world) else {
+                return None;
+            };
             let access = access.combined_access();
             if access.has_read_all() {
                 return None;
@@ -2220,7 +2222,8 @@ fn schedule_message_access(
 /// swaps, so a render system reading a message written outside the render schedule can miss it.
 /// Input that render systems depend on must be applied to world state in the input sets instead.
 ///
-/// Exclusive systems are skipped because their access covers the whole world, and the order of
+/// Exclusive systems and systems reading the whole world are skipped because their access covers
+/// every message, and the order of
 /// writers and readers inside the render schedule is not checked.
 #[test]
 fn render_systems_only_read_messages_written_in_render() {
@@ -2229,7 +2232,7 @@ fn render_systems_only_read_messages_written_in_render() {
     let message_ids: Vec<_> = world
         .components()
         .iter_registered()
-        .map(|info| (info.id(), info.name().to_string()))
+        .map(|(id, info)| (id, info.name().to_string()))
         .filter(|(_, name)| name.starts_with("bevy_ecs::message::messages::Messages<"))
         .collect();
     assert!(

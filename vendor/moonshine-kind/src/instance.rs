@@ -1,0 +1,1374 @@
+use std::borrow::Borrow;
+use std::{
+    cmp::Ordering,
+    fmt,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
+
+use bevy_derive::{Deref, DerefMut};
+use bevy_ecs::change_detection::MaybeLocation;
+use bevy_ecs::component::Mutable;
+use bevy_ecs::query::EcsAccessType;
+use bevy_ecs::relationship::RelationshipSourceCollection;
+use bevy_ecs::{
+    archetype::Archetype,
+    change_detection::Tick,
+    component::{ComponentId, Components},
+    entity::{EntityMapper, MapEntities},
+    prelude::*,
+    query::{FilteredAccess, FilteredAccessSet, IterQueryData, QueryData, ReadOnlyQueryData, WorldQuery},
+    storage::{Table, TableRow},
+    system::EntityCommands,
+    world::unsafe_world_cell::UnsafeWorldCell,
+};
+use bevy_reflect::Reflect;
+
+use crate::{Any, CastInto, Kind};
+
+/// Represents an [`Entity`] of [`Kind`] `T`.
+///
+/// `Instance<Any>` is functionally equivalent to an entity.
+///
+/// # Usage
+/// An `Instance<T>` can be used to access entities in a "kind-safe" manner to improve safety and readability.
+///
+/// This type is designed to behave exactly like an [`Entity`].
+///
+/// This means you may use it as a [`Query`] parameter, pass it to [`Commands`] to access [`InstanceCommands<T>`],
+/// or store it as a type-safe reference to an [`Entity`].
+///
+/// Note that an `Instance<T>` has `'static` lifetime and does not contain any [`Component`] data.
+/// It *only* contains type information.
+///
+/// # Example
+/// ```
+/// # use bevy::prelude::*;
+/// # use moonshine_kind::prelude::*;
+///
+/// #[derive(Component)]
+/// struct Apple;
+///
+/// #[derive(Component)]
+/// struct Orange;
+///
+/// struct Fruit;
+///
+/// impl Kind for Fruit {
+///     type Filter = Or<(With<Apple>, With<Orange>)>;
+/// }
+///
+/// #[derive(Resource, Deref, DerefMut)]
+/// struct FruitBasket(Vec<Instance<Fruit>>);
+///
+/// fn collect_fruits(mut basket: ResMut<FruitBasket>, fruits: Query<Instance<Fruit>>) {
+///     for fruit in fruits.iter() {
+///         println!("{fruit:?}");
+///         basket.push(fruit);
+///     }
+/// }
+///
+/// # bevy_ecs::system::assert_is_system(collect_fruits);
+/// ```
+#[derive(Reflect)]
+pub struct Instance<T: Kind>(Entity, #[reflect(ignore)] PhantomData<T>);
+
+impl<T: Kind> Instance<T> {
+    /// Same as [`Entity::PLACEHOLDER`], but for an [`Instance<T>`].
+    pub const PLACEHOLDER: Self = Self(Entity::PLACEHOLDER, PhantomData);
+
+    /// Creates a new instance of kind `T` from some [`Entity`].
+    ///
+    /// # Usage
+    /// This function is useful when you **know** an `Entity` is of a specific kind and you
+    /// need an `Instance<T>` with no way to validate it.
+    ///
+    /// See [`Instance::from_entity`] for a safer alternative.
+    ///
+    /// # Safety
+    /// Assumes `entity` is a valid instance of kind `T`.
+    ///
+    /// # Example
+    /// ```
+    /// # use bevy::prelude::*;
+    /// # use moonshine_kind::prelude::*;
+    ///
+    /// #[derive(Component)]
+    /// struct Apple;
+    ///
+    /// fn init_apple(entity: Entity, commands: &mut Commands) -> Instance<Apple> {
+    ///     commands.entity(entity).insert(Apple);
+    ///     // SAFE: `entity` will be a valid instance of `Apple`.
+    ///     unsafe { Instance::from_entity_unchecked(entity) }
+    /// }
+    /// ```
+    pub unsafe fn from_entity_unchecked(entity: Entity) -> Self {
+        Self(entity, PhantomData)
+    }
+
+    /// Returns the [`Entity`] of this instance.
+    pub fn entity(&self) -> Entity {
+        self.0
+    }
+
+    /// Converts this instance into an instance of another kind [`Kind`] `U`.
+    ///
+    /// # Usage
+    /// A kind `T` is safety convertible to another kind `U` if `T` implements [`CastInto<U>`].
+    pub fn cast_into<U: Kind>(self) -> Instance<U>
+    where
+        T: CastInto<U>,
+    {
+        unsafe { T::cast(self) }
+    }
+
+    /// Converts this instance into an instance of [`Kind`] [`Any`].
+    ///
+    /// # Usage
+    ///
+    /// Any [`Instance<T>`] can be safely cast into an [`Instance<Any>`] using this function.
+    pub fn cast_into_any(self) -> Instance<Any> {
+        // SAFE: All instances are of kind `Any`.
+        unsafe { self.cast_into_unchecked() }
+    }
+
+    /// Converts this instance into an instance of another kind [`Kind`] `U` without any validation.
+    ///
+    /// # Usage
+    /// This function is useful when you **know** an `Instance<T>` is convertible to a specific type and you
+    /// need an `Instance<U>` with no way to validate it.
+    ///
+    /// Always prefer to explicitly declare safe casts with the [`CastInto`] trait and use [`Instance::cast_into`].
+    ///
+    /// # Safety
+    /// Assumes this instance is also a valid `Instance<U>`.
+    pub unsafe fn cast_into_unchecked<U: Kind>(self) -> Instance<U> {
+        Instance::from_entity_unchecked(self.entity())
+    }
+
+    /// Returns a mutable reference to the internal [`Entity`] of this [`Instance`].
+    ///
+    /// # Safety
+    /// You are responsible to ensure the entity is still a valid instance of [`Kind`] `T`.
+    #[deprecated(note = "use `Instance::<T>::from_entity_unchecked` instead")]
+    pub unsafe fn as_entity_mut(&mut self) -> &mut Entity {
+        &mut self.0
+    }
+}
+
+impl<T: Component> Instance<T> {
+    /// Creates a new instance of kind `T` from some [`EntityRef`] if the entity has a [`Component`] of type `T`.
+    pub fn from_entity(entity: EntityRef) -> Option<Self> {
+        if entity.contains::<T>() {
+            // SAFE: `entity` must be of kind `T`.
+            Some(unsafe { Self::from_entity_unchecked(entity.id()) })
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: Kind> Clone for Instance<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Kind> Copy for Instance<T> {}
+
+impl<T: Kind> fmt::Debug for Instance<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({:?})", T::debug_name(), self.0)
+    }
+}
+
+impl<T: Kind> fmt::Display for Instance<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}({}v{})",
+            T::debug_name(),
+            self.0.index(),
+            self.0.generation()
+        )
+    }
+}
+
+impl<T: Kind> Hash for Instance<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<T: Kind, U: Kind> PartialEq<Instance<U>> for Instance<T> {
+    fn eq(&self, other: &Instance<U>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Kind> PartialEq<Entity> for Instance<T> {
+    fn eq(&self, other: &Entity) -> bool {
+        self.0 == *other
+    }
+}
+
+impl<T: Kind> PartialEq<Instance<T>> for Entity {
+    fn eq(&self, other: &Instance<T>) -> bool {
+        other == self
+    }
+}
+
+impl<T: Kind> Eq for Instance<T> {}
+
+impl<T: Kind> PartialOrd for Instance<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Kind> Ord for Instance<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<T: Kind> Deref for Instance<T> {
+    type Target = Entity;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Kind> Borrow<Entity> for Instance<T> {
+    fn borrow(&self) -> &Entity {
+        &self.0
+    }
+}
+
+unsafe impl<T: Kind> WorldQuery for Instance<T> {
+    type Fetch<'a> = <T::Filter as WorldQuery>::Fetch<'a>;
+
+    type State = <T::Filter as WorldQuery>::State;
+
+    fn shrink_fetch<'wlong: 'wshort, 'wshort>(fetch: Self::Fetch<'wlong>) -> Self::Fetch<'wshort> {
+        <T::Filter as WorldQuery>::shrink_fetch(fetch)
+    }
+
+    unsafe fn init_fetch<'w>(
+        world: UnsafeWorldCell<'w>,
+        state: &Self::State,
+        last_change_tick: Tick,
+        change_tick: Tick,
+    ) -> Self::Fetch<'w> {
+        <T::Filter as WorldQuery>::init_fetch(world, state, last_change_tick, change_tick)
+    }
+
+    const IS_DENSE: bool = <T::Filter as WorldQuery>::IS_DENSE;
+
+    unsafe fn set_archetype<'w>(
+        fetch: &mut Self::Fetch<'w>,
+        state: &Self::State,
+        archetype: &'w Archetype,
+        table: &'w Table,
+    ) {
+        <T::Filter as WorldQuery>::set_archetype(fetch, state, archetype, table)
+    }
+
+    unsafe fn set_table<'w>(fetch: &mut Self::Fetch<'w>, state: &Self::State, table: &'w Table) {
+        <T::Filter as WorldQuery>::set_table(fetch, state, table)
+    }
+
+    fn update_component_access(state: &Self::State, access: &mut FilteredAccess) {
+        <T::Filter as WorldQuery>::update_component_access(state, access)
+    }
+
+    fn get_state(components: &Components) -> Option<Self::State> {
+        <T::Filter as WorldQuery>::get_state(components)
+    }
+
+    fn init_state(world: &mut World) -> Self::State {
+        <T::Filter as WorldQuery>::init_state(world)
+    }
+
+    fn matches_component_set(
+        state: &Self::State,
+        set_contains_id: &impl Fn(ComponentId) -> bool,
+    ) -> bool {
+        <T::Filter as WorldQuery>::matches_component_set(state, set_contains_id)
+    }
+
+    /// Forwards nested access registration to the wrapped query.
+    fn init_nested_access(
+        state: &Self::State,
+        system_name: Option<&str>,
+        component_access_set: &mut FilteredAccessSet,
+        world: UnsafeWorldCell,
+    ) {
+        <T::Filter as WorldQuery>::init_nested_access(state, system_name, component_access_set, world)
+    }
+
+    /// Forwards archetype updates to the wrapped query.
+    fn update_archetypes(state: &mut Self::State, world: UnsafeWorldCell) {
+        <T::Filter as WorldQuery>::update_archetypes(state, world)
+    }
+}
+
+unsafe impl<T: Kind> IterQueryData for Instance<T> {}
+
+unsafe impl<T: Kind> ReadOnlyQueryData for Instance<T> {}
+
+unsafe impl<T: Kind> QueryData for Instance<T> {
+    type ReadOnly = Self;
+
+    const IS_READ_ONLY: bool = <Entity as QueryData>::IS_READ_ONLY;
+
+    const IS_ARCHETYPAL: bool = <Entity as QueryData>::IS_ARCHETYPAL;
+
+    type Item<'w, 's> = Self;
+
+    fn shrink<'wlong: 'wshort, 'wshort, 's>(
+        item: Self::Item<'wlong, 's>,
+    ) -> Self::Item<'wshort, 's> {
+        item
+    }
+
+    unsafe fn fetch<'w, 's>(
+        _state: &'s Self::State,
+        _fetch: &mut Self::Fetch<'w>,
+        entity: Entity,
+        _table_row: TableRow,
+    ) -> Option<Self::Item<'w, 's>> {
+        Some(Instance::from_entity_unchecked(entity))
+    }
+
+    fn iter_access(_state: &Self::State) -> impl Iterator<Item = EcsAccessType<'_>> {
+        // Based on impl for `Entity`
+        std::iter::empty()
+    }
+}
+
+impl<T: Kind> MapEntities for Instance<T> {
+    fn map_entities<M: EntityMapper>(&mut self, entity_mapper: &mut M) {
+        self.0 = entity_mapper.get_mapped(self.0);
+    }
+}
+
+impl<T: Kind> From<Instance<T>> for Entity {
+    fn from(instance: Instance<T>) -> Self {
+        instance.entity()
+    }
+}
+
+impl<T: Kind> RelationshipSourceCollection for Instance<T> {
+    type SourceIter<'a> = <Entity as RelationshipSourceCollection>::SourceIter<'a>;
+
+    fn new() -> Self {
+        Self::PLACEHOLDER
+    }
+
+    fn with_capacity(_capacity: usize) -> Self {
+        Self::new()
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.0.reserve(additional);
+    }
+
+    fn add(&mut self, entity: Entity) -> bool {
+        self.0.add(entity)
+    }
+
+    fn remove(&mut self, entity: Entity) -> bool {
+        self.0.remove(entity)
+    }
+
+    fn iter(&self) -> Self::SourceIter<'_> {
+        self.0.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    fn shrink_to_fit(&mut self) {
+        self.0.shrink_to_fit();
+    }
+
+    fn extend_from_iter(&mut self, entities: impl IntoIterator<Item = Entity>) {
+        self.0.extend_from_iter(entities)
+    }
+}
+
+impl From<Entity> for Instance<Any> {
+    fn from(entity: Entity) -> Self {
+        Self(entity, PhantomData)
+    }
+}
+
+impl<T: Kind> ContainsEntity for Instance<T> {
+    fn entity(&self) -> Entity {
+        self.entity()
+    }
+}
+
+/// Similar to [`ContainsEntity`], but for [`Instance<T>`].
+pub trait ContainsInstance<T: Kind> {
+    /// Returns the associated [`Instance<T>`].
+    fn instance(&self) -> Instance<T>;
+
+    /// Returns the [`Entity`] of the associated [`Instance<T>`].
+    fn entity(&self) -> Entity {
+        self.instance().entity()
+    }
+}
+
+/// A [`QueryData`] item which represents a reference to an [`Instance<T>`] and its associated [`Component`].
+///
+/// This is analogous to a `(Instance<T>, &T)` query.
+///
+/// # Usage
+/// If a [`Kind`] is also a component, it is often convenient to access the instance and component data together.
+/// This type is designed to make these queries more ergonomic.
+///
+/// You may use this type as either a [`Query`] parameter, or access it from an [`EntityRef`].
+///
+/// # Example
+/// ```
+/// # use bevy::prelude::*;
+/// # use moonshine_kind::prelude::*;
+///
+/// #[derive(Component)]
+/// struct Apple {
+///     freshness: f32,
+/// }
+///
+/// impl Apple {
+///     fn is_fresh(&self) -> bool {
+///         self.freshness >= 0.5
+///     }
+/// }
+///
+/// // Query Access:
+/// fn fresh_apples(query: Query<InstanceRef<Apple>>) -> Vec<Instance<Apple>> {
+///     query.iter()
+///         .filter_map(|apple| apple.is_fresh().then_some(apple.instance()))
+///         .collect()
+/// }
+///
+/// // Entity Access:
+/// fn fresh_apples_world<'a>(world: &'a World) -> Vec<InstanceRef<'a, Apple>> {
+///    world.try_query::<EntityRef>()
+///         .unwrap()
+///         .iter(&world)
+///         .filter_map(|entity| InstanceRef::from_entity(entity))
+///         .collect()
+/// }
+///
+/// # bevy_ecs::system::assert_is_system(fresh_apples);
+/// ```
+pub struct InstanceRef<'a, T: Component>(Instance<T>, &'a T);
+
+unsafe impl<T: Component> WorldQuery for InstanceRef<'_, T> {
+    type Fetch<'w> = <(Instance<T>, &'static T) as WorldQuery>::Fetch<'w>;
+
+    type State = <(Instance<T>, &'static T) as WorldQuery>::State;
+
+    fn shrink_fetch<'wlong: 'wshort, 'wshort>(fetch: Self::Fetch<'wlong>) -> Self::Fetch<'wshort> {
+        <(Instance<T>, &T) as WorldQuery>::shrink_fetch(fetch)
+    }
+
+    unsafe fn init_fetch<'w>(
+        world: UnsafeWorldCell<'w>,
+        state: &Self::State,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Self::Fetch<'w> {
+        <(Instance<T>, &T) as WorldQuery>::init_fetch(world, state, last_run, this_run)
+    }
+
+    const IS_DENSE: bool = <(Instance<T>, &T) as WorldQuery>::IS_DENSE;
+
+    unsafe fn set_archetype<'w>(
+        fetch: &mut Self::Fetch<'w>,
+        state: &Self::State,
+        archetype: &'w Archetype,
+        table: &'w Table,
+    ) {
+        <(Instance<T>, &T) as WorldQuery>::set_archetype(fetch, state, archetype, table)
+    }
+
+    unsafe fn set_table<'w>(fetch: &mut Self::Fetch<'w>, state: &Self::State, table: &'w Table) {
+        <(Instance<T>, &T) as WorldQuery>::set_table(fetch, state, table)
+    }
+
+    fn update_component_access(state: &Self::State, access: &mut FilteredAccess) {
+        <(Instance<T>, &T) as WorldQuery>::update_component_access(state, access)
+    }
+
+    fn init_state(world: &mut World) -> Self::State {
+        <(Instance<T>, &T) as WorldQuery>::init_state(world)
+    }
+
+    fn get_state(components: &Components) -> Option<Self::State> {
+        <(Instance<T>, &T) as WorldQuery>::get_state(components)
+    }
+
+    fn matches_component_set(
+        state: &Self::State,
+        set_contains_id: &impl Fn(ComponentId) -> bool,
+    ) -> bool {
+        <(Instance<T>, &T) as WorldQuery>::matches_component_set(state, set_contains_id)
+    }
+
+    /// Forwards nested access registration to the wrapped query.
+    fn init_nested_access(
+        state: &Self::State,
+        system_name: Option<&str>,
+        component_access_set: &mut FilteredAccessSet,
+        world: UnsafeWorldCell,
+    ) {
+        <(Instance<T>, &T) as WorldQuery>::init_nested_access(state, system_name, component_access_set, world)
+    }
+
+    /// Forwards archetype updates to the wrapped query.
+    fn update_archetypes(state: &mut Self::State, world: UnsafeWorldCell) {
+        <(Instance<T>, &T) as WorldQuery>::update_archetypes(state, world)
+    }
+}
+
+unsafe impl<T: Component> QueryData for InstanceRef<'_, T> {
+    type ReadOnly = Self;
+
+    const IS_READ_ONLY: bool = true;
+
+    const IS_ARCHETYPAL: bool = <&'static T as QueryData>::IS_ARCHETYPAL;
+
+    type Item<'w, 's> = InstanceRef<'w, T>;
+
+    fn shrink<'wlong: 'wshort, 'wshort, 's>(
+        item: Self::Item<'wlong, 's>,
+    ) -> Self::Item<'wshort, 's> {
+        InstanceRef(item.0, item.1)
+    }
+
+    unsafe fn fetch<'w, 's>(
+        state: &'s Self::State,
+        fetch: &mut Self::Fetch<'w>,
+        entity: Entity,
+        table_row: TableRow,
+    ) -> Option<Self::Item<'w, 's>> {
+        <(Instance<T>, &T) as QueryData>::fetch(state, fetch, entity, table_row)
+            .map(|(instance, data)| InstanceRef(instance, data))
+    }
+
+    fn iter_access(state: &Self::State) -> impl Iterator<Item = EcsAccessType<'_>> {
+        <(Instance<T>, &T) as QueryData>::iter_access(state)
+    }
+}
+
+unsafe impl<T: Component> IterQueryData for InstanceRef<'_, T> {}
+
+unsafe impl<T: Component> ReadOnlyQueryData for InstanceRef<'_, T> {}
+
+impl<'a, T: Component> InstanceRef<'a, T> {
+    /// Creates a new [`InstanceRef<T>`] from an [`EntityRef`] if it contains a given [`Component`] of type `T`.
+    pub fn from_entity(entity: EntityRef<'a>) -> Option<Self> {
+        Some(Self(
+            // SAFE: Kind is validated by `entity.get()` above.
+            unsafe { Instance::from_entity_unchecked(entity.id()) },
+            entity.get()?,
+        ))
+    }
+
+    /// Creates a new [`InstanceRef<T>`] from [`EntityRef`] without any validation.
+    ///
+    /// # Safety
+    /// Assumes `entity` is a valid instance of kind `T`.
+    pub unsafe fn from_entity_unchecked(entity: EntityRef<'a>) -> Self {
+        Self(
+            Instance::from_entity_unchecked(entity.id()),
+            entity.get().unwrap(),
+        )
+    }
+}
+
+impl<T: Component> Clone for InstanceRef<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Component> Copy for InstanceRef<'_, T> {}
+
+impl<T: Component> From<InstanceRef<'_, T>> for Instance<T> {
+    fn from(item: InstanceRef<T>) -> Self {
+        item.instance()
+    }
+}
+
+impl<T: Component> From<&InstanceRef<'_, T>> for Instance<T> {
+    fn from(item: &InstanceRef<T>) -> Self {
+        item.instance()
+    }
+}
+
+impl<T: Component> PartialEq for InstanceRef<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Component> PartialEq<Entity> for InstanceRef<'_, T> {
+    fn eq(&self, other: &Entity) -> bool {
+        self.0 == *other
+    }
+}
+
+impl<T: Component> PartialEq<InstanceRef<'_, T>> for Entity {
+    fn eq(&self, other: &InstanceRef<'_, T>) -> bool {
+        other == self
+    }
+}
+
+impl<T: Component, U: Component> PartialEq<Instance<U>> for InstanceRef<'_, T>
+where
+    U: CastInto<T>,
+{
+    fn eq(&self, other: &Instance<U>) -> bool {
+        *self.0 == *other
+    }
+}
+
+impl<T: Component, U: Component> PartialEq<InstanceRef<'_, U>> for Instance<T>
+where
+    U: CastInto<T>,
+{
+    fn eq(&self, other: &InstanceRef<'_, U>) -> bool {
+        *self == other.instance()
+    }
+}
+
+impl<T: Component> Eq for InstanceRef<'_, T> {}
+
+impl<T: Component> Deref for InstanceRef<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.1
+    }
+}
+
+impl<T: Component> AsRef<Instance<T>> for InstanceRef<'_, T> {
+    fn as_ref(&self) -> &Instance<T> {
+        &self.0
+    }
+}
+
+impl<T: Component> AsRef<T> for InstanceRef<'_, T> {
+    fn as_ref(&self) -> &T {
+        self.1
+    }
+}
+
+impl<T: Component> ContainsInstance<T> for InstanceRef<'_, T> {
+    fn instance(&self) -> Instance<T> {
+        self.0
+    }
+}
+
+/// A [`QueryData`] item which represents a mutable reference to an [`Instance<T>`] and its associated [`Component`].
+///
+/// This is analogous to a `(Instance<T>, &mut T)` query.
+///
+/// # Usage
+/// This type behaves similar like [`InstanceRef<T>`] but allows mutable access to its associated [`Component`].
+///
+/// The main difference is that you cannot create an [`InstanceMut<T>`] from an [`EntityMut`].
+/// See [`InstanceMut::from_entity`] for more details.
+///
+/// See [`InstanceRef<T>`] for more information and examples.
+pub struct InstanceMut<'a, T: Component>(Instance<T>, Mut<'a, T>);
+
+unsafe impl<T: Component> WorldQuery for InstanceMut<'_, T> {
+    type Fetch<'w> = <(Instance<T>, &'static mut T) as WorldQuery>::Fetch<'w>;
+
+    type State = <(Instance<T>, &'static mut T) as WorldQuery>::State;
+
+    fn shrink_fetch<'wlong: 'wshort, 'wshort>(fetch: Self::Fetch<'wlong>) -> Self::Fetch<'wshort> {
+        <(Instance<T>, &mut T) as WorldQuery>::shrink_fetch(fetch)
+    }
+
+    unsafe fn init_fetch<'w>(
+        world: UnsafeWorldCell<'w>,
+        state: &Self::State,
+        last_run: Tick,
+        this_run: Tick,
+    ) -> Self::Fetch<'w> {
+        <(Instance<T>, &mut T) as WorldQuery>::init_fetch(world, state, last_run, this_run)
+    }
+
+    const IS_DENSE: bool = <(Instance<T>, &T) as WorldQuery>::IS_DENSE;
+
+    unsafe fn set_archetype<'w>(
+        fetch: &mut Self::Fetch<'w>,
+        state: &Self::State,
+        archetype: &'w Archetype,
+        table: &'w Table,
+    ) {
+        <(Instance<T>, &mut T) as WorldQuery>::set_archetype(fetch, state, archetype, table)
+    }
+
+    unsafe fn set_table<'w>(fetch: &mut Self::Fetch<'w>, state: &Self::State, table: &'w Table) {
+        <(Instance<T>, &mut T) as WorldQuery>::set_table(fetch, state, table)
+    }
+
+    /// Registers write access to `T`; upstream 0.5.1 registered read access, which let mutable
+    /// instance queries alias readers of the same component.
+    fn update_component_access(state: &Self::State, access: &mut FilteredAccess) {
+        <(Instance<T>, &mut T) as WorldQuery>::update_component_access(state, access)
+    }
+
+    fn init_state(world: &mut World) -> Self::State {
+        <(Instance<T>, &T) as WorldQuery>::init_state(world)
+    }
+
+    fn get_state(components: &Components) -> Option<Self::State> {
+        <(Instance<T>, &T) as WorldQuery>::get_state(components)
+    }
+
+    fn matches_component_set(
+        state: &Self::State,
+        set_contains_id: &impl Fn(ComponentId) -> bool,
+    ) -> bool {
+        <(Instance<T>, &T) as WorldQuery>::matches_component_set(state, set_contains_id)
+    }
+
+    /// Forwards nested access registration to the wrapped query.
+    fn init_nested_access(
+        state: &Self::State,
+        system_name: Option<&str>,
+        component_access_set: &mut FilteredAccessSet,
+        world: UnsafeWorldCell,
+    ) {
+        <(Instance<T>, &mut T) as WorldQuery>::init_nested_access(state, system_name, component_access_set, world)
+    }
+
+    /// Forwards archetype updates to the wrapped query.
+    fn update_archetypes(state: &mut Self::State, world: UnsafeWorldCell) {
+        <(Instance<T>, &mut T) as WorldQuery>::update_archetypes(state, world)
+    }
+}
+
+unsafe impl<'b, T: Component<Mutability = Mutable>> QueryData for InstanceMut<'b, T> {
+    type ReadOnly = InstanceRef<'b, T>;
+
+    const IS_READ_ONLY: bool = false;
+
+    const IS_ARCHETYPAL: bool = <&'static mut T as QueryData>::IS_ARCHETYPAL;
+
+    type Item<'w, 's> = InstanceMut<'w, T>;
+
+    fn shrink<'wlong: 'wshort, 'wshort, 's>(
+        item: Self::Item<'wlong, 's>,
+    ) -> Self::Item<'wshort, 's> {
+        InstanceMut(item.0, item.1)
+    }
+
+    unsafe fn fetch<'w, 's>(
+        state: &'s Self::State,
+        fetch: &mut Self::Fetch<'w>,
+        entity: Entity,
+        table_row: TableRow,
+    ) -> Option<Self::Item<'w, 's>> {
+        <(Instance<T>, &mut T) as QueryData>::fetch(state, fetch, entity, table_row)
+            .map(|(instance, data)| InstanceMut(instance, data))
+    }
+
+    fn iter_access(state: &Self::State) -> impl Iterator<Item = EcsAccessType<'_>> {
+        <(Instance<T>, &mut T) as QueryData>::iter_access(state)
+    }
+}
+
+unsafe impl<'a, T: Component<Mutability = Mutable>> IterQueryData for InstanceMut<'a, T> {}
+
+impl<'a, T: Component<Mutability = Mutable>> InstanceMut<'a, T> {
+    /// Creates a new [`InstanceMut<T>`] from an [`EntityWorldMut`] if it contains a given [`Component`] of type `T`.
+    pub fn from_entity(entity: EntityMut<'a>) -> Option<Self> {
+        let id = entity.id();
+        let data = entity.into_mut()?;
+        Some(Self(
+            // SAFE: Kind is validated by `entity.get_mut()` above.
+            unsafe { Instance::from_entity_unchecked(id) },
+            data,
+        ))
+    }
+
+    /// Creates a new [`InstanceMut<T>`] from an [`EntityMut`] without any validation.
+    ///
+    /// # Safety
+    /// Assumes `entity` is a valid instance of kind `T`.
+    pub unsafe fn from_entity_unchecked(entity: EntityMut<'a>) -> Self {
+        let id = entity.id();
+        let data = entity.into_mut().unwrap();
+        Self(Instance::from_entity_unchecked(id), data)
+    }
+}
+
+impl<T: Component> From<InstanceMut<'_, T>> for Instance<T> {
+    fn from(item: InstanceMut<T>) -> Self {
+        item.instance()
+    }
+}
+
+impl<T: Component> From<&InstanceMut<'_, T>> for Instance<T> {
+    fn from(item: &InstanceMut<T>) -> Self {
+        item.instance()
+    }
+}
+
+impl<T: Component> PartialEq for InstanceMut<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Component> PartialEq<Entity> for InstanceMut<'_, T> {
+    fn eq(&self, other: &Entity) -> bool {
+        self.0 == *other
+    }
+}
+
+impl<T: Component> PartialEq<InstanceMut<'_, T>> for Entity {
+    fn eq(&self, other: &InstanceMut<'_, T>) -> bool {
+        other == self
+    }
+}
+
+impl<T: Component, U: Component> PartialEq<Instance<U>> for InstanceMut<'_, T>
+where
+    U: CastInto<T>,
+{
+    fn eq(&self, other: &Instance<U>) -> bool {
+        *self.0 == *other
+    }
+}
+
+impl<T: Component, U: Component> PartialEq<InstanceMut<'_, U>> for Instance<T>
+where
+    U: CastInto<T>,
+{
+    fn eq(&self, other: &InstanceMut<'_, U>) -> bool {
+        *self == other.instance()
+    }
+}
+
+impl<T: Component> Eq for InstanceMut<'_, T> {}
+
+impl<T: Component> Deref for InstanceMut<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.1.as_ref()
+    }
+}
+
+impl<T: Component> DerefMut for InstanceMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.1.as_mut()
+    }
+}
+
+impl<T: Component> AsRef<Instance<T>> for InstanceMut<'_, T> {
+    fn as_ref(&self) -> &Instance<T> {
+        &self.0
+    }
+}
+
+impl<T: Component> AsRef<T> for InstanceMut<'_, T> {
+    fn as_ref(&self) -> &T {
+        self.1.as_ref()
+    }
+}
+
+impl<T: Component> AsMut<T> for InstanceMut<'_, T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.1.as_mut()
+    }
+}
+
+impl<T: Component> DetectChanges for InstanceMut<'_, T> {
+    fn is_added(&self) -> bool {
+        self.1.is_added()
+    }
+
+    fn is_changed(&self) -> bool {
+        self.1.is_changed()
+    }
+
+    fn last_changed(&self) -> Tick {
+        self.1.last_changed()
+    }
+
+    /// Returns the change tick of the current system run.
+    fn this_run(&self) -> Tick {
+        self.1.this_run()
+    }
+
+    /// Returns the change tick of the previous system run.
+    fn last_run(&self) -> Tick {
+        self.1.last_run()
+    }
+
+    fn added(&self) -> Tick {
+        self.1.added()
+    }
+
+    fn changed_by(&self) -> MaybeLocation {
+        self.1.changed_by()
+    }
+
+    fn is_added_after(&self, other: Tick) -> bool {
+        self.1.is_added_after(other)
+    }
+
+    fn is_changed_after(&self, other: Tick) -> bool {
+        self.1.is_changed_after(other)
+    }
+}
+
+impl<T: Component> DetectChangesMut for InstanceMut<'_, T> {
+    type Inner = T;
+
+    fn set_changed(&mut self) {
+        self.1.set_changed();
+    }
+
+    fn set_last_changed(&mut self, last_changed: Tick) {
+        self.1.set_last_changed(last_changed);
+    }
+
+    fn bypass_change_detection(&mut self) -> &mut Self::Inner {
+        self.1.bypass_change_detection()
+    }
+
+    fn set_added(&mut self) {
+        self.1.set_added();
+    }
+
+    fn set_last_added(&mut self, last_added: Tick) {
+        self.1.set_last_added(last_added);
+    }
+}
+
+impl<T: Component> ContainsInstance<T> for InstanceMut<'_, T> {
+    fn instance(&self) -> Instance<T> {
+        self.0
+    }
+}
+
+/// Extension trait to access [`InstanceCommands<T>`] from [`Commands`].
+///
+/// See [`InstanceCommands`] for more information.
+pub trait GetInstanceCommands<T: Kind> {
+    /// Returns the [`InstanceCommands<T>`] for an [`Instance<T>`].
+    fn instance(&mut self, instance: Instance<T>) -> InstanceCommands<'_, T>;
+}
+
+impl<T: Kind> GetInstanceCommands<T> for Commands<'_, '_> {
+    fn instance(&mut self, instance: Instance<T>) -> InstanceCommands<'_, T> {
+        InstanceCommands(self.entity(instance.entity()), PhantomData)
+    }
+}
+
+/// [`EntityCommands`] with kind semantics.
+///
+/// # Usage
+/// On its own, this type is not very useful. Instead, it is designed to be extended using traits.
+/// This allows you to design commands for a specific kind of an entity in a type-safe manner.
+///
+/// # Example
+/// ```
+/// # use bevy::prelude::*;
+/// # use moonshine_kind::prelude::*;
+///
+/// #[derive(Component)]
+/// struct Apple;
+///
+/// #[derive(Component)]
+/// struct Eat;
+///
+/// trait EatApple {
+///     fn eat(&mut self);
+/// }
+///
+/// impl EatApple for InstanceCommands<'_, Apple> {
+///     fn eat(&mut self) {
+///         info!("Crunch!");
+///         self.despawn();
+///     }
+/// }
+///
+/// fn eat_apples(apples: Query<Instance<Apple>, With<Eat>>, mut commands: Commands) {
+///     for apple in apples.iter() {
+///         commands.instance(apple).eat();
+///     }
+/// }
+///
+/// # bevy_ecs::system::assert_is_system(eat_apples);
+pub struct InstanceCommands<'a, T: Kind>(EntityCommands<'a>, PhantomData<T>);
+
+impl<'a, T: Kind> InstanceCommands<'a, T> {
+    /// Creates a new [`InstanceCommands<T>`] from [`EntityCommands`] without any validation.
+    ///
+    /// # Safety
+    /// Assumes `entity` is a valid instance of kind `T`.
+    pub unsafe fn from_entity_unchecked(entity: EntityCommands<'a>) -> Self {
+        Self(entity, PhantomData)
+    }
+
+    /// Creates a new [`InstanceCommands<T>`] from [`EntityRef`] if it contains a [`Component`] of type `T`.
+    pub fn from_entity(entity: EntityRef, commands: &'a mut Commands) -> Option<Self>
+    where
+        T: Component,
+    {
+        if entity.contains::<T>() {
+            Some(Self(commands.entity(entity.id()), PhantomData))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the associated [`Instance<T>`].
+    pub fn instance(&self) -> Instance<T> {
+        // SAFE: `self.entity()` must be a valid instance of kind `T`.
+        unsafe { Instance::from_entity_unchecked(self.id()) }
+    }
+
+    /// Returns the associated [`EntityCommands`].
+    pub fn as_entity(&mut self) -> &mut EntityCommands<'a> {
+        &mut self.0
+    }
+
+    /// Equivalent to [`EntityCommands::insert`], but it returns `self` to maintain kind semantics.
+    pub fn insert(&mut self, bundle: impl Bundle) -> &mut Self {
+        self.0.insert(bundle);
+        self
+    }
+
+    /// Equivalent to [`EntityCommands::insert`], but it returns `self` to maintain kind semantics.
+    pub fn remove<U: Component>(&mut self) -> &mut Self {
+        self.0.remove::<U>();
+        self
+    }
+
+    /// Equivalent to [`EntityCommands::try_insert`], but it returns `self` to maintain kind semantics.
+    pub fn try_remove<U: Component>(&mut self) -> &mut Self {
+        self.0.try_remove::<U>();
+        self
+    }
+
+    /// Returns an [`InstanceCommands`] with a smaller lifetime.
+    ///
+    /// This is useful if you have `&mut InstanceCommands` but you need `InstanceCommands`.
+    pub fn reborrow(&mut self) -> InstanceCommands<'_, T> {
+        InstanceCommands(self.0.reborrow(), PhantomData)
+    }
+
+    /// Converts this [`InstanceCommands<T>`] into an [`InstanceCommands<U>`], given that `T` implements [`CastInto<U>`].
+    pub fn cast_into<U: Kind>(self) -> InstanceCommands<'a, U>
+    where
+        T: CastInto<U>,
+    {
+        // SAFE: `CastInto<U>` is implemented for `T`.
+        unsafe { InstanceCommands::from_entity_unchecked(self.0) }
+    }
+}
+
+impl<'a, T: Kind> From<InstanceCommands<'a, T>> for Instance<T> {
+    fn from(commands: InstanceCommands<'a, T>) -> Self {
+        commands.instance()
+    }
+}
+
+impl<'a, T: Kind> From<&InstanceCommands<'a, T>> for Instance<T> {
+    fn from(commands: &InstanceCommands<'a, T>) -> Self {
+        commands.instance()
+    }
+}
+
+impl<'a, T: Kind> Deref for InstanceCommands<'a, T> {
+    type Target = EntityCommands<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Kind> DerefMut for InstanceCommands<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<T: Kind> ContainsInstance<T> for InstanceCommands<'_, T> {
+    fn instance(&self) -> Instance<T> {
+        self.instance()
+    }
+}
+
+/// A macro which implements [`EntityEvent`] from an [`Instance<T>`].
+///
+/// This is useful when you have an [`EntityEvent`] which refers to its target by [`Instance<T>`].
+///
+/// ```
+/// use bevy::prelude::*;
+/// use bevy::ecs::event::EntityTrigger;
+/// use moonshine_kind::prelude::*;
+/// use moonshine_kind::impl_entity_event_from_instance;
+///
+/// #[derive(Component)]
+/// struct Fruit;
+///
+/// #[derive(Event)]
+/// #[event(trigger = EntityTrigger)]
+/// struct Eat {
+///     target: Instance<Fruit>
+/// }
+///
+/// impl_entity_event_from_instance!(Eat { .target, .. });
+///
+/// let mut world = World::new();
+/// let fruit = world.spawn_instance(Fruit).instance();
+/// world.trigger_with(Eat { target: fruit }, EntityTrigger);
+/// ```
+#[macro_export]
+macro_rules! impl_entity_event_from_instance {
+    ($name:ident < $($gen:tt),+ $(,)? > $(where $($where:tt)+)? ) => {
+        $crate::impl_entity_event_from_instance!($name<$($gen),+> { .instance, .. } $(where $($where)+)?);
+    };
+
+    ($name:ident < $($gen:tt),+ $(,)? > { .$field:ident, .. } $(where $($where:tt)+)? ) => {
+        impl<$($gen),+> EntityEvent for $name<$($gen),+>
+        $(where $($where)+)? {
+            fn event_target(&self) -> Entity {
+                self.$field.entity()
+            }
+        }
+    };
+
+    ($name:ident) => {
+        $crate::impl_entity_event_from_instance!($name { .instance, .. });
+    };
+
+    ($name:ident { .$field:ident, .. }) => {
+        impl EntityEvent for $name {
+            fn event_target(&self) -> Entity {
+                self.$field.entity()
+            }
+        }
+
+    }
+}
+
+#[test]
+fn test_impl_entity_event_from_instance() {
+    #![allow(unused)]
+
+    #[derive(Event)]
+    struct Foo {
+        instance: Instance<Any>,
+    }
+
+    #[derive(Event)]
+    struct Bar {
+        inst: Instance<Any>,
+    }
+
+    #[derive(Event)]
+    struct Baz<T: Kind> {
+        instance: Instance<T>,
+    }
+
+    #[derive(Event)]
+    struct Bat<T: Kind> {
+        inst: Instance<T>,
+    }
+
+    impl_entity_event_from_instance!(Foo);
+    impl_entity_event_from_instance!(Bar { .inst, .. });
+    impl_entity_event_from_instance!(Baz<T> where T: Kind);
+    impl_entity_event_from_instance!(Bat<T> { .inst, .. } where T: Kind);
+}
+
+// Experimental
+#[doc(hidden)]
+#[derive(Deref, DerefMut, Reflect)]
+pub struct InstanceVec<T: Kind>(Vec<Instance<T>>);
+
+impl<T: Kind> Default for InstanceVec<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<T: Kind> InstanceVec<T> {
+    #[doc(hidden)]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(Vec::with_capacity(capacity))
+    }
+}
+
+impl<T: Kind> MapEntities for InstanceVec<T> {
+    fn map_entities<M: EntityMapper>(&mut self, entity_mapper: &mut M) {
+        let olds: Vec<_> = self.0.drain(..).collect();
+        for old in olds {
+            let new_entity = entity_mapper.get_mapped(old.entity());
+            // SAFE: In Deserializer, we trust.
+            let new = unsafe { Instance::from_entity_unchecked(new_entity) };
+            self.0.push(new);
+        }
+    }
+}
+
+impl<T: Kind> RelationshipSourceCollection for InstanceVec<T> {
+    type SourceIter<'a>
+        = std::iter::Map<std::slice::Iter<'a, Instance<T>>, fn(&Instance<T>) -> Entity>
+    where
+        Self: 'a;
+
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        Self::with_capacity(capacity)
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.0.reserve(additional);
+    }
+
+    fn add(&mut self, entity: Entity) -> bool {
+        self.0
+            .push(unsafe { Instance::from_entity_unchecked(entity) });
+        true
+    }
+
+    fn remove(&mut self, entity: Entity) -> bool {
+        let Some(index) = self.0.iter().position(|i| *i == entity) else {
+            return false;
+        };
+        self.0.swap_remove(index);
+        true
+    }
+
+    fn iter(&self) -> Self::SourceIter<'_> {
+        self.0.iter().map(|i| i.entity())
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn clear(&mut self) {
+        self.0.clear()
+    }
+
+    fn shrink_to_fit(&mut self) {
+        self.0.shrink_to_fit()
+    }
+
+    fn extend_from_iter(&mut self, entities: impl IntoIterator<Item = Entity>) {
+        self.0.extend(
+            entities
+                .into_iter()
+                .map(|entity| unsafe { Instance::from_entity_unchecked(entity) }),
+        )
+    }
+}
+
+#[cfg(test)]
+mod test_instance_vec {
+    use super::*;
+
+    // In a world, where the relationship:
+    //      Friends(Vec<Instance<Person>>) <-> FriendOf(Instance<Person>)
+    // Cannot exist due to Bevy derive requirements and Rust trait implementation restrictions...
+    // This is a workaround to sort of guarantee kind safety:
+
+    use bevy::prelude::*;
+    use moonshine_util::expect::Expect; // <--- Required for this pattern to work.
+
+    use crate::prelude::*;
+
+    // Marker to "guarantee" kind safety across related components:
+    #[derive(Component)]
+    struct Person;
+
+    // A potato is not a person. It doesn't have friends. :(
+    #[derive(Component)]
+    struct Potato;
+
+    #[derive(Component, Deref)]
+    #[require(Expect<Person>)] // <--- Only People can have Friends
+    #[relationship_target(relationship = FriendOf)]
+    struct Friends(
+        // Wrapper around `Vec<Instance<Person>>` to implement `RelationshipSourceCollection`
+        InstanceVec<Person>,
+    );
+
+    #[derive(Component)]
+    #[require(Expect<Person>)] // <--- Only People become Friends
+    #[relationship(relationship_target = Friends)]
+    struct FriendOf(
+        // This entity can point to anything, but if it points to anything other
+        // than a Person, it would cause a panic because both `Friends` and `FriendOf` expect `Person`.
+        pub Entity,
+    );
+
+    #[test]
+    fn test_instance_vec_relationship() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        let w = app.world_mut();
+        let p0 = w.spawn_instance(Person).instance();
+        let p1 = w.spawn_instance(Person).instance();
+        w.entity_mut(*p1).insert(FriendOf(*p0));
+
+        let fs = w.get::<Friends>(*p0).expect("Person 0 must have Friends");
+        let f: Instance<Person> = *fs.first().expect("Person 0 must have at least 1 friend");
+        assert_eq!(f, p1, "Person 1 must be a friend of Person 0");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_instance_vec_relationship_panic_1() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        let w = app.world_mut();
+        let potato = w.spawn_instance(Potato).instance();
+        let person = w.spawn_instance(Person).instance();
+
+        // PANIC: Person cannot be friends with Potato. :(
+        w.entity_mut(*person).insert(FriendOf(*potato));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_instance_vec_relationship_panic_2() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        let w = app.world_mut();
+        let potato = w.spawn_instance(Potato).instance();
+        let person = w.spawn_instance(Person).instance();
+
+        // PANIC: Potato cannot be friends with Person. :(
+        w.entity_mut(*potato).insert(FriendOf(*person));
+    }
+}

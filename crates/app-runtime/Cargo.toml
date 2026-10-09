@@ -66,7 +66,7 @@ tracing-appender = "0.2"
 tracing-subscriber = { workspace = true, features = ["json"] }
 tracing.workspace = true
 uuid.workspace = true
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+zip = { version = "9.0", default-features = false, features = ["deflate"] }
 tempfile.workspace = true
 nightfall-fixture-model = { path = "../fixture-model" }
 

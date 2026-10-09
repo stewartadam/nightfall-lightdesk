@@ -101,8 +101,7 @@ pub fn spawn_released_reconstructed_sequence_for_clip(
     color_path_data_provider: Option<&DataProvider<ColorPath>>,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     fixture_data_provider: &Res<FixtureDataProviderExt>,
-    parameter_mut_query: &mut Query<InstanceMut<Parameter>>,
-    parameter_query: &Query<InstanceRef<Parameter>>,
+    parameter_query: &mut Query<InstanceMut<Parameter>>,
     selection_resolver: &SpatialSelectionResolver,
     position: u32,
     active_started_at: Duration,
@@ -120,10 +119,10 @@ pub fn spawn_released_reconstructed_sequence_for_clip(
     );
     msequence.set_priority(clip.priority);
     msequence.set_position_reconstructing_prefix_at_playback_position(position, active_started_at);
-    msequence.render_release_snapshot_at_position(parameter_mut_query, release_timing.started_at);
+    msequence.render_release_snapshot_at_position(parameter_query, release_timing.started_at);
     msequence.release_from_rendered_assertions_at_position(
         fixture_data_provider,
-        parameter_query,
+        &parameter_query.as_readonly(),
         Some(release_timing.started_at),
     );
 
