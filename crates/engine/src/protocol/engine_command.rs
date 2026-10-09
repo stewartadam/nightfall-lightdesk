@@ -155,9 +155,10 @@ impl std::fmt::Display for ClientId {
 }
 
 /// Identifies where a command's result should be delivered.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum ReplyTarget {
     /// Publish to every client attached to the host adapter, for commands no client submitted.
+    #[default]
     ClientBroadcast,
     /// Publish only to the client session that submitted the command.
     Client(ClientId),

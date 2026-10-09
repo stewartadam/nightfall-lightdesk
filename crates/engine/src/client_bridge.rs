@@ -512,12 +512,13 @@ pub struct CommandJsonEnvelope {
     pub module: String,
     /// The raw command JSON to be deserialized by the plugin
     pub command: Value,
-    /// Session that submitted the command, stamped by the host transport after parsing.
+    /// Where the command's feedback goes, assigned by the host transport after parsing.
     ///
-    /// Never read from the wire, so a client cannot address replies to another session.
-    /// `None` for commands that no connected client submitted.
+    /// Never read from the wire, so a client cannot address replies to another session. The
+    /// websocket host sets the submitting session; adapters whose caller cannot receive a
+    /// reply set [`ReplyTarget::Detached`]. Defaults to a broadcast.
     #[serde(skip)]
-    pub client: Option<ClientId>,
+    pub reply_target: ReplyTarget,
 }
 
 impl CommandJsonEnvelope {
@@ -766,7 +767,7 @@ mod client_bridge_tests {
                 undo_id: None,
                 module: "MissingCommand".to_string(),
                 command: serde_json::json!({}),
-                client: None,
+                reply_target: ReplyTarget::ClientBroadcast,
             })
             .unwrap();
 
@@ -791,19 +792,24 @@ mod client_bridge_tests {
     }
 
     /// Verifies a command submitted by one client session reports its result to that session
-    /// only, while a command without a submitting client is still broadcast.
+    /// only, a command without a submitting client is still broadcast, and a detached command
+    /// publishes no result.
     #[test]
     fn client_submitted_result_is_addressed_to_its_client() {
         let (mut app, output) = bridge_app();
         let sender = app.world().resource::<ClientBridgeHost>().command_sender();
-        for client in [Some(ClientId(7)), None] {
+        for reply_target in [
+            ReplyTarget::Client(ClientId(7)),
+            ReplyTarget::Detached,
+            ReplyTarget::ClientBroadcast,
+        ] {
             sender
                 .try_send(CommandJsonEnvelope {
                     command_id: CommandId::new(),
                     undo_id: None,
                     module: "MissingCommand".to_string(),
                     command: serde_json::json!({}),
-                    client,
+                    reply_target,
                 })
                 .unwrap();
         }
@@ -850,17 +856,17 @@ mod client_bridge_tests {
         );
     }
 
-    /// Verifies the serialized wire envelope cannot name the submitting client itself.
+    /// Verifies the serialized wire envelope cannot choose where its feedback is delivered.
     #[test]
-    fn wire_envelope_ignores_client_identity() {
+    fn wire_envelope_ignores_reply_target() {
         let envelope: CommandJsonEnvelope = serde_json::from_value(serde_json::json!({
             "command_id": CommandId::new().to_string(),
             "module": "DeskCommand",
             "command": {},
-            "client": 9
+            "reply_target": { "Client": 9 }
         }))
         .unwrap();
 
-        assert_eq!(envelope.client, None);
+        assert_eq!(envelope.reply_target, ReplyTarget::ClientBroadcast);
     }
 }

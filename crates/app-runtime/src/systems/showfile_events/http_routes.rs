@@ -19,7 +19,7 @@ use axum::{
     routing::{get, post},
 };
 use nightfall_desk::prelude::ShowfileSaveOptions;
-use nightfall_engine::prelude::{CommandId, CommandJsonEnvelope};
+use nightfall_engine::prelude::{CommandId, CommandJsonEnvelope, ReplyTarget};
 use nightfall_websocket::prelude::{AxumAppState, HttpRouteRegistry};
 use tower_http::services::ServeFile;
 
@@ -345,7 +345,8 @@ async fn save_current_showfile_draft(
             "type": "SaveDraftShowfile",
             "data": save_options,
         }),
-        client: None,
+        // The closing tab cannot receive the outcome, and other clients did not ask for it.
+        reply_target: ReplyTarget::Detached,
     };
 
     match state.command_json_tx.send(envelope).await {

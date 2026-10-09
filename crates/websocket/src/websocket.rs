@@ -214,7 +214,7 @@ async fn client_ws(
                                 "Parsed command envelope from websocket (module={})",
                                 json_envelope.module
                             );
-                            json_envelope.client = Some(client_id);
+                            json_envelope.reply_target = ReplyTarget::Client(client_id);
                             let _ = command_json_tx.send(json_envelope).await;
                         }
                         Ok(InboundWebsocketText::Update(json_envelope)) => {
