@@ -435,7 +435,11 @@ function applyWorkerQueuedMessage(message: WorkerQueuedMessage): void {
   if (typeof message.deliveryMessageId === "number") {
     lastSeenDeliveryMessageId = message.deliveryMessageId;
   }
-  const data = queuedWorkerMessageData(message, parameterStateDecoder);
+  const data = message.packedParameters
+    ? measurePerformanceScope("websocket-main.parameter-state.unpack", () =>
+        queuedWorkerMessageData(message, parameterStateDecoder),
+      )
+    : queuedWorkerMessageData(message, parameterStateDecoder);
   if (data) queueWorkerMessage(data);
 }
 
@@ -460,6 +464,15 @@ function applyWorkerMessageBatch(messages: unknown): void {
   }
 }
 
+/** Visualizer outputs of one fixture, with the decoded state they were built from. */
+interface ImmediateFixtureOutput {
+  source: FixtureParameterState;
+  elements: Record<string, number>[];
+}
+
+/** Outputs published by the last {@link updateImmediateParams}, keyed by fixture UID. */
+let previousImmediateOutputs = new Map<string, ImmediateFixtureOutput>();
+
 // The WebSocket worker handles connection, CBOR decode, and payload staging.
 // Main thread pulls already-decoded messages once per frame and dispatches them
 // in batch order.
@@ -469,13 +482,24 @@ function applyWorkerMessageBatch(messages: unknown): void {
  */
 function updateImmediateParams(rawData: FixtureParameterState[]) {
   const outputMap: ParameterOutputMap = new Map();
+  const outputs = new Map<string, ImmediateFixtureOutput>();
   for (const item of rawData) {
-    // Preserve per-element output arrays for multi-element fixtures
-    const elementOutputs = item.parameters.map((ps) =>
-      visualizerOutputForElement(ps),
-    );
-    outputMap.set(item.fixture_uid, elementOutputs);
+    const previous = previousImmediateOutputs.get(item.fixture_uid);
+    // The decoder returns unchanged fixtures as the same object, so their outputs keep their
+    // identity and the visualizer can skip them.
+    const output =
+      previous?.source === item
+        ? previous
+        : {
+            source: item,
+            elements: item.parameters.map((ps) =>
+              visualizerOutputForElement(ps),
+            ),
+          };
+    outputMap.set(item.fixture_uid, output.elements);
+    outputs.set(item.fixture_uid, output);
   }
+  previousImmediateOutputs = outputs;
   setParametersImmediate(outputMap);
 }
 
@@ -2221,6 +2245,8 @@ let pendingReactiveParameterState: FixtureParameterState[] | null = null;
 let reactiveParameterStateTimer: ReturnType<typeof setTimeout> | null = null;
 let lastReactiveParameterStateFlushMs = 0;
 let previousParameterRows = new Map<string, ParameterRow>();
+/** Decoded state each of {@link previousParameterRows} was built from, keyed by fixture UID. */
+let previousParameterSources = new Map<string, FixtureParameterState>();
 
 /** Clears pending reactive parameter state without publishing it to UI stores. */
 function resetReactiveParameterStateQueue(): void {
@@ -2231,6 +2257,7 @@ function resetReactiveParameterStateQueue(): void {
   pendingReactiveParameterState = null;
   lastReactiveParameterStateFlushMs = 0;
   previousParameterRows = new Map<string, ParameterRow>();
+  previousParameterSources = new Map<string, FixtureParameterState>();
 }
 
 /** Marks the current websocket state as waiting for a fresh backend resync. */
@@ -2402,9 +2429,20 @@ function processParameterState(
   rawData: FixtureParameterState[],
 ): Map<string, ParameterRow> {
   const paramMap = new Map<string, ParameterRow>();
+  const sources = new Map<string, FixtureParameterState>();
   for (const item of rawData) {
     const uid = item.fixture_uid;
     const elementStates = item.parameters;
+    sources.set(uid, item);
+    // The decoder returns unchanged fixtures as the same object, whose row cannot have changed.
+    const unchangedRow =
+      previousParameterSources.get(uid) === item
+        ? previousParameterRows.get(uid)
+        : undefined;
+    if (unchangedRow) {
+      paramMap.set(uid, unchangedRow);
+      continue;
+    }
 
     // Track conflicts: attribute -> element output values
     const conflictTracker: Record<string, number[]> = {};
@@ -2474,6 +2512,7 @@ function processParameterState(
     );
   }
   previousParameterRows = paramMap;
+  previousParameterSources = sources;
   return paramMap;
 }
 

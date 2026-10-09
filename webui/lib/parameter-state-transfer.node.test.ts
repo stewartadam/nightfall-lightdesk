@@ -185,3 +185,110 @@ test("queued worker messages route layouts and unpack values", () => {
   assert.equal(queuedWorkerMessageData(other, decoder), other.data);
   assert.equal(carriesParameterState(undefined), false);
 });
+
+/** Three fixtures with two single-attribute elements each, for reuse tests. */
+const REUSE_LAYOUT = layout(5, [
+  { fixture_uid: "a", elements: [["Red"], ["Green"]] },
+  { fixture_uid: "b", elements: [["Red"], ["Green"]] },
+  { fixture_uid: "c", elements: [["Red"], ["Green"]] },
+]);
+
+/**
+ * A frame that changes one fixture's output returns a new state for that fixture only, keeps the
+ * unchanged element and assertion records inside it, and decodes the same values a fresh decoder
+ * would.
+ */
+test("decoder reuses fixtures whose output did not change", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const absolute: [number, number, number][] = [[2, 0, 1]];
+  const first = decoder.unpack(packedState(5, [1, 2, 3, 4, 5, 6], absolute));
+  assert.ok(first);
+  const next = decoder.unpack(packedState(5, [1, 2, 3, 9, 5, 6], absolute));
+  assert.ok(next);
+
+  assert.equal(next[0], first[0]);
+  assert.equal(next[2], first[2]);
+  assert.notEqual(next[1], first[1]);
+  assert.equal(next[1].parameters[0].output, first[1].parameters[0].output);
+  assert.equal(next[1].parameters[0].absolute, first[1].parameters[0].absolute);
+  assert.notEqual(next[1].parameters[1].output, first[1].parameters[1].output);
+
+  const fresh = new ParameterStateDecoder();
+  fresh.setLayout(REUSE_LAYOUT);
+  assert.deepEqual(
+    next,
+    fresh.unpack(packedState(5, [1, 2, 3, 9, 5, 6], absolute)),
+  );
+});
+
+/**
+ * Bit-level changes the backend sends, such as a signed zero or a NaN becoming a number, count as
+ * changes, and an identical frame returns every previous fixture.
+ */
+test("decoder compares outputs by their bits", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const first = decoder.unpack(packedState(5, [0, NaN, 1, 1, 1, 1], []));
+  const next = decoder.unpack(packedState(5, [-0, 7, 1, 1, 1, 1], []));
+  assert.ok(first && next);
+  assert.notEqual(next[0], first[0]);
+  assert.deepEqual(next[0].parameters[0].output, { Red: -0 });
+  assert.deepEqual(next[0].parameters[1].output, { Green: 7 });
+
+  const same = decoder.unpack(packedState(5, [-0, 7, 1, 1, 1, 1], []));
+  assert.ok(same);
+  for (const [index, state] of same.entries()) {
+    assert.equal(state, next[index]);
+  }
+});
+
+/**
+ * When assertions change, only fixtures whose own assertions differ get new state; fixtures with
+ * the same assertions keep theirs, even if other entries moved within the assertion arrays.
+ */
+test("decoder reuses fixtures whose assertions did not change", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const output = [1, 2, 3, 4, 5, 6];
+  const first = decoder.unpack(
+    packedState(5, output, [
+      [0, 0, 10],
+      [4, 1, 0.5],
+    ]),
+  );
+  const next = decoder.unpack(
+    packedState(
+      5,
+      output,
+      [
+        [4, 1, 0.5],
+        [0, 0, 10],
+      ],
+      [[2, 2, -3]],
+    ),
+  );
+  assert.ok(first && next);
+  assert.equal(next[0], first[0]);
+  assert.equal(next[2], first[2]);
+  assert.notEqual(next[1], first[1]);
+  assert.deepEqual(next[1].parameters[0].relative, {
+    Red: { type: "Relative", data: { offset: -3 } },
+  });
+  assert.equal(next[1].parameters[0].output, first[1].parameters[0].output);
+});
+
+/** A new layout, even with the same fixtures, rebuilds every fixture rather than reusing state. */
+test("decoder rebuilds every fixture after a layout", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const output = [1, 2, 3, 4, 5, 6];
+  const first = decoder.unpack(packedState(5, output, []));
+  decoder.setLayout(REUSE_LAYOUT);
+  const next = decoder.unpack(packedState(5, output, []));
+  assert.ok(first && next);
+  for (const [index, state] of next.entries()) {
+    assert.notEqual(state, first[index]);
+  }
+  assert.deepEqual(next, first);
+});
