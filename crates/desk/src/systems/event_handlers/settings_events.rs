@@ -25,11 +25,12 @@ use nightfall_io::prelude::{
     sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout,
 };
 
+use crate::panel_layouts;
 use crate::prelude::DeskSettings;
 use crate::settings::{AvailableAudioDevices, SettingsCommand, TelemetryState};
 
 #[derive(Clone, Debug)]
-enum SettingsCommandSuccess {
+enum SettingsCommandOutcome {
     Applied,
     NetworkInterfaces {
         interfaces: Vec<NetworkInterfaceInfo>,
@@ -37,13 +38,33 @@ enum SettingsCommandSuccess {
     },
     AudioDevices(std::collections::HashMap<String, String>),
     UsbDmxDevices(Vec<UsbDmxDeviceInfo>),
+    /// The command was refused and changed nothing.
+    Rejected(CommandError),
+}
+
+impl From<Result<(), CommandError>> for SettingsCommandOutcome {
+    /// Maps a settings edit to an applied or rejected outcome.
+    fn from(result: Result<(), CommandError>) -> Self {
+        match result {
+            Ok(()) => Self::Applied,
+            Err(error) => Self::Rejected(error),
+        }
+    }
+}
+
+/// Returns wall-clock milliseconds since the Unix epoch for layout timestamps.
+fn now_ms() -> f64 {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as f64)
+        .unwrap_or(0.0)
 }
 
 /// Domain-local result emitted after one settings command has applied.
 #[derive(Clone, Debug, Message)]
 pub struct SettingsCommandResult {
     command_id: CommandId,
-    result: SettingsCommandSuccess,
+    result: SettingsCommandOutcome,
 }
 
 /// Settings resources used by mutation and enumeration commands.
@@ -107,59 +128,59 @@ pub fn handle_events(
             SettingsCommand::SetProgrammerAutoSelect(value) => {
                 params.settings.programmer_auto_select = *value;
                 tracing::debug!("Programmer auto-select set to: {}", value);
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetExternalControl(value) => {
                 if params.external_control.available {
                     params.external_control.settings = value.clone();
                 }
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetTelemetryConsent(value) => {
                 if params.telemetry.available {
                     params.telemetry.consent = *value;
                 }
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::ResetTelemetryInstallId => {
                 if params.telemetry.available {
                     params.telemetry.install_id = uuid::Uuid::new_v4().to_string();
                 }
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetNetworkInterface(value) => {
                 params.io_settings.network_interface = value.clone();
                 tracing::debug!(value = ?value, "Network interface set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetNetworkOutputEnabled(value) => {
                 params.io_settings.network_output_enabled = *value;
                 tracing::debug!(value, "Network output enabled set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetNetworkInputEnabled(value) => {
                 params.io_settings.network_input_enabled = *value;
                 tracing::debug!(value, "Network input enabled set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetUsbOutputEnabled(value) => {
                 params.io_settings.usb_output_enabled = *value;
                 tracing::debug!(value, "USB output enabled set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetNetworkDmxOutputs(value) => {
                 let sanitized = value.sanitized();
                 params.io_settings.network_dmx_outputs = sanitized.clone();
                 *params.network_dmx_outputs = sanitized;
                 tracing::debug!("Network DMX output targets updated");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetUsbDmxOutputs(value) => {
                 let sanitized = value.sanitized();
                 params.io_settings.usb_dmx_outputs = sanitized.clone();
                 *params.usb_dmx_outputs = sanitized;
                 tracing::debug!("USB DMX output targets updated");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetInputSignalLossPolicy(value) => {
                 params.io_settings.input_signal_loss_policy = *value;
@@ -167,7 +188,7 @@ pub fn handle_events(
                     value = ?params.io_settings.input_signal_loss_policy,
                     "Input signal loss policy set"
                 );
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetInputSignalLossTimeout(value) => {
                 let timeout = sanitize_input_signal_loss_timeout(*value);
@@ -177,7 +198,7 @@ pub fn handle_events(
                     value = ?params.io_settings.input_signal_loss_timeout,
                     "Input signal loss timeout set"
                 );
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetDmxOutputRate(value) => {
                 params.io_settings.dmx_output_rate_hz = sanitize_dmx_output_rate_hz(*value);
@@ -185,17 +206,17 @@ pub fn handle_events(
                     value = params.io_settings.dmx_output_rate_hz,
                     "DMX output rate set"
                 );
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetBindingValidationMode(value) => {
                 params.binding_validation_settings.mode = *value;
                 tracing::debug!(value = ?value, "Binding validation mode set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetAudioDevice(value) => {
                 params.settings.audio_device = value.clone();
                 tracing::debug!(value = ?value, "Audio device set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetSequenceReorderRenumberPolicy(value) => {
                 params.settings.sequence_reorder_renumber_policy = *value;
@@ -203,7 +224,7 @@ pub fn handle_events(
                     value = ?value,
                     "Sequence reorder renumber policy set"
                 );
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetInputUniverseVisibilityMode(value) => {
                 if params.io_settings.input_universe_visibility_mode != *value {
@@ -215,45 +236,53 @@ pub fn handle_events(
                     value = ?value,
                     "Input universe visibility mode set"
                 );
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetSelectionFlattenPolicy(value) => {
                 params.settings.selection_flatten_policy = *value;
                 tracing::debug!(value = ?value, "Selection flatten policy set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetTimeDisplayPreference(value) => {
                 params.settings.time_display_preference = *value;
                 tracing::debug!(value = ?value, "Time display preference set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetTimelinePlacementPreference(value) => {
                 params.settings.timeline_placement_preference = *value;
                 tracing::debug!(value = ?value, "Timeline placement preference set");
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetShowfileBackupRetention(value) => {
                 params.settings.showfile_backup_retention = *value;
                 tracing::debug!("Showfile backup retention set to: {}", value);
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
             SettingsCommand::SetParameterKeyframesOnly(value) => {
                 params.settings.parameter_keyframes_only = *value;
                 tracing::debug!("Parameter keyframes-only set to: {}", value);
-                SettingsCommandSuccess::Applied
+                SettingsCommandOutcome::Applied
             }
-            SettingsCommand::SetPanelLayouts(value) => {
-                params.settings.panel_layouts = value.clone();
-                tracing::debug!(count = value.len(), "Panel layouts updated");
-                SettingsCommandSuccess::Applied
+            SettingsCommand::CreatePanelLayout(layout) => {
+                panel_layouts::create(&mut params.settings, layout).into()
             }
-            SettingsCommand::SetActivePanelLayout(value) => {
-                params.settings.active_panel_layout = value.clone();
-                tracing::debug!(
-                    has_layout = params.settings.active_panel_layout.is_some(),
-                    "Active panel layout updated"
-                );
-                SettingsCommandSuccess::Applied
+            SettingsCommand::SavePanelLayoutArrangement(arrangement) => {
+                panel_layouts::save_arrangement(&mut params.settings, arrangement, now_ms()).into()
+            }
+            SettingsCommand::RenamePanelLayout(rename) => {
+                panel_layouts::rename(&mut params.settings, rename, now_ms()).into()
+            }
+            SettingsCommand::SetPanelLayoutVisibility(visibility) => {
+                panel_layouts::set_visibility(&mut params.settings, visibility).into()
+            }
+            SettingsCommand::DeletePanelLayout(id) => {
+                panel_layouts::delete(&mut params.settings, id).into()
+            }
+            SettingsCommand::ReorderPanelLayouts(ids) => {
+                panel_layouts::reorder(&mut params.settings, ids).into()
+            }
+            SettingsCommand::SetDefaultPanelLayout(id) => {
+                panel_layouts::set_default(&mut params.settings, id.as_deref()).into()
             }
             SettingsCommand::GetAvailableNetworkInterfaces => {
                 let status = resolve_network_interface_status(
@@ -265,7 +294,7 @@ pub fn handle_events(
                     &params.network_interface_state,
                     &params.broadcaster,
                 );
-                SettingsCommandSuccess::NetworkInterfaces {
+                SettingsCommandOutcome::NetworkInterfaces {
                     interfaces: params.network_interface_state.available_interfaces.clone(),
                     status,
                 }
@@ -275,14 +304,14 @@ pub fn handle_events(
                     &params.available_audio_devices,
                     &params.broadcaster,
                 );
-                SettingsCommandSuccess::AudioDevices(params.available_audio_devices.0.clone())
+                SettingsCommandOutcome::AudioDevices(params.available_audio_devices.0.clone())
             }
             SettingsCommand::GetAvailableUsbDmxDevices => {
                 crate::websocket::send_available_usb_dmx_devices(
                     &params.available_usb_dmx_devices.0,
                     &params.broadcaster,
                 );
-                SettingsCommandSuccess::UsbDmxDevices(params.available_usb_dmx_devices.0.clone())
+                SettingsCommandOutcome::UsbDmxDevices(params.available_usb_dmx_devices.0.clone())
             }
         };
         results.write(SettingsCommandResult {
@@ -299,17 +328,20 @@ pub fn finish_commands(
 ) {
     for event in events.read() {
         let response = match &event.result {
-            SettingsCommandSuccess::Applied => responder.succeed(event.command_id),
-            SettingsCommandSuccess::NetworkInterfaces { interfaces, status } => responder
+            SettingsCommandOutcome::Applied => responder.succeed(event.command_id),
+            SettingsCommandOutcome::NetworkInterfaces { interfaces, status } => responder
                 .succeed_with_output(
                     event.command_id,
                     serde_json::json!({ "interfaces": interfaces, "status": status }),
                 ),
-            SettingsCommandSuccess::AudioDevices(devices) => {
+            SettingsCommandOutcome::AudioDevices(devices) => {
                 responder.succeed_with_output(event.command_id, devices)
             }
-            SettingsCommandSuccess::UsbDmxDevices(devices) => {
+            SettingsCommandOutcome::UsbDmxDevices(devices) => {
                 responder.succeed_with_output(event.command_id, devices)
+            }
+            SettingsCommandOutcome::Rejected(error) => {
+                responder.fail(event.command_id, error.clone())
             }
         };
         if let Err(error) = response {

@@ -131,7 +131,7 @@
     "timeline_placement_preference": "Playhead",
     "showfile_backup_retention": 20,
     "panel_layouts": [],
-    "active_panel_layout": null
+    "default_panel_layout_id": null
   },
   "ioSettings": {
     "network_interface": null,

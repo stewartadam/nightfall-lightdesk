@@ -27,7 +27,6 @@ pub fn handle_events(
                 &mut showfile_save_state,
                 current_showfile.name(),
                 &mut clean_snapshot_hash,
-                &Default::default(),
             ) {
                 tracing::error!("Failed to preserve showfile draft before quit: {}", error);
                 if let Err(completion_error) = responder.fail(

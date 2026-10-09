@@ -19,7 +19,6 @@
 import type { ReadableAtom } from "nanostores";
 import { createEffect, createRoot, createSignal } from "solid-js";
 import {
-  dockviewLayoutActiveLayoutKey,
   dockviewLayoutSettingsSnapshotRevision,
   dockviewLayoutShowfileRevision,
 } from "../components/shell/docking/layout-readiness";
@@ -31,7 +30,6 @@ import {
 import type { NightfallHarness } from "../e2e/harness/registry";
 import { type AppLifecyclePhase, appLifecycle } from "../state/app-lifecycle";
 import { $settings, $settingsSnapshotRevision } from "../state/settings";
-import { activeLayoutKey } from "./dockview-active-layout";
 import {
   backendAppState,
   connectionStatus,
@@ -65,8 +63,6 @@ export type TestReadiness = {
   layoutShowfileRevision: number;
   settingsRevision: number;
   layoutSettingsRevision: number;
-  /** Whether Dockview restored the active layout the settings describe. */
-  activeLayoutApplied: boolean;
   /** Whether Dockview applied the layout for the current showfile and settings. */
   layoutApplied: boolean;
   /** Whether startup finished and a resynced backend session drives the shell. */
@@ -148,7 +144,6 @@ const readinessAtoms: ReadableAtom<unknown>[] = [
   currentShowfileRevision,
   dockviewLayoutShowfileRevision,
   dockviewLayoutSettingsSnapshotRevision,
-  dockviewLayoutActiveLayoutKey,
   $settings,
   $settingsSnapshotRevision,
   e2eAutoOpenStartupShowfileSettled,
@@ -160,13 +155,9 @@ function readiness(): TestReadiness {
   const settingsRevision = $settingsSnapshotRevision.get();
   const layoutShowfileRevision = dockviewLayoutShowfileRevision.get();
   const layoutSettingsRevision = dockviewLayoutSettingsSnapshotRevision.get();
-  const activeLayoutApplied =
-    dockviewLayoutActiveLayoutKey.get() ===
-    activeLayoutKey($settings.get().active_panel_layout);
   const layoutApplied =
     layoutShowfileRevision >= showfileRevision &&
-    layoutSettingsRevision >= settingsRevision &&
-    activeLayoutApplied;
+    layoutSettingsRevision >= settingsRevision;
   const startupAutoOpenPending = e2eAutoOpenStartupShowfileName() !== null;
   const lifecyclePhase = appLifecycle.get().phase;
   const status = connectionStatus();
@@ -182,7 +173,6 @@ function readiness(): TestReadiness {
     layoutShowfileRevision,
     settingsRevision,
     layoutSettingsRevision,
-    activeLayoutApplied,
     layoutApplied,
     shellInteractive:
       lifecyclePhase === "interactive" &&

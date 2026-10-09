@@ -847,7 +847,7 @@ test("saved showfile reload renders timeline track items", async ({
   );
   await sendOwnedCommand(page, {
     module: "DeskCommand",
-    command: { type: "SaveShowfile", data: {} },
+    command: { type: "SaveShowfile" },
   });
 
   await loadOwnedShowfile(page, showfileName);

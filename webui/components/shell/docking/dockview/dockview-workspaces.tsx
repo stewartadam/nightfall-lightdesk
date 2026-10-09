@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createSignal, For, onCleanup, untrack } from "solid-js";
+import { createEffect, createSignal, For, onCleanup } from "solid-js";
 import {
   createSerializedLayout,
   type SerializedLayout,
@@ -37,6 +37,7 @@ import { $settings } from "../../../../state/settings";
 import { useAppShell } from "../../../providers/app-shell";
 import { ModalVisibilityContext } from "../../../ui/modal";
 import {
+  dockviewLayoutKeptDeviceArrangement,
   dockviewLayoutSettingsSnapshotRevision,
   dockviewLayoutShowfileRevision,
 } from "../layout-readiness";
@@ -47,6 +48,13 @@ import { DockviewEventListener } from "./dockview-event-listener";
 import { createLayoutEntrance } from "./layout-entrance";
 
 const log = getLogger(import.meta.url);
+
+/**
+ * Showfile revision whose named layout this tab already opened. It outlives remounts (such as
+ * crossing the compact breakpoint) so a remount keeps the layout the operator was on instead of
+ * reopening the showfile's default.
+ */
+let settledShowfileRevision = -1;
 
 interface Workspace {
   layoutId?: string;
@@ -295,19 +303,19 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     const api = shell.dockviewApi();
     if (!api) return;
     initializedRevision = revision;
-    const preferred = untrack(
-      () =>
-        $settings.get().active_panel_layout?.layoutId ??
-        getActiveStoredLayoutId(),
+    const keptDeviceArrangement =
+      dockviewLayoutKeptDeviceArrangement.get() ||
+      settledShowfileRevision === revision;
+    const defaultLayoutId = $settings.get().default_panel_layout_id ?? null;
+    const preferred = keptDeviceArrangement
+      ? (getActiveStoredLayoutId() ?? defaultLayoutId)
+      : defaultLayoutId;
+    void initializeNamedLayout(api, preferred, keptDeviceArrangement).then(
+      (initialized) => {
+        if (initialized) settledShowfileRevision = revision;
+        else if (initializedRevision === revision) initializedRevision = -1;
+      },
     );
-    void initializeNamedLayout(
-      api,
-      preferred,
-      Boolean($settings.get().active_panel_layout),
-    ).then((initialized) => {
-      if (!initialized && initializedRevision === revision)
-        initializedRevision = -1;
-    });
   });
 
   /** Releases shell references after all owned Dockviews are torn down. */

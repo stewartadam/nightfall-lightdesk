@@ -89,7 +89,6 @@ test("exports named copies from the menu, palette, and native File menu", async 
     );
     expect(exported.name).toBe(exportName);
     expect(exported.policy).toBe(policy);
-    expect(exported.saveOptions.activePanelLayout).toBeTruthy();
   }
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Open command palette" }).click();

@@ -23,7 +23,6 @@ import { openOrFocusPanelDefinition } from "../../../lib/panel-open-command";
 import {
   newShowfile,
   promptForNewShowfile,
-  showfileSaveCommandForInput,
 } from "../../../lib/showfile-actions";
 import { dockApi, pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -211,28 +210,12 @@ export function createCommandLineController(
         },
       );
     } else {
-      const showfileSaveCommand = showfileSaveCommandForInput(trimmedInput);
-      if (showfileSaveCommand) {
-        queueCommandSubmission(
-          trimmedInput,
-          Promise.resolve([trimmedInput]),
-          (_statements, progress) => {
-            progress.onStatementStarted?.(0);
-            engineRuntime.sendCommand(
-              { module: "DeskCommand", command: showfileSaveCommand },
-              true,
-              trimmedInput,
-            );
-          },
-        );
-      } else {
-        queueCommandSubmission(
-          trimmedInput,
-          splitCommandSequence(trimmedInput),
-          (statements, progress) =>
-            commandSequenceRunner.runStatements(statements, progress),
-        );
-      }
+      queueCommandSubmission(
+        trimmedInput,
+        splitCommandSequence(trimmedInput),
+        (statements, progress) =>
+          commandSequenceRunner.runStatements(statements, progress),
+      );
     }
 
     recordSubmittedCommand(trimmedInput);

@@ -14,9 +14,7 @@ use super::*;
 pub(super) fn save_showfile(
     showfile_save_state: &mut ShowfileSaveState,
     showfile_name: Option<&str>,
-    save_options: &ShowfileSaveOptions,
 ) -> Result<ShowfileSnapshot, String> {
-    apply_showfile_save_options(&mut showfile_save_state.desk_settings, save_options);
     let mut showfile_snapshot = snapshot_from_save_state(showfile_save_state);
     showfile_snapshot.metadata = current_showfile_metadata();
 
@@ -193,16 +191,6 @@ pub(crate) fn refresh_clean_snapshot_hash_after_showfile_bootstrap(
             );
         }
         Ok(())
-    }
-}
-
-/// Applies save-time options to the live settings baseline used for later snapshots.
-pub(in crate::systems::showfile_events) fn apply_showfile_save_options(
-    desk_settings: &mut DeskSettings,
-    save_options: &ShowfileSaveOptions,
-) {
-    if let Some(active_panel_layout) = save_options.active_panel_layout.clone() {
-        desk_settings.active_panel_layout = Some(active_panel_layout);
     }
 }
 

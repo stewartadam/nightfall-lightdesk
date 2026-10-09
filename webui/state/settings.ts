@@ -32,7 +32,7 @@ export const $settings = atom<DeskSettings>({
   time_display_preference: TimeDisplayPreference.Auto,
   timeline_placement_preference: TimelinePlacementPreference.Playhead,
   showfile_backup_retention: 20,
-  active_panel_layout: undefined,
+  default_panel_layout_id: undefined,
 });
 
 /** Current transport-owned runtime settings. */

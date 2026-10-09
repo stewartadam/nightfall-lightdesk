@@ -18,6 +18,7 @@ import {
   sanitizeSerializedLayout,
 } from "./dockview-layout";
 import { getLogger } from "./logger";
+import { currentShowfileName } from "./showfile-loading";
 
 const log = getLogger(import.meta.url);
 
@@ -45,6 +46,8 @@ export interface LayoutStorageState {
   version: number;
   activeLayoutId: string | null;
   sessionLayout: SerializedLayout | null;
+  /** Showfile the session arrangement was made for; it is only reused for that showfile. */
+  sessionShowfileName: string | null;
   layouts: StoredPanelLayout[];
 }
 
@@ -57,6 +60,7 @@ function emptyState(): LayoutStorageState {
     version: CURRENT_VERSION,
     activeLayoutId: null,
     sessionLayout: null,
+    sessionShowfileName: null,
     layouts: [],
   };
 }
@@ -93,6 +97,7 @@ function cloneLayoutStorageState(
     sessionLayout: state.sessionLayout
       ? cloneSerializedLayout(state.sessionLayout)
       : null,
+    sessionShowfileName: state.sessionShowfileName ?? null,
     layouts: state.layouts.map(cloneStoredPanelLayout),
   };
 }
@@ -155,6 +160,10 @@ function sanitizeLayoutStorageState(value: unknown): LayoutStorageState {
     version: CURRENT_VERSION,
     activeLayoutId,
     sessionLayout: sanitizeSerializedLayout(parsed.sessionLayout),
+    sessionShowfileName:
+      typeof parsed.sessionShowfileName === "string"
+        ? parsed.sessionShowfileName
+        : null,
     layouts,
   };
 }
@@ -212,6 +221,7 @@ export function saveLayout(dockApi: DockviewApi): boolean {
 
     const state = loadState();
     state.sessionLayout = createSerializedLayout(dockApi);
+    state.sessionShowfileName = currentShowfileName.get();
     const success = persistState(state);
     if (success) {
       log.trace("Layout session saved to persistent storage");
@@ -231,6 +241,26 @@ export function loadLayout(): SerializedLayout | null {
   return loadState().sessionLayout;
 }
 
+/** Returns whether this device has its own arrangement for the named showfile. */
+export function hasSessionLayoutFor(showfileName: string): boolean {
+  const state = loadState();
+  return (
+    state.sessionLayout !== null && state.sessionShowfileName === showfileName
+  );
+}
+
+/**
+ * Moves this device's arrangement to a show's new name after a Save As, since the contents it
+ * was made for are unchanged. Arrangements made for any other show are left alone.
+ */
+export function renameSessionLayoutShowfile(from: string, to: string): void {
+  const state = loadState();
+  if (state.sessionLayout === null || state.sessionShowfileName !== from)
+    return;
+  state.sessionShowfileName = to;
+  persistState(state);
+}
+
 /**
  * Clear the active session layout.
  * @returns boolean indicating success
@@ -239,6 +269,7 @@ export function clearLayout(): boolean {
   const state = loadState();
   state.activeLayoutId = null;
   state.sessionLayout = null;
+  state.sessionShowfileName = null;
   return persistState(state);
 }
 
@@ -321,6 +352,7 @@ export function storeCurrentLayout(
 
   const state = loadState();
   state.sessionLayout = serialized;
+  state.sessionShowfileName = currentShowfileName.get();
   state.activeLayoutId = stored.id;
   state.layouts = [...state.layouts, stored];
 

@@ -16,6 +16,7 @@ import type {
 } from "../state/appStores";
 import { browserDemoAudioHost } from "./browser-demo-audio";
 import { normalizeDmxUniverseData } from "./dmx-universe-data";
+import { renameSessionLayoutShowfile } from "./layoutStorage";
 import { backendLogConfigToUi } from "./log-config-bridge";
 import {
   configure as configureUiLogging,
@@ -1793,6 +1794,11 @@ function handleUiNotification(notification: types.UiNotification) {
         log.error("Current showfile notification has an invalid change ID");
         break;
       }
+      if (notification.data.renamed_from != null)
+        renameSessionLayoutShowfile(
+          normalizedShowfileName(notification.data.renamed_from),
+          normalizedShowfileName(notification.data.name),
+        );
       applyConfirmedShowfileChange(notification.data.name, changeId);
       break;
     }
@@ -2620,6 +2626,7 @@ function currentShowfileNameFromCommand(
         : null;
     case "LoadNamedShowfile":
     case "LoadDraftShowfile":
+    case "SaveNamedShowfile":
       return typeof command.data === "string"
         ? {
             name: normalizedShowfileName(command.data),
@@ -2632,15 +2639,6 @@ function currentShowfileNameFromCommand(
         typeof command.data.showfileName === "string"
         ? {
             name: normalizedShowfileName(command.data.showfileName),
-          }
-        : null;
-    case "SaveNamedShowfile":
-      return command.data &&
-        typeof command.data === "object" &&
-        "name" in command.data &&
-        typeof command.data.name === "string"
-        ? {
-            name: normalizedShowfileName(command.data.name),
           }
         : null;
     default:

@@ -406,6 +406,21 @@ test("invalid layout store data falls back to an empty state", async () => {
     version: 2,
     activeLayoutId: null,
     sessionLayout: null,
+    sessionShowfileName: null,
     layouts: [],
   });
+});
+
+/** Verifies a device's arrangement is only reused for the showfile it was made for. */
+test("session layouts belong to the showfile they were saved for", async () => {
+  const storage = await importLayoutStorage();
+  const { persistCurrentShowfileName } = await import("./showfile-loading.js");
+
+  persistCurrentShowfileName("tour");
+  assert.equal(storage.saveLayout(createDockApi("session")), true);
+  assert.equal(storage.hasSessionLayoutFor("tour"), true);
+  assert.equal(storage.hasSessionLayoutFor("festival"), false);
+
+  assert.equal(storage.clearLayout(), true);
+  assert.equal(storage.hasSessionLayoutFor("tour"), false);
 });

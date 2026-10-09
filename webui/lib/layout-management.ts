@@ -19,6 +19,7 @@ import {
   layoutEditPending,
   reconcileLayoutSessions,
 } from "../state/layout-switcher";
+import type * as types from "../types";
 import {
   createSerializedLayout,
   type SerializedLayout,
@@ -56,17 +57,24 @@ export async function revertNamedLayout(
   return restored;
 }
 
-/** Queues edits in order without locking unrelated controls or losing concurrent list changes. */
-export function editLayouts(
-  edit: (layouts: StoredPanelLayout[]) => StoredPanelLayout[] | null,
-  ids: string[] = [],
-): Promise<boolean> {
+/**
+ * One change to the showfile's shared layouts: the backend command that makes
+ * it, and the same change applied to a local list so this device can check it
+ * first and show it before the next settings snapshot arrives.
+ */
+interface LayoutEdit {
+  command: types.SettingsCommand;
+  apply: (layouts: StoredPanelLayout[]) => StoredPanelLayout[] | null;
+}
+
+/** Queues edits in order without locking unrelated controls. */
+function editLayouts(edit: LayoutEdit, ids: string[] = []): Promise<boolean> {
   const revision = currentShowfileRevision.get();
   pendingEdits += 1;
   for (const id of ids) pendingById.set(id, (pendingById.get(id) ?? 0) + 1);
   busyLayoutIds.set([...pendingById.keys()]);
   layoutEditPending.set(true);
-  const result = editQueue.then(() => persistLayouts(edit, revision));
+  const result = editQueue.then(() => persistLayoutEdit(edit, revision));
   editQueue = result.catch(() => false);
   return result.finally(() => {
     pendingEdits -= 1;
@@ -80,13 +88,17 @@ export function editLayouts(
   });
 }
 
-/** Commits one queued edit against the latest list and rejects completions from another showfile. */
-async function persistLayouts(
-  edit: (layouts: StoredPanelLayout[]) => StoredPanelLayout[] | null,
+/**
+ * Sends one queued edit after checking it against the latest list, and rejects
+ * completions from another showfile. The check keeps this device's active
+ * layout shown; other devices' active layouts are theirs to protect.
+ */
+async function persistLayoutEdit(
+  edit: LayoutEdit,
   revision: number,
 ): Promise<boolean> {
   if (revision !== currentShowfileRevision.get()) return false;
-  const layouts = edit(getShowfilePanelLayouts());
+  const layouts = edit.apply(getShowfilePanelLayouts());
   if (!layouts) return false;
   const active = activeLayoutId.get();
   if (
@@ -94,24 +106,39 @@ async function persistLayouts(
     !layouts.some((layout) => layout.id === active && layout.shownInSwitcher)
   )
     return false;
-  if (new Set(layouts.map((layout) => layout.id)).size !== layouts.length)
-    return false;
   try {
     const result = await engineRuntime.sendCommandAndAwait({
       module: "SettingsCommand",
-      command: { type: "SetPanelLayouts", data: layouts },
+      command: edit.command,
     });
-    if (result.outcome.type === "Failed")
-      throw new Error(result.outcome.data.message);
+    if (result.outcome.type === "Failed") {
+      log.warn("Layout edit refused", result.outcome.data);
+      pushToast("error", result.outcome.data.message);
+      return false;
+    }
     if (currentShowfileRevision.get() !== revision) return false;
-    replaceStoredLayoutsFromShowfile(layouts);
-    reconcileLayoutSessions(layouts.map((layout) => layout.id));
+    const next = edit.apply(getShowfilePanelLayouts());
+    if (next) {
+      replaceStoredLayoutsFromShowfile(next);
+      reconcileLayoutSessions(next.map((layout) => layout.id));
+    }
     return true;
   } catch (error) {
     log.error("Could not save layouts", error);
     pushToast("error", "Could not save layouts. Check your connection.");
     return false;
   }
+}
+
+/** Applies a change to one layout in a local list, or refuses when another device removed it. */
+function updateLayout(
+  id: string,
+  change: (layout: StoredPanelLayout) => StoredPanelLayout,
+): (layouts: StoredPanelLayout[]) => StoredPanelLayout[] | null {
+  return (layouts) =>
+    layouts.some((layout) => layout.id === id)
+      ? layouts.map((layout) => (layout.id === id ? change(layout) : layout))
+      : null;
 }
 
 /** Creates a visible saved layout without changing the currently mounted arrangement. */
@@ -125,9 +152,24 @@ export async function createNamedLayout(
   const layout = createBlankStoredLayout(api);
   if (!blank) Object.assign(layout, createSerializedLayout(api));
   layout.name = normalized;
-  return (await editLayouts((layouts) => [...layouts, layout], [layout.id]))
-    ? layout
-    : null;
+  return (await addStoredLayout(layout)) ? layout : null;
+}
+
+/** Adds a fully built layout to the end of the showfile's shared list. */
+export function addStoredLayout(
+  layout: StoredPanelLayout,
+  busyIds: string[] = [layout.id],
+): Promise<boolean> {
+  return editLayouts(
+    {
+      command: { type: "CreatePanelLayout", data: wireLayout(layout) },
+      apply: (layouts) =>
+        layouts.some((existing) => existing.id === layout.id)
+          ? null
+          : [...layouts, layout],
+    },
+    busyIds,
+  );
 }
 
 /** Saves the selected layout's own working arrangement, including inactive retained workspaces. */
@@ -141,13 +183,19 @@ export async function saveNamedLayout(
       : (getLayoutSession(id) ?? getStoredLayout(id));
   if (!snapshot) return false;
   const resizeRevision = getLayoutResizeRevision(id);
+  const fields = snapshotFields(snapshot);
   const saved = await editLayouts(
-    (layouts) =>
-      layouts.map((layout) =>
-        layout.id === id
-          ? { ...layout, ...snapshotFields(snapshot), updatedAt: Date.now() }
-          : layout,
-      ),
+    {
+      command: {
+        type: "SavePanelLayoutArrangement",
+        data: { id, ...fields },
+      },
+      apply: updateLayout(id, (layout) => ({
+        ...layout,
+        ...fields,
+        updatedAt: Date.now(),
+      })),
+    },
     [id],
   );
   if (saved) acknowledgeLayoutResize(id, resizeRevision, snapshot);
@@ -155,21 +203,37 @@ export async function saveNamedLayout(
 }
 
 /** Copies only arrangement fields so saving cannot replace a layout's identity or visibility. */
-function snapshotFields(layout: SerializedLayout): SerializedLayout {
+function snapshotFields(
+  layout: SerializedLayout,
+): Omit<types.PanelLayoutArrangement, "id"> {
   return {
     version: layout.version,
     layout: layout.layout,
-    panels: layout.panels,
+    panels: layout.panels.map((panel) => ({
+      ...panel,
+      params: panel.params ?? {},
+    })),
   };
+}
+
+/** Converts a locally cached layout into the shape the backend stores. */
+function wireLayout(layout: StoredPanelLayout): types.StoredPanelLayout {
+  return { ...layout, ...snapshotFields(layout) };
 }
 
 /** Shows or hides a saved layout while protecting the active workspace. */
 export function setLayoutShown(id: string, shown: boolean): Promise<boolean> {
   return editLayouts(
-    (layouts) =>
-      layouts.map((layout) =>
-        layout.id === id ? { ...layout, shownInSwitcher: shown } : layout,
-      ),
+    {
+      command: {
+        type: "SetPanelLayoutVisibility",
+        data: { id, shownInSwitcher: shown },
+      },
+      apply: updateLayout(id, (layout) => ({
+        ...layout,
+        shownInSwitcher: shown,
+      })),
+    },
     [id],
   );
 }
@@ -177,23 +241,49 @@ export function setLayoutShown(id: string, shown: boolean): Promise<boolean> {
 /** Removes an inactive saved layout and its retained working arrangement. */
 export function deleteNamedLayout(id: string): Promise<boolean> {
   return editLayouts(
-    (layouts) => layouts.filter((layout) => layout.id !== id),
+    {
+      command: { type: "DeletePanelLayout", data: id },
+      apply: (layouts) =>
+        layouts.some((layout) => layout.id === id)
+          ? layouts.filter((layout) => layout.id !== id)
+          : null,
+    },
     [id],
   );
 }
 
 /** Renames a layout without altering its saved or working arrangement. */
 export function renameNamedLayout(id: string, name: string): Promise<boolean> {
-  if (!name.trim()) return Promise.resolve(false);
+  const trimmed = name.trim();
+  if (!trimmed) return Promise.resolve(false);
   return editLayouts(
-    (layouts) =>
-      layouts.map((layout) =>
-        layout.id === id
-          ? { ...layout, name: name.trim(), updatedAt: Date.now() }
-          : layout,
-      ),
+    {
+      command: { type: "RenamePanelLayout", data: { id, name: trimmed } },
+      apply: updateLayout(id, (layout) => ({
+        ...layout,
+        name: trimmed,
+        updatedAt: Date.now(),
+      })),
+    },
     [id],
   );
+}
+
+/** Makes a layout the one devices open when they have no arrangement for this showfile. */
+export async function setDefaultLayout(id: string | null): Promise<boolean> {
+  try {
+    const result = await engineRuntime.sendCommandAndAwait({
+      module: "SettingsCommand",
+      command: { type: "SetDefaultPanelLayout", data: id ?? undefined },
+    });
+    if (result.outcome.type === "Failed")
+      throw new Error(result.outcome.data.message);
+    return true;
+  } catch (error) {
+    log.error("Could not set the default layout", error);
+    pushToast("error", "Could not set the default layout.");
+    return false;
+  }
 }
 
 /** Duplicates a saved snapshot as a visible independent layout without activating it. */
@@ -201,42 +291,38 @@ export function duplicateNamedLayout(
   id: string,
   name: string,
 ): Promise<boolean> {
-  return editLayouts(
-    (layouts) => {
-      const source = layouts.find((layout) => layout.id === id);
-      if (!source) return null;
-      return [
-        ...layouts,
-        {
-          ...source,
-          id: uuidv4(),
-          name,
-          shownInSwitcher: true,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ];
-    },
-    [id],
-  );
+  const source = getStoredLayout(id);
+  if (!source) return Promise.resolve(false);
+  const copy: StoredPanelLayout = {
+    ...source,
+    id: uuidv4(),
+    name,
+    shownInSwitcher: true,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  return addStoredLayout(copy, [id]);
 }
 
 /** Reorders visible layouts in place while preserving hidden layouts and working arrangements. */
 export function reorderLayouts(ids: string[]): Promise<boolean> {
-  return editLayouts((layouts) => {
-    const visible = layouts.filter((layout) => layout.shownInSwitcher);
-    if (
-      ids.length !== visible.length ||
-      new Set(ids).size !== ids.length ||
-      ids.some((id) => !visible.some((layout) => layout.id === id))
-    )
-      return null;
-    const ordered = ids.map(
-      (id) => visible.find((layout) => layout.id === id)!,
-    );
-    return layouts.map((layout) =>
-      layout.shownInSwitcher ? ordered.shift()! : layout,
-    );
+  return editLayouts({
+    command: { type: "ReorderPanelLayouts", data: ids },
+    apply: (layouts) => {
+      const visible = layouts.filter((layout) => layout.shownInSwitcher);
+      if (
+        ids.length !== visible.length ||
+        new Set(ids).size !== ids.length ||
+        ids.some((id) => !visible.some((layout) => layout.id === id))
+      )
+        return null;
+      const ordered = ids.map(
+        (id) => visible.find((layout) => layout.id === id)!,
+      );
+      return layouts.map((layout) =>
+        layout.shownInSwitcher ? ordered.shift()! : layout,
+      );
+    },
   });
 }
 
@@ -254,7 +340,9 @@ export async function initializeNamedLayout(
       !(await setLayoutShown(preferred.id, true))
     )
       return false;
-    return activateStoredLayout(api, preferred.id, { adoptCurrent: true });
+    return activateStoredLayout(api, preferred.id, {
+      adoptCurrent: hasRestoredArrangement,
+    });
   }
   if (layouts.length) {
     const next = layouts.find((layout) => layout.shownInSwitcher) ?? layouts[0];

@@ -21,7 +21,6 @@ export * as timelineJump from "../../features/timeline/model/timeline-jump";
 export * as visualizerContext from "../../features/visualizer/context/visualizer-context";
 export * as visualizerSettings from "../../features/visualizer/state/settings";
 export * as api from "../../lib/api";
-export * as dockviewActiveLayout from "../../lib/dockview-active-layout";
 export * as dockviewLayout from "../../lib/dockview-layout";
 export * as featureFlags from "../../lib/feature-flags";
 export * as keyboardShortcuts from "../../lib/keyboardShortcuts";

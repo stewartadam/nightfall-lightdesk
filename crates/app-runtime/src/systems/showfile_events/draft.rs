@@ -12,8 +12,7 @@ use std::{
 };
 
 use super::{
-    InitialShowfileAsset, ShowfileCleanSnapshotHash, ShowfileSaveOptions, ShowfileSaveState,
-    ShowfileSnapshot, apply_showfile_save_options,
+    InitialShowfileAsset, ShowfileCleanSnapshotHash, ShowfileSaveState, ShowfileSnapshot,
     assets::{
         normalize_scene_object_model_paths_for_showfile, paths_refer_to_same_file,
         remove_orphaned_showfile_object_snapshots, remove_orphaned_timeline_audio_assets,
@@ -205,11 +204,7 @@ pub(crate) fn save_draft_showfile_if_dirty(
     showfile_save_state: &mut ShowfileSaveState,
     showfile_name: Option<&str>,
     clean_snapshot_hash: &mut ShowfileCleanSnapshotHash,
-    save_options: &ShowfileSaveOptions,
 ) -> Result<DraftSaveOutcome, String> {
-    if save_options.active_panel_layout.is_some() {
-        apply_showfile_save_options(&mut showfile_save_state.desk_settings, save_options);
-    }
     let mut showfile_snapshot = snapshot_from_save_state(showfile_save_state);
     let current_hash =
         hash_showfile_snapshot_with_metadata(&showfile_snapshot, &clean_snapshot_hash.metadata)?;
