@@ -230,17 +230,55 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
               value={props.stats?.main.pull?.inFlight ? "in flight" : "idle"}
             />
           </div>
+          <h3 class="text-sm font-medium">Parameter stream</h3>
+          <div class="grid grid-cols-4 gap-3">
+            <MetricCard
+              label="Keyframes"
+              value={props.stats?.worker.parameterStream?.keyframes ?? "—"}
+            />
+            <MetricCard
+              label="Deltas"
+              value={props.stats?.worker.parameterStream?.deltas ?? "—"}
+            />
+            <MetricCard
+              label="Gaps"
+              value={props.stats?.worker.parameterStream?.gaps ?? "—"}
+              valueClass={`text-xl font-bold ${
+                (props.stats?.worker.parameterStream?.gaps ?? 0) > 0
+                  ? "text-yellow-500"
+                  : ""
+              }`}
+            />
+            <MetricCard
+              label="Drifted keyframes"
+              value={
+                props.stats?.worker.parameterStream?.driftedKeyframes ?? "—"
+              }
+              valueClass={`text-xl font-bold ${
+                (props.stats?.worker.parameterStream?.driftedKeyframes ?? 0) > 0
+                  ? "text-red-500"
+                  : ""
+              }`}
+            />
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            The worker applies every numbered ParameterState frame as it
+            arrives. A gap means a frame was missed, so the worker stops
+            delivering parameter state and asks the backend for a keyframe.
+            Drifted keyframes disagreed with the state the worker rebuilt
+            without a gap, and should always be zero.
+          </p>
           <h3 class="text-sm font-medium">Worker message totals</h3>
           <p class="text-xs text-gray-500 dark:text-gray-400">
             Decode and processing are worker-side exponential moving averages
-            (EMA). ParameterState snapshots are coalesced: newer snapshots
-            replace older ones before delivery, increasing Drop (cum.). This is
-            expected when updates arrive faster than the main thread consumes
-            them. Structural messages are queued separately and are not
-            coalesced. Queue overflow, resynchronization, or ParameterState
-            frames indexed by an outdated ParameterLayout can also cause drops;
-            the counter is not exclusively snapshot replacement. Delivery IDs
-            show main-thread received / worker staged.
+            (EMA). Snapshot messages are coalesced: newer snapshots replace
+            older ones before delivery, increasing Drop (cum.). This is expected
+            when updates arrive faster than the main thread consumes them.
+            Structural messages are queued separately and are not coalesced.
+            ParameterState frames are counted as dropped when they belong to an
+            outdated ParameterLayout, arrive after a gap, or arrive during a
+            resynchronization. Delivery IDs show main-thread received / worker
+            staged.
           </p>
           <TableScroll
             aria-label="Worker message totals scroll area"

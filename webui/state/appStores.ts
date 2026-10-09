@@ -24,6 +24,7 @@ import {
 import type { BrowserDemoRuntimeInfo } from "../lib/engine-runtime-protocol";
 import { setStoreAction } from "../lib/nanostore-action";
 import { registerPanelTabStatus } from "../lib/panel-tab-status";
+import type { ParameterStreamStats } from "../lib/parameter-stream";
 import type { SelectionTarget } from "../lib/selection-targets";
 import { testHooksEnabled } from "../lib/test-mode";
 import type * as types from "../types";
@@ -567,6 +568,7 @@ export interface WsStats {
     avgDecodeMs: number;
     queueDepth: number;
     lastStagedDeliveryMessageId: number;
+    parameterStream?: ParameterStreamStats;
     processing?: PerformanceMeasureStats;
   };
   main: {

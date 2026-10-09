@@ -28,10 +28,11 @@ import type {
   EngineRuntimeConfig,
   EngineRuntimeWorkerRequest,
 } from "./engine-runtime-protocol";
+import { parameterStateTransfers } from "./parameter-state-transfer";
 import {
-  packParameterStateFrame,
-  parameterStateTransfers,
-} from "./parameter-state-transfer";
+  PARAMETER_KEYFRAME_REQUEST_MODULE,
+  ParameterStream,
+} from "./parameter-stream";
 import { RollingTimingSamples } from "./rolling-timing-samples";
 
 /** Optional demo adapter; native workers do not import its WASM implementation. */
@@ -82,6 +83,8 @@ export function startEngineRuntimeWorker(
   const LAGGING_RECONNECT_BACKOFF_WINDOW_MS = 10_000;
   const PARAMETER_STATE_TYPE = "ParameterState";
   const PARAMETER_LAYOUT_TYPE = "ParameterLayout";
+  // Minimum spacing of keyframe requests, so a burst of deltas after one gap asks only once.
+  const KEYFRAME_REQUEST_INTERVAL_MS = 250;
 
   interface QueuedDecodedMessage {
     data: unknown;
@@ -209,9 +212,14 @@ export function startEngineRuntimeWorker(
   const latestDroppableByType = new Map<string, StagedSnapshot>();
   let structuralOverflowNotified = false;
   let stagingSuspendedForResync = false;
-  // Values frames are indexed by the most recent ParameterLayout; frames for any other
-  // layout cannot be resolved and are dropped when pulled.
-  let parameterLayoutId: number | null = null;
+  // Parameter frames form a numbered stream of keyframes and deltas, so every frame is applied as
+  // it arrives rather than coalesced; a pull delivers the rebuilt state when it changed.
+  const parameterStream = new ParameterStream();
+  let parameterStateDelivery: {
+    postedAtMs: number;
+    deliveryMessageId: number;
+  } | null = null;
+  let lastKeyframeRequestMs: number | null = null;
 
   // Heartbeat tracking for transport-level latency measurement
   const pendingHeartbeats: Map<number, number> = new Map();
@@ -238,21 +246,68 @@ export function startEngineRuntimeWorker(
     latestDroppableByType.clear();
     structuralOverflowNotified = false;
     stagingSuspendedForResync = false;
-    parameterLayoutId = null;
+    invalidateParameterStream();
+  }
+
+  /** Forgets rebuilt parameter state until the backend publishes a layout and keyframe again. */
+  function invalidateParameterStream(): void {
+    parameterStream.invalidate();
+    parameterStateDelivery = null;
   }
 
   /**
-   * Tracks the parameter layout the backend published last. A staged values frame indexed by an
-   * earlier layout is discarded, since the main thread could no longer resolve its slots.
+   * Applies one parameter frame in arrival order, asking the backend for a keyframe when a gap
+   * leaves the stream unable to apply deltas. Returns whether the frame went unused.
    */
-  function acceptParameterLayout(layoutId: number): void {
-    if (
-      parameterLayoutId !== layoutId &&
-      latestDroppableByType.delete(PARAMETER_STATE_TYPE)
-    ) {
+  function receiveParameterFrame(frame: ParameterStateFrame): boolean {
+    if (stagingSuspendedForResync) {
       droppedCount++;
+      return true;
     }
-    parameterLayoutId = layoutId;
+    const outcome = parameterStream.apply(frame);
+    if (outcome === "gap") requestParameterKeyframe();
+    if (outcome !== "applied") {
+      droppedCount++;
+      return true;
+    }
+    const deliveryMessageId = nextDeliveryMessageId++;
+    lastStagedDeliveryMessageId = deliveryMessageId;
+    parameterStateDelivery = {
+      postedAtMs: absolutePerformanceNowMs(),
+      deliveryMessageId,
+    };
+    return false;
+  }
+
+  /**
+   * Asks the backend to make its next parameter frame a keyframe, at most once per
+   * {@link KEYFRAME_REQUEST_INTERVAL_MS}. A socket that is not open yet needs no request: the
+   * resync after it connects brings a layout and keyframe anyway.
+   */
+  function requestParameterKeyframe(): void {
+    const now = performance.now();
+    if (
+      lastKeyframeRequestMs !== null &&
+      now - lastKeyframeRequestMs < KEYFRAME_REQUEST_INTERVAL_MS
+    ) {
+      return;
+    }
+    const request = { module: PARAMETER_KEYFRAME_REQUEST_MODULE, update: {} };
+    if (runtimeMode === "embedded-demo") {
+      // Submitting ticks the demo engine at once; deferring keeps that tick's publications from
+      // being processed in the middle of the batch that revealed the gap.
+      const generation = runtimeGeneration;
+      queueMicrotask(() => {
+        if (isRunning && generation === runtimeGeneration) {
+          embeddedRuntime?.submit(request);
+        }
+      });
+    } else if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(request));
+    } else {
+      return;
+    }
+    lastKeyframeRequestMs = now;
   }
 
   /** Returns a cross-context high-resolution timestamp in milliseconds. */
@@ -303,10 +358,7 @@ export function startEngineRuntimeWorker(
     return replacedExisting;
   }
 
-  /**
-   * Decodes staged snapshots into pullable messages, skipping any that fail to decode and
-   * parameter values frames indexed by a layout other than the latest one.
-   */
+  /** Decodes staged snapshots into pullable messages, skipping any that fail to decode. */
   function decodeStagedSnapshots(): QueuedDecodedMessage[] {
     const messages: QueuedDecodedMessage[] = [];
     for (const snapshot of latestDroppableByType.values()) {
@@ -324,15 +376,6 @@ export function startEngineRuntimeWorker(
         const decodeElapsed = performance.now() - decodeStart;
         decodeTimeMs += decodeElapsed;
         recordSnapshotDecode(snapshot.messageType, decodeElapsed);
-      }
-      if (
-        snapshot.messageType === PARAMETER_STATE_TYPE &&
-        (decoded as { data: ParameterStateFrame }).data.layout_id !==
-          parameterLayoutId
-      ) {
-        droppedCount++;
-        typeMetricsFor(snapshot.messageType, 0, 0).droppedCount++;
-        continue;
       }
       messages.push({
         data: decoded,
@@ -358,6 +401,7 @@ export function startEngineRuntimeWorker(
       droppedCount++;
       structuralQueue.length = 0;
       latestDroppableByType.clear();
+      invalidateParameterStream();
       stagingSuspendedForResync = true;
       if (!structuralOverflowNotified) {
         structuralOverflowNotified = true;
@@ -382,21 +426,26 @@ export function startEngineRuntimeWorker(
    * the engine published ahead of it.
    */
   function postPulledMessageBatch(): void {
-    const messages = structuralQueue.splice(0, structuralQueue.length);
+    const messages: unknown[] = structuralQueue.splice(
+      0,
+      structuralQueue.length,
+    );
     messages.push(...decodeStagedSnapshots());
 
     const transfers: ArrayBuffer[] = [];
-    const wireMessages = messages.map((message) => {
-      if (message.messageType !== PARAMETER_STATE_TYPE) return message;
-      const snapshot = message.data as { data: ParameterStateFrame };
-      const packedParameters = packParameterStateFrame(snapshot.data);
+    const packedParameters = parameterStream.takePacked();
+    if (packedParameters && parameterStateDelivery) {
       transfers.push(...parameterStateTransfers(packedParameters));
-      return { ...message, data: undefined, packedParameters };
-    });
+      messages.push({
+        ...parameterStateDelivery,
+        messageType: PARAMETER_STATE_TYPE,
+        packedParameters,
+      });
+    }
     self.postMessage(
       {
         type: "messageBatch",
-        messages: wireMessages,
+        messages,
       },
       { transfer: transfers },
     );
@@ -458,7 +507,7 @@ export function startEngineRuntimeWorker(
     // decoded and messages queued behind it are received without waiting on its decode.
     if (discriminator === DISCRIMINATOR_DROPPABLE) {
       const snapshotType = peekCborMessageType(cborData);
-      if (snapshotType !== undefined) {
+      if (snapshotType !== undefined && snapshotType !== PARAMETER_STATE_TYPE) {
         const wasDropped = stageSnapshot({ encoded: cborData }, snapshotType);
         const processElapsed = performance.now() - processStart;
         processingSamples.record(processElapsed, performance.now());
@@ -493,13 +542,15 @@ export function startEngineRuntimeWorker(
           pendingHeartbeats.delete(id);
         }
       }
+    } else if (msgType === PARAMETER_STATE_TYPE) {
+      wasDropped = receiveParameterFrame(
+        (decoded as { data: ParameterStateFrame }).data,
+      );
     } else if (discriminator === DISCRIMINATOR_DROPPABLE) {
       wasDropped = stageSnapshot({ decoded }, msgType);
     } else {
-      if (msgType === PARAMETER_LAYOUT_TYPE) {
-        acceptParameterLayout(
-          (decoded as { data: ParameterLayout }).data.layout_id,
-        );
+      if (msgType === PARAMETER_LAYOUT_TYPE && !stagingSuspendedForResync) {
+        parameterStream.setLayout((decoded as { data: ParameterLayout }).data);
       }
       wasDropped = stageDecodedMessage(decoded, msgType);
     }
@@ -519,8 +570,8 @@ export function startEngineRuntimeWorker(
     submitsAwaitingOpen = [];
 
     postStatus(Status.Connecting);
-    // A new connection may reach a different backend world, whose layouts restart.
-    parameterLayoutId = null;
+    // A new connection may reach a different backend world, whose layouts and frames restart.
+    invalidateParameterStream();
 
     const opened = new WebSocket(url);
     socket = opened;
@@ -676,7 +727,10 @@ export function startEngineRuntimeWorker(
       };
     }
 
-    const queueDepth = structuralQueue.length + latestDroppableByType.size;
+    const queueDepth =
+      structuralQueue.length +
+      latestDroppableByType.size +
+      (parameterStream.pending ? 1 : 0);
 
     self.postMessage({
       type: "stats",
@@ -687,6 +741,7 @@ export function startEngineRuntimeWorker(
           avgDecodeMs: rawCount > 0 ? decodeTimeMs / rawCount : 0,
           queueDepth,
           lastStagedDeliveryMessageId,
+          parameterStream: { ...parameterStream.stats },
           processing: processingSamples.summarize(
             "nightfall:websocket.worker-processing",
             now,

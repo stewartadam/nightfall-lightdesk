@@ -119,22 +119,10 @@ test("demo adapter shares worker delivery and honors cancellation", (t) => {
   callbacks?.processEncodedPublication(new Uint8Array([0, ...encode(payload)]));
   worker.send({ type: "pullFrame" });
   assert.deepEqual(worker.publications.at(-1).messages[0].data, payload);
-  /** Encodes one values frame with a single output slot. */
+  let seq = 0;
+  /** Encodes the next keyframe of a one-slot layout. */
   const values = (layoutId: number, red: number) =>
-    new Uint8Array([
-      1,
-      ...encode({
-        type: "ParameterState",
-        data: {
-          layout_id: layoutId,
-          output: new Uint8Array(Float32Array.of(red).buffer),
-          absolute_count: 0,
-          assertion_slots: new Uint8Array(),
-          assertion_kinds: new Uint8Array(),
-          assertion_values: new Uint8Array(),
-        },
-      }),
-    ]);
+    engineEncoded(1, "ParameterState", keyframeWithRed(layoutId, ++seq, red));
   /** Encodes a layout with one fixture whose only slot is `attribute`. */
   const layout = (layoutId: number, attribute: string) =>
     new Uint8Array([
@@ -154,7 +142,7 @@ test("demo adapter shares worker delivery and honors cancellation", (t) => {
   callbacks?.processEncodedPublication(values(1, 255));
   worker.send({ type: "pullFrame" });
   const messages = worker.publications.at(-1).messages;
-  assert.equal(messages.length, 2, "the layout and the newest values frame");
+  assert.equal(messages.length, 2, "the layout and the latest rebuilt state");
   assert.equal(messages[0].data.type, "ParameterLayout");
   assert.equal(messages[1].data, undefined);
   const decoder = new ParameterStateDecoder();
@@ -177,7 +165,7 @@ test("demo adapter shares worker delivery and honors cancellation", (t) => {
   assert.deepEqual(
     relayout.map((message: { data?: { type: string } }) => message.data?.type),
     ["ParameterLayout"],
-    "values staged or received for an earlier layout are dropped",
+    "state rebuilt for an earlier layout is dropped with that layout",
   );
   worker.send({ type: "submit", data: { update: "test" } });
   assert.deepEqual(submitted, { update: "test" });
@@ -194,6 +182,42 @@ function engineEncoded(discriminator: number, type: string, data: unknown) {
     0xa2,
     ...entries.flatMap((entry) => [...entry]),
   ]);
+}
+
+/** Builds keyframe `seq` of a one-slot layout with the given red output and no assertions. */
+function keyframeWithRed(layoutId: number, seq: number, red: number) {
+  return {
+    layout_id: layoutId,
+    seq,
+    keyframe: true,
+    verifiable: false,
+    changed_slots: new Uint8Array(),
+    output: new Uint8Array(Float32Array.of(red).buffer),
+    assertions_included: true,
+    absolute_count: 0,
+    assertion_slots: new Uint8Array(),
+    assertion_kinds: new Uint8Array(),
+    assertion_values: new Uint8Array(),
+  };
+}
+
+/** Builds delta `seq` of a one-slot layout that changes red and leaves assertions alone. */
+function deltaWithRed(layoutId: number, seq: number, red: number) {
+  return {
+    ...keyframeWithRed(layoutId, seq, red),
+    keyframe: false,
+    changed_slots: new Uint8Array(Uint32Array.of(0).buffer),
+    assertions_included: false,
+  };
+}
+
+/** Encodes the backend's one-slot layout with the Red attribute. */
+function redLayout(layoutId: number) {
+  return engineEncoded(0, "ParameterLayout", {
+    layout_id: layoutId,
+    fixtures: [{ fixture_uid: "fixture", elements: [["Red"]] }],
+    assertion_variants: ["Absolute"],
+  });
 }
 
 /**
@@ -221,28 +245,13 @@ test("pulls deliver command results with the newest staged snapshot", (t) => {
     type: "start",
     config: { mode: "embedded-demo", sampleId: "test", showfileUrl: "/s" },
   });
-  /** Builds a one-slot values frame for `layoutId` with the given red output. */
-  const frameWithRed = (layoutId: number, red: number) => ({
-    layout_id: layoutId,
-    output: new Uint8Array(Float32Array.of(red).buffer),
-    absolute_count: 0,
-    assertion_slots: new Uint8Array(),
-    assertion_kinds: new Uint8Array(),
-    assertion_values: new Uint8Array(),
-  });
   const result = { command_id: "c1", outcome: { type: "Succeeded" } };
+  callbacks?.processEncodedPublication(redLayout(1));
   callbacks?.processEncodedPublication(
-    engineEncoded(0, "ParameterLayout", {
-      layout_id: 1,
-      fixtures: [{ fixture_uid: "fixture", elements: [["Red"]] }],
-      assertion_variants: ["Absolute"],
-    }),
+    engineEncoded(1, "ParameterState", keyframeWithRed(1, 1, 0)),
   );
   callbacks?.processEncodedPublication(
-    engineEncoded(1, "ParameterState", frameWithRed(1, 0)),
-  );
-  callbacks?.processEncodedPublication(
-    engineEncoded(1, "ParameterState", frameWithRed(1, 255)),
+    engineEncoded(1, "ParameterState", keyframeWithRed(1, 2, 255)),
   );
   callbacks?.processEncodedPublication(
     engineEncoded(0, "CommandResult", result),
@@ -269,13 +278,13 @@ test("pulls deliver command results with the newest staged snapshot", (t) => {
   });
 
   callbacks?.processEncodedPublication(
-    engineEncoded(1, "ParameterState", frameWithRed(2, 128)),
+    engineEncoded(1, "ParameterState", keyframeWithRed(2, 3, 128)),
   );
   worker.send({ type: "pullFrame" });
   assert.deepEqual(
     worker.publications.at(-1).messages,
     [],
-    "a snapshot staged encoded is dropped on pull when its layout is not the latest",
+    "a frame for a layout other than the latest is never delivered",
   );
 });
 
@@ -405,6 +414,154 @@ test("lagging disconnects reconnect immediately once", (t) => {
   reconnectAndClose();
   assert.deepEqual(reconnectDelays(), [0, 1000, 1000]);
 
+  worker.send({ type: "stop" });
+});
+
+/**
+ * Deltas are applied as they arrive, so a pull delivers state built from every frame rather than
+ * only the newest one. A missed frame stops delivery and sends one keyframe request however many
+ * deltas follow, and the next keyframe resumes delivery.
+ */
+test("parameter frame gaps request a keyframe", (t) => {
+  const worker = workerHarness(t);
+  installFakeSocket(t);
+  startEngineRuntimeWorker();
+  worker.send({
+    type: "start",
+    config: { mode: "remote", websocketUrl: "ws://backend/ws" },
+  });
+  const socket = FakeSocket.instances[0];
+  socket.open();
+  /** Delivers one engine publication through the socket. */
+  const receive = (bytes: Uint8Array) =>
+    socket.onmessage?.({ data: bytes.slice().buffer } as MessageEvent);
+  /** Pulls a batch and returns the red output its parameter state carries, if any. */
+  const pulledRed = () => {
+    worker.send({ type: "pullFrame" });
+    const batch = worker.publications.at(-1).messages;
+    const packed = batch.find(
+      (message: { packedParameters?: unknown }) => message.packedParameters,
+    )?.packedParameters;
+    return packed?.output[0];
+  };
+  const keyframeRequests = () =>
+    socket.sent.filter((data) => data.includes("ParameterKeyframeRequest"));
+
+  receive(redLayout(1));
+  receive(engineEncoded(1, "ParameterState", keyframeWithRed(1, 1, 10)));
+  receive(engineEncoded(1, "ParameterState", deltaWithRed(1, 2, 20)));
+  assert.equal(pulledRed(), 20);
+  assert.equal(pulledRed(), undefined, "unchanged state is not redelivered");
+
+  receive(engineEncoded(1, "ParameterState", deltaWithRed(1, 4, 40)));
+  receive(engineEncoded(1, "ParameterState", deltaWithRed(1, 5, 50)));
+  assert.equal(pulledRed(), undefined, "deltas after a gap are not applied");
+  assert.deepEqual(keyframeRequests(), [
+    JSON.stringify({ module: "ParameterKeyframeRequest", update: {} }),
+  ]);
+
+  receive(engineEncoded(1, "ParameterState", keyframeWithRed(1, 6, 60)));
+  receive(engineEncoded(1, "ParameterState", deltaWithRed(1, 7, 70)));
+  assert.equal(pulledRed(), 70);
+  worker.send({ type: "stop" });
+});
+
+/**
+ * After a resync request or a new layout, no parameter state is delivered until a keyframe for
+ * the current layout arrives, and a layout and the state built on it arrive in that order.
+ */
+test("resyncs and relayouts withhold state until a keyframe", (t) => {
+  const worker = workerHarness(t);
+  let callbacks: Parameters<EmbeddedRuntimeFactory>[0] | undefined;
+  startEngineRuntimeWorker((hooks) => {
+    callbacks = hooks;
+    return {
+      /** Skip demo loading; the test publishes engine output directly. */
+      async start() {},
+      /** No adapter resources to release. */
+      stop() {},
+      /** Keyframe requests are covered by another test. */
+      submit() {},
+      /** Leave periodic metrics inactive in this protocol test. */
+      postInfo() {},
+    };
+  });
+  worker.send({
+    type: "start",
+    config: { mode: "embedded-demo", sampleId: "test", showfileUrl: "/s" },
+  });
+  /** Publishes one engine message to the worker. */
+  const publish = (bytes: Uint8Array) =>
+    callbacks?.processEncodedPublication(bytes);
+  /** Pulls a batch and returns its message types in delivery order. */
+  const pulledTypes = () => {
+    worker.send({ type: "pullFrame" });
+    return worker.publications
+      .at(-1)
+      .messages.map((message: { messageType: string }) => message.messageType);
+  };
+
+  publish(redLayout(1));
+  publish(engineEncoded(1, "ParameterState", keyframeWithRed(1, 1, 10)));
+  assert.deepEqual(pulledTypes(), ["ParameterLayout", "ParameterState"]);
+
+  worker.send({ type: "resumeAfterResyncRequest" });
+  publish(engineEncoded(1, "ParameterState", deltaWithRed(1, 2, 20)));
+  assert.deepEqual(pulledTypes(), [], "state waits for the resync's layout");
+
+  publish(redLayout(2));
+  publish(engineEncoded(1, "ParameterState", deltaWithRed(1, 3, 30)));
+  assert.deepEqual(pulledTypes(), ["ParameterLayout"]);
+
+  publish(engineEncoded(1, "ParameterState", keyframeWithRed(2, 4, 40)));
+  publish(redLayout(3));
+  assert.deepEqual(
+    pulledTypes(),
+    ["ParameterLayout"],
+    "state for a replaced layout is never delivered",
+  );
+  worker.send({ type: "stop" });
+});
+
+/**
+ * In the demo engine a keyframe request runs an engine tick, so it is deferred until the
+ * publication batch that revealed the gap has been processed.
+ */
+test("demo keyframe requests wait for the current batch", async (t) => {
+  const worker = workerHarness(t);
+  let callbacks: Parameters<EmbeddedRuntimeFactory>[0] | undefined;
+  const submitted: unknown[] = [];
+  startEngineRuntimeWorker((hooks) => {
+    callbacks = hooks;
+    return {
+      /** Skip demo loading; the test publishes engine output directly. */
+      async start() {},
+      /** No adapter resources to release. */
+      stop() {},
+      /** Record forwarded keyframe requests. */
+      submit(data) {
+        submitted.push(data);
+      },
+      /** Leave periodic metrics inactive in this protocol test. */
+      postInfo() {},
+    };
+  });
+  worker.send({
+    type: "start",
+    config: { mode: "embedded-demo", sampleId: "test", showfileUrl: "/s" },
+  });
+  callbacks?.processEncodedPublication(redLayout(1));
+  callbacks?.processEncodedPublication(
+    engineEncoded(1, "ParameterState", keyframeWithRed(1, 1, 10)),
+  );
+  callbacks?.processEncodedPublication(
+    engineEncoded(1, "ParameterState", deltaWithRed(1, 3, 30)),
+  );
+  assert.deepEqual(submitted, [], "nothing is submitted mid-batch");
+  await Promise.resolve();
+  assert.deepEqual(submitted, [
+    { module: "ParameterKeyframeRequest", update: {} },
+  ]);
   worker.send({ type: "stop" });
 });
 

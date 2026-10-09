@@ -67,6 +67,15 @@ async function seedWebsocketStats(page: Page): Promise<void> {
         avgDecodeMs: 1.25,
         queueDepth: 2,
         lastStagedDeliveryMessageId: 1234,
+        parameterStream: {
+          keyframes: 41,
+          deltas: 2307,
+          gaps: 1,
+          discarded: 2,
+          verifiedKeyframes: 40,
+          driftedKeyframes: 0,
+          driftedSlots: 0,
+        },
       },
       main: {
         processedCount: 100,
@@ -214,8 +223,21 @@ test("websocket delivery lag is exposed as Performance measures", async ({
     timings.getByRole("row", { name: /Worker processing/ }),
   ).toContainText("—");
   await expect(
-    panel.getByText(/ParameterState snapshots are coalesced/),
+    panel.getByText(/Snapshot messages are coalesced/),
   ).toBeVisible();
+  await expect(
+    panel.getByText("Drifted keyframes", { exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByText("2307")).toBeVisible();
+  await expect(
+    panel.getByText(/asks the backend for a keyframe/),
+  ).toBeVisible();
+  await panel
+    .getByText(/asks the backend for a keyframe/)
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.screenshot({
+    path: test.info().outputPath("parameter-stream-metrics.png"),
+  });
   await expect(panel.getByText(/not one-way delivery/)).toBeVisible();
   await expect(
     panel.getByRole("button", { name: "Processing (EMA)" }),
