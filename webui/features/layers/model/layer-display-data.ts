@@ -18,6 +18,11 @@ import type { FilterableGridColumn } from "../../../lib/datagrid-filtering";
 import { getFixtureAttributeNames } from "../../../lib/fixture-attributes";
 import { startPerformanceMeasure } from "../../../lib/performance-marks";
 import { normalizeAttributeName } from "../../../lib/utils";
+import type {
+  LayerElementComputedState,
+  LayerElementParameterValues,
+  LayerState,
+} from "../../../lib/ws/types";
 import type { LayerNavigationRequest } from "../../../state/appStores";
 import type * as types from "../../../types";
 
@@ -115,8 +120,8 @@ export function memoizeLayerColumns<TRevision>(
 /** Adds normalized parameter names from element parameter maps to an attribute set. */
 function collectElementParameterAttributes(
   values:
-    | readonly types.OutboundElementParameterValues[]
-    | readonly types.OutboundElementComputedState[],
+    | readonly LayerElementParameterValues[]
+    | readonly LayerElementComputedState[],
   attributes: Set<string>,
 ): void {
   for (const fixtureValues of values) {
@@ -129,9 +134,7 @@ function collectElementParameterAttributes(
 }
 
 /** Returns the layer attribute names without constructing display rows or cells. */
-export function collectLayerAttributeNames(
-  layer: types.OutboundLayerState,
-): string[] {
+export function collectLayerAttributeNames(layer: LayerState): string[] {
   const attributes = new Set<string>();
   collectElementParameterAttributes(layer.asserted_absolute_values, attributes);
   collectElementParameterAttributes(layer.asserted_relative_values, attributes);
@@ -140,9 +143,7 @@ export function collectLayerAttributeNames(
 }
 
 /** Returns whether a layer has any rendered fixture rows. */
-export function layerHasDisplayContent(
-  layer: types.OutboundLayerState,
-): boolean {
+export function layerHasDisplayContent(layer: LayerState): boolean {
   return (
     layer.asserted_absolute_values.length > 0 ||
     layer.asserted_relative_values.length > 0 ||
@@ -152,9 +153,9 @@ export function layerHasDisplayContent(
 
 /** Returns the largest element count present for one fixture in a layer. */
 function layerFixtureElementCount(
-  absSource: types.OutboundElementParameterValues | undefined,
-  relSource: types.OutboundElementParameterValues | undefined,
-  outSource: types.OutboundElementComputedState | undefined,
+  absSource: LayerElementParameterValues | undefined,
+  relSource: LayerElementParameterValues | undefined,
+  outSource: LayerElementComputedState | undefined,
 ): number {
   return Math.max(
     absSource?.parameters?.length ?? 0,
@@ -174,7 +175,7 @@ function fixtureStructureRevision(fixture: types.Fixture): unknown[] {
 
 /** Returns the row and column structure revision for a layer without building rows. */
 export function layerDisplayStructureRevision(
-  layer: types.OutboundLayerState,
+  layer: LayerState,
   expanded: Set<string>,
   fixtureList: Record<string, types.Fixture>,
 ): string {
@@ -182,8 +183,8 @@ export function layerDisplayStructureRevision(
   /** Records the largest parameter row count found for each fixture UID. */
   const recordElementCount = (
     values:
-      | readonly types.OutboundElementParameterValues[]
-      | readonly types.OutboundElementComputedState[],
+      | readonly LayerElementParameterValues[]
+      | readonly LayerElementComputedState[],
   ): void => {
     for (const item of values) {
       elementCounts.set(
@@ -238,7 +239,7 @@ function flattenLayerRows(
 
 /** Builds Layer View row and column structure without materializing per-cell values. */
 export function createLayerDisplayStructure(
-  layer: types.OutboundLayerState,
+  layer: LayerState,
   expanded: Set<string>,
   fixtureList: Record<string, types.Fixture>,
 ): LayerDisplayRowsData {
@@ -251,17 +252,17 @@ export function createLayerDisplayStructure(
     return empty;
   }
 
-  const absMap = new Map<string, types.OutboundElementParameterValues>();
+  const absMap = new Map<string, LayerElementParameterValues>();
   for (const item of layer.asserted_absolute_values) {
     absMap.set(item.fixture_uid, item);
   }
 
-  const relMap = new Map<string, types.OutboundElementParameterValues>();
+  const relMap = new Map<string, LayerElementParameterValues>();
   for (const item of layer.asserted_relative_values) {
     relMap.set(item.fixture_uid, item);
   }
 
-  const outMap = new Map<string, types.OutboundElementComputedState>();
+  const outMap = new Map<string, LayerElementComputedState>();
   for (const item of layer.computed_values) {
     outMap.set(item.fixture_uid, item);
   }

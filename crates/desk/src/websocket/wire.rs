@@ -6,56 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Desk websocket wire schemas and attribute-key serialization helpers.
+//! Desk websocket wire schemas.
 
 use super::*;
-
-mod attribute_keyed_map_vec {
-    use std::collections::HashMap;
-    use std::str::FromStr;
-
-    use nightfall_dmx::prelude::Attribute;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    /// Serialize per-element attribute maps using canonical keys, preserving custom labels.
-    pub fn serialize<S, V>(maps: &[HashMap<Attribute, V>], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        V: Serialize,
-    {
-        let keyed: Vec<HashMap<String, &V>> = maps
-            .iter()
-            .map(|map| {
-                map.iter()
-                    .map(|(attribute, value)| (attribute.key(), value))
-                    .collect()
-            })
-            .collect();
-        keyed.serialize(serializer)
-    }
-
-    /// Deserialize per-element attribute maps from canonical keys, treating unknown keys as custom labels.
-    pub fn deserialize<'de, D, V>(deserializer: D) -> Result<Vec<HashMap<Attribute, V>>, D::Error>
-    where
-        D: Deserializer<'de>,
-        V: Deserialize<'de>,
-    {
-        let keyed = Vec::<HashMap<String, V>>::deserialize(deserializer)?;
-        Ok(keyed
-            .into_iter()
-            .map(|map| {
-                map.into_iter()
-                    .map(|(key, value)| (attribute_from_key(key), value))
-                    .collect()
-            })
-            .collect())
-    }
-
-    /// Resolve a serialized attribute key back into an Attribute value.
-    fn attribute_from_key(key: String) -> Attribute {
-        Attribute::from_str(&key).unwrap_or(Attribute::Custom { label: key })
-    }
-}
 
 /// Local outbound clip representation used for UI serialization
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -265,7 +218,7 @@ pub(super) enum DeskWsMessage<'a> {
     #[allow(dead_code)]
     BlueprintCommand(&'a BlueprintCommand),
     /// Layer stack with computed values (sorted by priority)
-    LayerStack(&'a [OutboundLayerState]),
+    LayerStack(&'a OutboundLayerStack),
     /// Engine performance metrics
     Metrics(&'a DeskMetrics),
     /// Active instances list
@@ -287,50 +240,23 @@ pub struct OutboundBlueprintDependency {
     pub dependents: Vec<String>,
 }
 
-/// Typeshare helper to avoid tuple types
-#[serde_with::serde_as]
+/// Layer stack snapshot whose parameter values are indexed by the slots of a
+/// [`ParameterLayout`](nightfall_fixtures::parameter_state::ParameterLayout).
+///
+/// Clients resolve each slot to its fixture, element and attribute with the layout they already
+/// hold for parameter state frames, so the snapshot carries no fixture ids or attribute names.
+#[derive(Debug, Default, Serialize)]
 #[typeshare::typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct OutboundElementParameterValues {
-    /// Unique ID of the fixture this state applies to
-    #[serde(with = "nightfall::serde_uuid_simple")]
-    pub(super) fixture_uid: Uuid,
-    /// Contains the attributes for each fixture element
-    #[typeshare(serialized_as = "Array<Record<String, ParameterValue>>")]
-    #[serde(with = "attribute_keyed_map_vec")]
-    pub(super) parameters: Vec<HashMap<Attribute, ParameterValue>>,
-}
-
-/// Typeshare helper to avoid tuple types
-#[typeshare::typeshare]
-#[serde_with::serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct OutboundElementComputedState {
-    /// Unique ID of the fixture this state applies to
-    #[serde(with = "nightfall::serde_uuid_simple")]
-    pub(super) fixture_uid: Uuid,
-    /// Contains the attributes for each fixture element
-    #[typeshare(serialized_as = "Array<Record<String, ParameterDmxValue>>")]
-    #[serde(with = "attribute_keyed_map_vec")]
-    pub(super) parameters: Vec<HashMap<Attribute, ParameterDmxValue>>,
-}
-
-/// Typeshare helper to avoid tuple types
-#[serde_with::serde_as]
-#[typeshare::typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct OutboundElementTransitionState {
-    /// Unique ID of the fixture this state applies to
-    #[serde(with = "nightfall::serde_uuid_simple")]
-    pub(super) fixture_uid: Uuid,
-    /// Contains transition-active flags for each fixture element attribute
-    #[typeshare(serialized_as = "Array<Record<String, boolean>>")]
-    #[serde(with = "attribute_keyed_map_vec")]
-    pub(super) parameters: Vec<HashMap<Attribute, bool>>,
+pub(super) struct OutboundLayerStack {
+    /// Layout the slots are indexed by. Clients holding a different layout discard the snapshot;
+    /// the backend sends a new one after every layout change.
+    pub layout_id: u32,
+    /// Layers in compositing order, lowest priority first.
+    pub layers: Vec<OutboundLayerState>,
 }
 
 /// Wire representation of a single layer's computation information sent to the UI
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[typeshare::typeshare]
 pub(super) struct OutboundLayerState {
     /// Creator name of the layer (cue / programmer / etc.)
@@ -343,14 +269,68 @@ pub(super) struct OutboundLayerState {
     pub is_releasing: bool,
     /// Current source-specific playback position for playback-backed layers.
     pub runtime_position: Option<InstancePosition>,
-    /// Asserted absolute parameter values for this layer, grouped by fixture element
-    pub asserted_absolute_values: Vec<OutboundElementParameterValues>,
-    /// Asserted relative parameter values for this layer, grouped by fixture element
-    pub asserted_relative_values: Vec<OutboundElementParameterValues>,
+    /// Asserted absolute parameter values for this layer.
+    pub asserted_absolute: PackedLayerAssertions,
+    /// Asserted relative parameter values for this layer.
+    pub asserted_relative: PackedLayerAssertions,
     /// Backend-owned lookahead assertions, such as lookahead values.
-    pub lookahead_asserted_values: Vec<OutboundElementParameterValues>,
-    /// Computed parameter values for this layer, grouped by fixture element
-    pub computed_values: Vec<OutboundElementComputedState>,
-    /// Transition-active flags for computed parameter values in this layer
-    pub computed_transitioning: Vec<OutboundElementTransitionState>,
+    pub lookahead_asserted: PackedLayerAssertions,
+    /// Layout slot of each computed absolute value as a `u32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub computed_slots: PackedBytes,
+    /// Computed absolute value of each slot in `computed_slots` as an `f32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub computed_values: PackedBytes,
+    /// Layout slot of each parameter whose computed value is still transitioning, as a `u32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub transitioning_slots: PackedBytes,
+}
+
+/// Asserted parameter values of one layer, packed like parameter state frame assertions.
+#[derive(Debug, Default, Serialize)]
+#[typeshare::typeshare]
+pub(super) struct PackedLayerAssertions {
+    /// Layout slot of each assertion as a `u32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub slots: PackedBytes,
+    /// Kind code of each assertion as a `u8`, indexing the layout's `assertion_variants`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub kinds: PackedBytes,
+    /// Value or offset of each assertion as an `f32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub values: PackedBytes,
+}
+
+impl PackedLayerAssertions {
+    /// Appends one assertion for `slot`, encoded with the parameter state assertion kind codes.
+    pub(super) fn push(&mut self, slot: u32, value: &ParameterValue) {
+        let (kind, number) = assertion_kind(value);
+        self.slots.push_u32(slot);
+        self.kinds.0.push(kind);
+        self.values.push_f32(number);
+    }
+}
+
+/// Little-endian packed numbers serialized as one binary string, so clients can view them as a
+/// typed array instead of decoding each value.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(super) struct PackedBytes(pub Vec<u8>);
+
+impl PackedBytes {
+    /// Appends a `u32` in little-endian order.
+    pub(super) fn push_u32(&mut self, value: u32) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+
+    /// Appends an `f32` in little-endian order.
+    pub(super) fn push_f32(&mut self, value: f32) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+impl Serialize for PackedBytes {
+    /// Writes the bytes through `serialize_bytes`, which CBOR encodes as a single byte string.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(&self.0)
+    }
 }

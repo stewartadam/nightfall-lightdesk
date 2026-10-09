@@ -38,10 +38,8 @@ pub(crate) fn handle_resync_state(
     exec_query: Query<&Clip>,
     blueprint_data_provider: Res<DataProvider<Blueprint>>,
     blueprint_reference_index: Res<BlueprintReferenceIndex>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
     resync_settings: ResyncSettingsParams,
-    parameters_query: Query<&Parameter>,
-    layers: Query<super::layers::LayerSnapshotData>,
+    mut layer_stack_publication: ResMut<LayerStackPublication>,
     instance_query: Query<super::instances::InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
     control_params: ResyncControlParams,
@@ -84,22 +82,24 @@ pub(crate) fn handle_resync_state(
         &broadcaster,
     );
     send_available_usb_dmx_devices(&resync_settings.available_usb_dmx_devices.0, &broadcaster);
-    send_layer_stack(
-        &fixture_data_provider,
-        parameters_query,
-        layers,
-        None,
-        &broadcaster,
-    );
+    // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
+    layer_stack_publication.invalidate();
     send_undo_state(undo_manager, &broadcaster);
     flush_pending_ui_notifications(pending_ui_notifications.as_deref_mut(), &broadcaster);
 }
 
+/// State the layer stack snapshot is built from and change-checked against.
+#[derive(SystemParam)]
+pub(crate) struct LayerStackParams<'w, 's> {
+    projection: Res<'w, ParameterStateProjection>,
+    parameters: Query<'w, 's, &'static Parameter>,
+    layers: Query<'w, 's, super::layers::LayerSnapshotData>,
+    publication: ResMut<'w, LayerStackPublication>,
+}
+
 /// Emits rate-limited droppable metrics, layer, and playback snapshots.
 pub(crate) fn handle_low_freq_updates(
-    fixtures_data_provider: Res<FixtureDataProviderExt>,
-    parameters_query: Query<&Parameter>,
-    layers: Query<super::layers::LayerSnapshotData>,
+    mut layer_stack: LayerStackParams,
     io_settings: Res<IoRuntimeSettings>,
     network_interface_state: Res<NetworkInterfaceState>,
     output_frames: Res<OutputDmxFrames>,
@@ -138,9 +138,10 @@ pub(crate) fn handle_low_freq_updates(
         &broadcaster,
     );
     send_layer_stack(
-        &fixtures_data_provider,
-        parameters_query,
-        layers,
+        &layer_stack.projection,
+        layer_stack.parameters,
+        layer_stack.layers,
+        &mut layer_stack.publication,
         Some(&mut performance_diagnostics),
         &broadcaster,
     );

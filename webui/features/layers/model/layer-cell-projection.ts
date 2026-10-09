@@ -16,23 +16,15 @@ import {
   normalizeAttributeName,
   resolveParameterValue,
 } from "../../../lib/utils";
+import type { LayerState } from "../../../lib/ws/types";
 import type * as types from "../../../types";
 import type { LayerDisplayRow } from "./layer-display-data";
 
 export interface LayerValueMaps {
-  absolute: Map<
-    string,
-    types.OutboundLayerState["asserted_absolute_values"][number]
-  >;
-  relative: Map<
-    string,
-    types.OutboundLayerState["asserted_relative_values"][number]
-  >;
-  output: Map<string, types.OutboundLayerState["computed_values"][number]>;
-  transitioning: Map<
-    string,
-    types.OutboundLayerState["computed_transitioning"][number]
-  >;
+  absolute: Map<string, LayerState["asserted_absolute_values"][number]>;
+  relative: Map<string, LayerState["asserted_relative_values"][number]>;
+  output: Map<string, LayerState["computed_values"][number]>;
+  transitioning: Map<string, LayerState["computed_transitioning"][number]>;
   sourceState: {
     winningSource: ReturnType<typeof fixtureValueSourceForLayer>;
     hasShadowedManual: false;
@@ -41,9 +33,7 @@ export interface LayerValueMaps {
 }
 
 /** Indexes one layer snapshot by fixture UID for visible-cell lookups. */
-export function createLayerValueMaps(
-  layer: types.OutboundLayerState,
-): LayerValueMaps {
+export function createLayerValueMaps(layer: LayerState): LayerValueMaps {
   return {
     absolute: new Map(
       layer.asserted_absolute_values.map((item) => [item.fixture_uid, item]),

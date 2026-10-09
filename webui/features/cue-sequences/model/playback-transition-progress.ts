@@ -8,6 +8,7 @@
 
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { durationToSeconds } from "../../../lib/duration";
+import type { LayerState } from "../../../lib/ws/types";
 import * as types from "../../../types";
 
 export type PlaybackTransitionPhase = "in" | "out";
@@ -105,9 +106,9 @@ function newestPlayback(
 
 /** Returns the topmost layer matching the supplied predicate. */
 function topmostLayer(
-  layers: readonly types.OutboundLayerState[],
-  matches: (layer: types.OutboundLayerState) => boolean,
-): types.OutboundLayerState | undefined {
+  layers: readonly LayerState[],
+  matches: (layer: LayerState) => boolean,
+): LayerState | undefined {
   for (let index = layers.length - 1; index >= 0; index -= 1) {
     const layer = layers[index];
     if (matches(layer)) return layer;
@@ -118,7 +119,7 @@ function topmostLayer(
 /** Returns the active instance whose layer is visibly rendering the requested cue. */
 export function findTopmostCuePlayback(
   instances: Record<string, types.InstanceInfo>,
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   cueUid: string,
 ): types.InstanceInfo | undefined {
   const normalizedCueUid = normalizePlaybackUid(cueUid);
@@ -167,7 +168,7 @@ export function findTopmostCuePlayback(
 /** Returns the active instance whose layer is visibly rendering the requested sequence. */
 export function findTopmostSequencePlayback(
   instances: Record<string, types.InstanceInfo>,
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   sequenceUid: string,
 ): types.InstanceInfo | undefined {
   const normalizedSequenceUid = normalizePlaybackUid(sequenceUid);

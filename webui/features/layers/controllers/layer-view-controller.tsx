@@ -51,6 +51,7 @@ import {
 import { makeColorSwatchCell } from "../../../lib/datagrid-rich-cells";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
 import { useSharedStore } from "../../../lib/use-shared-store";
+import type { LayerState } from "../../../lib/ws/types";
 import type { LayerNavigationRequest } from "../../../state/appStores";
 import { attributeMetadata, fixtures } from "../../../state/appStores";
 import * as types from "../../../types";
@@ -72,7 +73,7 @@ import {
 export type LayerViewProps = {
   contentOnly?: boolean;
   expandedFixtures?: Accessor<Set<string>>;
-  layer: types.OutboundLayerState | Accessor<types.OutboundLayerState>;
+  layer: LayerState | Accessor<LayerState>;
   summary?: LayerViewSummary | Accessor<LayerViewSummary>;
   layerIndex: number | Accessor<number>;
   panelId: string;
@@ -84,7 +85,7 @@ export type LayerViewProps = {
   showColumnVisibilityMenu?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
   onNavigationHandled?: (requestId: number) => void;
-  onNavigateToLayerObject?: (layer: types.OutboundLayerState) => void;
+  onNavigateToLayerObject?: (layer: LayerState) => void;
 };
 
 type LayerViewSummary = {
@@ -100,7 +101,7 @@ function resolveMaybeAccessor<T>(value: T | Accessor<T>): T {
 
 type LayerDisplayStructureInput = {
   revision: string;
-  layer: types.OutboundLayerState;
+  layer: LayerState;
   expanded: Set<string>;
   fixtureList: Record<string, types.Fixture>;
 };

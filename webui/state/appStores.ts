@@ -27,6 +27,7 @@ import { registerPanelTabStatus } from "../lib/panel-tab-status";
 import type { ParameterStreamStats } from "../lib/parameter-stream";
 import type { SelectionTarget } from "../lib/selection-targets";
 import { testHooksEnabled } from "../lib/test-mode";
+import type { LayerState } from "../lib/ws/types";
 import type * as types from "../types";
 import type * as flowTypes from "../types/index";
 import {
@@ -410,7 +411,7 @@ export const timelineBeatgridDetectionStatus =
   deepMap<TimelineBeatgridDetectionMap>({});
 export const timelineBeatgridPreview = deepMap<TimelineBeatgridPreviewMap>({});
 const timelineBeatgridShiftState = deepMap<TimelineBeatgridShiftMap>({});
-export const layerStack = atom<types.OutboundLayerState[]>([]);
+export const layerStack = atom<LayerState[]>([]);
 export const layerNavigationRequest = atom<LayerNavigationRequest | null>(null);
 export const layerObjectNavigationRequest =
   atom<LayerObjectNavigationRequest | null>(null);

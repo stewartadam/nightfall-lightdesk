@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type * as types from "../types";
 import { ObjectType } from "../types";
 import { normalizeAttributeName } from "./utils";
+import type { LayerElementParameterValues, LayerState } from "./ws/types";
 
 export type FixtureValueWinningSource = "manual" | "input" | "normal";
 
@@ -25,9 +25,7 @@ const EMPTY_FIXTURE_VALUE_SOURCE_STATE: FixtureValueSourceState = {
 };
 
 /** Returns whether a layer is the compositor-owned manual assertion layer. */
-export function isManualAssertionLayer(
-  layer: types.OutboundLayerState,
-): boolean {
+export function isManualAssertionLayer(layer: LayerState): boolean {
   return (
     isParameterAssertionLayer(layer, MANUAL_ASSERTION_LAYER_ID) ||
     isProgrammerAssertionLayer(layer)
@@ -35,9 +33,7 @@ export function isManualAssertionLayer(
 }
 
 /** Returns whether a layer represents programmer-authored fixture assertions. */
-export function isProgrammerAssertionLayer(
-  layer: types.OutboundLayerState,
-): boolean {
+export function isProgrammerAssertionLayer(layer: LayerState): boolean {
   return (
     layer.creator === "Programmer" ||
     layer.creator.startsWith("Programmer Instruction ")
@@ -45,15 +41,13 @@ export function isProgrammerAssertionLayer(
 }
 
 /** Returns whether a layer is the compositor-owned input assertion layer. */
-export function isTransportInputAssertionLayer(
-  layer: types.OutboundLayerState,
-): boolean {
+export function isTransportInputAssertionLayer(layer: LayerState): boolean {
   return isParameterAssertionLayer(layer, TRANSPORT_INPUT_LAYER_ID);
 }
 
 /** Resolves the high-level source family represented by a layer. */
 export function fixtureValueSourceForLayer(
-  layer: types.OutboundLayerState,
+  layer: LayerState,
 ): FixtureValueWinningSource {
   if (isManualAssertionLayer(layer)) return "manual";
   if (isTransportInputAssertionLayer(layer)) return "input";
@@ -61,10 +55,7 @@ export function fixtureValueSourceForLayer(
 }
 
 /** Returns whether a layer is one of the persistent parameter assertion layers. */
-function isParameterAssertionLayer(
-  layer: types.OutboundLayerState,
-  id: number,
-): boolean {
+function isParameterAssertionLayer(layer: LayerState, id: number): boolean {
   return (
     layer.object_ref?.type === "ById" &&
     layer.object_ref.data.object_type === ObjectType.Parameter &&
@@ -74,7 +65,7 @@ function isParameterAssertionLayer(
 
 /** Returns true when one fixture parameter row contains the requested attribute. */
 function rowHasAttribute(
-  rows: types.OutboundElementParameterValues[] | undefined,
+  rows: LayerElementParameterValues[] | undefined,
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,
@@ -98,7 +89,7 @@ function rowHasAttribute(
 
 /** Returns the element indexes in one row set that assert an attribute. */
 function rowElementIndexesWithAttribute(
-  rows: types.OutboundElementParameterValues[] | undefined,
+  rows: LayerElementParameterValues[] | undefined,
   fixtureUid: string,
   attribute: string,
 ): number[] {
@@ -120,10 +111,10 @@ function rowElementIndexesWithAttribute(
 
 /** Collects concrete element indexes that assert an attribute in the layer set. */
 function assertedElementIndexesForAttribute(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixtureUid: string,
   attribute: string,
-  layerFilter?: (layer: types.OutboundLayerState) => boolean,
+  layerFilter?: (layer: LayerState) => boolean,
 ): number[] {
   const indexes = new Set<number>();
   for (const layer of layers) {
@@ -148,7 +139,7 @@ function assertedElementIndexesForAttribute(
 
 /** Returns whether a layer directly asserts the requested fixture attribute. */
 function layerHasAssertedFixtureAttribute(
-  layer: types.OutboundLayerState,
+  layer: LayerState,
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,
@@ -171,11 +162,11 @@ function layerHasAssertedFixtureAttribute(
 
 /** Resolves source state for a concrete fixture element value cell. */
 function concreteFixtureValueSourceState(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixtureUid: string,
   elementIndex: number,
   attribute: string,
-  layerFilter?: (layer: types.OutboundLayerState) => boolean,
+  layerFilter?: (layer: LayerState) => boolean,
 ): FixtureValueSourceState {
   let winningSource: FixtureValueWinningSource | null = null;
   let hasManualAssertion = false;
@@ -208,10 +199,10 @@ function concreteFixtureValueSourceState(
 
 /** Aggregates element-local source states without comparing unrelated elements. */
 function aggregateFixtureValueSourceState(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixtureUid: string,
   attribute: string,
-  layerFilter?: (layer: types.OutboundLayerState) => boolean,
+  layerFilter?: (layer: LayerState) => boolean,
 ): FixtureValueSourceState {
   const elementIndexes = assertedElementIndexesForAttribute(
     layers,
@@ -251,11 +242,11 @@ function aggregateFixtureValueSourceState(
 
 /** Resolves the winning and shadowed manual state for a fixture value cell. */
 export function fixtureValueSourceState(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,
-  layerFilter?: (layer: types.OutboundLayerState) => boolean,
+  layerFilter?: (layer: LayerState) => boolean,
 ): FixtureValueSourceState {
   if (elementIndex === undefined) {
     return aggregateFixtureValueSourceState(
