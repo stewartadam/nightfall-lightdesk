@@ -7,7 +7,8 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { Checkbox, NativeSelect } from "../../components/ui/form-controls";
+import { NativeSelect } from "../../components/ui/form-controls";
+import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { AccentPicker } from "../../components/ui/visual-language/accent-picker";
 import { TabAlignmentSelect } from "../../components/ui/visual-language/tab-alignment-select";
 import {
@@ -25,29 +26,22 @@ export function AppearanceSettings() {
         value={appearance().accent}
         onChange={(accent) => setAppearanceSetting("accent", accent.value)}
       />
-      <label class="flex items-center justify-between gap-3 text-sm text-gray-300">
-        <span>Table gridlines</span>
-        <Checkbox
-          checked={appearance().gridlines}
-          onChange={(event) =>
-            setAppearanceSetting("gridlines", event.currentTarget.checked)
-          }
-        />
-      </label>
-      <label class="block">
-        <span class="flex items-center justify-between gap-3 text-sm text-gray-300">
-          <span>Mute accents in unfocused panels</span>
-          <Checkbox
-            checked={appearance().muteUnfocusedAccents}
-            onChange={(event) =>
-              setAppearanceSetting(
-                "muteUnfocusedAccents",
-                event.currentTarget.checked,
-              )
-            }
-          />
-        </span>
-      </label>
+      <ToggleSwitch
+        label="Table gridlines"
+        ariaLabel="Table gridlines"
+        class="w-full justify-between"
+        checked={appearance().gridlines}
+        onChange={(enabled) => setAppearanceSetting("gridlines", enabled)}
+      />
+      <ToggleSwitch
+        label="Mute accents in unfocused panels"
+        ariaLabel="Mute accents in unfocused panels"
+        class="w-full justify-between"
+        checked={appearance().muteUnfocusedAccents}
+        onChange={(enabled) =>
+          setAppearanceSetting("muteUnfocusedAccents", enabled)
+        }
+      />
       <label class="block">
         <span class="text-sm text-gray-300">Panel tab position</span>
         <NativeSelect

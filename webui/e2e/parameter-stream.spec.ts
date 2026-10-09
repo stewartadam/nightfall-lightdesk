@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { expect, type Page, test } from "./playwright-fixtures";
+import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 test.use({ sampleDataOnly: true });
@@ -46,6 +46,64 @@ async function outputSnapshot(page: Page): Promise<string> {
 }
 
 /**
+ * Scrolls a switch clear of the dialog's blurred scroll edges, which reject clicks beneath them,
+ * and clicks it once no visible edge covers its center.
+ */
+async function clickSwitch(toggle: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      toggle.evaluate((element) => {
+        element.scrollIntoView({ block: "center" });
+        const box = element.getBoundingClientRect();
+        const x = box.left + box.width / 2;
+        const y = box.top + box.height / 2;
+        return [
+          ...document.querySelectorAll('.nf-scroll-edge[data-visible="true"]'),
+        ].some((edge) => {
+          const cover = edge.getBoundingClientRect();
+          return (
+            x >= cover.left &&
+            x < cover.right &&
+            y >= cover.top &&
+            y < cover.bottom
+          );
+        });
+      }),
+    )
+    .toBe(false);
+  await toggle.click();
+}
+
+/**
+ * Reports whether the UI's parameter state shows some element with an absolute percent
+ * assertion of `attribute` at `fraction`, meaning the engine has applied that command.
+ */
+async function programmerHolds(
+  page: Page,
+  attribute: string,
+  fraction: number,
+): Promise<boolean> {
+  return page.evaluate(
+    ({ attribute, fraction }) => {
+      const rows = (window as any).appStores.parameters.get();
+      for (const row of rows.values()) {
+        for (const element of row.elements ?? []) {
+          const value = element.absolute?.[attribute];
+          if (
+            value?.type === "AbsolutePercent" &&
+            Math.abs(value.data.value - fraction) < 1e-4
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+    { attribute, fraction },
+  );
+}
+
+/**
  * Verifies the UI keeps exact parameter state from deltas: while values change across several
  * keyframe intervals the worker applies deltas without gaps or drift, verifiable keyframes agree
  * with the rebuilt state, and the state rebuilt from deltas equals a fresh full resync.
@@ -72,7 +130,11 @@ test("parameter deltas keep the UI exact", async ({ page }, testInfo) => {
   expect(stats.gaps).toBe(0);
   expect(stats.driftedKeyframes).toBe(0);
 
-  // Fades keep changing output after the last command, so compare only once it has settled.
+  // The engine can still be working through the commands, and fades keep changing output after
+  // the last one, so compare only once the final values are asserted and output has settled.
+  await expect
+    .poll(() => programmerHolds(page, "Red", 0.48), { timeout: 15_000 })
+    .toBe(true);
   let rebuilt = await outputSnapshot(page);
   await expect
     .poll(
@@ -110,15 +172,23 @@ test("keyframes-only setting sends full frames", async ({ page }, testInfo) => {
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await expect.poll(() => streamStats(page)).toBeDefined();
+  // The switch follows the backend snapshot, which would undo a click made before it arrives.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.settings.get().parameter_keyframes_only,
+      ),
+    )
+    .toBe(false);
 
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   await dialog.getByRole("tab", { name: "Network", exact: true }).click();
-  const changedOnly = dialog.getByRole("checkbox", {
-    name: "Send only changed values",
+  const changedOnly = dialog.getByRole("switch", {
+    name: "Send only changed parameters (recommended)",
   });
   await expect(changedOnly).toBeChecked();
-  await changedOnly.uncheck();
+  await clickSwitch(changedOnly);
   await expect
     .poll(() =>
       page.evaluate(
@@ -127,8 +197,16 @@ test("keyframes-only setting sends full frames", async ({ page }, testInfo) => {
     )
     .toBe(true);
   await expect(changedOnly).not.toBeChecked();
-  await dialog.screenshot({
+  await changedOnly.evaluate((element) => {
+    const viewport = element.closest(".nf-scroll-viewport");
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  });
+  await expect(
+    dialog.locator('.nf-scroll-edge[data-edge="bottom"][data-visible="true"]'),
+  ).toHaveCount(0);
+  await page.screenshot({
     path: testInfo.outputPath("keyframes-only-setting.png"),
+    animations: "disabled",
   });
   await page.keyboard.press("Escape");
 
@@ -145,7 +223,7 @@ test("keyframes-only setting sends full frames", async ({ page }, testInfo) => {
 
   await page.keyboard.press("ControlOrMeta+,");
   await dialog.getByRole("tab", { name: "Network", exact: true }).click();
-  await changedOnly.check();
+  await clickSwitch(changedOnly);
   await expect
     .poll(() =>
       page.evaluate(

@@ -61,10 +61,11 @@ test("appearance settings update panels and portals and survive reload", async (
   await dialog.getByRole("button", { name: "Violet accent" }).click();
   await dialog.getByLabel("Table gridlines").check();
   await dialog.getByLabel("Panel tab position").selectOption("bottom");
-  await expect(dialog.getByLabel("Table gridlines")).toHaveCSS(
-    "accent-color",
-    "rgb(176, 128, 255)",
-  );
+  await expect(
+    dialog
+      .locator(".nf-switch", { hasText: "Table gridlines" })
+      .locator(".nf-switch-track"),
+  ).toHaveCSS("background-color", "rgb(176, 128, 255)");
   await expect
     .poll(() => workspacePositions(page))
     .toEqual(["bottom", "bottom", "bottom"]);

@@ -18,11 +18,7 @@ import {
 } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { Dialog, DialogBody } from "../../components/ui/dialog";
-import {
-  Checkbox,
-  Input,
-  NativeSelect,
-} from "../../components/ui/form-controls";
+import { Input, NativeSelect } from "../../components/ui/form-controls";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
@@ -396,17 +392,13 @@ export function SettingsOverlay() {
             <section>
               <h3 class="text-sm font-medium text-gray-300 mb-3">Programmer</h3>
               <div class="space-y-3">
-                <label class="flex items-center justify-between">
-                  <span class="text-sm text-gray-400">
-                    Auto-select on attribute set
-                  </span>
-                  <Checkbox
-                    checked={settings().programmer_auto_select}
-                    onChange={(e) =>
-                      setProgrammerAutoSelect(e.currentTarget.checked)
-                    }
-                  />
-                </label>
+                <ToggleSwitch
+                  label="Auto-select on attribute set"
+                  ariaLabel="Auto-select on attribute set"
+                  class="w-full justify-between"
+                  checked={settings().programmer_auto_select}
+                  onChange={setProgrammerAutoSelect}
+                />
                 <label class="block">
                   <span class="text-sm text-gray-400">
                     Selection flatten behavior
@@ -721,21 +713,16 @@ export function SettingsOverlay() {
             </section>
             <section>
               <h3 class="text-sm font-medium text-gray-300 mb-3">UI updates</h3>
-              <label class="flex items-center justify-between">
-                <span class="text-sm text-gray-400">
-                  Send only changed values
-                </span>
-                <Checkbox
-                  checked={!settings().parameter_keyframes_only}
-                  onChange={(e) =>
-                    setParameterKeyframesOnly(!e.currentTarget.checked)
-                  }
-                />
-              </label>
+              <ToggleSwitch
+                label="Send only changed parameters (recommended)"
+                ariaLabel="Send only changed parameters (recommended)"
+                class="w-full justify-between"
+                checked={!settings().parameter_keyframes_only}
+                onChange={(enabled) => setParameterKeyframesOnly(!enabled)}
+              />
               <p class="mt-1 text-xs text-gray-500">
-                Turn off to send every value in full each frame if a screen
-                shows values that do not match the output. Uses more network
-                bandwidth.
+                Sending every parameter in full each frame may be more reliable,
+                but uses more network bandwidth and processing power.
               </p>
             </section>
           </Show>
