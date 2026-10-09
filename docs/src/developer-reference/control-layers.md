@@ -87,6 +87,44 @@ trigger binding. The action catalog lists each action's supported behaviors. OSC
 buttons report releases when their mapping names both the pressed value (`arg_value`)
 and the released value (`release_value`).
 
+### Controller mapping mode
+
+Mapping mode lets an operator touch a MIDI or OSC control and click a UI control to bind
+it. Touching an already-mapped control must not fire its live action, so the backend
+pauses controller dispatch while any client is mapping:
+
+- Clients send `ActionCommand::EnterControllerMappingMode` and
+  `LeaveControllerMappingMode`. `ControllerMappingMode` holds the set of mapping client
+  sessions; controllers are paused while it is non-empty, so several clients can map at
+  once. Entering again is harmless, and the Web UI re-sends it after reconnecting.
+- Sessions are identified by `ClientConnectionId`, which the host adapter stamps on each
+  command it submits (`CommandTracker::connection`). The websocket host reports ended
+  sessions through `ClientBridgeHost::disconnect_sender`, and the engine turns them into
+  `ClientDisconnected` messages that release that session's hold. The embedded browser
+  runtime has one session, `ClientConnectionId::EMBEDDED`. Commands without a session,
+  such as HTTP routes, cannot hold mapping mode.
+- Mapping mode is not cleared on showfile load: it belongs to client sessions, not to
+  the show, and each client's banner would otherwise disagree with the backend.
+- While paused, `SourceEdgeStates` starts nothing new but finishes what already started
+  live. Presses, fader levels, pulses, and `Release`-behavior triggers are swallowed. A
+  release completing a press that was dispatched before mapping began still dispatches,
+  so a `Hold` binding's counterpart runs and a `Flash` restores its level instead of
+  latching. A press swallowed while paused also swallows its release, even when the
+  release arrives after mapping mode ends, so leaving mapping mode never fires a stray
+  release binding.
+- The count of mapping sessions is broadcast non-droppably as `ControllerMappingMode`.
+  Other clients show a banner that controller actions are paused; the mapping client
+  shows whether its pause is confirmed.
+- `MidiLastEvent` and `OscLastEvent` telemetry is droppable and coalesced to one event
+  per frame, which can lose the control an operator touched. While mapping mode is active
+  the backend also sends non-droppable `MidiControlTouched` and `OscControlTouched`
+  batches: every mappable MIDI control touched in a frame (its latest message), and every
+  OSC message whose address and first argument are new within the frame, capped at 64
+  per frame. The Web UI arms only from these batches, so the press and release values of
+  an OSC button arriving in one frame are both recorded.
+- Keybindings are not paused: they are client-local, and mapping mode arms from
+  controllers, not the keyboard.
+
 ### Invocation failures
 
 Registry and domain failures are `InvocationError`s: a stable `code`, an

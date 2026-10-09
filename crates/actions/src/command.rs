@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use crate::descriptor::ActionSurface;
 use crate::invocation::{ActionInvocation, ActionReference, InvocationOutcome};
+use crate::mapping_mode::ControllerMappingMode;
 
 /// Commands clients send to invoke backend actions from keybindings or the palette.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
@@ -29,6 +30,13 @@ pub enum ActionCommand {
         /// Client surface that invoked the action.
         surface: ActionSurface,
     },
+    /// Pauses MIDI and OSC actions while the sending client binds controllers.
+    ///
+    /// Held per client session until it sends [`ActionCommand::LeaveControllerMappingMode`]
+    /// or disconnects. Entering again is harmless, so clients re-send it after reconnecting.
+    EnterControllerMappingMode,
+    /// Releases the sending client's hold on controller mapping mode.
+    LeaveControllerMappingMode,
 }
 
 impl IngressCommand for ActionCommand {}
@@ -52,21 +60,60 @@ pub fn deserialize_action_command(
     Ok(())
 }
 
-/// Turns client invoke commands into action invocations that finish the commands.
+/// Applies client action commands.
 ///
-/// The command stays active until the invocation is dispatched, which then finishes it with
-/// the invocation's immediate outcome through [`complete_invoke_command`].
+/// Invoke commands become action invocations that stay active until dispatched, which then
+/// finishes them with the invocation's immediate outcome through [`complete_invoke_command`].
+/// Mapping mode commands update the sending session's hold on [`ControllerMappingMode`] and
+/// finish immediately; they fail when the transport did not identify the session, because
+/// such a hold could never be released on disconnect.
 pub fn handle_action_commands(
     mut events: MessageReader<CommandEnvelope<ActionCommand>>,
     mut invocations: MessageWriter<ActionInvocation>,
+    mut mode: ResMut<ControllerMappingMode>,
+    mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let ActionCommand::Invoke { action, surface } = &event.command;
-        invocations.write(
-            ActionInvocation::trigger(action.clone(), *surface)
-                .with_source(surface.label())
-                .completing(event.command_id),
-        );
+        let entering = match &event.command {
+            ActionCommand::Invoke { action, surface } => {
+                invocations.write(
+                    ActionInvocation::trigger(action.clone(), *surface)
+                        .with_source(surface.label())
+                        .completing(event.command_id),
+                );
+                continue;
+            }
+            ActionCommand::EnterControllerMappingMode => true,
+            ActionCommand::LeaveControllerMappingMode => false,
+        };
+        let command_id = event.command_id;
+        let result = match responder.connection(command_id) {
+            Some(client) => {
+                if entering != mode.contains(client) {
+                    if entering {
+                        mode.enter(client);
+                    } else {
+                        mode.leave(client);
+                    }
+                    tracing::info!(
+                        connection = client.0,
+                        entering,
+                        "controller_mapping_mode_changed"
+                    );
+                }
+                responder.succeed(command_id)
+            }
+            None => responder.fail(
+                command_id,
+                CommandError::new(
+                    "action.mapping_mode_requires_client",
+                    "Controller mapping mode can only be changed by a connected client",
+                ),
+            ),
+        };
+        if let Err(error) = result {
+            tracing::error!(%command_id, %error, "action_command_completion_failed");
+        }
     }
 }
 
