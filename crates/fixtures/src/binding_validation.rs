@@ -305,7 +305,7 @@ fn validate_console_address_uniqueness(
             if footprint == 0 {
                 continue;
             }
-            layout.advance(assigned_start, footprint);
+            layout.advance(footprint);
 
             let assigned_end = assigned_start.saturating_add(footprint - 1);
             for addr in assigned_start..=assigned_end {
@@ -621,7 +621,7 @@ fn collect_transport_spans(
                     if footprint == 0 {
                         continue;
                     }
-                    layout.advance(start, footprint);
+                    layout.advance(footprint);
                     spans.push(TransportSpan {
                         transport: target.clone(),
                         universe: universe_id..=universe_id,
@@ -1055,6 +1055,40 @@ mod tests {
         let issues = validate_console_address_uniqueness(&overlapping, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].involves_fixture(uids[2]) && issues[0].involves_fixture(uids[4]));
+    }
+
+    /// A cloned binding over a universe range puts each fixture at the binding address of its
+    /// own universe, so its fixtures do not collide with each other, and a fixture patched over
+    /// that address in the second universe overlaps only the fixture cloned there.
+    #[test]
+    fn cloned_universe_range_binding_places_one_fixture_per_universe() {
+        let mut provider = FixtureDataProviderExt::default();
+        let uids = add_fixtures_with_footprint(&mut provider, 3, 4);
+        let cloned = OutputBinding {
+            clone: true,
+            ..fixture_binding(
+                uids[..2].to_vec(),
+                OutputTarget::Console {
+                    universe: Some(DmxRange { start: 1, end: 2 }),
+                    address: Some(5),
+                },
+            )
+        };
+        let neighbour = fixture_binding(
+            vec![uids[2]],
+            OutputTarget::Console {
+                universe: Some(DmxRange::single(2)),
+                address: Some(8),
+            },
+        );
+
+        let bindings = OutputBindings {
+            bindings: vec![cloned, neighbour],
+        };
+        let issues = validate_console_address_uniqueness(&bindings, &provider);
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].message.contains("universe 2 address 8"));
+        assert!(issues[0].involves_fixture(uids[1]) && issues[0].involves_fixture(uids[2]));
     }
 
     #[test]

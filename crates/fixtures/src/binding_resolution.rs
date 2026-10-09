@@ -51,30 +51,37 @@ fn expand_range(range: Option<DmxRange>) -> Vec<u16> {
 /// the same address. Output resolution and patch validation both walk bindings through this
 /// layout so a validation error always describes a real conflict on the wire.
 pub(crate) struct FixturePatchLayout {
-    universes: Vec<u16>,
+    /// Universe the next fixture lands in.
+    next_universe: u16,
+    /// Last universe of the range, which takes every remaining fixture.
+    last_universe: u16,
+    /// Universe holding the most recently placed fixture.
+    current_universe: u16,
     base_address: u16,
     clone: bool,
-    index: usize,
-    universe: u16,
+    /// Packing position in the current universe.
     next_address: u16,
+    /// Start address of the most recently placed fixture.
+    placed_address: u16,
 }
 
 impl FixturePatchLayout {
-    /// Starts a layout for a binding target's universe range (universe 1 when unset), start
-    /// address (1 when unset) and clone flag.
+    /// Starts a layout for a binding target's universe range (universe 1 when unset or
+    /// empty), start address (1 when unset) and clone flag.
     pub(crate) fn new(universe: Option<DmxRange>, address: Option<u16>, clone: bool) -> Self {
-        let universes = match expand_range(universe) {
-            universes if universes.is_empty() => vec![1],
-            universes => universes,
+        let (first_universe, last_universe) = match universe {
+            Some(range) if range.start <= range.end => (range.start, range.end),
+            _ => (1, 1),
         };
         let base_address = address.unwrap_or(1);
         Self {
-            universe: universes[0],
-            universes,
+            next_universe: first_universe,
+            last_universe,
+            current_universe: first_universe,
             base_address,
             clone,
-            index: 0,
             next_address: base_address,
+            placed_address: base_address,
         }
     }
 
@@ -83,25 +90,27 @@ impl FixturePatchLayout {
     /// Call once for every fixture of the binding, in order, including fixtures that end up
     /// skipped, since each one consumes its universe slot in the range.
     pub(crate) fn place_next(&mut self) -> (u16, u16) {
-        let universe = self.universes[self.index.min(self.universes.len() - 1)];
-        self.index += 1;
-        if universe != self.universe {
-            self.universe = universe;
+        let universe = self.next_universe;
+        if universe != self.current_universe {
+            self.current_universe = universe;
             self.next_address = self.base_address;
         }
-        let address = if self.clone {
+        if self.next_universe < self.last_universe {
+            self.next_universe += 1;
+        }
+        self.placed_address = if self.clone {
             self.base_address
         } else {
             self.next_address
         };
-        (universe, address)
+        (universe, self.placed_address)
     }
 
-    /// Moves the packing position past a fixture just placed at `address` with `footprint`
+    /// Moves the packing position past the fixture just placed, which spans `footprint`
     /// slots; cloned bindings keep every fixture on the binding address.
-    pub(crate) fn advance(&mut self, address: u16, footprint: u16) {
+    pub(crate) fn advance(&mut self, footprint: u16) {
         if !self.clone {
-            self.next_address = address.saturating_add(footprint);
+            self.next_address = self.placed_address.saturating_add(footprint);
         }
     }
 }
@@ -410,7 +419,7 @@ pub fn derive_console_addresses(
                 );
             }
 
-            layout.advance(fixture_address, footprint);
+            layout.advance(footprint);
         }
     }
 }
@@ -860,7 +869,7 @@ pub fn resolve_output_bindings(
                             });
                     }
 
-                    layout.advance(fixture_address, footprint);
+                    layout.advance(footprint);
                 }
             }
             (
