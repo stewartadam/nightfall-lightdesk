@@ -196,13 +196,13 @@ impl BrowserEngine {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(
             std::time::Duration::ZERO,
         ));
-        app.add_plugins(ActionsPlugin);
         set_construction_stage(1);
         app.add_plugins(EnginePlugin);
         set_construction_stage(2);
         app.add_plugins(UndoPlugin);
         set_construction_stage(3);
         app.add_plugins(ClientBridgePlugin);
+        app.add_plugins(ActionsPlugin);
         set_construction_stage(4);
         app.add_plugins(FixturePlugin);
         set_construction_stage(5);

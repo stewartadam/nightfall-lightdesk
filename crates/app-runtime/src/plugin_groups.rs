@@ -36,11 +36,11 @@ pub struct CorePlugins {
 impl PluginGroup for CorePlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .add(ActionsPlugin)
             .add(EnginePlugin)
             .maybe_core_audio()
             .add(UndoPlugin)
             .add(ClientBridgePlugin)
+            .add(ActionsPlugin)
             .add(FixturePlugin)
             .add(SceneObjectPlugin)
             .add(FixtureCompositorPlugin)
