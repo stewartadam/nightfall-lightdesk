@@ -61,13 +61,20 @@ import {
   useBindableActionCatalog,
 } from "../../actions";
 import { BehaviorSelect } from "../components/behavior-select";
-import { actionBehaviors } from "../model/binding-behaviors";
 import {
+  actionBehaviors,
+  actionSupportsBehavior,
+  behaviorCell,
+  behaviorFilterText,
+  editedBehavior,
+} from "../model/binding-behaviors";
+import {
+  editedMidiDevice,
   formatBehavior,
+  midiDeviceCell,
   midiMappingFromEvent,
   midiSourceLabel,
   midiSourceNumber,
-  parseBehavior,
   withMidiChannel,
   withMidiNumber,
 } from "../model/controller-mapping-builders";
@@ -143,8 +150,10 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
   {
     title: "Behavior",
     id: "behavior",
-    width: 90,
-    filter: { value: (row) => formatBehavior(row.mapping.behavior) },
+    width: 130,
+    filter: {
+      value: (row) => behaviorFilterText(formatBehavior(row.mapping.behavior)),
+    },
     ...columnVisibilityMeta("Binding", "Behavior"),
   },
   {
@@ -181,6 +190,14 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
       ? chosenBehavior()
       : ControlBehavior.Press;
   const panelId = props.id;
+  /** Names of the connected MIDI devices, offered in each Device cell. */
+  const connectedDeviceNames = createMemo(() =>
+    $midiDevices().map((device) => device.name),
+  );
+  /** Devices the show's mappings listen to, offered even while unplugged. */
+  const mappedDeviceNames = createMemo(() => [
+    ...new Set($midiMappings().map((mapping) => mapping.device_name)),
+  ]);
 
   const [selection, setSelection] = createSignal<GridSelection>(
     emptyGridSelection(),
@@ -232,12 +249,11 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
         const mapping = row.mapping;
         switch (column.id) {
           case "device_name":
-            return {
-              kind: GridCellKind.Text,
-              allowOverlay: true,
-              displayData: mapping.device_name,
-              data: mapping.device_name,
-            };
+            return midiDeviceCell(
+              mapping.device_name,
+              connectedDeviceNames(),
+              mappedDeviceNames(),
+            );
           case "control": {
             const label = midiSourceLabel(mapping.source);
             return {
@@ -274,12 +290,10 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             };
           }
           case "behavior":
-            return {
-              kind: GridCellKind.Text,
-              data: formatBehavior(mapping.behavior),
-              displayData: formatBehavior(mapping.behavior),
-              allowOverlay: true,
-            };
+            return behaviorCell(
+              formatBehavior(mapping.behavior),
+              findCatalogEntry($actionCatalog(), mapping.action.id),
+            );
           case "action": {
             const label = formatActionReference(
               mapping.action,
@@ -306,7 +320,10 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     }),
   );
 
-  /** Applies one edited cell to every targeted mapping and upserts each result. */
+  /**
+   * Applies one edited cell to every targeted mapping and upserts each result. A behavior
+   * skips rows whose action does not support it.
+   */
   const handleCellEdited = (cell: Item, newValue: GridCell) => {
     const [col, row] = cell;
     const colId = displayColumns()[col]?.id;
@@ -319,9 +336,20 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
       row,
       visibleRows.length,
     );
+    const behavior =
+      colId === "behavior" ? editedBehavior(newValue) : undefined;
     for (const targetRow of rowsToEdit) {
       const mapping = visibleRows[targetRow]?.mapping;
       if (!mapping) continue;
+      if (
+        behavior &&
+        !actionSupportsBehavior(
+          findCatalogEntry($actionCatalog(), mapping.action.id),
+          behavior,
+        )
+      ) {
+        continue;
+      }
       const edited = editedMapping(mapping, colId, newValue);
       if (edited) void upsertMidiMapping(edited).then(announceReplacedMappings);
     }
@@ -526,10 +554,12 @@ function editedMapping(
   value: GridCell,
 ): MidiMapping | undefined {
   switch (columnId) {
-    case "device_name":
-      return value.kind === GridCellKind.Text
-        ? { ...mapping, device_name: String(value.data ?? "") }
-        : undefined;
+    case "device_name": {
+      const device = editedMidiDevice(value);
+      return device === undefined
+        ? undefined
+        : { ...mapping, device_name: device };
+    }
     case "channel": {
       if (value.kind !== GridCellKind.Number) return undefined;
       const channel = Number(value.data);
@@ -550,8 +580,7 @@ function editedMapping(
       return { ...mapping, source: withMidiNumber(mapping.source, number) };
     }
     case "behavior": {
-      if (value.kind !== GridCellKind.Text) return undefined;
-      const behavior = parseBehavior(String(value.data ?? ""));
+      const behavior = editedBehavior(value);
       return behavior === undefined ? undefined : { ...mapping, behavior };
     }
     default:

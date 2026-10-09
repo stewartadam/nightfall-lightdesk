@@ -6,7 +6,48 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { type GridCell, GridCellKind } from "../../../lib/data-grid-types";
+import {
+  type DropdownGridCell,
+  isDropdownCell,
+} from "../../../lib/tanstack-dropdown-cell";
 import * as types from "../../../types";
+
+/**
+ * Builds a MIDI mapping's Device cell as a dropdown of devices, so a mapping whose device
+ * was renamed or swapped can be moved onto the device now sending, or onto a device other
+ * mappings already use while it is unplugged. The mapping's own device is listed first;
+ * devices that are not connected are marked as such.
+ */
+export function midiDeviceCell(
+  deviceName: string,
+  connectedDevices: readonly string[],
+  mappedDevices: readonly string[],
+): DropdownGridCell {
+  const connected = new Set(connectedDevices);
+  const names = [
+    ...new Set([deviceName, ...connectedDevices, ...mappedDevices]),
+  ];
+  return {
+    kind: GridCellKind.Custom,
+    data: {
+      kind: "dropdown-cell",
+      value: deviceName,
+      allowedValues: names.map((name) => ({
+        value: name,
+        label: connected.has(name) ? name : `${name} (not connected)`,
+      })),
+    },
+    copyData: deviceName,
+    allowOverlay: true,
+  };
+}
+
+/** Returns the device chosen in an edited Device cell, or undefined for other cells. */
+export function editedMidiDevice(cell: GridCell): string | undefined {
+  if (!isDropdownCell(cell)) return undefined;
+  return cell.data.value || undefined;
+}
 
 /** Creates a stable mapping ID in the simple UUID form the backend accepts. */
 export function newMappingId(): string {
@@ -106,21 +147,11 @@ export function oscMatchValue(
   }
 }
 
-/** Formats a mapping's behavior for grid display; mappings default to Press. */
+/** Returns a mapping's behavior for display, defaulting to Press when it names none. */
 export function formatBehavior(
   behavior: types.ControlBehavior | undefined,
-): string {
+): types.ControlBehavior {
   return behavior ?? types.ControlBehavior.Press;
-}
-
-/** Parses an edited Behavior cell, accepting a behavior name in any case. */
-export function parseBehavior(
-  value: string,
-): types.ControlBehavior | undefined {
-  const name = value.trim().toLowerCase();
-  return Object.values(types.ControlBehavior).find(
-    (behavior) => behavior.toLowerCase() === name,
-  );
 }
 
 /**
