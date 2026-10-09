@@ -246,26 +246,53 @@ impl CommandSender {
 #[derive(Message, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LastClientDisconnected;
 
-/// Lets a host transport report that its last client session closed.
+/// Written when one client session closes, so state that session owned, such as
+/// controller mapping mode, can be released.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClientDisconnected(pub ClientId);
+
+/// A host transport's report about its client sessions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientPresence {
+    /// One client session closed.
+    Disconnected(ClientId),
+    /// No client session remains connected.
+    LastDisconnected,
+}
+
+/// Lets a host transport report that client sessions closed.
 ///
 /// Every report also wakes the frame limiter, so the engine reacts on its next
 /// frame instead of waiting for the next tick.
 #[derive(Clone)]
 pub struct ClientPresenceSender {
-    tx: Sender<LastClientDisconnected>,
+    tx: Sender<ClientPresence>,
     waker: FrameWaker,
 }
 
 impl ClientPresenceSender {
     /// Wraps a presence channel so every report also wakes `waker`.
-    pub fn new(tx: Sender<LastClientDisconnected>, waker: FrameWaker) -> Self {
+    pub fn new(tx: Sender<ClientPresence>, waker: FrameWaker) -> Self {
         Self { tx, waker }
+    }
+
+    /// Reports that one client session closed.
+    ///
+    /// Hosts report a session after forwarding every command it sent, so the engine ingests
+    /// those commands no later than the frame that releases the session's state.
+    pub fn client_disconnected(&self, client: ClientId) {
+        self.report(ClientPresence::Disconnected(client));
     }
 
     /// Reports that no client session remains connected to the host.
     pub fn last_client_disconnected(&self) {
-        if let Err(error) = self.tx.try_send(LastClientDisconnected) {
-            tracing::warn!(%error, "last_client_disconnected_report_failed");
+        self.report(ClientPresence::LastDisconnected);
+    }
+
+    /// Queues one presence report and wakes the engine to handle it.
+    fn report(&self, report: ClientPresence) {
+        if let Err(error) = self.tx.try_send(report) {
+            tracing::warn!(%error, ?report, "client_presence_report_failed");
             return;
         }
         self.waker.wake();
@@ -274,15 +301,25 @@ impl ClientPresenceSender {
 
 /// Engine-side end of the host's client presence reports.
 #[derive(Resource)]
-struct ClientPresenceReceiver(Receiver<LastClientDisconnected>);
+struct ClientPresenceReceiver(Receiver<ClientPresence>);
 
-/// Turns host presence reports into [`LastClientDisconnected`] messages for this frame.
+/// Turns host presence reports into [`ClientDisconnected`] and [`LastClientDisconnected`]
+/// messages for this frame.
 fn forward_client_presence(
     receiver: Res<ClientPresenceReceiver>,
-    mut disconnected: MessageWriter<LastClientDisconnected>,
+    mut client_disconnected: MessageWriter<ClientDisconnected>,
+    mut last_disconnected: MessageWriter<LastClientDisconnected>,
 ) {
     while let Ok(report) = receiver.0.try_recv() {
-        disconnected.write(report);
+        match report {
+            ClientPresence::Disconnected(client) => {
+                tracing::debug!(%client, "client_disconnected");
+                client_disconnected.write(ClientDisconnected(client));
+            }
+            ClientPresence::LastDisconnected => {
+                last_disconnected.write(LastClientDisconnected);
+            }
+        }
     }
 }
 
@@ -331,8 +368,8 @@ pub struct SharedClientBridge {
     command_rx: Receiver<CommandJsonEnvelope>,
     update_tx: Sender<UpdateJsonEnvelope>,
     update_rx: Receiver<UpdateJsonEnvelope>,
-    presence_tx: Sender<LastClientDisconnected>,
-    presence_rx: Receiver<LastClientDisconnected>,
+    presence_tx: Sender<ClientPresence>,
+    presence_rx: Receiver<ClientPresence>,
     output_tx: Sender<OutboundFrame>,
     output_rx: Receiver<OutboundFrame>,
     frame_waker: FrameWaker,
@@ -409,6 +446,7 @@ impl Plugin for ClientBridgePlugin {
         });
         app.init_resource::<CommandFeedbackCursors>();
         app.add_message::<LastClientDisconnected>();
+        app.add_message::<ClientDisconnected>();
         app.add_systems(
             Update,
             (
@@ -753,6 +791,31 @@ mod client_bridge_tests {
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(reports, vec![LastClientDisconnected]);
+    }
+
+    /// Verifies a host's report that one session closed names that session on the next frame,
+    /// without claiming the last client left.
+    #[test]
+    fn client_disconnect_report_names_the_session() {
+        let (mut app, _output) = bridge_app();
+        let presence = app.world().resource::<ClientBridgeHost>().presence_sender();
+
+        presence.client_disconnected(ClientId(4));
+        app.update();
+
+        let world = app.world_mut();
+        let reports = world
+            .resource_mut::<Messages<ClientDisconnected>>()
+            .drain()
+            .collect::<Vec<_>>();
+        assert_eq!(reports, vec![ClientDisconnected(ClientId(4))]);
+        assert!(
+            world
+                .resource_mut::<Messages<LastClientDisconnected>>()
+                .drain()
+                .next()
+                .is_none()
+        );
     }
 
     /// Verifies JSON nulls nested in opaque values, such as action arguments, reach clients

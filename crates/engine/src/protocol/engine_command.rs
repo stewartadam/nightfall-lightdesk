@@ -151,8 +151,13 @@ pub enum CommandOrigin {
 ///
 /// Hosts allocate identities when a session connects and never accept one from
 /// client-supplied payloads, so a client cannot claim another session's replies.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ClientId(pub u64);
+
+impl ClientId {
+    /// The single client of an embedded browser runtime, which has no websocket sessions.
+    pub const EMBEDDED: Self = Self(0);
+}
 
 impl std::fmt::Display for ClientId {
     /// Formats the identity as its numeric session counter for tracing fields.
