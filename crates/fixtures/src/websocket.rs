@@ -153,10 +153,13 @@ pub fn send_parameter_state(
         );
     }
     if let Some(frame) = projection.publish_frame(Instant::now()) {
-        broadcaster.publish(
-            DISCRIMINATOR_DROPPABLE,
-            &FixtureWsMessage::ParameterState(&frame),
-        );
+        // A keyframe may replace a queued frame; a delta must never, since it builds on it.
+        let discriminator = if frame.keyframe {
+            DISCRIMINATOR_DROPPABLE
+        } else {
+            DISCRIMINATOR_DELTA
+        };
+        broadcaster.publish(discriminator, &FixtureWsMessage::ParameterState(&frame));
     }
     let broadcast_elapsed = broadcast_start.elapsed();
     record_elapsed_ms(

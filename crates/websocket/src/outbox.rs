@@ -9,18 +9,20 @@
 //! Bounded outbound queue for one websocket client.
 //!
 //! A client that reads slower than the engine publishes falls behind. Between two ordered messages,
-//! its queue keeps at most one copy of each droppable snapshot type: a newer snapshot replaces the
-//! queued one in place. A snapshot is never replaced across an ordered message, so every snapshot
-//! keeps its order relative to ordered messages, exactly as published. Ordered messages are never
-//! dropped. When the queued bytes would exceed the limit, the queue
-//! is discarded and the client is closed with [`LAGGING_CLIENT_CLOSE_CODE`], so it reconnects and
+//! a newer droppable snapshot replaces everything of its type still queued: it takes the position
+//! of the oldest such entry and the rest are discarded. A snapshot is never replaced across an
+//! ordered message, so every snapshot keeps its order relative to ordered messages, exactly as
+//! published. A delta builds on everything of its type before it, so it is always appended and
+//! never replaces anything; the next snapshot of its type collapses it along with the rest.
+//! Ordered messages are never dropped. When the queued bytes would exceed the limit, the queue is
+//! discarded and the client is closed with [`LAGGING_CLIENT_CLOSE_CODE`], so it reconnects and
 //! resyncs from complete state instead of applying a partial stream.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::ws::{CloseFrame, Message};
-use nightfall_engine::prelude::DISCRIMINATOR_DROPPABLE;
+use nightfall_engine::prelude::{DISCRIMINATOR_DELTA, DISCRIMINATOR_DROPPABLE};
 use tokio::sync::Notify;
 
 /// Queued bytes beyond which a client is considered unable to keep up and is disconnected.
@@ -39,34 +41,41 @@ pub(crate) const LAGGING_CLIENT_CLOSE_CODE: u16 = 4001;
 #[derive(Clone)]
 pub(crate) struct Publication {
     message: Message,
+    /// Message type of a snapshot or delta, shared with the snapshots it may replace or yield to.
     snapshot_type: Option<Arc<str>>,
+    /// Whether this is a delta, which is always appended rather than replacing a queued snapshot.
+    delta: bool,
     bytes: usize,
 }
 
 impl Publication {
-    /// Wraps one encoded publication, reading the message type of droppable snapshots so later
-    /// snapshots of the same type can replace it in a lagging client's queue.
+    /// Wraps one encoded publication, reading the message type of droppable snapshots and deltas
+    /// so they can be coalesced in a lagging client's queue.
     pub(crate) fn from_encoded(encoded: Vec<u8>) -> Self {
-        let snapshot_type = match encoded.split_first() {
-            Some((&DISCRIMINATOR_DROPPABLE, cbor)) => peek_message_type(cbor).map(Arc::from),
-            _ => None,
+        let (snapshot_type, delta) = match encoded.split_first() {
+            Some((&DISCRIMINATOR_DROPPABLE, cbor)) => (peek_message_type(cbor), false),
+            Some((&DISCRIMINATOR_DELTA, cbor)) => (peek_message_type(cbor), true),
+            _ => (None, false),
         };
-        Self::ordered_or_snapshot(Message::Binary(encoded.into()), snapshot_type)
+        let snapshot_type = snapshot_type.map(Arc::from);
+        Self::new(Message::Binary(encoded.into()), snapshot_type, delta)
     }
 
     /// Wraps a message that must be delivered in order and never replaced.
     pub(crate) fn ordered(message: Message) -> Self {
-        Self::ordered_or_snapshot(message, None)
+        Self::new(message, None, false)
     }
 
-    /// Builds a publication, measuring the payload bytes it holds in a queue.
-    fn ordered_or_snapshot(message: Message, snapshot_type: Option<Arc<str>>) -> Self {
+    /// Builds a publication, measuring the payload bytes it holds in a queue. A delta whose type
+    /// cannot be read is treated as ordered, so no snapshot can ever replace it.
+    fn new(message: Message, snapshot_type: Option<Arc<str>>, delta: bool) -> Self {
         let bytes = match &message {
             Message::Binary(bytes) => bytes.len(),
             Message::Text(text) => text.len(),
             _ => 0,
         };
         Self {
+            delta: delta && snapshot_type.is_some(),
             message,
             snapshot_type,
             bytes,
@@ -92,7 +101,7 @@ fn peek_message_type(cbor: &[u8]) -> Option<&str> {
 pub(crate) enum Enqueued {
     /// Appended to the end of the queue.
     Queued,
-    /// Replaced a pending snapshot of the same type in place.
+    /// Replaced the pending entries of the same type, taking the position of the oldest one.
     Coalesced,
     /// The queue exceeded its limit; it was discarded and a lagging close frame queued instead.
     Overflowed,
@@ -126,10 +135,12 @@ pub(crate) struct ClientOutbox {
 /// Queue contents guarded by the outbox lock.
 #[derive(Default)]
 struct OutboxState {
-    entries: VecDeque<Publication>,
+    /// Queued publications; `None` marks an entry a newer snapshot discarded, skipped when sent.
+    entries: VecDeque<Option<Publication>>,
     /// Sequence number of `entries[0]`; entries are numbered consecutively from it.
     head_seq: u64,
-    /// Sequence number of the newest queued entry of each droppable snapshot type.
+    /// Sequence number of the oldest queued snapshot or delta of each type that a newer snapshot
+    /// may still replace.
     pending_snapshots: HashMap<Arc<str>, u64>,
     /// Sequence number of the most recently queued ordered message, if any was ever queued.
     last_ordered_seq: Option<u64>,
@@ -144,8 +155,19 @@ impl OutboxState {
         self.entries.clear();
         self.pending_snapshots.clear();
         self.queued_bytes = 0;
-        self.entries.push_back(Publication::ordered(close));
+        self.entries.push_back(Some(Publication::ordered(close)));
         self.closed = true;
+    }
+
+    /// Returns the queued bytes of the entry at `seq` and every later entry of `snapshot_type`,
+    /// which a snapshot replacing the pending entry at `seq` discards.
+    fn superseded_bytes(&self, snapshot_type: &str, seq: u64) -> usize {
+        self.entries
+            .range((seq - self.head_seq) as usize..)
+            .flatten()
+            .filter(|entry| entry.snapshot_type.as_deref() == Some(snapshot_type))
+            .map(|entry| entry.bytes)
+            .sum()
     }
 }
 
@@ -161,26 +183,28 @@ impl ClientOutbox {
 
     /// Offers one publication to this client.
     ///
-    /// A droppable snapshot replaces a queued snapshot of the same type at its queue position when
-    /// no ordered message was queued after it. Anything else is appended. If the queue would exceed its byte limit, it is discarded and
-    /// replaced by a lagging close frame.
+    /// A droppable snapshot replaces the queued snapshots and deltas of the same type when no
+    /// ordered message was queued after the oldest of them: it takes that entry's position and the
+    /// later ones are discarded. Anything else, deltas included, is appended. If the queue would
+    /// exceed its byte limit, it is discarded and replaced by a lagging close frame.
     pub(crate) fn publish(&self, publication: &Publication) -> Enqueued {
         let mut state = self.state.lock().unwrap();
         if state.closed {
             return Enqueued::Closed;
         }
 
-        // A pending snapshot is replaced only while no ordered message follows it, so neither the
-        // older nor the newer snapshot changes position relative to an ordered message.
+        // Pending entries are replaced only while no ordered message follows them, so neither the
+        // older entries nor the newer snapshot change position relative to an ordered message.
         let pending = publication
             .snapshot_type
             .as_ref()
             .and_then(|snapshot_type| state.pending_snapshots.get(snapshot_type).copied())
             .filter(|&seq| state.last_ordered_seq.is_none_or(|ordered| seq > ordered));
-        let replaced_bytes = pending.map_or(0, |seq| {
-            let index = (seq - state.head_seq) as usize;
-            state.entries[index].bytes
-        });
+        let replaced = pending.filter(|_| !publication.delta);
+        let replaced_bytes = match (replaced, &publication.snapshot_type) {
+            (Some(seq), Some(snapshot_type)) => state.superseded_bytes(snapshot_type, seq),
+            _ => 0,
+        };
 
         if state.queued_bytes - replaced_bytes + publication.bytes > self.byte_limit {
             tracing::warn!(
@@ -198,20 +222,31 @@ impl ClientOutbox {
         }
 
         state.queued_bytes = state.queued_bytes - replaced_bytes + publication.bytes;
-        let outcome = if let Some(seq) = pending {
-            let index = (seq - state.head_seq) as usize;
-            state.entries[index] = publication.clone();
-            state.coalesced += 1;
+        let outcome = if let Some(seq) = replaced {
+            let start = (seq - state.head_seq) as usize;
+            let mut superseded = 0;
+            for entry in state.entries.range_mut(start..) {
+                if entry
+                    .as_ref()
+                    .is_some_and(|queued| queued.snapshot_type == publication.snapshot_type)
+                {
+                    *entry = None;
+                    superseded += 1;
+                }
+            }
+            state.entries[start] = Some(publication.clone());
+            state.coalesced += superseded;
             Enqueued::Coalesced
         } else {
             let seq = state.head_seq + state.entries.len() as u64;
             match &publication.snapshot_type {
+                Some(_) if pending.is_some() => {}
                 Some(snapshot_type) => {
                     state.pending_snapshots.insert(snapshot_type.clone(), seq);
                 }
                 None => state.last_ordered_seq = Some(seq),
             }
-            state.entries.push_back(publication.clone());
+            state.entries.push_back(Some(publication.clone()));
             Enqueued::Queued
         };
         drop(state);
@@ -232,7 +267,7 @@ impl ClientOutbox {
         }
         state
             .entries
-            .push_back(Publication::ordered(Message::Close(None)));
+            .push_back(Some(Publication::ordered(Message::Close(None))));
         state.closed = true;
         drop(state);
         self.ready.notify_one();
@@ -252,25 +287,44 @@ impl ClientOutbox {
     /// Takes the next queued message without waiting, or reports why there is none.
     pub(crate) fn try_next(&self) -> Result<Message, TryNextError> {
         let mut state = self.state.lock().unwrap();
-        let Some(entry) = state.entries.pop_front() else {
-            return Err(if state.closed {
-                TryNextError::Closed
-            } else {
-                TryNextError::Empty
-            });
-        };
-        let seq = state.head_seq;
-        state.head_seq += 1;
-        state.queued_bytes -= entry.bytes;
-        if let Some(snapshot_type) = &entry.snapshot_type
-            && state.pending_snapshots.get(snapshot_type) == Some(&seq)
-        {
-            state.pending_snapshots.remove(snapshot_type);
+        loop {
+            let Some(entry) = state.entries.pop_front() else {
+                return Err(if state.closed {
+                    TryNextError::Closed
+                } else {
+                    TryNextError::Empty
+                });
+            };
+            let seq = state.head_seq;
+            state.head_seq += 1;
+            let Some(entry) = entry else {
+                continue;
+            };
+            state.queued_bytes -= entry.bytes;
+            if let Some(snapshot_type) = &entry.snapshot_type
+                && state.pending_snapshots.get(snapshot_type) == Some(&seq)
+            {
+                // The next queued entry of the type, if any, is the oldest one left to replace.
+                let next = state
+                    .entries
+                    .iter()
+                    .position(|queued| {
+                        queued.as_ref().is_some_and(|queued| {
+                            queued.snapshot_type.as_ref() == Some(snapshot_type)
+                        })
+                    })
+                    .map(|index| state.head_seq + index as u64);
+                match next {
+                    Some(next) => state.pending_snapshots.insert(snapshot_type.clone(), next),
+                    None => state.pending_snapshots.remove(snapshot_type),
+                };
+            }
+            return Ok(entry.message);
         }
-        Ok(entry.message)
     }
 
-    /// Number of snapshots replaced in place because this client had not yet received them.
+    /// Number of queued snapshots and deltas a newer snapshot replaced before this client
+    /// received them.
     pub(crate) fn coalesced_count(&self) -> u64 {
         self.state.lock().unwrap().coalesced
     }
@@ -317,13 +371,17 @@ mod tests {
         std::iter::from_fn(|| outbox.try_next().ok()).collect()
     }
 
-    /// Verifies the message type is read only from droppable publications.
+    /// Verifies the message type is read only from droppable publications and deltas.
     #[test]
     fn classifies_only_droppable_snapshots() {
         let snapshot = encoded(DISCRIMINATOR_DROPPABLE, &TestMessage::Snapshot(1));
         let ordered = encoded(DISCRIMINATOR_NON_DROPPABLE, &TestMessage::Snapshot(1));
+        let delta = encoded(DISCRIMINATOR_DELTA, &TestMessage::Snapshot(1));
         assert_eq!(snapshot.snapshot_type.as_deref(), Some("Snapshot"));
+        assert!(!snapshot.delta);
         assert_eq!(ordered.snapshot_type, None);
+        assert_eq!(delta.snapshot_type.as_deref(), Some("Snapshot"));
+        assert!(delta.delta);
     }
 
     /// Verifies newer snapshots replace queued ones of the same type in place, but never across
@@ -369,6 +427,74 @@ mod tests {
             ]
         );
         assert_eq!(outbox.coalesced_count(), 3);
+    }
+
+    /// Verifies deltas are always queued in order, and a full snapshot replaces every queued
+    /// snapshot and delta of its type at the position of the oldest, but never across an ordered
+    /// message, while entries of other types keep their place.
+    #[tokio::test]
+    async fn snapshots_collapse_queued_deltas() {
+        let outbox = ClientOutbox::new(OUTBOX_BYTE_LIMIT);
+        let publications = [
+            encoded(DISCRIMINATOR_DELTA, &TestMessage::Snapshot(1)),
+            encoded(DISCRIMINATOR_DROPPABLE, &TestMessage::Other(1)),
+            encoded(DISCRIMINATOR_DELTA, &TestMessage::Snapshot(2)),
+            encoded(DISCRIMINATOR_DROPPABLE, &TestMessage::Snapshot(3)),
+            encoded(DISCRIMINATOR_DELTA, &TestMessage::Snapshot(4)),
+            encoded(DISCRIMINATOR_NON_DROPPABLE, &TestMessage::Result(1)),
+            encoded(DISCRIMINATOR_DELTA, &TestMessage::Snapshot(5)),
+            encoded(DISCRIMINATOR_DELTA, &TestMessage::Snapshot(6)),
+        ];
+        let outcomes: Vec<_> = publications.iter().map(|p| outbox.publish(p)).collect();
+        assert_eq!(
+            outcomes,
+            [
+                Enqueued::Queued,
+                Enqueued::Queued,
+                Enqueued::Queued,
+                Enqueued::Coalesced,
+                Enqueued::Queued,
+                Enqueued::Queued,
+                Enqueued::Queued,
+                Enqueued::Queued,
+            ]
+        );
+        assert_eq!(outbox.coalesced_count(), 2);
+        let received: Vec<_> = drain(&outbox).into_iter().map(decoded).collect();
+        assert_eq!(
+            received,
+            [
+                ("Snapshot".to_owned(), 3),
+                ("Other".to_owned(), 1),
+                ("Snapshot".to_owned(), 4),
+                ("Result".to_owned(), 1),
+                ("Snapshot".to_owned(), 5),
+                ("Snapshot".to_owned(), 6),
+            ]
+        );
+        let state = outbox.state.lock().unwrap();
+        assert_eq!(state.queued_bytes, 0);
+        assert!(state.pending_snapshots.is_empty());
+    }
+
+    /// Verifies that once the oldest pending entry of a type is sent, a snapshot still collapses
+    /// the deltas of that type queued behind it instead of being appended after them.
+    #[tokio::test]
+    async fn sending_the_oldest_delta_keeps_the_rest_replaceable() {
+        let outbox = ClientOutbox::new(OUTBOX_BYTE_LIMIT);
+        for value in 1..=3 {
+            outbox.publish(&encoded(DISCRIMINATOR_DELTA, &TestMessage::Snapshot(value)));
+        }
+        assert_eq!(
+            decoded(outbox.next().await.unwrap()),
+            ("Snapshot".into(), 1)
+        );
+
+        let outcome = outbox.publish(&encoded(DISCRIMINATOR_DROPPABLE, &TestMessage::Snapshot(4)));
+        assert_eq!(outcome, Enqueued::Coalesced);
+        let received: Vec<_> = drain(&outbox).into_iter().map(decoded).collect();
+        assert_eq!(received, [("Snapshot".to_owned(), 4)]);
+        assert_eq!(outbox.state.lock().unwrap().queued_bytes, 0);
     }
 
     /// Verifies a snapshot published after the pending one was sent is queued again rather than
@@ -427,7 +553,7 @@ mod tests {
         }
         let state = outbox.state.lock().unwrap();
         assert_eq!(state.entries.len(), 1);
-        assert_eq!(state.queued_bytes, state.entries[0].bytes);
+        assert_eq!(state.queued_bytes, state.entries[0].as_ref().unwrap().bytes);
     }
 
     /// Verifies a regular close lets pending messages drain before the close frame.

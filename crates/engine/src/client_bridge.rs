@@ -53,6 +53,10 @@ use crate::{
 pub const DISCRIMINATOR_NON_DROPPABLE: u8 = 0;
 /// Snapshot-like message types that may be coalesced or dropped under load.
 pub const DISCRIMINATOR_DROPPABLE: u8 = 1;
+/// Changes on top of the previous message of the same type. A transport delivers every delta in
+/// order and never lets one replace a queued message; a newer droppable snapshot of the same type
+/// may replace queued deltas, since it carries their changes.
+pub const DISCRIMINATOR_DELTA: u8 = 2;
 
 /// Pre-encoded client message ready for transport delivery.
 ///
