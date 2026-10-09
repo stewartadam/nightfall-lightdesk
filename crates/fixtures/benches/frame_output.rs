@@ -15,7 +15,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use nightfall::prelude::{ObjectRef, ObjectType};
 use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
 use nightfall_dmx::prelude::ParameterValue;
-use nightfall_engine::prelude::ClientEventSink;
+use nightfall_engine::prelude::{ClientEventSink, OutboundFrame};
 use nightfall_fixtures::prelude::{
     ConsoleDmxUniverses, FixtureDataProviderExt, ParameterStateProjection,
 };
@@ -231,16 +231,16 @@ fn assert_every_parameter(app: &mut App, parameters: &[BenchParameter]) {
 }
 
 /// Installs an unbounded client sink and returns the receiver the benchmark drains.
-fn install_client_sink(app: &mut App) -> Receiver<Vec<u8>> {
+fn install_client_sink(app: &mut App) -> Receiver<OutboundFrame> {
     let (sender, receiver) = async_channel::unbounded();
     app.insert_resource(ClientEventSink::new(sender));
     receiver
 }
 
 /// Drains every queued client message and returns the total encoded byte count.
-fn drain_bytes(receiver: &Receiver<Vec<u8>>) -> usize {
+fn drain_bytes(receiver: &Receiver<OutboundFrame>) -> usize {
     std::iter::from_fn(|| receiver.try_recv().ok())
-        .map(|message| message.len())
+        .map(|message| message.bytes.len())
         .sum()
 }
 

@@ -10,7 +10,7 @@ use bevy_app::prelude::*;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
-    CommandNotice, CommandReply, CommandResult, CommandTracker, EngineActionEnvelope,
+    CommandNoticeReply, CommandReply, CommandResult, CommandTracker, EngineActionEnvelope,
     FinishedCommand,
 };
 use nightfall_fixture_model::prelude::*;
@@ -25,7 +25,7 @@ fn init_command_lifecycle(app: &mut App) {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
 }
 
 /// Build a single-parameter fixture for restore system tests.

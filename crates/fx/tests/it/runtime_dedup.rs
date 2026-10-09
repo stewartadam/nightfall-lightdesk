@@ -20,8 +20,9 @@ use nightfall_desk::instances::sync_active_state_on_instance_despawn;
 use nightfall_desk::systems::event_handlers::instance_events::handle_playback_commands;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
-    DataProvider, EngineActionEnvelope, EventEnvelope, FinishedCommand, ReplyTarget,
+    CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
+    CommandTracker, DataProvider, EngineActionEnvelope, EventEnvelope, FinishedCommand,
+    ReplyTarget,
 };
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_fx::events::{StepFxCommandResult, handle_events, handle_preview_commands};
@@ -47,7 +48,7 @@ fn add_command_lifecycle(app: &mut App) {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
 }
 
 /// Adds fixture and group resources required by selection-aware FX command handlers.

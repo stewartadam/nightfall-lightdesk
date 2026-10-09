@@ -30,7 +30,7 @@ fn setup_app() -> App {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.init_resource::<Programmer>();
     app.init_resource::<StoreObjectWorkflows>();
@@ -109,9 +109,9 @@ fn send_command(app: &mut App, command: ProgrammerCommand) {
 /// Drains non-terminal command feedback emitted by Blueprint application handling.
 fn command_notices(app: &mut App) -> Vec<String> {
     app.world_mut()
-        .resource_mut::<bevy_ecs::prelude::Messages<CommandNotice>>()
+        .resource_mut::<bevy_ecs::prelude::Messages<CommandNoticeReply>>()
         .drain()
-        .map(|notice| notice.message)
+        .map(|reply| reply.notice.message)
         .collect()
 }
 

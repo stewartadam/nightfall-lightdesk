@@ -15,7 +15,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::world::CommandQueue;
 use nightfall_dmx::DmxValueResolution;
 use nightfall_dmx::prelude::{Attribute, ParameterUnit, ParameterValue};
-use nightfall_engine::prelude::{CommandEnvelope, CommandError, CommandId, UndoId};
+use nightfall_engine::prelude::{CommandEnvelope, CommandError, CommandId, CommandTracker, UndoId};
 use nightfall_fixture_model::prelude::PhysicalUnit;
 
 use super::catalog::{
@@ -741,6 +741,7 @@ fn create_library_fixtures_rejects_empty_request() {
 fn deserialize_fixture_library_command_writes_semantic_envelope() {
     let mut world = World::new();
     world.insert_resource(Messages::<CommandEnvelope<FixtureLibraryCommand>>::default());
+    world.init_resource::<CommandTracker>();
     let command_id = CommandId::new();
     let undo_id = UndoId::new();
     deserialize_fixture_library_command(

@@ -20,7 +20,7 @@ use nightfall_cues::prelude::{
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandId, CommandNotice, CommandOrigin, CommandOutcome, CommandReply,
+    CommandEnvelope, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandReply,
     CommandResult, CommandTracker, DataProvider, EngineActionEnvelope, FinishedCommand,
     OperationResult, PendingEngineActionBuffer, ReplyTarget,
 };
@@ -304,7 +304,7 @@ fn setup_app() -> App {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.add_message::<EngineActionEnvelope<CueStoreOperation>>();
     app.add_message::<OperationResult<CueStoreSuccess, CueStoreError>>();
     app.init_resource::<CommandTracker>();
@@ -625,9 +625,9 @@ fn command_feedback_messages(app: &mut App) -> Vec<String> {
         .collect::<Vec<_>>();
     messages.extend(
         app.world_mut()
-            .resource_mut::<Messages<CommandNotice>>()
+            .resource_mut::<Messages<CommandNoticeReply>>()
             .drain()
-            .map(|notice| notice.message),
+            .map(|reply| reply.notice.message),
     );
     messages
 }

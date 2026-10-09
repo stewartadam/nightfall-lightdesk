@@ -304,7 +304,7 @@ mod tests {
         world.init_resource::<Messages<CommandResult>>();
         world.init_resource::<Messages<CommandReply>>();
         world.init_resource::<Messages<FinishedCommand>>();
-        world.init_resource::<Messages<CommandNotice>>();
+        world.init_resource::<Messages<CommandNoticeReply>>();
     }
 
     /// Verifies a registered erased action is restored to its concrete typed envelope.

@@ -73,6 +73,8 @@ struct TransportHeartbeatResponse<'a> {
 /// A connected session and whether it arrived through the loopback interface.
 #[derive(Clone)]
 pub struct ConnectedClient {
+    /// Identity the engine uses to address replies to this session.
+    pub id: ClientId,
     /// Bounded outbound queue for this session.
     pub(crate) outbox: Arc<ClientOutbox>,
     /// Cancels both I/O tasks without depending on the peer reading an outgoing frame.
@@ -90,6 +92,8 @@ pub struct AxumAppState {
     pub update_json_tx: ClientSender<UpdateJsonEnvelope>,
     /// Maintains references the message channels of connected client
     pub clients: Arc<Mutex<Vec<ConnectedClient>>>,
+    /// Source of unique identities for sessions, never reused while the server runs.
+    pub next_client_id: Arc<AtomicU64>,
     /// Admission generation used to reject remote upgrades from retired listeners.
     pub remote_generation: Arc<AtomicU64>,
     /// Session PIN and tokens that devices on the network need to connect.
@@ -160,6 +164,7 @@ async fn client_ws(
     let clients = state.clients.clone();
     let command_json_tx = state.command_json_tx.clone();
     let update_json_tx = state.update_json_tx.clone();
+    let client_id = ClientId(state.next_client_id.fetch_add(1, Ordering::Relaxed));
 
     // Register client and then drop reference to the guard
     // Required to that this async fn is Send-compatible
@@ -172,6 +177,7 @@ async fn client_ws(
             return;
         }
         guard.push(ConnectedClient {
+            id: client_id,
             outbox: outbox.clone(),
             cancellation: cancellation.clone(),
             local,
@@ -202,11 +208,13 @@ async fn client_ws(
             while let Some(Ok(msg)) = ws_receiver.next().await {
                 if let Message::Text(text) = msg {
                     match serde_json::from_str::<InboundWebsocketText>(&text) {
-                        Ok(InboundWebsocketText::Command(json_envelope)) => {
+                        Ok(InboundWebsocketText::Command(mut json_envelope)) => {
                             tracing::trace!(
+                                %client_id,
                                 "Parsed command envelope from websocket (module={})",
                                 json_envelope.module
                             );
+                            json_envelope.client = Some(client_id);
                             let _ = command_json_tx.send(json_envelope).await;
                         }
                         Ok(InboundWebsocketText::Update(json_envelope)) => {
@@ -367,11 +375,37 @@ async fn stop_listeners(
     }
 }
 
+/// Queues one engine frame on every session in its audience.
+///
+/// Each session's outbox bounds what a slow reader can accumulate and drops the session once
+/// it falls too far behind. A frame addressed to a session that already disconnected reaches
+/// no one.
+fn deliver_frame(clients: &Mutex<Vec<ConnectedClient>>, frame: OutboundFrame) {
+    tracing::trace!(
+        audience = ?frame.audience,
+        "Sending plugin-serialized websocket message ({} KB)",
+        frame.bytes.len() as f32 / 1024.0
+    );
+    let audience = frame.audience;
+    let publication = Publication::from_encoded(frame.bytes);
+    let mut guard = clients.lock().unwrap();
+    guard.retain(|client| {
+        if !audience.includes(client.id) {
+            return true;
+        }
+        let outcome = client.outbox.publish(&publication);
+        if outcome == Enqueued::Overflowed {
+            cancel_after_lag_grace(client.cancellation.clone());
+        }
+        outcome.keeps_client()
+    });
+}
+
 /// Start the axum websocket server and broadcast task.
 pub(crate) fn create_axum_task(
     config: crate::external_control::ListenerTaskConfig,
     mut shutdown_rx: BroadcastReceiver<()>,
-    ws_broadcast_rx: ClientReceiver<Vec<u8>>,
+    ws_broadcast_rx: ClientReceiver<OutboundFrame>,
     command_json_tx: CommandSender,
     update_json_tx: ClientSender<UpdateJsonEnvelope>,
     plugin_routes: Router,
@@ -390,31 +424,19 @@ pub(crate) fn create_axum_task(
         command_json_tx,
         update_json_tx,
         clients: clients.clone(),
+        next_client_id: Default::default(),
         remote_generation: remote_generation.clone(),
         pairing: Arc::new(crate::pairing::RemotePairing::new(port)),
     };
     let routes = SwappableRoutes::new(state.clone(), web_ui, plugin_routes, stateful_plugin_routes);
     let axum_app = websocket_router(state, routes.clone());
 
-    // Byte-oriented broadcast task for plugin-owned serialization. Each client's outbox bounds
-    // what a slow reader can accumulate and drops the client once it falls too far behind.
+    // Byte-oriented fan-out task for plugin-owned serialization
     let _broadcast_task = tokio::spawn({
         let clients = clients.clone();
         async move {
-            while let Ok(encoded) = ws_broadcast_rx.recv().await {
-                tracing::trace!(
-                    "Sending plugin-serialized websocket message ({} KB)",
-                    encoded.len() as f32 / 1024.0
-                );
-                let publication = Publication::from_encoded(encoded);
-                let mut guard = clients.lock().unwrap();
-                guard.retain(|client| {
-                    let outcome = client.outbox.publish(&publication);
-                    if outcome == Enqueued::Overflowed {
-                        cancel_after_lag_grace(client.cancellation.clone());
-                    }
-                    outcome.keeps_client()
-                });
+            while let Ok(frame) = ws_broadcast_rx.recv().await {
+                deliver_frame(&clients, frame);
             }
         }
     });
@@ -785,11 +807,13 @@ mod tests {
         let (remote_cancel, remote_cancellation) = tokio::sync::watch::channel(false);
         let clients = Arc::new(Mutex::new(vec![
             ConnectedClient {
+                id: ClientId(0),
                 outbox: local_outbox.clone(),
                 cancellation: local_cancel,
                 local: true,
             },
             ConnectedClient {
+                id: ClientId(1),
                 outbox: remote_outbox.clone(),
                 cancellation: remote_cancel,
                 local: false,
@@ -828,6 +852,7 @@ mod tests {
         assert_eq!(commands_rx.recv().await, Some("before revocation"));
         let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
         let clients = Arc::new(Mutex::new(vec![ConnectedClient {
+            id: ClientId(0),
             outbox: Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT)),
             cancellation,
             local: false,
@@ -850,12 +875,56 @@ mod tests {
         assert!(clients.lock().unwrap().is_empty());
     }
 
+    /// Verifies addressed frames reach only their client, broadcast frames reach every client,
+    /// and both keep their relative order on each session.
+    #[test]
+    fn deliver_frame_honours_audience() {
+        let first = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let second = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let clients = Mutex::new(vec![
+            ConnectedClient {
+                id: ClientId(1),
+                outbox: first.clone(),
+                cancellation: tokio::sync::watch::channel(false).0,
+                local: true,
+            },
+            ConnectedClient {
+                id: ClientId(2),
+                outbox: second.clone(),
+                cancellation: tokio::sync::watch::channel(false).0,
+                local: false,
+            },
+        ]);
+        let frame = |audience, byte| OutboundFrame {
+            audience,
+            bytes: vec![byte],
+        };
+
+        deliver_frame(&clients, frame(Audience::All, 1));
+        deliver_frame(&clients, frame(Audience::Client(ClientId(2)), 2));
+        deliver_frame(&clients, frame(Audience::Client(ClientId(9)), 3));
+        deliver_frame(&clients, frame(Audience::All, 4));
+
+        let drain = |outbox: &ClientOutbox| {
+            std::iter::from_fn(|| outbox.try_next().ok())
+                .map(|message| match message {
+                    Message::Binary(bytes) => bytes[0],
+                    other => panic!("unexpected message {other:?}"),
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(drain(&first), vec![1, 4]);
+        assert_eq!(drain(&second), vec![1, 2, 4]);
+        assert_eq!(clients.lock().unwrap().len(), 2);
+    }
+
     /// Verifies shutdown fanout sends a close frame and removes all registered clients.
     #[test]
     fn close_connected_clients_sends_close_and_clears_registry() {
         let outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
         let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
         let clients = Arc::new(Mutex::new(vec![ConnectedClient {
+            id: ClientId(0),
             outbox: outbox.clone(),
             cancellation,
             local: true,
@@ -922,6 +991,7 @@ mod tests {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
         };
@@ -1022,6 +1092,7 @@ mod tests {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(3030)),
         };
@@ -1159,6 +1230,7 @@ mod tests {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(3030)),
         };
@@ -1279,6 +1351,7 @@ mod tests {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
         };

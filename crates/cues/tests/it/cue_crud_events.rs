@@ -21,7 +21,7 @@ use nightfall_cues::prelude::{
 use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandId, CommandNotice, CommandOrigin, CommandOutcome, CommandOutput,
+    CommandEnvelope, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandOutput,
     CommandReply, CommandResult, CommandTracker, DataProvider, EngineActionEnvelope,
     FinishedCommand, OperationId, ReplyTarget, UndoId,
 };
@@ -41,7 +41,7 @@ fn init_cue_runtime_resources(app: &mut App) {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.add_message::<CueDefinitionChange>();
     app.add_message::<SequenceDefinitionChange>();
 }

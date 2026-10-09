@@ -65,6 +65,15 @@ pub struct CommandReply {
     pub reply_target: ReplyTarget,
 }
 
+/// Transport-routing instruction emitted for one non-terminal command notice.
+#[derive(Clone, Debug, Message)]
+pub struct CommandNoticeReply {
+    /// Transport-neutral operator feedback.
+    pub notice: CommandNotice,
+    /// Adapter that should deliver the notice to its initiating client.
+    pub reply_target: ReplyTarget,
+}
+
 /// Failure to register a new command lifecycle.
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum CommandRegistrationError {
@@ -142,6 +151,25 @@ impl CommandTracker {
             },
         );
         Ok(())
+    }
+
+    /// Wraps a typed payload in the context its ingress adapter registered for `command_id`.
+    ///
+    /// Domain deserializers run after ingress registered the command, so the tracker holds the
+    /// origin and reply target the transport assigned. An untracked command falls back to a
+    /// broadcast Web UI context.
+    pub fn admitted_envelope<T>(
+        &self,
+        command_id: CommandId,
+        undo_id: UndoId,
+        command: T,
+    ) -> CommandEnvelope<T> {
+        let (origin, reply_target) = self
+            .active
+            .get(&command_id)
+            .map(|active| (active.origin.clone(), active.reply_target.clone()))
+            .unwrap_or((CommandOrigin::WebUi, ReplyTarget::ClientBroadcast));
+        CommandEnvelope::with_context(command_id, undo_id, origin, reply_target, command)
     }
 
     /// Returns whether the supplied command is currently awaiting a terminal result.
@@ -363,7 +391,7 @@ pub struct CommandResponder<'w> {
     results: MessageWriter<'w, CommandResult>,
     replies: MessageWriter<'w, CommandReply>,
     finished_commands: MessageWriter<'w, FinishedCommand>,
-    notices: MessageWriter<'w, CommandNotice>,
+    notices: MessageWriter<'w, CommandNoticeReply>,
 }
 
 impl CommandResponder<'_> {
@@ -467,10 +495,18 @@ impl CommandResponder<'_> {
         message: impl Into<String>,
     ) -> Result<(), CommandLifecycleError> {
         self.tracker.verify_active(command_id)?;
-        self.notices.write(CommandNotice {
-            command_id,
-            level,
-            message: message.into(),
+        let reply_target = self
+            .tracker
+            .active_command(command_id)
+            .map(|active| active.reply_target.clone())
+            .unwrap_or(ReplyTarget::ClientBroadcast);
+        self.notices.write(CommandNoticeReply {
+            notice: CommandNotice {
+                command_id,
+                level,
+                message: message.into(),
+            },
+            reply_target,
         });
         Ok(())
     }
@@ -749,7 +785,7 @@ mod tests {
         world.init_resource::<Messages<CommandResult>>();
         world.init_resource::<Messages<CommandReply>>();
         world.init_resource::<Messages<FinishedCommand>>();
-        world.init_resource::<Messages<CommandNotice>>();
+        world.init_resource::<Messages<CommandNoticeReply>>();
         let mut state = SystemState::<CommandResponder>::new(&mut world);
         let command_id = CommandId::new();
 
@@ -774,7 +810,7 @@ mod tests {
         world.init_resource::<Messages<CommandResult>>();
         world.init_resource::<Messages<CommandReply>>();
         world.init_resource::<Messages<FinishedCommand>>();
-        world.init_resource::<Messages<CommandNotice>>();
+        world.init_resource::<Messages<CommandNoticeReply>>();
         let command = command();
         world
             .resource_mut::<CommandTracker>()

@@ -40,7 +40,7 @@ use nightfall_desk::{
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNotice,
+    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
     DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
     EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, Render, RenderPass,
@@ -1375,7 +1375,7 @@ fn publish_world_replaced_notifies_clients() {
     )
     .expect("world replacement should encode")
     .to_bytes();
-    assert_eq!(rx.try_recv().ok(), Some(expected));
+    assert_eq!(rx.try_recv().ok().map(|frame| frame.bytes), Some(expected));
     assert!(rx.try_recv().is_err());
 }
 
@@ -1391,7 +1391,7 @@ fn world_swap_success_emits_command_result_for_original_request() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.world_mut()
         .resource_mut::<CommandTracker>()

@@ -17,7 +17,7 @@ use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
 use nightfall_desk::prelude::{DeskSettings, SelectionFlattenPolicy};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin, CommandOutcome,
+    CommandEnvelope, CommandError, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome,
     CommandReply, CommandResult, CommandTracker, DataProvider, EngineActionEnvelope,
     FinishedCommand, OperationResult, PayloadEnvelope, PendingCommandBuffer,
     PendingEngineActionBuffer, ReplyTarget,
@@ -94,7 +94,7 @@ fn setup_app() -> App {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.init_resource::<SelectionFlattenApprovals>();
     app.init_resource::<PendingUserCommandPlans>();

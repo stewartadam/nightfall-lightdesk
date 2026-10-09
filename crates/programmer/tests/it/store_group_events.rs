@@ -11,8 +11,9 @@ use bevy_ecs::{prelude::Messages, schedule::IntoScheduleConfigs};
 use nightfall::prelude::*;
 use nightfall_desk::prelude::GroupAction;
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
-    DataProvider, EngineActionEnvelope, FinishedCommand, OperationResult, ReplyTarget,
+    CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
+    CommandTracker, DataProvider, EngineActionEnvelope, FinishedCommand, OperationResult,
+    ReplyTarget,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_fixtures::selection::SpatialSelectionResolver;
@@ -148,7 +149,7 @@ fn tracked_store_group_finishes_after_action_result() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.add_systems(
         Update,
         (

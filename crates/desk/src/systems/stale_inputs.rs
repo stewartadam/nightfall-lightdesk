@@ -99,8 +99,8 @@ mod tests {
     use moonshine_kind::prelude::Instance;
     use nightfall_dmx::prelude::ParameterValue;
     use nightfall_engine::prelude::{
-        CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker, FinishedCommand,
-        ReplyTarget,
+        CommandNoticeReply, CommandOrigin, CommandReply, CommandResult, CommandTracker,
+        FinishedCommand, ReplyTarget,
     };
     use nightfall_fixtures::prelude::TRANSPORT_INPUT_LAYER_PRIORITY;
     use nightfall_fixtures::prelude::{ConsoleChannelOrigin, Parameter, ParameterAssertionSource};
@@ -113,7 +113,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         app.init_resource::<CommandTracker>();
     }
 

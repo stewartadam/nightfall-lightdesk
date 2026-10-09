@@ -100,12 +100,15 @@ pub fn process_json_envelopes(world: &mut World) {
         let command_id = envelope.command_id;
         let undo_id = envelope.effective_undo_id();
         let command_json = envelope.command;
+        let reply_target = envelope
+            .client
+            .map_or(ReplyTarget::ClientBroadcast, ReplyTarget::Client);
 
         let registration = world.resource_mut::<CommandTracker>().register_context(
             command_id,
             undo_id,
             CommandOrigin::WebUi,
-            ReplyTarget::ClientBroadcast,
+            reply_target,
         );
         if let Err(error) = registration {
             tracing::warn!(
@@ -247,6 +250,7 @@ mod tests {
             undo_id: None,
             module: module.to_string(),
             command,
+            client: None,
         }
     }
 

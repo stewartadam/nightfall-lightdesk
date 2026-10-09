@@ -284,7 +284,7 @@ mod tests {
     use nightfall::prelude::{ObjectRef, ObjectType};
     use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
     use nightfall_dmx::prelude::{Attribute, DmxValueResolution, Percentage};
-    use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE};
+    use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, OutboundFrame};
     use nightfall_io::OutputTransport;
 
     use super::*;
@@ -295,7 +295,7 @@ mod tests {
     use crate::websocket::{register_fixture_websocket_diagnostics, send_parameter_state};
 
     /// Builds an app publishing parameter state for `fixture_count` patched bench fixtures.
-    fn projection_app(fixture_count: usize) -> (App, Vec<BenchParameter>, Receiver<Vec<u8>>) {
+    fn projection_app(fixture_count: usize) -> (App, Vec<BenchParameter>, Receiver<OutboundFrame>) {
         let mut app = App::new();
         app.add_plugins(DiagnosticsPlugin);
         register_fixture_websocket_diagnostics(&mut app);
@@ -315,9 +315,9 @@ mod tests {
     }
 
     /// Returns how many layout messages were published since the last drain.
-    fn drain_layout_count(receiver: &Receiver<Vec<u8>>) -> usize {
+    fn drain_layout_count(receiver: &Receiver<OutboundFrame>) -> usize {
         std::iter::from_fn(|| receiver.try_recv().ok())
-            .filter(|bytes| bytes[0] == DISCRIMINATOR_NON_DROPPABLE)
+            .filter(|frame| frame.bytes[0] == DISCRIMINATOR_NON_DROPPABLE)
             .count()
     }
 

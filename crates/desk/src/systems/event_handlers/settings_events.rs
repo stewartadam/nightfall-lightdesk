@@ -418,7 +418,7 @@ mod command_tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         let (sender, _receiver) = async_channel::unbounded();
         app.insert_resource(ClientEventSink::new(sender));
         app.add_systems(Update, (handle_events, finish_commands).chain());
@@ -516,6 +516,7 @@ mod command_tests {
     fn deserialize_settings_command_writes_semantic_envelope() {
         let mut world = World::new();
         world.insert_resource(Messages::<CommandEnvelope<SettingsCommand>>::default());
+        world.init_resource::<CommandTracker>();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
 

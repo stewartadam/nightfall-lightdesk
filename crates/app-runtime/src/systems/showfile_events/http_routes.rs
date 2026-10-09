@@ -345,6 +345,7 @@ async fn save_current_showfile_draft(
             "type": "SaveDraftShowfile",
             "data": save_options,
         }),
+        client: None,
     };
 
     match state.command_json_tx.send(envelope).await {

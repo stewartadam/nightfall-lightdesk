@@ -237,13 +237,10 @@ pub fn deserialize_fixture_library_command(
 ) -> Result<(), String> {
     let command: FixtureLibraryCommand = serde_json::from_value(json)
         .map_err(|error| format!("Failed to parse FixtureLibraryCommand: {error}"))?;
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
     Ok(())
 }
 
