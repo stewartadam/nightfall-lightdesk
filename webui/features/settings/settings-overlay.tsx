@@ -66,6 +66,11 @@ import {
   visualizerShowOrbitTargetIndicator,
 } from "../visualizer";
 import { AppearanceSettings } from "./appearance-settings";
+import { PrivacySettings } from "./privacy-settings";
+import {
+  $requestedSettingsTab,
+  type SettingsTab,
+} from "./settings-tab-request";
 
 const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
 const DEFAULT_SHOWFILE_BACKUP_RETENTION = 20;
@@ -84,19 +89,13 @@ const ROTATION_MODE_OPTIONS: {
   { value: "center-locked", label: "Center-locked (orbit world origin)" },
 ];
 
-type SettingsTab =
-  | "general"
-  | "appearance"
-  | "editors"
-  | "network"
-  | "visualizer";
-
 const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "general", label: "General" },
   { key: "appearance", label: "Appearance" },
   { key: "editors", label: "Editors" },
   { key: "network", label: "Network" },
   { key: "visualizer", label: "Visualizer" },
+  { key: "privacy", label: "Privacy" },
 ];
 
 /** Returns the human-readable interface name, falling back to the system name. */
@@ -162,7 +161,15 @@ export function SettingsOverlay() {
   const quality = useStore(visualizerQuality);
   const darkness = useStore(visualizerDarkness);
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
+  const requestedTab = useStore($requestedSettingsTab);
   const tabId = createUniqueId();
+  /** Switches to a tab another surface asked for, then forgets the request. */
+  createEffect(() => {
+    const tab = requestedTab();
+    if (!tab || !isSettingsOpen()) return;
+    setActiveTab(tab);
+    $requestedSettingsTab.set(null);
+  });
   /** Refreshes backend-provided device choices whenever settings becomes visible. */
   createEffect(() => {
     if (!isSettingsOpen()) return;
@@ -361,7 +368,7 @@ export function SettingsOverlay() {
         label="Settings"
         closeLabel="Close settings"
         onDismiss={closeSettings}
-        class="max-w-[500px]"
+        class="max-w-[560px]"
         style={{ "max-height": "80vh" }}
       >
         <div class="px-4 pt-3">
@@ -383,6 +390,9 @@ export function SettingsOverlay() {
         >
           <Show when={activeTab() === "appearance"}>
             <AppearanceSettings />
+          </Show>
+          <Show when={activeTab() === "privacy"}>
+            <PrivacySettings />
           </Show>
           <Show when={activeTab() === "general"}>
             <section>

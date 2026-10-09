@@ -239,6 +239,8 @@ pub(super) enum DeskWsMessage<'a> {
     IoSettings(&'a IoRuntimeSettings),
     /// Host-owned external control settings and listener status.
     ExternalControlState(&'a ExternalControlState),
+    /// Host-owned telemetry consent and anonymous identifier.
+    TelemetryState(&'a crate::settings::TelemetryState),
     /// Network interfaces list
     AvailableNetworkInterfaces(&'a [NetworkInterfaceInfo]),
     /// Current/default network interface status

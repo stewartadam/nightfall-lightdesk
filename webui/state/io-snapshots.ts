@@ -31,6 +31,7 @@ import {
   $networkInterfaceStatus,
   $settings,
   $settingsSnapshotRevision,
+  $telemetryState,
 } from "./settings";
 
 /** Reads persisted panel layouts from settings while tolerating older snapshots. */
@@ -146,6 +147,11 @@ export function applyOscListenerStatusSnapshot(
   status: types.OscListenerStatus | null,
 ): void {
   setStoreAction(oscListenerStatus, "Receive OscListenerStatus", status);
+}
+
+/** Applies host-owned telemetry consent so every client reflects the same choices. */
+export function applyTelemetryStateSnapshot(state: types.TelemetryState): void {
+  setStoreAction($telemetryState, "Receive TelemetryState", state);
 }
 
 /** Applies host-owned external control preferences and listener health. */

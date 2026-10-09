@@ -21,6 +21,7 @@ import {
   applyOscMappingsSnapshot,
   applyOscSourcesSnapshot,
   applySettingsSnapshot,
+  applyTelemetryStateSnapshot,
 } from "../../state/io-snapshots";
 import type { WsMessageHandlerRegistry } from "./message-registry";
 import type { AnyWsMessage } from "./types";
@@ -35,6 +36,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("ExternalControlState", (message) => {
     applyExternalControlStateSnapshot(message.data);
+  });
+
+  registry.register("TelemetryState", (message) => {
+    applyTelemetryStateSnapshot(message.data);
   });
 
   registry.register("IoSettings", (message) => {

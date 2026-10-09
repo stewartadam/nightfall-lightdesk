@@ -25,7 +25,7 @@ use nightfall_io::prelude::{
 };
 
 use crate::prelude::DeskSettings;
-use crate::settings::{AvailableAudioDevices, SettingsCommand};
+use crate::settings::{AvailableAudioDevices, SettingsCommand, TelemetryState};
 
 #[derive(Clone, Debug)]
 enum SettingsCommandSuccess {
@@ -51,6 +51,7 @@ pub struct SettingsCommandParams<'w> {
     settings: ResMut<'w, DeskSettings>,
     io_settings: ResMut<'w, IoRuntimeSettings>,
     external_control: ResMut<'w, nightfall_io::ExternalControlState>,
+    telemetry: ResMut<'w, TelemetryState>,
     binding_validation_settings: ResMut<'w, BindingValidationSettings>,
     input_universe_stale_timeout: ResMut<'w, InputUniverseStaleTimeout>,
     input_universe_visibility_mode: ResMut<'w, InputUniverseVisibilityMode>,
@@ -110,6 +111,18 @@ pub fn handle_events(
             SettingsCommand::SetExternalControl(value) => {
                 if params.external_control.available {
                     params.external_control.settings = value.clone();
+                }
+                SettingsCommandSuccess::Applied
+            }
+            SettingsCommand::SetTelemetryConsent(value) => {
+                if params.telemetry.available {
+                    params.telemetry.consent = *value;
+                }
+                SettingsCommandSuccess::Applied
+            }
+            SettingsCommand::ResetTelemetryInstallId => {
+                if params.telemetry.available {
+                    params.telemetry.install_id = uuid::Uuid::new_v4().to_string();
                 }
                 SettingsCommandSuccess::Applied
             }
@@ -400,6 +413,7 @@ mod command_tests {
         app.init_resource::<DeskSettings>();
         app.init_resource::<IoRuntimeSettings>();
         app.init_resource::<nightfall_io::ExternalControlState>();
+        app.init_resource::<TelemetryState>();
         app.init_resource::<BindingValidationSettings>();
         app.init_resource::<InputUniverseStaleTimeout>();
         app.init_resource::<InputUniverseVisibilityMode>();
@@ -471,6 +485,38 @@ mod command_tests {
         );
         assert_eq!(*app.world().resource::<IoRuntimeSettings>(), before);
         assert_eq!(take_result(&mut app).outcome, CommandOutcome::succeeded());
+    }
+
+    /// Verifies consent and identifier commands update host telemetry state only where it can be stored.
+    #[test]
+    fn telemetry_commands_require_available_host() {
+        let mut app = settings_command_app();
+        let consent = crate::settings::TelemetryConsent {
+            decided: true,
+            share_usage: true,
+            share_errors: false,
+        };
+        submit_command(&mut app, SettingsCommand::SetTelemetryConsent(consent));
+        app.update();
+        assert_eq!(take_result(&mut app).outcome, CommandOutcome::succeeded());
+        assert_eq!(
+            app.world().resource::<TelemetryState>().consent,
+            Default::default(),
+            "an unavailable host must ignore consent changes"
+        );
+
+        {
+            let mut state = app.world_mut().resource_mut::<TelemetryState>();
+            state.available = true;
+            state.install_id = "before".into();
+        }
+        submit_command(&mut app, SettingsCommand::SetTelemetryConsent(consent));
+        submit_command(&mut app, SettingsCommand::ResetTelemetryInstallId);
+        app.update();
+        let state = app.world().resource::<TelemetryState>();
+        assert_eq!(state.consent, consent);
+        assert_ne!(state.install_id, "before");
+        assert!(uuid::Uuid::parse_str(&state.install_id).is_ok());
     }
 
     /// Verifies a setting mutation is visible before terminal success is published.

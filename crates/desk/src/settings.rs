@@ -193,6 +193,36 @@ pub enum TimelinePlacementPreference {
     Cursor,
 }
 
+/// Operator choices about anonymous telemetry, kept with the host rather than any showfile
+/// so that opening a show on another computer never changes what that computer shares.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+#[serde(default)]
+pub struct TelemetryConsent {
+    /// Whether the operator has answered the telemetry prompt; while false the UI keeps asking.
+    pub decided: bool,
+    /// Whether anonymous usage reports (hardware, patch makeup, app starts) may be sent.
+    pub share_usage: bool,
+    /// Whether automatic error and crash reports may be sent.
+    pub share_errors: bool,
+}
+
+/// Host telemetry consent plus the anonymous identifier that groups one installation's reports.
+#[derive(
+    Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, bevy_ecs::prelude::Resource,
+)]
+#[typeshare::typeshare]
+pub struct TelemetryState {
+    /// Whether this runtime can store host preferences; false in the browser demo and tests.
+    pub available: bool,
+    /// The operator's current choices.
+    pub consent: TelemetryConsent,
+    /// Random identifier attached to reports so monthly installs can be counted; empty until loaded.
+    pub install_id: String,
+    /// Persistence failure the operator should see.
+    pub error: Option<String>,
+}
+
 /// Commands for modifying desk-wide settings
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
@@ -205,6 +235,10 @@ pub enum SettingsCommand {
     SetNetworkInterface(Option<String>),
     /// Sets host-owned external control permission and interface selection.
     SetExternalControl(ExternalControlSettings),
+    /// Sets host-owned telemetry consent.
+    SetTelemetryConsent(TelemetryConsent),
+    /// Replaces the anonymous telemetry identifier with a new random one.
+    ResetTelemetryInstallId,
     /// Set whether network DMX output is enabled
     SetNetworkOutputEnabled(bool),
     /// Set whether network DMX input is enabled

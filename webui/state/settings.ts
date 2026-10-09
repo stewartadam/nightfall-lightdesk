@@ -17,6 +17,7 @@ import {
   type NetworkInterfaceStatus,
   SelectionFlattenPolicy,
   SequenceReorderRenumberPolicy,
+  type TelemetryState,
   TimeDisplayPreference,
   TimelinePlacementPreference,
   type UsbDmxDeviceInfo,
@@ -67,6 +68,14 @@ export const $availableAudioDevices = atom<Record<string, string>>({});
 
 /** Compatible USB DMX devices for output transport selection */
 export const $availableUsbDmxDevices = atom<UsbDmxDeviceInfo[]>([]);
+
+/** Host-owned telemetry consent and the anonymous identifier reports are grouped under. */
+export const $telemetryState = atom<TelemetryState>({
+  available: false,
+  consent: { decided: false, share_usage: false, share_errors: false },
+  install_id: "",
+  error: undefined,
+});
 
 /** Host-owned external control preferences and live listener status. */
 export const $externalControlState = atom<ExternalControlState>({

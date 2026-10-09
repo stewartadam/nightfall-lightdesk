@@ -265,10 +265,14 @@ pub fn send_settings_on_change(
 pub fn send_io_settings_on_change(
     settings: Res<IoRuntimeSettings>,
     external_control: Res<ExternalControlState>,
+    telemetry: Res<crate::settings::TelemetryState>,
     broadcaster: Res<ClientEventSink>,
 ) {
     if external_control.is_changed() {
         send_external_control_state(&external_control, &broadcaster);
+    }
+    if telemetry.is_changed() {
+        send_telemetry_state(&telemetry, &broadcaster);
     }
     if !settings.is_changed() {
         return;
@@ -382,6 +386,17 @@ fn broadcast_network_interface_status(
         &DeskWsMessage::NetworkInterfaceStatus(status),
     );
     tracing::trace!("Sending network interface status to websocket clients");
+}
+
+/// Publishes host telemetry consent so every connected client shows the same choices.
+pub fn send_telemetry_state(
+    state: &crate::settings::TelemetryState,
+    broadcaster: &ClientEventSink,
+) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &DeskWsMessage::TelemetryState(state),
+    );
 }
 
 /// Publishes host control preferences and actual listener status to clients.

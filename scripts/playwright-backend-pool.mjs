@@ -8,7 +8,14 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, openSync, readdirSync, rmSync } from "node:fs";
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { clonePlaywrightDataDir } from "./nightfall-test-data-dir.mjs";
@@ -239,10 +246,31 @@ export function sampleDataBootstrapEnvironment({
   };
 }
 
+/**
+ * Records a declined telemetry choice so the first-run prompt stays out of tests that
+ * are not about it, or removes any stored choice so the prompt appears.
+ */
+function seedTelemetryChoice(dataDir, telemetryUndecided) {
+  const path = join(dataDir, "telemetry.json");
+  if (telemetryUndecided) {
+    rmSync(path, { force: true });
+    return;
+  }
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      consent: { decided: true, share_usage: false, share_errors: false },
+      install_id: "",
+    }),
+  );
+}
+
 /** Starts a freshly seeded backend for one test on its worker's fixed port. */
 export async function startPlaywrightTestBackend({
   emptyStartupWorld = false,
   experimentalFlows = false,
+  telemetryUndecided = false,
   seedDataDir,
   testId,
   workerSlot,
@@ -252,6 +280,7 @@ export async function startPlaywrightTestBackend({
     seedDataDir,
     workerSlot.runRoot,
   );
+  seedTelemetryChoice(dataDir, telemetryUndecided);
   const registryPath = join(
     workerSlot.runRoot,
     `worker-${workerSlot.workerIndex}-test-${testKey}.jsonl`,
