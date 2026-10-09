@@ -43,6 +43,69 @@ fn expand_range(range: Option<DmxRange>) -> Vec<u16> {
     }
 }
 
+/// Places the fixtures of one fixture→console or fixture→transport binding, in patch order.
+///
+/// The Nth fixture lands in the Nth universe of the binding's range, and every fixture past the
+/// end of the range lands in its last universe. Each universe starts at the binding address;
+/// fixtures sharing a universe are packed one after another unless the binding clones them onto
+/// the same address. Output resolution and patch validation both walk bindings through this
+/// layout so a validation error always describes a real conflict on the wire.
+pub(crate) struct FixturePatchLayout {
+    universes: Vec<u16>,
+    base_address: u16,
+    clone: bool,
+    index: usize,
+    universe: u16,
+    next_address: u16,
+}
+
+impl FixturePatchLayout {
+    /// Starts a layout for a binding target's universe range (universe 1 when unset), start
+    /// address (1 when unset) and clone flag.
+    pub(crate) fn new(universe: Option<DmxRange>, address: Option<u16>, clone: bool) -> Self {
+        let universes = match expand_range(universe) {
+            universes if universes.is_empty() => vec![1],
+            universes => universes,
+        };
+        let base_address = address.unwrap_or(1);
+        Self {
+            universe: universes[0],
+            universes,
+            base_address,
+            clone,
+            index: 0,
+            next_address: base_address,
+        }
+    }
+
+    /// Returns the universe and start address of the next fixture in the binding.
+    ///
+    /// Call once for every fixture of the binding, in order, including fixtures that end up
+    /// skipped, since each one consumes its universe slot in the range.
+    pub(crate) fn place_next(&mut self) -> (u16, u16) {
+        let universe = self.universes[self.index.min(self.universes.len() - 1)];
+        self.index += 1;
+        if universe != self.universe {
+            self.universe = universe;
+            self.next_address = self.base_address;
+        }
+        let address = if self.clone {
+            self.base_address
+        } else {
+            self.next_address
+        };
+        (universe, address)
+    }
+
+    /// Moves the packing position past a fixture just placed at `address` with `footprint`
+    /// slots; cloned bindings keep every fixture on the binding address.
+    pub(crate) fn advance(&mut self, address: u16, footprint: u16) {
+        if !self.clone {
+            self.next_address = address.saturating_add(footprint);
+        }
+    }
+}
+
 fn default_universe_list() -> Vec<u16> {
     (1..=DEFAULT_UNIVERSE_MAX).collect()
 }
@@ -312,25 +375,9 @@ pub fn derive_console_addresses(
             continue;
         };
 
-        let target_universes = expand_range(*universe);
-        let base_universes = if target_universes.is_empty() {
-            vec![1]
-        } else {
-            target_universes
-        };
-
-        let base_address = address.unwrap_or(1);
-
-        let mut running_address = base_address;
-        let mut last_universe = base_universes.first().copied().unwrap_or(1);
-
-        for (index, uid) in uids.iter().enumerate() {
-            let target_universe = map_universe_by_index(&base_universes, &base_universes, index);
-            if target_universe != last_universe {
-                running_address = base_address;
-                last_universe = target_universe;
-            }
-
+        let mut layout = FixturePatchLayout::new(*universe, *address, binding.clone);
+        for uid in uids {
+            let (target_universe, fixture_address) = layout.place_next();
             let params = collect_fixture_parameters(
                 &data_provider,
                 &param_query,
@@ -348,7 +395,7 @@ pub fn derive_console_addresses(
                 *uid,
                 ConsoleDmxAddress {
                     universe: target_universe,
-                    address: running_address,
+                    address: fixture_address,
                 },
             );
 
@@ -358,14 +405,12 @@ pub fn derive_console_addresses(
                     param.target,
                     ConsoleParameterAddress {
                         universe: target_universe,
-                        addresses: offset_slots(&param.slots, running_address),
+                        addresses: offset_slots(&param.slots, fixture_address),
                     },
                 );
             }
 
-            if !binding.clone {
-                running_address = running_address.saturating_add(footprint);
-            }
+            layout.advance(fixture_address, footprint);
         }
     }
 }
@@ -787,25 +832,9 @@ pub fn resolve_output_bindings(
                 else {
                     continue;
                 };
-                let base_universes = expand_range(*universe);
-                let base_universes = if base_universes.is_empty() {
-                    vec![1]
-                } else {
-                    base_universes
-                };
-                let base_address = address.unwrap_or(1);
-
-                let mut running_address = base_address;
-                let mut last_universe = base_universes.first().copied().unwrap_or(1);
-
-                for (index, uid) in selection.uids.iter().enumerate() {
-                    let target_universe =
-                        map_universe_by_index(&base_universes, &base_universes, index);
-                    if target_universe != last_universe {
-                        running_address = base_address;
-                        last_universe = target_universe;
-                    }
-
+                let mut layout = FixturePatchLayout::new(*universe, *address, binding.clone);
+                for uid in selection.uids {
+                    let (target_universe, fixture_address) = layout.place_next();
                     let params = collect_fixture_parameters(
                         &data_provider,
                         &param_query,
@@ -819,11 +848,6 @@ pub fn resolve_output_bindings(
                         continue;
                     }
 
-                    let fixture_address = if binding.clone {
-                        base_address
-                    } else {
-                        running_address
-                    };
                     let footprint = params.footprint();
                     for param in params.parameters {
                         destinations
@@ -836,9 +860,7 @@ pub fn resolve_output_bindings(
                             });
                     }
 
-                    if !binding.clone {
-                        running_address = fixture_address.saturating_add(footprint);
-                    }
+                    layout.advance(fixture_address, footprint);
                 }
             }
             (

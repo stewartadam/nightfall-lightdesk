@@ -21,6 +21,7 @@ use nightfall_io::BindingTransport;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::binding_resolution::FixturePatchLayout;
 use crate::bindings::{
     DmxRange, InputBindings, InputSource, InputTarget, OutputBindings, OutputSource, OutputTarget,
 };
@@ -289,57 +290,38 @@ fn validate_console_address_uniqueness(
             continue;
         };
 
-        let universes = expand_universe_range(*universe, 1);
-        for universe_id in universes {
-            let start_address = address.unwrap_or(1);
-            let mut next_address = start_address;
-
-            for uid in uids {
-                let shape = match fixture_shape_for_binding(
-                    data_provider,
-                    *uid,
-                    *element,
-                    param.as_deref(),
-                ) {
+        let mut layout = FixturePatchLayout::new(*universe, *address, binding.clone);
+        for uid in uids {
+            let (universe_id, assigned_start) = layout.place_next();
+            let shape =
+                match fixture_shape_for_binding(data_provider, *uid, *element, param.as_deref()) {
                     Ok(shape) => shape,
                     Err(issue) => {
                         issues.push(issue);
                         continue;
                     }
                 };
-                let footprint = shape_footprint(&shape, 1);
-                if footprint == 0 {
-                    continue;
-                }
+            let footprint = shape_footprint(&shape, 1);
+            if footprint == 0 {
+                continue;
+            }
+            layout.advance(assigned_start, footprint);
 
-                let assigned_start = if binding.clone {
-                    start_address
-                } else {
-                    next_address
-                };
-                let assigned_end = assigned_start.saturating_add(footprint - 1);
-                if !binding.clone {
-                    next_address = assigned_end.saturating_add(1);
-                }
-
-                for addr in assigned_start..=assigned_end {
-                    let key = (universe_id, addr);
-                    if let Some(existing_uid) = occupancy.get(&key) {
-                        if existing_uid != uid {
-                            issues.push(BindingValidationIssue::for_fixtures(
-                                format!(
-                                    "Console address overlap at universe {} address {} (fixtures {} and {})",
-                                    universe_id,
-                                    addr,
-                                    existing_uid,
-                                    uid
-                                ),
-                                [*existing_uid, *uid],
-                            ));
-                        }
-                    } else {
-                        occupancy.insert(key, *uid);
+            let assigned_end = assigned_start.saturating_add(footprint - 1);
+            for addr in assigned_start..=assigned_end {
+                let key = (universe_id, addr);
+                if let Some(existing_uid) = occupancy.get(&key) {
+                    if existing_uid != uid {
+                        issues.push(BindingValidationIssue::for_fixtures(
+                            format!(
+                                "Console address overlap at universe {} address {} (fixtures {} and {})",
+                                universe_id, addr, existing_uid, uid
+                            ),
+                            [*existing_uid, *uid],
+                        ));
                     }
+                } else {
+                    occupancy.insert(key, *uid);
                 }
             }
         }
@@ -623,51 +605,38 @@ fn collect_transport_spans(
                 let Some(selection) = source.fixture_selection() else {
                     continue;
                 };
-                let universes = expand_universe_range(*universe, 1);
-                for universe_id in universes {
-                    let mut next_address = address.unwrap_or(1);
-                    for uid in selection.uids {
-                        let fixture = match data_provider.inner.get(*uid) {
-                            Ok(fixture) => fixture,
-                            Err(_) => continue,
-                        };
-                        let shape = match fixture_shape(
-                            fixture.value(),
-                            selection.element,
-                            selection.param,
-                        ) {
+                let mut layout = FixturePatchLayout::new(*universe, *address, binding.clone);
+                for uid in selection.uids {
+                    let (universe_id, start) = layout.place_next();
+                    let fixture = match data_provider.inner.get(*uid) {
+                        Ok(fixture) => fixture,
+                        Err(_) => continue,
+                    };
+                    let shape =
+                        match fixture_shape(fixture.value(), selection.element, selection.param) {
                             Ok(shape) => shape,
                             Err(_) => continue,
                         };
-                        let footprint = shape_footprint(&shape, selection.dmx_break);
-                        if footprint == 0 {
-                            continue;
-                        }
-                        let start = if binding.clone {
-                            address.unwrap_or(1)
-                        } else {
-                            next_address
-                        };
-                        let end = start.saturating_add(footprint - 1);
-                        if !binding.clone {
-                            next_address = end.saturating_add(1);
-                        }
-                        spans.push(TransportSpan {
-                            transport: target.clone(),
-                            universe: universe_id..=universe_id,
-                            address: start..=end,
-                            kind: TransportSpanKind::Fixture,
-                            label: if selection.dmx_break == 1 {
-                                format!("fixture {}", fixture.identifiers.id)
-                            } else {
-                                format!(
-                                    "fixture {} break {}",
-                                    fixture.identifiers.id, selection.dmx_break
-                                )
-                            },
-                            fixtures: vec![*uid],
-                        });
+                    let footprint = shape_footprint(&shape, selection.dmx_break);
+                    if footprint == 0 {
+                        continue;
                     }
+                    layout.advance(start, footprint);
+                    spans.push(TransportSpan {
+                        transport: target.clone(),
+                        universe: universe_id..=universe_id,
+                        address: start..=start.saturating_add(footprint - 1),
+                        kind: TransportSpanKind::Fixture,
+                        label: if selection.dmx_break == 1 {
+                            format!("fixture {}", fixture.identifiers.id)
+                        } else {
+                            format!(
+                                "fixture {} break {}",
+                                fixture.identifiers.id, selection.dmx_break
+                            )
+                        },
+                        fixtures: vec![*uid],
+                    });
                 }
             }
             (
@@ -853,13 +822,6 @@ fn range_from_optional_address(address: Option<u16>) -> RangeInclusive<u16> {
     }
 }
 
-fn expand_universe_range(range: Option<DmxRange>, default_universe: u16) -> Vec<u16> {
-    match range {
-        Some(range) => (range.start..=range.end).collect(),
-        None => vec![default_universe],
-    }
-}
-
 fn ranges_overlap(a: &RangeInclusive<u16>, b: &RangeInclusive<u16>) -> bool {
     !(a.end() < b.start() || b.end() < a.start())
 }
@@ -977,6 +939,122 @@ mod tests {
 
         let issues = validate_console_address_uniqueness(&output_bindings, &provider);
         assert!(!issues.is_empty());
+    }
+
+    /// Adds `count` fixtures with a `footprint`-slot DMX footprint and returns their uids.
+    fn add_fixtures_with_footprint(
+        provider: &mut FixtureDataProviderExt,
+        count: u32,
+        footprint: u16,
+    ) -> Vec<Uuid> {
+        (1..=count)
+            .map(|id| {
+                let uid = Uuid::new_v4();
+                let intensity = param_at_slots(
+                    Attribute::Intensity,
+                    DmxValueResolution::Coarse,
+                    &[footprint],
+                );
+                provider
+                    .inner
+                    .add(make_fixture(uid, id, vec![intensity]))
+                    .unwrap();
+                uid
+            })
+            .collect()
+    }
+
+    /// Returns a fixture binding of `uids` onto `target`, packed from the target address.
+    fn fixture_binding(uids: Vec<Uuid>, target: OutputTarget) -> OutputBinding {
+        OutputBinding {
+            source: OutputSource::Fixture {
+                uids,
+                element: None,
+                param: None,
+            },
+            target,
+            priority: 0,
+            clone: false,
+        }
+    }
+
+    /// One binding over a universe range whose fixtures add up to more than 65,535 channels
+    /// places one fixture per universe, so neither console nor transport validation reports
+    /// an overlap.
+    #[test]
+    fn wide_universe_range_binding_does_not_self_overlap() {
+        let mut provider = FixtureDataProviderExt::default();
+        let uids = add_fixtures_with_footprint(&mut provider, 600, 120);
+        let universe = Some(DmxRange {
+            start: 101,
+            end: 700,
+        });
+        let output_bindings = OutputBindings {
+            bindings: vec![
+                fixture_binding(
+                    uids.clone(),
+                    OutputTarget::Console {
+                        universe,
+                        address: Some(1),
+                    },
+                ),
+                fixture_binding(
+                    uids,
+                    OutputTarget::Transport {
+                        target: "sacn".to_string(),
+                        universe,
+                        address: Some(1),
+                    },
+                ),
+            ],
+        };
+
+        let console_issues = validate_console_address_uniqueness(&output_bindings, &provider);
+        assert!(console_issues.is_empty(), "{console_issues:?}");
+        let transport_issues = validate_transport_address_uniqueness(
+            &InputBindings::default(),
+            &output_bindings,
+            &provider,
+        );
+        assert!(transport_issues.is_empty(), "{transport_issues:?}");
+    }
+
+    /// Console validation places fixtures where output does: the Nth fixture in the Nth
+    /// universe of the range, with the remainder packed into the last universe. A binding next
+    /// to the first fixture is clear, and one on the packed remainder overlaps.
+    #[test]
+    fn console_validation_follows_universe_range_layout() {
+        let mut provider = FixtureDataProviderExt::default();
+        let uids = add_fixtures_with_footprint(&mut provider, 5, 1);
+        let ranged = fixture_binding(
+            uids[..3].to_vec(),
+            OutputTarget::Console {
+                universe: Some(DmxRange { start: 1, end: 2 }),
+                address: Some(1),
+            },
+        );
+        let at = |uid: Uuid, universe: u16, address: u16| {
+            fixture_binding(
+                vec![uid],
+                OutputTarget::Console {
+                    universe: Some(DmxRange::single(universe)),
+                    address: Some(address),
+                },
+            )
+        };
+
+        let clear = OutputBindings {
+            bindings: vec![ranged.clone(), at(uids[3], 1, 2)],
+        };
+        let issues = validate_console_address_uniqueness(&clear, &provider);
+        assert!(issues.is_empty(), "{issues:?}");
+
+        let overlapping = OutputBindings {
+            bindings: vec![ranged, at(uids[4], 2, 2)],
+        };
+        let issues = validate_console_address_uniqueness(&overlapping, &provider);
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].involves_fixture(uids[2]) && issues[0].involves_fixture(uids[4]));
     }
 
     #[test]
