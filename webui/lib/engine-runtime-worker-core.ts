@@ -74,6 +74,12 @@ export function startEngineRuntimeWorker(
 
   const DISCRIMINATOR_DROPPABLE = 1;
   const STRUCTURAL_QUEUE_LIMIT = 10_000;
+  // Close code the backend sends when this client fell too far behind (LAGGING_CLIENT_CLOSE_CODE
+  // in crates/websocket/src/outbox.rs). The backend is healthy, so reconnect and resync at once,
+  // unless the previous lagging disconnect was recent, which suggests the client cannot keep up.
+  const LAGGING_CLIENT_CLOSE_CODE = 4001;
+  const RECONNECT_DELAY_MS = 1000;
+  const LAGGING_RECONNECT_BACKOFF_WINDOW_MS = 10_000;
   const PARAMETER_STATE_TYPE = "ParameterState";
   const PARAMETER_LAYOUT_TYPE = "ParameterLayout";
 
@@ -187,6 +193,8 @@ export function startEngineRuntimeWorker(
   let submitsAwaitingOpen: string[] = [];
   let url = "";
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // When the backend last dropped this client for lagging, for reconnect backoff.
+  let lastLaggingDisconnectMs: number | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let runtimeGeneration = 0;
   let runtimeMode: EngineRuntimeConfig["mode"] = "remote";
@@ -527,12 +535,12 @@ export function startEngineRuntimeWorker(
       self.postMessage({ type: "connected" });
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event: CloseEvent) => {
       stopHeartbeatTimer();
       submitsAwaitingOpen = [];
       postStatus(Status.Disconnected);
       socket = null;
-      scheduleReconnect();
+      scheduleReconnect(reconnectDelayAfterClose(event.code));
     };
 
     socket.onerror = () => {
@@ -545,13 +553,29 @@ export function startEngineRuntimeWorker(
     };
   }
 
-  /** Schedules a single reconnect attempt while the worker is still running. */
-  function scheduleReconnect() {
+  /**
+   * Picks the reconnect delay for a socket that closed with `code`. A lagging disconnect retries
+   * at once so the client resyncs promptly, but only if the previous one was outside the backoff
+   * window; repeated lagging disconnects fall back to the normal delay so a client that cannot keep
+   * up does not reconnect in a tight loop.
+   */
+  function reconnectDelayAfterClose(code: number): number {
+    if (code !== LAGGING_CLIENT_CLOSE_CODE) return RECONNECT_DELAY_MS;
+    const now = performance.now();
+    const recentlyLagged =
+      lastLaggingDisconnectMs !== null &&
+      now - lastLaggingDisconnectMs < LAGGING_RECONNECT_BACKOFF_WINDOW_MS;
+    lastLaggingDisconnectMs = now;
+    return recentlyLagged ? RECONNECT_DELAY_MS : 0;
+  }
+
+  /** Schedules a single reconnect attempt after `delayMs` while the worker is still running. */
+  function scheduleReconnect(delayMs: number) {
     if (reconnectTimer || !isRunning) return;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       if (isRunning) connect();
-    }, 1000);
+    }, delayMs);
   }
 
   /** Cancels any pending reconnect attempt. */

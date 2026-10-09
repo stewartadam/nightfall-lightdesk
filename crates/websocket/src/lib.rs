@@ -25,6 +25,7 @@ use crate::websocket::create_axum_task;
 
 mod external_control;
 mod origin;
+mod outbox;
 mod pairing;
 pub mod routes;
 mod web_ui;

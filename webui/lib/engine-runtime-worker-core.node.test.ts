@@ -288,7 +288,7 @@ class FakeSocket {
   binaryType = "";
   sent: string[] = [];
   onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
 
@@ -308,10 +308,13 @@ class FakeSocket {
     this.onopen?.();
   }
 
-  /** Closes the socket the way a browser does after a failed or ended connection. */
-  close(): void {
+  /**
+   * Closes the socket the way a browser does after a failed or ended connection, reporting
+   * `code` as the close code (1006, abnormal closure, by default).
+   */
+  close(code = 1006): void {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code });
   }
 }
 
@@ -355,6 +358,53 @@ test("submits sent while connecting are delivered when the socket opens", (t) =>
     JSON.stringify({ command_id: "first" }),
     JSON.stringify({ command_id: "second" }),
   ]);
+  worker.send({ type: "stop" });
+});
+
+/**
+ * A client the backend disconnects for falling behind reconnects without the usual delay, a
+ * second lagging disconnect soon after backs off to the normal delay, and any other close waits a
+ * second before retrying.
+ */
+test("lagging disconnects reconnect immediately once", (t) => {
+  const worker = workerHarness(t);
+  installFakeSocket(t);
+  const timers = (
+    globalThis.setTimeout as unknown as {
+      mock: { calls: { arguments: unknown[] }[] };
+    }
+  ).mock;
+  startEngineRuntimeWorker();
+  worker.send({
+    type: "start",
+    config: { mode: "remote", websocketUrl: "ws://backend/ws" },
+  });
+  const reconnectDelays = () =>
+    timers.calls
+      .map((call) => call.arguments[1])
+      .filter((delay) => delay === 0 || delay === 1000);
+
+  /** Restarts the worker connection, then opens and closes its socket with `code`. */
+  const reconnectAndClose = (code?: number) => {
+    worker.send({ type: "stop" });
+    worker.send({
+      type: "start",
+      config: { mode: "remote", websocketUrl: "ws://backend/ws" },
+    });
+    FakeSocket.instances.at(-1)!.open();
+    FakeSocket.instances.at(-1)!.close(code);
+  };
+
+  FakeSocket.instances[0].open();
+  FakeSocket.instances[0].close(4001);
+  assert.deepEqual(reconnectDelays(), [0]);
+
+  reconnectAndClose(4001);
+  assert.deepEqual(reconnectDelays(), [0, 1000]);
+
+  reconnectAndClose();
+  assert.deepEqual(reconnectDelays(), [0, 1000, 1000]);
+
   worker.send({ type: "stop" });
 });
 

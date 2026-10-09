@@ -30,6 +30,7 @@ enum_dispatch = "0.3.13"
 futures-util = "0.3.34"
 gdtf = "0.3.0"
 jiff = "0.2.37"
+minicbor = "2.3"
 minicbor-serde = { version = "0.7", features = ["alloc"] }
 mime_guess = { version = "2.0.5", default-features = false }
 moonshine-kind = "0.5"

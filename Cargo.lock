@@ -5747,6 +5747,7 @@ dependencies = [
  "bevy_ecs",
  "futures-util",
  "mime_guess",
+ "minicbor",
  "minicbor-serde",
  "nightfall",
  "nightfall-engine",
