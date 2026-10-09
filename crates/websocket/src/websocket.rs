@@ -32,11 +32,14 @@ use futures_util::StreamExt;
 use minicbor_serde;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    net::TcpListener,
-    sync::{broadcast::Receiver as BroadcastReceiver, mpsc::UnboundedSender},
-};
+use tokio::{net::TcpListener, sync::broadcast::Receiver as BroadcastReceiver};
 use tower_http::cors::{AllowOrigin, CorsLayer};
+
+use crate::outbox::{ClientOutbox, Enqueued, OUTBOX_BYTE_LIMIT, Publication};
+
+/// How long a client dropped for lagging has to receive its close frame before its socket is
+/// torn down without one.
+const LAGGING_CLIENT_CLOSE_GRACE: Duration = Duration::from_secs(5);
 
 const TRANSPORT_HEARTBEAT_RESPONSE_TYPE: &str = "WebSocketHeartbeatResponse";
 
@@ -70,8 +73,8 @@ struct TransportHeartbeatResponse<'a> {
 /// A connected session and whether it arrived through the loopback interface.
 #[derive(Clone)]
 pub struct ConnectedClient {
-    /// Outbound message channel for this session.
-    pub sender: UnboundedSender<Message>,
+    /// Bounded outbound queue for this session.
+    pub(crate) outbox: Arc<ClientOutbox>,
     /// Cancels both I/O tasks without depending on the peer reading an outgoing frame.
     pub cancellation: tokio::sync::watch::Sender<bool>,
     /// Whether the session is local and survives external permission changes.
@@ -152,7 +155,7 @@ async fn client_ws(
     }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    let outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
     let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
     let clients = state.clients.clone();
     let command_json_tx = state.command_json_tx.clone();
@@ -169,29 +172,32 @@ async fn client_ws(
             return;
         }
         guard.push(ConnectedClient {
-            sender: tx.clone(),
-            cancellation,
+            outbox: outbox.clone(),
+            cancellation: cancellation.clone(),
             local,
         });
     }
 
     // Task: forward backend → client
-    let send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            let should_close = matches!(msg, Message::Close(_));
-            if ws_sender.send(msg).await.is_err() {
-                break;
-            }
-            if should_close {
-                break;
+    let send_task = tokio::spawn({
+        let outbox = outbox.clone();
+        async move {
+            while let Some(msg) = outbox.next().await {
+                let should_close = matches!(msg, Message::Close(_));
+                if ws_sender.send(msg).await.is_err() {
+                    break;
+                }
+                if should_close {
+                    break;
+                }
             }
         }
     });
 
     // Task: client → backend
-    let tx_for_recv = tx.clone();
     let recv_task = tokio::spawn({
         let clients = clients.clone();
+        let outbox = outbox.clone();
         async move {
             while let Some(Ok(msg)) = ws_receiver.next().await {
                 if let Message::Text(text) = msg {
@@ -215,7 +221,9 @@ async fn client_ws(
                         })) => {
                             if let Some(message) = encode_transport_heartbeat_response(&data) {
                                 tracing::trace!("Responding to transport websocket heartbeat");
-                                let _ = tx_for_recv.send(message);
+                                if outbox.push(message) == Enqueued::Overflowed {
+                                    cancel_after_lag_grace(cancellation.clone());
+                                }
                             }
                         }
                         Err(_) => {
@@ -230,15 +238,19 @@ async fn client_ws(
             // Required to that this async fn is Send-compatible
             {
                 let mut guard = clients.lock().unwrap();
-                guard.retain(|c| !c.sender.same_channel(&tx_for_recv));
+                guard.retain(|c| !Arc::ptr_eq(&c.outbox, &outbox));
             }
         }
     });
 
     supervise_client_tasks(send_task, recv_task, cancellation_rx).await;
 
+    tracing::debug!(
+        coalesced = outbox.coalesced_count(),
+        "WebSocket client disconnected"
+    );
     let mut guard = clients.lock().unwrap();
-    guard.retain(|c| !c.sender.same_channel(&tx));
+    guard.retain(|c| !Arc::ptr_eq(&c.outbox, &outbox));
 }
 
 /// Cancels both socket directions on revocation even when either task is blocked on I/O.
@@ -268,10 +280,9 @@ async fn supervise_client_tasks(
 /// Closes every active session when listener permissions change or the host exits.
 fn close_connected_clients(clients: &Arc<Mutex<Vec<ConnectedClient>>>) {
     let mut guard = clients.lock().unwrap();
-    let close_message = Message::Close(None);
     for client in guard.iter() {
         client.cancellation.send_replace(true);
-        let _ = client.sender.send(close_message.clone());
+        client.outbox.close();
     }
     guard.clear();
 }
@@ -297,9 +308,21 @@ fn close_remote_entries(clients: &mut Vec<ConnectedClient>) {
     clients.retain(|client| {
         if !client.local {
             client.cancellation.send_replace(true);
-            let _ = client.sender.send(Message::Close(None));
+            client.outbox.close();
         }
         client.local
+    });
+}
+
+/// Tears down a lagging client's socket tasks if its close frame has not gone out within
+/// [`LAGGING_CLIENT_CLOSE_GRACE`].
+///
+/// A client that stopped reading entirely never accepts the close frame, which would otherwise
+/// leave its send task blocked until the TCP connection times out.
+fn cancel_after_lag_grace(cancellation: tokio::sync::watch::Sender<bool>) {
+    tokio::spawn(async move {
+        tokio::time::sleep(LAGGING_CLIENT_CLOSE_GRACE).await;
+        cancellation.send_replace(true);
     });
 }
 
@@ -373,7 +396,8 @@ pub(crate) fn create_axum_task(
     let routes = SwappableRoutes::new(state.clone(), web_ui, plugin_routes, stateful_plugin_routes);
     let axum_app = websocket_router(state, routes.clone());
 
-    // Byte-oriented broadcast task for plugin-owned serialization
+    // Byte-oriented broadcast task for plugin-owned serialization. Each client's outbox bounds
+    // what a slow reader can accumulate and drops the client once it falls too far behind.
     let _broadcast_task = tokio::spawn({
         let clients = clients.clone();
         async move {
@@ -382,9 +406,15 @@ pub(crate) fn create_axum_task(
                     "Sending plugin-serialized websocket message ({} KB)",
                     encoded.len() as f32 / 1024.0
                 );
-                let message = Message::Binary(encoded.into());
+                let publication = Publication::from_encoded(encoded);
                 let mut guard = clients.lock().unwrap();
-                guard.retain(|client| client.sender.send(message.clone()).is_ok());
+                guard.retain(|client| {
+                    let outcome = client.outbox.publish(&publication);
+                    if outcome == Enqueued::Overflowed {
+                        cancel_after_lag_grace(client.cancellation.clone());
+                    }
+                    outcome.keeps_client()
+                });
             }
         }
     });
@@ -623,6 +653,7 @@ fn websocket_router(state: AxumAppState, routes: SwappableRoutes) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outbox::TryNextError;
 
     /// Exercises live wildcard/local rebinding and fallback after a selected address fails.
     #[tokio::test]
@@ -748,25 +779,25 @@ mod tests {
     /// Ensures permission changes revoke remote sessions while preserving loopback sessions.
     #[test]
     fn permission_changes_close_only_remote_clients() {
-        let (local_tx, mut local_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (remote_tx, mut remote_rx) = tokio::sync::mpsc::unbounded_channel();
+        let local_outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let remote_outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
         let (local_cancel, local_cancellation) = tokio::sync::watch::channel(false);
         let (remote_cancel, remote_cancellation) = tokio::sync::watch::channel(false);
         let clients = Arc::new(Mutex::new(vec![
             ConnectedClient {
-                sender: local_tx,
+                outbox: local_outbox.clone(),
                 cancellation: local_cancel,
                 local: true,
             },
             ConnectedClient {
-                sender: remote_tx,
+                outbox: remote_outbox.clone(),
                 cancellation: remote_cancel,
                 local: false,
             },
         ]));
         close_remote_clients(&clients, &AtomicU64::new(0));
-        assert_eq!(remote_rx.try_recv().unwrap(), Message::Close(None));
-        assert!(local_rx.try_recv().is_err());
+        assert_eq!(remote_outbox.try_next(), Ok(Message::Close(None)));
+        assert_eq!(local_outbox.try_next(), Err(TryNextError::Empty));
         assert!(!*local_cancellation.borrow());
         assert!(*remote_cancellation.borrow());
         assert_eq!(clients.lock().unwrap().len(), 1);
@@ -796,9 +827,8 @@ mod tests {
         incoming_tx.send("before revocation").unwrap();
         assert_eq!(commands_rx.recv().await, Some("before revocation"));
         let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
-        let (message_tx, _unread_messages) = tokio::sync::mpsc::unbounded_channel();
         let clients = Arc::new(Mutex::new(vec![ConnectedClient {
-            sender: message_tx,
+            outbox: Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT)),
             cancellation,
             local: false,
         }]));
@@ -823,20 +853,17 @@ mod tests {
     /// Verifies shutdown fanout sends a close frame and removes all registered clients.
     #[test]
     fn close_connected_clients_sends_close_and_clears_registry() {
-        let (client_tx, mut client_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
         let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
         let clients = Arc::new(Mutex::new(vec![ConnectedClient {
-            sender: client_tx,
+            outbox: outbox.clone(),
             cancellation,
             local: true,
         }]));
 
         close_connected_clients(&clients);
 
-        let close_message = client_rx
-            .try_recv()
-            .expect("client should receive close frame");
-        assert_eq!(close_message, Message::Close(None));
+        assert_eq!(outbox.try_next(), Ok(Message::Close(None)));
         assert!(clients.lock().unwrap().is_empty());
         assert!(*cancellation_rx.borrow());
     }
