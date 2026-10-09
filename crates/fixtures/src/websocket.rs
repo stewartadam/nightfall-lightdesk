@@ -152,10 +152,12 @@ pub fn send_parameter_state(
             &FixtureWsMessage::ParameterLayout(layout),
         );
     }
-    broadcaster.publish(
-        DISCRIMINATOR_DROPPABLE,
-        &FixtureWsMessage::ParameterState(&projection.values()),
-    );
+    if let Some(frame) = projection.publish_frame(Instant::now()) {
+        broadcaster.publish(
+            DISCRIMINATOR_DROPPABLE,
+            &FixtureWsMessage::ParameterState(&frame),
+        );
+    }
     let broadcast_elapsed = broadcast_start.elapsed();
     record_elapsed_ms(
         &mut diagnostics,
@@ -248,6 +250,21 @@ pub fn deserialize_fixture_command(
             Box::new(command),
         ));
 
+    Ok(())
+}
+
+/// Handle a client's request for a parameter keyframe.
+///
+/// A client sends this after it detects a gap in the parameter frame sequence
+/// (or otherwise loses confidence in its rebuilt state). The payload carries no
+/// data; the next published frame becomes a full keyframe for every client.
+pub fn deserialize_parameter_keyframe_request(
+    world: &mut World,
+    _json: Value,
+) -> Result<(), String> {
+    world
+        .resource_mut::<ParameterStateProjection>()
+        .request_keyframe();
     Ok(())
 }
 

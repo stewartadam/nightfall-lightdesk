@@ -143,6 +143,7 @@ import {
   queuedWorkerMessageData,
   type WorkerQueuedMessage,
 } from "./parameter-state-transfer";
+import type { ParameterStreamStats } from "./parameter-stream";
 import { watchWorkerUncaughtErrors } from "./uncaught-error-reporter";
 import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
@@ -168,6 +169,7 @@ interface WorkerAggregateStats {
   avgDecodeMs: number;
   queueDepth: number;
   lastStagedDeliveryMessageId: number;
+  parameterStream?: ParameterStreamStats;
   processing?: PerformanceMeasureStats;
 }
 

@@ -138,6 +138,11 @@ impl Plugin for FixturePlugin {
             app,
             websocket::deserialize_fixture_command,
         );
+        register_update_deserializer(
+            app,
+            parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE,
+            websocket::deserialize_parameter_keyframe_request,
+        );
 
         app.init_resource::<data_provider_ext::FixtureDataProviderExt>();
         app.init_resource::<bindings::InputBindings>();

@@ -6,19 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type {
-  ParameterLayout,
-  ParameterStateFrame,
-  ParameterValue,
-} from "../types";
+import type { ParameterLayout, ParameterValue } from "../types";
 import { getLogger } from "./logger";
 import type { AnyWsMessage, FixtureParameterState } from "./ws/types";
 
 const log = getLogger(import.meta.url);
 
 /**
- * A `ParameterState` values frame whose buffers the worker copied into typed arrays it can
- * transfer to the main thread without cloning.
+ * Parameter state the worker rebuilt from the frame stream, in typed arrays it can transfer to
+ * the main thread without cloning.
  */
 export interface PackedParameterState {
   layoutId: number;
@@ -62,25 +58,6 @@ function setAttribute<T>(
   } else {
     target[name] = value;
   }
-}
-
-/** Copies a decoded byte string into its own aligned buffer so it can back a typed array. */
-function ownedBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.slice().buffer as ArrayBuffer;
-}
-
-/** Views a values frame's byte strings as typed arrays the worker can transfer. */
-export function packParameterStateFrame(
-  values: ParameterStateFrame,
-): PackedParameterState {
-  return {
-    layoutId: values.layout_id,
-    output: new Float32Array(ownedBuffer(values.output)),
-    absoluteCount: values.absolute_count,
-    assertionSlots: new Uint32Array(ownedBuffer(values.assertion_slots)),
-    assertionKinds: new Uint8Array(ownedBuffer(values.assertion_kinds)),
-    assertionValues: new Float32Array(ownedBuffer(values.assertion_values)),
-  };
 }
 
 /** Returns the buffers that move to the main thread with a packed values frame. */
