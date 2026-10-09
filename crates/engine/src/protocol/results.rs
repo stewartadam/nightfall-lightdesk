@@ -115,7 +115,10 @@ pub enum NoticeLevel {
 }
 
 /// Non-terminal operator feedback associated with an active command.
-#[derive(Debug, Clone, Message, Eq, PartialEq, Serialize, Deserialize)]
+///
+/// Handlers publish notices through [`crate::prelude::CommandResponder::notice`], which wraps
+/// them in a [`crate::prelude::CommandNoticeReply`] carrying the command's reply target.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct CommandNotice {
     /// Active command receiving this notice.

@@ -16,8 +16,8 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
-    EngineActionEnvelope, FinishedCommand, ReplyTarget,
+    CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
+    CommandTracker, EngineActionEnvelope, FinishedCommand, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::DmxAction;
@@ -43,7 +43,7 @@ fn setup_app() -> App {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.add_message::<CommandEnvelope<FixtureCommand>>();
     app.add_message::<EngineActionEnvelope<PlaybackAction>>();
     app.add_message::<EngineActionEnvelope<DmxAction>>();

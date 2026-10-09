@@ -634,7 +634,7 @@ mod tests {
 
     /// Set up generic FX command routing for stored module mutation tests.
     fn setup_management_app(module_uid: Uuid) -> App {
-        let (tx, _rx) = async_channel::unbounded::<Vec<u8>>();
+        let (tx, _rx) = async_channel::unbounded::<OutboundFrame>();
         let mut app = App::new();
         app.insert_resource(DataProvider::<Fx>::default());
         app.insert_resource(DataProvider::<StoredFxModule>::default());
@@ -653,7 +653,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         app.add_systems(
             Update,
             (

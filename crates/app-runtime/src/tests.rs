@@ -40,7 +40,7 @@ use nightfall_desk::{
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNotice,
+    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
     DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
     EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, Render, RenderPass,
@@ -578,6 +578,56 @@ fn world_factory_named_empty_bootstrap_persists_initial_draft() {
         "new showfile draft should not create a saved showfile"
     );
 
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// Verifies unsaved work reaches the draft once the last client disconnects, and not before.
+#[tokio::test]
+async fn last_client_disconnect_saves_dirty_draft() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("tour".to_string()),
+        })
+        .expect("named empty world factory build");
+    let draft_snapshot = root
+        .path()
+        .join("drafts")
+        .join("tour.nightfall-show")
+        .join("showfile.json.gz");
+    let initial_draft = std::fs::read(&draft_snapshot).expect("read initial draft");
+
+    app.world()
+        .resource::<nightfall_engine::prelude::GlobalVariables>()
+        .set(
+            "unsaved",
+            nightfall::prelude::VariableValue::String("kept".to_string()),
+        );
+    app.update();
+    assert_eq!(
+        std::fs::read(&draft_snapshot).expect("read draft while clients remain"),
+        initial_draft,
+        "the draft should not change while a client is still connected"
+    );
+
+    app.world()
+        .resource::<nightfall_engine::prelude::ClientBridgeHost>()
+        .presence_sender()
+        .last_client_disconnected();
+    app.update();
+    assert_ne!(
+        std::fs::read(&draft_snapshot).expect("read draft after last disconnect"),
+        initial_draft,
+        "the last disconnect should save the unsaved change into the draft"
+    );
+
+    drop(app);
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
 }
@@ -1375,7 +1425,7 @@ fn publish_world_replaced_notifies_clients() {
     )
     .expect("world replacement should encode")
     .to_bytes();
-    assert_eq!(rx.try_recv().ok(), Some(expected));
+    assert_eq!(rx.try_recv().ok().map(|frame| frame.bytes), Some(expected));
     assert!(rx.try_recv().is_err());
 }
 
@@ -1391,7 +1441,7 @@ fn world_swap_success_emits_command_result_for_original_request() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.world_mut()
         .resource_mut::<CommandTracker>()

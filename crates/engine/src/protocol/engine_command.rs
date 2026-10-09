@@ -140,11 +140,28 @@ pub enum CommandOrigin {
     Remote(String),
 }
 
+/// Transport-assigned identity of one connected client session.
+///
+/// Hosts allocate identities when a session connects and never accept one from
+/// client-supplied payloads, so a client cannot claim another session's replies.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ClientId(pub u64);
+
+impl std::fmt::Display for ClientId {
+    /// Formats the identity as its numeric session counter for tracing fields.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Identifies where a command's result should be delivered.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum ReplyTarget {
-    /// Publish through the attached client host adapter.
+    /// Publish to every client attached to the host adapter, for commands no client submitted.
+    #[default]
     ClientBroadcast,
+    /// Publish only to the client session that submitted the command.
+    Client(ClientId),
     /// Return to the local process command-line interface.
     Cli,
     /// Execute without an attached reply transport while retaining lifecycle tracking.

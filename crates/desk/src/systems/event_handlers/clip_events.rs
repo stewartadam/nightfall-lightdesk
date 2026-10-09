@@ -1148,7 +1148,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         app.init_resource::<CommandTracker>();
         app.add_systems(Update, (crud_events, ApplyDeferred).chain());
         app
@@ -1161,7 +1161,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         app.init_resource::<CommandTracker>();
         app.add_systems(Update, handle_configuration_commands);
         app
@@ -1178,7 +1178,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         app.init_resource::<CommandTracker>();
         app.add_systems(Update, route_clip_playback_actions);
         app

@@ -105,7 +105,7 @@ pub fn process_json_envelopes(world: &mut World) {
             command_id,
             undo_id,
             CommandOrigin::WebUi,
-            ReplyTarget::ClientBroadcast,
+            envelope.reply_target,
         );
         if let Err(error) = registration {
             tracing::warn!(
@@ -247,6 +247,7 @@ mod tests {
             undo_id: None,
             module: module.to_string(),
             command,
+            reply_target: ReplyTarget::ClientBroadcast,
         }
     }
 

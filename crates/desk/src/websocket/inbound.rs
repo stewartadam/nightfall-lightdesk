@@ -31,13 +31,10 @@ pub fn deserialize_desk_command(
         return Ok(());
     }
 
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
 
     Ok(())
 }
@@ -250,13 +247,10 @@ pub fn deserialize_settings_command(
     let command: SettingsCommand = serde_json::from_value(json)
         .map_err(|e| format!("Failed to parse SettingsCommand: {}", e))?;
 
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
 
     Ok(())
 }

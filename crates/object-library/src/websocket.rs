@@ -60,13 +60,10 @@ pub fn deserialize_object_library_command(
     let command: ObjectLibraryCommand = serde_json::from_value(json)
         .map_err(|error| format!("Failed to parse ObjectLibraryCommand: {error}"))?;
 
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
     Ok(())
 }
 
@@ -532,7 +529,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         let (sender, _receiver) = async_channel::unbounded();
         app.insert_resource(ClientEventSink::new(sender));
         app.add_systems(
@@ -662,6 +659,7 @@ mod tests {
     fn deserialize_object_library_command_writes_semantic_envelope() {
         let mut world = World::new();
         world.insert_resource(Messages::<CommandEnvelope<ObjectLibraryCommand>>::default());
+        world.init_resource::<CommandTracker>();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
 

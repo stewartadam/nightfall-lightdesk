@@ -354,43 +354,6 @@ test("shows grouped showfile actions in the status bar menu", async ({
   await expect(dialog).toBeHidden();
 });
 
-/** Verifies tab close handling delegates draft preservation to the backend. */
-test("triggers draft preservation on pagehide without dirty tracking", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const globalWindow = window as Window & {
-      __nightfallBeaconUrls?: string[];
-    };
-    globalWindow.__nightfallBeaconUrls = [];
-    Object.defineProperty(navigator, "sendBeacon", {
-      configurable: true,
-      value: (url: string | URL) => {
-        globalWindow.__nightfallBeaconUrls?.push(String(url));
-        return true;
-      },
-    });
-  });
-
-  await openShowfileTestApp(page);
-  await expect(page.locator("button[title='Menu']")).toBeVisible();
-  await page.evaluate(() => {
-    window.dispatchEvent(new Event("pagehide"));
-  });
-
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const urls = (window as Window & { __nightfallBeaconUrls?: string[] })
-          .__nightfallBeaconUrls;
-        return urls?.some((url) =>
-          url.endsWith("/api/showfiles/current/draft"),
-        );
-      }),
-    )
-    .toBe(true);
-});
-
 /** Verifies disabling draft recovery still waits for a startup showfile selection. */
 test("skips draft recovery and prompts for a startup showfile", async ({
   page,

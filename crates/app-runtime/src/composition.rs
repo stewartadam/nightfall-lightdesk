@@ -230,6 +230,7 @@ pub(super) fn init_bevy_with_transport_policy(
             systems::deleted_object_instances::release_deleted_object_instances,
             systems::quit_event::handle_events,
             handle_periodic_draft_autosave,
+            save_draft_when_last_client_disconnects,
             handle_process_shutdown_request,
         )
             .chain()
@@ -337,6 +338,42 @@ pub(super) fn handle_periodic_draft_autosave(
         }
         Err(error) => {
             tracing::warn!("Periodic showfile draft autosave failed: {}", error);
+        }
+    }
+}
+
+/// Persist a dirty working draft once the last connected client closes.
+///
+/// With no client left, nobody can save from a UI, so the backend keeps the work in the draft
+/// itself. A tab closing while another stays open saves nothing. Saves use the panel layout
+/// from the showfile's last explicit save, because each client arranges its own panels.
+pub(super) fn save_draft_when_last_client_disconnects(
+    mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
+    current_showfile: Res<systems::showfile_events::CurrentShowfile>,
+    mut clean_snapshot_hash: ResMut<systems::showfile_events::ShowfileCleanSnapshotHash>,
+    mut disconnects: MessageReader<LastClientDisconnected>,
+) {
+    if disconnects.read().count() == 0 || is_process_shutdown_requested() {
+        return;
+    }
+
+    match systems::showfile_events::save_draft_showfile_if_dirty(
+        &mut showfile_save_state,
+        current_showfile.name(),
+        &mut clean_snapshot_hash,
+        &Default::default(),
+    ) {
+        Ok(outcome) => {
+            tracing::info!(
+                ?outcome,
+                "Saved showfile draft after the last client disconnected"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(
+                "Failed to save showfile draft after the last client disconnected: {}",
+                error
+            );
         }
     }
 }

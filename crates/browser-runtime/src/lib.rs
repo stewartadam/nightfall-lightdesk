@@ -26,7 +26,7 @@ use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::EnginePlugin;
 use nightfall_engine::prelude::{
     AppState, ClientBridgeHost, ClientBridgePlugin, CommandJsonEnvelope, CommandSender,
-    DataProvider, RuntimeCapabilities, UpdateJsonEnvelope,
+    DataProvider, OutboundFrame, RuntimeCapabilities, UpdateJsonEnvelope,
 };
 use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
@@ -72,7 +72,7 @@ pub struct BrowserEngine {
     app: App,
     command_tx: CommandSender,
     update_tx: Sender<UpdateJsonEnvelope>,
-    output_rx: Receiver<Vec<u8>>,
+    output_rx: Receiver<OutboundFrame>,
     runtime_info: RuntimeInfo,
 }
 
@@ -287,10 +287,13 @@ impl BrowserEngine {
     }
 
     /// Copy all pending encoded messages into host-owned byte buffers.
+    ///
+    /// The embedded page is the runtime's only client, so every frame is delivered
+    /// whatever its audience.
     fn drain_output_core(&self) -> Vec<Vec<u8>> {
         let mut output = Vec::new();
-        while let Ok(bytes) = self.output_rx.try_recv() {
-            output.push(bytes);
+        while let Ok(frame) = self.output_rx.try_recv() {
+            output.push(frame.bytes);
         }
         output
     }

@@ -51,13 +51,10 @@ pub fn deserialize_flow_command(
     let command: FlowCommand = serde_json::from_str(&json.to_string())
         .map_err(|e| format!("Failed to parse FlowCommand: {}", e))?;
 
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
 
     Ok(())
 }
@@ -158,9 +155,19 @@ mod tests {
     fn deserialize_flow_command_writes_semantic_envelope() {
         let mut world = World::new();
         world.insert_resource(Messages::<CommandEnvelope<FlowCommand>>::default());
+        world.init_resource::<CommandTracker>();
 
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
+        world
+            .resource_mut::<CommandTracker>()
+            .register_context(
+                command_id,
+                undo_id,
+                CommandOrigin::WebUi,
+                ReplyTarget::Client(ClientId(4)),
+            )
+            .unwrap();
         deserialize_flow_command(
             &mut world,
             serde_json::json!({
@@ -179,6 +186,7 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].command_id, command_id);
         assert_eq!(messages[0].undo_id, undo_id);
+        assert_eq!(messages[0].reply_target, ReplyTarget::Client(ClientId(4)));
         assert!(matches!(messages[0].command, FlowCommand::StopFlow(7)));
     }
 }

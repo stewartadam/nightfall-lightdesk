@@ -53,13 +53,10 @@ pub fn deserialize_osc_command(
     let command: OscCommand =
         serde_json::from_value(json).map_err(|e| format!("Failed to parse OscCommand: {e}"))?;
 
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
 
     Ok(())
 }
@@ -159,6 +156,7 @@ mod tests {
     fn deserialize_osc_command_writes_semantic_envelope() {
         let mut world = World::new();
         world.insert_resource(Messages::<CommandEnvelope<OscCommand>>::default());
+        world.init_resource::<CommandTracker>();
 
         let command_id = CommandId::new();
         let undo_id = UndoId::new();

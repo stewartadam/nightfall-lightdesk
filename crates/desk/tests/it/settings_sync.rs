@@ -18,7 +18,9 @@ use nightfall_desk::prelude::{
 };
 use nightfall_desk::systems::event_handlers::settings_events;
 use nightfall_desk::websocket::{send_io_settings_on_change, send_settings_on_change};
-use nightfall_engine::prelude::{ClientEventSink, CommandEnvelope, CommandOrigin, ReplyTarget};
+use nightfall_engine::prelude::{
+    ClientEventSink, CommandEnvelope, CommandOrigin, OutboundFrame, ReplyTarget,
+};
 use nightfall_fixtures::prelude::{
     BindingValidationMode, BindingValidationSettings, InputDmxUniverses, InputUniverseStaleTimeout,
 };
@@ -29,7 +31,7 @@ use nightfall_io::prelude::{
 };
 
 /// Discards every message currently buffered on `rx`, stopping once it is empty or closed.
-fn drain_channel(rx: &Receiver<Vec<u8>>) {
+fn drain_channel(rx: &Receiver<OutboundFrame>) {
     while rx.try_recv().is_ok() {}
 }
 
@@ -43,8 +45,8 @@ fn decode_ws_message(raw: &[u8]) -> serde_json::Value {
 }
 
 /// Creates the resources required by the semantic settings command handler.
-fn settings_command_app() -> (App, Receiver<Vec<u8>>) {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+fn settings_command_app() -> (App, Receiver<OutboundFrame>) {
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let mut app = App::new();
     app.add_message::<CommandEnvelope<SettingsCommand>>();
     app.add_message::<settings_events::SettingsCommandResult>();
@@ -79,7 +81,7 @@ fn submit_settings_command(app: &mut App, command: SettingsCommand) {
 
 #[test]
 fn broadcasts_settings_when_desk_settings_changes() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
 
     let mut app = App::new();
     app.init_resource::<DeskSettings>();
@@ -112,7 +114,7 @@ fn broadcasts_settings_when_desk_settings_changes() {
     let raw = rx
         .try_recv()
         .expect("expected websocket settings broadcast after settings change");
-    let message = decode_ws_message(&raw);
+    let message = decode_ws_message(&raw.bytes);
     assert_eq!(message["type"], "Settings");
     assert_eq!(message["data"]["programmer_auto_select"], true);
     assert_eq!(message["data"]["panel_layouts"][0]["name"], "Layout B");
@@ -121,7 +123,7 @@ fn broadcasts_settings_when_desk_settings_changes() {
 
 #[test]
 fn does_not_broadcast_settings_without_change() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
 
     let mut app = App::new();
     app.init_resource::<DeskSettings>();
@@ -164,7 +166,7 @@ fn broadcasts_input_signal_loss_policy_and_timeout() {
     let raw = rx
         .try_recv()
         .expect("expected websocket settings broadcast after settings command");
-    let message = decode_ws_message(&raw);
+    let message = decode_ws_message(&raw.bytes);
     assert_eq!(message["type"], "IoSettings");
     assert_eq!(
         message["data"]["input_signal_loss_policy"]["type"],
@@ -196,7 +198,8 @@ fn broadcasts_clamped_dmx_output_rate() {
     app.update();
     let message = decode_ws_message(
         &rx.try_recv()
-            .expect("expected websocket settings broadcast after rate change"),
+            .expect("expected websocket settings broadcast after rate change")
+            .bytes,
     );
     assert_eq!(message["type"], "IoSettings");
     assert_eq!(message["data"]["dmx_output_rate_hz"], 30);

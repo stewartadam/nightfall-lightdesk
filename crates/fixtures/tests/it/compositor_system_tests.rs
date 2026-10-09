@@ -22,8 +22,8 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
-    EngineActionEnvelope, FinishedCommand, ReplyTarget,
+    CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
+    CommandTracker, EngineActionEnvelope, FinishedCommand, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -37,7 +37,7 @@ fn init_command_lifecycle(app: &mut App) {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
 }
 
 /// Registers and writes one fixture command through its semantic test envelope.
@@ -1709,7 +1709,7 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(ConsoleDmxUniverses::default());

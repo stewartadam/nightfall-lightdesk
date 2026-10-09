@@ -68,7 +68,7 @@ fn setup_world() -> World {
     world.insert_resource(Messages::<CommandResult>::default());
     world.insert_resource(Messages::<CommandReply>::default());
     world.insert_resource(Messages::<FinishedCommand>::default());
-    world.insert_resource(Messages::<CommandNotice>::default());
+    world.insert_resource(Messages::<CommandNoticeReply>::default());
     world.insert_resource(CommandTracker::default());
     world.insert_resource(CurrentShowfile::default());
     world.insert_resource(ShowfileCleanSnapshotHash::default());
@@ -1786,7 +1786,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.add_message::<UiNotification>();
     let correlation_id = Uuid::new_v4();

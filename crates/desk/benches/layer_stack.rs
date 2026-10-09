@@ -17,7 +17,7 @@ use nightfall::prelude::{FadeCurve, MaterializedTransition, ObjectRef, ObjectTyp
 use nightfall_compositor::prelude::{Layer, ObjectRefMarker, OutputLayer};
 use nightfall_desk::websocket::{LayerSnapshotData, send_layer_stack};
 use nightfall_dmx::prelude::ParameterValue;
-use nightfall_engine::prelude::ClientEventSink;
+use nightfall_engine::prelude::{ClientEventSink, OutboundFrame};
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
 use nightfall_fixtures::testing::{BENCH_FIXTURE_PARAMETERS, BenchParameter, patch_bench_fixtures};
 use nightfall_io::OutputTransport;
@@ -83,7 +83,7 @@ fn publish_layer_stack(
 }
 
 /// Builds an app of patched fixtures and `layer_count` fully asserting layers.
-fn layer_stack_app(fixture_count: usize, layer_count: usize) -> (App, Receiver<Vec<u8>>) {
+fn layer_stack_app(fixture_count: usize, layer_count: usize) -> (App, Receiver<OutboundFrame>) {
     let mut app = App::new();
     let parameters =
         patch_bench_fixtures(app.world_mut(), fixture_count, &OutputTransport::Disabled);
@@ -138,9 +138,9 @@ fn fade() -> MaterializedTransition {
 }
 
 /// Drains every queued client message and returns the total encoded byte count.
-fn drain_bytes(receiver: &Receiver<Vec<u8>>) -> usize {
+fn drain_bytes(receiver: &Receiver<OutboundFrame>) -> usize {
     std::iter::from_fn(|| receiver.try_recv().ok())
-        .map(|message| message.len())
+        .map(|message| message.bytes.len())
         .sum()
 }
 

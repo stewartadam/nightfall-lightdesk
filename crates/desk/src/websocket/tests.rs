@@ -36,7 +36,7 @@ impl UndoableOperation for TestUndoCommand {
 }
 
 /// Removes any startup messages from a test websocket receiver.
-fn drain_channel(rx: &async_channel::Receiver<Vec<u8>>) {
+fn drain_channel(rx: &async_channel::Receiver<OutboundFrame>) {
     while rx.try_recv().is_ok() {}
 }
 
@@ -86,7 +86,7 @@ fn spawn_parameter(
 #[test]
 /// Verifies log-level commands are echoed as non-droppable desk messages.
 fn forward_desk_commands_broadcasts_set_log_level() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
     app.insert_resource(ClientEventSink::new(tx));
@@ -103,9 +103,12 @@ fn forward_desk_commands_broadcasts_set_log_level() {
     let payload = rx
         .try_recv()
         .expect("expected websocket payload for SetLogLevel");
-    assert_eq!(payload.first().copied(), Some(DISCRIMINATOR_NON_DROPPABLE));
+    assert_eq!(
+        payload.bytes.first().copied(),
+        Some(DISCRIMINATOR_NON_DROPPABLE)
+    );
 
-    let payload_text = String::from_utf8_lossy(&payload);
+    let payload_text = String::from_utf8_lossy(&payload.bytes);
     assert!(
         payload_text.contains("DeskCommand"),
         "payload did not include DeskCommand tag: {payload_text:?}"
@@ -123,7 +126,7 @@ fn forward_desk_commands_broadcasts_set_log_level() {
 #[test]
 /// Verifies desk commands without a UI synchronization contract are not echoed.
 fn forward_desk_commands_ignores_non_log_level() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
     app.insert_resource(ClientEventSink::new(tx));
@@ -146,7 +149,7 @@ fn forward_desk_commands_ignores_non_log_level() {
 #[test]
 /// Verifies UI notifications are forwarded as non-droppable websocket messages.
 fn forward_ui_notifications_broadcasts_show_toast() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let mut app = App::new();
     app.add_message::<UiNotification>();
     app.init_resource::<UiNotificationState>();
@@ -163,9 +166,12 @@ fn forward_ui_notifications_broadcasts_show_toast() {
     let payload = rx
         .try_recv()
         .expect("expected websocket payload for UiNotification::ShowToast");
-    assert_eq!(payload.first().copied(), Some(DISCRIMINATOR_NON_DROPPABLE));
+    assert_eq!(
+        payload.bytes.first().copied(),
+        Some(DISCRIMINATOR_NON_DROPPABLE)
+    );
 
-    let payload_text = String::from_utf8_lossy(&payload);
+    let payload_text = String::from_utf8_lossy(&payload.bytes);
     assert!(
         payload_text.contains("UiNotification"),
         "payload did not include UiNotification tag: {payload_text:?}"
@@ -183,7 +189,7 @@ fn forward_ui_notifications_broadcasts_show_toast() {
 #[test]
 /// Verifies queued startup notifications are replayed once and then drained.
 fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let broadcaster = ClientEventSink::new(tx);
     let mut pending = UiNotificationState::default();
     pending.push(UiNotification::ShowToast {
@@ -196,9 +202,12 @@ fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
     let payload = rx
         .try_recv()
         .expect("expected websocket payload for pending UiNotification::ShowToast");
-    assert_eq!(payload.first().copied(), Some(DISCRIMINATOR_NON_DROPPABLE));
+    assert_eq!(
+        payload.bytes.first().copied(),
+        Some(DISCRIMINATOR_NON_DROPPABLE)
+    );
 
-    let payload_text = String::from_utf8_lossy(&payload);
+    let payload_text = String::from_utf8_lossy(&payload.bytes);
     assert!(
         payload_text.contains("ShowToast"),
         "payload did not include ShowToast variant: {payload_text:?}"
@@ -218,7 +227,7 @@ fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
 #[test]
 /// Reconnects must receive confirmed identity even after an unobserved internal resync.
 fn resync_replays_showfile_identity_after_earlier_delivery() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let broadcaster = ClientEventSink::new(tx);
     let mut state = UiNotificationState::default();
     flush_pending_ui_notifications(Some(&mut state), &broadcaster);
@@ -232,14 +241,14 @@ fn resync_replays_showfile_identity_after_earlier_delivery() {
     for _ in 0..2 {
         flush_pending_ui_notifications(Some(&mut state), &broadcaster);
         let payload = rx.try_recv().expect("identity must survive every resync");
-        assert!(String::from_utf8_lossy(&payload).contains("Sample Tour"));
+        assert!(String::from_utf8_lossy(&payload.bytes).contains("Sample Tour"));
     }
 }
 
 #[test]
 /// Live rename notifications replace the identity retained for a later reconnect.
 fn forward_ui_notifications_updates_replayed_identity() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let mut app = App::new();
     app.add_message::<UiNotification>();
     app.init_resource::<UiNotificationState>();
@@ -267,7 +276,7 @@ fn forward_ui_notifications_updates_replayed_identity() {
 #[test]
 /// Verifies an unchanged undo manager produces no repeated websocket traffic.
 fn send_undo_state_on_change_does_not_broadcast_when_idle() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let mut app = App::new();
     app.insert_resource(ClientEventSink::new(tx));
     app.init_resource::<UndoManager>();
@@ -290,7 +299,7 @@ fn send_undo_state_on_change_does_not_broadcast_when_idle() {
 #[test]
 /// Verifies undo stack changes broadcast complete developer-visible metadata.
 fn send_undo_state_on_change_broadcasts_on_undo_stack_change() {
-    let (tx, rx) = async_channel::unbounded::<Vec<u8>>();
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let mut app = App::new();
     app.insert_resource(ClientEventSink::new(tx));
     app.init_resource::<UndoManager>();
@@ -319,7 +328,7 @@ fn send_undo_state_on_change_broadcasts_on_undo_stack_change() {
     let payload = rx
         .try_recv()
         .expect("expected websocket payload for undo state change");
-    let message = decode_ws_message(&payload);
+    let message = decode_ws_message(&payload.bytes);
     assert_eq!(message["type"], "UndoState");
     assert_eq!(message["data"]["can_undo"], true);
     assert_eq!(message["data"]["undo_depth"], 1);

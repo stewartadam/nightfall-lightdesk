@@ -76,14 +76,15 @@ pub mod prelude {
         BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
     };
     pub use crate::client_bridge::{
-        ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
-        CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        Audience, ClientBridgeHost, ClientBridgePlugin, ClientEventSink, ClientPresenceSender,
+        CommandDeserializerRegistry, CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DROPPABLE,
+        DISCRIMINATOR_NON_DROPPABLE, EncodedClientMessage, LastClientDisconnected, OutboundFrame,
+        SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
-        ActiveCommand, CommandLifecycleError, CommandRegistrationError, CommandReply,
-        CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
+        ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
+        CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
     };
     pub use crate::command_traits::CliCommand;
     pub use crate::data_provider::{DataProvider, DataStoreError};
@@ -93,15 +94,16 @@ pub mod prelude {
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{
         DebugPanicTarget, debug_panic_target_names, init_process_shutdown,
-        is_process_shutdown_requested, maybe_trigger_debug_worker_panic, parse_debug_panic_target,
-        process_shutdown_grace_period, process_shutdown_reason, request_debug_worker_panic,
+        is_graceful_exit_requested, is_process_shutdown_requested,
+        maybe_trigger_debug_worker_panic, parse_debug_panic_target, process_shutdown_grace_period,
+        process_shutdown_reason, request_debug_worker_panic, request_graceful_exit,
         request_process_shutdown, subscribe_process_shutdown,
     };
     pub use crate::protocol::client::EngineClientMessage;
     pub use crate::protocol::dispatch::{CommandIngressRouter, EngineActionRouter};
     pub use crate::protocol::dispatch_ast::{AstConvert, DispatchError};
     pub use crate::protocol::engine_command::{
-        CommandEnvelope, CommandId, CommandOrigin, EngineAction, EngineActionEnvelope,
+        ClientId, CommandEnvelope, CommandId, CommandOrigin, EngineAction, EngineActionEnvelope,
         EngineIngressMeta, EnginePayload, EventEnvelope, IngressCommand, NotificationEnvelope,
         OperationId, OperationResult, ReplyTarget, RequestEnvelope, UndoId,
     };
@@ -170,7 +172,7 @@ impl Plugin for EnginePlugin {
         app.add_message::<CommandResult>();
         app.add_message::<command_lifecycle::CommandReply>();
         app.add_message::<command_lifecycle::FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         // Add startup transition system
         app.add_systems(
             Update,
@@ -525,7 +527,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         let (sender, receiver) = unbounded();
         app.insert_resource(ClientEventSink::new(sender));
         app.add_systems(Update, (begin_resync, send_resync_complete).chain());
@@ -559,13 +561,14 @@ mod tests {
         let notification = receiver
             .try_recv()
             .expect("resync should publish its completion notification");
-        let decoded: serde_json::Value = minicbor_serde::from_slice(&notification[1..]).unwrap();
+        let decoded: serde_json::Value =
+            minicbor_serde::from_slice(&notification.bytes[1..]).unwrap();
         assert_eq!(decoded["type"], "ResyncComplete");
     }
 
     /// Receiving end of the client sink, readable from systems under test.
     #[derive(Resource)]
-    struct PublishedPayloads(async_channel::Receiver<Vec<u8>>);
+    struct PublishedPayloads(async_channel::Receiver<OutboundFrame>);
 
     /// Whether ResyncComplete had already been published when clock work started.
     #[derive(Resource, Default)]
@@ -577,7 +580,7 @@ mod tests {
         mut seen: ResMut<ResyncCompleteBeforeClock>,
     ) {
         let published = std::iter::from_fn(|| payloads.0.try_recv().ok()).any(|payload| {
-            minicbor_serde::from_slice::<serde_json::Value>(&payload[1..])
+            minicbor_serde::from_slice::<serde_json::Value>(&payload.bytes[1..])
                 .is_ok_and(|decoded| decoded["type"] == "ResyncComplete")
         });
         seen.0.get_or_insert(published);

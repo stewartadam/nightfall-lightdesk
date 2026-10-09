@@ -29,7 +29,7 @@ fn timeline_runtime_command_app() -> App {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.add_systems(Update, handle_timeline_events);
     app
@@ -547,7 +547,7 @@ fn delete_timecode_stops_associated_timelines() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.init_resource::<TimelineCommandOrigins>();
     app.init_resource::<ObservedTimelineActions>();

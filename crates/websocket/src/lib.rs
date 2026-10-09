@@ -186,6 +186,7 @@ fn start_or_attach_axum_task(
         client_event_rx,
         client_bridge.command_sender(),
         client_bridge.update_sender(),
+        client_bridge.presence_sender(),
         plugin_routes,
         stateful_plugin_routes,
         host.web_ui.clone(),

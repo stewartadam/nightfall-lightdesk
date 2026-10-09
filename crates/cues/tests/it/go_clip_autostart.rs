@@ -30,7 +30,7 @@ use nightfall_cues::prelude::{
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin, CommandOutcome,
+    CommandEnvelope, CommandError, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome,
     CommandReply, CommandResult, CommandTracker, DataProvider, EngineActionEnvelope,
     FinishedCommand, OperationResult, PendingEngineActionBuffer, ReplyTarget,
 };
@@ -77,7 +77,7 @@ fn setup_app() -> App {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.add_message::<OperationResult<(), CommandError>>();
 
     app.init_resource::<DataProvider<Sequence>>();
