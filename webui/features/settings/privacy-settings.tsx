@@ -20,17 +20,16 @@ export const PRIVACY_POLICY_URL = "https://nightfall.live/privacy";
 
 /** What a usage report contains, shown so operators can judge it before agreeing. */
 const USAGE_CONTENTS = [
-  "App version, operating system, and whether Nightfall runs as the desktop app or headless",
+  "App version and operating system",
   "CPU and GPU model, core count, and memory rounded to a size bucket",
   "Make and model of library fixtures in your patch; custom fixtures only as a count",
-  "How many of each object type your show contains, never their names",
+  "How many of each object type your show contains",
   "Output and input protocols and interface models in use",
-  "Frame timing, missed DMX output deadlines, startup time, and session length",
 ];
 
 /** What an error report contains. */
 const ERROR_CONTENTS = [
-  "Error message and stack trace, with your home folder, showfile names and network addresses removed",
+  "Error message and stack trace, with your home folder, showfile names and any IP addresses in the text removed",
   "Warnings logged shortly before the error",
   "App version, operating system, processor architecture, and the anonymous ID below",
   "Reports not sent yet are deleted as soon as you stop sharing",
