@@ -45,7 +45,7 @@ import {
 import { filterColumnsFromMetadata } from "../../../lib/datagrid-filtering";
 import { sendRemovePatchBinding } from "../../../lib/fixture-service";
 import { useSharedStore } from "../../../lib/use-shared-store";
-import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
+import { bindings, dmxUniverseList, fixtures } from "../../../state/appStores";
 import {
   type BindingDeleteFilter,
   type BindingRow,
@@ -69,7 +69,7 @@ export interface PatchBindingsTabProps {
 export default function PatchBindingsTab(props: PatchBindingsTabProps) {
   const $bindings = useStore(bindings);
   const $fixtures = useSharedStore(fixtures);
-  const $dmxUniverseData = useStore(dmxUniverseData);
+  const $dmxUniverseList = useStore(dmxUniverseList);
   const [columns, setColumns] =
     createSignal<VisibilityGridColumn[]>(DEFAULT_COLUMNS);
   const displayColumns = createMemo(() => {
@@ -153,7 +153,7 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
   });
 
   const bindingConflictColumns = createMemo(() => {
-    const activeUniverses = $dmxUniverseData().map(
+    const activeUniverses = $dmxUniverseList().map(
       (universe) => universe.universe_id,
     );
     const analysis = computeBindingOverlapAnalysis(

@@ -15,7 +15,6 @@ import type {
   PerformanceMeasureStats,
 } from "../state/appStores";
 import { browserDemoAudioHost } from "./browser-demo-audio";
-import { normalizeDmxUniverseData } from "./dmx-universe-data";
 import { backendLogConfigToUi } from "./log-config-bridge";
 import {
   configure as configureUiLogging,
@@ -80,7 +79,9 @@ import {
   cueDefinitionsLoaded,
   cueDurationProfiles,
   cues,
-  dmxUniverseData,
+  dmxUniverseChannels,
+  dmxUniverseList,
+  dmxUniverseWatch,
   fixtureGeometries,
   fixtures,
   flowDefinitionsRevision,
@@ -1245,11 +1246,20 @@ function dispatchMessage(raw: AnyWsMessage) {
       break;
     }
 
-    case "DmxUniverseData": {
+    case "DmxUniverseList": {
       setStoreAction(
-        dmxUniverseData,
-        "Receive DmxUniverseData",
-        normalizeDmxUniverseData(raw.data as types.OutboundDmxUniverse[]),
+        dmxUniverseList,
+        "Receive DmxUniverseList",
+        raw.data as types.DmxUniverseSummary[],
+      );
+      break;
+    }
+
+    case "DmxUniverseChannels": {
+      setStoreAction(
+        dmxUniverseChannels,
+        "Receive DmxUniverseChannels",
+        raw.data as types.DmxUniverseChannels[],
       );
       break;
     }
@@ -1380,6 +1390,9 @@ function dispatchMessage(raw: AnyWsMessage) {
     case "ResyncComplete": {
       setResyncComplete(true);
       setResyncGeneration(resyncGeneration() + 1);
+      // Watches belong to one connection and one backend world, so a resync after a reconnect
+      // or world swap starts without ours; re-sending also gets fresh values at once.
+      sendDmxUniverseWatch(dmxUniverseWatch.get());
       break;
     }
 
@@ -3104,6 +3117,20 @@ export const engineRuntime = {
   },
 };
 
+/**
+ * Tells the backend which universes' channel values this client wants, replacing what it asked
+ * for before. An empty list stops the values.
+ */
+function sendDmxUniverseWatch(
+  universes: readonly types.DmxUniverseKey[],
+): void {
+  if (!engineRuntime.isRunning) return;
+  const watch: types.DmxUniverseWatch = { universes: [...universes] };
+  engineRuntime.sendUpdate("DmxUniverseWatch", watch, false);
+}
+
+const stopDmxUniverseWatchSync = dmxUniverseWatch.listen(sendDmxUniverseWatch);
+
 export {
   backendAppState,
   connectionStatus,
@@ -3130,6 +3157,7 @@ if (import.meta.hot) {
     data.setResyncGeneration = setResyncGeneration;
     data.backendAppState = backendAppState;
     data.setBackendAppState = setBackendAppState;
+    stopDmxUniverseWatchSync();
     log.info("HMR dispose: disconnecting WebSocket");
     engineRuntime.stop();
   });

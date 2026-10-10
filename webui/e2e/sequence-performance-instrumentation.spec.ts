@@ -128,7 +128,7 @@ async function notifyRepresentativeStores(page: Page): Promise<void> {
       output: [...(bindings.output ?? [])],
       disabled: [...(bindings.disabled ?? [])],
     });
-    stores.dmxUniverseData.set([...(stores.dmxUniverseData.get() ?? [])]);
+    stores.dmxUniverseList.set([...(stores.dmxUniverseList.get() ?? [])]);
     stores.fixtures.set({ ...stores.fixtures.get() });
     stores.flows.set({ ...stores.flows.get() });
     stores.parameters.set(new Map(stores.parameters.get()));

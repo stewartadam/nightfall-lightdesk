@@ -52,7 +52,7 @@ import {
 } from "../../../lib/datagrid-column-visibility";
 import { filterColumnsFromMetadata } from "../../../lib/datagrid-filtering";
 import { useSharedStore } from "../../../lib/use-shared-store";
-import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
+import { bindings, dmxUniverseList, fixtures } from "../../../state/appStores";
 import {
   type BindingRow,
   toDisabledBindingRow,
@@ -83,7 +83,7 @@ export interface PatchUniversesTabProps {
 export default function PatchUniversesTab(props: PatchUniversesTabProps) {
   const $bindings = useStore(bindings);
   const $fixtures = useSharedStore(fixtures);
-  const $dmxUniverseData = useStore(dmxUniverseData);
+  const $dmxUniverseList = useStore(dmxUniverseList);
 
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
   const [columns, setColumns] =
@@ -99,7 +99,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
   const universeGroups = createMemo(() => {
     const snapshot = $bindings();
     const fixtureMap = $fixtures();
-    const activeUniverses = $dmxUniverseData().map(
+    const activeUniverses = $dmxUniverseList().map(
       (universe) => universe.universe_id,
     );
     const overlapAnalysis = computeBindingOverlapAnalysis(

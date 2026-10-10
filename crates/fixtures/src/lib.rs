@@ -32,6 +32,7 @@ pub mod selection;
 pub mod testing;
 pub mod undo;
 pub mod universe;
+pub mod universe_stream;
 pub mod websocket;
 pub mod wire_layout;
 
@@ -143,6 +144,11 @@ impl Plugin for FixturePlugin {
             parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE,
             websocket::deserialize_parameter_keyframe_request,
         );
+        register_client_update_deserializer(
+            app,
+            universe_stream::DMX_UNIVERSE_WATCH_MODULE,
+            universe_stream::deserialize_dmx_universe_watch,
+        );
 
         app.init_resource::<data_provider_ext::FixtureDataProviderExt>();
         app.init_resource::<bindings::InputBindings>();
@@ -155,6 +161,7 @@ impl Plugin for FixturePlugin {
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
         app.init_resource::<universe::InputUniverseStaleTimeout>();
+        app.init_resource::<universe_stream::DmxUniverseStream>();
         app.init_resource::<output_frames::OutputRouting>();
         app.init_resource::<output_frames::OutputDmxFrames>();
         app.init_resource::<nightfall_io::NetworkDmxOutputTargets>();
@@ -235,7 +242,8 @@ impl Plugin for FixturePlugin {
         app.add_systems(
             Render,
             (
-                websocket::send_dmx_universes.after(DmxOutput),
+                universe_stream::send_dmx_universes.after(DmxOutput),
+                websocket::send_input_contribution_trace,
                 websocket::send_bindings_on_change,
                 websocket::send_color_path_defaults_on_change,
                 websocket::send_binding_validation_settings_on_change,
@@ -247,6 +255,11 @@ impl Plugin for FixturePlugin {
         app.add_systems(
             Update,
             websocket::handle_resync_state.in_set(ResyncHandling),
+        );
+        app.add_systems(
+            Update,
+            // After update ingress, so a watch sent just before a disconnect cannot outlive it.
+            universe_stream::forget_disconnected_watchers.in_set(EventHandling),
         );
     }
 }
