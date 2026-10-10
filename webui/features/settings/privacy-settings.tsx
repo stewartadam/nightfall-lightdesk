@@ -15,6 +15,9 @@ import { setStoreAction } from "../../lib/nanostore-action";
 import { $telemetryState } from "../../state/settings";
 import type { TelemetryConsent } from "../../types";
 
+/** Public privacy policy describing what Nightfall shares and where it goes. */
+export const PRIVACY_POLICY_URL = "https://nightfall.live/privacy";
+
 /** What a usage report contains, shown so operators can judge it before agreeing. */
 const USAGE_CONTENTS = [
   "App version, operating system, and whether Nightfall runs as the desktop app or headless",
@@ -71,6 +74,18 @@ export function PrivacySettings() {
         </p>
       }
     >
+      <p class="text-xs text-gray-400">
+        Read the{" "}
+        <a
+          class="text-blue-300 underline"
+          href={PRIVACY_POLICY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          privacy policy
+        </a>{" "}
+        for how reports are handled and stored.
+      </p>
       <section aria-label="Usage reports">
         <ToggleSwitch
           label="Share anonymous usage reports"

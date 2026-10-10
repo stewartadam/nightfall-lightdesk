@@ -48,6 +48,9 @@ test("telemetry prompt opens privacy settings and choices persist on the host", 
     "aria-selected",
     "true",
   );
+  await expect(
+    settings.getByRole("link", { name: "privacy policy" }),
+  ).toHaveAttribute("href", "https://nightfall.live/privacy");
   const usage = settings.getByRole("switch", {
     name: "Share anonymous usage reports",
   });
