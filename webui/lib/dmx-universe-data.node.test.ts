@@ -53,7 +53,10 @@ test("dmxUniverseSnapshot merges the matching channel values", () => {
   assert.deepEqual(snapshot?.channels, [255, 0]);
   assert.equal(snapshot?.frame_age_ms, 123);
   assert.equal(snapshot?.is_self, true);
-  assert.equal(dmxUniverseSnapshot(inputSummary(3), channels), undefined);
+  const pending = dmxUniverseSnapshot(inputSummary(3), channels);
+  assert.equal(pending.channels.length, 512);
+  assert.ok(pending.channels.every((value) => value === null));
+  assert.equal(pending.frame_age_ms, undefined);
 });
 
 /** Key ids distinguish I/O mode, numbering space and universe number. */
