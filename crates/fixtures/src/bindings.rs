@@ -60,7 +60,8 @@ pub struct OutputBinding {
     pub target: OutputTarget,
     /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
     pub priority: i32,
-    /// If true, duplicate the source address across a range destination.
+    /// If true, fixtures sharing a target universe all start at the target address instead of
+    /// being packed one after another.
     pub clone: bool,
 }
 
@@ -209,6 +210,10 @@ impl OutputSource {
 }
 
 /// Output binding target.
+///
+/// A fixture source patched to a universe range puts its Nth fixture in the Nth universe of
+/// the range, each at the target address, and packs every fixture past the end of the range
+/// into its last universe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
