@@ -103,9 +103,10 @@ impl EncodedClientMessage {
 }
 
 /// Connected clients that should receive one outbound frame.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum Audience {
     /// Every client attached to the host adapter.
+    #[default]
     All,
     /// Only the identified client session; dropped when that session has disconnected.
     Client(ClientId),
@@ -232,26 +233,42 @@ impl CommandSender {
 #[derive(Message, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LastClientDisconnected;
 
-/// Lets a host transport report that its last client session closed.
+/// Written when one client session closes, so domains can drop state they keep for it.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClientDisconnected {
+    /// Transport-assigned identity of the session that closed.
+    pub client: ClientId,
+}
+
+/// One host report that a client session closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClientDisconnectReport {
+    /// Session that closed.
+    pub client: ClientId,
+    /// Whether no other session remains connected.
+    pub last: bool,
+}
+
+/// Lets a host transport report that client sessions closed.
 ///
 /// Every report also wakes the frame limiter, so the engine reacts on its next
 /// frame instead of waiting for the next tick.
 #[derive(Clone)]
 pub struct ClientPresenceSender {
-    tx: Sender<LastClientDisconnected>,
+    tx: Sender<ClientDisconnectReport>,
     waker: FrameWaker,
 }
 
 impl ClientPresenceSender {
     /// Wraps a presence channel so every report also wakes `waker`.
-    pub fn new(tx: Sender<LastClientDisconnected>, waker: FrameWaker) -> Self {
+    pub fn new(tx: Sender<ClientDisconnectReport>, waker: FrameWaker) -> Self {
         Self { tx, waker }
     }
 
-    /// Reports that no client session remains connected to the host.
-    pub fn last_client_disconnected(&self) {
-        if let Err(error) = self.tx.try_send(LastClientDisconnected) {
-            tracing::warn!(%error, "last_client_disconnected_report_failed");
+    /// Reports that `client` closed, and whether it was the last connected session.
+    pub fn client_disconnected(&self, client: ClientId, last: bool) {
+        if let Err(error) = self.tx.try_send(ClientDisconnectReport { client, last }) {
+            tracing::warn!(%error, "client_disconnect_report_failed");
             return;
         }
         self.waker.wake();
@@ -260,15 +277,22 @@ impl ClientPresenceSender {
 
 /// Engine-side end of the host's client presence reports.
 #[derive(Resource)]
-struct ClientPresenceReceiver(Receiver<LastClientDisconnected>);
+struct ClientPresenceReceiver(Receiver<ClientDisconnectReport>);
 
-/// Turns host presence reports into [`LastClientDisconnected`] messages for this frame.
+/// Turns host presence reports into [`ClientDisconnected`] messages for this frame, plus a
+/// [`LastClientDisconnected`] when a report says no session remains.
 fn forward_client_presence(
     receiver: Res<ClientPresenceReceiver>,
-    mut disconnected: MessageWriter<LastClientDisconnected>,
+    mut disconnected: MessageWriter<ClientDisconnected>,
+    mut last_disconnected: MessageWriter<LastClientDisconnected>,
 ) {
     while let Ok(report) = receiver.0.try_recv() {
-        disconnected.write(report);
+        disconnected.write(ClientDisconnected {
+            client: report.client,
+        });
+        if report.last {
+            last_disconnected.write(LastClientDisconnected);
+        }
     }
 }
 
@@ -292,7 +316,7 @@ impl ClientBridgeHost {
         self.update_tx.clone()
     }
 
-    /// Clone the sender used to report that the last client session closed.
+    /// Clone the sender used to report that client sessions closed.
     pub fn presence_sender(&self) -> ClientPresenceSender {
         self.presence_tx.clone()
     }
@@ -317,8 +341,8 @@ pub struct SharedClientBridge {
     command_rx: Receiver<CommandJsonEnvelope>,
     update_tx: Sender<UpdateJsonEnvelope>,
     update_rx: Receiver<UpdateJsonEnvelope>,
-    presence_tx: Sender<LastClientDisconnected>,
-    presence_rx: Receiver<LastClientDisconnected>,
+    presence_tx: Sender<ClientDisconnectReport>,
+    presence_rx: Receiver<ClientDisconnectReport>,
     output_tx: Sender<OutboundFrame>,
     output_rx: Receiver<OutboundFrame>,
     frame_waker: FrameWaker,
@@ -394,6 +418,7 @@ impl Plugin for ClientBridgePlugin {
             output_rx: Some(output_rx),
         });
         app.init_resource::<CommandFeedbackCursors>();
+        app.add_message::<ClientDisconnected>();
         app.add_message::<LastClientDisconnected>();
         app.add_systems(
             Update,
@@ -596,8 +621,10 @@ impl CommandJsonEnvelope {
     }
 }
 
-/// Type alias for untracked update deserializer functions.
-pub type UpdateDeserializerFn = Box<dyn Fn(&mut World, Value) -> Result<(), String> + Send + Sync>;
+/// Type alias for untracked update deserializer functions, which receive the update payload and
+/// the clients that sent it.
+pub type UpdateDeserializerFn =
+    Box<dyn Fn(&mut World, Value, Audience) -> Result<(), String> + Send + Sync>;
 
 /// Registry for high-frequency update deserializers owned by domain plugins.
 #[derive(Resource, Default)]
@@ -609,7 +636,7 @@ impl UpdateDeserializerRegistry {
     /// Registers one domain-owned update deserializer under a stable module name.
     pub fn register<F>(&mut self, module_name: impl Into<String>, deserializer: F)
     where
-        F: Fn(&mut World, Value) -> Result<(), String> + Send + Sync + 'static,
+        F: Fn(&mut World, Value, Audience) -> Result<(), String> + Send + Sync + 'static,
     {
         let name = module_name.into();
         tracing::trace!(module = %name, "Registering update deserializer");
@@ -634,6 +661,12 @@ pub struct UpdateJsonEnvelope {
     pub module: String,
     /// Raw domain update payload.
     pub update: Value,
+    /// Client session that sent the update, assigned by the host transport after parsing.
+    ///
+    /// Never read from the wire, so a client cannot speak for another session. Hosts with a
+    /// single client leave the default, [`Audience::All`].
+    #[serde(skip)]
+    pub sender: Audience,
 }
 
 #[cfg(test)]
@@ -724,15 +757,24 @@ mod client_bridge_tests {
         );
     }
 
-    /// Verifies a host's last-client report surfaces as one engine message on the next frame.
+    /// Verifies every disconnect report surfaces as a per-client message, and only the report
+    /// for the final session also surfaces as the last-client message.
     #[test]
-    fn last_client_report_becomes_an_engine_message() {
+    fn disconnect_reports_become_engine_messages() {
         let (mut app, _output) = bridge_app();
         let presence = app.world().resource::<ClientBridgeHost>().presence_sender();
 
-        presence.last_client_disconnected();
+        presence.client_disconnected(ClientId(1), false);
+        presence.client_disconnected(ClientId(2), true);
         app.update();
 
+        let clients = app
+            .world_mut()
+            .resource_mut::<Messages<ClientDisconnected>>()
+            .drain()
+            .map(|message| message.client)
+            .collect::<Vec<_>>();
+        assert_eq!(clients, vec![ClientId(1), ClientId(2)]);
         let reports = app
             .world_mut()
             .resource_mut::<Messages<LastClientDisconnected>>()

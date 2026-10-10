@@ -47,6 +47,7 @@ pub fn process_update_json_envelopes(world: &mut World) {
     for envelope in envelopes {
         let module = envelope.module;
         let update = envelope.update;
+        let sender = envelope.sender;
         let registered = world
             .resource::<UpdateDeserializerRegistry>()
             .contains(&module);
@@ -58,7 +59,7 @@ pub fn process_update_json_envelopes(world: &mut World) {
             let Some(deserializer) = registry.get(&module) else {
                 return;
             };
-            if let Err(error) = deserializer(world, update) {
+            if let Err(error) = deserializer(world, update, sender) {
                 tracing::warn!(%module, %error, "update_deserialize_failed");
             }
         });
@@ -201,7 +202,8 @@ mod tests {
         (world, sender)
     }
 
-    /// Verifies update ingress dispatches without registering a command lifecycle.
+    /// Verifies update ingress dispatches without registering a command lifecycle and hands the
+    /// domain the session that sent the update.
     #[test]
     fn update_ingress_dispatches_without_command_tracking() {
         let mut world = World::new();
@@ -210,10 +212,10 @@ mod tests {
         world.init_resource::<Messages<TestUpdate>>();
         world.resource_mut::<UpdateDeserializerRegistry>().register(
             "TestUpdate",
-            |world, value| {
+            |world, value, sender| {
                 let value =
                     serde_json::from_value::<u32>(value).map_err(|error| error.to_string())?;
-                world.write_message(TestUpdate(value));
+                world.write_message(TestUpdate(value, sender));
                 Ok(())
             },
         );
@@ -223,6 +225,7 @@ mod tests {
             .try_send(UpdateJsonEnvelope {
                 module: "TestUpdate".to_string(),
                 update: serde_json::json!(42),
+                sender: Audience::Client(ClientId(9)),
             })
             .unwrap();
 
@@ -233,12 +236,12 @@ mod tests {
             .resource_mut::<Messages<TestUpdate>>()
             .drain()
             .collect::<Vec<_>>();
-        assert_eq!(updates, vec![TestUpdate(42)]);
+        assert_eq!(updates, vec![TestUpdate(42, Audience::Client(ClientId(9)))]);
     }
 
-    /// Focused update message proving domain deserializer dispatch.
+    /// Focused update message proving domain deserializer dispatch and sender identity.
     #[derive(Clone, Debug, Message, PartialEq, Eq)]
-    struct TestUpdate(u32);
+    struct TestUpdate(u32, Audience);
 
     /// Creates an inbound command envelope with a deterministic module and identity.
     fn envelope(module: &str, command: serde_json::Value) -> CommandJsonEnvelope {

@@ -36,6 +36,7 @@ test-support = []
 async-channel.workspace = true
 bevy.workspace = true
 criterion.workspace = true
+minicbor-serde.workspace = true
 nightfall-fixtures = { path = ".", features = ["test-support"] }
 
 [[bench]]

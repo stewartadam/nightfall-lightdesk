@@ -7,12 +7,18 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, createSignal } from "solid-js";
-import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import {
+  CONSOLE_TRANSPORT,
+  dmxUniverseKeyId,
+  dmxUniverseKeyOf,
+  dmxUniverseSnapshot,
+} from "../../../lib/dmx-universe-data";
+import { watchDmxUniverse } from "../../../lib/dmx-universe-watch";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
-import { dmxUniverseData } from "../../../state/appStores";
+import { dmxUniverseChannels, dmxUniverseList } from "../../../state/appStores";
 import { $ioSettings } from "../../../state/settings";
 import { DmxIoMode, InputUniverseVisibilityMode } from "../../../types";
 import { outputSpaceSelection } from "../model/output-binding-follow";
@@ -27,10 +33,9 @@ const TRANSPORT_SORT_ORDER = [
 
 /** Owns DMX I/O mode, transport selection, and visible-universe projection. */
 export function createDmxUniverseSelectionController() {
-  const dmxData = useConditionalShallowStore(
-    dmxUniverseData,
-    useWorkspaceActivity(),
-  );
+  const active = useWorkspaceActivity();
+  const dmxData = useConditionalShallowStore(dmxUniverseList, active);
+  const channelData = useConditionalShallowStore(dmxUniverseChannels, active);
   const settings = useStore($ioSettings);
   const [ioMode, setIoMode] = createSignal<DmxIoMode>(DmxIoMode.Output);
   const [selectedOutputTransport, setSelectedOutputTransport] =
@@ -168,10 +173,42 @@ export function createDmxUniverseSelectionController() {
       ),
   );
 
-  /** Returns the selected filtered universe, when available. */
-  const currentUniverse = createMemo(() => {
+  /** Returns the selected filtered universe as listed, without channel values. */
+  const currentSummary = createMemo(() => {
     const id = selectedUniverse();
     return id === null ? undefined : universeById().get(id);
+  });
+
+  /**
+   * Returns the key of the selected universe, keeping the same object while the identity is
+   * unchanged so a republished list does not restart the watch.
+   */
+  const currentKey = createMemo(
+    () => {
+      const summary = currentSummary();
+      return summary ? dmxUniverseKeyOf(summary) : undefined;
+    },
+    undefined,
+    {
+      equals: (previous, next) =>
+        previous === next ||
+        (previous !== undefined &&
+          next !== undefined &&
+          dmxUniverseKeyId(previous) === dmxUniverseKeyId(next)),
+    },
+  );
+
+  /** Watches the selected universe's channel values while the panel is active. */
+  createEffect(() => {
+    const key = currentKey();
+    if (!active() || !key) return;
+    onCleanup(watchDmxUniverse(key));
+  });
+
+  /** Returns the selected universe with its channel values, once the backend sent them. */
+  const currentUniverse = createMemo(() => {
+    const summary = currentSummary();
+    return summary ? dmxUniverseSnapshot(summary, channelData()) : undefined;
   });
 
   /** Selects the first universe whenever filtering invalidates the current tab. */

@@ -219,11 +219,13 @@ async fn client_ws(
                             json_envelope.reply_target = ReplyTarget::Client(client_id);
                             let _ = command_json_tx.send(json_envelope).await;
                         }
-                        Ok(InboundWebsocketText::Update(json_envelope)) => {
+                        Ok(InboundWebsocketText::Update(mut json_envelope)) => {
                             tracing::trace!(
+                                %client_id,
                                 "Parsed update envelope from websocket (module={})",
                                 json_envelope.module
                             );
+                            json_envelope.sender = Audience::Client(client_id);
                             let _ = update_json_tx.send(json_envelope).await;
                         }
                         Ok(InboundWebsocketText::Transport(TransportMessage::Heartbeat {
@@ -252,10 +254,11 @@ async fn client_ws(
         coalesced = outbox.coalesced_count(),
         "WebSocket client disconnected"
     );
-    if forget_client(&clients, &outbox) {
+    let last = forget_client(&clients, &outbox);
+    if last {
         tracing::info!(%client_id, "Last websocket client disconnected");
-        state.client_presence.last_client_disconnected();
     }
+    state.client_presence.client_disconnected(client_id, last);
 }
 
 /// Removes a closed session from the registry and returns whether no session remains.
@@ -792,10 +795,10 @@ mod tests {
             .unwrap();
     }
 
-    /// Verifies the engine hears about disconnects only once the final session closes, so a
-    /// tab closing while another stays open does not trigger backend work.
+    /// Verifies the engine hears about every closed session, and that only the final one is
+    /// marked last, so a tab closing while another stays open does not trigger last-client work.
     #[tokio::test]
-    async fn only_the_last_disconnect_is_reported() {
+    async fn disconnects_report_the_session_and_whether_it_was_last() {
         let (command_tx, _command_rx) = async_channel::unbounded();
         let (update_json_tx, _update_rx) = async_channel::unbounded();
         let (presence_tx, presence_rx) = async_channel::unbounded();
@@ -836,17 +839,30 @@ mod tests {
             .unwrap();
 
         first.close(None).await.unwrap();
-        tokio::time::timeout(Duration::from_secs(5), registered(1))
+        let report = tokio::time::timeout(Duration::from_secs(5), presence_rx.recv())
             .await
+            .unwrap()
             .unwrap();
-        assert!(presence_rx.try_recv().is_err());
+        assert_eq!(
+            report,
+            ClientDisconnectReport {
+                client: ClientId(0),
+                last: false
+            }
+        );
 
         second.close(None).await.unwrap();
         let report = tokio::time::timeout(Duration::from_secs(5), presence_rx.recv())
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(report, LastClientDisconnected);
+        assert_eq!(
+            report,
+            ClientDisconnectReport {
+                client: ClientId(1),
+                last: true
+            }
+        );
         assert!(presence_rx.try_recv().is_err());
         server.abort();
     }

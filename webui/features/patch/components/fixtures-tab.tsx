@@ -56,7 +56,7 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { useSharedStore } from "../../../lib/use-shared-store";
-import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
+import { bindings, dmxUniverseList, fixtures } from "../../../state/appStores";
 import {
   type BindingRow,
   toDisabledBindingRow,
@@ -87,7 +87,7 @@ export interface PatchFixturesTabProps {
 export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   const $bindings = useStore(bindings);
   const $fixtures = useSharedStore(fixtures);
-  const $dmxUniverseData = useStore(dmxUniverseData);
+  const $dmxUniverseList = useStore(dmxUniverseList);
 
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
   const [conflictTooltip, setConflictTooltip] =
@@ -174,7 +174,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   const rows = createMemo<FixtureDisplayRow[]>(() => {
     const snapshot = $bindings();
     const fixtureMap = $fixtures();
-    const activeUniverses = $dmxUniverseData().map(
+    const activeUniverses = $dmxUniverseList().map(
       (universe) => universe.universe_id,
     );
     const conflictColumnsByBinding = computeBindingOverlapAnalysis(

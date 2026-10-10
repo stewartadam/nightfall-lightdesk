@@ -5385,6 +5385,7 @@ dependencies = [
  "bevy_ecs",
  "criterion",
  "dashmap",
+ "minicbor-serde",
  "moonshine-kind",
  "nightfall",
  "nightfall-cmd-parse",

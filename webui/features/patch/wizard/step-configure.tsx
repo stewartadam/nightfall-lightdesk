@@ -30,7 +30,7 @@ import {
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   bindings,
-  dmxUniverseData,
+  dmxUniverseList,
   fixtureLibrary,
   fixtureProfile,
   fixtures,
@@ -123,7 +123,7 @@ export function StepConfigure() {
   const formId = createUniqueId();
   const { state, updateState, setPatchConflict, patchConflict } =
     usePatchWizard();
-  const $dmxData = useStore(dmxUniverseData);
+  const $dmxData = useStore(dmxUniverseList);
   const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);

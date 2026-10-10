@@ -12,7 +12,10 @@ import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import Tooltip from "../../../components/ui/tooltip";
-import { getInputFreshness } from "../../../lib/dmx-universe-data";
+import {
+  type DmxUniverseSnapshot,
+  getInputFreshness,
+} from "../../../lib/dmx-universe-data";
 import type * as types from "../../../types";
 import { DmxIoMode, InputUniverseVisibilityMode } from "../../../types";
 import type { ChannelInfo } from "../model/dmx-universe-model";
@@ -29,12 +32,12 @@ export type DmxUniverseViewProps = {
   selectedTransport: string;
   universeIds: number[];
   selectedUniverse: number | null;
-  currentUniverse: types.OutboundDmxUniverse | undefined;
+  currentUniverse: DmxUniverseSnapshot | undefined;
   fixtures: Record<string, types.Fixture>;
   fixtureJumpActive: boolean;
   fixtureJumpText: string;
   fixtureJumpHighlight: FixtureJumpHighlight | undefined;
-  universeForId: (id: number) => types.OutboundDmxUniverse | undefined;
+  universeForId: (id: number) => types.DmxUniverseSummary | undefined;
   channelInfo: (address: number) => ChannelInfo | undefined;
   channelIsSelected: (address: number) => boolean;
   channelValueColor: (address: number, value: number) => string;
@@ -194,9 +197,7 @@ function DmxUniverseTabs(props: DmxUniverseViewProps & { contentId: string }) {
 }
 
 /** Renders freshness metadata above an input universe channel grid. */
-function InputUniverseFreshness(props: {
-  universe: types.OutboundDmxUniverse;
-}) {
+function InputUniverseFreshness(props: { universe: DmxUniverseSnapshot }) {
   /** Projects input freshness for the visible universe. */
   const freshness = () => getInputFreshness(props.universe);
 
@@ -228,7 +229,7 @@ function InputUniverseFreshness(props: {
 /** Renders the address/value cell grid for one DMX universe. */
 function DmxChannelGrid(
   props: DmxUniverseViewProps & {
-    universe: types.OutboundDmxUniverse;
+    universe: DmxUniverseSnapshot;
   },
 ) {
   return (
@@ -250,11 +251,23 @@ function DmxChannelGrid(
               ? `#${info.fixtureId}.${info.elementIndex}`
               : `#${info.fixtureId}`;
           };
+          /** Returns `: <value>` for the tooltip, or nothing while the value is still unknown. */
+          const valueSuffix = () => {
+            const current = value();
+            return current === null ? "" : `: ${current}`;
+          };
+          /** Returns the value's text color, leaving it unset while the value is unknown. */
+          const valueColor = () => {
+            const current = value();
+            return current === null
+              ? undefined
+              : props.channelValueColor(address, current);
+          };
           /** Returns descriptive hover content for this channel. */
           const tooltip = () => {
             const info = channelInfo();
-            if (!info) return `Ch ${address}: ${value()}`;
-            return `Ch ${address}: ${value()}\n${fixtureIdentifier()} ${info.fixtureLabel}\n${info.elementLabel} → ${info.attribute}`;
+            if (!info) return `Ch ${address}${valueSuffix()}`;
+            return `Ch ${address}${valueSuffix()}\n${fixtureIdentifier()} ${info.fixtureLabel}\n${info.elementLabel} → ${info.attribute}`;
           };
           /** Returns whether fixture jump navigation highlights this cell. */
           const isJumpMatch = () =>
@@ -286,13 +299,11 @@ function DmxChannelGrid(
                   {fixtureIdentifier()}
                 </div>
                 <div
-                  class="font-mono text-sm leading-none"
+                  class="font-mono text-sm leading-none min-h-[1em]"
                   data-dmx-channel-value={address}
-                  style={{
-                    color: props.channelValueColor(address, value()),
-                  }}
+                  style={{ color: valueColor() }}
                 >
-                  {value()}
+                  {value() ?? ""}
                 </div>
                 <div class="text-[8px] text-gray-600 leading-tight h-3">
                   {address}
