@@ -4725,8 +4725,9 @@ dependencies = [
 
 [[package]]
 name = "moonshine-kind"
-version = "0.5.1"
-source = "git+https://github.com/stewartadam/moonshine_kind?rev=067615a57073b8af310ef235a027dc11a64dcc7f#067615a57073b8af310ef235a027dc11a64dcc7f"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62c98b1b9e2378cb3040c18455b50d050540dfbe89117f636be09d5e13be9521"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
