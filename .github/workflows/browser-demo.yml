@@ -98,3 +98,4 @@ jobs:
           name: nightfall-browser-demo-${{ github.sha }}
           path: webui/dist/
           if-no-files-found: error
+          retention-days: 7
