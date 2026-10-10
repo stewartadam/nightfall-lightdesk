@@ -39,8 +39,6 @@ use sentry::{
 use tracing::{Level, Metadata, Subscriber, callsite::Identifier};
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
-/// Error service used when the build does not name another; submit-only, so safe to ship.
-const DEFAULT_DSN: &str = "https://9162256fdd2a46b7b0b520a8aa19bfa3@app.glitchtip.com/28629";
 /// Client name sent with reports.
 const USER_AGENT: &str = concat!("nightfall/", env!("CARGO_PKG_VERSION"));
 /// Folder in the data directory holding reports that have not been uploaded yet.
@@ -78,12 +76,13 @@ pub struct ErrorReportsGuard {
 }
 
 /// Resolves the error service: the runtime configuration's value wins, then
-/// `NIGHTFALL_ERROR_REPORTS_DSN` at build time, then the project's service. An empty value turns
-/// reporting off, so forks and test harnesses can opt out.
+/// `NIGHTFALL_ERROR_REPORTS_DSN` as it was when the app was compiled. Only the release workflow
+/// sets it at compile time, so local, benchmark, and fork builds report nowhere unless someone
+/// opts in. An empty value turns reporting off.
 fn resolve_dsn(configured: Option<&str>) -> Option<Dsn> {
     let dsn = configured
         .or(option_env!("NIGHTFALL_ERROR_REPORTS_DSN"))
-        .unwrap_or(DEFAULT_DSN);
+        .unwrap_or_default();
     if dsn.is_empty() {
         return None;
     }

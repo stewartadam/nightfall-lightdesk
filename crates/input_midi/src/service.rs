@@ -210,7 +210,7 @@ impl MidiInputWorker {
                 }
                 Err(error) => {
                     if self.last_discovery_error.as_deref() != Some(error.as_str()) {
-                        tracing::error!("Failed to create MIDI input for discovery: {}", error);
+                        tracing::warn!("Failed to create MIDI input for discovery: {}", error);
                         self.last_discovery_error = Some(error);
                     }
 

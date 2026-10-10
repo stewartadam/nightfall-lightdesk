@@ -208,3 +208,27 @@ test("supports nondismissing actions and propagates error severity into summarie
     "error",
   );
 });
+
+/** Dismissing by the pushed id closes a visible notification and retires its actions in history. */
+test("dismisses a notification by the id push returns", () => {
+  const h = harness();
+  let calls = 0;
+  const id = h.queue.push({
+    level: "info",
+    message: "Choose sharing",
+    ttlMs: 0,
+    actions: [{ label: "OK", onClick: () => (calls += 1) }],
+  });
+  h.flush();
+  assert.ok(h.visible.has(id));
+  h.queue.dismiss(id);
+  h.visible.get(id)?.remove();
+  h.flush();
+  assert.equal(h.visible.has(id), false);
+  assert.equal(
+    h.snapshots.at(-1)?.find((entry) => entry.id === id)?.actions.length,
+    0,
+  );
+  h.queue.runAction(id, 0);
+  assert.equal(calls, 0);
+});
