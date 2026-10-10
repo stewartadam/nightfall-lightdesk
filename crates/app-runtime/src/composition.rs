@@ -325,7 +325,6 @@ pub(super) fn handle_periodic_draft_autosave(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-        &Default::default(),
     ) {
         Ok(systems::showfile_events::DraftSaveOutcome::SavedDirtyDraft) => {
             tracing::debug!("Periodic showfile draft autosave wrote a dirty draft");
@@ -361,7 +360,6 @@ pub(super) fn save_draft_when_last_client_disconnects(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-        &Default::default(),
     ) {
         Ok(outcome) => {
             tracing::info!(

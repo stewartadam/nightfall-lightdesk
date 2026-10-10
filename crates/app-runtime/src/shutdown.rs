@@ -126,7 +126,6 @@ pub(super) fn handle_process_shutdown_request(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-        &Default::default(),
     ) {
         tracing::warn!(
             "Failed to preserve showfile draft before process shutdown: {}",

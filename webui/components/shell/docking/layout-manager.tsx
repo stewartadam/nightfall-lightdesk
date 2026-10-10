@@ -11,6 +11,7 @@ import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
+import { StarIcon } from "@squidlab/phosphor-solid/star";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { XIcon } from "@squidlab/phosphor-solid/x";
 import { createMemo, createSignal, For, Show } from "solid-js";
@@ -20,6 +21,7 @@ import {
   duplicateNamedLayout,
   renameNamedLayout,
   saveNamedLayout,
+  setDefaultLayout,
   setLayoutShown,
 } from "../../../lib/layout-management";
 import {
@@ -31,6 +33,7 @@ import {
   activeLayoutId as activeLayoutStore,
   busyLayoutIds,
 } from "../../../state/layout-switcher";
+import { $settings } from "../../../state/settings";
 import { useAppShell } from "../../providers/app-shell";
 import { Dialog, DialogBody } from "../../ui/dialog";
 import { Checkbox, Input } from "../../ui/form-controls";
@@ -85,6 +88,7 @@ export default function LayoutManager(props: LayoutManagerProps) {
   /** Returns the currently loaded named layout id from persistent storage. */
   const activeLayoutId = useStore(activeLayoutStore);
   const busy = useStore(busyLayoutIds);
+  const settings = useStore($settings);
   const [creating, setCreating] = createSignal(false);
   const [newLayoutName, setNewLayoutName] = createSignal("");
   const [editingLayoutId, setEditingLayoutId] = createSignal<string | null>(
@@ -188,7 +192,9 @@ export default function LayoutManager(props: LayoutManagerProps) {
             </form>
             <p class="mt-2 text-xs text-neutral-400">
               Select layouts in the switcher to activate them. Switch to another
-              layout before hiding or deleting the active one.
+              layout before hiding or deleting the active one. Each device keeps
+              its own arrangement; a device opening this show for the first time
+              starts from the default layout.
             </p>
           </div>
 
@@ -212,6 +218,10 @@ export default function LayoutManager(props: LayoutManagerProps) {
 
                     /** Identifies the layout currently applied to the workspace. */
                     const isActive = () => activeLayoutId() === layout().id;
+
+                    /** Identifies the layout devices open when they have no arrangement of their own. */
+                    const isDefault = () =>
+                      settings().default_panel_layout_id === layout().id;
 
                     return (
                       <div
@@ -249,6 +259,11 @@ export default function LayoutManager(props: LayoutManagerProps) {
                                   <Show when={isActive()}>
                                     <span class="rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-100">
                                       Active
+                                    </span>
+                                  </Show>
+                                  <Show when={isDefault()}>
+                                    <span class="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-100">
+                                      Default
                                     </span>
                                   </Show>
                                 </div>
@@ -317,6 +332,32 @@ export default function LayoutManager(props: LayoutManagerProps) {
                             />
                             Show in switcher
                           </label>
+                          <Tooltip
+                            content={() =>
+                              isDefault()
+                                ? `Stop opening ${layout().name} by default`
+                                : `Open ${layout().name} by default`
+                            }
+                          >
+                            <Button
+                              size="icon"
+                              type="button"
+                              class="items-center justify-center"
+                              aria-label={`Open ${layout().name} by default`}
+                              aria-pressed={isDefault()}
+                              onClick={() =>
+                                setDefaultLayout(
+                                  isDefault() ? null : layout().id,
+                                )
+                              }
+                            >
+                              <StarIcon
+                                class="size-4"
+                                weight={isDefault() ? "fill" : "regular"}
+                                aria-hidden
+                              />
+                            </Button>
+                          </Tooltip>
                           <Tooltip content={() => `Save ${layout().name}`}>
                             <Button
                               size="icon"

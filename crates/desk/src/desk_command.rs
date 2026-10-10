@@ -13,8 +13,6 @@ use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::settings::ActivePanelLayout;
-
 /// Conflict policy used when importing one showfile object collection into another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -125,15 +123,6 @@ pub struct NewShowfileOptions {
     pub include_sample_data: bool,
 }
 
-/// Options captured at the moment a showfile save is requested.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(default, rename_all = "camelCase")]
-pub struct ShowfileSaveOptions {
-    /// Dockview active layout snapshot to write into the saved showfile.
-    pub active_panel_layout: Option<ActivePanelLayout>,
-}
-
 /// Identifies one timestamped backup revision and its owning showfile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -218,25 +207,13 @@ pub enum DeskCommand {
     /// Create a fresh showfile for a named `.nightfall-show` folder.
     NewNamedShowfile(NewShowfileOptions),
     /// Save showfile
-    SaveShowfile(ShowfileSaveOptions),
+    SaveShowfile,
     /// Save showfile to a named `.nightfall-show` folder.
-    SaveNamedShowfile {
-        /// Target showfile folder name.
-        name: String,
-        /// Save-time options captured by the caller.
-        #[serde(default)]
-        options: ShowfileSaveOptions,
-    },
+    SaveNamedShowfile(String),
     /// Save a recoverable draft for the current showfile when it is dirty.
-    SaveDraftShowfile(ShowfileSaveOptions),
+    SaveDraftShowfile,
     /// Save a recoverable draft for a named `.nightfall-show` folder.
-    SaveNamedDraftShowfile {
-        /// Target showfile folder name.
-        name: String,
-        /// Save-time options captured by the caller.
-        #[serde(default)]
-        options: ShowfileSaveOptions,
-    },
+    SaveNamedDraftShowfile(String),
     /// Load showfile
     LoadShowfile,
     /// Load a named `.nightfall-show` folder.

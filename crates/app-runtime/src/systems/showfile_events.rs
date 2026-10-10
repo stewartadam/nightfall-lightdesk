@@ -118,14 +118,11 @@ use nightfall_showfile::{
 #[cfg(test)]
 use nightfall_showfile::{ShowfileLoadDomain, ordered_showfile_load_domains};
 use paths::*;
-use save::{
-    apply_showfile_save_options, save_showfile, update_clean_snapshot_hash,
-    update_clean_snapshot_hash_from_saved_show,
-};
 pub(crate) use save::{
     persist_new_showfile_draft_from_world, refresh_clean_snapshot_hash_after_showfile_bootstrap,
     refresh_clean_snapshot_hash_from_world, serialize_showfile_snapshot_json_from_world,
 };
+use save::{save_showfile, update_clean_snapshot_hash, update_clean_snapshot_hash_from_saved_show};
 pub use state::{CurrentShowfile, ShowfileCleanSnapshotHash};
 pub(crate) use storage::read_showfile_snapshot_from_path;
 use storage::{

@@ -89,7 +89,7 @@ test("fader assignments survive saving and loading a showfile", async ({
       module: "DeskCommand",
       command: {
         type: "SaveNamedShowfile",
-        data: { name: "fader-roundtrip", options: {} },
+        data: "fader-roundtrip",
       },
     }),
   );

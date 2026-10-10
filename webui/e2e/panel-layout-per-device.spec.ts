@@ -17,7 +17,7 @@ const LAYOUT_STORAGE_KEY = "nightfall-ui-layouts";
 /** Seeds browser storage so startup opens the default showfile context. */
 async function installBrowserStorageSeed(page: Page) {
   await page.addInitScript(() => {
-    const seedKey = "nightfall.activePanelLayoutShowfileSeeded";
+    const seedKey = "nightfall.panelLayoutPerDeviceSeeded";
     if (!window.sessionStorage.getItem(seedKey)) {
       window.localStorage.clear();
       window.localStorage.setItem("nightfall.currentShowfileName", "default");
@@ -70,28 +70,22 @@ async function sendWorldSwapDeskCommand(
   await waitForDockviewApp(page, { timeoutMs: 30_000 });
 }
 
-/** Returns the current active panel layout as seen by the browser page. */
-async function currentActivePanelLayout(page: Page) {
-  return page.evaluate(async () => {
-    const api = (window as any).appStores.dockApi.get();
-    if (!api) {
-      throw new Error("Dockview API unavailable");
-    }
-    const { createActivePanelLayout } = (
+/**
+ * Stores the current arrangement as a new named layout and makes it the
+ * showfile's default, returning the layout id.
+ */
+async function storeArrangementAsDefaultLayout(page: Page, name: string) {
+  return page.evaluate(async (layoutName) => {
+    const { createNamedLayout, setDefaultLayout } = (
       await window.__nightfallHarness.load("app")
-    ).dockviewActiveLayout;
-    return createActivePanelLayout(api);
-  });
-}
-
-/** Sends a draft save command that captures the current browser Dockview layout. */
-async function saveDraftShowfile(page: Page) {
-  await sendDeskCommand(page, {
-    type: "SaveDraftShowfile",
-    data: {
-      activePanelLayout: await currentActivePanelLayout(page),
-    },
-  });
+    ).layoutManagement;
+    const api = (window as any).appStores.dockApi.get();
+    const layout = await createNamedLayout(api, layoutName);
+    if (!layout) throw new Error("Could not create layout");
+    if (!(await setDefaultLayout(layout.id)))
+      throw new Error("Could not set default layout");
+    return layout.id as string;
+  }, name);
 }
 
 /** Returns the serialized right edge group size saved in localStorage. */
@@ -307,28 +301,50 @@ test("restores unsaved active panel layout after page refresh", async ({
   await expect.poll(() => savedRightEdgeGroupSize(page)).toBeGreaterThan(500);
 });
 
-/** Verifies saved showfile layout discards later unsaved panel changes on load. */
-test("restores saved active panel layout on showfile load", async ({
+/** The arrangement summary `arrangeDistinctiveLayout` produces. */
+const DISTINCTIVE_SUMMARY = {
+  programmerLocationType: "grid",
+  propertiesEdgePosition: "right",
+  propertiesLocationType: "edge",
+  rightCollapsed: true,
+  rightSerializedCollapsed: true,
+  rightVisible: true,
+};
+
+/** The arrangement summary `arrangeDiscardedLayout` produces. */
+const DISCARDED_SUMMARY = {
+  propertiesLocationType: "grid",
+  rightCollapsed: false,
+};
+
+/** Verifies a device with no arrangement of its own opens the showfile's default layout. */
+test("opens the showfile's default layout on a device without its own arrangement", async ({
   backendSlot,
   page,
 }, testInfo) => {
-  const showfileName = `activePanelLayout${testInfo.workerIndex}${Date.now()}`;
+  const showfileName = `defaultLayout${testInfo.workerIndex}${Date.now()}`;
 
-  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  const otherShowfileName = await prepareFreshBackendShowfile(
+    backendSlot.backendPort,
+  );
   await installBrowserStorageSeed(page);
   await page.goto("/?startup:draftRecovery=false");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
+  // Keep the fresh show on disk so the test can switch back to it.
+  await sendDeskCommand(page, { type: "SaveShowfile" });
 
   await arrangeDistinctiveLayout(page);
-
+  const defaultLayoutId = await storeArrangementAsDefaultLayout(page, "Stage");
   await saveShowfileFromHeader(page, showfileName);
 
-  await arrangeDiscardedLayout(page);
-
-  await page.evaluate(() => {
-    window.localStorage.clear();
+  // Work in another show, so this device's arrangement no longer belongs to
+  // the saved one, as when a device opens a show it never arranged.
+  await sendWorldSwapDeskCommand(page, {
+    type: "LoadNamedShowfile",
+    data: otherShowfileName,
   });
+  await arrangeDiscardedLayout(page);
   await sendWorldSwapDeskCommand(page, {
     type: "LoadNamedShowfile",
     data: showfileName,
@@ -336,23 +352,24 @@ test("restores saved active panel layout on showfile load", async ({
 
   await expect
     .poll(() => activeLayoutSummary(page))
-    .toMatchObject({
-      programmerLocationType: "grid",
-      propertiesEdgePosition: "right",
-      propertiesLocationType: "edge",
-      rightCollapsed: true,
-      rightSerializedCollapsed: true,
-      rightVisible: true,
-    });
-  await expect.poll(() => savedRightEdgeGroupSize(page)).toBeGreaterThan(500);
+    .toMatchObject(DISTINCTIVE_SUMMARY);
+  await expect
+    .poll(() =>
+      page.evaluate(async () =>
+        (
+          await window.__nightfallHarness.load("app")
+        ).layoutSwitcher.activeLayoutId.get(),
+      ),
+    )
+    .toBe(defaultLayoutId);
 });
 
-/** Verifies repeated command-line load settles on the saved showfile layout. */
-test("keeps saved active panel layout after repeated command-line loads", async ({
+/** Verifies reloading a showfile keeps the arrangement this device already made for it. */
+test("keeps this device's arrangement when the same showfile loads again", async ({
   backendSlot,
   page,
 }, testInfo) => {
-  const showfileName = `activePanelRepeated${testInfo.workerIndex}${Date.now()}`;
+  const showfileName = `deviceLayout${testInfo.workerIndex}${Date.now()}`;
 
   await prepareFreshBackendShowfile(backendSlot.backendPort);
   await installBrowserStorageSeed(page);
@@ -361,70 +378,129 @@ test("keeps saved active panel layout after repeated command-line loads", async 
   await waitForDockviewApp(page);
 
   await arrangeDistinctiveLayout(page);
+  await storeArrangementAsDefaultLayout(page, "Stage");
   await saveShowfileFromHeader(page, showfileName);
-
   await arrangeDiscardedLayout(page);
-  await submitWorldSwapHeaderCommand(page, `load ${showfileName}`);
+
   await submitWorldSwapHeaderCommand(page, `load ${showfileName}`);
 
   await expect
     .poll(() => activeLayoutSummary(page))
-    .toMatchObject({
-      programmerLocationType: "grid",
-      propertiesEdgePosition: "right",
-      propertiesLocationType: "edge",
-      rightCollapsed: true,
-      rightSerializedCollapsed: true,
-      rightVisible: true,
-    });
-  await page.waitForTimeout(500);
-  await expect
-    .poll(() => activeLayoutSummary(page))
-    .toMatchObject({
-      programmerLocationType: "grid",
-      propertiesEdgePosition: "right",
-      propertiesLocationType: "edge",
-      rightCollapsed: true,
-      rightSerializedCollapsed: true,
-      rightVisible: true,
-    });
-  await expect.poll(() => savedRightEdgeGroupSize(page)).toBeGreaterThan(500);
+    .toMatchObject(DISCARDED_SUMMARY);
 });
 
-/** Verifies draft load restores the save-time active panel layout. */
-test("restores draft active panel layout after loading draft", async ({
+/** Verifies saving the show on one device does not rearrange another device's panels. */
+test("saving on another device leaves this device's panels alone", async ({
   backendSlot,
   page,
 }) => {
-  const showfileName = await prepareFreshBackendShowfile(
-    backendSlot.backendPort,
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await installBrowserStorageSeed(page);
+  await page.goto("/?startup:draftRecovery=false");
+  await expect(page.locator("main#app")).toBeVisible();
+  await waitForDockviewApp(page);
+  await arrangeDistinctiveLayout(page);
+
+  const otherPage = await page.context().newPage();
+  await otherPage.goto("/?startup:draftRecovery=false");
+  await expect(otherPage.locator("main#app")).toBeVisible();
+  await waitForDockviewApp(otherPage);
+  await arrangeDiscardedLayout(otherPage);
+
+  /** Reads the settings snapshot revision this page has applied. */
+  const settingsRevision = () =>
+    page.evaluate(async () =>
+      (
+        await window.__nightfallHarness.load("app")
+      ).settings.$settingsSnapshotRevision.get(),
+    );
+  const before = await settingsRevision();
+  // The other device saves its arrangement into the shared layout, which
+  // broadcasts new settings to every device, then saves the show.
+  await otherPage.evaluate(async () => {
+    const harness = await window.__nightfallHarness.load("app");
+    const id = harness.layoutSwitcher.activeLayoutId.get();
+    const api = (window as any).appStores.dockApi.get();
+    if (!id || !(await harness.layoutManagement.saveNamedLayout(api, id)))
+      throw new Error("Could not save the other device's layout");
+  });
+  await sendDeskCommand(otherPage, { type: "SaveShowfile" });
+  await expect.poll(settingsRevision).toBeGreaterThan(before);
+
+  await page.waitForTimeout(500);
+  await expect
+    .poll(() => activeLayoutSummary(page))
+    .toMatchObject(DISTINCTIVE_SUMMARY);
+  await otherPage.close();
+});
+
+/** Reads the id of the named layout this page has open. */
+async function activeLayoutId(page: Page) {
+  return page.evaluate(async () =>
+    (
+      await window.__nightfallHarness.load("app")
+    ).layoutSwitcher.activeLayoutId.get(),
   );
+}
+
+/** Verifies saving the show under a new name keeps the arrangement this device made for it. */
+test("save as keeps this device's arrangement", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  const showfileName = `saveAsLayout${testInfo.workerIndex}${Date.now()}`;
+
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await installBrowserStorageSeed(page);
+  await page.goto("/?startup:draftRecovery=false");
+  await expect(page.locator("main#app")).toBeVisible();
+  await waitForDockviewApp(page);
+  await arrangeDistinctiveLayout(page);
+  const layoutBefore = await activeLayoutId(page);
+
+  await saveShowfileFromHeader(page, showfileName);
+  await page.waitForTimeout(500);
+
+  await expect
+    .poll(() => activeLayoutSummary(page))
+    .toMatchObject(DISTINCTIVE_SUMMARY);
+  expect(await activeLayoutId(page)).toBe(layoutBefore);
+});
+
+/** Verifies crossing the compact breakpoint and back keeps the layout the operator switched to. */
+test("returning from the compact view keeps the open layout", async ({
+  backendSlot,
+  page,
+}) => {
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
   await installBrowserStorageSeed(page);
   await page.goto("/?startup:draftRecovery=false");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
 
-  await arrangeDistinctiveLayout(page);
-  await saveDraftShowfile(page);
-  await arrangeDiscardedLayout(page);
-
-  await page.evaluate(() => {
-    window.localStorage.clear();
+  const otherId = await page.evaluate(async () => {
+    const harness = await window.__nightfallHarness.load("app");
+    const api = (window as any).appStores.dockApi.get();
+    const layout = await harness.layoutManagement.createNamedLayout(
+      api,
+      "Other",
+      true,
+    );
+    if (
+      !layout ||
+      !(await harness.layoutActivation.activateStoredLayout(api, layout.id))
+    )
+      throw new Error("Could not open the other layout");
+    return layout.id as string;
   });
-  await sendWorldSwapDeskCommand(page, {
-    type: "LoadDraftShowfile",
-    data: showfileName,
-  });
+  await expect.poll(() => activeLayoutId(page)).toBe(otherId);
 
-  await expect
-    .poll(() => activeLayoutSummary(page))
-    .toMatchObject({
-      programmerLocationType: "grid",
-      propertiesEdgePosition: "right",
-      propertiesLocationType: "edge",
-      rightCollapsed: true,
-      rightSerializedCollapsed: true,
-      rightVisible: true,
-    });
-  await expect.poll(() => savedRightEdgeGroupSize(page)).toBeGreaterThan(500);
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: 500, height: size.height });
+  await expect(page.getByRole("button", { name: "Panels" })).toBeVisible();
+  await page.setViewportSize(size);
+  await waitForDockviewApp(page);
+  await page.waitForTimeout(500);
+
+  expect(await activeLayoutId(page)).toBe(otherId);
 });

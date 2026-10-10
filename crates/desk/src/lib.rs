@@ -37,6 +37,7 @@ pub mod group_command;
 pub mod instances;
 pub mod masters;
 mod object_crud;
+mod panel_layouts;
 pub mod resources;
 pub mod settings;
 pub mod systems;
@@ -56,7 +57,6 @@ pub mod prelude {
     };
     pub use crate::desk_command::{
         DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
-        ShowfileSaveOptions,
     };
     pub use crate::group_command::GroupAction;
     pub use crate::group_command::GroupCommand;
@@ -67,9 +67,10 @@ pub mod prelude {
     pub use crate::resources::ExclusiveResource;
     pub use crate::resources::network_stats::{NetworkOutputSendFailure, NetworkStats};
     pub use crate::settings::{
-        ActivePanelLayout, AvailableAudioDevices, DeskSettings, SelectionFlattenPolicy,
-        SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
-        TelemetryConsent, TelemetryState, TimeDisplayPreference, TimelinePlacementPreference,
+        AvailableAudioDevices, DeskSettings, PanelLayoutArrangement, PanelLayoutRename,
+        PanelLayoutVisibility, SelectionFlattenPolicy, SequenceReorderRenumberPolicy,
+        SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel, TelemetryConsent,
+        TelemetryState, TimeDisplayPreference, TimelinePlacementPreference,
     };
     pub use crate::systems::relations::apply_virtual_relations;
     pub use crate::systems::vdim::{

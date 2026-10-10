@@ -114,7 +114,6 @@ pub(super) async fn export_showfile(
     window: WebviewWindow,
     name: String,
     policy: app_runtime::ShowfileExportPolicy,
-    save_options: nightfall_desk::prelude::ShowfileSaveOptions,
 ) -> Result<Option<ShowfileExportResult>, String> {
     use tauri_plugin_dialog::DialogExt;
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -129,10 +128,7 @@ pub(super) async fn export_showfile(
         return Ok(None);
     };
     let parent = parent.into_path().map_err(|error| error.to_string())?;
-    let mut capture = app_runtime::capture_showfile().await?;
-    if let Some(layout) = save_options.active_panel_layout {
-        capture.snapshot.settings.active_panel_layout = Some(layout);
-    }
+    let capture = app_runtime::capture_showfile().await?;
     let app_data =
         nightfall::nightfall_data_dir().ok_or("Application data directory unavailable")?;
     tauri::async_runtime::spawn_blocking(move || {

@@ -18,7 +18,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use nightfall_desk::prelude::ShowfileSaveOptions;
 use nightfall_websocket::prelude::HttpRouteRegistry;
 use tower_http::services::ServeFile;
 
@@ -69,8 +68,6 @@ async fn validate_new_name(Query(query): Query<NewShowNameQuery>) -> Response {
 struct ShowfileExportRequest {
     name: String,
     policy: super::export::ShowfileExportPolicy,
-    #[serde(default)]
-    save_options: ShowfileSaveOptions,
 }
 
 /// Captures live engine state and streams a finalized ZIP with a separately loadable show directory.
@@ -78,13 +75,10 @@ async fn export_current_showfile(Json(options): Json<ShowfileExportRequest>) -> 
     if let Err(error) = super::paths::showfile_folder_name(Some(&options.name)) {
         return showfile_resource_error(StatusCode::BAD_REQUEST, error);
     }
-    let mut capture = match crate::diagnostic_showfile::capture_showfile().await {
+    let capture = match crate::diagnostic_showfile::capture_showfile().await {
         Ok(capture) => capture,
         Err(error) => return showfile_resource_error(StatusCode::SERVICE_UNAVAILABLE, error),
     };
-    if let Some(layout) = options.save_options.active_panel_layout {
-        capture.snapshot.settings.active_panel_layout = Some(layout);
-    }
     let Some(app_data) = nightfall::nightfall_data_dir() else {
         return showfile_resource_error(
             StatusCode::SERVICE_UNAVAILABLE,

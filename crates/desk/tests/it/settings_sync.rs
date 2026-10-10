@@ -12,9 +12,9 @@ use async_channel::{Receiver, TryRecvError};
 use bevy_app::{App, Update};
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall_desk::prelude::{
-    ActivePanelLayout, AvailableAudioDevices, DeskSettings, SelectionFlattenPolicy,
-    SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
-    TimeDisplayPreference, TimelinePlacementPreference,
+    AvailableAudioDevices, DeskSettings, PanelLayoutRename, PanelLayoutVisibility,
+    SelectionFlattenPolicy, SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout,
+    StoredPanelLayoutPanel, TimeDisplayPreference, TimelinePlacementPreference,
 };
 use nightfall_desk::systems::event_handlers::settings_events;
 use nightfall_desk::websocket::{send_io_settings_on_change, send_settings_on_change};
@@ -539,84 +539,91 @@ fn deserializes_showfile_backup_retention_settings_command() {
     assert_eq!(retention, 3);
 }
 
-/// Verifies settings commands update showfile-scoped named panel layouts.
-#[test]
-fn updates_panel_layouts_from_settings_command() {
-    let (mut app, _rx) = settings_command_app();
-
-    let layout = StoredPanelLayout {
-        shown_in_switcher: true,
-        id: "layout-a".to_string(),
-        name: "Layout A".to_string(),
+/// Builds a named layout fixture with the given id and switcher visibility.
+fn stored_layout(id: &str, shown_in_switcher: bool) -> StoredPanelLayout {
+    StoredPanelLayout {
+        shown_in_switcher,
+        id: id.to_string(),
+        name: id.to_string(),
         version: 2,
-        layout: serde_json::json!({ "grid": "a" }),
-        panels: Vec::new(),
-        created_at: 10.0,
-        updated_at: 20.0,
-    };
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::SetPanelLayouts(vec![layout.clone()]),
-    );
-
-    app.update();
-
-    assert_eq!(
-        app.world().resource::<DeskSettings>().panel_layouts,
-        vec![layout]
-    );
-}
-
-/// Verifies switcher visibility and order round-trip as properties of saved layouts.
-#[test]
-fn layout_visibility_and_order_round_trip() {
-    let (mut app, _rx) = settings_command_app();
-    let layouts: Vec<_> = [("second", true), ("hidden", false), ("first", true)]
-        .into_iter()
-        .map(|(id, shown_in_switcher)| StoredPanelLayout {
-            id: id.into(),
-            name: id.into(),
-            shown_in_switcher,
-            version: 2,
-            layout: serde_json::json!({}),
-            panels: Vec::new(),
-            created_at: 0.0,
-            updated_at: 0.0,
-        })
-        .collect();
-    submit_settings_command(&mut app, SettingsCommand::SetPanelLayouts(layouts.clone()));
-    app.update();
-    let settings = app.world().resource::<DeskSettings>();
-    let decoded: DeskSettings =
-        serde_json::from_str(&serde_json::to_string(settings).unwrap()).unwrap();
-    assert_eq!(decoded.panel_layouts, layouts);
-}
-
-/// Verifies settings commands update the showfile-scoped active panel layout.
-#[test]
-fn updates_active_panel_layout_from_settings_command() {
-    let (mut app, _rx) = settings_command_app();
-
-    let layout = ActivePanelLayout {
-        layout_id: Some("layout-a".into()),
-        version: 2,
-        layout: serde_json::json!({ "grid": "active" }),
+        layout: serde_json::json!({ "grid": id }),
         panels: vec![StoredPanelLayoutPanel {
             id: "panel-Cues".to_string(),
             title: "Cues".to_string(),
             params: serde_json::json!({ "sequence": "main" }),
         }],
-        updated_at: 50.0,
-    };
+        created_at: 10.0,
+        updated_at: 20.0,
+    }
+}
+
+/// Verifies per-layout commands build the showfile's named layouts, order and default layout,
+/// and that the result survives a settings round trip.
+#[test]
+fn panel_layout_commands_round_trip() {
+    let (mut app, _rx) = settings_command_app();
+    for layout in [
+        stored_layout("second", true),
+        stored_layout("hidden", true),
+        stored_layout("first", true),
+    ] {
+        submit_settings_command(&mut app, SettingsCommand::CreatePanelLayout(layout));
+    }
     submit_settings_command(
         &mut app,
-        SettingsCommand::SetActivePanelLayout(Some(layout.clone())),
+        SettingsCommand::SetPanelLayoutVisibility(PanelLayoutVisibility {
+            id: "hidden".into(),
+            shown_in_switcher: false,
+        }),
     );
-
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::ReorderPanelLayouts(vec!["first".into(), "second".into()]),
+    );
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::SetDefaultPanelLayout(Some("first".into())),
+    );
     app.update();
 
+    let settings = app.world().resource::<DeskSettings>();
+    let decoded: DeskSettings =
+        serde_json::from_str(&serde_json::to_string(settings).unwrap()).unwrap();
+    let order: Vec<_> = decoded
+        .panel_layouts
+        .iter()
+        .map(|layout| (layout.id.as_str(), layout.shown_in_switcher))
+        .collect();
     assert_eq!(
-        app.world().resource::<DeskSettings>().active_panel_layout,
-        Some(layout)
+        order,
+        [("first", true), ("hidden", false), ("second", true)]
     );
+    assert_eq!(decoded.default_panel_layout_id.as_deref(), Some("first"));
+}
+
+/// Verifies a refused layout edit leaves the showfile's layouts untouched.
+#[test]
+fn rejected_panel_layout_edit_changes_nothing() {
+    let (mut app, _rx) = settings_command_app();
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::CreatePanelLayout(stored_layout("only", true)),
+    );
+    app.update();
+    let before = app.world().resource::<DeskSettings>().panel_layouts.clone();
+
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::RenamePanelLayout(PanelLayoutRename {
+            id: "missing".into(),
+            name: "Renamed".into(),
+        }),
+    );
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::CreatePanelLayout(stored_layout("only", false)),
+    );
+    app.update();
+
+    assert_eq!(app.world().resource::<DeskSettings>().panel_layouts, before);
 }

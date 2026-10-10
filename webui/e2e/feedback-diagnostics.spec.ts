@@ -274,7 +274,7 @@ test("downloads browser diagnostics with selected showfile references", async ({
       module: "DeskCommand",
       command: {
         type: "SaveNamedShowfile",
-        data: { name: "browser-diagnostics", options: {} },
+        data: "browser-diagnostics",
       },
     }),
   );

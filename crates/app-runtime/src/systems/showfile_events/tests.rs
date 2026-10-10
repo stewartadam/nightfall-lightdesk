@@ -587,44 +587,18 @@ fn effective_save_showfile_name_uses_current_loaded_showfile() {
     };
 
     assert_eq!(
-        effective_save_showfile_name(
-            &DeskCommand::SaveShowfile(Default::default()),
-            &current_showfile
-        )
-        .expect("resolve save target"),
+        effective_save_showfile_name(&DeskCommand::SaveShowfile, &current_showfile)
+            .expect("resolve save target"),
         Some("sample".to_string())
     );
     assert_eq!(
         effective_save_showfile_name(
-            &DeskCommand::SaveNamedShowfile {
-                name: "other.nightfall-show".to_string(),
-                options: Default::default(),
-            },
+            &DeskCommand::SaveNamedShowfile("other.nightfall-show".to_string()),
             &current_showfile,
         )
         .expect("resolve named save target"),
         Some("other".to_string())
     );
-}
-
-/// Verifies save-time layout options become the in-memory saved settings baseline.
-#[test]
-fn apply_showfile_save_options_updates_active_panel_layout() {
-    let active_panel_layout = ActivePanelLayout {
-        layout_id: None,
-        version: 1,
-        layout: serde_json::json!({ "layout": "saved" }),
-        panels: Vec::new(),
-        updated_at: 42.0,
-    };
-    let mut desk_settings = DeskSettings::default();
-    let save_options = ShowfileSaveOptions {
-        active_panel_layout: Some(active_panel_layout.clone()),
-    };
-
-    apply_showfile_save_options(&mut desk_settings, &save_options);
-
-    assert_eq!(desk_settings.active_panel_layout, Some(active_panel_layout));
 }
 
 /// Verifies any directory can supply a snapshot while saving remains targeted elsewhere.
@@ -1795,7 +1769,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
         correlation_id.into(),
         CommandOrigin::WebUi,
         ReplyTarget::Detached,
-        DeskCommand::SaveShowfile(Default::default()),
+        DeskCommand::SaveShowfile,
     );
     app.world_mut()
         .resource_mut::<CommandTracker>()
@@ -2146,10 +2120,7 @@ fn load_showfile_revision_event_preserves_saved_showfile_until_save() {
         "revision variable should retain its loaded string value"
     );
 
-    let save_command_id = submit_showfile_command(
-        &mut world,
-        DeskCommand::SaveShowfile(ShowfileSaveOptions::default()),
-    );
+    let save_command_id = submit_showfile_command(&mut world, DeskCommand::SaveShowfile);
     world
         .run_system_once(handle_events)
         .expect("run explicit save handler");
@@ -2419,22 +2390,7 @@ fn seed_world(world: &mut World) {
         desk_settings.programmer_auto_select = true;
         desk_settings.audio_device = Some("Built-in Output".to_string());
         desk_settings.selection_flatten_policy = SelectionFlattenPolicy::Prompt;
-        desk_settings.active_panel_layout = Some(ActivePanelLayout {
-            layout_id: None,
-            version: 2,
-            layout: serde_json::json!({
-                "grid": "active",
-                "activeGroup": "main",
-            }),
-            panels: vec![StoredPanelLayoutPanel {
-                id: "panel-Visualizer".to_string(),
-                title: "Visualizer".to_string(),
-                params: serde_json::json!({
-                    "mode": "operator",
-                }),
-            }],
-            updated_at: 1_700_000_002_000.0,
-        });
+        desk_settings.default_panel_layout_id = Some("operator-layout".to_string());
         desk_settings.panel_layouts = vec![StoredPanelLayout {
             shown_in_switcher: true,
             id: "operator-layout".to_string(),
@@ -2944,8 +2900,8 @@ fn roundtrip_preserves_desk_settings() {
         source_snapshot.settings.panel_layouts
     );
     assert_eq!(
-        restored_snapshot.settings.active_panel_layout,
-        source_snapshot.settings.active_panel_layout
+        restored_snapshot.settings.default_panel_layout_id,
+        source_snapshot.settings.default_panel_layout_id
     );
 }
 

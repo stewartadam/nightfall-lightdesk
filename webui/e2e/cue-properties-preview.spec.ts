@@ -31,7 +31,7 @@ test("cue transition slider scrubs output backward and steps through time", asyn
     module: "DeskCommand",
     command: {
       type: "SaveNamedShowfile",
-      data: { name: "scrub-output", options: {} },
+      data: "scrub-output",
     },
   });
   await sendCommand(page, {
@@ -184,7 +184,7 @@ test("cue transition backgrounds respect fixture element overrides", async ({
     module: "DeskCommand",
     command: {
       type: "SaveNamedShowfile",
-      data: { name: "override-progress", options: {} },
+      data: "override-progress",
     },
   });
   await sendCommand(page, {

@@ -15,27 +15,22 @@ import {
 } from "dockview";
 import { createEffect, onCleanup } from "solid-js";
 import {
-  activeLayoutKey,
-  activeLayoutToSerializedLayout,
-} from "../../../../lib/dockview-active-layout";
-import {
   createSerializedLayout,
-  restoreSerializedLayout,
   type SerializedLayout,
 } from "../../../../lib/dockview-layout";
-import { saveLayout } from "../../../../lib/layoutStorage";
+import { hasSessionLayoutFor, saveLayout } from "../../../../lib/layoutStorage";
 import { getLogger } from "../../../../lib/logger";
-import { currentShowfileRevision } from "../../../../lib/showfile-loading";
+import {
+  currentShowfileName,
+  currentShowfileRevision,
+} from "../../../../lib/showfile-loading";
 import {
   activeLayoutId,
   clearLayoutSessions,
   rememberLayoutResize,
   rememberLayoutSession,
 } from "../../../../state/layout-switcher";
-import {
-  $settings,
-  $settingsSnapshotRevision,
-} from "../../../../state/settings";
+import { $settingsSnapshotRevision } from "../../../../state/settings";
 import { useAppShell } from "../../../providers/app-shell";
 import { markDockviewLayoutReady } from "../layout-readiness";
 
@@ -165,20 +160,19 @@ function createEdgeGroupSizePersistence(
 }
 
 /**
- * The showfile layout already applied to the local session. It outlives one
- * listener, so remounting the workspace when the shell switches between docked
- * and compact keeps the session instead of restoring the showfile over it.
+ * The showfile revision whose arrangement this tab already settled on. It
+ * outlives one listener, so remounting the workspace when the shell switches
+ * between docked and compact keeps the arrangement instead of starting over.
  */
-const appliedShowfileLayout: { key: string | null; revision: number } = {
-  key: null,
+const appliedShowfile: { revision: number; keptDeviceArrangement: boolean } = {
   revision: -1,
+  keptDeviceArrangement: false,
 };
 
 /** Handles Dockview focus, restore, and showfile-backed layout persistence events. */
 export function DockviewEventListener(props: DockviewEventListenerProps) {
   log.trace("mounting");
   const { dockviewApi } = useAppShell();
-  const settings = useStore($settings);
   const settingsSnapshotRevision = useStore($settingsSnapshotRevision);
   const showfileRevision = useStore(currentShowfileRevision);
   let hasInitializedLayout = false;
@@ -189,7 +183,13 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     if (props.persist !== false) saveLayout(api);
   };
 
-  /** Restores the showfile-backed active layout when settings snapshots change. */
+  /**
+   * Settles this device's arrangement once per loaded showfile. The device keeps
+   * its own arrangement when it already has one for this showfile; otherwise it
+   * starts from the built-in arrangement and the workspace opens the showfile's
+   * default named layout. Settings snapshots from other devices never rearrange
+   * this one.
+   */
   createEffect(() => {
     const api = dockviewApi();
     if (!api) return;
@@ -197,87 +197,30 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     const snapshotRevision = settingsSnapshotRevision();
     if (snapshotRevision === 0) return;
 
-    const currentShowfileRevisionValue = showfileRevision();
-    if (currentShowfileRevisionValue !== appliedShowfileLayout.revision) {
+    const revision = showfileRevision();
+    if (revision !== appliedShowfile.revision) {
       clearLayoutSessions();
-    }
-    const activeLayout = settings().active_panel_layout;
-    const nextLayoutKey = activeLayoutKey(activeLayout);
-    if (!activeLayout) {
-      if (!hasInitializedLayout && props.hasSessionLayout?.()) {
-        hasInitializedLayout = true;
-        appliedShowfileLayout.key = null;
-        appliedShowfileLayout.revision = currentShowfileRevisionValue;
-        markDockviewLayoutReady(
-          currentShowfileRevisionValue,
-          snapshotRevision,
-          nextLayoutKey,
-        );
-        return;
-      }
-
-      if (
-        !hasInitializedLayout ||
-        currentShowfileRevisionValue !== appliedShowfileLayout.revision
-      ) {
-        log.debug("No showfile active layout found, using default layout");
+      const keep =
+        hasSessionLayoutFor(currentShowfileName.get()) &&
+        (hasInitializedLayout || Boolean(props.hasSessionLayout?.()));
+      if (!keep) {
+        isRestoringLayout = true;
+        log.debug("No arrangement on this device for the showfile");
         props.onResetLayout?.();
         persistSession(api);
-        hasInitializedLayout = true;
+        window.queueMicrotask(() => {
+          isRestoringLayout = false;
+        });
       }
-      appliedShowfileLayout.key = null;
-      appliedShowfileLayout.revision = currentShowfileRevisionValue;
-      markDockviewLayoutReady(
-        currentShowfileRevisionValue,
-        snapshotRevision,
-        nextLayoutKey,
-      );
-      return;
+      appliedShowfile.revision = revision;
+      appliedShowfile.keptDeviceArrangement = keep;
     }
-
-    if (
-      nextLayoutKey === appliedShowfileLayout.key &&
-      currentShowfileRevisionValue === appliedShowfileLayout.revision &&
-      (hasInitializedLayout || props.hasSessionLayout?.())
-    ) {
-      hasInitializedLayout = true;
-      appliedShowfileLayout.key = nextLayoutKey;
-      markDockviewLayoutReady(
-        currentShowfileRevisionValue,
-        snapshotRevision,
-        nextLayoutKey,
-      );
-      return;
-    }
-
-    try {
-      isRestoringLayout = true;
-      log.debug("Restoring active layout from showfile settings");
-      restoreSerializedLayout(
-        api,
-        activeLayoutToSerializedLayout(activeLayout),
-      );
-      appliedShowfileLayout.key = nextLayoutKey;
-      appliedShowfileLayout.revision = currentShowfileRevisionValue;
-      hasInitializedLayout = true;
-      persistSession(api);
-    } catch (error) {
-      log.error("Error restoring showfile active layout:", error);
-      props.onResetLayout?.();
-      appliedShowfileLayout.key = nextLayoutKey;
-      appliedShowfileLayout.revision = currentShowfileRevisionValue;
-      hasInitializedLayout = true;
-      persistSession(api);
-    } finally {
-      markDockviewLayoutReady(
-        currentShowfileRevisionValue,
-        snapshotRevision,
-        nextLayoutKey,
-      );
-      window.queueMicrotask(() => {
-        isRestoringLayout = false;
-      });
-    }
+    hasInitializedLayout = true;
+    markDockviewLayoutReady(
+      revision,
+      snapshotRevision,
+      appliedShowfile.keptDeviceArrangement,
+    );
   });
 
   /** Registers Dockview layout persistence listeners. */

@@ -25,7 +25,7 @@ test("creates module FX from the active show's packaged modules", async ({
       module: "DeskCommand",
       command: {
         type: "SaveNamedShowfile",
-        data: { name: "packaged-modules", options: {} },
+        data: "packaged-modules",
       },
     }),
   );

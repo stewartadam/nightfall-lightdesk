@@ -7,7 +7,6 @@
  */
 
 import { getBackendUrl } from "./api";
-import { currentShowfileSaveOptions } from "./showfile-actions";
 import type { ShowfileExportPolicy } from "./showfile-export-options";
 import { isTauriRuntime } from "./tauri";
 
@@ -16,7 +15,7 @@ export interface ShowfileExportResult {
   warnings: string[];
 }
 
-/** Exports live show state and UI layout with a local timestamp matching the backup filename format. */
+/** Exports live show state with a local timestamp matching the backup filename format. */
 export async function exportShowfile(
   name: string,
   policy: ShowfileExportPolicy,
@@ -34,7 +33,6 @@ export async function exportShowfile(
   const options = {
     name: exportName,
     policy,
-    saveOptions: currentShowfileSaveOptions(),
   };
   if (isTauriRuntime()) {
     const { invoke } = await import("@tauri-apps/api/core");

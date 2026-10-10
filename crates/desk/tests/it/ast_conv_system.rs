@@ -36,10 +36,7 @@ fn test_save_conversion() {
     assert!(cmd.is_some(), "Command is not a DeskCommand");
 
     match cmd.unwrap() {
-        DeskCommand::SaveShowfile(options) => {
-            // Success - correct command variant
-            assert!(options.active_panel_layout.is_none());
-        }
+        DeskCommand::SaveShowfile => {}
         other => panic!("Expected SaveShowfile command, got {:?}", other),
     }
 }
@@ -55,9 +52,8 @@ fn test_named_save_conversion() {
     assert!(cmd.is_some(), "Command is not a DeskCommand");
 
     match cmd.unwrap() {
-        DeskCommand::SaveNamedShowfile { name, options } => {
+        DeskCommand::SaveNamedShowfile(name) => {
             assert_eq!(name, "demo");
-            assert!(options.active_panel_layout.is_none());
         }
         other => panic!("Expected SaveNamedShowfile command, got {:?}", other),
     }

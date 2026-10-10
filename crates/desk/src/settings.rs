@@ -37,22 +37,42 @@ pub struct StoredPanelLayoutPanel {
     pub params: Value,
 }
 
-/// Serialized Dockview panel layout saved as the showfile's active UI layout.
+/// Panel arrangement a device saves into one named layout from its working copy.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[typeshare::typeshare]
 #[serde(rename_all = "camelCase")]
-pub struct ActivePanelLayout {
-    /// Named layout owning this working arrangement.
-    pub layout_id: Option<String>,
+pub struct PanelLayoutArrangement {
+    /// Named layout receiving the arrangement.
+    pub id: String,
     /// Layout storage format version.
     pub version: u32,
     /// Opaque Dockview layout payload.
     #[typeshare(serialized_as = "unknown")]
     pub layout: Value,
-    /// Panel metadata captured when the layout was stored.
+    /// Panel metadata captured with the arrangement.
     pub panels: Vec<StoredPanelLayoutPanel>,
-    /// Last layout update timestamp in milliseconds since Unix epoch.
-    pub updated_at: f64,
+}
+
+/// New user-visible name for one named layout.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct PanelLayoutRename {
+    /// Named layout to rename.
+    pub id: String,
+    /// New user-visible name; surrounding whitespace is trimmed.
+    pub name: String,
+}
+
+/// Whether one named layout appears in the layout switcher.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct PanelLayoutVisibility {
+    /// Named layout to show or hide.
+    pub id: String,
+    /// Whether the layout is listed in the switcher.
+    pub shown_in_switcher: bool,
 }
 
 /// Serialized Dockview panel layout that is named and saved with the showfile.
@@ -115,9 +135,9 @@ pub struct DeskSettings {
     /// Showfile-scoped named UI panel layouts.
     #[serde(default)]
     pub panel_layouts: Vec<StoredPanelLayout>,
-    /// Showfile-scoped active UI panel layout restored when the showfile loads.
+    /// Named layout a device opens when it has no arrangement of its own for this showfile.
     #[serde(default)]
-    pub active_panel_layout: Option<ActivePanelLayout>,
+    pub default_panel_layout_id: Option<String>,
 }
 
 impl Default for DeskSettings {
@@ -132,7 +152,7 @@ impl Default for DeskSettings {
             showfile_backup_retention: DEFAULT_SHOWFILE_BACKUP_RETENTION,
             parameter_keyframes_only: false,
             panel_layouts: Vec::new(),
-            active_panel_layout: None,
+            default_panel_layout_id: None,
         }
     }
 }
@@ -278,10 +298,20 @@ pub enum SettingsCommand {
     SetShowfileBackupRetention(u32),
     /// Set whether clients receive every parameter value each frame instead of only changes
     SetParameterKeyframesOnly(bool),
-    /// Set showfile-scoped named UI panel layouts
-    SetPanelLayouts(Vec<StoredPanelLayout>),
-    /// Set showfile-scoped active UI panel layout
-    SetActivePanelLayout(Option<ActivePanelLayout>),
+    /// Add a named UI panel layout to the showfile; its id must not already exist
+    CreatePanelLayout(StoredPanelLayout),
+    /// Replace the saved arrangement of one named layout
+    SavePanelLayoutArrangement(PanelLayoutArrangement),
+    /// Rename one named layout
+    RenamePanelLayout(PanelLayoutRename),
+    /// Show or hide one named layout in the layout switcher
+    SetPanelLayoutVisibility(PanelLayoutVisibility),
+    /// Remove one named layout, clearing the default layout if it pointed there
+    DeletePanelLayout(String),
+    /// Reorder the layouts shown in the switcher; hidden layouts keep their positions
+    ReorderPanelLayouts(Vec<String>),
+    /// Set the named layout devices open when they have no arrangement for this showfile
+    SetDefaultPanelLayout(Option<String>),
     /// Request list of available network interfaces
     GetAvailableNetworkInterfaces,
     /// Request list of available audio devices
@@ -294,7 +324,18 @@ impl IngressCommand for SettingsCommand {}
 
 #[cfg(test)]
 mod tests {
-    use super::StoredPanelLayout;
+    use super::{SettingsCommand, StoredPanelLayout};
+
+    /// The web UI clears the default layout by omitting the payload, which must read as no layout.
+    #[test]
+    fn clearing_the_default_layout_needs_no_payload() {
+        let command: SettingsCommand =
+            serde_json::from_value(serde_json::json!({ "type": "SetDefaultPanelLayout" })).unwrap();
+        assert!(matches!(
+            command,
+            SettingsCommand::SetDefaultPanelLayout(None)
+        ));
+    }
 
     /// Saved layouts without visibility metadata remain accessible, while explicit hiding survives a round trip.
     #[test]

@@ -154,7 +154,7 @@ test("reverted snapshots stay clean after settling", async ({
     page.getByRole("button", { name: "Layout 1: Your Layout", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   const ids = await page.evaluate(async () => {
-    const { editLayouts } = (await window.__nightfallHarness.load("app"))
+    const { addStoredLayout } = (await window.__nightfallHarness.load("app"))
       .layoutManagement;
     const { createBlankStoredLayout } = (
       await window.__nightfallHarness.load("app")
@@ -173,7 +173,8 @@ test("reverted snapshots stay clean after settling", async ({
       (populated.layout as any).edgeGroups,
     ) as any[])
       delete edge.minimumSize;
-    await editLayouts((existing) => [...existing, blank, populated]);
+    await addStoredLayout(blank);
+    await addStoredLayout(populated);
     return [blank.id, populated.id];
   });
   for (const id of ids) {
@@ -282,55 +283,49 @@ test("restores saved layouts without visibility metadata", async ({
   ).toHaveAttribute("aria-pressed", "true");
   const result = await page.evaluate(async () => {
     const stores = (window as any).appStores;
-    const { getShowfilePanelLayouts } = (
-      await window.__nightfallHarness.load("app")
-    ).layoutStorage;
     return stores.sendAndAwait({
       module: "SettingsCommand",
       command: {
-        type: "SetPanelLayouts",
-        data: [
-          ...getShowfilePanelLayouts(),
-          {
-            id: "older-layout",
-            name: "Saved arrangement",
-            version: 2,
-            createdAt: 1,
-            updatedAt: 1,
-            layout: {
-              grid: {
-                width: 1000,
-                height: 700,
-                orientation: "HORIZONTAL",
-                root: {
-                  type: "branch",
-                  size: 700,
-                  data: [
-                    {
-                      type: "leaf",
-                      size: 1000,
-                      data: {
-                        id: "saved-group",
-                        views: ["saved-sequences"],
-                        activeView: "saved-sequences",
-                      },
+        type: "CreatePanelLayout",
+        data: {
+          id: "older-layout",
+          name: "Saved arrangement",
+          version: 2,
+          createdAt: 1,
+          updatedAt: 1,
+          layout: {
+            grid: {
+              width: 1000,
+              height: 700,
+              orientation: "HORIZONTAL",
+              root: {
+                type: "branch",
+                size: 700,
+                data: [
+                  {
+                    type: "leaf",
+                    size: 1000,
+                    data: {
+                      id: "saved-group",
+                      views: ["saved-sequences"],
+                      activeView: "saved-sequences",
                     },
-                  ],
-                },
-              },
-              panels: {
-                "saved-sequences": {
-                  id: "saved-sequences",
-                  contentComponent: "ExecutorList",
-                  title: "Saved sequences",
-                },
+                  },
+                ],
               },
             },
-            panels: [
-              { id: "saved-sequences", title: "Saved sequences", params: {} },
-            ],
+            panels: {
+              "saved-sequences": {
+                id: "saved-sequences",
+                contentComponent: "ExecutorList",
+                title: "Saved sequences",
+              },
+            },
           },
-        ],
+          panels: [
+            { id: "saved-sequences", title: "Saved sequences", params: {} },
+          ],
+        },
       },
     });
   });
@@ -656,20 +651,18 @@ test("retains live timeline views and measures parked workspace overhead", async
     const { getShowfilePanelLayouts } = (
       await window.__nightfallHarness.load("app")
     ).layoutStorage;
-    const { editLayouts } = (await window.__nightfallHarness.load("app"))
+    const { addStoredLayout } = (await window.__nightfallHarness.load("app"))
       .layoutManagement;
     const layout = getShowfilePanelLayouts().find(
       (entry: any) => entry.name === "Measurement",
     );
     if (!layout) throw new Error("Missing measurement layout");
-    await editLayouts((layouts) => [
-      ...layouts,
-      ...Array.from({ length: 4 }, (_, index) => ({
+    for (let index = 0; index < 4; index += 1)
+      await addStoredLayout({
         ...layout,
         id: `measure-${index}`,
         name: `Measurement ${index}`,
-      })),
-    ]);
+      });
   });
 
   /** Recalls a slot and times activation through the next rendered frame. */
@@ -1595,7 +1588,7 @@ test("manager saves preserve rows and keep unrelated actions enabled", async ({
     ) => {
       if (
         (args[0] as { command?: { type: string } }).command?.type ===
-        "SetPanelLayouts"
+        "SavePanelLayoutArrangement"
       )
         await gate;
       return original(...args);
