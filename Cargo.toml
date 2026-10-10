@@ -34,7 +34,7 @@ jiff = "0.2.38"
 minicbor = "2.3"
 minicbor-serde = { version = "0.7", features = ["alloc"] }
 mime_guess = { version = "2.0.5", default-features = false }
-moonshine-kind = "0.5"
+moonshine-kind = "0.6"
 netdev = "0.46"
 netwatcher = "0.8"
 notify = "8.2"
@@ -61,10 +61,6 @@ typeshare = "1.0.5"
 uuid = { version = "1.27", features = ["serde", "v4", "v5"] }
 web-time = { version = "1.1", features = ["serde"] }
 wit-component = "0.261"
-
-[patch.crates-io]
-# Bevy 0.20 port of moonshine-kind 0.5.1 (upstream PR pending); drop once upstream publishes a Bevy 0.20 release.
-moonshine-kind = { git = "https://github.com/stewartadam/moonshine_kind", rev = "067615a57073b8af310ef235a027dc11a64dcc7f" }
 
 [profile.dev]
 incremental = true            # Improve consecutive recompile performance
