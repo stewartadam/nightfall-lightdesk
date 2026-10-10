@@ -11,53 +11,56 @@ import { createEffect } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
-import type { TelemetryConsent } from "../../types";
 import { setTelemetryConsent } from "./privacy-settings";
 import { requestSettingsTab } from "./settings-tab-request";
 
 /**
- * Asks once per page load whether this computer may send anonymous reports, until the
- * operator answers. Closing the notification without choosing asks again next launch.
+ * Asks once per page load whether this computer may send anonymous reports. Nothing is shared
+ * until the operator answers: the notice has no close button and stays until they pick OK,
+ * which shares both kinds of reports, or make a choice in Settings > Privacy, which Customize
+ * opens.
  */
 export function TelemetryConsentPrompt() {
   const state = useStore($telemetryState);
   const { openSettings } = useAppShell();
   let prompted = false;
-  /** Applies a prompt answer unless someone already answered, possibly on another device. */
-  const answer = (
-    consent: Pick<TelemetryConsent, "share_usage" | "share_errors">,
-  ) => {
-    if ($telemetryState.get().consent.decided) return;
-    setTelemetryConsent(consent);
-  };
+  let closeNotice: (() => void) | undefined;
 
-  /** Shows the persistent prompt the first time the host reports an unanswered choice. */
+  /**
+   * Shows the notice the first time the host reports an unanswered choice, and withdraws it
+   * once a choice is recorded, whether from the notice, Settings, or another device.
+   */
   createEffect(() => {
     const current = state();
-    if (prompted || !current.available || current.consent.decided) return;
+    if (current.consent.decided) {
+      closeNotice?.();
+      closeNotice = undefined;
+      return;
+    }
+    if (prompted || !current.available) return;
     prompted = true;
-    pushToast(
+    closeNotice = pushToast(
       "info",
-      "Share anonymous usage and error reports to help improve Nightfall? You can change this anytime in Settings.",
+      "Nightfall can send anonymous usage and error reports to help fix problems and decide what to build next. Your folders and showfile names are never included.",
       0,
       [
         {
-          label: "Share",
-          onClick: () => answer({ share_usage: true, share_errors: true }),
+          label: "OK",
+          onClick: () => {
+            if ($telemetryState.get().consent.decided) return;
+            setTelemetryConsent({ share_usage: true, share_errors: true });
+          },
         },
         {
-          label: "Don't share",
-          onClick: () => answer({ share_usage: false, share_errors: false }),
-        },
-        {
-          label: "Details",
+          label: "Customize",
+          dismissOnClick: false,
           onClick: () => {
             requestSettingsTab("privacy");
             openSettings();
           },
         },
       ],
-      { title: "Help improve Nightfall" },
+      { title: "Help improve Nightfall", closable: false },
     );
   });
 

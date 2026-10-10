@@ -24,6 +24,8 @@ export type NotificationHistoryEntry = NotificationEntry;
 export interface ToastPresentation {
   title?: string;
   icon?: AppIcon;
+  /** Hides the close button so the notification stays until one of its actions runs. */
+  closable?: boolean;
 }
 
 export const notificationHistory = atom<NotificationHistoryEntry[]>([]);
@@ -44,15 +46,25 @@ export function runNotificationAction(id: number, index: number): void {
   notifications.runAction(id, index);
 }
 
-/** Queues typed feedback without synchronously creating DOM or publishing store updates. */
+/**
+ * Queues typed feedback without synchronously creating DOM or publishing store updates, and
+ * returns a function that closes it, for notices that become moot before anyone answers them.
+ */
 export function pushToast(
   level: ToastLevel,
   message: string,
   ttlMs = TOAST_DURATION_MS,
   actions: readonly ToastAction[] = [],
   presentation: ToastPresentation = {},
-): void {
-  notifications.push({ level, message, ttlMs, actions, ...presentation });
+): () => void {
+  const id = notifications.push({
+    level,
+    message,
+    ttlMs,
+    actions,
+    ...presentation,
+  });
+  return () => notifications.dismiss(id);
 }
 
 const toastStyles: Record<
@@ -137,6 +149,9 @@ function renderToast(
   const node = createToastNode(entry.level, entry.message, {
     title: entry.title,
   });
+  // A notification without actions keeps its close button, or nothing could ever remove it.
+  if (entry.closable === false && entry.actions.length > 0)
+    node.querySelector(".toast-close")?.remove();
   const iconHost = node.querySelector<HTMLElement>(".toast-icon");
   if (iconHost && entry.icon)
     renderIconComponent(iconHost, entry.icon as AppIcon, "size-5 shrink-0");

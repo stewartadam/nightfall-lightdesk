@@ -230,7 +230,7 @@ impl AudioWorker {
                 let mut stream_handle = match open_output_sink(None) {
                     Ok(handle) => handle,
                     Err(error) => {
-                        tracing::error!("{error}");
+                        tracing::warn!("{error}");
                         return;
                     }
                 };

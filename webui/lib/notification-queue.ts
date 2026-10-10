@@ -24,6 +24,8 @@ export interface NotificationEntry {
   actions: readonly ToastAction[];
   ttlMs: number;
   title?: string;
+  /** Hides the close button so the notification stays until one of its actions runs. */
+  closable?: boolean;
   /** Renderer-specific icon identity, also used to distinguish duplicate messages. */
   icon?: unknown;
 }
@@ -127,8 +129,13 @@ export function createNotificationQueue(options: NotificationQueueOptions) {
     }
   }
 
-  /** Enqueues a notification, coalescing only non-actionable messages with identical presentation. */
-  function push(input: Omit<NotificationEntry, "id" | "count" | "createdAt">) {
+  /**
+   * Enqueues a notification, coalescing only non-actionable messages with identical
+   * presentation, and returns the id that `dismiss` accepts.
+   */
+  function push(
+    input: Omit<NotificationEntry, "id" | "count" | "createdAt">,
+  ): number {
     const duplicate =
       input.actions.length === 0
         ? [
@@ -153,7 +160,7 @@ export function createNotificationQueue(options: NotificationQueueOptions) {
       historyDirty = true;
       dirty.add(duplicate.id);
       requestFlush();
-      return;
+      return duplicate.id;
     }
     const entry = { ...input, id: nextId++, count: 1, createdAt: Date.now() };
     history.unshift(entry);
@@ -182,6 +189,7 @@ export function createNotificationQueue(options: NotificationQueueOptions) {
       else summarize(entry);
     }
     requestFlush();
+    return entry.id;
   }
 
   /** Executes an action once for dismissing notifications, regardless of its UI entry point. */
@@ -192,14 +200,22 @@ export function createNotificationQueue(options: NotificationQueueOptions) {
       history.find((item) => item.id === id);
     const action = entry?.actions[index];
     if (!entry || !action) return;
-    if (action.dismissOnClick !== false) {
-      entry.actions = [];
-      pending = pending.filter((item) => item.id !== id);
-      active.get(id)?.handle.dismiss();
-      historyDirty = true;
-      requestFlush();
-    }
+    if (action.dismissOnClick !== false) dismiss(id);
     action.onClick();
+  }
+
+  /** Closes a notification wherever it is and retires its actions, so history cannot rerun them. */
+  function dismiss(id: number) {
+    const entry =
+      active.get(id)?.entry ??
+      pending.find((item) => item.id === id) ??
+      history.find((item) => item.id === id);
+    if (!entry) return;
+    entry.actions = [];
+    pending = pending.filter((item) => item.id !== id);
+    active.get(id)?.handle.dismiss();
+    historyDirty = true;
+    requestFlush();
   }
 
   /** Clears both published and not-yet-published history without dismissing current toasts. */
@@ -209,5 +225,5 @@ export function createNotificationQueue(options: NotificationQueueOptions) {
     options.publishHistory([]);
   }
 
-  return { push, runAction, clearHistory };
+  return { push, runAction, dismiss, clearHistory };
 }

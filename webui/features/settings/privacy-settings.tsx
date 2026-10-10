@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { engineRuntime } from "../../lib/engine-runtime";
@@ -56,6 +56,19 @@ export function setTelemetryConsent(patch: Partial<TelemetryConsent>): void {
 /** Edits host-scoped telemetry consent and explains exactly what each report contains. */
 export function PrivacySettings() {
   const state = useStore($telemetryState);
+  /**
+   * Choices the switches show. Before the operator answers, they show the proposed choice of
+   * sharing both, so turning one off here records the other as shared.
+   */
+  const shown = createMemo(() => {
+    const { consent } = state();
+    return consent.decided
+      ? { share_usage: consent.share_usage, share_errors: consent.share_errors }
+      : { share_usage: true, share_errors: true };
+  });
+  /** Records the full choice with one switch changed, which also answers the first-run notice. */
+  const change = (patch: Partial<ReturnType<typeof shown>>) =>
+    setTelemetryConsent({ ...shown(), ...patch });
   /** Replaces the anonymous identifier so future reports cannot be linked to past ones. */
   const resetInstallId = () => {
     engineRuntime.sendCommand({
@@ -89,8 +102,8 @@ export function PrivacySettings() {
         <ToggleSwitch
           label="Share anonymous usage reports"
           ariaLabel="Share anonymous usage reports"
-          checked={state().consent.share_usage}
-          onChange={(share_usage) => setTelemetryConsent({ share_usage })}
+          checked={shown().share_usage}
+          onChange={(share_usage) => change({ share_usage })}
         />
         <p class="mt-2 text-xs text-gray-400">
           Sent at most once a day. Helps decide which fixtures, hardware and
@@ -104,8 +117,8 @@ export function PrivacySettings() {
         <ToggleSwitch
           label="Share error reports"
           ariaLabel="Share error reports"
-          checked={state().consent.share_errors}
-          onChange={(share_errors) => setTelemetryConsent({ share_errors })}
+          checked={shown().share_errors}
+          onChange={(share_errors) => change({ share_errors })}
         />
         <p class="mt-2 text-xs text-gray-400">
           Sent automatically when something goes wrong, so problems get fixed
