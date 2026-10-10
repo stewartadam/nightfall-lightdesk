@@ -25,7 +25,7 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 18;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 19;
 pub use selection_refs::stabilize_showfile_group_refs;
 pub use snapshot::{
     BindingsSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,

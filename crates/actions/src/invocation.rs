@@ -278,3 +278,17 @@ pub struct ExternalCommandInvocation {
     /// Human-readable source label.
     pub source: String,
 }
+
+/// Request for connected Web UI clients to run one of their hosted `ui.*` actions.
+#[derive(Debug, Clone, Serialize, Deserialize, Message)]
+#[typeshare::typeshare]
+pub struct ClientActionInvocation {
+    /// Client-hosted action to run.
+    pub action: ActionReference,
+    /// Adapted runtime input.
+    pub input: ActionInput,
+    /// Surface that invoked the action.
+    pub surface: ActionSurface,
+    /// Human-readable source label.
+    pub source: String,
+}

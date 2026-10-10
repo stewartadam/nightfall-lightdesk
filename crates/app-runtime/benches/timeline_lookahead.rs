@@ -157,7 +157,7 @@ fn lookahead_app(fixture_count: usize, start_count: usize, mode: TimelineLookahe
                 label: format!("Start {index}"),
                 position: START_SPACING * (index as u32 + 1),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }
         })
         .collect();

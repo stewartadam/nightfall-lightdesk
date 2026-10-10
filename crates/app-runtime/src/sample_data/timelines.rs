@@ -94,7 +94,7 @@ impl ActionList {
             label: label.to_owned(),
             position,
             duration,
-            action,
+            action: action.to_reference(),
         });
     }
 

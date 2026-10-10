@@ -9,111 +9,218 @@
 //! MIDI mapping storage and lookup
 
 use bevy_ecs::prelude::*;
-use nightfall_actions::ActionReference;
+use nightfall_actions::{ActionInputKind, ActionReference};
+use uuid::Uuid;
 
-use crate::command::MidiMapping;
+use crate::command::{MidiMapping, MidiSource};
 
-/// Resource storing all MIDI input mappings
+/// Resource storing all MIDI input mappings.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct MidiMappings {
     mappings: Vec<MidiMapping>,
 }
 
 impl MidiMappings {
-    /// Create a new empty mappings collection
+    /// Create a new empty mappings collection.
     pub fn new() -> Self {
         Self {
             mappings: Vec::new(),
         }
     }
 
-    /// Replace all mappings with the provided list
+    /// Replace all mappings with the provided list, as when loading a showfile.
     pub fn set_mappings(&mut self, mappings: Vec<MidiMapping>) {
         self.mappings = mappings;
     }
 
-    /// Get all mappings
+    /// Get all mappings.
     pub fn mappings(&self) -> &[MidiMapping] {
         &self.mappings
     }
 
-    /// Delete a mapping by index
-    pub fn delete_mapping(&mut self, index: usize) -> bool {
-        if index < self.mappings.len() {
-            self.mappings.remove(index);
-            true
-        } else {
-            false
+    /// Creates or replaces a mapping and returns the IDs of other mappings it displaced.
+    ///
+    /// A control fires at most one action per edge, so other mappings on the same device and
+    /// control are removed when they would fire from the same edge (see
+    /// [`nightfall_actions::ControlBehavior::overlaps`]). `input_kind` reports the input kind of a bound action. An
+    /// existing mapping with the same ID keeps its list position.
+    pub fn upsert(
+        &mut self,
+        mapping: MidiMapping,
+        input_kind: impl Fn(&ActionReference) -> Option<ActionInputKind>,
+    ) -> Vec<Uuid> {
+        let kind = input_kind(&mapping.action);
+        let displaced = self
+            .mappings
+            .iter()
+            .filter(|existing| {
+                existing.id != mapping.id
+                    && existing.device_name == mapping.device_name
+                    && existing.source == mapping.source
+                    && mapping.behavior.overlaps(
+                        kind,
+                        existing.behavior,
+                        input_kind(&existing.action),
+                    )
+            })
+            .map(|existing| existing.id)
+            .collect::<Vec<_>>();
+        self.mappings
+            .retain(|existing| !displaced.contains(&existing.id));
+        match self
+            .mappings
+            .iter_mut()
+            .find(|existing| existing.id == mapping.id)
+        {
+            Some(existing) => *existing = mapping,
+            None => self.mappings.push(mapping),
         }
+        displaced
     }
 
-    /// Look up an action for a given MIDI event
-    ///
-    /// Returns the first matching action, or None if no mapping matches.
-    pub fn lookup(
-        &self,
-        device: &str,
-        channel: u8,
-        note: u8,
-        velocity: u8,
-    ) -> Option<&ActionReference> {
+    /// Deletes a mapping by ID and reports whether it existed.
+    pub fn delete(&mut self, id: Uuid) -> bool {
+        let before = self.mappings.len();
+        self.mappings.retain(|mapping| mapping.id != id);
+        self.mappings.len() != before
+    }
+
+    /// Returns the mappings bound to one control on a device, at most one per edge.
+    pub fn lookup(&self, device: &str, source: MidiSource) -> impl Iterator<Item = &MidiMapping> {
         self.mappings
             .iter()
-            .find(|m| {
-                m.device_name == device
-                    && m.channel == channel
-                    && m.note == note
-                    && m.velocity.is_none_or(|v| v == velocity)
-            })
-            .map(|m| &m.action)
+            .filter(move |mapping| mapping.device_name == device && mapping.source == source)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use nightfall_actions::ActionReference;
+    use nightfall_actions::ControlBehavior;
     use serde_json::json;
 
     use super::*;
 
-    #[test]
-    fn test_lookup_exact_match() {
-        let mut mappings = MidiMappings::new();
-        mappings.set_mappings(vec![MidiMapping {
-            device_name: "Device A".to_string(),
-            channel: 144,
-            note: 60,
-            velocity: Some(127),
-            action: ActionReference::new("test.action", json!({ "id": 1 })),
-        }]);
-
-        // Exact match
-        assert_eq!(
-            mappings.lookup("Device A", 144, 60, 127),
-            Some(&ActionReference::new("test.action", json!({ "id": 1 })))
-        );
-
-        // Wrong velocity
-        assert!(mappings.lookup("Device A", 144, 60, 100).is_none());
-
-        // Wrong device
-        assert!(mappings.lookup("Device B", 144, 60, 127).is_none());
+    /// Reports every bound action as a trigger.
+    fn triggers(_: &ActionReference) -> Option<ActionInputKind> {
+        Some(ActionInputKind::Trigger)
     }
 
-    #[test]
-    fn test_lookup_any_velocity() {
-        let mut mappings = MidiMappings::new();
-        mappings.set_mappings(vec![MidiMapping {
-            device_name: "Device A".to_string(),
-            channel: 144,
-            note: 60,
-            velocity: None, // Match any velocity
-            action: ActionReference::new("test.action", json!({ "id": 1 })),
-        }]);
+    /// Builds a note mapping with a deterministic ID.
+    fn note_mapping(id: u128, device: &str, note: u8, action: &str) -> MidiMapping {
+        MidiMapping {
+            id: Uuid::from_u128(id),
+            device_name: device.to_string(),
+            source: MidiSource::Note { channel: 0, note },
+            behavior: ControlBehavior::Press,
+            action: ActionReference::new(action, json!({})),
+        }
+    }
 
-        // Any velocity should match
-        assert!(mappings.lookup("Device A", 144, 60, 0).is_some());
-        assert!(mappings.lookup("Device A", 144, 60, 64).is_some());
-        assert!(mappings.lookup("Device A", 144, 60, 127).is_some());
+    /// Verifies lookup matches both the device and the control.
+    #[test]
+    fn lookup_matches_device_and_control() {
+        let mut mappings = MidiMappings::new();
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
+
+        assert!(
+            mappings
+                .lookup(
+                    "Device A",
+                    MidiSource::Note {
+                        channel: 0,
+                        note: 60
+                    }
+                )
+                .next()
+                .is_some()
+        );
+        assert!(
+            mappings
+                .lookup(
+                    "Device B",
+                    MidiSource::Note {
+                        channel: 0,
+                        note: 60
+                    }
+                )
+                .next()
+                .is_none()
+        );
+        assert!(
+            mappings
+                .lookup(
+                    "Device A",
+                    MidiSource::ControlChange {
+                        channel: 0,
+                        controller: 60
+                    }
+                )
+                .next()
+                .is_none()
+        );
+    }
+
+    /// Verifies binding a control again replaces its previous mapping.
+    #[test]
+    fn upsert_replaces_other_mappings_on_the_same_control() {
+        let mut mappings = MidiMappings::new();
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
+        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"), triggers);
+
+        let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.c"), triggers);
+
+        assert_eq!(displaced, vec![Uuid::from_u128(1)]);
+        assert_eq!(
+            mappings
+                .mappings()
+                .iter()
+                .map(|mapping| mapping.action.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["test.b", "test.c"]
+        );
+    }
+
+    /// Verifies editing a mapping by ID updates it in place.
+    #[test]
+    fn upsert_edits_existing_mapping_in_place() {
+        let mut mappings = MidiMappings::new();
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
+        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"), triggers);
+
+        let displaced = mappings.upsert(note_mapping(1, "Device A", 62, "test.c"), triggers);
+
+        assert!(displaced.is_empty());
+        assert_eq!(mappings.mappings()[0].action.id.as_str(), "test.c");
+        assert!(mappings.delete(Uuid::from_u128(1)));
+        assert!(!mappings.delete(Uuid::from_u128(1)));
+    }
+
+    /// Verifies one control keeps a press and a release trigger, and a held action takes over both.
+    #[test]
+    fn press_and_release_bindings_share_a_control_until_an_action_uses_both() {
+        let input_kind = |action: &ActionReference| {
+            Some(if action.id.as_str() == "test.hold" {
+                ActionInputKind::Momentary
+            } else {
+                ActionInputKind::Trigger
+            })
+        };
+        let mut mappings = MidiMappings::new();
+        mappings.upsert(note_mapping(1, "Device A", 60, "test.start"), input_kind);
+        let release = MidiMapping {
+            behavior: ControlBehavior::Release,
+            ..note_mapping(2, "Device A", 60, "test.stop")
+        };
+
+        assert!(mappings.upsert(release, input_kind).is_empty());
+        let pad = MidiSource::Note {
+            channel: 0,
+            note: 60,
+        };
+        assert_eq!(mappings.lookup("Device A", pad).count(), 2);
+
+        let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.hold"), input_kind);
+        assert_eq!(displaced, vec![Uuid::from_u128(1), Uuid::from_u128(2)]);
+        assert_eq!(mappings.lookup("Device A", pad).count(), 1);
     }
 }

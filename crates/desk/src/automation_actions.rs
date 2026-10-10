@@ -13,15 +13,18 @@ use bevy_ecs::prelude::World;
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
-    ActionParameterKind, ActionReference, ExternalCommandInvocation, InvocationDispatch,
-    InvocationError, submit_command,
+    ActionParameterKind, ActionReference, DESK_EVAL_ACTION_ID, DeskEvalActionArguments,
+    ExternalCommandInvocation, InvocationDispatch, InvocationError, submit_command,
 };
 use nightfall_clips::{
-    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments,
+    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_RATE_ACTION_ID,
+    CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipGotoActionArguments,
+    ClipRateActionArguments,
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
-    PlannedPlaybackInterventionKind, TimelinePlaybackActionKind, TimelinePlaybackActionPlan,
+    PlannedPlaybackInterventionKind, TimelineEvalActionPlan, TimelinePlaybackActionKind,
+    TimelinePlaybackActionPlan,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -29,7 +32,7 @@ use uuid::Uuid;
 use crate::clips::{Clip, ClipCommand};
 use crate::controls::{ControlCommand, ControlUpdate};
 use crate::desk_command::DeskCommand;
-use crate::masters::{Master, MasterCommand, MasterUpdate};
+use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
 
 /// Stable action ID for driving a control slot's level from external hardware input.
 pub const CONTROL_LEVEL_ACTION_ID: &str = "control.level";
@@ -43,8 +46,11 @@ pub const MASTER_LEVEL_ACTION_ID: &str = "master.level";
 /// Stable action ID for toggling a toggle-mode master.
 pub const MASTER_TOGGLE_ACTION_ID: &str = "master.toggle";
 
-/// Stable action ID for evaluating a desk command.
-pub const DESK_EVAL_ACTION_ID: &str = "desk.eval";
+/// Stable action ID for turning a toggle-mode master on.
+pub const MASTER_ON_ACTION_ID: &str = "master.on";
+
+/// Stable action ID for turning a toggle-mode master off.
+pub const MASTER_OFF_ACTION_ID: &str = "master.off";
 
 /// Persisted arguments for externally-driven control actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,14 +67,6 @@ pub struct MasterActionArguments {
     /// Persistent UID of the addressed master.
     #[typeshare(serialized_as = "String")]
     pub master: Uuid,
-}
-
-/// Persisted arguments for desk command evaluation actions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct DeskEvalActionArguments {
-    /// Command text evaluated by the desk command parser.
-    pub command: String,
 }
 
 /// Creates a persisted control level action reference.
@@ -91,39 +89,87 @@ pub fn master_toggle_action(master: Uuid) -> ActionReference {
     master_action_reference(MASTER_TOGGLE_ACTION_ID, master)
 }
 
-/// Creates a persisted desk-eval action reference.
-pub fn desk_eval_action(command: impl Into<String>) -> ActionReference {
-    ActionReference::with_arguments(
-        DESK_EVAL_ACTION_ID,
-        &DeskEvalActionArguments {
-            command: command.into(),
-        },
-    )
-    .expect("desk eval action arguments should serialize")
-}
-
 /// Registers every bindable action owned by the desk domain.
 pub fn register_desk_actions(app: &mut App) {
     register_clip_action(
         app,
-        CLIP_START_ACTION_ID,
-        "Start clip",
+        ActionDescriptor::new(CLIP_START_ACTION_ID, "Start clip", "Clips")
+            .with_hold_release(CLIP_STOP_ACTION_ID),
         ClipCommand::StartClip,
         TimelinePlaybackActionKind::Start,
     );
     register_clip_action(
         app,
-        CLIP_STOP_ACTION_ID,
-        "Stop clip",
+        ActionDescriptor::new(CLIP_STOP_ACTION_ID, "Stop clip", "Clips"),
         ClipCommand::StopClip,
         TimelinePlaybackActionKind::Stop,
     );
     register_clip_action(
         app,
-        CLIP_GO_ACTION_ID,
-        "Go clip",
+        ActionDescriptor::new(CLIP_GO_ACTION_ID, "Go clip", "Clips"),
         ClipCommand::GoClip,
         TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
+    );
+    register_clip_action(
+        app,
+        ActionDescriptor::new(CLIP_BACK_ACTION_ID, "Back clip", "Clips"),
+        ClipCommand::BackClip,
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceBack),
+    );
+    app.register_command_action::<ClipGotoActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_GOTO_ACTION_ID, "Go to cue", "Clips")
+            .with_description("Jumps a sequence clip to a cue position")
+            .with_parameter(clip_parameter())
+            .with_parameter(ActionParameter::required(
+                "cue_index",
+                "Cue",
+                ActionParameterKind::Integer { min: 1, max: None },
+            )),
+        |world, arguments| {
+            Ok(ClipCommand::GotoClip {
+                clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
+                position: arguments.cue_index,
+                timing: None,
+            })
+        },
+    )
+    .register_action_capability::<ClipGotoActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_GOTO_ACTION_ID,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.clip,
+                kind: TimelinePlaybackActionKind::Intervene(
+                    PlannedPlaybackInterventionKind::SequenceGotoCue(arguments.cue_index),
+                ),
+            })
+        },
+    );
+    app.register_command_action::<ClipRateActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_SET_RATE_ACTION_ID, "Set clip rate", "Clips")
+            .with_description("Sets the playback rate multiplier of a running clip")
+            .with_parameter(clip_parameter())
+            .with_parameter(ActionParameter::required(
+                "rate",
+                "Rate",
+                ActionParameterKind::Number { min: 0.0, max: 4.0 },
+            )),
+        |world, arguments| {
+            Ok(ClipCommand::SetRate {
+                clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
+                rate: arguments.rate,
+            })
+        },
+    )
+    .register_action_capability::<ClipRateActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_SET_RATE_ACTION_ID,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.clip,
+                kind: TimelinePlaybackActionKind::SetRate(arguments.rate),
+            })
+        },
     );
     app.register_update_action::<ControlActionArguments, ControlUpdate, _>(
         ActionDescriptor::new(CONTROL_LEVEL_ACTION_ID, "Control level", "Controls")
@@ -158,6 +204,15 @@ pub fn register_desk_actions(app: &mut App) {
                 level_percent: Master::level_percent_from_control(master.kind, value * 100.0),
             })
         },
+    )
+    .register_flash_level::<MasterActionArguments, _>(
+        MASTER_LEVEL_ACTION_ID,
+        |world, arguments| {
+            let master = resolve_master(world, arguments.master)?;
+            Ok(Some(
+                Master::control_percent_from_level(master.kind, master.level_percent) / 100.0,
+            ))
+        },
     );
     app.register_command_action::<MasterActionArguments, MasterCommand, _>(
         ActionDescriptor::new(MASTER_TOGGLE_ACTION_ID, "Toggle master", "Masters")
@@ -169,6 +224,21 @@ pub fn register_desk_actions(app: &mut App) {
             })
         },
     );
+    for (action_id, label, active) in [
+        (MASTER_ON_ACTION_ID, "Master on", true),
+        (MASTER_OFF_ACTION_ID, "Master off", false),
+    ] {
+        let mut descriptor = ActionDescriptor::new(action_id, label, "Masters")
+            .with_description("Turns a toggle-mode master on or off")
+            .with_parameter(master_parameter());
+        if active {
+            descriptor = descriptor.with_hold_release(MASTER_OFF_ACTION_ID);
+        }
+        app.register_command_action::<MasterActionArguments, MasterCommand, _>(
+            descriptor,
+            move |world, arguments| set_master_active(world, arguments.master, active),
+        );
+    }
     app.register_action::<DeskEvalActionArguments, _>(
         ActionDescriptor::new(DESK_EVAL_ACTION_ID, "Evaluate command", "Desk")
             .with_description("Runs a desk command line as if it were typed")
@@ -178,6 +248,15 @@ pub fn register_desk_actions(app: &mut App) {
                 ActionParameterKind::Text,
             )),
         invoke_desk_eval,
+    )
+    .register_action_capability::<DeskEvalActionArguments, TimelineEvalActionPlan, _>(
+        DESK_EVAL_ACTION_ID,
+        TimelineEvalActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelineEvalActionPlan {
+                command: arguments.command,
+            })
+        },
     );
 }
 
@@ -191,6 +270,11 @@ fn control_action_reference(action_id: &str, control_index: u32) -> ActionRefere
 fn master_action_reference(action_id: &str, master: Uuid) -> ActionReference {
     ActionReference::with_arguments(action_id, &MasterActionArguments { master })
         .expect("master action arguments should serialize")
+}
+
+/// Describes the clip argument shared by clip actions.
+fn clip_parameter() -> ActionParameter {
+    ActionParameter::required("clip", "Clip", ActionParameterKind::Clip)
 }
 
 /// Describes the control slot argument shared by control actions.
@@ -223,27 +307,47 @@ fn resolve_master(world: &World, uid: Uuid) -> Result<Master, InvocationError> {
         })
 }
 
+/// Lowers turning a toggle-mode master on or off to a mode change.
+///
+/// Masters in other modes are rejected so a held button never changes how a master works.
+fn set_master_active(
+    world: &World,
+    uid: Uuid,
+    active: bool,
+) -> Result<MasterCommand, InvocationError> {
+    let master = resolve_master(world, uid)?;
+    if !matches!(master.mode, MasterMode::Toggle { .. }) {
+        return Err(InvocationError::new(
+            "master.not_toggle",
+            format!(
+                "Master '{}' is not a toggle master",
+                master.identifiers.label
+            ),
+        ));
+    }
+    Ok(MasterCommand::SetMasterMode {
+        id: master.identifiers.id,
+        mode: MasterMode::Toggle { active },
+    })
+}
+
 /// Registers one clip lifecycle action lowering to its clip command and timeline plan.
 fn register_clip_action(
     app: &mut App,
-    action_id: &'static str,
-    label: &'static str,
+    descriptor: ActionDescriptor,
     command: fn(IdExpr) -> ClipCommand,
     timeline_kind: TimelinePlaybackActionKind,
 ) {
+    let action_id = descriptor.id.as_str().to_owned();
     app.register_command_action::<ClipActionArguments, ClipCommand, _>(
-        ActionDescriptor::new(action_id, label, "Clips").with_parameter(ActionParameter::required(
-            "clip",
-            "Clip",
-            ActionParameterKind::Clip,
-        )),
+        descriptor.with_parameter(clip_parameter()),
         move |world, arguments| {
             let id = resolve_clip_id(world, arguments.clip)?;
             Ok(command(IdExpr::Single(id)))
         },
     )
     .register_action_capability::<ClipActionArguments, TimelinePlaybackActionPlan, _>(
-        action_id,
+        &action_id,
         TimelinePlaybackActionPlan::CAPABILITY,
         move |arguments| {
             Ok(TimelinePlaybackActionPlan {
@@ -298,8 +402,11 @@ fn invoke_desk_eval(
 #[cfg(test)]
 mod tests {
     use bevy_ecs::message::Messages;
-    use nightfall_actions::{ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult};
-    use nightfall_clips::{go_clip_action, start_clip_action};
+    use nightfall_actions::{
+        ActionInput, ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult,
+        desk_eval_action,
+    };
+    use nightfall_clips::{go_clip_action, start_clip_action, stop_clip_action};
 
     use super::*;
 
@@ -365,6 +472,19 @@ mod tests {
             envelope.payload.as_any().downcast_ref::<ClipCommand>(),
             Some(ClipCommand::GoClip(IdExpr::Single(7)))
         ));
+    }
+
+    /// Verifies Start clip declares Stop clip as its Hold release counterpart.
+    #[test]
+    fn start_clip_holds_until_stop_clip() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
+        let uid = Uuid::from_u128(7);
+
+        assert_eq!(
+            registry.hold_release_action(&start_clip_action(uid)),
+            Some(stop_clip_action(uid))
+        );
     }
 
     /// Verifies clip actions expose deterministic timeline plans keyed by the clip UID.
@@ -520,6 +640,69 @@ mod tests {
                 .and_then(|envelope| envelope.payload.as_any().downcast_ref::<MasterCommand>()),
             Some(MasterCommand::ToggleMaster { id: 4 })
         ));
+    }
+
+    /// Verifies Master on and off set a toggle master's state and pair up for Hold.
+    #[test]
+    fn master_on_and_off_set_toggle_state() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        let on = master_action_reference(MASTER_ON_ACTION_ID, uid);
+        assert_eq!(
+            app.world()
+                .resource::<nightfall_actions::ActionRegistry>()
+                .hold_release_action(&on),
+            Some(master_action_reference(MASTER_OFF_ACTION_ID, uid))
+        );
+        for action in [on, master_action_reference(MASTER_OFF_ACTION_ID, uid)] {
+            app.world_mut()
+                .write_message(ActionInvocation::trigger(action, ActionSurface::Midi));
+            app.update();
+        }
+
+        let modes = take_pending_commands(&mut app)
+            .iter()
+            .filter_map(|envelope| match envelope.payload.as_any().downcast_ref() {
+                Some(MasterCommand::SetMasterMode { id: 4, mode }) => Some(mode.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            modes,
+            vec![
+                MasterMode::Toggle { active: true },
+                MasterMode::Toggle { active: false }
+            ]
+        );
+    }
+
+    /// Verifies flashing a master pushes it to full and restores its level on release.
+    #[test]
+    fn master_level_flash_restores_the_previous_level() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        for input in [ActionInput::Press, ActionInput::Release] {
+            app.world_mut().write_message(ActionInvocation::new(
+                master_level_action(uid),
+                ActionSurface::Midi,
+                input,
+            ));
+            app.update();
+        }
+
+        let levels = app
+            .world_mut()
+            .resource_mut::<Messages<MasterUpdate>>()
+            .drain()
+            .filter_map(|update| match update {
+                MasterUpdate::SetLevel {
+                    id: 4,
+                    level_percent,
+                } => Some(level_percent),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(levels, vec![200.0, 100.0]);
     }
 
     /// Verifies control Go lowers to the control Go command expanded later in the frame.

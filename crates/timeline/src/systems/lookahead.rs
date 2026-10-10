@@ -219,6 +219,7 @@ pub fn update_timeline_lookahead_sources_system(
     timeline_query: Query<&MaterializedTimeline>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
     clips: Query<&Clip>,
+    action_registry: Option<Res<ActionRegistry>>,
     sequence_data_provider: Option<Res<DataProvider<Sequence>>>,
     cue_data_provider: Res<DataProvider<Cue>>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
@@ -248,7 +249,12 @@ pub fn update_timeline_lookahead_sources_system(
             .unwrap_or_default();
         let timeline_position = timeline_lookahead_position(timeline, timecode_time);
 
-        for source in upcoming_lookahead_sources(timeline, timeline_position, &clips) {
+        for source in upcoming_lookahead_sources(
+            timeline,
+            timeline_position,
+            &clips,
+            action_registry.as_deref(),
+        ) {
             let key = source.key();
             let existing_provider = existing_providers.remove(&key);
 
@@ -703,7 +709,7 @@ fn timeline_action_playback_footprint(
     parameter_read_query: &Query<InstanceRef<Parameter>>,
     footprint_cache: &mut TimelineLookaheadFootprintCache,
 ) -> FixtureFootprint {
-    match timeline_action.action {
+    match timeline_action.kind(action_registry) {
         ActionKind::FireCue(cue_uid) => planned_source_playback_footprint(
             PlannedPlaybackSource::Cue(cue_uid),
             context,
@@ -740,26 +746,7 @@ fn timeline_action_playback_footprint(
                 })
                 .unwrap_or(FixtureFootprint::Unknown)
         }
-        ActionKind::DeskEval(_) => FixtureFootprint::Unknown,
-        ActionKind::RegisteredAction(_) => {
-            normalized_registered_action_kind(&timeline_action.action, action_registry)
-                .map(|action_kind| Action {
-                    action: action_kind,
-                    ..timeline_action.clone()
-                })
-                .map(|normalized_action| {
-                    timeline_action_playback_footprint(
-                        &normalized_action,
-                        context,
-                        clips,
-                        action_registry,
-                        step_fx_query,
-                        parameter_read_query,
-                        footprint_cache,
-                    )
-                })
-                .unwrap_or(FixtureFootprint::Unknown)
-        }
+        ActionKind::DeskEval(_) | ActionKind::RegisteredAction(_) => FixtureFootprint::Unknown,
     }
 }
 
@@ -947,6 +934,7 @@ fn upcoming_lookahead_sources(
     timeline: &MaterializedTimeline,
     timeline_position: Duration,
     clips: &Query<&Clip>,
+    action_registry: Option<&ActionRegistry>,
 ) -> Vec<TimelineLookahead> {
     let solo_mode = timeline.timeline.tracks.iter().any(|track| track.solo);
     let mut sources = Vec::new();
@@ -959,7 +947,7 @@ fn upcoming_lookahead_sources(
             if action.position <= timeline_position {
                 continue;
             }
-            let ActionKind::StartClip(clip_uid) = action.action else {
+            let ActionKind::StartClip(clip_uid) = action.kind(action_registry) else {
                 continue;
             };
             let Some(source) = planned_source_for_clip_uid(clip_uid, clips) else {

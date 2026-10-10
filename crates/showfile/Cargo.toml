@@ -28,6 +28,13 @@ serde_json.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 
+[dev-dependencies]
+flate2 = "1.1"
+
+[[example]]
+name = "validate"
+required-features = ["midi", "osc"]
+
 [features]
 default = []
 midi = ["dep:nightfall-input-midi"]

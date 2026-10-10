@@ -48,6 +48,26 @@ Parameter kinds (`Clip`, `Master`, `Control`, `Timeline`, `Cue`, `Panel`,
 `Integer`, `Number`, `Text`) tell clients which picker to render and which UI
 target a click can capture.
 
+### Controller behaviors
+
+Each MIDI or OSC mapping has a `ControlBehavior` that decides how the control's
+presses and releases invoke its action:
+
+- `Press` fires a trigger on press, and lets faders drive absolute actions directly.
+- `Release` fires a trigger when the control is let go.
+- `Hold` invokes the action on press and its release counterpart on release, with the
+  same arguments. Domains declare the counterpart with
+  `ActionDescriptor::with_hold_release`, such as `clip.start` with `clip.stop`.
+- `Flash` pushes an absolute action to full while held and restores the previous level
+  on release. Domains enable it with `register_flash_level`. Stacked flashes restore
+  after the last release, and a level moved during the flash wins.
+
+Behaviors never decide undo: that follows the command each invoked action lowers to.
+A control holds one binding reacting to both edges, or one Press and one Release
+trigger binding. The action catalog lists each action's supported behaviors. OSC
+buttons report releases when their mapping names both the pressed value (`arg_value`)
+and the released value (`release_value`).
+
 ### Capabilities
 
 Optional, deterministic interpretations of an action are registered as

@@ -12,10 +12,14 @@
 //! ingress commands and continuous actions lower to untracked update messages, so an action
 //! never introduces a second execution path next to commands, updates, and engine operations.
 
+mod command;
 mod descriptor;
+mod eval;
+mod flash;
 mod invocation;
 mod lowering;
 mod registry;
+mod source;
 pub mod websocket;
 
 use bevy_app::{App, Plugin, PostUpdate, Update};
@@ -24,19 +28,25 @@ use bevy_ecs::{
     schedule::IntoScheduleConfigs,
     system::SystemState,
 };
+pub use command::ActionCommand;
 pub use descriptor::{
     ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
     ActionParameterKind, ActionSurface,
 };
+pub use eval::{DESK_EVAL_ACTION_ID, DeskEvalActionArguments, desk_eval_action};
 pub use invocation::{
-    ActionInput, ActionInvocation, ActionReference, ExternalCommandInvocation, InvocationDispatch,
-    InvocationError, InvocationId, InvocationOutcome, InvocationResult,
+    ActionInput, ActionInvocation, ActionReference, ClientActionInvocation,
+    ExternalCommandInvocation, InvocationDispatch, InvocationError, InvocationId,
+    InvocationOutcome, InvocationResult,
 };
 pub use lowering::{ActionAppExt, submit_command};
 use nightfall_engine::prelude::{
-    ClientFeedback, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
+    ClientFeedback, CommandDeserializerRegistry, CommandIngressRouter, EventHandling,
+    InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
+    register_command_deserializer, register_ingress_command,
 };
-pub use registry::ActionRegistry;
+pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
+pub use source::{BindingTarget, ControlBehavior, SourceEdgeStates, SourceSignal};
 
 /// Plugin that installs the generic registered-action invocation stage.
 pub struct ActionsPlugin;
@@ -48,9 +58,11 @@ pub struct ActionInvocationHandling;
 impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ActionRegistry>();
+        app.init_resource::<SourceEdgeStates>();
         app.add_message::<ActionInvocation>();
         app.add_message::<InvocationResult>();
         app.add_message::<ExternalCommandInvocation>();
+        app.add_message::<ClientActionInvocation>();
         app.add_message::<ResyncRequested>();
         app.configure_sets(
             Update,
@@ -69,8 +81,29 @@ impl Plugin for ActionsPlugin {
         // Client publications run in ClientFeedback so they pause while a staged world is swapped in.
         app.add_systems(
             PostUpdate,
-            websocket::send_action_catalog_on_change.in_set(ClientFeedback),
+            (
+                websocket::send_action_catalog_on_change,
+                websocket::send_client_action_invocations,
+            )
+                .in_set(ClientFeedback),
         );
+        // Client invoke commands need the engine's command routing, which focused test apps
+        // without the engine and client bridge plugins do not have.
+        if app.world().contains_resource::<CommandIngressRouter>()
+            && app
+                .world()
+                .contains_resource::<CommandDeserializerRegistry>()
+        {
+            register_ingress_command::<ActionCommand>(app);
+            register_command_deserializer::<ActionCommand>(
+                app,
+                command::deserialize_action_command,
+            );
+            app.add_systems(
+                Update,
+                command::handle_action_commands.in_set(EventHandling),
+            );
+        }
     }
 }
 
@@ -351,6 +384,75 @@ mod tests {
         );
     }
 
+    /// Level read back by the test flash registration.
+    #[derive(bevy_ecs::prelude::Resource)]
+    struct TestLevel(f32);
+
+    /// Verifies flashing pushes an absolute action to full and restores the level read on press.
+    #[test]
+    fn flash_pushes_to_full_and_restores_on_release() {
+        let mut app = action_app();
+        app.insert_resource(TestLevel(0.4));
+        app.register_update_action::<TestArguments, TestApplied, _>(
+            ActionDescriptor::new("test.level", "Test level", "Tests")
+                .with_input(ActionInputKind::Absolute),
+            |_world, _arguments, value| Ok(TestApplied(value)),
+        )
+        .register_flash_level::<TestArguments, _>("test.level", |world, _arguments| {
+            Ok(Some(world.resource::<TestLevel>().0))
+        });
+        let action = ActionReference::new("test.level", json!({ "value": 1 }));
+
+        for input in [ActionInput::Press, ActionInput::Release] {
+            invoke(
+                &mut app,
+                ActionInvocation::new(action.clone(), ActionSurface::Midi, input),
+            );
+        }
+
+        assert_eq!(applied(&mut app), vec![TestApplied(1.0), TestApplied(0.4)]);
+        let registry = app.world().resource::<ActionRegistry>();
+        assert_eq!(
+            registry.behaviors(&ActionId::new("test.level")),
+            vec![ControlBehavior::Press, ControlBehavior::Flash]
+        );
+    }
+
+    /// Verifies triggers with a release counterpart support Hold and resolve the counterpart.
+    #[test]
+    fn hold_release_counterpart_keeps_the_bound_arguments() {
+        let mut app = action_app();
+        for (id, release) in [("test.start", Some("test.stop")), ("test.stop", None)] {
+            let mut descriptor = ActionDescriptor::new(id, id, "Tests");
+            if let Some(release) = release {
+                descriptor = descriptor.with_hold_release(release);
+            }
+            app.register_command_action::<TestArguments, TestCommand, _>(
+                descriptor,
+                |_world, arguments| Ok(TestCommand(arguments.value)),
+            );
+        }
+        let registry = app.world().resource::<ActionRegistry>();
+        let start = ActionReference::new("test.start", json!({ "value": 3 }));
+
+        assert_eq!(
+            registry.hold_release_action(&start),
+            Some(ActionReference::new("test.stop", json!({ "value": 3 })))
+        );
+        assert_eq!(
+            registry.behaviors(&start.id),
+            vec![
+                ControlBehavior::Press,
+                ControlBehavior::Release,
+                ControlBehavior::Hold
+            ]
+        );
+        assert_eq!(
+            registry.behaviors(&ActionId::new("test.stop")),
+            vec![ControlBehavior::Press, ControlBehavior::Release]
+        );
+    }
+
     /// Verifies update actions write untracked updates carrying the clamped normalized value.
     #[test]
     fn update_action_writes_untracked_update() {
@@ -393,6 +495,33 @@ mod tests {
             InvocationOutcome::Failed(InvocationError { ref code, .. })
                 if code == "action.not_registered"
         ));
+    }
+
+    /// Verifies client-hosted actions are forwarded to clients once per press.
+    #[test]
+    fn client_actions_forward_presses_to_clients() {
+        let mut app = action_app();
+        let action = ActionReference::new("ui.panel-Masters", json!({}));
+
+        let pressed = invoke(
+            &mut app,
+            ActionInvocation::new(action.clone(), ActionSurface::Midi, ActionInput::Press),
+        );
+        let released = invoke(
+            &mut app,
+            ActionInvocation::new(action, ActionSurface::Midi, ActionInput::Release),
+        );
+
+        assert_eq!(pressed, InvocationOutcome::Accepted);
+        assert_eq!(released, InvocationOutcome::Ignored);
+        let forwarded = app
+            .world_mut()
+            .resource_mut::<Messages<ClientActionInvocation>>()
+            .drain()
+            .collect::<Vec<_>>();
+        assert_eq!(forwarded.len(), 1);
+        assert_eq!(forwarded[0].action.id.as_str(), "ui.panel-Masters");
+        assert_eq!(forwarded[0].input, ActionInput::Trigger);
     }
 
     /// Verifies two domains cannot silently replace one another's stable action ID.

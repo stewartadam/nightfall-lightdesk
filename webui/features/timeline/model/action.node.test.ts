@@ -22,6 +22,10 @@ import {
   resolveActionVisualDurationMs,
 } from "./action-duration";
 import type { ActionTargetIndex } from "./action-targets";
+import {
+  type TimelineActionKind,
+  timelineActionReference,
+} from "./timeline-action-kind";
 
 /** Builds the snap configuration used by drag geometry tests. */
 function snapConfig(enabled: boolean) {
@@ -87,14 +91,14 @@ function cueDurationProfile(
 function timelineAction(
   id: string,
   positionMs: number,
-  action: types.ActionKind,
+  action: TimelineActionKind,
 ): types.Action {
   return {
     id,
     label: id,
     position: msToDuration(positionMs),
     duration: msToDuration(1000),
-    action,
+    action: timelineActionReference(action),
   };
 }
 

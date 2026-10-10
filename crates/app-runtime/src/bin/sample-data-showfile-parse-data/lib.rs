@@ -318,10 +318,13 @@ fn add_input_mappings(world: &mut World) {
     world
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0001),
             device_name: "Parser Grid".to_owned(),
-            channel: 176,
-            note: 36,
-            velocity: None,
+            source: MidiSource::ControlChange {
+                channel: 0,
+                controller: 36,
+            },
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(1),
         }]);
 
@@ -329,10 +332,13 @@ fn add_input_mappings(world: &mut World) {
     world
         .resource_mut::<OscMappings>()
         .set_mappings(vec![OscMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0002),
             source: Some("127.0.0.1:9000".to_owned()),
             address: "/parser/fader".to_owned(),
             arg_index: Some(0),
-            arg_value: Some("0.5".to_owned()),
+            arg_value: None,
+            release_value: None,
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(2),
         }]);
 }
@@ -774,7 +780,7 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
             actions: vec![Action {
                 id: "item-1".to_owned(),
                 label: "Start Parser Sequence".to_owned(),
-                action: ActionKind::StartClip(uuid(CUE_CLIP_UID)),
+                action: ActionKind::StartClip(uuid(CUE_CLIP_UID)).to_reference(),
                 position: Duration::from_secs(1),
                 duration: Duration::from_secs(2),
             }],

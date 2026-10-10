@@ -16,10 +16,13 @@ pub(super) fn add_midi_mappings(world: &mut World) {
     };
 
     midi_mappings.set_mappings(vec![MidiMapping {
+        id: uuid::Uuid::from_u128(0x5a3d_0001),
         device_name: "Grid".to_string(),
-        channel: 176,
-        note: 36,
-        velocity: None,
+        source: MidiSource::ControlChange {
+            channel: 0,
+            controller: 36,
+        },
+        behavior: nightfall_actions::ControlBehavior::Press,
         action: control_level_action(1),
     }]);
 }

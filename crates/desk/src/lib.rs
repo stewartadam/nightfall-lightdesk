@@ -48,10 +48,10 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
-        CONTROL_GO_ACTION_ID, CONTROL_LEVEL_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
-        DeskEvalActionArguments, MASTER_LEVEL_ACTION_ID, MASTER_TOGGLE_ACTION_ID,
-        MasterActionArguments, control_go_action, control_level_action, desk_eval_action,
-        master_level_action, master_toggle_action,
+        CONTROL_GO_ACTION_ID, CONTROL_LEVEL_ACTION_ID, ControlActionArguments,
+        MASTER_LEVEL_ACTION_ID, MASTER_OFF_ACTION_ID, MASTER_ON_ACTION_ID, MASTER_TOGGLE_ACTION_ID,
+        MasterActionArguments, control_go_action, control_level_action, master_level_action,
+        master_toggle_action,
     };
     pub use crate::controls::{
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,

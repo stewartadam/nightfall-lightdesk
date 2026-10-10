@@ -286,7 +286,7 @@ test("clip rate automation controls Step FX playback and output", async ({
       label: "Start Step FX",
       position: { secs: 2, nanos: 0 },
       duration: { secs: 0, nanos: 0 },
-      action: { type: "StartClip", data: clipUid },
+      action: { id: "clip.start", arguments: { clip: clipUid } },
     },
   ];
   timeline.tracks[0].automation_lanes = [];
@@ -549,7 +549,7 @@ function ownedOperatorBaseTrack(): object {
         label: `Cue ${CUE_ID}`,
         position: { secs: 3, nanos: 0 },
         duration: { secs: 1, nanos: 0 },
-        action: { type: "FireCue", data: CUE_UID },
+        action: { id: "timeline.fire-cue", arguments: { cue: CUE_UID } },
       },
     ],
     automation_lanes: [
@@ -848,10 +848,7 @@ async function seedDraggableTimelineItem(
                 label: itemLabel,
                 position: { secs: 1, nanos: 0 },
                 duration: { secs: 0, nanos: 0 },
-                action: {
-                  type: "FireCue",
-                  data: cueUid,
-                },
+                action: { id: "timeline.fire-cue", arguments: { cue: cueUid } },
               },
             ],
             automation_lanes: [],
@@ -907,7 +904,7 @@ async function seedDenseTimelineItems(
         label: `Dense item ${index}`,
         position: { secs: index, nanos: 0 },
         duration: { secs: 0, nanos: 0 },
-        action: { type: "FireCue", data: cueUid },
+        action: { id: "timeline.fire-cue", arguments: { cue: cueUid } },
       }));
 
       stores.timelines.setKey(uid, {
@@ -960,7 +957,10 @@ async function measureTimelineItemAppendRenderMs(
                     label: "Dense new item",
                     position: { secs: track.actions.length + 1, nanos: 0 },
                     duration: { secs: 0, nanos: 0 },
-                    action: { type: "FireCue", data: targetCueUid },
+                    action: {
+                      id: "timeline.fire-cue",
+                      arguments: { cue: targetCueUid },
+                    },
                   },
                 ],
               }
@@ -1839,8 +1839,10 @@ test("timeline keeps chrome fixed while track rows scroll", async ({
         position: { secs: 45 + itemIndex, nanos: 0 },
         duration: { secs: 0, nanos: 0 },
         action: {
-          type: "DeskEval",
-          data: `echo hidden scroll flag ${trackIndex + 1}.${itemIndex + 1}`,
+          id: "desk.eval",
+          arguments: {
+            command: `echo hidden scroll flag ${trackIndex + 1}.${itemIndex + 1}`,
+          },
         },
       }));
     const visibleEdgeHintItem = (trackIndex: number) => ({
@@ -1849,8 +1851,8 @@ test("timeline keeps chrome fixed while track rows scroll", async ({
       position: { secs: 2, nanos: 0 },
       duration: { secs: 0, nanos: 0 },
       action: {
-        type: "DeskEval",
-        data: `echo scroll flag ${trackIndex + 1}`,
+        id: "desk.eval",
+        arguments: { command: `echo scroll flag ${trackIndex + 1}` },
       },
     });
     const tracks = Array.from({ length: 48 }, (_, index) => {
@@ -2671,10 +2673,7 @@ test("shift-click multi-selects timeline action flags", async ({ page }) => {
             nanos: (positionMs % 1000) * 1_000_000,
           },
           duration: { secs: 0, nanos: 0 },
-          action: {
-            type: "FireCue",
-            data: cueUid,
-          },
+          action: { id: "timeline.fire-cue", arguments: { cue: cueUid } },
         };
       });
 
@@ -2878,10 +2877,7 @@ test("timeline actions can be dragged between tracks", async ({
                 label: "Cross-action",
                 position: { secs: 1, nanos: 0 },
                 duration: { secs: 0, nanos: 0 },
-                action: {
-                  type: "FireCue",
-                  data: cueUid,
-                },
+                action: { id: "timeline.fire-cue", arguments: { cue: cueUid } },
               },
             ],
             automation_lanes: [],

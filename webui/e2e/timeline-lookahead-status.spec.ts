@@ -112,7 +112,7 @@ async function openTimelinePreactivationFixture(
                 label: "Preactivation Item",
                 position: { secs: 1, nanos: 0 },
                 duration: { secs: 1, nanos: 0 },
-                action: { type: "StartClip", data: clipUid },
+                action: { id: "clip.start", arguments: { clip: clipUid } },
               },
             ],
             automation_lanes: [],

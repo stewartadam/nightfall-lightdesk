@@ -2368,20 +2368,26 @@ fn seed_world(world: &mut World) {
     world
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0001),
             device_name: "Grid".to_string(),
-            channel: 176,
-            note: 36,
-            velocity: None,
+            source: MidiSource::ControlChange {
+                channel: 0,
+                controller: 36,
+            },
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(1),
         }]);
     #[cfg(feature = "osc")]
     world
         .resource_mut::<OscMappings>()
         .set_mappings(vec![OscMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0002),
             source: Some("127.0.0.1:9000".to_string()),
             address: "/grid/fader".to_string(),
             arg_index: Some(1),
-            arg_value: Some("0.5".to_string()),
+            arg_value: None,
+            release_value: None,
+            behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(2),
         }]);
 
@@ -2983,9 +2989,13 @@ fn roundtrip_preserves_midi_mappings() {
     assert_eq!(restored_snapshot.midi_mappings.len(), 1);
     let mapping = &restored_snapshot.midi_mappings[0];
     assert_eq!(mapping.device_name, "Grid");
-    assert_eq!(mapping.channel, 176);
-    assert_eq!(mapping.note, 36);
-    assert_eq!(mapping.velocity, None);
+    assert_eq!(
+        mapping.source,
+        MidiSource::ControlChange {
+            channel: 0,
+            controller: 36
+        }
+    );
     assert_eq!(mapping.action, control_level_action(1));
 }
 
@@ -3007,7 +3017,7 @@ fn roundtrip_preserves_osc_mappings() {
     assert_eq!(mapping.source.as_deref(), Some("127.0.0.1:9000"));
     assert_eq!(mapping.address, "/grid/fader");
     assert_eq!(mapping.arg_index, Some(1));
-    assert_eq!(mapping.arg_value.as_deref(), Some("0.5"));
+    assert_eq!(mapping.arg_value, None);
     assert_eq!(mapping.action, control_level_action(2));
 }
 

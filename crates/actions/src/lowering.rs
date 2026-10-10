@@ -111,6 +111,16 @@ pub trait ActionAppExt {
         C: IngressCommand + Clone + 'static,
         F: Fn(&World, A) -> Result<C, InvocationError> + Send + Sync + 'static;
 
+    /// Registers how to read an absolute action's current normalized level, enabling Flash.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the action is not registered yet or is not absolute.
+    fn register_flash_level<A, F>(&mut self, action_id: &str, reader: F) -> &mut Self
+    where
+        A: DeserializeOwned + 'static,
+        F: Fn(&World, A) -> Result<Option<f32>, InvocationError> + Send + Sync + 'static;
+
     /// Registers an absolute action that lowers each normalized value to an untracked update.
     ///
     /// Continuous hardware input is live performance state, so updates bypass undo capture.
@@ -178,6 +188,18 @@ impl ActionAppExt for App {
             let command_id = submit_command(world, invocation, command)?;
             Ok(InvocationDispatch::Submitted { command_id })
         })
+    }
+
+    fn register_flash_level<A, F>(&mut self, action_id: &str, reader: F) -> &mut Self
+    where
+        A: DeserializeOwned + 'static,
+        F: Fn(&World, A) -> Result<Option<f32>, InvocationError> + Send + Sync + 'static,
+    {
+        self.init_resource::<ActionRegistry>();
+        self.world_mut()
+            .resource_mut::<ActionRegistry>()
+            .register_flash_level::<A, F>(action_id, reader);
+        self
     }
 
     fn register_update_action<A, U, F>(
