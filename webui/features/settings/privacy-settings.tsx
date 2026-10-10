@@ -15,20 +15,24 @@ import { setStoreAction } from "../../lib/nanostore-action";
 import { $telemetryState } from "../../state/settings";
 import type { TelemetryConsent } from "../../types";
 
+/** Public privacy policy describing what Nightfall shares and where it goes. */
+export const PRIVACY_POLICY_URL = "https://nightfall.live/privacy";
+
 /** What a usage report contains, shown so operators can judge it before agreeing. */
 const USAGE_CONTENTS = [
-  "App version, operating system, and whether Nightfall runs as the desktop app or headless",
+  "App version and operating system",
   "CPU and GPU model, core count, and memory rounded to a size bucket",
   "Make and model of library fixtures in your patch; custom fixtures only as a count",
-  "How many of each object type your show contains, never their names",
+  "How many of each object type your show contains",
   "Output and input protocols and interface models in use",
-  "Frame timing, missed DMX output deadlines, startup time, and session length",
 ];
 
 /** What an error report contains. */
 const ERROR_CONTENTS = [
-  "Error message and stack trace, with your home folder and showfile names removed",
-  "App version and operating system",
+  "Error message and stack trace, with showfile names and any IP addresses in the text removed",
+  "Warnings logged shortly before the error",
+  "App version, operating system, processor architecture, and the anonymous ID below",
+  "Reports not sent yet are deleted as soon as you stop sharing",
 ];
 
 /**
@@ -69,6 +73,18 @@ export function PrivacySettings() {
         </p>
       }
     >
+      <p class="text-xs text-gray-400">
+        Read the{" "}
+        <a
+          class="text-blue-300 underline"
+          href={PRIVACY_POLICY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          privacy policy
+        </a>{" "}
+        for how reports are handled and stored.
+      </p>
       <section aria-label="Usage reports">
         <ToggleSwitch
           label="Share anonymous usage reports"

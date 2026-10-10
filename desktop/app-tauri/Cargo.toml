@@ -42,9 +42,10 @@ uuid.workspace = true
 nightfall-workspace-hack = { version = "0.1", path = "../../crates/workspace-hack" }
 
 [features]
-default = ["full", "beat-detection"]
+default = ["full", "beat-detection", "telemetry"]
 full = ["app-runtime/full"]
 beat-detection = ["app-runtime/beat-detection"]
+telemetry = ["app-runtime/telemetry"]
 
 [lints]
 workspace = true
