@@ -158,10 +158,31 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+          # The ERROR_REPORTS_DSN repository variable is compiled into published releases only, so
+          # every other build reports nowhere. The address only accepts new reports.
+          NIGHTFALL_ERROR_REPORTS_DSN: ${{ needs.prepare.outputs.publish == 'true' && vars.ERROR_REPORTS_DSN || '' }}
         with:
           projectPath: desktop/app-tauri
           tauriScript: pnpm exec tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --locked
+      - name: Verify the release reports errors
+        if: needs.prepare.outputs.publish == 'true'
+        shell: bash
+        env:
+          DESKTOP_TARGET: ${{ matrix.target }}
+          ERROR_REPORTS_DSN: ${{ vars.ERROR_REPORTS_DSN }}
+        run: |
+          if [ -z "$ERROR_REPORTS_DSN" ]; then
+            echo "::error::Set the ERROR_REPORTS_DSN repository variable before publishing a release"
+            exit 1
+          fi
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          binary="$target_dir/$DESKTOP_TARGET/release/nightfall-app"
+          [ -f "$binary" ] || binary="$binary.exe"
+          if ! grep -qF "$ERROR_REPORTS_DSN" "$binary"; then
+            echo "::error::The release build does not contain the error report address"
+            exit 1
+          fi
       - name: Archive the macOS app for isolated signing
         if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
         shell: bash
