@@ -41,7 +41,7 @@ export function TelemetryConsentPrompt() {
     prompted = true;
     closeNotice = pushToast(
       "info",
-      "Nightfall can send anonymous usage and error reports to help fix problems and decide what to build next. Your folders and showfile names are never included.",
+      "Nightfall can send anonymous usage and error reports to help fix problems and decide what to build next.",
       0,
       [
         {
