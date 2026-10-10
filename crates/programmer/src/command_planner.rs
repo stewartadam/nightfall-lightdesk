@@ -8,19 +8,19 @@
 
 //! Planning from programmer-owned user intents into concrete domain actions.
 
-use nightfall_engine::prelude::EngineAction;
-use nightfall_fixtures::DmxAction;
+use nightfall_engine::prelude::EngineOperation;
+use nightfall_fixtures::DmxOperation;
 
 use crate::action_model::{
-    AttributeFilter, ClearCommand, ClearTarget, ProgrammerAction, ReleaseCommand, ReleaseTarget,
+    AttributeFilter, ClearCommand, ClearTarget, ProgrammerOperation, ReleaseCommand, ReleaseTarget,
     Scope, UserCommand,
 };
 
 /// One concrete domain action erased only for heterogeneous plan storage.
-pub type PlannedEngineAction = Box<dyn EngineAction>;
+pub type PlannedEngineOperation = Box<dyn EngineOperation>;
 
 /// Erases a concrete domain action after planning has selected its type.
-fn planned<A: EngineAction>(action: A) -> PlannedEngineAction {
+fn planned<A: EngineOperation>(action: A) -> PlannedEngineOperation {
     Box::new(action)
 }
 
@@ -39,7 +39,7 @@ impl Default for ProgrammerPlanContext {
     }
 }
 
-/// Translates user commands into engine actions.
+/// Translates user commands into engine operations.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ProgrammerCommandPlanner;
 
@@ -49,7 +49,7 @@ impl ProgrammerCommandPlanner {
         &self,
         command: &UserCommand,
         context: &ProgrammerPlanContext,
-    ) -> Vec<PlannedEngineAction> {
+    ) -> Vec<PlannedEngineOperation> {
         match command {
             UserCommand::Clear(clear) => self.plan_clear(clear, context),
             UserCommand::Release(release) => self.plan_release(release),
@@ -60,16 +60,16 @@ impl ProgrammerCommandPlanner {
         &self,
         clear: &ClearCommand,
         context: &ProgrammerPlanContext,
-    ) -> Vec<PlannedEngineAction> {
+    ) -> Vec<PlannedEngineOperation> {
         if clear.targets.is_empty() {
             return if context.active_selection_is_empty {
-                vec![planned(ProgrammerAction::ClearValues {
+                vec![planned(ProgrammerOperation::ClearValues {
                     scope: Scope::All,
                     attributes: AttributeFilter::All,
                     allow_selection_flatten: clear.allow_selection_flatten,
                 })]
             } else {
-                vec![planned(ProgrammerAction::ClearSelection)]
+                vec![planned(ProgrammerOperation::ClearSelection)]
             };
         }
 
@@ -81,11 +81,11 @@ impl ProgrammerCommandPlanner {
             match target {
                 ClearTarget::Selection if !clear_selection_emitted => {
                     clear_selection_emitted = true;
-                    actions.push(planned(ProgrammerAction::ClearSelection));
+                    actions.push(planned(ProgrammerOperation::ClearSelection));
                 }
                 ClearTarget::Values if !clear_values_emitted => {
                     clear_values_emitted = true;
-                    actions.push(planned(ProgrammerAction::ClearValues {
+                    actions.push(planned(ProgrammerOperation::ClearValues {
                         scope: Scope::All,
                         attributes: AttributeFilter::All,
                         allow_selection_flatten: clear.allow_selection_flatten,
@@ -97,13 +97,13 @@ impl ProgrammerCommandPlanner {
                 } => {
                     let filter = AttributeFilter::from_attributes(attributes);
                     if matches!(filter, AttributeFilter::All) {
-                        actions.push(planned(ProgrammerAction::ReleaseValues {
+                        actions.push(planned(ProgrammerOperation::ReleaseValues {
                             scope: Scope::Selection(selection.clone()),
                             attributes: filter,
                             allow_selection_flatten: clear.allow_selection_flatten,
                         }));
                     } else {
-                        actions.push(planned(ProgrammerAction::ClearValues {
+                        actions.push(planned(ProgrammerOperation::ClearValues {
                             scope: Scope::Selection(selection.clone()),
                             attributes: filter,
                             allow_selection_flatten: clear.allow_selection_flatten,
@@ -111,7 +111,7 @@ impl ProgrammerCommandPlanner {
                     }
                 }
                 ClearTarget::Attribute { attributes } => {
-                    actions.push(planned(ProgrammerAction::ClearValues {
+                    actions.push(planned(ProgrammerOperation::ClearValues {
                         scope: Scope::All,
                         attributes: AttributeFilter::from_attributes(attributes),
                         allow_selection_flatten: clear.allow_selection_flatten,
@@ -124,15 +124,15 @@ impl ProgrammerCommandPlanner {
         actions
     }
 
-    fn plan_release(&self, release: &ReleaseCommand) -> Vec<PlannedEngineAction> {
+    fn plan_release(&self, release: &ReleaseCommand) -> Vec<PlannedEngineOperation> {
         match &release.target {
-            None => vec![planned(ProgrammerAction::ReleaseValues {
+            None => vec![planned(ProgrammerOperation::ReleaseValues {
                 scope: Scope::All,
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: release.allow_selection_flatten,
             })],
             Some(ReleaseTarget::Selection(selection)) => {
-                vec![planned(ProgrammerAction::ReleaseValues {
+                vec![planned(ProgrammerOperation::ReleaseValues {
                     scope: Scope::Selection(selection.clone()),
                     attributes: AttributeFilter::All,
                     allow_selection_flatten: release.allow_selection_flatten,
@@ -141,20 +141,20 @@ impl ProgrammerCommandPlanner {
             Some(ReleaseTarget::Fixture {
                 selection,
                 attributes,
-            }) => vec![planned(ProgrammerAction::ReleaseValues {
+            }) => vec![planned(ProgrammerOperation::ReleaseValues {
                 scope: Scope::Selection(selection.clone()),
                 attributes: AttributeFilter::from_attributes(attributes),
                 allow_selection_flatten: release.allow_selection_flatten,
             })],
             Some(ReleaseTarget::Attribute { attributes }) => {
-                vec![planned(ProgrammerAction::ReleaseValues {
+                vec![planned(ProgrammerOperation::ReleaseValues {
                     scope: Scope::All,
                     attributes: AttributeFilter::Only(attributes.clone()),
                     allow_selection_flatten: release.allow_selection_flatten,
                 })]
             }
             Some(ReleaseTarget::Channels { channels }) => {
-                vec![planned(DmxAction::ReleaseChannels {
+                vec![planned(DmxOperation::ReleaseChannels {
                     channels: channels.clone(),
                 })]
             }
@@ -172,10 +172,10 @@ mod tests {
     use super::*;
     use crate::action_model::{ClearTarget, ReleaseTarget};
 
-    /// Verifies that one erased plan entry contains the expected concrete action.
-    fn assert_planned_action<A>(actual: &PlannedEngineAction, expected: &A)
+    /// Verifies that one erased plan entry contains the expected concrete operation.
+    fn assert_planned_action<A>(actual: &PlannedEngineOperation, expected: &A)
     where
-        A: EngineAction + Debug + PartialEq,
+        A: EngineOperation + Debug + PartialEq,
     {
         assert_eq!(actual.as_any().downcast_ref::<A>(), Some(expected));
     }
@@ -190,7 +190,7 @@ mod tests {
         };
         let actions = planner.plan(&clear, &selection_present);
         assert_eq!(actions.len(), 1);
-        assert_planned_action(&actions[0], &ProgrammerAction::ClearSelection);
+        assert_planned_action(&actions[0], &ProgrammerOperation::ClearSelection);
 
         let selection_empty = ProgrammerPlanContext {
             active_selection_is_empty: true,
@@ -199,7 +199,7 @@ mod tests {
         assert_eq!(actions.len(), 1);
         assert_planned_action(
             &actions[0],
-            &ProgrammerAction::ClearValues {
+            &ProgrammerOperation::ClearValues {
                 scope: Scope::All,
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: false,
@@ -223,10 +223,10 @@ mod tests {
         let actions = planner.plan(&clear, &ProgrammerPlanContext::default());
 
         assert_eq!(actions.len(), 2);
-        assert_planned_action(&actions[0], &ProgrammerAction::ClearSelection);
+        assert_planned_action(&actions[0], &ProgrammerOperation::ClearSelection);
         assert_planned_action(
             &actions[1],
-            &ProgrammerAction::ClearValues {
+            &ProgrammerOperation::ClearValues {
                 scope: Scope::All,
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: false,
@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(actions.len(), 1);
         assert_planned_action(
             &actions[0],
-            &ProgrammerAction::ReleaseValues {
+            &ProgrammerOperation::ReleaseValues {
                 scope: Scope::All,
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: false,
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(actions.len(), 1);
         assert_planned_action(
             &actions[0],
-            &ProgrammerAction::ReleaseValues {
+            &ProgrammerOperation::ReleaseValues {
                 scope: Scope::Selection(selection),
                 attributes: AttributeFilter::Only(vec![Attribute::Red]),
                 allow_selection_flatten: false,
@@ -293,7 +293,7 @@ mod tests {
         assert_eq!(actions.len(), 1);
         assert_planned_action(
             &actions[0],
-            &ProgrammerAction::ReleaseValues {
+            &ProgrammerOperation::ReleaseValues {
                 scope: Scope::Selection(selection),
                 attributes: AttributeFilter::All,
                 allow_selection_flatten: false,
@@ -318,6 +318,6 @@ mod tests {
         let actions = planner.plan(&release, &ProgrammerPlanContext::default());
 
         assert_eq!(actions.len(), 1);
-        assert_planned_action(&actions[0], &DmxAction::ReleaseChannels { channels });
+        assert_planned_action(&actions[0], &DmxOperation::ReleaseChannels { channels });
     }
 }

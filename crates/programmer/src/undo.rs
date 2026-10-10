@@ -42,9 +42,9 @@ pub struct RemoveProgrammerInstructionByUuid {
     pub uuid: Uuid,
 }
 
-impl EngineAction for RestoreProgrammerState {}
+impl EngineOperation for RestoreProgrammerState {}
 
-impl EngineAction for RemoveProgrammerInstructionByUuid {}
+impl EngineOperation for RemoveProgrammerInstructionByUuid {}
 
 /// Captures the complete programmer state that undo restoration needs.
 fn capture_restore_programmer_state(programmer: &Programmer) -> RestoreProgrammerState {
@@ -69,8 +69,8 @@ fn capture_restore_programmer_state(programmer: &Programmer) -> RestoreProgramme
     }
 }
 
-impl UndoableOperation for RestoreProgrammerState {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for RestoreProgrammerState {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         // Inverse of restore is to capture the current state before restoring
         let programmer = ctx.world.resource::<Programmer>();
         Some(Box::new(capture_restore_programmer_state(programmer)))
@@ -81,8 +81,8 @@ impl UndoableOperation for RestoreProgrammerState {
     }
 }
 
-impl UndoableOperation for RemoveProgrammerInstructionByUuid {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for RemoveProgrammerInstructionByUuid {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let programmer = ctx.world.resource::<Programmer>();
 
         if programmer
@@ -105,8 +105,8 @@ impl UndoableOperation for RemoveProgrammerInstructionByUuid {
     }
 }
 
-impl UndoableOperation for ProgrammerCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for ProgrammerCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let programmer = ctx.world.resource::<Programmer>();
 
         match self {
@@ -357,15 +357,15 @@ mod tests {
     fn restore_programmer_state_restores_active_spatial_selection_directly() {
         let mut app = App::new();
         init_command_lifecycle(&mut app);
-        app.add_message::<EngineActionEnvelope<RestoreProgrammerState>>();
-        app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
+        app.add_message::<EngineOperationEnvelope<RestoreProgrammerState>>();
+        app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
         app.insert_resource(Programmer::default());
         app.add_systems(Update, handle_undo_events);
 
         let restored_selection = spatial_selection_with_clause();
         app.world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<RestoreProgrammerState>>>()
-            .write(EngineActionEnvelope::detached(RestoreProgrammerState {
+            .resource_mut::<Messages<EngineOperationEnvelope<RestoreProgrammerState>>>()
+            .write(EngineOperationEnvelope::detached(RestoreProgrammerState {
                 live_instructions: Vec::new(),
                 blind_instructions: Vec::new(),
                 mode: ProgrammerMode::Blind,
@@ -388,14 +388,14 @@ mod tests {
     fn restore_programmer_state_restores_recalled_cue_timing_defaults() {
         let mut app = App::new();
         init_command_lifecycle(&mut app);
-        app.add_message::<EngineActionEnvelope<RestoreProgrammerState>>();
-        app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
+        app.add_message::<EngineOperationEnvelope<RestoreProgrammerState>>();
+        app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
         app.insert_resource(Programmer::default());
         app.add_systems(Update, handle_undo_events);
 
         app.world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<RestoreProgrammerState>>>()
-            .write(EngineActionEnvelope::detached(RestoreProgrammerState {
+            .resource_mut::<Messages<EngineOperationEnvelope<RestoreProgrammerState>>>()
+            .write(EngineOperationEnvelope::detached(RestoreProgrammerState {
                 live_instructions: Vec::new(),
                 blind_instructions: Vec::new(),
                 mode: ProgrammerMode::Blind,
@@ -423,7 +423,7 @@ mod tests {
     fn remove_instruction_event_clears_recalled_defaults_when_programmer_is_empty() {
         let mut app = App::new();
         init_command_lifecycle(&mut app);
-        app.add_message::<EngineActionEnvelope<RemoveProgrammerInstructionByUuid>>();
+        app.add_message::<EngineOperationEnvelope<RemoveProgrammerInstructionByUuid>>();
         app.insert_resource(Programmer::default());
         app.add_systems(Update, handle_remove_instruction_events);
 
@@ -447,8 +447,8 @@ mod tests {
         }
 
         app.world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<RemoveProgrammerInstructionByUuid>>>()
-            .write(EngineActionEnvelope::detached(
+            .resource_mut::<Messages<EngineOperationEnvelope<RemoveProgrammerInstructionByUuid>>>()
+            .write(EngineOperationEnvelope::detached(
                 RemoveProgrammerInstructionByUuid {
                     uuid: instruction_id,
                 },
@@ -467,8 +467,8 @@ mod tests {
     fn restore_replays_join_nested_cue_cleanup_without_late_count_expansion() {
         let mut app = App::new();
         init_command_lifecycle(&mut app);
-        app.add_message::<EngineActionEnvelope<RestoreProgrammerState>>();
-        app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
+        app.add_message::<EngineOperationEnvelope<RestoreProgrammerState>>();
+        app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
         app.insert_resource(Programmer::default());
         app.add_systems(Update, handle_undo_events);
 
@@ -495,7 +495,7 @@ mod tests {
             .insert(first_uid, BoundCueInstruction::default());
         for restored_uid in [second_uid, Uuid::new_v4()] {
             app.world_mut()
-                .write_message(EngineActionEnvelope::for_command_context(
+                .write_message(EngineOperationEnvelope::for_command_context(
                     command_id,
                     command_id.into(),
                     RestoreProgrammerState {
@@ -513,7 +513,7 @@ mod tests {
 
         let release_operations = app
             .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<CueLifecycleAction>>>()
+            .resource_mut::<Messages<EngineOperationEnvelope<CueLifecycleOperation>>>()
             .drain()
             .map(|event| event.operation_id)
             .collect::<Vec<_>>();

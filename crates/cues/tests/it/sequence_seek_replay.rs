@@ -11,7 +11,7 @@ use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
 use nightfall_clips::InstanceIndex;
 use nightfall_clips::{
-    Clip, ClipAction, ClipCommand, MaterializedClip, Source, clip_action_from_command,
+    Clip, ClipCommand, ClipOperation, MaterializedClip, Source, clip_action_from_command,
 };
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_cues::events::handle_events;
@@ -22,7 +22,7 @@ use nightfall_cues::prelude::*;
 use nightfall_desk::instances::sync_active_state_on_instance_despawn;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
-use nightfall_instances::{InstanceId, PlaybackAction};
+use nightfall_instances::{InstanceId, PlaybackOperation};
 use uuid::Uuid;
 
 /// Installs lifecycle resources required by the cue event responder.
@@ -36,10 +36,10 @@ fn add_command_lifecycle(app: &mut App) {
 }
 
 /// Converts a clip command fixture into a detached concrete runtime action.
-fn clip_action(command: ClipCommand) -> EngineActionEnvelope<ClipAction> {
+fn clip_action(command: ClipCommand) -> EngineOperationEnvelope<ClipOperation> {
     let action = clip_action_from_command(&command)
         .expect("test clip command should map to a runtime action");
-    EngineActionEnvelope::detached(action)
+    EngineOperationEnvelope::detached(action)
 }
 
 fn build_cue(id: u32, uid: Uuid, label: &str) -> Cue {
@@ -69,9 +69,9 @@ fn build_sequence(id: u32, uid: Uuid, label: &str, steps: Vec<Uuid>) -> Sequence
 fn same_frame_stop_start_go_goto_keeps_sequence_linked_and_not_releasing() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<CueCommand>>();
-    app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+    app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
     add_command_lifecycle(&mut app);
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -79,7 +79,7 @@ fn same_frame_stop_start_go_goto_keeps_sequence_linked_and_not_releasing() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(PendingCommandBuffer::default());
-    app.insert_resource(PendingEngineActionBuffer::default());
+    app.insert_resource(PendingEngineOperationBuffer::default());
     app.add_systems(Update, handle_events);
 
     let cue_uid_a = Uuid::new_v4();
@@ -207,9 +207,9 @@ fn same_frame_stop_start_go_goto_keeps_sequence_linked_and_not_releasing() {
 fn orphan_cleanup_before_sequence_restart_spawns_fresh_clip_link() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<CueCommand>>();
-    app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+    app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
     add_command_lifecycle(&mut app);
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -217,7 +217,7 @@ fn orphan_cleanup_before_sequence_restart_spawns_fresh_clip_link() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(PendingCommandBuffer::default());
-    app.insert_resource(PendingEngineActionBuffer::default());
+    app.insert_resource(PendingEngineOperationBuffer::default());
     app.insert_resource(InstanceIndex::default());
     app.add_systems(
         Update,
@@ -273,8 +273,8 @@ fn orphan_cleanup_before_sequence_restart_spawns_fresh_clip_link() {
 fn same_frame_sequence_restart_does_not_release_reactivated_cues() {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<CueCommand>>();
-    app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     add_command_lifecycle(&mut app);
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -282,7 +282,7 @@ fn same_frame_sequence_restart_does_not_release_reactivated_cues() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(PendingCommandBuffer::default());
-    app.insert_resource(PendingEngineActionBuffer::default());
+    app.insert_resource(PendingEngineOperationBuffer::default());
     app.add_systems(
         Update,
         (

@@ -15,14 +15,14 @@ use nightfall::prelude::*;
 use nightfall_cues::data_provider_ext::CueDataProviderExt;
 use nightfall_cues::events::{cue_action_events, cue_crud_events};
 use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueAction, CueCommand, CueInstruction, CuePart, CuePartStoreTarget,
-    CueStoreTarget, Sequence,
+    BoundCueInstruction, Cue, CueCommand, CueInstruction, CueOperation, CuePart,
+    CuePartStoreTarget, CueStoreTarget, Sequence,
 };
 use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandOutput,
-    CommandReply, CommandResult, CommandTracker, DataProvider, EngineActionEnvelope,
+    CommandReply, CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope,
     FinishedCommand, OperationId, ReplyTarget, UndoId,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
@@ -366,7 +366,7 @@ fn setup_cue_crud_app() -> App {
 }
 
 /// Emits a cue command and returns snapshots matching block test assertions.
-fn run_cue_command(app: &mut App, command: CueCommand) -> Vec<CueAction> {
+fn run_cue_command(app: &mut App, command: CueCommand) -> Vec<CueOperation> {
     app.world_mut()
         .write_message(cue_command_message(command.clone()));
     app.update();
@@ -388,7 +388,7 @@ fn run_cue_command(app: &mut App, command: CueCommand) -> Vec<CueAction> {
                     .from_id(sequence_id)
                     .expect("sequence should exist after cue command"))
                 .clone();
-                vec![CueAction::StoreSequence(Box::new(sequence))]
+                vec![CueOperation::StoreSequence(Box::new(sequence))]
             } else {
                 let cue = (*app
                     .world()
@@ -400,7 +400,7 @@ fn run_cue_command(app: &mut App, command: CueCommand) -> Vec<CueAction> {
                     )
                     .expect("cue should exist after cue command"))
                 .clone();
-                vec![CueAction::StoreCue(Box::new(cue))]
+                vec![CueOperation::StoreCue(Box::new(cue))]
             }
         }
         _ => Vec::new(),
@@ -408,11 +408,11 @@ fn run_cue_command(app: &mut App, command: CueCommand) -> Vec<CueAction> {
 }
 
 /// Extracts the cue snapshot stored by a cue action list.
-fn stored_cue(actions: &[CueAction]) -> Cue {
+fn stored_cue(actions: &[CueOperation]) -> Cue {
     *actions
         .iter()
         .find_map(|action| match action {
-            CueAction::StoreCue(cue) => Some(cue.clone()),
+            CueOperation::StoreCue(cue) => Some(cue.clone()),
             _ => None,
         })
         .expect("cue store action should be queued")
@@ -1311,7 +1311,7 @@ fn rename_cue_to_new_sequence_moves_step_and_updates_target_id() {
 #[test]
 fn cue_action_store_cue_persists_cue_data() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1319,7 +1319,7 @@ fn cue_action_store_cue_persists_cue_data() {
     let cue = build_cue(7, cue_uid, "action-cue");
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(CueAction::StoreCue(
+        .write_message(EngineOperationEnvelope::detached(CueOperation::StoreCue(
             Box::new(cue.clone()),
         )));
     app.update();
@@ -1345,7 +1345,7 @@ fn cue_action_store_cue_persists_cue_data() {
 #[test]
 fn cue_action_store_sequence_persists_sequence_data() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1353,9 +1353,9 @@ fn cue_action_store_sequence_persists_sequence_data() {
     let sequence = build_sequence(11, sequence_uid, "action-sequence", Vec::new());
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(CueAction::StoreSequence(
-            Box::new(sequence.clone()),
-        )));
+        .write_message(EngineOperationEnvelope::detached(
+            CueOperation::StoreSequence(Box::new(sequence.clone())),
+        ));
     app.update();
 
     let sequence_provider = app.world().resource::<DataProvider<Sequence>>();
@@ -1372,7 +1372,7 @@ fn cue_action_store_sequence_persists_sequence_data() {
 #[test]
 fn cue_definition_actions_finish_joined_command_lifecycle() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1392,16 +1392,16 @@ fn cue_definition_actions_finish_joined_command_lifecycle() {
         .expect_completions(command_id, 2)
         .expect("replay command should join both definition actions");
     app.world_mut()
-        .write_message(EngineActionEnvelope::for_command_context(
+        .write_message(EngineOperationEnvelope::for_command_context(
             command_id,
             undo_id,
-            CueAction::StoreCue(Box::new(build_cue(7, Uuid::new_v4(), "action-cue"))),
+            CueOperation::StoreCue(Box::new(build_cue(7, Uuid::new_v4(), "action-cue"))),
         ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::for_command_context(
+        .write_message(EngineOperationEnvelope::for_command_context(
             command_id,
             undo_id,
-            CueAction::StoreSequence(Box::new(build_sequence(
+            CueOperation::StoreSequence(Box::new(build_sequence(
                 11,
                 Uuid::new_v4(),
                 "action-sequence",
@@ -1429,7 +1429,7 @@ fn cue_definition_actions_finish_joined_command_lifecycle() {
 #[test]
 fn sequence_definition_action_failure_finishes_command_lifecycle() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1458,10 +1458,10 @@ fn sequence_definition_action_failure_finishes_command_lifecycle() {
         .expect_completions(command_id, 1)
         .expect("replay command should join its definition action");
     app.world_mut()
-        .write_message(EngineActionEnvelope::for_command_context(
+        .write_message(EngineOperationEnvelope::for_command_context(
             command_id,
             undo_id,
-            CueAction::StoreSequence(Box::new(build_sequence(
+            CueOperation::StoreSequence(Box::new(build_sequence(
                 11,
                 Uuid::new_v4(),
                 "conflicting-sequence",
@@ -1489,7 +1489,7 @@ fn sequence_definition_action_failure_finishes_command_lifecycle() {
 #[test]
 fn cue_action_store_cue_in_sequence_resolves_next_ids_while_mutating() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1516,11 +1516,11 @@ fn cue_action_store_cue_in_sequence_resolves_next_ids_while_mutating() {
     let batch_one = Uuid::new_v4();
     let batch_two = Uuid::new_v4();
     app.world_mut()
-        .write_message(EngineActionEnvelope::with_context(
+        .write_message(EngineOperationEnvelope::with_context(
             OperationId::new(),
             None,
             Some(UndoId::from(batch_one)),
-            CueAction::StoreCueInSequence {
+            CueOperation::StoreCueInSequence {
                 sequence_id: 10,
                 cue_id: CueStoreTarget::Next,
                 part_id: CuePartStoreTarget::Exact(0),
@@ -1529,11 +1529,11 @@ fn cue_action_store_cue_in_sequence_resolves_next_ids_while_mutating() {
             },
         ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::with_context(
+        .write_message(EngineOperationEnvelope::with_context(
             OperationId::new(),
             None,
             Some(UndoId::from(batch_two)),
-            CueAction::StoreCueInSequence {
+            CueOperation::StoreCueInSequence {
                 sequence_id: 10,
                 cue_id: CueStoreTarget::Next,
                 part_id: CuePartStoreTarget::Exact(0),
@@ -1578,7 +1578,7 @@ fn cue_action_store_cue_in_sequence_resolves_next_ids_while_mutating() {
 #[test]
 fn cue_action_restore_cue_store_state_removes_new_cue_and_restores_sequence() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1608,8 +1608,8 @@ fn cue_action_restore_cue_store_state_removes_new_cue_and_restores_sequence() {
     }
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            CueAction::RestoreCueStoreState {
+        .write_message(EngineOperationEnvelope::detached(
+            CueOperation::RestoreCueStoreState {
                 sequence_id: 10,
                 cue_uid: appended_cue_uid,
                 previous_cue: None,
@@ -1637,7 +1637,7 @@ fn cue_action_restore_cue_store_state_removes_new_cue_and_restores_sequence() {
 #[test]
 fn cue_action_store_cue_part_in_sequence_resolves_next_ids_while_mutating() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1657,8 +1657,8 @@ fn cue_action_store_cue_part_in_sequence_resolves_next_ids_while_mutating() {
     }
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            CueAction::StoreCueInSequence {
+        .write_message(EngineOperationEnvelope::detached(
+            CueOperation::StoreCueInSequence {
                 sequence_id: 10,
                 cue_id: CueStoreTarget::Exact(1),
                 part_id: CuePartStoreTarget::Next,
@@ -1667,8 +1667,8 @@ fn cue_action_store_cue_part_in_sequence_resolves_next_ids_while_mutating() {
             },
         ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            CueAction::StoreCueInSequence {
+        .write_message(EngineOperationEnvelope::detached(
+            CueOperation::StoreCueInSequence {
                 sequence_id: 10,
                 cue_id: CueStoreTarget::Exact(1),
                 part_id: CuePartStoreTarget::Next,
@@ -1689,7 +1689,7 @@ fn cue_action_store_cue_part_in_sequence_resolves_next_ids_while_mutating() {
 #[test]
 fn cue_action_store_cue_part_zero_updates_parent_cue() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<CueAction>>();
+    app.add_message::<EngineOperationEnvelope<CueOperation>>();
     init_cue_runtime_resources(&mut app);
     app.add_systems(Update, cue_action_events);
 
@@ -1705,8 +1705,8 @@ fn cue_action_store_cue_part_zero_updates_parent_cue() {
     stored_part_zero.identifiers.id = 0;
     stored_part_zero.identifiers.label = "Part 0".to_string();
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            CueAction::StoreCueInSequence {
+        .write_message(EngineOperationEnvelope::detached(
+            CueOperation::StoreCueInSequence {
                 sequence_id: 10,
                 cue_id: CueStoreTarget::Exact(1),
                 part_id: CuePartStoreTarget::Exact(0),
@@ -2083,9 +2083,9 @@ fn block_setup_cue_does_not_assert_its_own_values() {
         },
     );
 
-    let CueAction::StoreSequence(sequence) = actions
+    let CueOperation::StoreSequence(sequence) = actions
         .iter()
-        .find(|action| matches!(action, CueAction::StoreSequence(_)))
+        .find(|action| matches!(action, CueOperation::StoreSequence(_)))
         .expect("setup block should store the containing sequence")
     else {
         panic!("expected sequence store action");

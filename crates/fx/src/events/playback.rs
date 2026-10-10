@@ -19,8 +19,9 @@ use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceStartContext, InstanceClock, InstanceControls,
-    InstanceDisplayKind, InstanceId, InstanceKind, InstanceMetadata, Owner, PlaybackReleaseAction,
-    instance_clock_from_reconstruction_timing, reconcile_instance_options,
+    InstanceDisplayKind, InstanceId, InstanceKind, InstanceMetadata, Owner,
+    PlaybackReleaseOperation, instance_clock_from_reconstruction_timing,
+    reconcile_instance_options,
 };
 use nightfall_playback_planner::PlaybackReconstructionTiming;
 use uuid::Uuid;
@@ -58,7 +59,7 @@ fn instance_clock_from_optional_reconstruction_timing(
 
 /// Clip-routed playback actions owned by the FX domain.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum FxPlaybackAction {
+pub enum FxPlaybackOperation {
     /// Start or refresh an ordinary waveform FX playback for an clip.
     StartFx {
         /// FX source UID to materialize.
@@ -84,7 +85,7 @@ pub enum FxPlaybackAction {
     },
 }
 
-impl EngineAction for FxPlaybackAction {}
+impl EngineOperation for FxPlaybackOperation {}
 
 /// Mark FX-domain playback entities for release.
 fn release_fx_instances(
@@ -124,7 +125,7 @@ pub fn handle_events(
     step_fx_query: Query<(Entity, &StepFx)>,
     active_step_fx_query: Query<ActiveStepFxData>,
     fx_data_provider: Res<DataProvider<Fx>>,
-    mut events: MessageReader<EngineActionEnvelope<FxPlaybackAction>>,
+    mut events: MessageReader<EngineOperationEnvelope<FxPlaybackOperation>>,
     mut attachments: MessageWriter<EventEnvelope<ClipInstanceAttachment>>,
     mut commands: Commands,
 ) {
@@ -145,8 +146,8 @@ pub fn handle_events(
     let mut detaching_instances = HashSet::new();
 
     for event in events.read() {
-        match &event.action {
-            FxPlaybackAction::Stop {
+        match &event.operation {
+            FxPlaybackOperation::Stop {
                 clip_id,
                 attached_instances,
                 timing,
@@ -166,7 +167,7 @@ pub fn handle_events(
                     &active_step_fx_query,
                 );
             }
-            FxPlaybackAction::StartFx { fx_uid, context } => {
+            FxPlaybackOperation::StartFx { fx_uid, context } => {
                 let context = *context;
                 let fx = fx_data_provider.get(*fx_uid).expect("failed to obtain fx");
 
@@ -282,7 +283,7 @@ pub fn handle_events(
                     ));
                 }
             }
-            FxPlaybackAction::StartStepFx {
+            FxPlaybackOperation::StartStepFx {
                 step_fx_uid,
                 context,
             } => {
@@ -463,31 +464,31 @@ pub fn handle_events(
 /// Handles playback-level stop commands for active step FX instances.
 pub fn handle_step_fx_playback_commands(
     mut commands: Commands,
-    mut instance_events: MessageReader<EngineActionEnvelope<PlaybackReleaseAction>>,
+    mut instance_events: MessageReader<EngineOperationEnvelope<PlaybackReleaseOperation>>,
     active_fx_query: Query<(Entity, &InstanceId, Option<&InstanceMetadata>), With<ActiveStepFx>>,
 ) {
     for event in instance_events.read() {
-        match &event.action {
-            PlaybackReleaseAction::One(target_instance_id) => {
+        match &event.operation {
+            PlaybackReleaseOperation::One(target_instance_id) => {
                 for (entity, instance_id, _) in active_fx_query.iter() {
                     if instance_id == target_instance_id {
                         commands.entity(entity).insert(ReleaseMarker::default());
                     }
                 }
             }
-            PlaybackReleaseAction::All => {
+            PlaybackReleaseOperation::All => {
                 for (entity, _, _) in active_fx_query.iter() {
                     commands.entity(entity).insert(ReleaseMarker::default());
                 }
             }
-            PlaybackReleaseAction::ByKind(kind) => {
+            PlaybackReleaseOperation::ByKind(kind) => {
                 for (entity, _, metadata) in active_fx_query.iter() {
                     if metadata.is_some_and(|metadata| metadata.kind == *kind) {
                         commands.entity(entity).insert(ReleaseMarker::default());
                     }
                 }
             }
-            PlaybackReleaseAction::ByTag(tag) => {
+            PlaybackReleaseOperation::ByTag(tag) => {
                 for (entity, _, metadata) in active_fx_query.iter() {
                     if metadata.is_some_and(|metadata| metadata.tags.contains(tag)) {
                         commands.entity(entity).insert(ReleaseMarker::default());

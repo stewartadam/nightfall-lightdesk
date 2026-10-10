@@ -18,7 +18,7 @@ use bevy_ecs::schedule::{ApplyDeferred, IntoScheduleConfigs};
 use moonshine_kind::{Instance, InstanceMut};
 use nightfall::prelude::*;
 use nightfall_clips::{
-    Clip, ClipAction, ClipOptions, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip,
+    Clip, ClipOperation, ClipOptions, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip,
     Source,
 };
 use nightfall_compositor::prelude::{LayerCompositingContext, ObjectRefMarker, ReleaseMarker};
@@ -67,7 +67,7 @@ use crate::prelude::{
     Track,
 };
 use crate::recording::TimelineCommandOrigins;
-use crate::{TimelineAction, TimelineCommand};
+use crate::{TimelineCommand, TimelineOperation};
 use crate::{TimelineLookaheadMode, TimelineStopBehavior};
 
 fn spawn_timecode(app: &mut App, timecode_id: u32, current_time: Duration) -> Uuid {
@@ -104,14 +104,14 @@ fn timecode_ingress(command: TimecodeCommand) -> CommandEnvelope<TimecodeCommand
 }
 
 fn matches_timed_start(
-    action: &ClipAction,
+    action: &ClipOperation,
     expected_clip_id: u32,
     expected_started_at_timeline: Duration,
     expected_evaluated_at_timeline: Duration,
 ) -> bool {
     matches!(
         action,
-        ClipAction::StartAtTiming {
+        ClipOperation::StartAtTiming {
             clip_id: IdExpr::Single(id),
             timing,
             ..
@@ -246,7 +246,7 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimecodeCommand>>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
-    app.add_message::<EngineActionEnvelope<TimelineAction>>();
+    app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
     app.init_resource::<TimelinePausedPlaybackRates>();
     app.init_resource::<PendingStoppedTimelineReleaseClocks>();
     app.add_systems(
@@ -322,7 +322,7 @@ fn paused_timecode_keeps_releasing_timeline_instance_clock_attached() {
     let mut app = App::new();
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
-    app.add_message::<EngineActionEnvelope<TimelineAction>>();
+    app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
     app.init_resource::<PendingStoppedTimelineReleaseClocks>();
     app.add_systems(
         Update,
@@ -383,7 +383,7 @@ fn keep_state_stop_keeps_releasing_timeline_instance_clock_attached() {
     let mut app = App::new();
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
-    app.add_message::<EngineActionEnvelope<TimelineAction>>();
+    app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
     app.init_resource::<PendingStoppedTimelineReleaseClocks>();
     app.add_systems(
         Update,
@@ -528,13 +528,13 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<DeskCommand>>();
     app.add_message::<CommandEnvelope<CueCommand>>();
-    app.add_message::<EngineActionEnvelope<EvalAction>>();
-    app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<EvalOperation>>();
+    app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
     app.add_message::<CommandEnvelope<TimecodeCommand>>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
-    app.add_message::<EngineActionEnvelope<TimelineAction>>();
+    app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
@@ -542,8 +542,8 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     app.add_message::<OperationResult<(), CommandError>>();
     app.init_resource::<CommandTracker>();
     app.init_resource::<CommandIngressRouter>();
-    app.init_resource::<EngineActionRouter>();
-    register_engine_action::<SequencePlaybackAction>(&mut app);
+    app.init_resource::<EngineOperationRouter>();
+    register_engine_operation::<SequencePlaybackOperation>(&mut app);
     app.insert_resource(DataProvider::<Cue>::default());
     app.insert_resource(DataProvider::<Sequence>::default());
     app.insert_resource(DataProvider::<Group>::default());
@@ -557,7 +557,7 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     app.init_resource::<TimelineLookaheadActionStatuses>();
     app.init_resource::<nightfall_compositor::prelude::FinalLayerOutput>();
     app.init_resource::<PendingCommandBuffer>();
-    app.init_resource::<PendingEngineActionBuffer>();
+    app.init_resource::<PendingEngineOperationBuffer>();
     if seek_mode {
         app.add_systems(
             Update,

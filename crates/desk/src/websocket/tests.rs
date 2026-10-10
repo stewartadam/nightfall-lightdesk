@@ -15,7 +15,7 @@ use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{Parameter, ParameterValues};
 use nightfall_undo::context::UndoContext;
 use nightfall_undo::manager::{UndoEntry, UndoGroup, UndoManager};
-use nightfall_undo::traits::UndoableOperation;
+use nightfall_undo::traits::Undoable;
 
 use super::*;
 
@@ -23,9 +23,9 @@ use super::*;
 #[derive(Debug, Clone, EnginePayload)]
 struct TestUndoCommand;
 
-impl UndoableOperation for TestUndoCommand {
+impl Undoable for TestUndoCommand {
     /// Produces no inverse because this command exists only to populate undo metadata.
-    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         None
     }
 

@@ -25,7 +25,7 @@ pub struct ProgrammerCueState<'w> {
     /// Supplies active instructions and receives recalled cue contents.
     programmer: ResMut<'w, Programmer>,
     /// Buffers programmer actions needed to apply recalled selections.
-    pending_actions: ResMut<'w, PendingEngineActionBuffer>,
+    pending_actions: ResMut<'w, PendingEngineOperationBuffer>,
     /// Tracks cue-store operations until the cues domain reports completion.
     store_workflows: ResMut<'w, StoreCueWorkflows>,
     /// Provides cue definitions used for recall and existing-target store modes.
@@ -143,7 +143,7 @@ fn stabilize_stored_cue_instructions(
 /// Handles events related to cues in the programmer
 pub fn handle_cue_events(
     mut events_reader: MessageReader<CommandEnvelope<ProgrammerCommand>>,
-    mut store_operations: MessageWriter<EngineActionEnvelope<CueStoreOperation>>,
+    mut store_operations: MessageWriter<EngineOperationEnvelope<CueStoreOperation>>,
     state: ProgrammerCueState,
 ) {
     let ProgrammerCueState {
@@ -294,11 +294,11 @@ pub fn handle_cue_events(
                     if use_workflow {
                         let operation_id = OperationId::new();
                         store_workflows.commands.insert(operation_id, command_id);
-                        store_operations.write(EngineActionEnvelope {
+                        store_operations.write(EngineOperationEnvelope {
                             operation_id,
                             command_id: Some(command_id),
                             undo_id: Some(undo_id),
-                            action: CueStoreOperation::StoreSequence {
+                            operation: CueStoreOperation::StoreSequence {
                                 sequence: Box::new(sequence),
                                 undo_label: event
                                     .command
@@ -307,11 +307,11 @@ pub fn handle_cue_events(
                             },
                         });
                     } else {
-                        pending_actions.push(DynEngineActionEnvelope::with_context(
+                        pending_actions.push(DynEngineOperationEnvelope::with_context(
                             OperationId::new(),
                             None,
                             Some(undo_id),
-                            Box::new(CueAction::StoreSequence(Box::new(sequence))),
+                            Box::new(CueOperation::StoreSequence(Box::new(sequence))),
                         ));
                     }
                     continue;
@@ -420,11 +420,11 @@ pub fn handle_cue_events(
                 if use_workflow {
                     let operation_id = OperationId::new();
                     store_workflows.commands.insert(operation_id, command_id);
-                    store_operations.write(EngineActionEnvelope {
+                    store_operations.write(EngineOperationEnvelope {
                         operation_id,
                         command_id: Some(command_id),
                         undo_id: Some(undo_id),
-                        action: CueStoreOperation::StoreCueInSequence {
+                        operation: CueStoreOperation::StoreCueInSequence {
                             sequence_id: *sequence_id,
                             cue_id: cue_target,
                             part_id: part_target,
@@ -433,11 +433,11 @@ pub fn handle_cue_events(
                         },
                     });
                 } else {
-                    pending_actions.push(DynEngineActionEnvelope::with_context(
+                    pending_actions.push(DynEngineOperationEnvelope::with_context(
                         OperationId::new(),
                         None,
                         Some(undo_id),
-                        Box::new(CueAction::StoreCueInSequence {
+                        Box::new(CueOperation::StoreCueInSequence {
                             sequence_id: *sequence_id,
                             cue_id: cue_target,
                             part_id: part_target,

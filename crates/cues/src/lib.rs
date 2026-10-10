@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 /// Internal actions owned by cue materialization lifecycle management.
 #[derive(Debug, Clone, PartialEq)]
-pub enum CueLifecycleAction {
+pub enum CueLifecycleOperation {
     /// Release materialized cue instances by uid.
     ReleaseCueInstances {
         /// Cue instance ids.
@@ -29,8 +29,8 @@ pub enum CueLifecycleAction {
     },
 }
 
-impl EnginePayload for CueLifecycleAction {}
-impl EngineAction for CueLifecycleAction {}
+impl EnginePayload for CueLifecycleOperation {}
+impl EngineOperation for CueLifecycleOperation {}
 
 mod object_lookup;
 
@@ -50,16 +50,16 @@ pub mod websocket;
 pub mod prelude {
     pub use nightfall::prelude::CueTriggerType;
 
-    pub use crate::CueAction;
     pub use crate::CueCommand;
-    pub use crate::CueLifecycleAction;
+    pub use crate::CueLifecycleOperation;
+    pub use crate::CueOperation;
     pub use crate::CuePartStoreTarget;
     pub use crate::CuePlugin;
     pub use crate::CueStoreError;
     pub use crate::CueStoreOperation;
     pub use crate::CueStoreSuccess;
     pub use crate::CueStoreTarget;
-    pub use crate::SequencePlaybackAction;
+    pub use crate::SequencePlaybackOperation;
     pub use crate::cue::cue_flags::TrackingFlags;
     pub use crate::cue::{
         BoundCueInstruction, Cue, CueInstruction, CuePart, Sequence, TrackingMode,
@@ -91,11 +91,11 @@ impl Plugin for CuePlugin {
         object_lookup::register_object_lookups(app);
 
         tracing::debug!("Registering CuePlugin");
-        register_engine_action::<CueAction>(app);
-        register_engine_action::<CueLifecycleAction>(app);
+        register_engine_operation::<CueOperation>(app);
+        register_engine_operation::<CueLifecycleOperation>(app);
         register_ingress_command::<CueCommand>(app);
-        register_engine_action::<SequencePlaybackAction>(app);
-        register_engine_action::<undo::RestoreSequencePosition>(app);
+        register_engine_operation::<SequencePlaybackOperation>(app);
+        register_engine_operation::<undo::RestoreSequencePosition>(app);
         register_ingress_command::<events::CuePreviewCommand>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::CueAstConverter>();
 
@@ -105,7 +105,7 @@ impl Plugin for CuePlugin {
         app.init_resource::<websocket::SequenceLookaheadStateDirty>();
         app.add_message::<websocket::CueDefinitionChange>();
         app.add_message::<websocket::SequenceDefinitionChange>();
-        app.add_message::<EngineActionEnvelope<CueStoreOperation>>();
+        app.add_message::<EngineOperationEnvelope<CueStoreOperation>>();
         app.add_message::<OperationResult<CueStoreSuccess, CueStoreError>>();
         app.add_message::<OperationResult<(), CommandError>>();
         {
@@ -116,10 +116,10 @@ impl Plugin for CuePlugin {
         // Register undoable commands
         {
             let mut registry = app.world_mut().resource_mut::<UndoRegistry>();
-            registry.register_action::<CueAction>();
+            registry.register_operation::<CueOperation>();
             registry.register::<CueCommand>();
-            registry.register_action::<SequencePlaybackAction>();
-            registry.register_action::<undo::RestoreSequencePosition>();
+            registry.register_operation::<SequencePlaybackOperation>();
+            registry.register_operation::<undo::RestoreSequencePosition>();
         }
 
         register_command_deserializer::<CueCommand>(app, crate::websocket::deserialize_cue_command);
@@ -194,7 +194,7 @@ impl Plugin for CuePlugin {
 
 /// Commands for cue-related operations
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub enum CueAction {
+pub enum CueOperation {
     /// Store a cue payload prepared by a planner/runtime command handler.
     StoreCue(Box<cue::Cue>),
     /// Store a sequence payload prepared by a planner/runtime command handler.
@@ -227,7 +227,7 @@ pub enum CueAction {
     },
 }
 
-impl EngineAction for CueAction {}
+impl EngineOperation for CueOperation {}
 
 /// Cue store target that may defer append ID allocation until mutation time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -416,7 +416,7 @@ pub enum CueCommand {
 
 impl IngressCommand for CueCommand {}
 
-/// Engine actions for sequence playback operations.
+/// Engine operations for sequence playback operations.
 ///
 /// These actions operate on running sequence instances (`MaterializedSequence`).
 /// They are typically delegated from ClipCommand to enable proper undo
@@ -425,7 +425,7 @@ impl IngressCommand for CueCommand {}
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
-pub enum SequencePlaybackAction {
+pub enum SequencePlaybackOperation {
     /// Advance the sequence to the next cue.
     Go {
         /// The playback to advance
@@ -463,7 +463,7 @@ pub enum SequencePlaybackAction {
     },
 }
 
-impl EngineAction for SequencePlaybackAction {}
+impl EngineOperation for SequencePlaybackOperation {}
 #[cfg(test)]
 mod tests {
     use bevy_app::App;

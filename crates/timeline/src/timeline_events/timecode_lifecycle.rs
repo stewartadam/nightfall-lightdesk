@@ -24,7 +24,7 @@ pub fn handle_timecode_events(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
     mut event_reader: MessageReader<TimecodeEvent>,
-    mut timeline_actions: MessageWriter<EngineActionEnvelope<TimelineAction>>,
+    mut timeline_actions: MessageWriter<EngineOperationEnvelope<TimelineOperation>>,
 ) {
     for event in event_reader.read() {
         match event {
@@ -119,9 +119,9 @@ pub fn handle_timecode_events(
                         timeline_id,
                         id
                     );
-                    timeline_actions.write(EngineActionEnvelope::detached(TimelineAction::Stop(
-                        timeline_id,
-                    )));
+                    timeline_actions.write(EngineOperationEnvelope::detached(
+                        TimelineOperation::Stop(timeline_id),
+                    ));
                 }
             }
 

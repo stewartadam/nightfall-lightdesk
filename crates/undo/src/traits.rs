@@ -20,18 +20,18 @@ use crate::context::UndoContext;
 ///
 /// Uses `DynClone` instead of `Clone` supertrait for dyn-compatibility.
 /// Implementors should derive `Clone` normally; `DynClone` is auto-implemented.
-pub trait UndoableOperation: EnginePayload + DynClone + Debug + Send + Sync + 'static {
+pub trait Undoable: EnginePayload + DynClone + Debug + Send + Sync + 'static {
     /// Generate the inverse command that undoes this command's effects.
     ///
     /// This is called BEFORE the command executes, using current state to
     /// capture what needs to be restored on undo.
     ///
     /// Returns `None` if the command cannot be undone (e.g., no state to restore).
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>>;
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>>;
 
     /// Human-readable description for display in the UI.
     fn description(&self) -> String;
 }
 
-// Enable cloning of Box<dyn UndoableOperation>
-dyn_clone::clone_trait_object!(UndoableOperation);
+// Enable cloning of Box<dyn Undoable>
+dyn_clone::clone_trait_object!(Undoable);

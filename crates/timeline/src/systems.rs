@@ -18,7 +18,7 @@ use nightfall_actions::{ActionInvocation, ActionRegistry, ActionSurface};
 #[cfg(feature = "audio")]
 use nightfall_audio::prelude::*;
 use nightfall_clips::{
-    Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupSnapshot, ClipReleaseAfterInstance,
+    Clip, ClipCommand, ClipLookup, ClipLookupSnapshot, ClipOperation, ClipReleaseAfterInstance,
     MaterializedClip, Source,
 };
 use nightfall_compositor::prelude::{Layer, ObjectRefMarker, ReleaseMarker};
@@ -42,7 +42,7 @@ use nightfall_playback_planner::{
     EvaluatedInstanceState, PlannedNoOpReason, PlannedPlaybackIntervention,
     PlannedPlaybackInterventionKind, PlannedPlaybackLifecycle, PlannedPlaybackSource,
     PlannedPlaybackSourceKind, PlaybackDurationProfile, PlaybackExtent,
-    PlaybackReconstructionTiming, TimelinePlaybackActionOperation, TimelinePlaybackActionPlan,
+    PlaybackReconstructionTiming, TimelinePlaybackActionKind, TimelinePlaybackActionPlan,
 };
 use nightfall_selection::filter_existing_selection;
 use nightfall_timecode::prelude::*;
@@ -51,8 +51,9 @@ use uuid::Uuid;
 use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
 use crate::planner::{TimelinePlanningAction, TimelinePlaybackSourceResolver, plan_timeline_at};
 use crate::prelude::{
-    ActionKind, ParameterType, TimelineAction, TimelineCommand, TimelineLookaheadMode,
-    TimelineNondeterministicSeekBehavior, TimelineSeekBehavior, TimelineStopBehavior,
+    ActionKind, ParameterType, TimelineCommand, TimelineLookaheadMode,
+    TimelineNondeterministicSeekBehavior, TimelineOperation, TimelineSeekBehavior,
+    TimelineStopBehavior,
 };
 use crate::recording::{TimelineCommandOrigins, write_timeline_clip_action};
 
@@ -120,21 +121,21 @@ fn normalized_registered_action_kind(
         .ok()
         .flatten()?;
     match capability.operation {
-        TimelinePlaybackActionOperation::Start => Some(ActionKind::StartClip(capability.owner_uid)),
-        TimelinePlaybackActionOperation::Stop => Some(ActionKind::StopClip(capability.owner_uid)),
-        TimelinePlaybackActionOperation::Intervene(PlannedPlaybackInterventionKind::SequenceGo) => {
+        TimelinePlaybackActionKind::Start => Some(ActionKind::StartClip(capability.owner_uid)),
+        TimelinePlaybackActionKind::Stop => Some(ActionKind::StopClip(capability.owner_uid)),
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceGo) => {
             Some(ActionKind::AdvanceSequence(capability.owner_uid))
         }
-        TimelinePlaybackActionOperation::Intervene(
-            PlannedPlaybackInterventionKind::SequenceBack,
-        ) => Some(ActionKind::BackSequence(capability.owner_uid)),
-        TimelinePlaybackActionOperation::Intervene(
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceBack) => {
+            Some(ActionKind::BackSequence(capability.owner_uid))
+        }
+        TimelinePlaybackActionKind::Intervene(
             PlannedPlaybackInterventionKind::SequenceGotoCue(cue_index),
         ) => Some(ActionKind::JumpToCue {
             uid: capability.owner_uid,
             cue_index,
         }),
-        TimelinePlaybackActionOperation::Intervene(PlannedPlaybackInterventionKind::Stop) => None,
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::Stop) => None,
     }
 }
 
