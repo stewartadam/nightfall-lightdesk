@@ -11,7 +11,6 @@
 //! This facade preserves the public desk WebSocket API while responsibility-focused child
 //! modules own wire schemas, inbound routing, state projection, metrics, and resynchronization.
 
-use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
@@ -28,6 +27,7 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::output_frames::OutputDmxFrames;
+use nightfall_fixtures::parameter_state::assertion_kind;
 use nightfall_fixtures::prelude::*;
 use nightfall_framepace::FramePaceStats;
 use nightfall_fx::prelude::{
@@ -72,9 +72,9 @@ pub use diagnostics::{
 use inbound::flush_pending_ui_notifications;
 pub use inbound::*;
 pub use instances::*;
-pub use layers::{LayerSnapshotData, send_layer_stack};
+pub use layers::{LayerSnapshotData, LayerStackPublication, send_layer_stack};
 #[cfg(test)]
-use layers::{computed_transition_fixture_state, is_transition_active};
+use layers::{computed_transitioning_slots, is_transition_active};
 pub use metrics::send_metrics;
 pub use nightfall_fixtures::websocket::{
     PARAMETER_STATE_BROADCAST_MS, PARAMETER_STATE_BUILD_MS, send_parameter_state,
@@ -84,8 +84,8 @@ pub use wire::{
     DeskMetrics, InstanceInfo, OutboundBlueprintDependency, UndoStackEntryMessage, UndoStateMessage,
 };
 use wire::{
-    DeskWsMessage, OutboundClipLocal, OutboundElementComputedState, OutboundElementParameterValues,
-    OutboundElementTransitionState, OutboundLayerState,
+    DeskWsMessage, OutboundClipLocal, OutboundLayerStack, OutboundLayerState, PackedBytes,
+    PackedLayerAssertions,
 };
 
 #[cfg(test)]

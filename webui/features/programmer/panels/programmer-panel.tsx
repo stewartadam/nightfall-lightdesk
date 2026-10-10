@@ -56,6 +56,7 @@ import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
+import type { LayerState } from "../../../lib/ws/types";
 import {
   activeInstances,
   blueprints,
@@ -67,7 +68,6 @@ import {
   programmerState,
   sequences,
 } from "../../../state/appStores";
-import type * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import ProgrammerProperties from "../components/programmer-properties";
 import { ProgrammerStoreDialogs } from "../components/programmer-store-dialogs";
@@ -509,7 +509,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
     const selectionUids = new Set($programmerSelection());
     const layersArg = $layerStack();
     const activeInstancesData = Object.values($activeInstances());
-    const isProgrammerLayer = (layer: types.OutboundLayerState): boolean => {
+    const isProgrammerLayer = (layer: LayerState): boolean => {
       if (
         layer.creator === "Programmer" ||
         layer.creator.startsWith("Programmer Instruction ")

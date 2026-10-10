@@ -23,6 +23,7 @@ import {
   fixtureValueSourceState,
 } from "./fixture-value-state";
 import { normalizeAttributeName } from "./utils";
+import type { LayerState } from "./ws/types";
 
 export const dataGridDarkTheme = {
   accentColor: "#8c96ff",
@@ -92,12 +93,12 @@ export interface AttributeValueColumnWidthOptions {
 }
 
 export interface FixtureAttributeValueStylingOptions {
-  sourceLayers?: readonly types.OutboundLayerState[];
+  sourceLayers?: readonly LayerState[];
   sourceState?: FixtureValueSourceState;
   fixtureUid?: string;
   elementIndex?: number;
   attribute?: string;
-  layerFilter?: (layer: types.OutboundLayerState) => boolean;
+  layerFilter?: (layer: LayerState) => boolean;
   isTransitioning?: boolean;
   isElement?: boolean;
   sourceStateEnabled?: boolean;

@@ -7,15 +7,15 @@
  */
 
 import { For, onCleanup, onMount, Show } from "solid-js";
+import type { LayerState } from "../../../lib/ws/types";
 import type { LayerNavigationRequest } from "../../../state/appStores";
-import type * as types from "../../../types";
 import type { LayerPanelEntry } from "../controllers/layer-panel-entries";
 import LayerView from "./layer-view";
 
 interface LayerEntryListProps {
   entries: LayerPanelEntry[];
   navigationRequest: LayerNavigationRequest | null;
-  onNavigateToLayerObject: (layer: types.OutboundLayerState) => void;
+  onNavigateToLayerObject: (layer: LayerState) => void;
   onNavigationHandled: (requestId: number) => void;
   onOpenChange: (layerKey: string, isOpen: boolean) => void;
   onVisibleLayersChange: (keys: Set<string>) => void;

@@ -20,6 +20,7 @@ import {
 } from "../../../lib/network-dmx-output-targets";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
+import type { LayerElementParameterValues } from "../../../lib/ws/types";
 import {
   bindings,
   dockApi,
@@ -28,7 +29,6 @@ import {
   requestLayerNavigation,
   requestPatchBindingNavigation,
 } from "../../../state/appStores";
-import type * as types from "../../../types";
 import { DmxIoMode } from "../../../types";
 import type { ChannelInfo } from "../model/dmx-universe-model";
 import {
@@ -93,7 +93,7 @@ export function createDmxChannelNavigationController(
 
   /** Reports whether a layer row asserts a normalized fixture attribute. */
   const layerHasAssertedAttribute = (
-    rows: types.OutboundElementParameterValues[],
+    rows: LayerElementParameterValues[],
     fixtureUid: string,
     elementIndex: number,
     attributeKey: string,

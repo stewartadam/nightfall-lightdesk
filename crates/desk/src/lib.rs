@@ -115,6 +115,7 @@ impl Plugin for DeskPlugin {
         app.add_message::<EngineActionEnvelope<BlueprintAction>>();
         app.add_message::<BlueprintDefinitionChange>();
         app.init_resource::<BlueprintReferenceIndex>();
+        app.init_resource::<websocket::LayerStackPublication>();
         app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<UiNotification>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
@@ -389,7 +390,8 @@ impl Plugin for DeskPlugin {
                 websocket::send_io_settings_on_change,
                 websocket::send_available_audio_devices_on_change,
                 websocket::send_available_usb_dmx_devices_on_change,
-                websocket::handle_low_freq_updates,
+                // Layer stack slots refer to the parameter layout published before it.
+                websocket::handle_low_freq_updates.after(websocket::send_parameter_state),
             )
                 .in_set(ClientOutput),
         );

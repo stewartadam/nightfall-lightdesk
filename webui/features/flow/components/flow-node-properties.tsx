@@ -9,6 +9,7 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
 import { getLogger } from "../../../lib/logger";
+import type { LayerState } from "../../../lib/ws/types";
 import * as types from "../../../types";
 import type * as flowTypes from "../../../types/index";
 import { WaveformEditor } from "../../fx";
@@ -86,7 +87,7 @@ export function FlowNodeProperties(props: {
   connectedInputs: () => Set<string>;
   portValues: () => { [portRef: string]: flowTypes.FlowValue };
   flow: () => flowTypes.FlowDefinition | undefined;
-  layerStack: () => types.OutboundLayerState[];
+  layerStack: () => LayerState[];
   flowContext: FlowContextType;
   onRename: (nodeId: flowTypes.FlowNodeId, label: string) => void;
 }) {
@@ -97,7 +98,7 @@ export function FlowNodeProperties(props: {
     | { status: "waiting"; sourceNode: flowTypes.FlowNodeDefinition }
     | {
         status: "ready";
-        layer: types.OutboundLayerState;
+        layer: LayerState;
         sourceNode: flowTypes.FlowNodeDefinition;
       };
 

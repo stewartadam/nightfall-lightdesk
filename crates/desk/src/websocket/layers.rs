@@ -7,6 +7,9 @@
  */
 
 //! Layer-stack projection and transition-state derivation.
+//!
+//! Layer values are packed by the slots of the parameter state layout, the same numbering
+//! parameter state frames use, and a snapshot is only sent when it differs from the last one.
 
 use nightfall_fixture_model::prelude::*;
 
@@ -23,271 +26,95 @@ pub type LayerSnapshotData = (
     Option<&'static InstanceStatus>,
 );
 
-/// Converts a parameter reference into the ECS instance key used by layer maps.
-fn parameter_instance(parameter: ParameterRef) -> moonshine_kind::Instance<Parameter> {
-    unsafe { moonshine_kind::Instance::from_entity_unchecked(parameter.entity()) }
+/// Encoded payload of the last layer stack snapshot sent to clients.
+///
+/// Layer stack snapshots are droppable, so clients only ever need the newest one; an unchanged
+/// snapshot carries nothing new and is not sent again.
+#[derive(Resource, Default)]
+pub struct LayerStackPublication {
+    last_payload: Option<Vec<u8>>,
 }
 
-/// Transform a `Layer` into per-fixture element values keyed by attribute.
-fn layer_absolute_fixture_state(
-    layer: &Layer,
-    param_index: &ParameterIndex,
-    parameters_query: &Query<&Parameter>,
-) -> Vec<OutboundElementParameterValues> {
-    // (fixture_id -> vec[element_index -> attribute map])
-    let mut per_fixture: HashMap<Uuid, Vec<HashMap<Attribute, ParameterValue>>> = HashMap::new();
-
-    for (param_instance, (param_value, _)) in layer.absolute.iter() {
-        // Determine fixture/element and attribute information
-        let typed_param = parameter_instance(param_instance);
-        let Some(ParameterLocation {
-            element: fixture_ref,
-            ..
-        }) = param_index.location(&typed_param)
-        else {
-            continue;
-        };
-        let param = parameters_query.get(param_instance.entity()).unwrap();
-        let attribute = param.metadata.attribute.clone();
-
-        // Insert into map
-        let entry = per_fixture.entry(fixture_ref.fixture_uid).or_default();
-        let element_index = fixture_ref.index.unwrap_or(1) as usize - 1;
-        if entry.len() <= element_index {
-            // Ensure capacity
-            entry.resize_with(element_index + 1, HashMap::new);
-        }
-        entry[element_index].insert(attribute, *param_value);
+impl LayerStackPublication {
+    /// Forgets the last snapshot so the next one is sent even when unchanged, for clients that
+    /// just resynced and hold no layer stack yet.
+    pub fn invalidate(&mut self) {
+        self.last_payload = None;
     }
-
-    // Convert to Vec as required by the websocket schema
-    per_fixture
-        .into_iter()
-        .map(|(fixture_uid, parameters)| OutboundElementParameterValues {
-            fixture_uid,
-            parameters,
-        })
-        .collect()
 }
 
-/// Transform a `Layer` into per-fixture element values keyed by attribute.
-fn layer_relative_fixture_state(
-    layer: &Layer,
-    param_index: &ParameterIndex,
-    parameters_query: &Query<&Parameter>,
-) -> Vec<OutboundElementParameterValues> {
-    // (fixture_id -> vec[element_index -> attribute map])
-    let mut per_fixture: HashMap<Uuid, Vec<HashMap<Attribute, ParameterValue>>> = HashMap::new();
-
-    for (param_instance, (param_value, _)) in layer.relative.iter() {
-        // Determine fixture/element and attribute information
-        let typed_param = parameter_instance(param_instance);
-        let Some(ParameterLocation {
-            element: fixture_ref,
-            ..
-        }) = param_index.location(&typed_param)
-        else {
-            continue;
-        };
-        let param = parameters_query.get(param_instance.entity()).unwrap();
-        let attribute = param.metadata.attribute.clone();
-
-        // Insert into map
-        let entry = per_fixture.entry(fixture_ref.fixture_uid).or_default();
-        let element_index = fixture_ref.index.unwrap_or(1) as usize - 1;
-        if entry.len() <= element_index {
-            // Ensure capacity
-            entry.resize_with(element_index + 1, HashMap::new);
+/// Packs a layer's assertions of one kind by layout slot, leaving out parameters the layout lacks.
+fn packed_assertions<'a>(
+    assertions: impl Iterator<Item = (ParameterRef, &'a ParameterValue)>,
+    slot_of: &impl Fn(ParameterRef) -> Option<u32>,
+) -> PackedLayerAssertions {
+    let mut packed = PackedLayerAssertions::default();
+    for (parameter, value) in assertions {
+        if let Some(slot) = slot_of(parameter) {
+            packed.push(slot, value);
         }
-        entry[element_index].insert(attribute, *param_value);
     }
-
-    // Convert to Vec as required by the websocket schema
-    per_fixture
-        .into_iter()
-        .map(|(fixture_uid, parameters)| OutboundElementParameterValues {
-            fixture_uid,
-            parameters,
-        })
-        .collect()
+    packed
 }
 
-/// Transform lookahead assertions into a fixture-centric websocket representation.
-fn lookahead_assertions_fixture_state(
-    assertions: Option<&LookaheadAssertions>,
-    param_index: &ParameterIndex,
-    parameters_query: &Query<&Parameter>,
-) -> Vec<OutboundElementParameterValues> {
-    let Some(assertions) = assertions else {
-        return Vec::new();
-    };
-
-    let mut per_fixture: HashMap<Uuid, Vec<HashMap<Attribute, ParameterValue>>> = HashMap::new();
-
-    for assertion in &assertions.assertions {
-        let Some(ParameterLocation {
-            element: fixture_ref,
-            ..
-        }) = param_index.location(&assertion.parameter)
-        else {
-            continue;
-        };
-        let Ok(parameter) = parameters_query.get(assertion.parameter.entity()) else {
-            continue;
-        };
-        let attribute = parameter.metadata.attribute.clone();
-        let entry = per_fixture.entry(fixture_ref.fixture_uid).or_default();
-        let element_index = fixture_ref.index.unwrap_or(1) as usize - 1;
-        if entry.len() <= element_index {
-            entry.resize_with(element_index + 1, HashMap::new);
-        }
-        entry[element_index].insert(attribute, assertion.value);
-    }
-
-    per_fixture
-        .into_iter()
-        .map(|(fixture_uid, parameters)| OutboundElementParameterValues {
-            fixture_uid,
-            parameters,
-        })
-        .collect()
-}
-
-/// Transform a `ComputedLayer` into per-fixture element values keyed by attribute.
-fn computed_layer_fixture_state(
+/// Packs a layer's computed absolute values as parallel slot and value buffers.
+fn packed_computed_values(
     output: &ComputedLayer,
-    param_index: &ParameterIndex,
-    parameters_query: &Query<&Parameter>,
-) -> Vec<OutboundElementComputedState> {
-    // (fixture_id -> vec[element_index -> attribute map])
-    let mut per_fixture: HashMap<Uuid, Vec<HashMap<Attribute, ParameterDmxValue>>> = HashMap::new();
-
-    for (param_instance, value) in output.absolute.iter() {
-        // Determine fixture/element and attribute information
-        let typed_param = parameter_instance(param_instance);
-        let Some(ParameterLocation {
-            element: fixture_ref,
-            ..
-        }) = param_index.location(&typed_param)
-        else {
-            continue;
-        };
-        let param = parameters_query.get(param_instance.entity()).unwrap();
-        let attribute = param.metadata.attribute.clone();
-
-        // Insert into map
-        let entry = per_fixture.entry(fixture_ref.fixture_uid).or_default();
-        let element_index = fixture_ref.index.unwrap_or(1) as usize - 1;
-        if entry.len() <= element_index {
-            // Ensure capacity
-            entry.resize_with(element_index + 1, HashMap::new);
+    slot_of: &impl Fn(ParameterRef) -> Option<u32>,
+) -> (PackedBytes, PackedBytes) {
+    let mut slots = PackedBytes::default();
+    let mut values = PackedBytes::default();
+    for (parameter, value) in output.absolute.iter() {
+        if let Some(slot) = slot_of(parameter) {
+            slots.push_u32(slot);
+            values.push_f32(*value);
         }
-        entry[element_index].insert(attribute, *value);
     }
-
-    // Convert to Vec as required by the websocket schema
-    per_fixture
-        .into_iter()
-        .map(|(fixture_uid, parameters)| OutboundElementComputedState {
-            fixture_uid,
-            parameters,
-        })
-        .collect()
+    (slots, values)
 }
 
-/// Builds fixture-centric transition flags for one computed layer snapshot.
-pub(super) fn computed_transition_fixture_state(
+/// Returns the layout slots of every parameter whose computed value in this layer is still
+/// transitioning, because the layer is releasing, the compositor flagged it, or its fade has not
+/// reached the target yet.
+pub(super) fn computed_transitioning_slots(
     layer: &Layer,
     output: &ComputedLayer,
-    param_index: &ParameterIndex,
+    slot_of: &impl Fn(ParameterRef) -> Option<u32>,
     parameters_query: &Query<&Parameter>,
     is_releasing: bool,
     compositing_context: Option<&LayerCompositingContext>,
-) -> Vec<OutboundElementTransitionState> {
-    let mut per_fixture: HashMap<Uuid, Vec<HashMap<Attribute, bool>>> = HashMap::new();
-
-    let mut mark_transition = |param_instance: ParameterRef, active: bool| {
-        if !active {
-            return;
+) -> PackedBytes {
+    let mut slots = PackedBytes::default();
+    for (values, outputs) in [
+        (&layer.absolute, &output.absolute),
+        (&layer.relative, &output.relative),
+    ] {
+        for (param_instance, (value, transition)) in values.iter() {
+            let Some(slot) = slot_of(param_instance) else {
+                continue;
+            };
+            let active = is_releasing
+                || layer
+                    .transitioning
+                    .get(param_instance)
+                    .copied()
+                    .unwrap_or(false)
+                || transition.as_ref().is_some_and(|transition| {
+                    is_transition_active(
+                        parameters_query,
+                        param_instance,
+                        value,
+                        transition,
+                        outputs.get(param_instance).copied().unwrap_or_default(),
+                        compositing_context,
+                    )
+                });
+            if active {
+                slots.push_u32(slot);
+            }
         }
-
-        let typed_param = parameter_instance(param_instance);
-        let Some(ParameterLocation {
-            element: fixture_ref,
-            ..
-        }) = param_index.location(&typed_param)
-        else {
-            return;
-        };
-        let Ok(parameter) = parameters_query.get(param_instance.entity()) else {
-            return;
-        };
-
-        let entry = per_fixture.entry(fixture_ref.fixture_uid).or_default();
-        let element_index = fixture_ref.index.unwrap_or(1) as usize - 1;
-        if entry.len() <= element_index {
-            entry.resize_with(element_index + 1, HashMap::new);
-        }
-        entry[element_index].insert(parameter.metadata.attribute.clone(), true);
-    };
-
-    for (param_instance, (value, transition)) in layer.absolute.iter() {
-        let current_output = output
-            .absolute
-            .get(param_instance)
-            .copied()
-            .unwrap_or_default();
-        let active = is_releasing
-            || layer
-                .transitioning
-                .get(param_instance)
-                .copied()
-                .unwrap_or(false)
-            || transition.as_ref().is_some_and(|transition| {
-                is_transition_active(
-                    parameters_query,
-                    param_instance,
-                    value,
-                    transition,
-                    current_output,
-                    compositing_context,
-                )
-            });
-        mark_transition(param_instance, active);
     }
-
-    for (param_instance, (value, transition)) in layer.relative.iter() {
-        let current_output = output
-            .relative
-            .get(param_instance)
-            .copied()
-            .unwrap_or_default();
-        let active = is_releasing
-            || layer
-                .transitioning
-                .get(param_instance)
-                .copied()
-                .unwrap_or(false)
-            || transition.as_ref().is_some_and(|transition| {
-                is_transition_active(
-                    parameters_query,
-                    param_instance,
-                    value,
-                    transition,
-                    current_output,
-                    compositing_context,
-                )
-            });
-        mark_transition(param_instance, active);
-    }
-
-    per_fixture
-        .into_iter()
-        .map(|(fixture_uid, parameters)| OutboundElementTransitionState {
-            fixture_uid,
-            parameters,
-        })
-        .collect()
+    slots
 }
 
 /// Reports whether a materialized transition is still changing its parameter output.
@@ -360,19 +187,23 @@ pub(super) fn is_transition_active(
     ratio < 1.0
 }
 
-/// Sends the current layer stack (metadata + computed values) to websocket clients
+/// Sends the current layer stack (metadata + computed values) to websocket clients when it
+/// differs from the last snapshot sent.
+///
+/// Run it after the parameter state layout is published in the same frame, so clients always
+/// hold the layout the snapshot's slots refer to.
 pub fn send_layer_stack(
-    fixture_data_provider: &Res<FixtureDataProviderExt>,
+    projection: &ParameterStateProjection,
     parameters_query: Query<&Parameter>,
     layers: Query<LayerSnapshotData>,
+    publication: &mut LayerStackPublication,
     mut diagnostics: Option<&mut Diagnostics>,
-    broadcaster: &Res<ClientEventSink>,
+    broadcaster: &ClientEventSink,
 ) {
     let _span = tracing::debug_span!("send_layer_stack").entered();
     let build_start = Instant::now();
     let mut transition_build_elapsed = Duration::ZERO;
-    // Acquire parameter map lock once for all layers
-    let param_index = fixture_data_provider.parameter_index();
+    let slot_of = |parameter: ParameterRef| projection.slot_of(parameter);
 
     // Collect and sort by the same priority/activation ordering as the compositor.
     let mut stack: Vec<_> = layers
@@ -389,15 +220,16 @@ pub fn send_layer_stack(
             )| {
                 let transition_start = Instant::now();
                 let is_releasing = release_marker.is_some();
-                let computed_transitioning = computed_transition_fixture_state(
+                let transitioning_slots = computed_transitioning_slots(
                     layer,
                     &output.0,
-                    &param_index,
+                    &slot_of,
                     &parameters_query,
                     is_releasing,
                     compositing_context,
                 );
                 transition_build_elapsed += transition_start.elapsed();
+                let (computed_slots, computed_values) = packed_computed_values(&output.0, &slot_of);
 
                 (
                     *layer.priority,
@@ -406,29 +238,32 @@ pub fn send_layer_stack(
                         creator: layer.creator.clone(),
                         object_ref: object_ref.map(|marker| marker.0.clone()),
                         priority: layer.priority,
-                        is_releasing: release_marker.is_some(),
+                        is_releasing,
                         runtime_position: runtime_status.map(|status| status.position.clone()),
-                        asserted_absolute_values: layer_absolute_fixture_state(
-                            layer,
-                            &param_index,
-                            &parameters_query,
+                        asserted_absolute: packed_assertions(
+                            layer
+                                .absolute
+                                .iter()
+                                .map(|(parameter, (value, _))| (parameter, value)),
+                            &slot_of,
                         ),
-                        asserted_relative_values: layer_relative_fixture_state(
-                            layer,
-                            &param_index,
-                            &parameters_query,
+                        asserted_relative: packed_assertions(
+                            layer
+                                .relative
+                                .iter()
+                                .map(|(parameter, (value, _))| (parameter, value)),
+                            &slot_of,
                         ),
-                        lookahead_asserted_values: lookahead_assertions_fixture_state(
-                            lookahead_assertions,
-                            &param_index,
-                            &parameters_query,
+                        lookahead_asserted: packed_assertions(
+                            lookahead_assertions
+                                .into_iter()
+                                .flat_map(|lookahead| &lookahead.assertions)
+                                .map(|assertion| (assertion.parameter.into(), &assertion.value)),
+                            &slot_of,
                         ),
-                        computed_values: computed_layer_fixture_state(
-                            &output.0,
-                            &param_index,
-                            &parameters_query,
-                        ),
-                        computed_transitioning,
+                        computed_slots,
+                        computed_values,
+                        transitioning_slots,
                     },
                 )
             },
@@ -436,7 +271,10 @@ pub fn send_layer_stack(
         .collect();
 
     stack.sort_by_key(|(priority, activation_time, _)| (*priority, *activation_time));
-    let stack: Vec<_> = stack.into_iter().map(|(_, _, layer)| layer).collect();
+    let stack = OutboundLayerStack {
+        layout_id: projection.layout_id(),
+        layers: stack.into_iter().map(|(_, _, layer)| layer).collect(),
+    };
     let build_elapsed = build_start.elapsed();
     if let Some(diagnostics) = diagnostics.as_deref_mut() {
         record_elapsed_ms(diagnostics, &LAYER_STACK_BUILD_MS, build_elapsed);
@@ -448,13 +286,24 @@ pub fn send_layer_stack(
     }
 
     let broadcast_start = Instant::now();
-    broadcaster.publish(DISCRIMINATOR_DROPPABLE, &DeskWsMessage::LayerStack(&stack));
+    let Some(message) =
+        EncodedClientMessage::new(DISCRIMINATOR_DROPPABLE, &DeskWsMessage::LayerStack(&stack))
+    else {
+        tracing::warn!("Failed to serialize layer stack");
+        return;
+    };
+    let changed = publication.last_payload.as_ref() != Some(&message.payload);
+    if changed {
+        publication.last_payload = Some(message.payload.clone());
+        broadcaster.send(message);
+    }
     let broadcast_elapsed = broadcast_start.elapsed();
     if let Some(diagnostics) = diagnostics {
         record_elapsed_ms(diagnostics, &LAYER_STACK_BROADCAST_MS, broadcast_elapsed);
     }
     tracing::trace!(
-        layer_count = stack.len(),
+        layer_count = stack.layers.len(),
+        changed,
         build_ms = build_elapsed.as_secs_f64() * 1000.0,
         transition_build_ms = transition_build_elapsed.as_secs_f64() * 1000.0,
         broadcast_ms = broadcast_elapsed.as_secs_f64() * 1000.0,

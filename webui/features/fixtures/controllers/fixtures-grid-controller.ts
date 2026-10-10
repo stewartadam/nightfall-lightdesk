@@ -23,8 +23,8 @@ import type {
 import { CompactSelection } from "../../../lib/data-grid-types";
 import { emptyGridSelection } from "../../../lib/datagrid";
 import { EMPTY_TABLE_FILTERS } from "../../../lib/datagrid-filtering";
+import type { LayerState } from "../../../lib/ws/types";
 import { dockApi, requestLayerNavigation } from "../../../state/appStores";
-import type * as types from "../../../types";
 import type {
   FixtureDisplayRow,
   FixtureGridColumn,
@@ -42,7 +42,7 @@ interface FixturesGridControllerOptions {
   allRows: () => readonly FixtureDisplayRow[];
   rows: () => readonly FixtureDisplayRow[];
   columns: () => readonly FixtureGridColumn[];
-  layerStack: () => readonly types.OutboundLayerState[];
+  layerStack: () => readonly LayerState[];
   showReleasedOutput: () => boolean;
   setTableFilters: (filters: typeof EMPTY_TABLE_FILTERS) => void;
   setSelection: Setter<GridSelection>;

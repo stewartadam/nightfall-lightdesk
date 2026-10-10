@@ -6,8 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { submitCommand } from "./gdtf-bench-support";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { prepareStoreSeededTestApp } from "./showfile-startup";
+import {
+  prepareStoreSeededTestApp,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 const FIXTURE_UID = "11111111111111111111111111111111";
 
@@ -712,4 +716,68 @@ test("layers panel pauses offscreen snapshots and refreshes on reentry", async (
   await expect(
     panel.getByRole("gridcell", { name: "199", exact: true }),
   ).toBeVisible();
+});
+
+/**
+ * Verifies the backend's slot-packed layer stack decodes into the Layers panel: programmer
+ * intensity set by command shows as the layer's asserted value for each selected fixture.
+ */
+test("layers panel shows programmer values sent by the backend", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 2200, height: 1200 });
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    const created = await stores.sendAndAwait({
+      module: "FixtureLibraryCommand",
+      command: {
+        type: "CreateFixturesFromLibrary",
+        data: {
+          make: "Generic",
+          model: "Moving Head RGBW",
+          mode: "Spot",
+          fixtures: [9101, 9102, 9103, 9104].map((id) => ({
+            id,
+            label: `Layer Probe ${id}`,
+          })),
+        },
+      },
+    });
+    if (created.outcome.type !== "Succeeded") {
+      throw new Error(`Unable to patch fixtures: ${JSON.stringify(created)}`);
+    }
+  });
+  await submitCommand(page, "fix 9101>9104 int @ 50");
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.addPanel({
+      id: "panel-LayerStack-backend",
+      component: "LayerStack",
+      title: "Layers",
+      position: { direction: "right" },
+      params: {},
+    });
+    panel.api.setActive();
+  });
+
+  const panel = page.locator(
+    '[data-panel-kind="layer"][data-panel-id="panel-LayerStack-backend"]',
+  );
+  const programmerLayer = panel
+    .locator("details")
+    .filter({ hasText: "Programmer" });
+  await expect(programmerLayer).toHaveCount(1);
+  await panel.getByRole("button", { name: "Expand all layers" }).click();
+  await expect(
+    programmerLayer
+      .locator('[data-grid-column-key="Intensity_Value"]')
+      .filter({ hasText: "50%" }),
+  ).toHaveCount(4);
+  await page.screenshot({
+    path: testInfo.outputPath("layers-panel-backend-programmer.png"),
+  });
+
+  await submitCommand(page, "clear");
 });

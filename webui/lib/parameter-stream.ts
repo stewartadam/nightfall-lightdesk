@@ -77,7 +77,7 @@ function ownedBuffer(bytes: Uint8Array): ArrayBuffer {
 /**
  * Copies `bytes` into `f32`s, or returns `undefined` when its length is not a whole number of them.
  */
-function floats(bytes: Uint8Array): Float32Array | undefined {
+export function floats(bytes: Uint8Array): Float32Array | undefined {
   return bytes.byteLength % 4 === 0
     ? new Float32Array(ownedBuffer(bytes))
     : undefined;
@@ -86,7 +86,7 @@ function floats(bytes: Uint8Array): Float32Array | undefined {
 /**
  * Copies `bytes` into `u32`s, or returns `undefined` when its length is not a whole number of them.
  */
-function words(bytes: Uint8Array): Uint32Array | undefined {
+export function words(bytes: Uint8Array): Uint32Array | undefined {
   return bytes.byteLength % 4 === 0
     ? new Uint32Array(ownedBuffer(bytes))
     : undefined;

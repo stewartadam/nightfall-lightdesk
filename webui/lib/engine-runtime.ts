@@ -152,6 +152,7 @@ import type {
   AnyWsMessage,
   ElementParameterState,
   FixtureParameterState,
+  LayerState,
 } from "./ws/types";
 
 /** Worker stats per message type */
@@ -1234,7 +1235,7 @@ function dispatchMessage(raw: AnyWsMessage) {
     }
 
     case "LayerStack": {
-      const data = raw.data as types.OutboundLayerState[];
+      const data = raw.data as LayerState[];
       measurePerformanceScope(
         "websocket-main.layer-stack.store-set",
         () => setStoreAction(layerStack, "Receive LayerStack", data),
@@ -2752,6 +2753,9 @@ export const engineRuntime = {
         case "status":
           log.trace(`Connection status change: ${msg.status}`);
           setConnectionStatus(msg.status);
+          if (msg.status !== EngineRuntimeStatus.Connected) {
+            parameterStateDecoder.reset();
+          }
           if (msg.status === EngineRuntimeStatus.Disconnected) {
             rejectPendingCommandWaiters(
               new EngineRuntimeCommandDisconnectedError(),

@@ -12,7 +12,11 @@ import {
   fixtureValueSourceForLayer,
 } from "../../../lib/fixture-value-state";
 import { normalizeAttributeName } from "../../../lib/utils";
-import type * as types from "../../../types";
+import type {
+  LayerElementParameterValues,
+  LayerElementTransitionState,
+  LayerState,
+} from "../../../lib/ws/types";
 
 export interface FixtureLayerCellState {
   sourceStates: ReadonlyMap<string, FixtureValueSourceState>;
@@ -79,7 +83,7 @@ function recordSourceAssertion(
 
 /** Builds normalized keys for transition flags reported by one layer snapshot. */
 function buildTransitioningFixtureAttributeLookup(
-  rows: readonly types.OutboundElementTransitionState[],
+  rows: readonly LayerElementTransitionState[],
 ): TransitioningFixtureAttributeLookup {
   const transitioning = new Set<string>();
 
@@ -125,7 +129,7 @@ function recordTransitionAssertion(
 
 /** Visits every asserted fixture attribute in one row set. */
 function visitAssertedFixtureAttributes(
-  rows: readonly types.OutboundElementParameterValues[],
+  rows: readonly LayerElementParameterValues[],
   visitor: (
     fixtureUid: string,
     elementIndex: number,
@@ -192,7 +196,7 @@ function finishAggregateSourceState(
 
 /** Builds layer-derived fixture cell source and transition lookups for the Fixtures grid. */
 export function buildFixtureLayerCellState(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
 ): FixtureLayerCellState {
   const mutableSourceStates = new Map<string, MutableFixtureValueSourceState>();
   const aggregateSourceStates = new Map<

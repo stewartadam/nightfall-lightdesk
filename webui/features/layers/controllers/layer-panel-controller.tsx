@@ -17,6 +17,7 @@ import {
   useShallowStore,
 } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
+import type { LayerState } from "../../../lib/ws/types";
 import {
   activeInstances,
   attributeMetadata,
@@ -197,7 +198,7 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     );
   };
 
-  const isProgrammerLayer = (layer: types.OutboundLayerState): boolean => {
+  const isProgrammerLayer = (layer: LayerState): boolean => {
     if (
       layer.creator === "Programmer" ||
       layer.creator.startsWith("Programmer Instruction ")
@@ -273,7 +274,7 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     });
   };
 
-  const handleNavigateToLayerObject = (layer: types.OutboundLayerState) => {
+  const handleNavigateToLayerObject = (layer: LayerState) => {
     if (isProgrammerLayer(layer)) {
       openProgrammerPanel();
       return;

@@ -26,7 +26,7 @@ use std::time::Duration;
 use bevy_ecs::prelude::*;
 use moonshine_kind::Instance;
 use nightfall::prelude::FixtureRef;
-use nightfall_compositor::prelude::{AttributedAssertionsLayer, ParameterMap};
+use nightfall_compositor::prelude::{AttributedAssertionsLayer, ParameterMap, ParameterRef};
 use nightfall_dmx::prelude::ParameterValue;
 use serde::{Serialize, Serializer};
 use uuid::Uuid;
@@ -417,6 +417,17 @@ impl ParameterStateProjection {
     /// Returns the number of slots in the current layout.
     pub fn slot_count(&self) -> usize {
         self.slots.len()
+    }
+
+    /// Returns the id of the current layout, which other slot-indexed client messages carry so
+    /// clients resolve their slots against the same layout as parameter state frames.
+    pub fn layout_id(&self) -> u32 {
+        self.layout.layout_id
+    }
+
+    /// Returns the layout slot of `parameter`, or `None` when the current layout leaves it out.
+    pub fn slot_of(&self, parameter: impl Into<ParameterRef>) -> Option<u32> {
+        self.slot_by_parameter.get(parameter).copied()
     }
 }
 

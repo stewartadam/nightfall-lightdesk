@@ -17,12 +17,13 @@ import {
   isProgrammerAssertionLayer,
   isTransportInputAssertionLayer,
 } from "./fixture-value-state";
+import type { LayerElementParameterValues, LayerState } from "./ws/types";
 
 /** Builds a compact layer fixture row for source-state tests. */
 function row(
   fixtureUid: string,
   parameters: Array<Record<string, types.ParameterValue>>,
-): types.OutboundElementParameterValues {
+): LayerElementParameterValues {
   return { fixture_uid: fixtureUid, parameters };
 }
 
@@ -31,7 +32,7 @@ function layer(
   objectRef: types.ObjectRef | undefined,
   parameters: Array<Record<string, types.ParameterValue>>,
   creator = "Test",
-): types.OutboundLayerState {
+): LayerState {
   return {
     creator,
     object_ref: objectRef,

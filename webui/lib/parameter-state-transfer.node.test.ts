@@ -8,7 +8,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ParameterLayout } from "../types";
+import type {
+  OutboundLayerStack,
+  OutboundLayerState,
+  ParameterLayout,
+} from "../types";
 import {
   carriesParameterState,
   type PackedParameterState,
@@ -184,4 +188,139 @@ test("queued worker messages route layouts and unpack values", () => {
   assert.equal(carriesParameterState(other), false);
   assert.equal(queuedWorkerMessageData(other, decoder), other.data);
   assert.equal(carriesParameterState(undefined), false);
+});
+
+/** Packs numbers as little-endian bytes the way the backend writes layer stack buffers. */
+function bytes(kind: "u32" | "f32", values: number[]): Uint8Array {
+  const array =
+    kind === "u32" ? Uint32Array.from(values) : Float32Array.from(values);
+  // Offset into a larger buffer, as a CBOR decoder returns byte strings, to exercise realignment.
+  const padded = new Uint8Array(array.byteLength + 1);
+  padded.set(new Uint8Array(array.buffer), 1);
+  return padded.subarray(1);
+}
+
+/** Builds one packed wire layer with only the given assertion and computed buffers set. */
+function packedLayer(
+  absolute: [slot: number, kind: number, value: number][],
+  computed: [slot: number, value: number][],
+  transitioning: number[],
+): OutboundLayerState {
+  const empty = {
+    slots: new Uint8Array(0),
+    kinds: new Uint8Array(0),
+    values: new Uint8Array(0),
+  };
+  return {
+    creator: "Programmer",
+    object_ref: undefined,
+    priority: 10,
+    is_releasing: false,
+    runtime_position: undefined,
+    asserted_absolute: {
+      slots: bytes(
+        "u32",
+        absolute.map(([slot]) => slot),
+      ),
+      kinds: Uint8Array.from(absolute.map(([, kind]) => kind)),
+      values: bytes(
+        "f32",
+        absolute.map(([, , value]) => value),
+      ),
+    },
+    asserted_relative: empty,
+    lookahead_asserted: empty,
+    computed_slots: bytes(
+      "u32",
+      computed.map(([slot]) => slot),
+    ),
+    computed_values: bytes(
+      "f32",
+      computed.map(([, value]) => value),
+    ),
+    transitioning_slots: bytes("u32", transitioning),
+  } as OutboundLayerState;
+}
+
+/** Layer stack slots resolve to fixture element attribute maps, keeping earlier elements empty. */
+test("decoder restores layer stack values from layout slots", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(
+    layout(3, [
+      { fixture_uid: "first", elements: [["Dimmer"]] },
+      { fixture_uid: "second", elements: [["Pan"], ["Dimmer", "Red"]] },
+    ]),
+  );
+  const stack: OutboundLayerStack = {
+    layout_id: 3,
+    layers: [packedLayer([[3, 0, 200]], [[3, 180]], [3])],
+  };
+
+  const message = queuedWorkerMessageData(
+    { data: { type: "LayerStack", data: stack } as unknown as AnyWsMessage },
+    decoder,
+  );
+
+  assert.deepEqual(message, {
+    type: "LayerStack",
+    data: [
+      {
+        creator: "Programmer",
+        object_ref: undefined,
+        priority: 10,
+        is_releasing: false,
+        runtime_position: undefined,
+        asserted_absolute_values: [
+          {
+            fixture_uid: "second",
+            parameters: [
+              {},
+              { Red: { type: "Absolute", data: { value: 200 } } },
+            ],
+          },
+        ],
+        asserted_relative_values: [],
+        lookahead_asserted_values: [],
+        computed_values: [
+          { fixture_uid: "second", parameters: [{}, { Red: 180 }] },
+        ],
+        computed_transitioning: [
+          { fixture_uid: "second", parameters: [{}, { Red: true }] },
+        ],
+      },
+    ],
+  });
+});
+
+/** Snapshots for another layout or with slots outside the layout are dropped, not misapplied. */
+test("decoder drops layer stacks it cannot resolve", () => {
+  const decoder = new ParameterStateDecoder();
+  assert.equal(
+    decoder.unpackLayerStack({ layout_id: 1, layers: [] }),
+    undefined,
+  );
+  decoder.setLayout(layout(1, [{ fixture_uid: "a", elements: [["Dimmer"]] }]));
+  assert.deepEqual(decoder.unpackLayerStack({ layout_id: 1, layers: [] }), []);
+  assert.equal(
+    decoder.unpackLayerStack({ layout_id: 2, layers: [] }),
+    undefined,
+  );
+  assert.equal(
+    decoder.unpackLayerStack({
+      layout_id: 1,
+      layers: [packedLayer([], [[1, 5]], [])],
+    }),
+    undefined,
+  );
+});
+
+/** A reset decoder drops slot-indexed messages until a layout arrives again. */
+test("decoder reset forgets the layout", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(layout(1, [{ fixture_uid: "a", elements: [["Dimmer"]] }]));
+  decoder.reset();
+  assert.equal(
+    decoder.unpackLayerStack({ layout_id: 1, layers: [] }),
+    undefined,
+  );
 });

@@ -9,6 +9,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fixtureValueSourceState } from "../../../lib/fixture-value-state";
+import type {
+  LayerElementParameterValues,
+  LayerElementTransitionState,
+  LayerState,
+} from "../../../lib/ws/types";
 import type * as types from "../../../types";
 import { ObjectType } from "../../../types";
 import {
@@ -20,7 +25,7 @@ import {
 function row(
   fixtureUid: string,
   parameters: Array<Record<string, types.ParameterValue>>,
-): types.OutboundElementParameterValues {
+): LayerElementParameterValues {
   return { fixture_uid: fixtureUid, parameters };
 }
 
@@ -28,7 +33,7 @@ function row(
 function transitionRow(
   fixtureUid: string,
   parameters: Array<Record<string, boolean>>,
-): types.OutboundElementTransitionState {
+): LayerElementTransitionState {
   return { fixture_uid: fixtureUid, parameters };
 }
 
@@ -48,11 +53,11 @@ function parameterLayerRef(id: number): types.ObjectRef {
 /** Builds a compact layer state for fixture layer-cell state tests. */
 function layer(options: {
   objectRef?: types.ObjectRef;
-  absoluteRows?: types.OutboundElementParameterValues[];
-  relativeRows?: types.OutboundElementParameterValues[];
-  transitionRows?: types.OutboundElementTransitionState[];
+  absoluteRows?: LayerElementParameterValues[];
+  relativeRows?: LayerElementParameterValues[];
+  transitionRows?: LayerElementTransitionState[];
   creator?: string;
-}): types.OutboundLayerState {
+}): LayerState {
   return {
     creator: options.creator ?? "Test",
     object_ref: options.objectRef,
