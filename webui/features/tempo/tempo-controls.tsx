@@ -55,6 +55,15 @@ function sendTempoCommand(command: TempoCommand) {
 }
 
 /**
+ * Sends one tap stamped with the input event's own time, so the engine fits the
+ * tempo on this device's clock and neither network delay nor engine frame timing
+ * skews the spacing between taps.
+ */
+function sendTap(event: Event) {
+  sendTempoCommand({ type: "Tap", data: event.timeStamp });
+}
+
+/**
  * Show tempo readout for the status bar and compact header: a beat indicator
  * that follows the engine's beat counter, the BPM (which opens tempo actions),
  * and a Tap button. Tapping registers on pointer down for the tightest timing.
@@ -259,13 +268,13 @@ export function TempoControls(props: { placement: "above" | "below" }) {
             class="nf-tempo-tap"
             data-testid="tempo-tap"
             onPointerDown={(event) => {
-              if (event.button === 0) sendTempoCommand({ type: "Tap" });
+              if (event.button === 0) sendTap(event);
             }}
             onKeyDown={(event) => {
               if (event.repeat) return;
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
-                sendTempoCommand({ type: "Tap" });
+                sendTap(event);
               }
             }}
           >

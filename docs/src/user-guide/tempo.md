@@ -12,6 +12,7 @@ Press **Tap** on the beat. The button responds the moment you press it, so tap o
 - **Each tap after that refines the tempo.** From the second tap on, Nightfall fits a steady beat through your recent taps. The BPM comes from their spacing, and the beat is pulled into line with where you tapped.
 - **Only your last 8 taps count.** Tapping longer does not keep averaging. Once you have tapped about 8 times, the tempo follows the most recent 8 taps (roughly two bars). That lets you keep tapping to follow a song that speeds up or slows down, and older taps stop influencing the result.
 - **A stray tap starts a fresh count.** A tap that lands more than 40% early or late compared with the current beat spacing is not averaged in. A double tap or a skipped beat are typical examples. Nightfall keeps the current tempo and starts counting again from that tap, so the next few taps set the tempo.
+- **Taps are timed where you make them.** The Tap button records the moment you pressed it on your own device, so network delay and the engine's frame rate do not change the tempo you tap. Taps from two devices are not mixed: a tap from a different device starts a fresh count.
 - **Stopping is safe.** When you stop tapping, the tempo keeps running at the last value.
 
 For the steadiest result, tap 8 or more beats evenly. To mark where the bar starts, pause for a few seconds and then tap on the "1".
@@ -68,7 +69,7 @@ In the [MIDI Input](panels/midi-input.md) and [OSC Input](panels/osc-input.md) m
 | `MultiplyTempo(0.5)` | Multiplies the tempo, for example `0.5` for half time and `2` for double time. |
 | `NudgeTempo(-0.25)` | Shifts the beat by the given number of beats. |
 
-Tempo actions run when a button is pressed and ignore the release. Taps from a MIDI or OSC controller are timed when Nightfall processes them, which can add a few milliseconds of jitter compared with the on-screen button.
+Tempo actions run when a button is pressed and ignore the release. Taps from a MIDI or OSC controller are timed the moment the message arrives.
 
 ## Flows
 

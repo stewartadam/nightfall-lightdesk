@@ -99,6 +99,47 @@ test("status bar tempo responds to taps, the menu and the command line", async (
   await expect.poll(() => targetBpm(page)).toBe(64);
 });
 
+/**
+ * Verifies taps exactly 500 ms apart produce exactly 120 BPM: taps carry the
+ * browser's own event time, so websocket delivery and engine frame timing must
+ * not change the fitted tempo.
+ */
+test("evenly spaced taps fit the exact tempo", async ({
+  page,
+  backendSlot,
+}) => {
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.showTempo?.get()),
+  );
+
+  await page.evaluate(async () => {
+    const tap = document.querySelector('[data-testid="tempo-tap"]');
+    if (!tap) throw new Error("Tap button missing");
+    const start = performance.now() + 100;
+    for (let index = 0; index < 10; index += 1) {
+      const due = start + index * 500;
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(0, due - performance.now() - 5)),
+      );
+      while (performance.now() < due) {
+        // Spin for the last few milliseconds so each tap fires on time.
+      }
+      tap.dispatchEvent(
+        new PointerEvent("pointerdown", { button: 0, bubbles: true }),
+      );
+    }
+  });
+
+  await expect
+    .poll(async () => Math.abs(((await targetBpm(page)) ?? 0) - 120), {
+      timeout: 5_000,
+    })
+    .toBeLessThan(0.1);
+});
+
 /** Verifies the phone header carries the tempo readout and a working Tap button. */
 test("compact header shows tempo controls on a phone", async ({
   page,

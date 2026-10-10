@@ -115,7 +115,12 @@ pub struct LastMidiEvent(pub Option<MidiLastEvent>);
 
 /// Runtime MIDI observation consumed by mapping dispatch without a user-command identity.
 #[derive(Clone, Debug, Message)]
-struct MidiInput(MidiLastEvent);
+struct MidiInput {
+    /// The received message.
+    event: MidiLastEvent,
+    /// When the input callback received the message.
+    received_at: Instant,
+}
 
 /// System that polls the MIDI event channel and writes events to the ECS event stream
 fn midi_event_system(
@@ -142,7 +147,10 @@ fn midi_event_system(
         // Update the last event resource for UI display
         last_event.0 = Some(midi_last_event.clone());
 
-        event_writer.write(MidiInput(midi_last_event));
+        event_writer.write(MidiInput {
+            event: midi_last_event,
+            received_at: raw_event.received_at,
+        });
     }
 }
 
@@ -174,7 +182,7 @@ fn handle_midi_events(
     mut invocations: MessageWriter<ActionInvocation>,
 ) {
     for event in events.read() {
-        let midi_event = &event.0;
+        let midi_event = &event.event;
         if let Some(action) = mappings.lookup(
             &midi_event.device,
             midi_event.channel,
@@ -183,11 +191,14 @@ fn handle_midi_events(
         ) {
             tracing::debug!(?midi_event, ?action, "MIDI mapping matched");
 
-            invocations.write(ActionInvocation::scalar(
-                action.clone(),
-                ActionSurface::Midi,
-                normalized_midi_value(midi_event.velocity),
-            ));
+            invocations.write(
+                ActionInvocation::scalar(
+                    action.clone(),
+                    ActionSurface::Midi,
+                    normalized_midi_value(midi_event.velocity),
+                )
+                .with_received_at(event.received_at),
+            );
         }
     }
 }

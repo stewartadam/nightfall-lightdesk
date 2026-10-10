@@ -79,7 +79,7 @@ pub fn register_tempo_actions(app: &mut App) {
             "Tap tempo",
             json!({ "type": "object" }),
         ),
-        |world, _: NoArguments, invocation| apply_on_press(world, invocation, TempoCommand::Tap),
+        |world, _: NoArguments, invocation| tap_on_press(world, invocation),
     );
     registry.register::<NoArguments, _>(
         descriptor(
@@ -132,7 +132,25 @@ fn apply_on_press(
     world
         .get_resource_mut::<ShowTempo>()
         .ok_or_else(|| InvocationError::new("tempo.unavailable", "Show tempo is unavailable"))?
-        .apply(&command);
+        .apply(&command, None);
+    Ok(InvocationDispatch::Succeeded { output: None })
+}
+
+/// Registers a tap when the invocation is a press, timed from when the surface received
+/// the input so the wait for the next frame does not skew the tempo.
+fn tap_on_press(
+    world: &mut World,
+    invocation: &ActionInvocation,
+) -> Result<InvocationDispatch, InvocationError> {
+    let Some(received_at) = invocation.received_at else {
+        return apply_on_press(world, invocation, TempoCommand::Tap(None));
+    };
+    if is_press(&invocation.input) {
+        world
+            .get_resource_mut::<ShowTempo>()
+            .ok_or_else(|| InvocationError::new("tempo.unavailable", "Show tempo is unavailable"))?
+            .tap_at(received_at);
+    }
     Ok(InvocationDispatch::Succeeded { output: None })
 }
 

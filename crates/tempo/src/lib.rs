@@ -24,11 +24,11 @@ pub mod ast_conv;
 pub mod engine;
 pub mod websocket;
 
-use crate::engine::{TempoEngine, TempoSnapshot};
+use crate::engine::{TapTime, TempoEngine, TempoSnapshot};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
-    pub use crate::engine::{TempoEngine, TempoSnapshot};
+    pub use crate::engine::{TapTime, TempoEngine, TempoSnapshot};
     pub use crate::{ShowTempo, TempoCommand, TempoPlugin, TempoUpdate};
 }
 
@@ -70,8 +70,10 @@ pub struct TempoUpdate;
 pub enum TempoCommand {
     /// Eases the tempo to a new BPM.
     SetBpm(f64),
-    /// Registers one tap of tap tempo.
-    Tap,
+    /// Registers one tap of tap tempo, optionally carrying when the tap happened on the
+    /// sending client's monotonic clock, in milliseconds. Timed taps keep their exact spacing
+    /// however long each takes to reach the engine.
+    Tap(Option<f64>),
     /// Eases the phase so that now becomes the nearest downbeat.
     Resync,
     /// Jumps forward to the next downbeat immediately.
@@ -98,6 +100,9 @@ impl TempoCommand {
             }
             Self::Nudge(beats) if !beats.is_finite() => Err(format!(
                 "Tempo nudge must be a number of beats, got {beats}"
+            )),
+            Self::Tap(Some(time)) if !time.is_finite() || *time < 0.0 => Err(format!(
+                "Tap time must be a non-negative number of milliseconds, got {time}"
             )),
             Self::SetBeatsPerBar(beats) if !(1..=engine::MAX_BEATS_PER_BAR).contains(beats) => {
                 Err(format!(
@@ -147,17 +152,35 @@ impl ShowTempo {
     }
 
     /// Applies one tempo command at the current wall-clock time.
-    pub fn apply(&mut self, command: &TempoCommand) {
+    ///
+    /// `client` identifies the client session that sent the command, if any. A tap that
+    /// carries its own time is fitted on that client's clock; without a sending client the
+    /// time cannot be trusted to share a clock with earlier taps, so the engine clock is used.
+    pub fn apply(&mut self, command: &TempoCommand, client: Option<ClientId>) {
         let now = self.now_secs();
         match *command {
             TempoCommand::SetBpm(bpm) => self.engine.set_bpm(bpm),
-            TempoCommand::Tap => self.engine.tap(now),
+            TempoCommand::Tap(time_ms) => self.engine.tap(match (client, time_ms) {
+                (Some(client), Some(time_ms)) => TapTime::Client {
+                    client: client.0,
+                    seconds: time_ms / 1000.0,
+                    received: now,
+                },
+                _ => TapTime::Engine(now),
+            }),
             TempoCommand::Resync => self.engine.resync(now),
             TempoCommand::Snap => self.engine.snap(now),
             TempoCommand::Multiply(factor) => self.engine.multiply(factor),
             TempoCommand::Nudge(beats) => self.engine.nudge(beats),
             TempoCommand::SetBeatsPerBar(beats) => self.engine.set_beats_per_bar(beats),
         }
+    }
+
+    /// Registers a tap that happened at `at`, such as when a MIDI or OSC message arrived,
+    /// rather than when the engine got around to processing it.
+    pub fn tap_at(&mut self, at: Instant) {
+        let time = at.saturating_duration_since(self.epoch).as_secs_f64();
+        self.engine.tap(TapTime::Engine(time));
     }
 
     /// Seconds elapsed since this resource's epoch, used as engine time.
@@ -180,7 +203,11 @@ fn handle_tempo_commands(
     for envelope in commands.read() {
         let result = match envelope.command.validate() {
             Ok(()) => {
-                tempo.apply(&envelope.command);
+                let client = match envelope.reply_target {
+                    ReplyTarget::Client(client) => Some(client),
+                    _ => None,
+                };
+                tempo.apply(&envelope.command, client);
                 responder.succeed(envelope.command_id)
             }
             Err(message) => responder.fail(
@@ -207,16 +234,44 @@ mod tests {
         assert!(TempoCommand::Nudge(f64::NAN).validate().is_err());
         assert!(TempoCommand::SetBeatsPerBar(0).validate().is_err());
         assert!(TempoCommand::SetBpm(128.0).validate().is_ok());
-        assert!(TempoCommand::Tap.validate().is_ok());
+        assert!(TempoCommand::Tap(Some(-1.0)).validate().is_err());
+        assert!(TempoCommand::Tap(None).validate().is_ok());
+        assert!(TempoCommand::Tap(Some(1234.5)).validate().is_ok());
+    }
+
+    /// Verifies taps timed at their arrival keep exact spacing however late they are applied.
+    #[test]
+    fn tap_at_uses_arrival_time() {
+        let mut tempo = ShowTempo::default();
+        let start = tempo.epoch + std::time::Duration::from_secs(1);
+        for index in 0..4 {
+            tempo.tap_at(start + std::time::Duration::from_millis(500 * index));
+        }
+        assert!((tempo.snapshot().target_bpm - 120.0).abs() < 1e-9);
+    }
+
+    /// Verifies a timed tap from the command line, which has no client clock to fit on,
+    /// falls back to the engine clock instead of trusting the supplied time.
+    #[test]
+    fn timed_tap_without_client_uses_engine_clock() {
+        let mut tempo = ShowTempo::default();
+        tempo.apply(&TempoCommand::Tap(Some(0.0)), None);
+        tempo.apply(&TempoCommand::Tap(Some(400.0)), None);
+        assert_eq!(
+            tempo.snapshot().target_bpm,
+            engine::MAX_BPM,
+            "back-to-back taps on the engine clock fit the fastest tempo, not the 150 BPM \
+             the supplied times imply"
+        );
     }
 
     /// Verifies the resource routes commands to the engine.
     #[test]
     fn apply_routes_commands_to_engine() {
         let mut tempo = ShowTempo::default();
-        tempo.apply(&TempoCommand::SetBpm(90.0));
-        tempo.apply(&TempoCommand::Multiply(2.0));
-        tempo.apply(&TempoCommand::SetBeatsPerBar(3));
+        tempo.apply(&TempoCommand::SetBpm(90.0), None);
+        tempo.apply(&TempoCommand::Multiply(2.0), None);
+        tempo.apply(&TempoCommand::SetBeatsPerBar(3), None);
         let snapshot = tempo.snapshot();
         assert_eq!(snapshot.target_bpm, 180.0);
         assert_eq!(snapshot.beats_per_bar, 3);

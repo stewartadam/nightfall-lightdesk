@@ -23,6 +23,7 @@ use nightfall_workspace_hack as _;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use uuid::Uuid;
+use web_time::Instant;
 
 /// Stable identifier for an action exposed through automation surfaces.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -164,6 +165,10 @@ pub struct ActionInvocation {
     pub input: ActionInput,
     /// Optional human-readable source detail for diagnostics and UI feedback.
     pub source: Option<String>,
+    /// When the surface received the input that produced this invocation, if it recorded
+    /// it. Timing-sensitive actions such as tap tempo use it instead of the frame time at
+    /// which the invocation is dispatched.
+    pub received_at: Option<Instant>,
 }
 
 impl ActionInvocation {
@@ -175,6 +180,7 @@ impl ActionInvocation {
             surface,
             input: ActionInput::Trigger,
             source: None,
+            received_at: None,
         }
     }
 
@@ -186,12 +192,19 @@ impl ActionInvocation {
             surface,
             input: ActionInput::Scalar(value.clamp(0.0, 1.0)),
             source: None,
+            received_at: None,
         }
     }
 
     /// Attaches human-readable source detail to an invocation.
     pub fn with_source(mut self, source: impl Into<String>) -> Self {
         self.source = Some(source.into());
+        self
+    }
+
+    /// Records when the surface received the input behind this invocation.
+    pub fn with_received_at(mut self, received_at: Instant) -> Self {
+        self.received_at = Some(received_at);
         self
     }
 }

@@ -35,7 +35,7 @@ impl AstConvert for TempoAstConverter {
 fn tempo_command(action: &ast::TempoActionAst) -> Result<TempoCommand, DispatchError> {
     Ok(match action {
         ast::TempoActionAst::SetBpm(bpm) => TempoCommand::SetBpm(parse_number(bpm.0, "tempo")?),
-        ast::TempoActionAst::Tap => TempoCommand::Tap,
+        ast::TempoActionAst::Tap => TempoCommand::Tap(None),
         ast::TempoActionAst::Resync => TempoCommand::Resync,
         ast::TempoActionAst::Snap => TempoCommand::Snap,
         ast::TempoActionAst::Half => TempoCommand::Multiply(0.5),
@@ -82,7 +82,7 @@ mod tests {
             convert("tempo 128.5").ok(),
             Some(TempoCommand::SetBpm(128.5))
         );
-        assert_eq!(convert("tempo tap").ok(), Some(TempoCommand::Tap));
+        assert_eq!(convert("tempo tap").ok(), Some(TempoCommand::Tap(None)));
         assert_eq!(convert("tempo resync").ok(), Some(TempoCommand::Resync));
         assert_eq!(convert("tempo snap").ok(), Some(TempoCommand::Snap));
         assert_eq!(

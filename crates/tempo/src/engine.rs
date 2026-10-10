@@ -116,26 +116,70 @@ enum TapOutcome {
     },
 }
 
+/// When and where a tap happened.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TapTime {
+    /// The tap was timed on the engine clock, in engine seconds.
+    Engine(f64),
+    /// The tap was timed on a remote client's clock.
+    Client {
+        /// Identity of the client session, so taps from different devices never mix.
+        client: u64,
+        /// Tap time on the client's own monotonic clock, in seconds.
+        seconds: f64,
+        /// Engine time at which the tap was received, in engine seconds.
+        received: f64,
+    },
+}
+
 /// Collects recent taps and fits a steady beat interval and phase to them.
+///
+/// Taps are fitted on the clock that timed them, so a client's taps keep their exact
+/// spacing however long each one took to reach the engine.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct TapTracker {
-    /// Times of the taps in the current sequence, oldest first, in engine seconds.
+    /// Times of the taps in the current sequence, oldest first, on the sequence's clock.
     taps: Vec<f64>,
+    /// Client whose clock times the current sequence, or `None` for the engine clock.
+    client: Option<u64>,
+    /// Smallest engine-minus-client clock difference seen in the sequence. The fastest
+    /// delivery best approximates the true offset, so client times map to engine time by
+    /// adding it.
+    clock_offset: f64,
 }
 
 impl TapTracker {
-    /// Records a tap and reports whether it starts, restarts or extends the sequence.
-    fn tap(&mut self, now: f64) -> TapOutcome {
-        let Some(&last) = self.taps.last() else {
-            self.taps.push(now);
-            return TapOutcome::Downbeat;
+    /// Records a tap and reports whether it starts, restarts or extends the sequence,
+    /// along with the tap's time on the engine clock.
+    fn tap(&mut self, time: TapTime) -> (TapOutcome, f64) {
+        let (client, now, offset) = match time {
+            TapTime::Engine(now) => (None, now, 0.0),
+            TapTime::Client {
+                client,
+                seconds,
+                received,
+            } => (Some(client), seconds, received - seconds),
         };
-        let gap = now - last;
-        if !(0.0..=TAP_RESET_SECS).contains(&gap) {
+        let continues = self.client == client && !self.taps.is_empty();
+        self.client = client;
+        self.clock_offset = if continues {
+            self.clock_offset.min(offset)
+        } else {
+            offset
+        };
+        let engine_time = now + self.clock_offset;
+        (self.record(now, continues), engine_time)
+    }
+
+    /// Adds a tap at `now` on the sequence's clock and fits the sequence, restarting it when
+    /// `continues` is false, after an idle gap, or when the tap breaks the rhythm.
+    fn record(&mut self, now: f64, continues: bool) -> TapOutcome {
+        let gap = self.taps.last().map(|last| now - last);
+        let Some(gap) = gap.filter(|gap| continues && (0.0..=TAP_RESET_SECS).contains(gap)) else {
             self.taps.clear();
             self.taps.push(now);
             return TapOutcome::Downbeat;
-        }
+        };
         if let Some((interval, _)) = self.fit()
             && (gap - interval).abs() > interval * TAP_OUTLIER_RATIO
         {
@@ -343,32 +387,42 @@ impl TempoEngine {
         self.pending_phase = 0.0;
     }
 
-    /// Registers a tap at `now`, updating the tempo target and easing the phase onto the taps.
+    /// Registers a tap, updating the tempo target and easing the phase onto the taps.
     ///
-    /// The first tap after an idle gap marks the downbeat. Later taps fit a steady interval to
-    /// the recent taps and align the nearest beat to the fitted line. A tap that breaks the
+    /// The first tap after an idle gap, or the first from a different client, marks the
+    /// downbeat. Later taps fit a steady interval to the recent taps, measured on the clock
+    /// that timed them, and align the nearest beat to the fitted line at the moment the tap
+    /// happened, which may be slightly before the engine processed it. A tap that breaks the
     /// rhythm restarts the sequence without moving anything.
-    pub fn tap(&mut self, now: f64) {
-        match self.taps.tap(now) {
-            TapOutcome::Downbeat => self.resync(now),
+    pub fn tap(&mut self, time: TapTime) {
+        let (outcome, at) = self.taps.tap(time);
+        match outcome {
+            TapOutcome::Downbeat => self.resync(at),
             TapOutcome::Restarted => {}
             TapOutcome::Fitted { interval, residual } => {
                 self.set_bpm(60.0 / interval);
-                self.align(now, residual / interval, 1.0);
+                self.align(at, residual / interval, 1.0);
             }
         }
     }
 
-    /// Beats elapsed between the last advance and `now` at the current tempo.
+    /// Beats elapsed between the last advance and `now` at the current tempo, never negative.
     fn beats_since_advance(&self, now: f64) -> f64 {
+        self.beats_relative_to_advance(now).max(0.0)
+    }
+
+    /// Signed beats between the last advance and `time` at the current tempo; negative for
+    /// times before the last advance, such as a tap that waited for the next frame.
+    fn beats_relative_to_advance(&self, time: f64) -> f64 {
         self.last_time
-            .map_or(0.0, |last| (now - last).max(0.0) * self.bpm / 60.0)
+            .map_or(0.0, |last| (time - last) * self.bpm / 60.0)
     }
 
     /// Eases the phase so that, at `now`, the counter sits at `offset` modulo `modulus`,
-    /// correcting the shorter way round.
+    /// correcting the shorter way round. `now` may lie slightly before the last advance.
     fn align(&mut self, now: f64, offset: f64, modulus: f64) {
-        let effective = self.beat_position + self.beats_since_advance(now) + self.pending_phase;
+        let effective =
+            self.beat_position + self.beats_relative_to_advance(now) + self.pending_phase;
         let mut error = (offset - effective).rem_euclid(modulus);
         if error > modulus / 2.0 {
             error -= modulus;
@@ -476,7 +530,7 @@ mod tests {
         let interval = 60.0 / 100.0;
         let mut last_tap = now;
         for _ in 0..6 {
-            engine.tap(now);
+            engine.tap(TapTime::Engine(now));
             last_tap = now;
             now = run(&mut engine, now, now + interval);
         }
@@ -499,11 +553,95 @@ mod tests {
         let mut engine = TempoEngine::default();
         engine.advance_to(0.0);
         let now = run(&mut engine, 0.0, 0.8);
-        engine.tap(now);
+        engine.tap(TapTime::Engine(now));
         let now = run(&mut engine, now, now + 8.0);
         let elapsed = (now - 0.8) * engine.snapshot().bpm / 60.0;
         let at_tap = engine.snapshot().beat_position - elapsed;
         assert!(distance_to_grid(at_tap, 4.0) < 1e-3, "off by {at_tap}");
+    }
+
+    /// Taps one client's beats exactly `interval` apart on its own clock, delivering each to
+    /// the engine after the matching delay in `delays`, and returns the engine time of the
+    /// last tap's true moment and the time of the last delivery.
+    fn tap_client_with_delays(
+        engine: &mut TempoEngine,
+        client: u64,
+        first_tap: f64,
+        interval: f64,
+        delays: &[f64],
+    ) -> (f64, f64) {
+        let client_clock_offset = 1_000.0;
+        let mut now = engine.last_time.unwrap_or(0.0);
+        let mut tap_time = first_tap;
+        for (index, delay) in delays.iter().enumerate() {
+            tap_time = first_tap + index as f64 * interval;
+            let received = tap_time + delay;
+            now = run(engine, now, received);
+            engine.advance_to(received);
+            now = now.max(received);
+            engine.tap(TapTime::Client {
+                client,
+                seconds: tap_time + client_clock_offset,
+                received,
+            });
+        }
+        (tap_time, now)
+    }
+
+    /// Verifies taps timed on the client's clock give the exact tempo and land beats on the
+    /// taps, however unevenly the network and frame timing delay their delivery.
+    #[test]
+    fn client_timed_taps_ignore_delivery_jitter() {
+        let mut engine = TempoEngine::default();
+        engine.advance_to(0.0);
+        let delays = [
+            0.023, 0.004, 0.017, 0.0, 0.011, 0.020, 0.008, 0.015, 0.002, 0.019,
+        ];
+        let (last_tap, now) = tap_client_with_delays(&mut engine, 7, 1.0, 0.5, &delays);
+        assert!(
+            (engine.snapshot().target_bpm - 120.0).abs() < 1e-9,
+            "target {}",
+            engine.snapshot().target_bpm
+        );
+
+        let now = run(&mut engine, now, now + 8.0);
+        let snapshot = engine.snapshot();
+        let at_tap = snapshot.beat_position - (now - last_tap) * snapshot.bpm / 60.0;
+        assert!(
+            distance_to_grid(at_tap, 1.0) < 0.01,
+            "taps should land on beats, off by {}",
+            distance_to_grid(at_tap, 1.0)
+        );
+    }
+
+    /// Verifies the same delivery jitter visibly skews the tempo when taps are timed on
+    /// arrival, which is what client timing avoids.
+    #[test]
+    fn arrival_timed_taps_pick_up_delivery_jitter() {
+        let mut engine = TempoEngine::default();
+        engine.advance_to(0.0);
+        let delays = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.023, 0.023];
+        let mut now = 0.0;
+        for (index, delay) in delays.iter().enumerate() {
+            let received = 1.0 + index as f64 * 0.5 + delay;
+            now = run(&mut engine, now, received);
+            engine.tap(TapTime::Engine(received));
+        }
+        assert!((engine.snapshot().target_bpm - 120.0).abs() > 0.5);
+    }
+
+    /// Verifies a tap from a different client starts a new sequence on that client's clock
+    /// instead of mixing two clocks into one fit.
+    #[test]
+    fn taps_from_another_client_start_a_new_sequence() {
+        let mut engine = TempoEngine::default();
+        engine.advance_to(0.0);
+        tap_client_with_delays(&mut engine, 1, 1.0, 0.4, &[0.0; 4]);
+        assert!((engine.snapshot().target_bpm - 150.0).abs() < 1e-9);
+        tap_client_with_delays(&mut engine, 2, 2.6, 0.5, &[0.0]);
+        assert!((engine.snapshot().target_bpm - 150.0).abs() < 1e-9);
+        tap_client_with_delays(&mut engine, 2, 3.1, 0.5, &[0.0]);
+        assert!((engine.snapshot().target_bpm - 120.0).abs() < 1e-9);
     }
 
     /// Verifies a tap far off the established rhythm restarts the sequence and leaves tempo alone.
@@ -512,13 +650,13 @@ mod tests {
         let mut engine = TempoEngine::default();
         engine.advance_to(0.0);
         for index in 0..4 {
-            engine.tap(f64::from(index) * 0.4);
+            engine.tap(TapTime::Engine(f64::from(index) * 0.4));
         }
         let target = engine.snapshot().target_bpm;
         assert!((target - 150.0).abs() < 1e-6);
-        engine.tap(1.2 + 1.0);
+        engine.tap(TapTime::Engine(1.2 + 1.0));
         assert_eq!(engine.snapshot().target_bpm, target);
-        engine.tap(1.2 + 1.0 + 0.5);
+        engine.tap(TapTime::Engine(1.2 + 1.0 + 0.5));
         assert!((engine.snapshot().target_bpm - 120.0).abs() < 1e-6);
     }
 
