@@ -29,7 +29,7 @@ const USAGE_CONTENTS = [
 
 /** What an error report contains. */
 const ERROR_CONTENTS = [
-  "Error message and stack trace, with your home folder, showfile names and any IP addresses in the text removed",
+  "Error message and stack trace, with showfile names and any IP addresses in the text removed",
   "Warnings logged shortly before the error",
   "App version, operating system, processor architecture, and the anonymous ID below",
   "Reports not sent yet are deleted as soon as you stop sharing",
