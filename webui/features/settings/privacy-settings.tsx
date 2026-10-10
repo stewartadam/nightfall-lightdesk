@@ -31,7 +31,12 @@ const USAGE_CONTENTS = [
 const ERROR_CONTENTS = [
   "Error message and stack trace, with showfile names and any IP addresses in the text removed",
   "Warnings logged shortly before the error",
-  "App version, operating system, processor architecture, and the anonymous ID below",
+  "App version and the Rust version it was built with",
+  "Operating system name, version, build, and kernel version",
+  "Computer model and processor architecture",
+  "The names and memory addresses of the app's loaded program files, used to read the stack trace",
+  "The anonymous ID below, and a random session ID that changes each time Nightfall starts",
+  "Errors on another device on your network are marked as such and leave out this computer's details",
   "Reports not sent yet are deleted as soon as you stop sharing",
 ];
 
