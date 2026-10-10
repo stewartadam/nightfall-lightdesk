@@ -46,6 +46,11 @@ const browserPackaging = [
   /^\.github\/workflows\/browser-demo\.yml$/,
   /^webui\/e2e\/(browser-demo|distribution-notices)\.spec\.ts$/,
 ];
+const documentation = [
+  /^docs\//,
+  /^scripts\/ci-scope/,
+  /^\.github\/workflows\/ci\.yml$/,
+];
 
 /**
  * Select validation by integration risk. Packaging compiles the desktop app but does not run
@@ -57,6 +62,8 @@ const browserPackaging = [
  *
  * Draft PRs skip desktop installers and Chromium product flows; marking the PR ready for review
  * re-runs selection and runs them then.
+ *
+ * Documentation builds only for PRs that touch the mdBook sources or the workflow that builds them.
  */
 export function selectScope({
   event,
@@ -71,6 +78,7 @@ export function selectScope({
   let browserPackage = false;
   let browserPreview = false;
   let desktopCheck = false;
+  let docs = false;
   if (event === "workflow_dispatch") {
     if (!["all", "desktop", "browser"].includes(distribution)) {
       throw new Error(`Unknown distribution: ${distribution}`);
@@ -93,6 +101,7 @@ export function selectScope({
         browserPackage = true;
       if (desktopChecks.some((pattern) => pattern.test(path)))
         desktopCheck = true;
+      if (documentation.some((pattern) => pattern.test(path))) docs = true;
     }
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
@@ -103,6 +112,7 @@ export function selectScope({
     browser_package: browserPackage,
     browser_preview: browserPreview,
     product_flows: !draft,
+    docs,
   };
 }
 

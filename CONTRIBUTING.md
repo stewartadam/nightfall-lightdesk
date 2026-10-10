@@ -622,6 +622,8 @@ mdbook build docs
 mdbook serve docs --open
 ```
 
+CI builds every book under `docs/` on PRs that change it, with the same mdBook version (keep the version in `.github/workflows/ci.yml` in sync), and fails on any error or warning mdBook logs.
+
 Internal design decisions, BRDs, and developer reference live in a separate mdBook in `docs/internal/`, with navigation in `docs/internal/src/SUMMARY.md`. Keep internal content in that source tree so it is excluded from the user manual, including its search index and downloadable output.
 
 ```sh
