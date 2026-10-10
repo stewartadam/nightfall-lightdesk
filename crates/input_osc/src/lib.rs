@@ -122,7 +122,12 @@ pub struct OscRuntimeStatus(pub OscListenerStatus);
 
 /// Runtime OSC observation consumed by mapping dispatch without a user-command identity.
 #[derive(Clone, Debug, Message)]
-struct OscInput(OscLastEvent);
+struct OscInput {
+    /// The received message.
+    event: OscLastEvent,
+    /// When the listener received the packet carrying the message.
+    received_at: std::time::Instant,
+}
 
 fn osc_event_system(
     mut osc_rx: ResMut<OscEventReceiver>,
@@ -131,6 +136,7 @@ fn osc_event_system(
     mut event_writer: MessageWriter<OscInput>,
 ) {
     while let Ok(raw_event) = osc_rx.0.try_recv() {
+        let received_at = raw_event.received_at;
         let osc_event: OscLastEvent = raw_event.into();
         if !sources
             .0
@@ -143,7 +149,10 @@ fn osc_event_system(
         }
 
         last_event.0 = Some(osc_event.clone());
-        event_writer.write(OscInput(osc_event));
+        event_writer.write(OscInput {
+            event: osc_event,
+            received_at,
+        });
     }
 }
 
@@ -153,7 +162,7 @@ fn handle_osc_events(
     mut invocations: MessageWriter<ActionInvocation>,
 ) {
     for event in events.read() {
-        let osc_event = &event.0;
+        let osc_event = &event.event;
         if let Some(mapping) = mappings.lookup_mapping(osc_event) {
             let arg_index = usize::from(mapping.arg_index.unwrap_or(0));
             let input = osc_event
@@ -168,6 +177,7 @@ fn handle_osc_events(
                 surface: ActionSurface::Osc,
                 input,
                 source: Some(format!("OSC {}", osc_event.source)),
+                received_at: Some(event.received_at),
             });
         }
     }

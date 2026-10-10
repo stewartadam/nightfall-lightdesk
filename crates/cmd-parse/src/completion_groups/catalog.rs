@@ -723,6 +723,14 @@ fn build_catalog() -> Vec<CompletionGroupSpec> {
             &[pred(&[ClauseId::Fps], Some(SlotId::FpsValue), None)],
             vis(&[], &[]),
         ),
+        completion_group(
+            CompletionGroupId::TempoAction,
+            "Tempo",
+            685,
+            &[SlotId::TempoAction],
+            &[pred(&[ClauseId::Tempo], Some(SlotId::TempoAction), None)],
+            vis(&[], &[]),
+        ),
     ]
 }
 

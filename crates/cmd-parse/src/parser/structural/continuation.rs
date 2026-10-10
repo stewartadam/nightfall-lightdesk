@@ -33,6 +33,7 @@ pub(in crate::parser) fn continuation_kind_for_slot(
         | crate::slots::contracts::SlotId::FlowAction
         | crate::slots::contracts::SlotId::TimecodeAction
         | crate::slots::contracts::SlotId::TimelineAction
+        | crate::slots::contracts::SlotId::TempoAction
         | crate::slots::contracts::SlotId::LogFilterField
         | crate::slots::contracts::SlotId::RecallBlueprintKeyword
         | crate::slots::contracts::SlotId::StoreObjectType
@@ -342,6 +343,9 @@ pub(in crate::parser) fn slot_requires_followup_value(
     }
     if slot == SlotId::FxAction {
         return fx_rate_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value);
+    }
+    if slot == SlotId::TempoAction {
+        return tempo_action_requires_followup(fills);
     }
     if slot == SlotId::FlowAction {
         return fills.last().is_some_and(|item| {

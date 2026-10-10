@@ -112,6 +112,7 @@ import {
   sequences,
   serverVersion,
   setParametersImmediate,
+  showTempo,
   stepFx,
   timecodes,
   timelineBeatgridDetectionStatus,
@@ -949,6 +950,14 @@ function dispatchMessage(raw: AnyWsMessage) {
         clipMap[clip.identifiers.uid] = [clip, is_active];
       }
       setStoreAction(clips, "Receive ClipDefinitions", clipMap);
+      break;
+    }
+
+    case "TempoState": {
+      setStoreAction(showTempo, "Receive TempoState", {
+        snapshot: raw.data,
+        receivedAtMs: performance.now(),
+      });
       break;
     }
 

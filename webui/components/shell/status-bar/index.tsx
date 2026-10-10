@@ -17,6 +17,7 @@ import { ListIcon } from "@squidlab/phosphor-solid/list";
 import { WifiHighIcon } from "@squidlab/phosphor-solid/wifi-high";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { TempoControls } from "../../../features/tempo";
 import { APP_BUILD_ID, APP_BUILD_NAME } from "../../../lib/app-metadata";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
@@ -163,6 +164,12 @@ export default function StatusBar() {
       <BrowserDemoBanner />
 
       <div class="flex items-center gap-2">
+        <Show when={connStatus() === "connected"}>
+          <div class="contents">
+            <TempoControls placement="above" />
+            <div aria-hidden="true" class="h-4 w-px bg-gray-700" />
+          </div>
+        </Show>
         <Tooltip content={() => `Showfile: ${showfileName()}`}>
           <div
             data-testid="status-showfile-name"

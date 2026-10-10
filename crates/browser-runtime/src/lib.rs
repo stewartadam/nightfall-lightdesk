@@ -33,6 +33,7 @@ use nightfall_flow::prelude::FlowPlugin;
 use nightfall_fx::prelude::{FxPlugin, StoredFxModule};
 use nightfall_programmer::prelude::ProgrammerPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
+use nightfall_tempo::prelude::TempoPlugin;
 use nightfall_timecode::prelude::TimecodePlugin;
 use nightfall_timeline::prelude::TimelinePlugin;
 use nightfall_undo::prelude::UndoPlugin;
@@ -215,6 +216,7 @@ impl BrowserEngine {
         });
         app.add_plugins(ProgrammerPlugin);
         app.add_plugins(CuePlugin);
+        app.add_plugins(TempoPlugin);
         app.add_plugins(FxPlugin);
         app.init_resource::<DataProvider<StoredFxModule>>();
         app.add_plugins(FlowPlugin);

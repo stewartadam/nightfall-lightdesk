@@ -39,6 +39,7 @@
           "set",
           "sleep",
           "store",
+          "tempo",
           "timecode",
           "timeline",
           "unblock",
@@ -1565,6 +1566,63 @@
         "breadcrumb": {
           "state": "current_clause_path",
           "path": ["fps"]
+        }
+      }
+    },
+    {
+      "name": "Tempo offers its operations alongside a BPM value.",
+      "input": "tempo ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["tempo/action"],
+        "candidates": [
+          "0..9",
+          "bar",
+          "double",
+          "half",
+          "nudge",
+          "resync",
+          "snap",
+          "tap"
+        ],
+        "current_breadcrumb": "Tempo",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["tempo"]
+        }
+      }
+    },
+    {
+      "name": "Tempo nudge expects a signed beat offset.",
+      "input": "tempo nudge ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["tempo/action"],
+        "candidates": ["+", "-", "0..9"],
+        "current_breadcrumb": "Tempo",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["tempo"]
+        }
+      }
+    },
+    {
+      "name": "User can submit a whole BPM or add a fractional part.",
+      "input": "tempo 128",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["tempo/action"],
+        "candidates": [".", "0..9"],
+        "current_breadcrumb": "Tempo",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["tempo"]
         }
       }
     }

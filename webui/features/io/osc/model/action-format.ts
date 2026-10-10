@@ -6,6 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  formatTempoAction,
+  parseTempoAction,
+} from "../../../../lib/tempo-action-format";
 import type { ActionReference } from "../../../../types";
 
 const CLIP_START_ACTION_ID = "clip.start";
@@ -69,6 +73,8 @@ function deskEvalCommand(argumentsValue: unknown): string | undefined {
 }
 
 export function formatOscAction(action: ActionReference): string {
+  const tempoAction = formatTempoAction(action);
+  if (tempoAction !== undefined) return tempoAction;
   const name = actionNameById[action.id];
   const evalCommand = deskEvalCommand(action.arguments);
   if (name === "Eval" && evalCommand !== undefined) {
@@ -87,6 +93,8 @@ export function formatOscAction(action: ActionReference): string {
 }
 
 export function parseOscAction(str: string): ActionReference | null {
+  const tempoAction = parseTempoAction(str);
+  if (tempoAction) return tempoAction;
   const trimmed = str.trim();
   const execMatch = trimmed.match(
     /^(StartClip|StopClip|GoClip|SetControl)\((\d+)\)$/,

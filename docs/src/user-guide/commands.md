@@ -28,6 +28,16 @@ clip 1 stop
 
 Create the sequence and configure the clip's source in their panels first. Cue `1.2` belongs to sequence `1`; clip `1` is a separate object with its own ID. See [Storing and recalling looks](stores.md) for overwrite modes.
 
+## Tempo
+
+```text
+tempo 128
+tempo tap
+tempo half
+```
+
+`tempo` sets, taps, halves or doubles the show tempo, and can resync or nudge the beat. See [Show tempo and tap tempo](tempo.md) for every form and how taps are interpreted.
+
 ## Clear, save, and recover
 
 ```text

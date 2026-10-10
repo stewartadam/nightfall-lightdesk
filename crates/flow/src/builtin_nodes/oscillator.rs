@@ -146,6 +146,7 @@ mod tests {
             &FlowNodeContext {
                 position: Duration::from_secs(1),
                 frame_delta: Duration::from_millis(16),
+                tempo: None,
             },
         )
         .expect("oscillator should execute");
@@ -179,6 +180,7 @@ mod tests {
         node.reset(&FlowNodeContext {
             position: Duration::from_secs(10),
             frame_delta: Duration::ZERO,
+            tempo: None,
         });
         node.execute(
             &inputs,
@@ -188,6 +190,7 @@ mod tests {
             &FlowNodeContext {
                 position: Duration::from_secs(11),
                 frame_delta: Duration::from_secs(1),
+                tempo: None,
             },
         )
         .expect("oscillator should execute after reset");

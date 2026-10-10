@@ -43,6 +43,7 @@ use super::structural_frontier::slot_keeps_expression_continuation_live;
 use super::structural_fx::{
     filled_value_for_fx_rate_followup, fx_rate_requires_followup, promote_ready_step_fx_definition,
 };
+use super::structural_tempo::{filled_value_for_tempo_followup, tempo_action_requires_followup};
 use super::structural_tree::clause_tree_from_branch;
 use crate::lexicon::aliases::{AliasCanonicalizationContext, canonicalize_token};
 use crate::lexicon::tokens::canonical_text;

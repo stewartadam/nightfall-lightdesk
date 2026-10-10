@@ -52,6 +52,7 @@ pub enum StructuralAstDispatchKind {
     Debug,
     Sleep,
     Fps,
+    Tempo,
 }
 
 /// Static metadata that groups related command heads and their parse behavior.
@@ -137,6 +138,7 @@ const RECALL_GROUPS: &[CompletionGroupId] = &[CompletionGroupId::RecallCueRef];
 const DEBUG_GROUPS: &[CompletionGroupId] = &[CompletionGroupId::DebugObject];
 const SLEEP_GROUPS: &[CompletionGroupId] = &[CompletionGroupId::SleepDuration];
 const FPS_GROUPS: &[CompletionGroupId] = &[CompletionGroupId::FpsValue];
+const TEMPO_GROUPS: &[CompletionGroupId] = &[CompletionGroupId::TempoAction];
 
 const RELEASE_SINGLE_TOKEN_OVERRIDE: &[FamilyExpectedToken] = &[
     FamilyExpectedToken::Token(TokenId::Attribute),
@@ -326,6 +328,13 @@ const COMMAND_FAMILY_SPECS: &[CommandFamilySpec] = &[
         single_token_head_policy: SingleTokenHeadPolicy::Replace(FPS_SINGLE_TOKEN_OVERRIDE),
         hidden_exact_head_groups: &[],
         structural_ast_dispatch: StructuralAstDispatchKind::Fps,
+    },
+    CommandFamilySpec {
+        root_clause: ClauseId::Tempo,
+        completion_groups: TEMPO_GROUPS,
+        single_token_head_policy: SingleTokenHeadPolicy::None,
+        hidden_exact_head_groups: &[],
+        structural_ast_dispatch: StructuralAstDispatchKind::Tempo,
     },
 ];
 

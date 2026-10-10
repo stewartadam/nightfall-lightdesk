@@ -1089,6 +1089,7 @@ pub(in crate::parser) fn is_property_slot(slot: SlotId) -> bool {
             | SlotId::FlowAction
             | SlotId::TimecodeAction
             | SlotId::TimelineAction
+            | SlotId::TempoAction
             | SlotId::LogFilterField
             | SlotId::RecallBlueprintKeyword
             | SlotId::StoreObjectType

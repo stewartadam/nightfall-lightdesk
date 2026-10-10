@@ -27,6 +27,7 @@ use crate::parser::structural_expectation::{
 };
 use crate::parser::structural_fx::{fx_rate_value_surface, step_fx_shaping_expected_tokens};
 use crate::parser::structural_programmer::programmer_placement_frontier;
+use crate::parser::structural_tempo::{tempo_action_can_extend, tempo_followup_expected_tokens};
 use crate::slots::contracts::{ClauseCardinality, ClauseId, SlotCardinality, SlotId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -580,6 +581,13 @@ fn immediate_frontier_for_clause(
                         *slot,
                         expected_tokens,
                     ));
+                } else if slot.slot == SlotId::TempoAction {
+                    frontier.push(filtered_slot_expectation(
+                        parser,
+                        clause.clone(),
+                        *slot,
+                        tempo_followup_expected_tokens(&slot_fills),
+                    ));
                 } else if matches!(
                     slot.slot,
                     SlotId::SetAttrValue | SlotId::StepFxAttributeShaping
@@ -703,6 +711,15 @@ fn immediate_frontier_for_clause(
                         *slot,
                         vec![ExpectedToken::Token(TokenId::GreaterThan)],
                     ));
+                } else if slot.slot == SlotId::TempoAction {
+                    if tempo_action_can_extend(&slot_fills) {
+                        frontier.push(filtered_slot_expectation(
+                            parser,
+                            clause.clone(),
+                            *slot,
+                            vec![ExpectedToken::Token(TokenId::Dot)],
+                        ));
+                    }
                 } else if slot_keeps_expression_continuation_live(slot.slot, &slot_fills) {
                     frontier.push(slot_expectation(parser, clause.clone(), *slot));
                 }

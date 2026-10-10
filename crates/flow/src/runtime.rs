@@ -26,6 +26,7 @@ use nightfall_fx_module::prelude::StoredFxModule;
 #[cfg(test)]
 use nightfall_instances::InstanceClockSource;
 use nightfall_instances::{ClipInstanceRequest, InstanceClock, InstancePosition, InstanceStatus};
+use nightfall_tempo::prelude::ShowTempo;
 use nightfall_timecode::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -321,6 +322,7 @@ impl FlowInstance {
         let ctx = FlowNodeContext {
             position: Duration::ZERO,
             frame_delta: Duration::ZERO,
+            tempo: None,
         };
         for node in self.nodes.values_mut() {
             node.node.reset(&ctx);
@@ -411,6 +413,7 @@ pub fn evaluate_flow_instances(
     fixture_data_provider: Res<FixtureDataProviderExt>,
     mut clip_events: MessageWriter<RequestEnvelope<ClipInstanceRequest>>,
     mut timecode_actions: MessageWriter<EngineActionEnvelope<TimecodeAction>>,
+    show_tempo: Option<Res<ShowTempo>>,
 ) {
     for (entity, mut instance, clock) in instances.iter_mut() {
         if !instance.is_running {
@@ -460,6 +463,7 @@ pub fn evaluate_flow_instances(
         let ctx = FlowNodeContext {
             position: evaluation_position,
             frame_delta,
+            tempo: show_tempo.as_ref().map(|tempo| tempo.snapshot()),
         };
 
         let mut flow_layer = Layer::new(
