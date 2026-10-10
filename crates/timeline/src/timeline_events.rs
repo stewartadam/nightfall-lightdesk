@@ -12,7 +12,7 @@ use std::time::Duration;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall::prelude::IdExpr;
-use nightfall_actions::ActionReference;
+use nightfall_actions::{ActionReference, ActionRegistry};
 #[cfg(test)]
 use nightfall_clips::start_clip_action;
 use nightfall_clips::{Clip, ClipOperation};
@@ -109,15 +109,113 @@ pub(crate) struct TimelineMutationContext<'w, 's> {
     responder: CommandResponder<'w>,
     /// Optional live reconstruction notifications.
     action_events: Option<MessageWriter<'w, TimelineActionsChanged>>,
+    /// Registered actions that stored timeline actions are validated against.
+    action_registry: Option<Res<'w, ActionRegistry>>,
+}
+
+/// Returns the timeline actions a command would newly store, with their track IDs.
+///
+/// `StoreTimeline` only yields actions that are new or whose reference changed relative to
+/// the stored timeline, so editing a timeline loaded with a legacy invalid action still
+/// succeeds. Undo and redo replays are not validated at all; see [`crud_events`].
+fn actions_to_store<'a>(
+    command: &'a TimelineCommand,
+    timelines: &DataProvider<Timeline>,
+) -> Vec<(&'a str, &'a Action)> {
+    /// Flattens every action of a timeline with its track ID.
+    fn all(timeline: &Timeline) -> impl Iterator<Item = (&str, &Action)> {
+        timeline.tracks.iter().flat_map(|track| {
+            track
+                .actions
+                .iter()
+                .map(move |action| (track.id.as_str(), action))
+        })
+    }
+    match command {
+        TimelineCommand::StoreTimeline(timeline) => {
+            let stored = timelines.get(timeline.identifiers.uid).ok();
+            all(timeline)
+                .filter(|(_, action)| {
+                    stored.as_ref().is_none_or(|stored| {
+                        !all(stored).any(|(_, existing)| {
+                            existing.id == action.id && existing.action == action.action
+                        })
+                    })
+                })
+                .collect()
+        }
+        TimelineCommand::CreateTimeline { timeline, .. } => all(timeline).collect(),
+        TimelineCommand::InsertRecordedActions {
+            track_id, actions, ..
+        } => actions
+            .iter()
+            .map(|action| (track_id.as_str(), action))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Rejects a timeline command that would store an action the timeline cannot run.
+///
+/// See [`validate_timeline_action`]. Without an action registry, as in focused tests,
+/// nothing is validated.
+fn validate_stored_actions(
+    command: &TimelineCommand,
+    timelines: &DataProvider<Timeline>,
+    registry: Option<&ActionRegistry>,
+) -> Result<(), CommandError> {
+    let Some(registry) = registry else {
+        return Ok(());
+    };
+    for (track_id, action) in actions_to_store(command, timelines) {
+        if let Err(error) = validate_timeline_action(registry, &action.action) {
+            return Err(CommandError {
+                code: error.code,
+                message: format!(
+                    "Timeline action '{}' cannot be stored: {}",
+                    action.label, error.message
+                ),
+                details: Some(serde_json::json!({
+                    "track_id": track_id,
+                    "action_id": action.id,
+                    "action": action.action,
+                    "details": error.details,
+                })),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Coordinate persisted timeline command families and internal recording actions.
+///
+/// Commands storing new or changed actions are validated first. Undo and redo replays are
+/// not: they restore a timeline as it was, which may hold actions that are invalid now, such
+/// as recorded actions or actions whose target was deleted since, and rejecting them would
+/// make the timeline impossible to restore.
 pub fn crud_events(
     mut context: TimelineMutationContext,
     mut events: MessageReader<CommandEnvelope<TimelineCommand>>,
     mut actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
 ) {
     for event in events.read() {
+        let validation = if context.responder.is_undo_replay(event.command_id) {
+            Ok(())
+        } else {
+            validate_stored_actions(
+                &event.command,
+                &context.timeline_data_provider,
+                context.action_registry.as_deref(),
+            )
+        };
+        if let Err(error) = validation {
+            if context.responder.is_active(event.command_id)
+                && let Err(completion) = context.responder.fail(event.command_id, error)
+            {
+                tracing::error!(%completion, "timeline_command_failure_failed");
+            }
+            continue;
+        }
         match &event.command {
             TimelineCommand::StoreTimeline(_)
             | TimelineCommand::RenameTimeline { .. }

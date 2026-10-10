@@ -1,0 +1,997 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+import { createSocket } from "node:dgram";
+import {
+  enterMapping,
+  leaveMapping,
+  mappingClients,
+  onlyMaster,
+  openMappingApp,
+  openPanel,
+  runPaletteEntry,
+} from "./controller-mapping";
+import { gridCellByKey } from "./data-grid-selectors";
+import { expect, type Page, test } from "./playwright-fixtures";
+import { waitForDockviewApp } from "./showfile-startup";
+
+/** Encodes a string as a null-terminated, four-byte-aligned OSC string. */
+function oscString(value: string): Buffer {
+  const length = Math.ceil((value.length + 1) / 4) * 4;
+  const buffer = Buffer.alloc(length);
+  buffer.write(value, "ascii");
+  return buffer;
+}
+
+/** Encodes one OSC message with optional float arguments. */
+function oscMessage(address: string, floats: number[] = []): Buffer {
+  const values = floats.map((value) => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeFloatBE(value);
+    return buffer;
+  });
+  return Buffer.concat([
+    oscString(address),
+    oscString(`,${"f".repeat(floats.length)}`),
+    ...values,
+  ]);
+}
+
+/** Sends one OSC message to the backend's listener over UDP. */
+async function sendOsc(
+  port: number,
+  address: string,
+  floats: number[] = [],
+): Promise<void> {
+  const socket = createSocket("udp4");
+  await new Promise<void>((resolve, reject) =>
+    socket.send(oscMessage(address, floats), port, "127.0.0.1", (error) =>
+      error ? reject(error) : resolve(),
+    ),
+  );
+  socket.close();
+}
+
+/** Returns the port the backend's OSC listener is bound to. */
+async function oscPort(page: Page): Promise<number> {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscListenerStatus.get()?.is_listening,
+      ),
+    )
+    .toBe(true);
+  return page.evaluate(
+    () => (window as any).appStores.oscListenerStatus.get().port as number,
+  );
+}
+
+test("touching a control then clicking a target binds it and the binding drives the target", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await expect
+    .poll(async () => (await onlyMaster(page))?.level_percent)
+    .toBe(100);
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.type)
+    .toBe("Toggle");
+
+  await enterMapping(page);
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await expect(banner).toContainText("move a MIDI or OSC control");
+
+  // Touch an OSC fader, then click the master's level slider.
+  await sendOsc(port, "/e2e/map/level", [0.9]);
+  await expect(banner).toContainText("OSC /e2e/map/level");
+  const levelOverlay = page.getByRole("button", {
+    name: "Map Global Master level",
+  });
+  await levelOverlay.click();
+  const levelMenu = page.getByRole("menu", {
+    name: "Map Global Master level to",
+  });
+  await expect(levelMenu).toContainText(
+    "Moving OSC /e2e/map/level sets Master level",
+  );
+  await levelMenu.getByRole("menuitem", { name: "Follow fader" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.oscMappings
+          .get()
+          .map((mapping: any) => mapping.action.id),
+      ),
+    )
+    .toEqual(["master.level"]);
+  // Binding disarms the control and a toast confirms what was created.
+  await expect(banner).toContainText("move a MIDI or OSC control");
+  await expect(
+    page.getByText("Bound OSC /e2e/map/level → Master level"),
+  ).toBeVisible();
+  await expect(levelOverlay.locator("[data-mapping-count]")).toHaveText("1");
+  // The click bound the slider instead of moving it.
+  expect((await onlyMaster(page)).level_percent).toBe(100);
+
+  // Touch an OSC button without arguments, then click the master's Toggle button.
+  await sendOsc(port, "/e2e/map/toggle");
+  await expect(banner).toContainText("OSC /e2e/map/toggle");
+  await page.getByRole("button", { name: "Map toggle Global Master" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscMappings.get().length as number,
+      ),
+    )
+    .toBe(2);
+
+  // Touch a MIDI controller, then click the programmer clear button in the header.
+  // Without MIDI hardware, inject the reliable touch batch the backend would publish.
+  await page.evaluate(() => {
+    (window as any).appStores.midiControlTouches.set([
+      {
+        device: "E2E Pad",
+        channel: 0xb0,
+        note: 20,
+        velocity: 127,
+        source: {
+          type: "ControlChange",
+          data: { channel: 0, controller: 20 },
+        },
+      },
+    ]);
+  });
+  await expect(banner).toContainText("MIDI CC 20 · Ch 1 (E2E Pad)");
+  await page
+    .getByRole("navigation", { name: "Global" })
+    .getByRole("button", { name: "Map clear programmer" })
+    .click();
+  await page
+    .getByRole("menu", { name: "Map clear programmer to" })
+    .getByRole("menuitem", { name: "On press" })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.midiMappings.get().map((mapping: any) => ({
+          action: mapping.action.id,
+          source: mapping.source,
+        })),
+      ),
+    )
+    .toEqual([
+      {
+        action: "programmer.clear",
+        source: {
+          type: "ControlChange",
+          data: { channel: 0, controller: 20 },
+        },
+      },
+    ]);
+
+  await page.screenshot({
+    path: test.info().outputPath("controller-mapping-mode.png"),
+  });
+
+  // Leaving mapping mode restores normal controls, and the bindings drive the master.
+  await leaveMapping(page);
+  await expect(banner).toBeHidden();
+  await expect(levelOverlay).toBeHidden();
+
+  await sendOsc(port, "/e2e/map/level", [0.25]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBe(25);
+  await sendOsc(port, "/e2e/map/toggle");
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .toBe(true);
+});
+
+/**
+ * Arms an OSC button by sending one press and one release while mapping mode is active.
+ *
+ * Waits for the release to reach the client so the armed gesture records both values.
+ */
+async function touchOscButton(
+  page: Page,
+  port: number,
+  address: string,
+): Promise<void> {
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await sendOsc(port, address, [1]);
+  await expect(banner).toContainText(`OSC ${address}`);
+  await sendOsc(port, address, [0]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscLastEvent.get()?.args[0]?.data,
+      ),
+    )
+    .toBe(0);
+}
+
+test("a Hold binding keeps a toggle master on only while the button is held", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+
+  await enterMapping(page);
+  await touchOscButton(page, port, "/e2e/map/button");
+  const toggleOverlay = page.getByRole("button", {
+    name: "Map toggle Global Master",
+  });
+  await toggleOverlay.click();
+  const menu = page.getByRole("menu", { name: "Map toggle Global Master to" });
+  await expect(
+    menu
+      .getByRole("menuitem")
+      .evaluateAll((items) =>
+        items.map((item) => item.getAttribute("aria-label")),
+      ),
+  ).resolves.toEqual([
+    "Toggle · On press",
+    "Toggle · On release",
+    "On while held",
+  ]);
+  await expect(menu).toContainText(
+    "Holding OSC /e2e/map/button runs Master on: 1: Global Master; letting go runs Master off: 1: Global Master.",
+  );
+  // A button that sent on then off is suggested to toggle on press, focused for Enter.
+  const suggested = menu.getByRole("menuitem", { name: "Toggle · On press" });
+  await expect(suggested).toHaveAttribute("data-recommended", "");
+  await expect(suggested).toBeFocused();
+  await expect(menu.locator("[data-recommended]")).toHaveCount(1);
+  await menu.screenshot({
+    path: test.info().outputPath("controller-mapping-behaviors.png"),
+  });
+  await menu.getByRole("menuitem", { name: "On while held" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.oscMappings.get().map((mapping: any) => ({
+          action: mapping.action.id,
+          arg_value: mapping.arg_value,
+          release_value: mapping.release_value,
+          behavior: mapping.behavior,
+        })),
+      ),
+    )
+    .toEqual([
+      {
+        action: "master.on",
+        arg_value: "1",
+        release_value: "0",
+        behavior: "Hold",
+      },
+    ]);
+
+  // With nothing armed, clicking the target lists its binding instead of rebinding it.
+  await toggleOverlay.click();
+  await expect(menu.locator("[data-existing-binding]")).toContainText(
+    "OSC /e2e/map/button 1 · Hold",
+  );
+  await expect(menu.getByRole("menuitem")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await leaveMapping(page);
+
+  // Pressing turns the master on and releasing turns it back off.
+  await sendOsc(port, "/e2e/map/button", [1]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .toBe(true);
+  await sendOsc(port, "/e2e/map/button", [0]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .toBe(false);
+});
+
+test("a Flash binding pushes a master to full while held and restores it", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await expect
+    .poll(async () => (await onlyMaster(page))?.level_percent)
+    .toBe(100);
+  const masterId = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.masters.get())[0] as any)
+        .identifiers.id as number,
+  );
+  await page.evaluate(
+    (id) =>
+      (window as any).appStores.sendAndAwait({
+        module: "MasterCommand",
+        command: {
+          type: "SetMasterLevel",
+          data: { id, level_percent: 30 },
+        },
+      }),
+    masterId,
+  );
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBeCloseTo(30, 3);
+
+  await enterMapping(page);
+  await touchOscButton(page, port, "/e2e/map/flash");
+  await page.getByRole("button", { name: "Map Global Master level" }).click();
+  await page
+    .getByRole("menu", { name: "Map Global Master level to" })
+    .getByRole("menuitem", { name: "Flash to full" })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscMappings.get()[0]?.behavior,
+      ),
+    )
+    .toBe("Flash");
+  await leaveMapping(page);
+
+  await sendOsc(port, "/e2e/map/flash", [1]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBe(100);
+  await sendOsc(port, "/e2e/map/flash", [0]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBeCloseTo(30, 3);
+});
+
+test("fader slots with an assigned master offer both mapping targets", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await expect
+    .poll(async () => (await onlyMaster(page))?.level_percent)
+    .toBe(100);
+  const masterId = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.masters.get())[0] as any)
+        .identifiers.id as number,
+  );
+  await page.evaluate(
+    (masterId) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command: {
+          type: "AssignMaster",
+          data: { control_index: 1, master_id: masterId },
+        },
+      }),
+    masterId,
+  );
+  await openPanel(page, "Clips");
+
+  await enterMapping(page);
+  await sendOsc(port, "/e2e/map/fader", [0.5]);
+  await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
+    "OSC /e2e/map/fader",
+  );
+  await page.getByRole("button", { name: "Map control 1 fader" }).click();
+  const menu = page.getByRole("menu", { name: "Map control 1 fader to" });
+  await expect(
+    menu
+      .getByRole("menuitem")
+      .evaluateAll((items) =>
+        items.map((item) => item.getAttribute("aria-label")),
+      ),
+  ).resolves.toEqual([
+    "Fader slot 1 · Follow fader",
+    "Assigned master: Global Master · Follow fader",
+    "Assigned master: Global Master · Flash to full",
+  ]);
+  await menu
+    .getByRole("menuitem", { name: "Fader slot 1 · Follow fader" })
+    .click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.oscMappings
+          .get()
+          .map((mapping: any) => mapping.action),
+      ),
+    )
+    .toEqual([{ id: "control.level", arguments: { control_index: 1 } }]);
+  await leaveMapping(page);
+
+  /** Returns each master's level keyed by numeric ID. */
+  const levels = () =>
+    page.evaluate(
+      () =>
+        Object.fromEntries(
+          Object.values((window as any).appStores.masters.get()).map(
+            (master: any) => [master.identifiers.id, master.level_percent],
+          ),
+        ) as Record<number, number>,
+    );
+  await sendOsc(port, "/e2e/map/fader", [0.3]);
+  await expect.poll(async () => (await levels())[masterId]).toBeCloseTo(30, 3);
+
+  // The binding follows the slot: reassigning another master moves what the fader drives.
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await expect.poll(async () => Object.keys(await levels()).length).toBe(2);
+  const secondId = Number(
+    Object.keys(await levels()).find((id) => Number(id) !== masterId),
+  );
+  await page.evaluate(
+    (masterId) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command: {
+          type: "AssignMaster",
+          data: { control_index: 1, master_id: masterId },
+        },
+      }),
+    secondId,
+  );
+  await sendOsc(port, "/e2e/map/fader", [0.6]);
+  await expect.poll(async () => (await levels())[secondId]).toBeCloseTo(60, 3);
+  expect((await levels())[masterId]).toBeCloseTo(30, 3);
+});
+
+/**
+ * Verifies an empty slot's Go button can be mapped, and that the binding runs whatever is
+ * assigned to the slot later.
+ */
+test("mapping an empty slot's Go follows what is assigned later", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await openPanel(page, "Clips");
+
+  await enterMapping(page);
+  await sendOsc(port, "/e2e/map/empty-go");
+  await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
+    "OSC /e2e/map/empty-go",
+  );
+  await expect(
+    page.getByRole("button", { name: "Go control 2" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Map control 2 Go" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.oscMappings
+          .get()
+          .map((mapping: any) => mapping.action),
+      ),
+    )
+    .toEqual([{ id: "control.go", arguments: { control_index: 2 } }]);
+  await leaveMapping(page);
+
+  // Assign a toggle master to slot 2; Go on a toggle master flips it.
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+  const masterId = (await onlyMaster(page)).identifiers.id;
+  await page.evaluate(
+    (masterId) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command: {
+          type: "AssignMaster",
+          data: { control_index: 2, master_id: masterId },
+        },
+      }),
+    masterId,
+  );
+
+  await sendOsc(port, "/e2e/map/empty-go");
+  await expect
+    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .toBe(true);
+});
+
+test("a mapped OSC button toggles timeline playback", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  const ids = await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    const timelineUid = crypto.randomUUID().replace(/-/g, "");
+    const timecodeUid = crypto.randomUUID().replace(/-/g, "");
+    await stores.sendAndAwait({
+      module: "TimecodeCommand",
+      command: {
+        type: "StoreTimecode",
+        data: {
+          identifiers: { id: 71, uid: timecodeUid, label: "Mapped Timecode" },
+          rate: "Fps30",
+          source: "Internal",
+        },
+      },
+    });
+    await stores.sendAndAwait({
+      module: "TimelineCommand",
+      command: {
+        type: "StoreTimeline",
+        data: {
+          identifiers: { id: 72, uid: timelineUid, label: "Mapped Timeline" },
+          timecode_uid: timecodeUid,
+          timecode_start: { secs: 0, nanos: 0 },
+          audio_path: "",
+          tracks: [],
+          markers: [],
+          regions: [],
+          bpm: 120,
+          beats_per_bar: 4,
+          use_beat_grid: false,
+          scroll_mode: "free",
+        },
+      },
+    });
+    const api = stores.dockApi.get();
+    api.addPanel({
+      id: `panel-Timeline-mapping-${timelineUid}`,
+      component: "Timeline",
+      title: "Mapped Timeline",
+      params: { initialTimelineUid: timelineUid },
+      position: {
+        referencePanel: api.panels.find(
+          (panel: { title?: string }) => panel.title === "3D Visualizer",
+        )?.id,
+        direction: "within",
+      },
+    });
+    return { timelineUid, timecodeUid };
+  });
+  /** Returns whether the timeline's linked timecode is running. */
+  const isRunning = () =>
+    page.evaluate(
+      (timecodeUid) =>
+        (window as any).appStores.timecodes.get()[timecodeUid]?.[1]
+          ?.is_active ?? false,
+      ids.timecodeUid,
+    );
+
+  await enterMapping(page);
+  await sendOsc(port, "/e2e/map/play", [1]);
+  await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
+    "OSC /e2e/map/play",
+  );
+  await page.getByRole("button", { name: "Map timeline play/pause" }).click();
+  await page
+    .getByRole("menu", { name: "Map timeline play/pause to" })
+    .getByRole("menuitem", { name: "On press" })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.oscMappings
+          .get()
+          .map((mapping: any) => mapping.action.id),
+      ),
+    )
+    .toEqual(["timeline.toggle-playback"]);
+  expect(await isRunning()).toBe(false);
+  await leaveMapping(page);
+
+  // A level-reporting button toggles once per press: 1 plays, 0 releases, 1 pauses.
+  await sendOsc(port, "/e2e/map/play", [0]);
+  await sendOsc(port, "/e2e/map/play", [1]);
+  await expect.poll(isRunning).toBe(true);
+  await sendOsc(port, "/e2e/map/play", [0]);
+  await sendOsc(port, "/e2e/map/play", [1]);
+  await expect.poll(isRunning).toBe(false);
+
+  // The binding targets the backend timeline, so it keeps working with its panel closed.
+  const panelId = `panel-Timeline-mapping-${ids.timelineUid}`;
+  await page.evaluate((panelId) => {
+    (window as any).appStores.dockApi.get().getPanel(panelId)?.api.close();
+  }, panelId);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (panelId) =>
+          (window as any).appStores.dockApi.get().getPanel(panelId) !==
+          undefined,
+        panelId,
+      ),
+    )
+    .toBe(false);
+  await sendOsc(port, "/e2e/map/play", [0]);
+  await sendOsc(port, "/e2e/map/play", [1]);
+  await expect.poll(isRunning).toBe(true);
+  await sendOsc(port, "/e2e/map/play", [0]);
+  await sendOsc(port, "/e2e/map/play", [1]);
+  await expect.poll(isRunning).toBe(false);
+});
+
+test("touching a mapped control in mapping mode arms it without firing its action", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await expect
+    .poll(async () => (await onlyMaster(page))?.level_percent)
+    .toBe(100);
+  const masterUid = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.masters.get())[0] as any)
+        .identifiers.uid as string,
+  );
+  await page.evaluate(
+    (master) =>
+      (window as any).appStores.sendAndAwait({
+        module: "OscCommand",
+        command: {
+          type: "UpsertMapping",
+          data: {
+            id: crypto.randomUUID().replace(/-/g, ""),
+            source: null,
+            address: "/e2e/live/level",
+            arg_index: 0,
+            arg_value: null,
+            release_value: null,
+            behavior: "Press",
+            action: { id: "master.level", arguments: { master } },
+          },
+        },
+      }),
+    masterUid,
+  );
+  await sendOsc(port, "/e2e/live/level", [0.5]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBeCloseTo(50, 3);
+
+  // A second client sees that controller actions are paused while this one maps.
+  const observer = await page.context().newPage();
+  await observer.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(observer);
+
+  await enterMapping(page);
+  await expect.poll(() => mappingClients(page)).toBe(1);
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await expect(observer.locator("[data-mapping-pause-banner]")).toHaveText(
+    "Controller actions paused while 1 client is mapping MIDI and OSC controls.",
+  );
+
+  // Moving the mapped fader arms it but leaves the master where it was.
+  await sendOsc(port, "/e2e/live/level", [0.2]);
+  await expect(banner).toContainText("OSC /e2e/live/level");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.oscLastEvent.get()?.args[0]?.data,
+      ),
+    )
+    .toBeCloseTo(0.2, 3);
+  await page.waitForTimeout(250);
+  expect((await onlyMaster(page)).level_percent).toBeCloseTo(50, 3);
+  await page.screenshot({
+    path: test.info().outputPath("controller-mapping-paused.png"),
+  });
+  await observer.screenshot({
+    path: test.info().outputPath("controller-mapping-paused-observer.png"),
+  });
+
+  // Leaving mapping mode resumes the binding.
+  await leaveMapping(page);
+  await expect(observer.locator("[data-mapping-pause-banner]")).toBeHidden();
+  await sendOsc(port, "/e2e/live/level", [0.25]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBeCloseTo(25, 3);
+
+  // Closing a client that is mapping releases its pause on the backend.
+  await observer
+    .getByRole("button", { name: "Controller mapping mode" })
+    .click();
+  await expect.poll(() => mappingClients(page)).toBe(1);
+  await sendOsc(port, "/e2e/live/level", [0.75]);
+  await expect(page.locator("[data-mapping-pause-banner]")).toBeVisible();
+  await observer.close();
+  await expect.poll(() => mappingClients(page)).toBe(0);
+  await expect(page.locator("[data-mapping-pause-banner]")).toBeHidden();
+  expect((await onlyMaster(page)).level_percent).toBeCloseTo(25, 3);
+  await sendOsc(port, "/e2e/live/level", [0.6]);
+  await expect
+    .poll(async () => (await onlyMaster(page)).level_percent)
+    .toBeCloseTo(60, 3);
+});
+
+/** Returns the action IDs of the stored OSC mappings, in list order. */
+function oscMappingActions(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    (window as any).appStores.oscMappings
+      .get()
+      .map((mapping: any) => mapping.action.id as string),
+  );
+}
+
+/**
+ * Verifies rebinding a bound OSC button names the binding it replaced, and that undo brings
+ * the replaced binding back while redo reapplies the rebinding.
+ */
+test("rebinding a control names the replaced binding and undo restores it", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+
+  // Bind an OSC button to the master's toggle.
+  await enterMapping(page);
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await sendOsc(port, "/e2e/map/rebind");
+  await expect(banner).toContainText("OSC /e2e/map/rebind");
+  await page.getByRole("button", { name: "Map toggle Global Master" }).click();
+  await expect.poll(() => oscMappingActions(page)).toHaveLength(1);
+  const [toggleAction] = await oscMappingActions(page);
+  expect(toggleAction).not.toBe("programmer.clear");
+
+  // Rebinding the same button to clear the programmer replaces the toggle binding. The
+  // just-bound control ignores messages briefly, so touch it until it arms again.
+  await expect(async () => {
+    await sendOsc(port, "/e2e/map/rebind");
+    await expect(banner).toContainText("OSC /e2e/map/rebind", {
+      timeout: 500,
+    });
+  }).toPass();
+  await page
+    .getByRole("navigation", { name: "Global" })
+    .getByRole("button", { name: "Map clear programmer" })
+    .click();
+  const clearMenu = page.getByRole("menu", { name: "Map clear programmer to" });
+  if (await clearMenu.isVisible()) {
+    await clearMenu.getByRole("menuitem", { name: "On press" }).click();
+  }
+  await expect
+    .poll(() => oscMappingActions(page))
+    .toEqual(["programmer.clear"]);
+  const replacedToast = page.getByText(
+    /^Bound OSC \/e2e\/map\/rebind → Clear programmer · On press \(replaced: .*Global Master\)$/,
+  );
+  await expect(replacedToast).toBeInViewport({ ratio: 1 });
+  await replacedToast.screenshot({
+    path: test.info().outputPath("controller-mapping-replaced.png"),
+  });
+  await leaveMapping(page);
+
+  // Undo restores the toggle binding, visible again in the OSC panel. A taller window leaves
+  // room for the mapping grid below the listener details.
+  await page.setViewportSize({ width: 1800, height: 2200 });
+  await openPanel(page, "OSC Input");
+  await page.getByRole("button", { name: "Undo: Map OSC control" }).click();
+  await expect.poll(() => oscMappingActions(page)).toEqual([toggleAction]);
+  const grid = page.locator('[data-grid-kind="tanstack"]').filter({
+    has: page.locator('[data-grid-header-id="tanstack-header-address"]'),
+  });
+  const restoredKey = await page.evaluate(
+    () => (window as any).appStores.oscMappings.get()[0].id as string,
+  );
+  const restoredAction = gridCellByKey(grid, {
+    columnKey: "action",
+    rowKey: restoredKey,
+  });
+  await restoredAction.scrollIntoViewIfNeeded();
+  await expect(restoredAction).toContainText("Global Master");
+  await expect(
+    gridCellByKey(grid, { columnKey: "address", rowKey: restoredKey }),
+  ).toContainText("/e2e/map/rebind");
+  await grid.screenshot({
+    path: test.info().outputPath("controller-mapping-undo-restored.png"),
+  });
+
+  // Redo reapplies the rebinding.
+  await page.getByRole("button", { name: "Redo: Map OSC control" }).click();
+  await expect
+    .poll(() => oscMappingActions(page))
+    .toEqual(["programmer.clear"]);
+});
+
+/**
+ * Verifies loading a show ends controller mapping mode: the backend resumes controller
+ * actions, and the mapping client leaves mapping mode and says why instead of re-entering
+ * on the new show.
+ */
+test("loading a show ends controller mapping mode", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  await enterMapping(page);
+
+  await page.evaluate(async () => {
+    const name = `e2e-mapping-${Date.now()}`;
+    await window.__nightfallTest.showfiles.swapWorld(
+      { type: "NewNamedShowfile", data: { name, includeSampleData: false } },
+      name,
+    );
+  });
+
+  await expect(page.locator("[data-mapping-mode-banner]")).toBeHidden();
+  await expect(page.getByText("a show was loaded").first()).toBeVisible();
+  await expect.poll(() => mappingClients(page)).toBe(0);
+  // The client stays out of mapping mode across later renewal intervals.
+  await page.waitForTimeout(6_000);
+  await expect(page.locator("[data-mapping-mode-banner]")).toBeHidden();
+  await expect.poll(() => mappingClients(page)).toBe(0);
+});
+
+/**
+ * Verifies that once a control is touched, targets it cannot drive are dimmed before being
+ * clicked, while targets it can drive stay highlighted.
+ */
+test("targets a touched control cannot drive are dimmed", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await openPanel(page, "Masters");
+  await page.getByRole("button", { name: "New intensity global" }).click();
+  await page
+    .locator("[data-master-id] select")
+    .first()
+    .selectOption("toggle-off");
+  await expect
+    .poll(async () => (await onlyMaster(page))?.mode.type)
+    .toBe("Toggle");
+
+  await enterMapping(page);
+  const level = page.getByRole("button", { name: "Map Global Master level" });
+  const toggle = page.getByRole("button", { name: "Map toggle Global Master" });
+  await expect(level).not.toHaveAttribute("data-mapping-compatible");
+
+  // A message without a value can fire the toggle but cannot set a level.
+  await sendOsc(port, "/e2e/map/pulse");
+  await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
+    "OSC /e2e/map/pulse",
+  );
+  await expect(level).toHaveAttribute("data-mapping-compatible", "false");
+  await expect(toggle).toHaveAttribute("data-mapping-compatible", "true");
+  await page
+    .locator("[data-master-id]")
+    .first()
+    .screenshot({
+      path: test.info().outputPath("mapping-incompatible-target.png"),
+    });
+  await leaveMapping(page);
+});
+
+/**
+ * Verifies a steady stream of touches does not starve lease renewal: controllers stay
+ * paused for longer than the 15 second lease while controls keep moving.
+ */
+test("mapping mode stays active while controls keep moving", async ({
+  backendSlot,
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await enterMapping(page);
+
+  for (let second = 0; second < 18; second += 1) {
+    await sendOsc(port, `/e2e/map/stream/${second % 3}`, [(second % 10) / 10]);
+    await page.waitForTimeout(1_000);
+  }
+  expect(await mappingClients(page)).toBe(1);
+  await expect(
+    page.locator("[data-mapping-mode-banner] [data-mapping-pause]"),
+  ).toHaveText("MIDI and OSC actions are paused.");
+  await leaveMapping(page);
+});
+
+/**
+ * Verifies the command palette runs entries as usual in mapping mode until a control is
+ * armed, so panels can still be opened while mapping.
+ */
+test("palette entries run normally until a control is armed", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  await enterMapping(page);
+
+  await openPanel(page, "Masters");
+  await expect(
+    page.getByRole("button", { name: "New intensity global" }),
+  ).toBeVisible();
+  await expect(page.getByText("Move a MIDI or OSC control first")).toHaveCount(
+    0,
+  );
+  await leaveMapping(page);
+});
+
+/**
+ * Verifies a phone-width layout, whose header has no mapping toggle, enters and leaves
+ * mapping mode from the command palette, and that leaving works even with a control armed
+ * rather than binding the armed control to the toggle.
+ */
+test("the command palette toggles mapping mode at phone width", async ({
+  backendSlot,
+  page,
+}) => {
+  await openMappingApp(page, backendSlot.backendPort);
+  const port = await oscPort(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole("button", { name: "Controller mapping mode" }),
+  ).toHaveCount(0);
+
+  await runPaletteEntry(page, "Toggle Controller Mapping Mode");
+  const banner = page.locator("[data-mapping-mode-banner]");
+  await expect(banner.locator("[data-mapping-pause]")).toHaveText(
+    "MIDI and OSC actions are paused.",
+  );
+  await sendOsc(port, "/e2e/map/phone", [0.4]);
+  await expect(banner).toContainText("/e2e/map/phone");
+  await page.screenshot({
+    path: test.info().outputPath("phone-mapping-armed.png"),
+  });
+
+  await runPaletteEntry(page, "Toggle Controller Mapping Mode");
+  await expect(banner).toBeHidden();
+  await expect.poll(() => mappingClients(page)).toBe(0);
+  const oscMappings = await page.evaluate(
+    () => (window as any).appStores.oscMappings.get() as unknown[],
+  );
+  expect(oscMappings).toHaveLength(0);
+});

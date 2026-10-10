@@ -8,7 +8,7 @@
 
 //! Adapts raw control-surface signals to the input each bound action consumes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
@@ -105,37 +105,94 @@ pub enum BindingTarget {
     HoldRelease,
 }
 
+/// Identifies one stream of press state: a binding, split per sender when several senders
+/// can drive the same binding.
+///
+/// An OSC mapping without a source filter matches every sender on its address, so tracking
+/// press state per binding alone would let one sender's release complete another's press.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EdgeKey {
+    /// Binding the signal matched.
+    binding: Uuid,
+    /// Sender the signal came from, when a binding can be driven by several senders.
+    sender: Option<String>,
+}
+
+impl EdgeKey {
+    /// Tracks press state for a binding across all senders.
+    pub fn new(binding: Uuid) -> Self {
+        Self {
+            binding,
+            sender: None,
+        }
+    }
+
+    /// Tracks press state for a binding separately for each sender.
+    pub fn with_sender(mut self, sender: impl Into<String>) -> Self {
+        self.sender = Some(sender.into());
+        self
+    }
+}
+
+impl From<Uuid> for EdgeKey {
+    fn from(binding: Uuid) -> Self {
+        Self::new(binding)
+    }
+}
+
 /// Per-binding press state used to turn continuous levels into button edges.
 ///
 /// Button-style hardware often reports levels (a MIDI controller sending 127 then 0, or an
 /// OSC toggle sending 1.0 then 0.0). Driving a button behavior from such a control reacts
 /// only when the level crosses the press threshold, so repeated values or fader movement
 /// within one half of the range do not retrigger the action.
+///
+/// Input can be suppressed, as it is while controller mapping mode is active. Suppression
+/// starts nothing new but finishes what already started live:
+/// - Presses, levels, pulses, and Release-behavior triggers are swallowed.
+/// - A release completing a press that was dispatched live still dispatches, so a Hold
+///   binding's release counterpart runs and a Flash restores its level instead of latching.
+/// - A press swallowed while suppressed also swallows its release, even when the release
+///   arrives after suppression ended, so leaving mapping mode never fires a stray release.
+///
+/// Outside suppression, a release still only fires for a press the binding saw, so a control
+/// held while it was being bound does not fire its release binding when let go.
+///
+/// State is kept per [`EdgeKey`], so senders sharing a binding each keep their own edges.
 #[derive(Debug, Default, Resource)]
 pub struct SourceEdgeStates {
-    pressed: HashMap<Uuid, bool>,
+    /// Last known button state per binding and sender.
+    pressed: HashMap<EdgeKey, bool>,
+    /// Bindings and senders whose current press was swallowed, so their release is too.
+    swallowed: HashSet<EdgeKey>,
 }
 
 impl SourceEdgeStates {
-    /// Converts one signal from the binding identified by `binding` to the input to invoke.
+    /// Converts one signal from the binding and sender identified by `key` to the input to
+    /// invoke.
     ///
     /// Returns which action to invoke with which input, or `None` when the signal has no
     /// effect for the binding, such as a level that stays on the same side of the press
-    /// threshold, or a press reaching a release binding.
+    /// threshold, a press reaching a release binding, or input swallowed while `suppressed`
+    /// (see [`SourceEdgeStates`] for which edges suppression lets through).
     pub fn adapt(
         &mut self,
-        binding: Uuid,
+        key: impl Into<EdgeKey>,
         kind: ActionInputKind,
         behavior: ControlBehavior,
         signal: SourceSignal,
+        suppressed: bool,
     ) -> Option<(BindingTarget, ActionInput)> {
+        let binding = &key.into();
         let action = |input| Some((BindingTarget::Action, input));
         match behavior {
-            ControlBehavior::Press => self.adapt_direct(binding, kind, signal).and_then(action),
-            ControlBehavior::Release => (!self.edge(binding, signal)?)
+            ControlBehavior::Press => self
+                .adapt_direct(binding, kind, signal, suppressed)
+                .and_then(action),
+            ControlBehavior::Release => (!self.edge(binding, signal, suppressed)? && !suppressed)
                 .then_some((BindingTarget::Action, ActionInput::Trigger)),
             ControlBehavior::Hold if kind == ActionInputKind::Trigger => {
-                let target = if self.edge(binding, signal)? {
+                let target = if self.edge(binding, signal, suppressed)? {
                     BindingTarget::Action
                 } else {
                     BindingTarget::HoldRelease
@@ -143,65 +200,96 @@ impl SourceEdgeStates {
                 Some((target, ActionInput::Trigger))
             }
             ControlBehavior::Hold | ControlBehavior::Flash => {
-                action(button_input(self.edge(binding, signal)?))
+                action(button_input(self.edge(binding, signal, suppressed)?))
             }
         }
     }
 
     /// Converts one signal for a Press binding, which drives the action's own input kind.
+    ///
+    /// Levels and pulses carry no press to complete, so suppression swallows them outright.
     fn adapt_direct(
         &mut self,
-        binding: Uuid,
+        binding: &EdgeKey,
         kind: ActionInputKind,
         signal: SourceSignal,
+        suppressed: bool,
     ) -> Option<ActionInput> {
         match (kind, signal) {
             (ActionInputKind::Absolute, SourceSignal::Level(value)) => {
-                Some(ActionInput::Scalar(value))
+                (!suppressed).then_some(ActionInput::Scalar(value))
             }
             (ActionInputKind::Absolute, SourceSignal::Button(pressed)) => {
-                Some(ActionInput::Scalar(if pressed { 1.0 } else { 0.0 }))
+                (!suppressed).then_some(ActionInput::Scalar(if pressed { 1.0 } else { 0.0 }))
             }
-            (ActionInputKind::Trigger, SourceSignal::Pulse) => Some(ActionInput::Trigger),
-            _ => self.edge(binding, signal).map(button_input),
+            (ActionInputKind::Trigger, SourceSignal::Pulse) => {
+                (!suppressed).then_some(ActionInput::Trigger)
+            }
+            _ => self.edge(binding, signal, suppressed).map(button_input),
         }
     }
 
-    /// Returns the button edge a signal represents: `true` for a press, `false` for a release.
+    /// Returns the button edge a signal dispatches: `true` for a press, `false` for a release.
     ///
     /// Pulses have no edges, and levels only report an edge when crossing the press threshold.
-    fn edge(&mut self, binding: Uuid, signal: SourceSignal) -> Option<bool> {
-        match signal {
-            SourceSignal::Pulse => None,
+    /// Press state is tracked even while `suppressed`, but a suppressed press is swallowed along
+    /// with its eventual release. A release only passes when it completes a press this binding
+    /// dispatched live, so a control held while it was bound does not fire on letting go.
+    fn edge(&mut self, binding: &EdgeKey, signal: SourceSignal, suppressed: bool) -> Option<bool> {
+        let (pressed, was_pressed) = match signal {
+            SourceSignal::Pulse => return None,
             SourceSignal::Button(pressed) => {
-                self.pressed.insert(binding, pressed);
-                Some(pressed)
+                let previous = self
+                    .pressed
+                    .insert(binding.clone(), pressed)
+                    .unwrap_or(false);
+                (pressed, previous)
             }
             SourceSignal::Level(value) => {
                 let pressed = value >= PRESS_THRESHOLD;
-                let previous = self.pressed.insert(binding, pressed).unwrap_or(false);
-                (pressed != previous).then_some(pressed)
+                let previous = self
+                    .pressed
+                    .insert(binding.clone(), pressed)
+                    .unwrap_or(false);
+                if pressed == previous {
+                    return None;
+                }
+                (pressed, previous)
             }
+        };
+        if pressed {
+            if suppressed {
+                self.swallowed.insert(binding.clone());
+                return None;
+            }
+            self.swallowed.remove(binding);
+            return Some(true);
         }
+        if self.swallowed.remove(binding) || !was_pressed {
+            return None;
+        }
+        Some(false)
     }
 
     /// Resolves the action and input one signal invokes through a stored binding.
     ///
     /// Adapts the signal to the bound action's input kind and behavior, and swaps in the
     /// action's release counterpart for the release half of a Hold. Unknown actions still
-    /// dispatch as triggers so the registry reports them as unregistered.
+    /// dispatch as triggers so the registry reports them as unregistered. While `suppressed`,
+    /// only releases completing a live press resolve.
     pub fn resolve(
         &mut self,
         registry: &ActionRegistry,
-        binding: Uuid,
+        key: impl Into<EdgeKey>,
         action: &ActionReference,
         behavior: ControlBehavior,
         signal: SourceSignal,
+        suppressed: bool,
     ) -> Option<(ActionReference, ActionInput)> {
         let kind = registry
             .input_kind(&action.id)
             .unwrap_or(ActionInputKind::Trigger);
-        let (target, input) = self.adapt(binding, kind, behavior, signal)?;
+        let (target, input) = self.adapt(key, kind, behavior, signal, suppressed)?;
         let action = match target {
             BindingTarget::Action => action.clone(),
             BindingTarget::HoldRelease => registry.hold_release_action(action)?,
@@ -209,9 +297,10 @@ impl SourceEdgeStates {
         Some((action, input))
     }
 
-    /// Forgets press state for a binding that was removed or replaced.
+    /// Forgets press state from every sender for a binding that was removed or replaced.
     pub fn forget(&mut self, binding: Uuid) {
-        self.pressed.remove(&binding);
+        self.pressed.retain(|key, _| key.binding != binding);
+        self.swallowed.retain(|key| key.binding != binding);
     }
 }
 
@@ -236,7 +325,165 @@ mod tests {
         behavior: ControlBehavior,
         signal: SourceSignal,
     ) -> Option<(BindingTarget, ActionInput)> {
-        states.adapt(Uuid::from_u128(binding), kind, behavior, signal)
+        states.adapt(Uuid::from_u128(binding), kind, behavior, signal, false)
+    }
+
+    /// Adapts one button edge while input is live or suppressed, returning the input fired.
+    fn button(
+        states: &mut SourceEdgeStates,
+        behavior: ControlBehavior,
+        kind: ActionInputKind,
+        pressed: bool,
+        suppressed: bool,
+    ) -> Option<(BindingTarget, ActionInput)> {
+        states.adapt(
+            Uuid::from_u128(9),
+            kind,
+            behavior,
+            SourceSignal::Button(pressed),
+            suppressed,
+        )
+    }
+
+    /// Verifies suppression swallows presses, levels, pulses, and Release-behavior triggers.
+    #[test]
+    fn suppression_swallows_new_input() {
+        let mut states = SourceEdgeStates::default();
+        let id = Uuid::from_u128(10);
+
+        assert_eq!(
+            button(
+                &mut states,
+                ControlBehavior::Press,
+                ActionInputKind::Trigger,
+                true,
+                true
+            ),
+            None
+        );
+        assert_eq!(
+            states.adapt(
+                id,
+                ActionInputKind::Absolute,
+                ControlBehavior::Press,
+                SourceSignal::Level(0.7),
+                true
+            ),
+            None
+        );
+        assert_eq!(
+            states.adapt(
+                id,
+                ActionInputKind::Trigger,
+                ControlBehavior::Press,
+                SourceSignal::Pulse,
+                true
+            ),
+            None
+        );
+        let release_binding = Uuid::from_u128(11);
+        for pressed in [true, false] {
+            assert_eq!(
+                states.adapt(
+                    release_binding,
+                    ActionInputKind::Trigger,
+                    ControlBehavior::Release,
+                    SourceSignal::Button(pressed),
+                    true
+                ),
+                None
+            );
+        }
+    }
+
+    /// Verifies a Hold pressed live still runs its release counterpart while suppressed.
+    #[test]
+    fn suppression_completes_live_hold() {
+        let mut states = SourceEdgeStates::default();
+        let (hold, trigger) = (ControlBehavior::Hold, ActionInputKind::Trigger);
+
+        assert_eq!(
+            button(&mut states, hold, trigger, true, false),
+            Some((BindingTarget::Action, ActionInput::Trigger))
+        );
+        assert_eq!(
+            button(&mut states, hold, trigger, false, true),
+            Some((BindingTarget::HoldRelease, ActionInput::Trigger))
+        );
+        assert_eq!(button(&mut states, hold, trigger, false, true), None);
+    }
+
+    /// Verifies a Flash pressed live still restores its level when released while suppressed.
+    #[test]
+    fn suppression_completes_live_flash() {
+        let mut states = SourceEdgeStates::default();
+        let (flash, absolute) = (ControlBehavior::Flash, ActionInputKind::Absolute);
+
+        assert_eq!(
+            button(&mut states, flash, absolute, true, false),
+            Some((BindingTarget::Action, ActionInput::Press))
+        );
+        assert_eq!(
+            button(&mut states, flash, absolute, false, true),
+            Some((BindingTarget::Action, ActionInput::Release))
+        );
+    }
+
+    /// Verifies a release with no press the binding saw, as when a control is bound while
+    /// held, fires nothing, and that the next full press and release behave normally.
+    #[test]
+    fn release_without_a_seen_press_fires_nothing() {
+        let mut states = SourceEdgeStates::default();
+        for behavior in [ControlBehavior::Release, ControlBehavior::Hold] {
+            assert_eq!(
+                button(
+                    &mut states,
+                    behavior,
+                    ActionInputKind::Trigger,
+                    false,
+                    false
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            button(
+                &mut states,
+                ControlBehavior::Release,
+                ActionInputKind::Trigger,
+                true,
+                false
+            ),
+            None
+        );
+        assert_eq!(
+            button(
+                &mut states,
+                ControlBehavior::Release,
+                ActionInputKind::Trigger,
+                false,
+                false
+            ),
+            Some((BindingTarget::Action, ActionInput::Trigger))
+        );
+    }
+
+    /// Verifies a press swallowed while suppressed also swallows its release after suppression.
+    #[test]
+    fn suppressed_press_swallows_trailing_release() {
+        let mut states = SourceEdgeStates::default();
+        let (hold, trigger) = (ControlBehavior::Hold, ActionInputKind::Trigger);
+
+        assert_eq!(button(&mut states, hold, trigger, true, true), None);
+        assert_eq!(button(&mut states, hold, trigger, false, false), None);
+        assert_eq!(
+            button(&mut states, hold, trigger, true, false),
+            Some((BindingTarget::Action, ActionInput::Trigger))
+        );
+        assert_eq!(
+            button(&mut states, hold, trigger, false, false),
+            Some((BindingTarget::HoldRelease, ActionInput::Trigger))
+        );
     }
 
     /// Verifies faders feed absolute actions directly.
@@ -379,6 +626,32 @@ mod tests {
             flash(0.0),
             Some((BindingTarget::Action, ActionInput::Release))
         );
+    }
+
+    /// Verifies two senders driving one binding keep separate edges, so interleaved presses
+    /// and releases each fire once instead of cancelling or duplicating each other.
+    #[test]
+    fn senders_sharing_a_binding_keep_separate_edges() {
+        let mut states = SourceEdgeStates::default();
+        let binding = Uuid::from_u128(12);
+        let mut release = |sender: &str, pressed| {
+            states.adapt(
+                EdgeKey::new(binding).with_sender(sender),
+                ActionInputKind::Trigger,
+                ControlBehavior::Release,
+                SourceSignal::Level(if pressed { 1.0 } else { 0.0 }),
+                false,
+            )
+        };
+        let fired = Some((BindingTarget::Action, ActionInput::Trigger));
+
+        assert_eq!(release("10.0.0.1:9000", true), None);
+        assert_eq!(release("10.0.0.2:9000", true), None);
+        assert_eq!(release("10.0.0.1:9000", false), fired);
+        assert_eq!(release("10.0.0.2:9000", false), fired);
+
+        states.forget(binding);
+        assert!(states.pressed.is_empty());
     }
 
     /// Verifies a control holds one press and one release trigger, or one two-edge binding.

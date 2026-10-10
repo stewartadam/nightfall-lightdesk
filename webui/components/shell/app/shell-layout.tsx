@@ -8,6 +8,8 @@
 
 import { useStore } from "@nanostores/solid";
 import { Show } from "solid-js";
+import { MappingModeBanner, MappingModeController } from "../../../features/io";
+import { KeybindingController } from "../../../features/keybindings";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
@@ -41,6 +43,8 @@ function ShellRuntime() {
       <ExportShowfileCommand />
       <FeedbackCommands />
       <LayoutCommands />
+      <MappingModeController />
+      <KeybindingController />
       <TauriMenuBridge />
       <ConnectionOverlay />
       <ShellOverlayHosts />
@@ -109,6 +113,7 @@ export default function AppShell() {
   return (
     <div class="nf-app-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
       <AppHeader />
+      <MappingModeBanner />
       <div class="min-h-0 flex-1 overflow-hidden">
         <ShellRuntime />
         <ShellContent />

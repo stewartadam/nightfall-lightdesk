@@ -10,11 +10,15 @@
 
 use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, HashMap};
+use std::mem::{Discriminant, discriminant};
 
 use bevy_ecs::prelude::{Resource, World};
 use serde::de::DeserializeOwned;
 
-use crate::descriptor::{ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind};
+use crate::descriptor::{
+    ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
+    ActionParameterKind, ActionSurface,
+};
 use crate::flash::{FLASH_LEVEL, FlashStates};
 use crate::invocation::{
     ActionInput, ActionInvocation, ActionReference, ClientActionInvocation, InvocationDispatch,
@@ -39,6 +43,13 @@ type CapabilityResolver = Box<
 type FlashLevelReader =
     Box<dyn Fn(&World, &ActionReference) -> Result<Option<f32>, InvocationError> + Send + Sync>;
 
+/// Checks that a reference's arguments decode into the owning domain's argument type.
+type ArgumentsCheck = Box<dyn Fn(&ActionReference) -> Result<(), InvocationError> + Send + Sync>;
+
+/// Checks, without mutating the world, that one argument's addressed object exists.
+type TargetValidator =
+    Box<dyn Fn(&World, &serde_json::Value) -> Result<(), InvocationError> + Send + Sync>;
+
 /// One deterministic interpretation of an action, keyed by its output type.
 struct RegisteredCapability {
     name: &'static str,
@@ -49,6 +60,7 @@ struct RegisteredCapability {
 struct RegisteredAction {
     descriptor: ActionDescriptor,
     invoker: RegisteredInvoker,
+    check_arguments: ArgumentsCheck,
     capabilities: HashMap<TypeId, RegisteredCapability>,
     flash_level: Option<FlashLevelReader>,
 }
@@ -57,6 +69,7 @@ struct RegisteredAction {
 #[derive(Default, Resource)]
 pub struct ActionRegistry {
     actions: BTreeMap<ActionId, RegisteredAction>,
+    target_validators: HashMap<Discriminant<ActionParameterKind>, TargetValidator>,
 }
 
 /// Returns whether an action ID is reserved for actions hosted by connected clients.
@@ -75,6 +88,96 @@ fn decode_arguments<A: DeserializeOwned>(action: &ActionReference) -> Result<A, 
             ),
         )
     })
+}
+
+/// Returns a present, non-null argument stored under a parameter's name.
+fn argument<'a>(action: &'a ActionReference, name: &str) -> Option<&'a serde_json::Value> {
+    action.arguments.get(name).filter(|value| !value.is_null())
+}
+
+/// Builds the failure reported for one argument that does not fit its parameter.
+fn invalid_argument(
+    action: &ActionReference,
+    parameter: &ActionParameter,
+    reason: impl std::fmt::Display,
+) -> InvocationError {
+    InvocationError::new(
+        "action.invalid_arguments",
+        format!(
+            "Invalid '{}' argument for action '{}': {reason}",
+            parameter.label,
+            action.id.as_str()
+        ),
+    )
+    .with_details(serde_json::json!({ "parameter": parameter.name }))
+}
+
+/// Checks that a numeric argument is a number within its parameter's declared range.
+///
+/// Object references and text are left to the domain's typed decoding.
+fn check_parameter_value(
+    action: &ActionReference,
+    parameter: &ActionParameter,
+    value: &serde_json::Value,
+) -> Result<(), InvocationError> {
+    match parameter.kind {
+        ActionParameterKind::Integer { min, max } => {
+            let within = value.as_u64().is_some_and(|value| {
+                value >= u64::from(min) && max.is_none_or(|max| value <= u64::from(max))
+            });
+            if within {
+                return Ok(());
+            }
+            let range = max.map_or_else(|| format!("at least {min}"), |max| format!("{min}–{max}"));
+            Err(invalid_argument(
+                action,
+                parameter,
+                format!("expected a whole number {range}"),
+            ))
+        }
+        ActionParameterKind::Number { min, max } => {
+            if value
+                .as_f64()
+                .is_some_and(|value| (min..=max).contains(&value))
+            {
+                return Ok(());
+            }
+            Err(invalid_argument(
+                action,
+                parameter,
+                format!("expected a number {min}–{max}"),
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Rejects binding or invoking an action from a surface its descriptor does not allow.
+fn ensure_surface_allowed(
+    descriptor: &ActionDescriptor,
+    surface: ActionSurface,
+) -> Result<(), InvocationError> {
+    if descriptor.allows_surface(surface) {
+        return Ok(());
+    }
+    let allowed = descriptor
+        .surfaces
+        .iter()
+        .map(|surface| surface.label())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(InvocationError::new(
+        "action.surface_not_allowed",
+        format!(
+            "'{}' cannot be invoked from {}; it only runs from: {allowed}",
+            descriptor.label,
+            surface.label()
+        ),
+    )
+    .with_details(serde_json::json!({
+        "surface": surface,
+        "allowed_surfaces": descriptor.surfaces,
+    })))
 }
 
 /// Lists the controller binding behaviors a registered action supports.
@@ -105,6 +208,9 @@ fn supported_behaviors(action: &RegisteredAction) -> Vec<ControlBehavior> {
 ///
 /// A press captures the current level and returns full; a release returns the captured
 /// level, or `None` while other flashes hold the target or after the level was moved.
+///
+/// A release always ends its hold, even when the level cannot be read because the target
+/// vanished while held, so later flashes of a restored target still return to their level.
 fn flash_level(
     world: &mut World,
     registered: &RegisteredAction,
@@ -117,13 +223,19 @@ fn flash_level(
             format!("Action '{}' cannot flash", registered.descriptor.label),
         )
     })?;
-    let current = reader(world, &invocation.action)?;
+    let current = reader(world, &invocation.action);
     let mut flashes = world.get_resource_or_insert_with(FlashStates::default);
     if pressed {
-        flashes.press(&invocation.action, current);
+        flashes.press(&invocation.action, current?);
         Ok(Some(FLASH_LEVEL))
     } else {
-        Ok(flashes.release(&invocation.action, current))
+        match current {
+            Ok(current) => Ok(flashes.release(&invocation.action, current)),
+            Err(error) => {
+                flashes.release(&invocation.action, None);
+                Err(error)
+            }
+        }
     }
 }
 
@@ -159,6 +271,7 @@ impl ActionRegistry {
             RegisteredAction {
                 descriptor,
                 invoker: Box::new(registered_invoker),
+                check_arguments: Box::new(|action| decode_arguments::<A>(action).map(drop)),
                 capabilities: HashMap::new(),
                 flash_level: None,
             },
@@ -287,6 +400,7 @@ impl ActionRegistry {
             return Ok(InvocationDispatch::Accepted);
         }
         let registered = self.registered(&invocation.action.id)?;
+        ensure_surface_allowed(&registered.descriptor, invocation.surface)?;
         let input = match (registered.descriptor.input, invocation.input) {
             (ActionInputKind::Absolute, ActionInput::Press | ActionInput::Release) => {
                 let Some(level) = flash_level(
@@ -363,42 +477,138 @@ impl ActionRegistry {
 
     /// Validates that a stored binding can invoke its action before it is persisted.
     ///
-    /// Checks that the action exists, that every required argument is present, and that the
-    /// binding's source can drive the action's input kind. Actions in the reserved `ui.`
-    /// namespace are hosted by connected clients and are accepted without a registration.
+    /// Applies [`Self::validate_reference`] and checks that the binding's source can drive
+    /// the action's input kind. Actions in the reserved `ui.` namespace are hosted by
+    /// connected clients and are accepted without a registration.
     pub fn validate_binding(
         &self,
         action: &ActionReference,
+        surface: ActionSurface,
         can_drive: impl Fn(ActionInputKind) -> bool,
+    ) -> Result<(), InvocationError> {
+        self.validate_reference(action, surface)?;
+        let Some(descriptor) = self.get(&action.id) else {
+            return Ok(());
+        };
+        if !can_drive(descriptor.input) {
+            let label = &descriptor.label;
+            return Err(InvocationError::new(
+                "action.input_incompatible",
+                match descriptor.input {
+                    ActionInputKind::Absolute => format!(
+                        "'{label}' needs a number from a fader or knob, and this control does not send one"
+                    ),
+                    ActionInputKind::Momentary => {
+                        format!("'{label}' needs a control that reports both press and release")
+                    }
+                    ActionInputKind::Trigger => format!("This control cannot trigger '{label}'"),
+                },
+            ));
+        }
+        Ok(())
+    }
+
+    /// Validates a stored action reference without resolving the objects it addresses.
+    ///
+    /// Checks that the action is registered, that `surface` may invoke it, and that its
+    /// arguments fit its parameters (see [`Self::validate_arguments`]). Client-hosted `ui.*`
+    /// actions are accepted without a registration.
+    pub fn validate_reference(
+        &self,
+        action: &ActionReference,
+        surface: ActionSurface,
     ) -> Result<(), InvocationError> {
         if is_client_action(&action.id) {
             return Ok(());
         }
-        let descriptor = &self.registered(&action.id)?.descriptor;
-        if let Some(missing) = descriptor.parameters.iter().find(|parameter| {
-            parameter.required
-                && action
-                    .arguments
-                    .get(&parameter.name)
-                    .is_none_or(serde_json::Value::is_null)
-        }) {
-            return Err(InvocationError::new(
-                "action.missing_argument",
-                format!(
-                    "Action '{}' requires the '{}' argument",
-                    action.id.as_str(),
-                    missing.label
-                ),
-            ));
+        ensure_surface_allowed(&self.registered(&action.id)?.descriptor, surface)?;
+        self.validate_arguments(action)
+    }
+
+    /// Validates that a reference's arguments fit the registered action's parameters.
+    ///
+    /// Every required argument must be present, numeric arguments must lie within their
+    /// declared ranges, and the arguments must decode into the owning domain's typed
+    /// argument struct, exactly as live invocation decodes them.
+    pub fn validate_arguments(&self, action: &ActionReference) -> Result<(), InvocationError> {
+        if is_client_action(&action.id) {
+            return Ok(());
         }
-        if !can_drive(descriptor.input) {
-            return Err(InvocationError::new(
-                "action.input_incompatible",
-                format!(
-                    "This control cannot drive '{}', which needs {:?} input",
-                    descriptor.label, descriptor.input
-                ),
-            ));
+        let registered = self.registered(&action.id)?;
+        for parameter in &registered.descriptor.parameters {
+            match argument(action, &parameter.name) {
+                Some(value) => check_parameter_value(action, parameter, value)?,
+                None if parameter.required => {
+                    return Err(InvocationError::new(
+                        "action.missing_argument",
+                        format!(
+                            "Action '{}' requires the '{}' argument",
+                            action.id.as_str(),
+                            parameter.label
+                        ),
+                    )
+                    .with_details(serde_json::json!({ "parameter": parameter.name })));
+                }
+                None => {}
+            }
+        }
+        (registered.check_arguments)(action)
+    }
+
+    /// Registers the read-only validator that checks arguments of one parameter kind.
+    ///
+    /// The owning domain of an object kind registers it once, such as clips for
+    /// [`ActionParameterKind::Clip`]. `validator` receives the decoded argument and reports
+    /// a structured failure, typically `*.not_found`, when the addressed object is missing.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a validator is already registered for the kind.
+    pub fn register_target_validator<T, F>(&mut self, kind: ActionParameterKind, validator: F)
+    where
+        T: DeserializeOwned + 'static,
+        F: Fn(&World, T) -> Result<(), InvocationError> + Send + Sync + 'static,
+    {
+        let key = discriminant(&kind);
+        assert!(
+            !self.target_validators.contains_key(&key),
+            "a target validator for {kind:?} is already registered"
+        );
+        self.target_validators.insert(
+            key,
+            Box::new(move |world, value| {
+                let target = serde_json::from_value::<T>(value.clone()).map_err(|error| {
+                    InvocationError::new(
+                        "action.invalid_arguments",
+                        format!("Invalid {kind:?} argument: {error}"),
+                    )
+                })?;
+                validator(world, target)
+            }),
+        );
+    }
+
+    /// Checks, without side effects, that every object a reference addresses exists.
+    ///
+    /// Runs the validator registered for the kind of each present argument. Arguments whose
+    /// kind has no validator, and client-hosted `ui.*` actions, are accepted. This is an
+    /// on-demand check for stored bindings; live invocation resolves targets itself.
+    pub fn validate_target(
+        &self,
+        world: &World,
+        action: &ActionReference,
+    ) -> Result<(), InvocationError> {
+        if is_client_action(&action.id) {
+            return Ok(());
+        }
+        let registered = self.registered(&action.id)?;
+        for parameter in &registered.descriptor.parameters {
+            let Some(value) = argument(action, &parameter.name) else {
+                continue;
+            };
+            if let Some(validator) = self.target_validators.get(&discriminant(&parameter.kind)) {
+                validator(world, value)?;
+            }
         }
         Ok(())
     }
@@ -448,6 +658,7 @@ impl ActionRegistry {
                 "action.not_registered",
                 format!("Action '{}' is not registered", id.as_str()),
             )
+            .with_details(serde_json::json!({ "action_id": id }))
         })
     }
 }

@@ -276,6 +276,9 @@ export async function startPlaywrightTestBackend({
   workerSlot,
 }) {
   const testKey = shortIdentifier(testId);
+  // Every backend connects only to its own test's MIDI port, which is unique across runs, so
+  // tests never see one another's (or the host's) MIDI controllers.
+  const midiInputPort = `Nightfall E2E ${shortIdentifier(`${workerSlot.runRoot}\0${testId}`)}`;
   const { runDataDir: dataDir, seedDataAvailable } = clonePlaywrightDataDir(
     seedDataDir,
     workerSlot.runRoot,
@@ -296,6 +299,7 @@ export async function startPlaywrightTestBackend({
         NIGHTFALL_OUTPUT_ARTNET: "false",
         NIGHTFALL_OUTPUT_SACN_ENABLED: "false",
         NIGHTFALL_OUTPUT_USB: "false",
+        NIGHTFALL_MIDI_INPUT_PORT: midiInputPort,
         NIGHTFALL_EXPERIMENTAL_FLOWS: experimentalFlows ? "1" : "0",
         NIGHTFALL_PORT: String(workerSlot.backendPort),
         NIGHTFALL_TIMELINE_AUDIO_ENABLED:
@@ -314,6 +318,7 @@ export async function startPlaywrightTestBackend({
       ...workerSlot,
       backendService,
       dataDir,
+      midiInputPort,
       testId,
     };
   } catch (error) {

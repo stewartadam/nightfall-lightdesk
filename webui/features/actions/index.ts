@@ -9,7 +9,10 @@
 export { ActionPicker } from "./components/action-picker";
 export {
   type ActionTargetNames,
+  actionAllowsSurface,
   actionInputKind,
+  actionReferenceAllowsSurface,
+  actionReferencesEqual,
   actionsAccepting,
   buildActionReference,
   findCatalogEntry,
@@ -19,6 +22,17 @@ export {
 export {
   type ActionTargetOption,
   type ActionTargetOptions,
+  actionTargetNamesSnapshot,
   useActionTargetNames,
   useActionTargetOptions,
 } from "./model/action-target-names";
+export {
+  defineEngineControl,
+  type EngineControl,
+  type EngineControlDefinition,
+} from "./model/engine-control";
+export {
+  bindableActionCatalogSnapshot,
+  uiActionCatalogEntries,
+  useBindableActionCatalog,
+} from "./model/ui-action-catalog";

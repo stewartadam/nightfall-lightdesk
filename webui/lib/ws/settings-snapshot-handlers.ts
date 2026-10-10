@@ -8,17 +8,24 @@
 
 import {
   applyActionCatalogSnapshot,
+  applyActionInvocationFailure,
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
+  applyClientActionInvocation,
+  applyControllerMappingModeSnapshot,
   applyExternalControlStateSnapshot,
   applyIoSettingsSnapshot,
+  applyMidiControlTouched,
   applyMidiDeviceListSnapshot,
   applyMidiLastEventSnapshot,
+  applyMidiMappingDiagnosticsSnapshot,
   applyMidiMappingsSnapshot,
   applyNetworkInterfaceStatusSnapshot,
+  applyOscControlTouched,
   applyOscLastEventSnapshot,
   applyOscListenerStatusSnapshot,
+  applyOscMappingDiagnosticsSnapshot,
   applyOscMappingsSnapshot,
   applyOscSourcesSnapshot,
   applySettingsSnapshot,
@@ -71,6 +78,10 @@ export function registerSettingsSnapshotHandlers(
     applyMidiMappingsSnapshot(message.data);
   });
 
+  registry.register("MidiMappingDiagnostics", (message) => {
+    applyMidiMappingDiagnosticsSnapshot(message.data);
+  });
+
   registry.register("MidiLastEvent", (message) => {
     applyMidiLastEventSnapshot(message.data);
   });
@@ -83,6 +94,10 @@ export function registerSettingsSnapshotHandlers(
     applyOscMappingsSnapshot(message.data);
   });
 
+  registry.register("OscMappingDiagnostics", (message) => {
+    applyOscMappingDiagnosticsSnapshot(message.data);
+  });
+
   registry.register("OscLastEvent", (message) => {
     applyOscLastEventSnapshot(message.data);
   });
@@ -93,5 +108,25 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("ActionCatalog", (message) => {
     applyActionCatalogSnapshot(message.data);
+  });
+
+  registry.register("ClientActionInvocation", (message) => {
+    applyClientActionInvocation(message.data);
+  });
+
+  registry.register("MidiControlTouched", (message) => {
+    applyMidiControlTouched(message.data);
+  });
+
+  registry.register("OscControlTouched", (message) => {
+    applyOscControlTouched(message.data);
+  });
+
+  registry.register("ControllerMappingMode", (message) => {
+    applyControllerMappingModeSnapshot(message.data);
+  });
+
+  registry.register("ActionInvocationFailed", (message) => {
+    applyActionInvocationFailure(message.data);
   });
 }

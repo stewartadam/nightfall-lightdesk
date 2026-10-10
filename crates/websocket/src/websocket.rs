@@ -251,7 +251,9 @@ async fn client_ws(
         coalesced = outbox.coalesced_count(),
         "WebSocket client disconnected"
     );
-    if forget_client(&clients, &outbox) {
+    let last_client = forget_client(&clients, &outbox);
+    state.client_presence.client_disconnected(client_id);
+    if last_client {
         tracing::info!(%client_id, "Last websocket client disconnected");
         state.client_presence.last_client_disconnected();
     }
@@ -791,8 +793,9 @@ mod tests {
             .unwrap();
     }
 
-    /// Verifies the engine hears about disconnects only once the final session closes, so a
-    /// tab closing while another stays open does not trigger backend work.
+    /// Verifies every closed session is reported by its identity, while the last-client report
+    /// waits for the final session, so a tab closing while another stays open releases only
+    /// that tab's state.
     #[tokio::test]
     async fn only_the_last_disconnect_is_reported() {
         let (command_tx, _command_rx) = async_channel::unbounded();
@@ -834,18 +837,29 @@ mod tests {
             .await
             .unwrap();
 
+        let next_report = || async {
+            tokio::time::timeout(Duration::from_secs(5), presence_rx.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        };
+
         first.close(None).await.unwrap();
+        assert!(matches!(
+            next_report().await,
+            ClientPresence::Disconnected(_)
+        ));
         tokio::time::timeout(Duration::from_secs(5), registered(1))
             .await
             .unwrap();
         assert!(presence_rx.try_recv().is_err());
 
         second.close(None).await.unwrap();
-        let report = tokio::time::timeout(Duration::from_secs(5), presence_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(report, LastClientDisconnected);
+        assert!(matches!(
+            next_report().await,
+            ClientPresence::Disconnected(_)
+        ));
+        assert_eq!(next_report().await, ClientPresence::LastDisconnected);
         assert!(presence_rx.try_recv().is_err());
         server.abort();
     }

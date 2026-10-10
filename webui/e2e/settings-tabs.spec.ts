@@ -19,7 +19,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });
-  await expect(tablist.getByRole("tab")).toHaveCount(6);
+  await expect(tablist.getByRole("tab")).toHaveCount(7);
   const general = tablist.getByRole("tab", { name: "General", exact: true });
   await expect(general).toHaveAttribute("aria-selected", "true");
   await expect(dialog.getByRole("tabpanel", { name: "General" })).toBeVisible();

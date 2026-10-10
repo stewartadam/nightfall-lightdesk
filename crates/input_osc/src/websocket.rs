@@ -9,13 +9,14 @@
 //! WebSocket integration for OSC input.
 
 use bevy_ecs::prelude::*;
+use nightfall_actions::BindingDiagnostic;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
 use crate::mapping::OscMappings;
-use crate::{LastOscEvent, OscRuntimeStatus, OscSources};
+use crate::{LastOscEvent, OscControlTouches, OscMappingDiagnostics, OscRuntimeStatus, OscSources};
 
 /// OSC source info for UI display.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -41,6 +42,13 @@ pub enum OscWsMessage<'a> {
     OscListenerStatus(&'a OscListenerStatus),
     /// External eval metadata for CommandLine source tagging.
     OscExternalEval(&'a OscExternalEval),
+    /// OSC mappings that cannot currently invoke their action, and why.
+    OscMappingDiagnostics(&'a [BindingDiagnostic]),
+    /// Messages received in one frame while controller mapping mode is active, in order.
+    ///
+    /// Unlike `OscLastEvent`, these are never dropped or coalesced to one message per frame,
+    /// so a mapping client reliably arms the touched address with its press and release.
+    OscControlTouched(&'a [OscLastEvent]),
 }
 
 /// Deserialize and dispatch `OscCommand` from JSON.
@@ -53,10 +61,13 @@ pub fn deserialize_osc_command(
     let command: OscCommand =
         serde_json::from_value(json).map_err(|e| format!("Failed to parse OscCommand: {e}"))?;
 
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
+    world
+        .resource_mut::<PendingCommandBuffer>()
+        .push(PayloadEnvelope::with_context(
+            command_id,
+            undo_id,
+            Box::new(command),
+        ));
 
     Ok(())
 }
@@ -66,6 +77,7 @@ pub fn handle_resync_state(
     mut events: MessageReader<ResyncRequested>,
     sources: Res<OscSources>,
     mappings: Res<OscMappings>,
+    diagnostics: Res<OscMappingDiagnostics>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
     broadcaster: Res<ClientEventSink>,
@@ -78,6 +90,7 @@ pub fn handle_resync_state(
 
     send_sources(&sources, &broadcaster);
     send_mappings(&mappings, &broadcaster);
+    send_diagnostics(&diagnostics, &broadcaster);
     send_listener_status(&status, &broadcaster);
     if let Some(ref event) = last_event.0 {
         send_last_event(event, &broadcaster);
@@ -88,15 +101,27 @@ pub fn handle_resync_state(
 pub fn send_osc_state(
     sources: Res<OscSources>,
     mappings: Res<OscMappings>,
+    diagnostics: Res<OscMappingDiagnostics>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
+    mut touches: ResMut<OscControlTouches>,
     broadcaster: Res<ClientEventSink>,
 ) {
+    if !touches.0.is_empty() {
+        broadcaster.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscControlTouched(&touches.0),
+        );
+        touches.0.clear();
+    }
     if sources.is_changed() {
         send_sources(&sources, &broadcaster);
     }
     if mappings.is_changed() {
         send_mappings(&mappings, &broadcaster);
+    }
+    if diagnostics.is_changed() {
+        send_diagnostics(&diagnostics, &broadcaster);
     }
     if status.is_changed() {
         send_listener_status(&status, &broadcaster);
@@ -135,6 +160,14 @@ fn send_mappings(mappings: &OscMappings, broadcaster: &ClientEventSink) {
     );
 }
 
+/// Sends the current OSC mapping diagnostics to websocket clients.
+fn send_diagnostics(diagnostics: &OscMappingDiagnostics, broadcaster: &ClientEventSink) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &OscWsMessage::OscMappingDiagnostics(&diagnostics.0),
+    );
+}
+
 fn send_last_event(event: &OscLastEvent, broadcaster: &ClientEventSink) {
     broadcaster.publish(DISCRIMINATOR_DROPPABLE, &OscWsMessage::OscLastEvent(event));
 }
@@ -148,15 +181,13 @@ fn send_listener_status(status: &OscRuntimeStatus, broadcaster: &ClientEventSink
 
 #[cfg(test)]
 mod tests {
-    use bevy_ecs::message::Messages;
-
     use super::*;
 
+    /// Verifies OSC commands queue through the pending buffer so undo can capture them.
     #[test]
-    fn deserialize_osc_command_writes_semantic_envelope() {
+    fn deserialize_osc_command_queues_for_undo_capture() {
         let mut world = World::new();
-        world.insert_resource(Messages::<CommandEnvelope<OscCommand>>::default());
-        world.init_resource::<CommandTracker>();
+        world.init_resource::<PendingCommandBuffer>();
 
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
@@ -171,15 +202,13 @@ mod tests {
         )
         .expect("osc command should deserialize");
 
-        let messages: Vec<_> = world
-            .resource_mut::<Messages<CommandEnvelope<OscCommand>>>()
-            .drain()
-            .collect();
+        let messages = world.resource_mut::<PendingCommandBuffer>().drain();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].command_id, command_id);
         assert_eq!(messages[0].undo_id, undo_id);
-        assert!(
-            matches!(messages[0].command, OscCommand::DeleteMapping(id) if id == uuid::Uuid::from_u128(4))
-        );
+        assert!(matches!(
+            messages[0].payload.as_any().downcast_ref::<OscCommand>(),
+            Some(OscCommand::DeleteMapping(id)) if *id == uuid::Uuid::from_u128(4)
+        ));
     }
 }

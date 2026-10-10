@@ -11,6 +11,7 @@ nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-engine = { path = "../engine" }
 nightfall-service-host = { path = "../service_host" }
+nightfall-undo = { path = "../undo" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

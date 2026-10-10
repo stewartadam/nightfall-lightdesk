@@ -9,10 +9,12 @@
 //! OSC mapping storage and lookup.
 
 use bevy_ecs::prelude::*;
-use nightfall_actions::{ActionInputKind, ActionReference, SourceSignal};
+use nightfall_actions::{
+    ActionInputKind, ActionReference, BindingStore, InvocationError, SourceSignal,
+};
 use uuid::Uuid;
 
-use crate::command::{OscLastEvent, OscMapping, OscType};
+use crate::command::{OscLastEvent, OscMapping, OscType, OscValueRange};
 
 /// Resource storing configured OSC mappings.
 #[derive(Resource, Default, Debug, Clone)]
@@ -38,7 +40,7 @@ impl OscMappings {
         &self.mappings
     }
 
-    /// Creates or replaces a mapping and returns the IDs of other mappings it displaced.
+    /// Creates or replaces a mapping and returns the other mappings it displaced.
     ///
     /// Mappings with identical match criteria address the same control, which fires at most
     /// one action per edge, so any such mapping that would fire from the same edge is removed
@@ -48,13 +50,12 @@ impl OscMappings {
         &mut self,
         mapping: OscMapping,
         input_kind: impl Fn(&ActionReference) -> Option<ActionInputKind>,
-    ) -> Vec<Uuid> {
+    ) -> Vec<OscMapping> {
         let mapping = normalize_mapping(mapping);
         let kind = input_kind(&mapping.action);
-        let displaced = self
-            .mappings
-            .iter()
-            .filter(|existing| {
+        let (displaced, kept) = std::mem::take(&mut self.mappings)
+            .into_iter()
+            .partition::<Vec<_>, _>(|existing| {
                 existing.id != mapping.id
                     && same_criteria(existing, &mapping)
                     && mapping.behavior.overlaps(
@@ -62,11 +63,8 @@ impl OscMappings {
                         existing.behavior,
                         input_kind(&existing.action),
                     )
-            })
-            .map(|existing| existing.id)
-            .collect::<Vec<_>>();
-        self.mappings
-            .retain(|existing| !displaced.contains(&existing.id));
+            });
+        self.mappings = kept;
         match self
             .mappings
             .iter_mut()
@@ -88,15 +86,42 @@ impl OscMappings {
     /// Returns the mappings bound to the control that sent an OSC message.
     ///
     /// The first mapping whose criteria match identifies the control; every mapping with the
-    /// same criteria is returned with it, at most one per edge.
-    pub fn lookup(&self, event: &OscLastEvent) -> impl Iterator<Item = &OscMapping> {
-        let control = self
+    /// same criteria that also matches the message is returned with it, at most one per edge.
+    /// A pulse mapping on a value therefore does not fire on the release value that a
+    /// neighbouring button mapping on the same control matches.
+    pub fn lookup(&self, event: &OscLastEvent) -> Vec<&OscMapping> {
+        let Some(control) = self
             .mappings
             .iter()
-            .find(|mapping| mapping_matches_event(mapping, event));
+            .find(|mapping| mapping_matches_event(mapping, event))
+        else {
+            return Vec::new();
+        };
         self.mappings
             .iter()
-            .filter(move |mapping| control.is_some_and(|control| same_criteria(control, mapping)))
+            .filter(|mapping| {
+                same_criteria(control, mapping) && mapping_matches_event(mapping, event)
+            })
+            .collect()
+    }
+}
+
+impl BindingStore for OscMappings {
+    type Binding = OscMapping;
+
+    /// Returns the mappings in list order.
+    fn bindings(&self) -> &[OscMapping] {
+        &self.mappings
+    }
+
+    /// Returns the mappings for undo and redo restoration.
+    fn bindings_mut(&mut self) -> &mut Vec<OscMapping> {
+        &mut self.mappings
+    }
+
+    /// Returns the mapping's stable ID.
+    fn binding_id(binding: &OscMapping) -> Uuid {
+        binding.id
     }
 }
 
@@ -126,13 +151,32 @@ impl OscMapping {
         };
         match event.args.get(usize::from(arg_index)) {
             Some(OscType::Bool(pressed)) => SourceSignal::Button(*pressed),
-            Some(arg) => arg
-                .as_hardware_fader_percent()
-                .map_or(SourceSignal::Pulse, |percent| {
-                    SourceSignal::Level(percent / 100.0)
-                }),
+            Some(arg) => self
+                .level(arg)
+                .map_or(SourceSignal::Pulse, SourceSignal::Level),
             None => SourceSignal::Pulse,
         }
+    }
+
+    /// Converts a numeric argument into a level in `0..=1`.
+    ///
+    /// A valid explicit range maps linearly between its ends; without one (or with an
+    /// invalid one, which diagnostics report) the argument's units are inferred.
+    fn level(&self, arg: &OscType) -> Option<f32> {
+        match self
+            .range
+            .and_then(|range| range.normalize(arg.as_number()?))
+        {
+            Some(level) => Some(level),
+            None => arg
+                .as_hardware_fader_percent()
+                .map(|percent| percent / 100.0),
+        }
+    }
+
+    /// Checks the mapping's own settings, independent of the action it binds.
+    pub fn validate(&self) -> Result<(), InvocationError> {
+        self.range.as_ref().map_or(Ok(()), OscValueRange::validate)
     }
 
     /// Returns whether messages matched by this mapping can drive an action input kind.
@@ -146,6 +190,25 @@ impl OscMapping {
     /// report button edges or levels; value-matched mappings without one are pulses.
     pub fn reports_release(&self) -> bool {
         self.release_value.is_some() || (self.arg_value.is_none() && self.arg_index.is_some())
+    }
+
+    /// Explains in plain language why matched messages cannot drive the action `label`.
+    ///
+    /// Describes what the mapping reads from each message and how to change it: a mapping
+    /// matching one exact value only fires, and one without an argument index reads nothing.
+    pub fn explain_undrivable(&self, label: &str) -> String {
+        match self.arg_value.as_deref() {
+            Some(value) => format!(
+                "OSC {} only matches the value {value}, so it cannot set '{label}'. Clear the \
+                 argument match so the mapping reads the value.",
+                self.address
+            ),
+            None => format!(
+                "OSC {} is not set to read a value, so it cannot set '{label}'. Send a number \
+                 with the message, such as 0.5, and map it again.",
+                self.address
+            ),
+        }
     }
 }
 
@@ -231,7 +294,10 @@ mod tests {
         mappings: &'a OscMappings,
         event: &OscLastEvent,
     ) -> Option<&'a ActionReference> {
-        mappings.lookup(event).next().map(|mapping| &mapping.action)
+        mappings
+            .lookup(event)
+            .first()
+            .map(|mapping| &mapping.action)
     }
 
     fn test_event(args: Vec<OscType>) -> OscLastEvent {
@@ -252,6 +318,7 @@ mod tests {
             arg_index: None,
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.start", json!({ "id": 5 })),
         }]);
@@ -272,6 +339,7 @@ mod tests {
             arg_index: None,
             arg_value: Some("42".to_string()),
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.go", json!({ "id": 7 })),
         }]);
@@ -293,6 +361,7 @@ mod tests {
             arg_index: Some(1),
             arg_value: Some("go".to_string()),
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.eval", json!({ "command": "clip 1 go" })),
         }]);
@@ -319,6 +388,7 @@ mod tests {
             arg_index: None,
             arg_value: Some("   ".to_string()),
             release_value: None,
+            range: None,
             behavior: ControlBehavior::Press,
             action: ActionReference::new("test.start", json!({ "id": 9 })),
         }]);
@@ -338,6 +408,7 @@ mod tests {
             arg_index: Some(0),
             arg_value: Some("1".to_string()),
             release_value: Some("0".to_string()),
+            range: None,
             behavior,
             action: ActionReference::new(action, json!({})),
         }
@@ -384,8 +455,38 @@ mod tests {
         assert!(displaced.is_empty());
         let actions = mappings
             .lookup(&test_event(vec![OscType::Int(0)]))
+            .into_iter()
             .map(|mapping| mapping.action.id.as_str())
             .collect::<Vec<_>>();
         assert_eq!(actions, vec!["test.start", "test.stop"]);
+    }
+
+    /// Verifies a pulse mapping on the pressed value does not fire on the release value that
+    /// a button mapping with the same criteria matches.
+    #[test]
+    fn pulse_mapping_ignores_a_neighbouring_release_value() {
+        let triggers = |_: &ActionReference| Some(ActionInputKind::Trigger);
+        let mut mappings = OscMappings::new();
+        mappings.upsert(
+            button_mapping(1, ControlBehavior::Release, "test.stop"),
+            triggers,
+        );
+        mappings.upsert(
+            OscMapping {
+                release_value: None,
+                ..button_mapping(2, ControlBehavior::Press, "test.start")
+            },
+            triggers,
+        );
+
+        let actions = |value| {
+            mappings
+                .lookup(&test_event(vec![OscType::Int(value)]))
+                .into_iter()
+                .map(|mapping| mapping.action.id.as_str().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(actions(0), vec!["test.stop"]);
+        assert_eq!(actions(1), vec!["test.stop", "test.start"]);
     }
 }

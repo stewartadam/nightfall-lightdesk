@@ -31,7 +31,7 @@ import "dockview/dist/styles/dockview.css";
 import "../index.css";
 import "./styles.css";
 import GlobalContextMenuHost from "../components/overlays/context-menu";
-import { useCommand } from "../components/providers/command-registry";
+import { useUiAction } from "../components/providers/command-registry";
 import {
   closeContextMenu,
   openContextMenu,
@@ -206,7 +206,7 @@ function DesignLab() {
   const popoutWindows = new Set<Window>();
 
   for (const demo of componentDemos) {
-    useCommand({
+    useUiAction({
       id: `design-lab.open.${demo.id}`,
       name: `Open ${demo.title}`,
       description: `Open or focus the ${demo.title.toLowerCase()} panel`,
@@ -214,7 +214,7 @@ function DesignLab() {
       execute: () => openDemo(demo),
     });
   }
-  useCommand({
+  useUiAction({
     id: "design-lab.toggle-density",
     name: "Toggle density",
     description: "Toggle Comfort / Compact density",
@@ -222,7 +222,7 @@ function DesignLab() {
     shortcut: "Alt+Shift+d",
     execute: () => setCompact((current) => !current),
   });
-  useCommand({
+  useUiAction({
     id: "design-lab.next-accent",
     name: "Next accent",
     description: "Cycle the lab accent color",

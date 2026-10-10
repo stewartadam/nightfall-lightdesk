@@ -6,6 +6,7 @@
 - [Cues and timing](user-guide/cues.md)
 - [Color Paths](user-guide/color-paths.md)
 - [Basic command syntax](user-guide/commands.md)
+- [Controllers and keybindings](user-guide/controller-mapping.md)
 - [Panel guide](user-guide/panels/index.md)
   - [Patch](user-guide/panels/patch.md)
   - [Fixture Library](user-guide/panels/fixture-library.md)

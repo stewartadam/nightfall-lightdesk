@@ -135,6 +135,90 @@ const sequenceCaptureKeyMap: Record<string, (event: KeyboardEvent) => void> =
 
 // Internal tracking of shortcuts by key for panel-specific handling
 const shortcutsByKey: Record<string, ShortcutHandler[]> = {};
+
+/** Normalized key and description identities of shortcuts the user disabled. */
+let disabledShortcutIds = new Set<string>();
+
+/** Returns the identity used to match a shortcut against the disabled list. */
+function shortcutIdentity(key: string, description: string): string {
+  return JSON.stringify([normalizeKeyString(key), description]);
+}
+
+/**
+ * Replaces the set of built-in shortcuts that must not fire.
+ *
+ * Shortcuts are identified by their registered key and description, so a disabled shortcut
+ * stays disabled when its panel remounts and registers it again.
+ */
+export function setDisabledShortcuts(
+  shortcuts: readonly { key: string; description: string }[],
+): void {
+  disabledShortcutIds = new Set(
+    shortcuts.map((shortcut) =>
+      shortcutIdentity(shortcut.key, shortcut.description),
+    ),
+  );
+}
+
+/** Handlers that may claim a key press before any built-in shortcut sees it. */
+const shortcutPreemptors = new Set<(event: KeyboardEvent) => boolean>();
+
+/**
+ * Registers a handler that runs before every built-in shortcut, including capture-phase ones.
+ *
+ * Returning true claims the key press: no built-in shortcut runs for it and propagation stops.
+ * User keybindings and key recording use this so they take precedence regardless of listener
+ * registration order. Returns a function that unregisters the handler.
+ */
+export function addShortcutPreemptor(
+  preemptor: (event: KeyboardEvent) => boolean,
+): () => void {
+  shortcutPreemptors.add(preemptor);
+  return () => {
+    shortcutPreemptors.delete(preemptor);
+  };
+}
+
+/**
+ * Returns whether an Enter or Escape press belongs to the open dialog containing its target,
+ * so neither preemptors nor panel shortcuts behind the dialog may claim it.
+ */
+function dialogOwnsKey(
+  event: KeyboardEvent,
+  target: EventTarget | null = event.target,
+): boolean {
+  return (
+    (event.key === "Enter" || event.key === "Escape") &&
+    isInsideOpenDialog(target)
+  );
+}
+
+/**
+ * Offers a key press to the preemptors, returning true when one claimed it.
+ *
+ * Presses a dialog owns, and every press while a blocking confirmation is open, are left to the
+ * regular dispatcher, which applies the same dialog rules to built-in shortcuts.
+ */
+function preemptShortcut(event: KeyboardEvent): boolean {
+  if (dialogBlocksBackgroundKeys() || dialogOwnsKey(event)) {
+    return false;
+  }
+  for (const preemptor of shortcutPreemptors) {
+    if (preemptor(event)) {
+      event.stopImmediatePropagation();
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Returns whether the user disabled the shortcut with this key and description. */
+function isShortcutDisabled(key: string, description: string): boolean {
+  return (
+    disabledShortcutIds.size > 0 &&
+    disabledShortcutIds.has(shortcutIdentity(key, description))
+  );
+}
 const captureDispatchedEvents = new WeakSet<KeyboardEvent>();
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 const PAGE_KEYS = new Set(["PageUp", "PageDown"]);
@@ -292,15 +376,13 @@ function dispatchShortcutForKey(
   if (document.querySelector('[data-overlay-kind="connection"]')) {
     return false;
   }
-  // Enter and Escape inside an open dialog belong to that dialog, never to panel shortcuts behind it.
-  if (
-    (event.key === "Enter" || event.key === "Escape") &&
-    isInsideOpenDialog(target ?? event.target)
-  ) {
+  if (dialogOwnsKey(event, target ?? event.target)) {
     return false;
   }
 
-  let handlers = shortcutsByKey[key];
+  let handlers = shortcutsByKey[key]?.filter(
+    (handler) => !isShortcutDisabled(key, handler.description),
+  );
   if (!handlers || handlers.length === 0) {
     return false;
   }
@@ -379,6 +461,9 @@ export function initKeyboardShortcuts() {
 
   /** Create a more direct DOM event handler to catch all keys that the browser may not bubble up to tinykeys */
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (preemptShortcut(event)) {
+      return;
+    }
     const target = event.target instanceof HTMLElement ? event.target : null;
     const allowDockFallback = allowsDockFocusFallback(target);
     // Update focused component immediately from the key event target.
@@ -405,7 +490,11 @@ export function initKeyboardShortcuts() {
           !shortcut.componentId ||
           (shortcut.componentId === focusedComponentId &&
             panelMayHandleKey(focusedComponentId, target, event));
-        return shortcutApplies && componentMatches;
+        return (
+          shortcutApplies &&
+          componentMatches &&
+          !isShortcutDisabled(shortcut.key, shortcut.description)
+        );
       });
 
       if (spaceShortcuts.length > 0) {

@@ -8,11 +8,13 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 nightfall-engine = { path = "../engine" }
+nightfall-undo = { path = "../undo" }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
+web-time.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }

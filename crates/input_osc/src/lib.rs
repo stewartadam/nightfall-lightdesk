@@ -18,8 +18,9 @@ use std::net::SocketAddr;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_actions::{
-    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, ExternalCommandInvocation,
-    SourceEdgeStates,
+    ActionInvocation, ActionRegistry, ActionSurface, ActionsPlugin, BindingDiagnostic,
+    ControllerMappingMode, EdgeKey, ExternalCommandInvocation, InvocationError, SourceEdgeStates,
+    bindings_need_diagnosis, collect_binding_diagnostics, register_binding_undo,
 };
 use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -28,20 +29,24 @@ pub mod command;
 pub mod mapping;
 mod osc;
 mod service;
+mod undo;
 mod websocket;
 
-use command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus};
+use command::{
+    OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping, OscMappingUpserted,
+};
 use mapping::OscMappings;
 use osc::RawOscEvent;
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
-    pub use crate::InputOscPlugin;
     pub use crate::command::{
-        OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping, OscType,
+        OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping,
+        OscMappingUpserted, OscType, OscValueRange,
     };
     pub use crate::mapping::OscMappings;
     pub use crate::websocket::{OscSource, OscWsMessage};
+    pub use crate::{InputOscPlugin, OscMappingDiagnostics};
 }
 
 /// Plugin for OSC input handling.
@@ -77,11 +82,13 @@ impl Plugin for InputOscPlugin {
         app.init_resource::<OscMappings>();
         app.init_resource::<LastOscEvent>();
         app.init_resource::<OscSources>();
+        app.init_resource::<OscControlTouches>();
         app.add_message::<OscExternalEval>();
         app.add_message::<OscInput>();
 
         register_ingress_command::<OscCommand>(app);
         register_command_deserializer::<OscCommand>(app, websocket::deserialize_osc_command);
+        register_binding_undo::<OscMappings, OscCommand>(app);
 
         app.add_systems(
             Update,
@@ -93,7 +100,16 @@ impl Plugin for InputOscPlugin {
             Update,
             (forward_external_command_invocations, handle_osc_crud).in_set(EventHandling),
         );
-        app.add_systems(Render, websocket::send_osc_state.in_set(ClientOutput));
+        app.init_resource::<OscMappingDiagnostics>();
+        app.add_systems(
+            Render,
+            (
+                refresh_osc_mapping_diagnostics.run_if(bindings_need_diagnosis::<OscMappings>),
+                websocket::send_osc_state,
+            )
+                .chain()
+                .in_set(ClientOutput),
+        );
         app.add_systems(
             PostUpdate,
             websocket::send_external_evals.in_set(ClientFeedback),
@@ -125,13 +141,44 @@ pub struct OscRuntimeStatus(pub OscListenerStatus);
 #[derive(Clone, Debug, Message)]
 struct OscInput(OscLastEvent);
 
+/// Most messages one frame reports as touches while controller mapping mode is active.
+const MAX_TOUCHES_PER_FRAME: usize = 64;
+
+/// Messages received this frame while controller mapping mode is active.
+///
+/// Published reliably so a mapping client can arm the touched address and learn its press
+/// and release values even when the droppable last-event telemetry is coalesced or dropped
+/// under load. A message repeating an address and first argument already recorded this
+/// frame is omitted, so a fader sweep does not flood clients.
+#[derive(Resource, Default, Debug)]
+pub(crate) struct OscControlTouches(pub(crate) Vec<OscLastEvent>);
+
+impl OscControlTouches {
+    /// Records one message unless the same address and first argument was already recorded.
+    fn record(&mut self, event: &OscLastEvent) {
+        let repeated = self.0.iter().any(|touch| {
+            touch.address == event.address && touch.args.first() == event.args.first()
+        });
+        if !repeated && self.0.len() < MAX_TOUCHES_PER_FRAME {
+            self.0.push(event.clone());
+        }
+    }
+}
+
+/// Drains received OSC packets into telemetry, known sources, and mapping dispatch input.
+///
+/// While controller mapping mode is active, messages received after it began are also
+/// recorded as touches for reliable delivery to mapping clients.
 fn osc_event_system(
     mut osc_rx: ResMut<OscEventReceiver>,
     mut last_event: ResMut<LastOscEvent>,
     mut sources: ResMut<OscSources>,
+    mapping_mode: Res<ControllerMappingMode>,
+    mut touches: ResMut<OscControlTouches>,
     mut event_writer: MessageWriter<OscInput>,
 ) {
     while let Ok(raw_event) = osc_rx.0.try_recv() {
+        let is_touch = mapping_mode.records_touch(raw_event.received_at);
         let osc_event: OscLastEvent = raw_event.into();
         if !sources
             .0
@@ -143,29 +190,49 @@ fn osc_event_system(
             });
         }
 
+        if is_touch {
+            touches.record(&osc_event);
+        }
         last_event.0 = Some(osc_event.clone());
         event_writer.write(OscInput(osc_event));
     }
 }
 
+/// Returns the host part of an `ip:port` OSC source, or the whole source when it has no port.
+fn sender_host(source: &str) -> String {
+    source
+        .parse::<SocketAddr>()
+        .map_or_else(|_| source.to_string(), |address| address.ip().to_string())
+}
+
 /// Invokes the action bound to each matching OSC message, adapted to its input kind and
 /// behavior.
+///
+/// Press state is tracked per sending host, since a mapping without a source filter matches
+/// every sender on its address. Hosts rather than ports identify senders, because many
+/// senders send each message from a fresh port.
+///
+/// While controller mapping mode is active, input is suppressed as described by
+/// [`SourceEdgeStates`]: nothing new fires, but releases completing live presses still do.
 fn handle_osc_events(
     mut events: MessageReader<OscInput>,
     mappings: Res<OscMappings>,
     registry: Res<ActionRegistry>,
+    mapping_mode: Res<ControllerMappingMode>,
     mut edges: ResMut<SourceEdgeStates>,
     mut invocations: MessageWriter<ActionInvocation>,
 ) {
+    let suppressed = mapping_mode.is_active();
     for event in events.read() {
         let osc_event = &event.0;
         for mapping in mappings.lookup(osc_event) {
             let Some((action, input)) = edges.resolve(
                 &registry,
-                mapping.id,
+                EdgeKey::new(mapping.id).with_sender(sender_host(&osc_event.source)),
                 &mapping.action,
                 mapping.behavior,
                 mapping.signal(osc_event),
+                suppressed,
             ) else {
                 continue;
             };
@@ -194,6 +261,77 @@ fn forward_external_command_invocations(
     }
 }
 
+/// Mappings that cannot currently invoke their action, in mapping order.
+///
+/// Invalid mappings stay stored; these diagnostics tell the operator which ones will fail.
+#[derive(Resource, Default, Debug, PartialEq)]
+pub struct OscMappingDiagnostics(pub Vec<BindingDiagnostic>);
+
+/// Validates that an OSC mapping can invoke its action with its behavior.
+///
+/// Checks the mapping's value range, the action and its arguments, and whether matched
+/// messages can drive the action and its behavior. A mapping that cannot drive its action
+/// is explained from its own argument criteria.
+fn validate_osc_binding(
+    registry: &ActionRegistry,
+    mapping: &OscMapping,
+) -> Result<(), InvocationError> {
+    mapping
+        .validate()
+        .and_then(|()| {
+            registry
+                .validate_binding(&mapping.action, ActionSurface::Osc, |kind| {
+                    mapping.can_drive(kind)
+                })
+                .map_err(|error| {
+                    if error.code != "action.input_incompatible" {
+                        return error;
+                    }
+                    let label = registry
+                        .get(&mapping.action.id)
+                        .map_or(mapping.action.id.as_str(), |descriptor| {
+                            descriptor.label.as_str()
+                        });
+                    InvocationError::new(error.code, mapping.explain_undrivable(label))
+                })
+        })
+        .and_then(|()| {
+            registry.validate_behavior(&mapping.action, mapping.behavior, mapping.reports_release())
+        })
+}
+
+/// Validates one stored OSC mapping against the registry and the current world.
+///
+/// Applies [`validate_osc_binding`] and checks that the action's targets exist.
+fn diagnose_osc_mapping(
+    registry: &ActionRegistry,
+    world: &World,
+    mapping: &OscMapping,
+) -> Result<(), InvocationError> {
+    validate_osc_binding(registry, mapping)
+        .and_then(|()| registry.validate_target(world, &mapping.action))
+}
+
+/// Recomputes OSC mapping diagnostics after mappings, registrations, or targets changed.
+///
+/// The diagnostics resource is only written when the result differs, so clients are
+/// notified only when a mapping becomes invalid or recovers.
+fn refresh_osc_mapping_diagnostics(world: &mut World) {
+    let diagnostics = {
+        let registry = world.resource::<ActionRegistry>();
+        collect_binding_diagnostics(
+            world
+                .resource::<OscMappings>()
+                .mappings()
+                .iter()
+                .map(|mapping| (mapping.id, diagnose_osc_mapping(registry, world, mapping))),
+        )
+    };
+    world
+        .resource_mut::<OscMappingDiagnostics>()
+        .set_if_neq(OscMappingDiagnostics(diagnostics));
+}
+
 /// Applies tracked OSC mapping CRUD commands and reports their terminal outcomes.
 fn handle_osc_crud(
     mut events: MessageReader<CommandEnvelope<OscCommand>>,
@@ -204,34 +342,20 @@ fn handle_osc_crud(
 ) {
     for event in events.read() {
         let result = match &event.command {
-            OscCommand::UpsertMapping(mapping) => {
-                match registry
-                    .validate_binding(&mapping.action, |kind| mapping.can_drive(kind))
-                    .and_then(|()| {
-                        registry.validate_behavior(
-                            &mapping.action,
-                            mapping.behavior,
-                            mapping.reports_release(),
-                        )
-                    }) {
-                    Ok(()) => {
-                        edges.forget(mapping.id);
-                        let displaced = mappings
-                            .upsert(mapping.clone(), |action| registry.input_kind(&action.id));
-                        for id in &displaced {
-                            edges.forget(*id);
-                        }
-                        responder.succeed_with_output(
-                            event.command_id,
-                            &serde_json::json!({ "replaced": displaced }),
-                        )
+            OscCommand::UpsertMapping(mapping) => match validate_osc_binding(&registry, mapping) {
+                Ok(()) => {
+                    edges.forget(mapping.id);
+                    let replaced = mappings.upsert(OscMapping::clone(mapping), |action| {
+                        registry.input_kind(&action.id)
+                    });
+                    for displaced in &replaced {
+                        edges.forget(displaced.id);
                     }
-                    Err(error) => responder.fail(
-                        event.command_id,
-                        CommandError::new(error.code, error.message),
-                    ),
+                    responder
+                        .succeed_with_output(event.command_id, &OscMappingUpserted { replaced })
                 }
-            }
+                Err(error) => responder.fail(event.command_id, error.into()),
+            },
             OscCommand::DeleteMapping(id) => {
                 if mappings.delete(*id) {
                     edges.forget(*id);
@@ -271,6 +395,7 @@ mod tests {
             arg_index: None,
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
             action: nightfall_actions::ActionReference::new(
                 "test.eval",
@@ -284,6 +409,8 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<OscMappings>();
         app.init_resource::<SourceEdgeStates>();
+        app.init_resource::<ControllerMappingMode>();
+        app.init_resource::<OscControlTouches>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<ActionRegistry>();
         let mut registry = app.world_mut().resource_mut::<ActionRegistry>();
@@ -294,6 +421,11 @@ mod tests {
         registry.register::<serde::de::IgnoredAny, _>(
             nightfall_actions::ActionDescriptor::new("test.level", "Test level", "Tests")
                 .with_input(nightfall_actions::ActionInputKind::Absolute),
+            |_world, _arguments, _invocation| Ok(nightfall_actions::InvocationDispatch::succeeded()),
+        );
+        registry.register::<serde::de::IgnoredAny, _>(
+            nightfall_actions::ActionDescriptor::new("test.timeline", "Timeline only", "Tests")
+                .with_surfaces([ActionSurface::Timeline]),
             |_world, _arguments, _invocation| Ok(nightfall_actions::InvocationDispatch::succeeded()),
         );
         app.add_message::<CommandEnvelope<OscCommand>>();
@@ -361,6 +493,63 @@ mod tests {
         );
     }
 
+    /// Verifies an explicit range reads integer faders linearly instead of as percents.
+    #[test]
+    fn ranged_numeric_argument_maps_across_its_range() {
+        let unranged = OscMapping {
+            arg_index: Some(0),
+            ..test_mapping()
+        };
+        let ranged = OscMapping {
+            range: Some(crate::command::OscValueRange {
+                min: 0.0,
+                max: 127.0,
+            }),
+            ..unranged.clone()
+        };
+
+        assert_eq!(
+            unranged.signal(&test_event(OscType::Int(100))),
+            SourceSignal::Level(1.0)
+        );
+        assert_eq!(
+            ranged.signal(&test_event(OscType::Int(127))),
+            SourceSignal::Level(1.0)
+        );
+        assert_eq!(
+            ranged.signal(&test_event(OscType::Int(100))),
+            SourceSignal::Level(100.0 / 127.0)
+        );
+        assert_eq!(
+            ranged.signal(&test_event(OscType::Bool(true))),
+            SourceSignal::Button(true)
+        );
+    }
+
+    /// Verifies upserting a mapping with an empty value range fails without storing it.
+    #[test]
+    fn upsert_rejects_invalid_range() {
+        let mut app = osc_command_app();
+        let mapping = OscMapping {
+            arg_index: Some(0),
+            range: Some(crate::command::OscValueRange {
+                min: 10.0,
+                max: 10.0,
+            }),
+            ..test_mapping()
+        };
+
+        submit_command(&mut app, OscCommand::UpsertMapping(Box::new(mapping)));
+        app.update();
+
+        assert!(app.world().resource::<OscMappings>().mappings().is_empty());
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. })
+                if code == "osc.invalid_range"
+        ));
+    }
+
     /// Verifies value-matching and argument-free mappings treat messages as pulses.
     #[test]
     fn value_filters_and_missing_arguments_are_pulses() {
@@ -385,13 +574,62 @@ mod tests {
     #[test]
     fn upsert_mapping_mutates_before_success() {
         let mut app = osc_command_app();
-        submit_command(&mut app, OscCommand::UpsertMapping(test_mapping()));
+        submit_command(
+            &mut app,
+            OscCommand::UpsertMapping(Box::new(test_mapping())),
+        );
         app.update();
         assert_eq!(app.world().resource::<OscMappings>().mappings().len(), 1);
         assert!(matches!(
             take_result(&mut app).outcome,
             CommandOutcome::Succeeded { .. }
         ));
+    }
+
+    /// Verifies loaded mappings that cannot run are kept and diagnosed with their failure.
+    #[test]
+    fn loaded_invalid_mappings_are_kept_and_diagnosed() {
+        let mut app = osc_command_app();
+        app.init_resource::<nightfall_actions::ActionTargets>();
+        app.init_resource::<OscMappingDiagnostics>();
+        app.add_systems(
+            Update,
+            refresh_osc_mapping_diagnostics.run_if(bindings_need_diagnosis::<OscMappings>),
+        );
+        let mapping = |id: u128, action: &str| OscMapping {
+            id: Uuid::from_u128(id),
+            address: format!("/control/{id}"),
+            action: nightfall_actions::ActionReference::new(action, serde_json::json!({})),
+            ..test_mapping()
+        };
+        app.world_mut()
+            .resource_mut::<OscMappings>()
+            .set_mappings(vec![
+                mapping(1, "test.eval"),
+                mapping(2, "test.timeline"),
+                mapping(3, "test.level"),
+            ]);
+
+        app.update();
+
+        assert_eq!(app.world().resource::<OscMappings>().mappings().len(), 3);
+        let diagnostics = &app.world().resource::<OscMappingDiagnostics>().0;
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.binding_id, diagnostic.error.code.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (Uuid::from_u128(2), "action.surface_not_allowed"),
+                (Uuid::from_u128(3), "action.input_incompatible"),
+            ]
+        );
+
+        app.world_mut()
+            .resource_mut::<OscMappings>()
+            .delete(Uuid::from_u128(2));
+        app.update();
+        assert_eq!(app.world().resource::<OscMappingDiagnostics>().0.len(), 1);
     }
 
     /// Verifies an argument-free address cannot be bound to a fader-style action.
@@ -403,15 +641,187 @@ mod tests {
             ..test_mapping()
         };
 
-        submit_command(&mut app, OscCommand::UpsertMapping(mapping));
+        submit_command(&mut app, OscCommand::UpsertMapping(Box::new(mapping)));
+        app.update();
+
+        assert!(app.world().resource::<OscMappings>().mappings().is_empty());
+        let CommandOutcome::Failed(CommandError { code, message, .. }) =
+            take_result(&mut app).outcome
+        else {
+            panic!("an argument-free address should not bind a fader-style action");
+        };
+        assert_eq!(code, "action.input_incompatible");
+        assert!(
+            message.starts_with("OSC /control is not set to read a value"),
+            "{message}"
+        );
+    }
+
+    /// Verifies an OSC address cannot be bound to an action restricted to other surfaces.
+    #[test]
+    fn upsert_rejects_action_disallowed_on_osc() {
+        let mut app = osc_command_app();
+        let mapping = OscMapping {
+            action: nightfall_actions::ActionReference::new("test.timeline", serde_json::json!({})),
+            ..test_mapping()
+        };
+
+        submit_command(&mut app, OscCommand::UpsertMapping(Box::new(mapping)));
         app.update();
 
         assert!(app.world().resource::<OscMappings>().mappings().is_empty());
         assert!(matches!(
             take_result(&mut app).outcome,
             CommandOutcome::Failed(CommandError { ref code, .. })
-                if code == "action.input_incompatible"
+                if code == "action.surface_not_allowed"
         ));
+    }
+
+    /// Extends the OSC command app with event dispatch and the supplied mappings.
+    fn osc_dispatch_app(mappings: Vec<OscMapping>) -> App {
+        let mut app = osc_command_app();
+        app.add_message::<OscInput>();
+        app.add_message::<ActionInvocation>();
+        app.add_systems(Update, handle_osc_events);
+        let mut stored = app.world_mut().resource_mut::<OscMappings>();
+        for mapping in mappings {
+            let kind = if mapping.action.id.as_str() == "test.level" {
+                nightfall_actions::ActionInputKind::Absolute
+            } else {
+                nightfall_actions::ActionInputKind::Trigger
+            };
+            stored.upsert(mapping, |_| Some(kind));
+        }
+        app
+    }
+
+    /// Sends messages to `/control` and returns the actions they invoked, in order.
+    fn send(app: &mut App, args: &[OscType]) -> Vec<(String, nightfall_actions::ActionInput)> {
+        for arg in args {
+            app.world_mut()
+                .write_message(OscInput(test_event(arg.clone())));
+        }
+        app.update();
+        app.world_mut()
+            .resource_mut::<Messages<ActionInvocation>>()
+            .drain()
+            .map(|invocation| (invocation.action.id.as_str().to_string(), invocation.input))
+            .collect()
+    }
+
+    /// Sets whether one client holds controller mapping mode.
+    fn set_mapping_mode(app: &mut App, active: bool) {
+        let mut mode = app.world_mut().resource_mut::<ControllerMappingMode>();
+        if active {
+            mode.enter(ClientId(1), std::time::Instant::now());
+        } else {
+            mode.leave(ClientId(1));
+        }
+    }
+
+    /// Verifies mapped OSC triggers and faders fire nothing while mapping mode is active.
+    #[test]
+    fn mapping_mode_suppresses_osc_actions() {
+        let fader = OscMapping {
+            id: Uuid::from_u128(2),
+            arg_index: Some(0),
+            action: nightfall_actions::ActionReference::new("test.level", serde_json::json!({})),
+            ..test_mapping()
+        };
+        let mut app = osc_dispatch_app(vec![fader]);
+        set_mapping_mode(&mut app, true);
+
+        assert!(send(&mut app, &[OscType::Float(0.4), OscType::Float(0.8)]).is_empty());
+
+        set_mapping_mode(&mut app, false);
+        assert_eq!(
+            send(&mut app, &[OscType::Float(0.3)]),
+            vec![(
+                "test.level".to_string(),
+                nightfall_actions::ActionInput::Scalar(0.3)
+            )]
+        );
+    }
+
+    /// Verifies an OSC button pressed in mapping mode does not fire its release binding when
+    /// released after mapping mode ends.
+    #[test]
+    fn osc_release_after_mapping_mode_is_swallowed() {
+        let release = OscMapping {
+            id: Uuid::from_u128(3),
+            arg_index: Some(0),
+            behavior: nightfall_actions::ControlBehavior::Release,
+            ..test_mapping()
+        };
+        let mut app = osc_dispatch_app(vec![release]);
+        set_mapping_mode(&mut app, true);
+        assert!(send(&mut app, &[OscType::Float(1.0)]).is_empty());
+
+        set_mapping_mode(&mut app, false);
+        assert!(send(&mut app, &[OscType::Float(0.0)]).is_empty());
+        assert_eq!(
+            send(&mut app, &[OscType::Float(1.0), OscType::Float(0.0)]),
+            vec![(
+                "test.eval".to_string(),
+                nightfall_actions::ActionInput::Trigger
+            )]
+        );
+    }
+
+    /// Verifies two senders pressing and releasing a source-less Release binding in an
+    /// interleaved order each fire the action once.
+    #[test]
+    fn interleaved_osc_senders_fire_their_own_releases() {
+        let release = OscMapping {
+            id: Uuid::from_u128(4),
+            arg_index: Some(0),
+            behavior: nightfall_actions::ControlBehavior::Release,
+            ..test_mapping()
+        };
+        let mut app = osc_dispatch_app(vec![release]);
+        let mut send_from = |source: &str, value: f32| {
+            app.world_mut().write_message(OscInput(OscLastEvent {
+                source: source.to_string(),
+                ..test_event(OscType::Float(value))
+            }));
+            app.update();
+            app.world_mut()
+                .resource_mut::<Messages<ActionInvocation>>()
+                .drain()
+                .count()
+        };
+
+        assert_eq!(send_from("10.0.0.1:9000", 1.0), 0);
+        assert_eq!(send_from("10.0.0.2:9000", 1.0), 0);
+        assert_eq!(send_from("10.0.0.1:9000", 0.0), 1);
+        assert_eq!(send_from("10.0.0.2:9000", 0.0), 1);
+
+        // A sender using a fresh port per message is still one sender.
+        assert_eq!(send_from("10.0.0.3:50001", 1.0), 0);
+        assert_eq!(send_from("10.0.0.3:50002", 0.0), 1);
+    }
+
+    /// Verifies touches skip repeated values on an address but keep press and release.
+    #[test]
+    fn touches_keep_distinct_values_per_address() {
+        let mut touches = OscControlTouches::default();
+        for arg in [
+            OscType::Float(1.0),
+            OscType::Float(1.0),
+            OscType::Float(0.0),
+            OscType::Float(1.0),
+        ] {
+            touches.record(&test_event(arg));
+        }
+
+        assert_eq!(
+            touches
+                .0
+                .iter()
+                .map(|touch| touch.args[0].clone())
+                .collect::<Vec<_>>(),
+            vec![OscType::Float(1.0), OscType::Float(0.0)]
+        );
     }
 
     /// Verifies deleting an unknown OSC mapping returns a stable failure.

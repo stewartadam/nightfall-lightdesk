@@ -51,6 +51,7 @@ import {
   TimelinePlacementPreference,
 } from "../../types";
 import { createBeatModelDownload } from "../beat-detection";
+import { KeybindingsSettings } from "../keybindings";
 import {
   type QualityPreset,
   setVisualizerQuality,
@@ -91,6 +92,7 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "editors", label: "Editors" },
   { key: "network", label: "Network" },
   { key: "visualizer", label: "Visualizer" },
+  { key: "keyboard", label: "Keyboard" },
   { key: "privacy", label: "Privacy" },
 ];
 
@@ -397,6 +399,9 @@ export function SettingsOverlay() {
           </Show>
           <Show when={activeTab() === "privacy"}>
             <PrivacySettings />
+          </Show>
+          <Show when={activeTab() === "keyboard"}>
+            <KeybindingsSettings />
           </Show>
           <Show when={activeTab() === "general"}>
             <section>

@@ -8,8 +8,10 @@
 
 //! Domain-owned bindable actions for desk clips, controls, and command evaluation.
 
+use std::collections::BTreeSet;
+
 use bevy_app::App;
-use bevy_ecs::prelude::World;
+use bevy_ecs::prelude::{Changed, DetectChanges, Local, Query, RemovedComponents, Res, World};
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
@@ -30,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::clips::{Clip, ClipCommand};
-use crate::controls::{ControlCommand, ControlUpdate};
+use crate::controls::{ControlCommand, ControlUpdate, Controls};
 use crate::desk_command::DeskCommand;
 use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
 
@@ -91,6 +93,7 @@ pub fn master_toggle_action(master: Uuid) -> ActionReference {
 
 /// Registers every bindable action owned by the desk domain.
 pub fn register_desk_actions(app: &mut App) {
+    register_desk_target_validators(app);
     register_clip_action(
         app,
         ActionDescriptor::new(CLIP_START_ACTION_ID, "Start clip", "Clips")
@@ -260,6 +263,82 @@ pub fn register_desk_actions(app: &mut App) {
     );
 }
 
+/// Registers how stored bindings check that their clip, master, and control targets exist.
+///
+/// Binding diagnostics are recomputed when clip entities, the set of masters, or the number
+/// of control slots change.
+fn register_desk_target_validators(app: &mut App) {
+    app.register_action_target_validator::<Uuid, _>(ActionParameterKind::Clip, |world, uid| {
+        resolve_clip_id(world, uid).map(drop)
+    })
+    .register_action_target_validator::<Uuid, _>(ActionParameterKind::Master, |world, uid| {
+        resolve_master(world, uid).map(drop)
+    })
+    .register_action_target_validator::<u32, _>(ActionParameterKind::Control, validate_control)
+    .invalidate_action_targets_when(clips_changed)
+    .invalidate_action_targets_when(master_set_changed)
+    .invalidate_action_targets_when(control_slot_count_changed);
+}
+
+/// Run condition reporting whether masters were added or removed.
+///
+/// Master levels change on every fader move and master targets only need to exist, so this
+/// compares the set of master UIDs, and only on frames where masters changed at all.
+fn master_set_changed(
+    masters: Option<Res<DataProvider<Master>>>,
+    mut last_uids: Local<Option<BTreeSet<Uuid>>>,
+) -> bool {
+    let Some(masters) = masters else {
+        return last_uids.take().is_some();
+    };
+    if !masters.is_changed() && last_uids.is_some() {
+        return false;
+    }
+    let uids: BTreeSet<Uuid> = masters.iter().map(|entry| *entry.key()).collect();
+    let changed = last_uids.as_ref() != Some(&uids);
+    *last_uids = Some(uids);
+    changed
+}
+
+/// Run condition reporting whether any clip was added, edited, or removed.
+fn clips_changed(changed: Query<(), Changed<Clip>>, removed: RemovedComponents<Clip>) -> bool {
+    !changed.is_empty() || !removed.is_empty()
+}
+
+/// Run condition reporting whether the control bank gained or lost slots.
+///
+/// Controls change on every fader move, so this compares slot counts rather than change
+/// ticks to avoid recomputing binding diagnostics while a fader is dragged.
+fn control_slot_count_changed(
+    controls: Option<Res<Controls>>,
+    mut last_count: Local<Option<usize>>,
+) -> bool {
+    let count = controls.map(|controls| controls.slot_count());
+    let changed = *last_count != count;
+    *last_count = count;
+    changed
+}
+
+/// Checks that a 1-based control index addresses a slot in the bank.
+///
+/// Unassigned slots are valid targets, since a binding follows whatever is later assigned.
+fn validate_control(world: &World, control_index: u32) -> Result<(), InvocationError> {
+    let controls = world.get_resource::<Controls>().ok_or_else(|| {
+        InvocationError::new("control.bank_unavailable", "Controls are unavailable")
+    })?;
+    if controls.contains(control_index) {
+        return Ok(());
+    }
+    Err(InvocationError::new(
+        "control.not_found",
+        format!(
+            "Control {control_index} does not exist; controls are numbered 1 to {}",
+            controls.slot_count()
+        ),
+    )
+    .with_details(serde_json::json!({ "control_index": control_index })))
+}
+
 /// Creates a control action reference for one stable action ID.
 fn control_action_reference(action_id: &str, control_index: u32) -> ActionReference {
     ActionReference::with_arguments(action_id, &ControlActionArguments { control_index })
@@ -304,6 +383,7 @@ fn resolve_master(world: &World, uid: Uuid) -> Result<Master, InvocationError> {
                 "master.not_found",
                 format!("Master with UID {uid} does not exist"),
             )
+            .with_details(serde_json::json!({ "master": uid }))
         })
 }
 
@@ -323,7 +403,8 @@ fn set_master_active(
                 "Master '{}' is not a toggle master",
                 master.identifiers.label
             ),
-        ));
+        )
+        .with_details(serde_json::json!({ "master": uid })));
     }
     Ok(MasterCommand::SetMasterMode {
         id: master.identifiers.id,
@@ -375,6 +456,7 @@ fn resolve_clip_id(world: &World, uid: Uuid) -> Result<u32, InvocationError> {
                 "clip.not_found",
                 format!("Clip with UID {uid} does not exist"),
             )
+            .with_details(serde_json::json!({ "clip": uid }))
         })
 }
 
@@ -401,6 +483,7 @@ fn invoke_desk_eval(
 
 #[cfg(test)]
 mod tests {
+    use bevy_ecs::change_detection::DetectChanges;
     use bevy_ecs::message::Messages;
     use nightfall_actions::{
         ActionInput, ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult,
@@ -417,6 +500,7 @@ mod tests {
         app.add_message::<ControlUpdate>();
         app.add_message::<MasterUpdate>();
         app.init_resource::<DataProvider<Master>>();
+        app.init_resource::<Controls>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<PendingCommandBuffer>();
         register_desk_actions(&mut app);
@@ -572,6 +656,145 @@ mod tests {
             InvocationOutcome::Submitted { command_id } if command_id == envelope.command_id
         ));
     }
+
+    /// Verifies desk target validators report missing clips and masters and accept present ones.
+    #[test]
+    fn target_validation_resolves_clips_and_masters() {
+        let mut app = desk_action_app();
+        let clip_uid = Uuid::from_u128(8);
+        let master_uid = Uuid::from_u128(41);
+        /// Validates one reference's targets against the app's current world.
+        fn validate(app: &App, action: &ActionReference) -> Result<(), InvocationError> {
+            app.world()
+                .resource::<nightfall_actions::ActionRegistry>()
+                .validate_target(app.world(), action)
+        }
+
+        assert_eq!(
+            validate(&app, &start_clip_action(clip_uid)).map_err(|error| error.code),
+            Err("clip.not_found".to_string())
+        );
+        assert_eq!(
+            validate(&app, &master_level_action(master_uid)).map_err(|error| error.code),
+            Err("master.not_found".to_string())
+        );
+
+        app.world_mut().spawn(Clip {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 8,
+                uid: clip_uid,
+                label: "Clip 8".to_string(),
+            },
+            ..Default::default()
+        });
+        add_rate_master(&mut app);
+
+        assert!(validate(&app, &start_clip_action(clip_uid)).is_ok());
+        assert!(validate(&app, &master_level_action(master_uid)).is_ok());
+        assert!(validate(&app, &control_go_action(2)).is_ok());
+    }
+
+    /// Verifies control targets accept every slot in the bank, assigned or not, and reject
+    /// indices outside `1..=slot_count`.
+    #[test]
+    fn target_validation_bounds_control_slots() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
+        let last = u32::try_from(app.world().resource::<Controls>().slot_count())
+            .expect("slot count fits in u32");
+        let code = |index| {
+            registry
+                .validate_target(app.world(), &control_go_action(index))
+                .map_err(|error| error.code)
+        };
+
+        assert_eq!(code(1), Ok(()));
+        assert_eq!(code(last), Ok(()));
+        assert_eq!(code(0), Err("control.not_found".to_string()));
+        assert_eq!(code(last + 1), Err("control.not_found".to_string()));
+        assert_eq!(
+            registry
+                .validate_target(app.world(), &control_level_action(last + 1))
+                .map_err(|error| error.code),
+            Err("control.not_found".to_string())
+        );
+    }
+
+    /// Verifies removing a clip marks action targets changed so bindings are re-diagnosed.
+    #[test]
+    fn removing_a_clip_marks_action_targets_changed() {
+        let mut app = desk_action_app();
+        let clip = app.world_mut().spawn(Clip::default()).id();
+        app.update();
+        app.update();
+        let unchanged = app
+            .world()
+            .resource_ref::<nightfall_actions::ActionTargets>()
+            .last_changed();
+
+        app.world_mut().despawn(clip);
+        app.update();
+
+        assert!(
+            app.world()
+                .resource_ref::<nightfall_actions::ActionTargets>()
+                .last_changed()
+                .is_newer_than(unchanged, app.world().read_change_tick()),
+            "clip removal should mark action targets changed"
+        );
+    }
+
+    /// Verifies changing a master's level leaves action targets untouched, so dragging a
+    /// master fader does not recompute binding diagnostics, while adding a master marks them.
+    #[test]
+    fn only_master_set_changes_mark_action_targets_changed() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        app.update();
+        app.update();
+        /// Returns when action targets were last marked changed.
+        fn targets_changed(app: &App) -> bevy_ecs::change_detection::Tick {
+            app.world()
+                .resource_ref::<nightfall_actions::ActionTargets>()
+                .last_changed()
+        }
+        let settled = targets_changed(&app);
+
+        let mut masters = app.world_mut().resource_mut::<DataProvider<Master>>();
+        let mut master = masters.remove(&uid).expect("master should exist");
+        master.level_percent = 40.0;
+        masters.add(master).expect("master should store");
+        app.update();
+        assert_eq!(
+            targets_changed(&app),
+            settled,
+            "a level change is not a target change"
+        );
+
+        let second = Master {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 5,
+                uid: Uuid::from_u128(42),
+                label: "Second".to_string(),
+            },
+            ..app
+                .world()
+                .resource::<DataProvider<Master>>()
+                .get(uid)
+                .expect("master should exist")
+                .clone()
+        };
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(second)
+            .expect("master should store");
+        app.update();
+        assert!(
+            targets_changed(&app).is_newer_than(settled, app.world().read_change_tick()),
+            "adding a master should mark action targets changed"
+        );
+    }
+
     /// Stores a toggle-mode playback rate master and returns its persistent UID.
     fn add_rate_master(app: &mut App) -> Uuid {
         let uid = Uuid::from_u128(41);

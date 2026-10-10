@@ -4961,12 +4961,14 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "nightfall-engine",
+ "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -5508,6 +5510,7 @@ dependencies = [
  "nightfall-coremidi-hotplug",
  "nightfall-engine",
  "nightfall-service-host",
+ "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
@@ -5528,6 +5531,7 @@ dependencies = [
  "nightfall-config",
  "nightfall-engine",
  "nightfall-service-host",
+ "nightfall-undo",
  "nightfall-workspace-hack",
  "rosc",
  "serde",

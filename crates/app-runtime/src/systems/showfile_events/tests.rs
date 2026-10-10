@@ -2387,6 +2387,7 @@ fn seed_world(world: &mut World) {
             arg_index: Some(1),
             arg_value: None,
             release_value: None,
+            range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
             action: control_level_action(2),
         }]);
@@ -2673,6 +2674,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     global_variables,
                     desk_settings,
                     io_settings,
+                    controller_mapping_mode: _,
                 } = &mut showfile_load_state;
 
                 load_showfile_in_place(
@@ -2722,6 +2724,34 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
 
 fn load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) {
     try_load_snapshot_in_place(world, snapshot).expect("in-place load should succeed");
+}
+
+/// Verifies loading a show in place ends every client's controller mapping mode and
+/// publishes a new show generation, which tells mapping clients why they left.
+#[test]
+fn loading_a_show_ends_controller_mapping_mode() {
+    let mut source_world = setup_world();
+    seed_world(&mut source_world);
+    let snapshot = collect_snapshot(&mut source_world);
+
+    let mut world = setup_world();
+    let mut mode = nightfall_actions::ControllerMappingMode::default();
+    mode.enter(ClientId(7), std::time::Instant::now());
+    let generation = mode.state().show_generation;
+    world.insert_resource(mode);
+
+    world
+        .run_system_once(
+            move |mut state: ShowfileLoadState, mut commands: Commands| {
+                load_showfile_snapshot_from_state(snapshot.clone(), &mut state, &mut commands)
+            },
+        )
+        .expect("load system should run")
+        .expect("load should succeed");
+
+    let mode = world.resource::<nightfall_actions::ControllerMappingMode>();
+    assert!(!mode.is_active());
+    assert_ne!(mode.state().show_generation, generation);
 }
 
 #[test]

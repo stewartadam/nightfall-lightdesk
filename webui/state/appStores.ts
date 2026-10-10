@@ -427,15 +427,47 @@ export const engineMetrics = atom<EngineMetrics | null>(null);
 
 // Bindable action catalog published by backend domains
 export const actionCatalog = atom<types.ActionCatalogEntry[]>([]);
+/** Latest client-hosted action invocation forwarded from a MIDI or OSC mapping. */
+export const clientActionInvocation = atom<types.ClientActionInvocation | null>(
+  null,
+);
+/** Recent failed action invocations from any surface, newest first. */
+export const actionInvocationFailures = atom<types.ActionInvocationFailure[]>(
+  [],
+);
 
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
 export const midiLastEvent = atom<types.MidiLastEvent | null>(null);
+/** MIDI mappings that cannot currently invoke their action, as diagnosed by the backend. */
+export const midiMappingDiagnostics = atom<types.BindingDiagnostic[]>([]);
 export const oscSources = atom<types.OscSource[]>([]);
 export const oscMappings = atom<types.OscMapping[]>([]);
+/** OSC mappings that cannot currently invoke their action, as diagnosed by the backend. */
+export const oscMappingDiagnostics = atom<types.BindingDiagnostic[]>([]);
 export const oscLastEvent = atom<types.OscLastEvent | null>(null);
 export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
+/**
+ * MIDI controls the backend reported touched in one frame while mapping mode is active.
+ *
+ * Unlike `midiLastEvent`, every batch is delivered, so mapping mode arms from these.
+ */
+export const midiControlTouches = atom<types.MidiLastEvent[]>([]);
+/**
+ * OSC messages the backend reported in one frame while mapping mode is active.
+ *
+ * Unlike `oscLastEvent`, every batch is delivered, so mapping mode arms from these.
+ */
+export const oscControlTouches = atom<types.OscLastEvent[]>([]);
+/**
+ * How many clients are mapping controllers, which pauses MIDI and OSC actions while
+ * non-zero, and the loaded show's generation (empty until the backend reports it).
+ */
+export const controllerMappingMode = atom<types.ControllerMappingModeState>({
+  mapping_clients: 0,
+  show_generation: "",
+});
 
 // DMX Universe data for raw channel visualization (input + output)
 export type DmxUniverseMap = types.OutboundDmxUniverse[];
@@ -1088,13 +1120,19 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     flowPortValues,
     flowTriggerTicks,
     actionCatalog,
+    actionInvocationFailures,
     midiDevices,
     midiMappings,
     midiLastEvent,
+    midiMappingDiagnostics,
     oscSources,
     oscMappings,
+    oscMappingDiagnostics,
     oscLastEvent,
     oscListenerStatus,
+    midiControlTouches,
+    oscControlTouches,
+    controllerMappingMode,
     consoleScrollback,
     clearConsoleScrollback,
     notificationHistory,
