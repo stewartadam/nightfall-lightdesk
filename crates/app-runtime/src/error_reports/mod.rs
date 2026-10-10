@@ -151,6 +151,7 @@ fn prepare_event(mut event: Event<'static>) -> Option<Event<'static>> {
         ..Default::default()
     });
     Scrubber::for_host().event(&mut event);
+    client_errors::remove_host_details(&mut event);
     Some(event)
 }
 
