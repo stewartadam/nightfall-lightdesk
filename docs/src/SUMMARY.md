@@ -4,6 +4,7 @@
 - [Your first show](user-guide/getting-started.md)
 - [Storing and recalling looks](user-guide/stores.md)
 - [Cues and timing](user-guide/cues.md)
+- [Show tempo and tap tempo](user-guide/tempo.md)
 - [Color Paths](user-guide/color-paths.md)
 - [Basic command syntax](user-guide/commands.md)
 - [Panel guide](user-guide/panels/index.md)
