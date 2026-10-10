@@ -48,6 +48,8 @@ This adds a trailer in the following format:
 Signed-off-by: Your Name <Your@Email.tld>
 ```
 
+The sign-off email must match the commit's author email, or the DCO check on the pull request fails. The `commit-signoff` prek hook rejects commits whose sign-off doesn't match, before they reach a pull request.
+
 First-party source files must include the `SPDX-License-Identifier: MPL-2.0`
 comment and Mozilla MPL 2.0 notice. The `insert-license` prek hook checks the
 complete header using the templates in `config/license-headers/`. When a header
@@ -227,14 +229,14 @@ For an existing checkout that already has prek hooks, run the following once to
 reinstall both tools in that order (without making commits or pushes between steps):
 
 ```sh
-pnpm exec prek uninstall -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek uninstall -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 git lfs install --local
 ```
 
 Then install the combined hooks:
 
 ```sh
-pnpm exec prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek install -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 ```
 
 If you wish to also use beads, ensure hooks are chained:

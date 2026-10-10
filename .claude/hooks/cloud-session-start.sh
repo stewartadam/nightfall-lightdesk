@@ -40,7 +40,7 @@ pnpm install --frozen-lockfile
 
 # Run the same quality gates on commit and push as local checkouts. prek keeps
 # the clone's Git LFS hooks as chained legacy hooks.
-pnpm exec prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek install -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 
 # pnpm switches to the packageManager version without running that wrapper's
 # install script, leaving a shebang-less placeholder at its `pnpm` bin. Shells
