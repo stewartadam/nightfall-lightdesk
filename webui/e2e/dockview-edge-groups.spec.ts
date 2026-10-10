@@ -571,6 +571,46 @@ test("command opening existing edge panel expands its edge group", async ({
   await expect.poll(() => rightEdgeGroupWidth(page)).toBeGreaterThan(260);
 });
 
+/** Verifies command-opening a panel inside a hidden edge group reveals that group. */
+test("command opening a panel in a hidden edge group reveals it", async ({
+  page,
+}) => {
+  await installDockviewStartupSeed(page);
+
+  await page.goto("/?e2e=1");
+  await waitForDockview(page);
+  await runCommand(page, "Reset Layout");
+
+  await page.evaluate(() =>
+    (window as any).appStores.dockApi.get().setEdgeGroupVisible("right", false),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.dockApi.get().isEdgeGroupVisible("right"),
+      ),
+    )
+    .toBe(false);
+
+  await openPanelCommand(page, "Properties");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const api = (window as any).appStores.dockApi.get();
+        return {
+          visible: api.isEdgeGroupVisible("right"),
+          collapsed: api.getEdgeGroup("right")?.isCollapsed(),
+        };
+      }),
+    )
+    .toEqual({ visible: true, collapsed: false });
+  await expect.poll(() => rightEdgeGroupWidth(page)).toBeGreaterThan(260);
+  await page.screenshot({
+    path: test.info().outputPath("hidden-edge-group-revealed.png"),
+  });
+});
+
 /** Verifies resized edge group sizes are persisted and restored with layouts. */
 test("resized edge group sizes survive layout reload", async ({ page }) => {
   await installDockviewStartupSeed(page, {
