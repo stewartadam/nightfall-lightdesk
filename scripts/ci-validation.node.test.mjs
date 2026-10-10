@@ -38,7 +38,14 @@ test("validation jobs wait only for their preparation prerequisites", () => {
   for (const id of ["source-checks", "native", "webui"]) {
     assert.equal(jobs[id].if, `\${{ !startsWith(github.ref, 'refs/tags/') }}`);
   }
-  for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
+  assert.deepEqual(jobs.docs.needs, ["scope", "selection"]);
+  for (const id of [
+    "source-checks",
+    "native",
+    "webui",
+    "browser-smoke",
+    "docs",
+  ]) {
     assert.ok(
       jobs.gate.needs.includes(id),
       `${id} must contribute to the required check`,
@@ -57,7 +64,7 @@ test("the required check accepts only successful prerequisite results", () => {
     jobs.gate.needs.map((id) => [id, { result: "success" }]),
   );
   /** Run the workflow shell against a controlled collection of dependency outcomes. */
-  function runGuard(outcomes, productFlows = "true") {
+  function runGuard(outcomes, productFlows = "true", docs = "true") {
     const result = spawnSync(
       "bash",
       ["-e", "-o", "pipefail", "-c", guard.run],
@@ -66,6 +73,7 @@ test("the required check accepts only successful prerequisite results", () => {
           ...process.env,
           JOB_RESULTS: JSON.stringify(outcomes),
           PRODUCT_FLOWS: productFlows,
+          DOCS: docs,
         },
         encoding: "utf8",
       },
@@ -94,5 +102,18 @@ test("the required check accepts only successful prerequisite results", () => {
     runGuard({ ...draft, native: { result: "failure" } }, "false"),
     0,
     "draft still requires other jobs",
+  );
+  assert.equal(guard.env.DOCS, `\${{ needs.selection.outputs.docs }}`);
+  const noDocs = { ...results, docs: { result: "skipped" } };
+  assert.equal(runGuard(noDocs, "true", "false"), 0, "unselected docs skip");
+  assert.notEqual(
+    runGuard(noDocs, "true", ""),
+    0,
+    "missing docs selection stays strict",
+  );
+  assert.notEqual(
+    runGuard({ ...noDocs, native: { result: "failure" } }, "true", "false"),
+    0,
+    "skipped docs still require other jobs",
   );
 });

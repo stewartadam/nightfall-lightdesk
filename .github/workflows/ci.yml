@@ -87,6 +87,7 @@ jobs:
       browser_package: ${{ steps.select.outputs.browser_package }}
       browser_preview: ${{ steps.select.outputs.browser_preview }}
       product_flows: ${{ steps.select.outputs.product_flows }}
+      docs: ${{ steps.select.outputs.docs }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -260,6 +261,48 @@ jobs:
       - name: Run source pre-commit hooks
         run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 
+  docs:
+    name: Documentation
+    needs: [scope, selection]
+    if: needs.selection.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore credential-free source
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - name: Install mdBook
+        # Keep in sync with the version in CONTRIBUTING.md.
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: mdbook@0.4.49
+      - name: Build every mdBook
+        # mdBook exits successfully on broken includes, so any logged error or warning fails the job.
+        env:
+          MDBOOK_BUILD__CREATE_MISSING: 'false'
+        run: |
+          set -o pipefail
+          mapfile -t books < <(find docs -name book.toml -printf '%h\n' | sort)
+          if (( ${#books[@]} == 0 )); then
+            echo '::error::No mdBook found under docs/'
+            exit 1
+          fi
+          status=0
+          for book in "${books[@]}"; do
+            echo "::group::$book"
+            if ! mdbook build "$book" 2>&1 | tee "$RUNNER_TEMP/mdbook.log"; then
+              status=1
+            elif grep -Eq '\[(ERROR|WARN)\]' "$RUNNER_TEMP/mdbook.log"; then
+              echo "::error::mdBook reported problems while building $book"
+              status=1
+            fi
+            echo '::endgroup::'
+          done
+          exit "$status"
+
   native:
     name: Native
     needs: scope
@@ -356,7 +399,7 @@ jobs:
   gate:
     # Single required check that aggregates every validation job.
     name: CI gate
-    needs: [scope, selection, source-checks, native, wasm-bridge, browser-runtime, webui, browser-smoke]
+    needs: [scope, selection, source-checks, docs, native, wasm-bridge, browser-runtime, webui, browser-smoke]
     if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -365,7 +408,8 @@ jobs:
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
           PRODUCT_FLOWS: ${{ needs.selection.outputs.product_flows }}
-        # Draft PRs deliberately skip the product flows.
+          DOCS: ${{ needs.selection.outputs.docs }}
+        # Draft PRs deliberately skip the product flows; documentation builds only when selected.
         run: |
-          printf '%s' "$JOB_RESULTS" | jq -e --arg flows "$PRODUCT_FLOWS" \
-            'with_entries(select($flows != "false" or .key != "browser-smoke")) | all(.[]; .result == "success")'
+          printf '%s' "$JOB_RESULTS" | jq -e --arg flows "$PRODUCT_FLOWS" --arg docs "$DOCS" \
+            'with_entries(select(($flows != "false" or .key != "browser-smoke") and ($docs != "false" or .key != "docs"))) | all(.[]; .result == "success")'

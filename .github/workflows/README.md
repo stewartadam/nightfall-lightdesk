@@ -66,6 +66,12 @@ review re-runs CI with them.
 Lockfile selection remains conservative; an ordinary lockfile update selects
 both distributions. Release-note-only changes do not select packaging.
 
+PRs that touch `docs/` (or the CI scope policy and workflow) also run the
+**Documentation** job, which builds every mdBook under `docs/` with the mdBook
+version pinned in `CONTRIBUTING.md`. It fails on missing chapter files and on any
+error or warning mdBook logs, such as a broken `{{#include}}`, because mdBook still
+exits successfully for those. Drafts run it too; branch pushes and manual dispatches do not.
+
 Keep policy tests in sync with added packaging inputs. Validate them with
 `node --test scripts/ci-scope.node.test.mjs`, and validate workflow syntax with
 `pnpm exec prek run actionlint --all-files`. Hosted runs are still needed to measure

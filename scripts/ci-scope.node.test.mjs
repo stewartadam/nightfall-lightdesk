@@ -16,6 +16,7 @@ const none = {
   browser_package: false,
   browser_preview: false,
   product_flows: true,
+  docs: false,
 };
 const desktop = { ...none, desktop_package: true };
 const browser = { ...none, browser_package: true };
@@ -57,8 +58,13 @@ test("PR selection follows distribution ownership", () => {
     ["pnpm-lock.yaml", both],
     ["pnpm-workspace.yaml", both],
     ["crates/app-runtime/assets/sample-audio/lofi.mp3", both],
-    [".github/workflows/ci.yml", both],
-    ["scripts/ci-scope.mjs", both],
+    [".github/workflows/ci.yml", { ...both, docs: true }],
+    ["scripts/ci-scope.mjs", { ...both, docs: true }],
+    ["docs/src/SUMMARY.md", { ...none, docs: true }],
+    ["docs/book.toml", { ...none, docs: true }],
+    ["docs/theme/navigation.js", { ...none, docs: true }],
+    ["CONTRIBUTING.md", none],
+    ["README.md", none],
     ["crates/wasm-bridge/src/lib.rs", both],
   ]) {
     assert.deepEqual(
@@ -198,6 +204,26 @@ test("draft PRs skip desktop installers and product flows", () => {
     browser_preview: true,
     product_flows: false,
   });
+});
+
+/** Documentation builds follow PR paths, including drafts, and never run for branch or manual events. */
+test("documentation builds only for PRs that touch the manual", () => {
+  assert.equal(
+    selectScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: ["docs/src/user-guide/index.md"],
+      draft: true,
+    }).docs,
+    true,
+  );
+  for (const [event, ref] of [
+    ["push", "refs/heads/main"],
+    ["push", "refs/heads/develop"],
+    ["workflow_dispatch", "refs/heads/develop"],
+  ]) {
+    assert.equal(selectScope({ event, ref }).docs, false, `${event} ${ref}`);
+  }
 });
 
 /** NUL-delimited paths preserve unusual names without interpreting them as script or shell input. */
