@@ -49,74 +49,6 @@ pub fn update_timeline_system(
     }
 }
 
-#[cfg(test)]
-mod update_timeline_tests {
-    use bevy_app::{App, Update};
-
-    use super::*;
-    use crate::prelude::{Timeline, TimelineLoopRange};
-
-    /// Looping one timeline seeks only its UID-associated timecode generator.
-    #[test]
-    fn loop_seek_targets_associated_timecode() {
-        let mut app = App::new();
-        app.add_systems(Update, update_timeline_system);
-
-        let mut unrelated_timecode = TimecodeGenerator::default();
-        unrelated_timecode.state.current_time = Duration::from_secs(9);
-        let unrelated_entity = app.world_mut().spawn(unrelated_timecode).id();
-
-        let mut associated_timecode = TimecodeGenerator::default();
-        associated_timecode.state.current_time = Duration::from_secs(6);
-        let associated_uid = associated_timecode.timecode.identifiers.uid;
-        let associated_entity = app.world_mut().spawn(associated_timecode).id();
-
-        let mut timeline = Timeline {
-            timecode_uid: associated_uid,
-            timecode_start: Duration::from_secs(1),
-            loop_range: Some(TimelineLoopRange {
-                start: Duration::from_secs(2),
-                end: Duration::from_secs(4),
-                enabled: true,
-            }),
-            ..Default::default()
-        };
-        timeline.identifiers.id = 1;
-        let mut materialized_timeline = MaterializedTimeline::new(timeline);
-        materialized_timeline.is_active = true;
-        app.world_mut().spawn(materialized_timeline);
-
-        app.update();
-
-        let unrelated_timecode = app
-            .world()
-            .entity(unrelated_entity)
-            .get::<TimecodeGenerator>()
-            .expect("unrelated timecode should remain materialized");
-        assert_eq!(
-            unrelated_timecode.state.current_time,
-            Duration::from_secs(9)
-        );
-
-        let associated_timecode = app
-            .world()
-            .entity(associated_entity)
-            .get::<TimecodeGenerator>()
-            .expect("associated timecode should remain materialized");
-        assert_eq!(
-            associated_timecode.state.current_time,
-            Duration::from_secs(3)
-        );
-
-        let materialized_timeline = app
-            .world_mut()
-            .query::<&MaterializedTimeline>()
-            .single(app.world())
-            .expect("timeline should remain materialized");
-        assert!(materialized_timeline.audio_needs_sync);
-    }
-}
-
 /// System that handles audio playback for timelines that had significant state changes
 #[cfg(feature = "audio")]
 pub fn handle_timeline_audio_system(
@@ -982,5 +914,73 @@ pub fn process_actions_system(
         for entity in entities_to_untrack {
             timeline.spawned_entities.remove(&entity);
         }
+    }
+}
+
+#[cfg(test)]
+mod update_timeline_tests {
+    use bevy_app::{App, Update};
+
+    use super::*;
+    use crate::prelude::{Timeline, TimelineLoopRange};
+
+    /// Looping one timeline seeks only its UID-associated timecode generator.
+    #[test]
+    fn loop_seek_targets_associated_timecode() {
+        let mut app = App::new();
+        app.add_systems(Update, update_timeline_system);
+
+        let mut unrelated_timecode = TimecodeGenerator::default();
+        unrelated_timecode.state.current_time = Duration::from_secs(9);
+        let unrelated_entity = app.world_mut().spawn(unrelated_timecode).id();
+
+        let mut associated_timecode = TimecodeGenerator::default();
+        associated_timecode.state.current_time = Duration::from_secs(6);
+        let associated_uid = associated_timecode.timecode.identifiers.uid;
+        let associated_entity = app.world_mut().spawn(associated_timecode).id();
+
+        let mut timeline = Timeline {
+            timecode_uid: associated_uid,
+            timecode_start: Duration::from_secs(1),
+            loop_range: Some(TimelineLoopRange {
+                start: Duration::from_secs(2),
+                end: Duration::from_secs(4),
+                enabled: true,
+            }),
+            ..Default::default()
+        };
+        timeline.identifiers.id = 1;
+        let mut materialized_timeline = MaterializedTimeline::new(timeline);
+        materialized_timeline.is_active = true;
+        app.world_mut().spawn(materialized_timeline);
+
+        app.update();
+
+        let unrelated_timecode = app
+            .world()
+            .entity(unrelated_entity)
+            .get::<TimecodeGenerator>()
+            .expect("unrelated timecode should remain materialized");
+        assert_eq!(
+            unrelated_timecode.state.current_time,
+            Duration::from_secs(9)
+        );
+
+        let associated_timecode = app
+            .world()
+            .entity(associated_entity)
+            .get::<TimecodeGenerator>()
+            .expect("associated timecode should remain materialized");
+        assert_eq!(
+            associated_timecode.state.current_time,
+            Duration::from_secs(3)
+        );
+
+        let materialized_timeline = app
+            .world_mut()
+            .query::<&MaterializedTimeline>()
+            .single(app.world())
+            .expect("timeline should remain materialized");
+        assert!(materialized_timeline.audio_needs_sync);
     }
 }

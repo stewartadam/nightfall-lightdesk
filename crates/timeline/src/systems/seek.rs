@@ -41,12 +41,18 @@ use sequence::TimelineSequenceSeekMaterializer;
 pub struct TimelineSeekPipeline<'w, 's> {
     /// Source definitions and runtime indexes needed during deterministic planning.
     planning: TimelineSeekPlanningParams<'w, 's>,
-    /// Cue-specific reconstruction dependencies.
-    cue_materializer: TimelineCueSeekMaterializer<'w, 's>,
+    /// Cue and sequence reconstruction dependencies, kept in a set because sequences write the
+    /// parameters that cues read.
+    cue_sequence_materializers: ParamSet<
+        'w,
+        's,
+        (
+            TimelineCueSeekMaterializer<'w, 's>,
+            TimelineSequenceSeekMaterializer<'w, 's>,
+        ),
+    >,
     /// Classic and step FX reconstruction dependencies.
     fx_materializer: TimelineFxSeekMaterializer<'w, 's>,
-    /// Sequence interval reconstruction dependencies.
-    sequence_materializer: TimelineSequenceSeekMaterializer<'w, 's>,
     /// Shared action lookup, reconciliation, and dispatch dependencies.
     dispatch: TimelineSeekDispatch<'w>,
     /// Runtime queries used by stale-entity reconciliation.
@@ -70,9 +76,8 @@ pub fn handle_timeline_seek_system(
 ) {
     let TimelineSeekPipeline {
         planning,
-        cue_materializer,
+        mut cue_sequence_materializers,
         fx_materializer,
-        mut sequence_materializer,
         mut dispatch,
         reconciliation,
         clip_lookup,
@@ -156,7 +161,7 @@ pub fn handle_timeline_seek_system(
             tracking::reset_timeline_reconstruction_tracking(&mut timeline);
 
             cue::materialize_timeline_cues(
-                &cue_materializer,
+                &cue_sequence_materializers.p0(),
                 &mut commands,
                 &reconstruction_plan,
                 timeline.timeline.identifiers.uid,
@@ -191,7 +196,7 @@ pub fn handle_timeline_seek_system(
                 );
             }
             sequence::materialize_timeline_sequences(
-                &mut sequence_materializer,
+                &mut cue_sequence_materializers.p1(),
                 &mut commands,
                 &timeline,
                 &reconstruction_plan,

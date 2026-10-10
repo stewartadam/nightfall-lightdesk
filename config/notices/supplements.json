@@ -42,6 +42,18 @@
     "sha256": "ab0e16cf53040a0b20856e528d6e3ddea8bbf37e94a7ba48ad29f8ddd2a8dec6"
   },
   {
+    "package": "cargo:mutants@0.0.3",
+    "file": "sourcefrog-cargo-mutants-479cbeb25061.txt",
+    "sha256": "479cbeb2506157776cf80abe31df18065d0fe50b5816ff77bfd75d5deb04ab5c",
+    "source": "https://raw.githubusercontent.com/sourcefrog/cargo-mutants/5c06912ca4c9372c03c435d0f55e1e088ce70b8d/LICENSE"
+  },
+  {
+    "package": "cargo:tauri-plugin@2.7.1",
+    "file": "tauri-apps-tauri-9dd42ea92cff.txt",
+    "sha256": "9dd42ea92cff2ede5cd477cbfcce051b2d0115c0ac7f368ee88cb545055dff1d",
+    "source": "https://raw.githubusercontent.com/tauri-apps/tauri/6f6ab1207bb3923c2721fbc67d2fdb1c8deb0c7a/LICENSE_MIT"
+  },
+  {
     "name": "Phosphor Icons (original artwork)",
     "version": "2.1.1",
     "license": "MIT",

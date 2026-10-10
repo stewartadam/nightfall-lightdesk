@@ -239,6 +239,16 @@ export function developmentNotices() {
   );
 }
 
+/**
+ * Returns where a crate's packaged source can be downloaded: the exact commit for git
+ * dependencies (such as `[patch]` forks), otherwise the crates.io archive.
+ */
+function crateSource(pkg) {
+  const git = pkg.source?.match(/^git\+([^?#]+)(?:\?[^#]*)?#([0-9a-f]+)$/);
+  if (git) return `${git[1].replace(/\.git$/, "")}/tree/${git[2]}`;
+  return `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download`;
+}
+
 /** Adapt cargo-about's selected license texts, retaining ancillary and vendored notices. */
 export function rustNotices(report) {
   const reviewed = supplements();
@@ -301,7 +311,7 @@ export function rustNotices(report) {
         ]
           .sort()
           .join(" AND "),
-        source: `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download`,
+        source: crateSource(pkg),
         text: combineTexts(files),
       };
     });

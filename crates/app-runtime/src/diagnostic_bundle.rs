@@ -257,7 +257,7 @@ mod tests {
                 let mut entry = zip.by_index(index).unwrap();
                 let mut bytes = Vec::new();
                 entry.read_to_end(&mut bytes).unwrap();
-                (entry.name().to_owned(), bytes)
+                (entry.name().unwrap().into_owned(), bytes)
             })
             .collect()
     }

@@ -88,6 +88,28 @@ test("Rust notices use cargo-about texts and selected licenses", () => {
   }
 });
 
+/** Point registry crates at their crates.io archive and git-patched crates at the pinned commit. */
+test("Rust notices link each crate's packaged source", () => {
+  const root = mkdtempSync(join(tmpdir(), "nightfall-notices-"));
+  try {
+    const report = cargoReport(root, [
+      { id: "MIT", source_path: "LICENSE-MIT", text: "MIT attribution" },
+    ]);
+    assert.equal(
+      rustNotices(report)[0].source,
+      "https://crates.io/api/v1/crates/example/1.0.0/download",
+    );
+    report.crates[0].package.source =
+      "git+https://github.com/owner/example.git?rev=abc123#abc123def456";
+    assert.equal(
+      rustNotices(report)[0].source,
+      "https://github.com/owner/example/tree/abc123def456",
+    );
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
+
 /** Preserve every required license while keeping notices scoped to the matching package identity. */
 test("Rust notices retain AND licenses and exclude unrelated packages", () => {
   const root = mkdtempSync(join(tmpdir(), "nightfall-notices-"));
