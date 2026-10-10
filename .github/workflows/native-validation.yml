@@ -77,7 +77,7 @@ jobs:
           name: rust-test-junit-${{ github.sha }}
           path: target/nextest/ci/junit.xml
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
 
       - name: Stage the tested native backend
         run: |
