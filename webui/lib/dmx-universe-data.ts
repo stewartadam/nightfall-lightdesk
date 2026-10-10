@@ -43,8 +43,8 @@ export function formatFrameAgeMs(value?: number): string {
 
 /** One listed universe together with the channel values the backend sent for it. */
 export type DmxUniverseSnapshot = DmxUniverseSummary & {
-  /** Channel values starting at address 1. */
-  channels: number[];
+  /** Channel values starting at address 1; `null` until the backend sent them. */
+  channels: (number | null)[];
   /** Milliseconds since an input universe last received a frame. */
   frame_age_ms?: number;
 };
@@ -63,19 +63,29 @@ export function dmxUniverseKeyId(universe: DmxUniverseKey): string {
   return `${universe.io_mode}|${universe.transport}|${universe.universe_id}`;
 }
 
+/** Channels in one DMX universe. */
+export const DMX_UNIVERSE_CHANNELS = 512;
+
 /**
  * Combines a listed universe with its channel values from the latest `DmxUniverseChannels`
- * message. Returns undefined until the backend has sent values for that universe.
+ * message. Until the backend has sent values for that universe, every channel is `null`, so the
+ * grid can be drawn at once and fill in when the values arrive.
  */
 export function dmxUniverseSnapshot(
   summary: DmxUniverseSummary,
   channelMessages: readonly DmxUniverseChannels[],
-): DmxUniverseSnapshot | undefined {
+): DmxUniverseSnapshot {
   const id = dmxUniverseKeyId(summary);
   const values = channelMessages.find(
     (universe) => dmxUniverseKeyId(universe) === id,
   );
-  if (!values) return undefined;
+  if (!values) {
+    return {
+      ...summary,
+      channels: new Array<null>(DMX_UNIVERSE_CHANNELS).fill(null),
+      frame_age_ms: undefined,
+    };
+  }
   return {
     ...summary,
     channels: Array.from(values.channels),
