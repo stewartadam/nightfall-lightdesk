@@ -433,50 +433,59 @@ test("each control has a go button with per-target start and go behavior", async
           type WindowWithWorkerMessages = Window & {
             __workerMessages?: unknown[];
           };
-          type IdExpr = { type: "Single"; data: number };
-
           const messages = (window as WindowWithWorkerMessages)
             .__workerMessages;
 
           return (
-            messages
-              ?.flatMap((message) => {
-                if (!message || typeof message !== "object") {
-                  return [];
-                }
-
-                const candidate = message as {
-                  type?: string;
-                  data?: {
-                    module?: string;
-                    command?: { type?: string; data?: IdExpr };
+            messages?.flatMap((message) => {
+              const candidate = message as {
+                data?: {
+                  module?: string;
+                  command?: {
+                    type?: string;
+                    data?: { control_index?: number };
                   };
                 };
-
-                if (
-                  candidate.type !== "submit" ||
-                  candidate.data?.module !== "ClipCommand" ||
-                  !candidate.data.command?.type ||
-                  candidate.data.command.data?.type !== "Single"
-                ) {
-                  return [];
-                }
-
-                return [
-                  {
-                    type: candidate.data.command.type,
-                    id: candidate.data.command.data.data,
-                  },
-                ];
-              })
-              .filter(Boolean) ?? []
+              } | null;
+              if (
+                candidate?.data?.module !== "ControlCommand" ||
+                candidate.data.command?.type !== "Go"
+              ) {
+                return [];
+              }
+              return [candidate.data.command.data?.control_index];
+            }) ?? []
           );
         }),
       { timeout: 10_000 },
     )
-    .toEqual([
-      { type: "StartClip", id: scenario.inactiveSequenceId },
-      { type: "GoClip", id: scenario.activeSequenceId },
-      { type: "StartClip", id: scenario.inactiveFxId },
-    ]);
+    .toEqual([1, 2, 3, 4]);
+
+  // The backend decides what Go does: inactive clips start and running clips keep running.
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          (ids) => {
+            const states = (window as any).appStores.clips.get() as Record<
+              string,
+              [{ identifiers: { id: number } }, boolean]
+            >;
+            const active = new Set(
+              Object.values(states)
+                .filter(([, isActive]) => isActive)
+                .map(([clip]) => clip.identifiers.id),
+            );
+            return ids.map((id) => active.has(id));
+          },
+          [
+            scenario.inactiveSequenceId,
+            scenario.activeSequenceId,
+            scenario.inactiveFxId,
+            scenario.activeFxId,
+          ],
+        ),
+      { timeout: 10_000 },
+    )
+    .toEqual([true, true, true, true]);
 });

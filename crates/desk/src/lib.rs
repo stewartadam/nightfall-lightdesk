@@ -48,9 +48,10 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
-        CONTROL_SET_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
-        DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
-        desk_eval_command_for_action, set_control_action,
+        CONTROL_GO_ACTION_ID, CONTROL_LEVEL_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
+        DeskEvalActionArguments, MASTER_LEVEL_ACTION_ID, MASTER_TOGGLE_ACTION_ID,
+        MasterActionArguments, control_go_action, control_level_action, desk_eval_action,
+        master_level_action, master_toggle_action,
     };
     pub use crate::controls::{
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
@@ -158,6 +159,7 @@ impl Plugin for DeskPlugin {
             websocket::deserialize_control_command,
         );
         register_update_deserializer(app, "ControlUpdate", websocket::deserialize_control_update);
+        register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::DeskAstConverter>(
         );
@@ -200,15 +202,20 @@ impl Plugin for DeskPlugin {
         // PendingCommandBuffer before undo processing
         app.add_systems(
             Update,
-            systems::scheduled_commands::process_scheduled_commands
-                .after(InputHandling)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+            systems::scheduled_commands::process_scheduled_commands.in_set(PendingCommandExpansion),
         );
         app.add_systems(
             Update,
             systems::event_handlers::desk_events::expand_pending_eval_commands
                 .after(systems::scheduled_commands::process_scheduled_commands)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+                .in_set(DeskEventSet::EvalExpansion)
+                .in_set(PendingCommandExpansion),
+        );
+        app.add_systems(
+            Update,
+            controls::expand_control_go_commands
+                .after(systems::event_handlers::desk_events::expand_pending_eval_commands)
+                .in_set(PendingCommandExpansion),
         );
 
         // Maintain InstanceIndex on spawn/despawn, and sync clip active state

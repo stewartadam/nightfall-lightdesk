@@ -183,7 +183,7 @@ fn forward_external_command_invocations(
             continue;
         }
         external_evals.write(OscExternalEval {
-            correlation_id: invocation.command_id,
+            correlation_id: invocation.command_id.into(),
             command: invocation.command.clone(),
             source: invocation.source.clone(),
         });

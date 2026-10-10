@@ -6,19 +6,24 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
+import { waitForDockviewApp } from "./showfile-startup";
 
 /**
  * Opens the application with a clean layout and a viewport large enough for
  * the OSC and CommandLine panels to render without truncating their controls.
  */
-async function openOscFlowApp(page: Page) {
+async function openOscFlowApp(page: Page, backendPort: number) {
+  await prepareFreshBackendShowfile(backendPort);
   await page.setViewportSize({ width: 1800, height: 1100 });
   await page.addInitScript(() => {
-    window.localStorage.removeItem("nightfall-ui-layouts");
+    window.localStorage.clear();
+    window.localStorage.setItem("nightfall.currentShowfileName", "default");
   });
-  await page.goto("/?e2e=1");
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
+  await waitForDockviewApp(page);
 }
 
 /**
@@ -199,9 +204,10 @@ async function dispatchOscExternalEval(page: Page) {
  * creation and the CommandLine source tag shown for an OSC-dispatched command.
  */
 test("OSC event can create a mapping and render dispatched command source", async ({
+  backendSlot,
   page,
 }, testInfo) => {
-  await openOscFlowApp(page);
+  await openOscFlowApp(page, backendSlot.backendPort);
   await waitForAppStores(page);
   await captureWebsocketSends(page);
   await seedOscLastEvent(page);
@@ -213,6 +219,12 @@ test("OSC event can create a mapping and render dispatched command source", asyn
   });
   await expect(page.getByText("OSC Listener", { exact: true })).toBeVisible();
   await expect(page.getByText("/e2e/osc/go")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Add Mapping" }),
+  ).toBeDisabled();
+  await page
+    .getByRole("combobox", { name: "Action for last input" })
+    .selectOption("programmer.clear");
   await page.getByRole("button", { name: "Add Mapping" }).click();
 
   await expect
@@ -223,11 +235,7 @@ test("OSC event can create a mapping and render dispatched command source", asyn
         {
           address: "/e2e/osc/go",
           arg_index: 0,
-          arg_value: "0.75",
-          action: {
-            id: "clip.start",
-            arguments: { target: { type: "Id", data: 1 } },
-          },
+          action: { id: "programmer.clear", arguments: {} },
         },
       ],
     });
@@ -239,11 +247,7 @@ test("OSC event can create a mapping and render dispatched command source", asyn
       {
         address: "/e2e/osc/go",
         arg_index: 0,
-        arg_value: "0.75",
-        action: {
-          id: "clip.start",
-          arguments: { target: { type: "Id", data: 1 } },
-        },
+        action: { id: "programmer.clear", arguments: {} },
       },
     ],
   });
@@ -255,7 +259,12 @@ test("OSC event can create a mapping and render dispatched command source", asyn
     const stores = (window as any).appStores;
     stores.oscMappings.set(command.data);
   }, storeMappingsCommand);
-  await expect(page.getByText("StartClip(1)", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByText("Clear programmer", { exact: true })
+      .locator("visible=true")
+      .first(),
+  ).toBeVisible();
 
   await addPanel(page, {
     id: "panel-CommandLine-osc-flow-e2e",

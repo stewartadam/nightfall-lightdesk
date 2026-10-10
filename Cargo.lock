@@ -4960,9 +4960,11 @@ version = "0.1.0-alpha.3"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "nightfall-engine",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
+ "tracing",
  "typeshare",
  "uuid",
 ]
@@ -5707,6 +5709,7 @@ dependencies = [
  "bevy_ecs",
  "moonshine-kind",
  "nightfall",
+ "nightfall-actions",
  "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-cues",

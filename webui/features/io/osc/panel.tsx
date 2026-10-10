@@ -42,17 +42,30 @@ import { engineRuntime } from "../../../lib/engine-runtime";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
+  actionCatalog,
   oscLastEvent,
   oscListenerStatus,
   oscMappings,
   oscSources,
 } from "../../../state/appStores";
-import type { OscMapping, OscType } from "../../../types";
 import {
-  cloneOscAction,
-  formatOscAction,
-  parseOscAction,
-} from "./model/action-format";
+  ActionInputKind,
+  type ActionReference,
+  type OscMapping,
+  type OscType,
+} from "../../../types";
+import {
+  ActionPicker,
+  formatActionReference,
+  useActionTargetNames,
+} from "../../actions";
+
+/** Input kinds an OSC message can drive: pulses and booleans as buttons, numbers as faders. */
+const OSC_INPUT_KINDS = [
+  ActionInputKind.Trigger,
+  ActionInputKind.Momentary,
+  ActionInputKind.Absolute,
+];
 
 export interface OscInputPanelProps extends BasePanelComponentProps {}
 
@@ -94,7 +107,7 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     title: "Action",
     id: "action",
     width: 260,
-    filter: { value: (row) => formatOscAction(row.mapping.action) },
+    filter: { value: (row) => row.mapping.action.id },
     ...columnVisibilityMeta("Binding", "Action"),
   },
 ];
@@ -156,8 +169,13 @@ function cloneMapping(mapping: OscMapping): OscMapping {
     address: mapping.address,
     arg_index: mapping.arg_index,
     arg_value: mapping.arg_value,
-    action: cloneOscAction(mapping.action),
+    action: cloneAction(mapping.action),
   };
+}
+
+/** Deep clones an action reference into a plain object that can be posted to the worker. */
+function cloneAction(action: ActionReference): ActionReference {
+  return JSON.parse(JSON.stringify(action)) as ActionReference;
 }
 
 export default function OscInputPanel(props: OscInputPanelProps) {
@@ -165,6 +183,11 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   const $oscMappings = useStore(oscMappings);
   const $oscLastEvent = useStore(oscLastEvent);
   const $oscListenerStatus = useStore(oscListenerStatus);
+  const $actionCatalog = useStore(actionCatalog);
+  const targetNames = useActionTargetNames();
+  const [lastEventAction, setLastEventAction] = createSignal<
+    ActionReference | undefined
+  >();
   const panelId = props.id;
 
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -245,10 +268,15 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               data: rowData.arg_value ?? "",
             };
           case "action": {
-            const actionStr = formatOscAction(rowData.action);
+            const actionStr = formatActionReference(
+              rowData.action,
+              $actionCatalog(),
+              targetNames,
+            );
             return {
               kind: GridCellKind.Text,
-              allowOverlay: true,
+              allowOverlay: false,
+              readonly: true,
               displayData: actionStr,
               data: actionStr,
             };
@@ -305,17 +333,15 @@ export default function OscInputPanel(props: OscInputPanelProps) {
           rowData.arg_value = trimmed === "" ? undefined : trimmed;
           break;
         }
-        case "action": {
-          const parsed = parseOscAction(value);
-          if (parsed) {
-            rowData.action = parsed;
-          }
-          break;
-        }
       }
       currentMappings[originalIndex] = cloneMapping(rowData);
     }
 
+    storeMappings(currentMappings);
+  };
+
+  /** Optimistically stores a replacement mapping list and sends it to the backend. */
+  const storeMappings = (currentMappings: OscMapping[]) => {
     setStoreAction(oscMappings, "Update OSC Mappings", currentMappings);
     engineRuntime.sendCommand({
       module: "OscCommand",
@@ -324,6 +350,24 @@ export default function OscInputPanel(props: OscInputPanelProps) {
         data: currentMappings,
       },
     });
+  };
+
+  /** Returns the single selected mapping row, when exactly one is selected. */
+  const selectedMapping = createMemo(() => {
+    const rows = selectedRows();
+    if (rows.length !== 1) return undefined;
+    return displayRows()[rows[0]];
+  });
+
+  /** Replaces the action of the selected mapping row. */
+  const updateSelectedAction = (action: ActionReference) => {
+    const row = selectedMapping();
+    if (!row) return;
+    const currentMappings = $oscMappings().map(cloneMapping);
+    const mapping = currentMappings[row.index];
+    if (!mapping) return;
+    currentMappings[row.index] = { ...mapping, action: cloneAction(action) };
+    storeMappings(currentMappings);
   };
 
   const deleteSelected = () => {
@@ -350,27 +394,21 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     });
   };
 
+  /** Binds the last received OSC address to the action chosen beside it. */
   const applyLastEvent = () => {
     const event = $oscLastEvent();
-    if (!event) return;
+    const action = lastEventAction();
+    if (!event || !action) return;
 
     const currentMappings = $oscMappings().map(cloneMapping);
     currentMappings.push({
       source: undefined,
       address: event.address,
       arg_index: event.args.length > 0 ? 0 : undefined,
-      arg_value:
-        event.args.length > 0 ? formatArgValue(event.args[0]) : undefined,
-      action: parseOscAction("StartClip(1)")!,
+      arg_value: undefined,
+      action: cloneAction(action),
     });
-
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    storeMappings(currentMappings);
   };
 
   return (
@@ -424,14 +462,22 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                   {$oscLastEvent()?.args.map(formatArgValue).join(", ")}
                 </span>
               </div>
-              <Button
-                size="compact"
-                variant="primary"
-                class="shrink-0"
-                onClick={applyLastEvent}
-              >
-                Add Mapping
-              </Button>
+              <div class="flex flex-wrap items-center gap-2">
+                <ActionPicker
+                  label="Action for last input"
+                  inputKinds={OSC_INPUT_KINDS}
+                  onChange={setLastEventAction}
+                />
+                <Button
+                  size="compact"
+                  variant="primary"
+                  class="shrink-0"
+                  disabled={!lastEventAction()}
+                  onClick={applyLastEvent}
+                >
+                  Add Mapping
+                </Button>
+              </div>
             </div>
           </div>
         </Show>
@@ -445,9 +491,8 @@ export default function OscInputPanel(props: OscInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">OSC Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Leave Source blank to match any sender. Action format:
-                StartClip(1), StopClip(2), GoClip(3), SetControl(1), Eval(clip 1
-                go)
+                Leave Source blank to match any sender. Select one mapping to
+                change its action.
               </p>
             </div>
           }
@@ -479,6 +524,20 @@ export default function OscInputPanel(props: OscInputPanelProps) {
           }
         />
 
+        <Show when={selectedMapping()}>
+          {(row) => (
+            <div class="flex items-center gap-2 border-b border-gray-700 px-3 py-2">
+              <span class="text-xs text-gray-400">Selected action</span>
+              <ActionPicker
+                label="Selected mapping action"
+                value={row().mapping.action}
+                inputKinds={OSC_INPUT_KINDS}
+                onChange={updateSelectedAction}
+              />
+            </div>
+          )}
+        </Show>
+
         <div class="flex-1 min-h-0">
           <DataGrid
             rows={displayRows().length}
@@ -499,8 +558,8 @@ export default function OscInputPanel(props: OscInputPanelProps) {
 
         <Show when={mappingRows().length === 0}>
           <div class="p-4 text-center text-gray-500 text-sm">
-            No OSC mappings configured. Send OSC input and click "Add Mapping"
-            to create one.
+            No OSC mappings configured. Send OSC input, choose an action, and
+            click "Add Mapping" to create one.
           </div>
         </Show>
       </div>

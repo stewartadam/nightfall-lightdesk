@@ -13,9 +13,9 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall::prelude::IdExpr;
 use nightfall_actions::ActionReference;
-use nightfall_clips::{Clip, ClipOperation};
 #[cfg(test)]
-use nightfall_clips::{ClipTarget, start_clip_action};
+use nightfall_clips::start_clip_action;
+use nightfall_clips::{Clip, ClipOperation};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceClock, InstanceClockSource, InstanceControls};

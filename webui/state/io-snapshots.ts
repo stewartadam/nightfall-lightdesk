@@ -13,6 +13,7 @@ import {
 import { setStoreAction } from "../lib/nanostore-action";
 import type * as types from "../types";
 import {
+  actionCatalog,
   midiDevices,
   midiLastEvent,
   midiMappings,
@@ -123,6 +124,13 @@ export function applyMidiLastEventSnapshot(
   event: types.MidiLastEvent | null,
 ): void {
   setStoreAction(midiLastEvent, "Receive MidiLastEvent", event);
+}
+
+/** Applies the backend action catalog used by mapping and binding pickers. */
+export function applyActionCatalogSnapshot(
+  catalog: types.ActionCatalogEntry[],
+): void {
+  setStoreAction(actionCatalog, "Receive ActionCatalog", catalog);
 }
 
 /** Applies the current OSC source list to the OSC store. */

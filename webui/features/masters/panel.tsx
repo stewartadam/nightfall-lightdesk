@@ -20,7 +20,8 @@ import * as types from "../../types";
 import {
   allFixturesTarget,
   allInstancesTarget,
-  buildSetMasterLevelCommand,
+  buildCommitMasterLevelCommand,
+  buildMasterLevelUpdate,
   buildSetMasterModeCommand,
   buildStoreMasterCommand,
   buildToggleMasterCommand,
@@ -34,7 +35,11 @@ import {
   sortedMasters,
   targetLabel,
 } from "./model/master-model";
-import { newMasterUid, sendMasterCommand } from "./services/master-commands";
+import {
+  newMasterUid,
+  sendMasterCommand,
+  sendMasterUpdate,
+} from "./services/master-commands";
 
 const MASTER_DRAG_TYPE = "application/x-master";
 
@@ -81,6 +86,26 @@ export default function MastersPanel(
     },
     { accepts: (payload) => payload.type === "master" },
   );
+
+  /** Levels captured when each master's slider drag began, keyed by master ID. */
+  const dragStartLevels = new Map<number, number>();
+
+  /** Streams a dragged master level without creating undo history for each step. */
+  const dragMasterLevel = (master: types.Master, levelPercent: number) => {
+    const id = master.identifiers.id;
+    if (!dragStartLevels.has(id)) dragStartLevels.set(id, master.level_percent);
+    sendMasterUpdate(buildMasterLevelUpdate(id, levelPercent));
+  };
+
+  /** Commits the released slider level as one undoable change from the drag start. */
+  const commitMasterLevel = (master: types.Master, levelPercent: number) => {
+    const id = master.identifiers.id;
+    const fromPercent = dragStartLevels.get(id) ?? master.level_percent;
+    dragStartLevels.delete(id);
+    sendMasterCommand(
+      buildCommitMasterLevelCommand(id, fromPercent, levelPercent),
+    );
+  };
 
   /** Creates an all-fixtures master from the panel toolbar. */
   const createGlobalMaster = () => {
@@ -302,11 +327,15 @@ export default function MastersPanel(
                         value={master.level_percent}
                         class="w-full"
                         onInput={(event) =>
-                          sendMasterCommand(
-                            buildSetMasterLevelCommand(
-                              master.identifiers.id,
-                              Number(event.currentTarget.value),
-                            ),
+                          dragMasterLevel(
+                            master,
+                            Number(event.currentTarget.value),
+                          )
+                        }
+                        onChange={(event) =>
+                          commitMasterLevel(
+                            master,
+                            Number(event.currentTarget.value),
                           )
                         }
                       />
