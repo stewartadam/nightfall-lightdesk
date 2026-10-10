@@ -103,6 +103,13 @@ repos:
       files: (^|/)Cargo\.toml$|^scripts/check-crate-boundaries\.mjs$|^config/architecture/(crate-boundary-exceptions|crate-roles)\.json$|^docs/backend-crate-boundaries\.md$
       stages: [pre-commit]
 
+    # The DCO check on pull requests needs a sign-off matching the commit author.
+    - id: commit-signoff
+      name: sign-off matches author
+      entry: node scripts/check-commit-signoff.mjs
+      language: system
+      stages: [commit-msg]
+
     # tests
     - id: cargo-nextest
       name: Rust tests
