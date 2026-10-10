@@ -14,7 +14,6 @@
 //! uploaded in the background whenever the service is reachable.
 
 mod client_errors;
-mod outbox;
 mod scrub;
 
 use std::{
@@ -28,10 +27,9 @@ use std::{
 
 pub(crate) use client_errors::register_routes;
 use nightfall_desk::prelude::TelemetryState;
-use outbox::{Endpoint, Outbox, OutboxStore};
 use scrub::Scrubber;
 use sentry::{
-    ClientOptions,
+    ClientOptions, Envelope, Transport,
     integrations::tracing::EventFilter,
     protocol::{Breadcrumb, Event, User},
     types::Dsn,
@@ -39,10 +37,19 @@ use sentry::{
 use tracing::{Level, Metadata, Subscriber, callsite::Identifier};
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
+use crate::telemetry_outbox::{Endpoint, Outbox, OutboxLimits, OutboxStore};
+
 /// Client name sent with reports.
 const USER_AGENT: &str = concat!("nightfall/", env!("CARGO_PKG_VERSION"));
 /// Folder in the data directory holding reports that have not been uploaded yet.
 const OUTBOX_DIR_NAME: &str = "error-reports";
+/// Queue limits; a failure that repeats for hours reaches the session budget long before it
+/// could fill the queue with copies.
+const LIMITS: OutboxLimits = OutboxLimits {
+    max_files: 50,
+    max_bytes: 2 * 1024 * 1024,
+    max_per_session: 50,
+};
 /// Field that marks the panic hook's own log record, which repeats the panic report.
 const PANIC_FIELD: &str = "panic";
 /// A log statement that keeps failing is reported once per window; repeats become breadcrumbs.
@@ -106,9 +113,14 @@ pub(crate) fn init(configured_dsn: Option<&str>) -> ErrorReportsGuard {
     };
     let endpoint = Endpoint {
         url: dsn.envelope_api_url().to_string(),
-        auth: dsn.to_auth(Some(USER_AGENT)).to_string(),
+        headers: vec![("X-Sentry-Auth", dsn.to_auth(Some(USER_AGENT)).to_string())],
+        content_type: "application/x-sentry-envelope",
     };
-    let outbox = match Outbox::start(OutboxStore::new(data_dir.join(OUTBOX_DIR_NAME)), endpoint) {
+    let outbox = match Outbox::start(
+        OutboxStore::new(data_dir.join(OUTBOX_DIR_NAME), &ENABLED, LIMITS),
+        endpoint,
+        "nightfall-error-reports",
+    ) {
         Ok(outbox) => outbox,
         Err(error) => {
             eprintln!("Error reports are unavailable: {error}");
@@ -132,10 +144,38 @@ pub(crate) fn init(configured_dsn: Option<&str>) -> ErrorReportsGuard {
         .in_app_include(["nightfall", "app_runtime", "app_tauri"])
         .before_send(prepare_event)
         .before_breadcrumb(prepare_breadcrumb)
-        .transport(Arc::new(outbox));
+        .transport(Arc::new(EnvelopeTransport(outbox)));
     let client = sentry::init((dsn, options));
     ErrorReportsGuard {
         _client: Some(client),
+    }
+}
+
+/// Hands the SDK's envelopes to the outbox.
+struct EnvelopeTransport(Outbox);
+
+impl Transport for EnvelopeTransport {
+    /// Queues an envelope for upload. While the process is panicking it is written to disk
+    /// directly, outside the session budget, since the process may stop before the background
+    /// thread runs again and earlier errors must not crowd out a crash.
+    fn send_envelope(&self, envelope: Envelope) {
+        if !reports_enabled() {
+            return;
+        }
+        let mut bytes = Vec::new();
+        if envelope.to_writer(&mut bytes).is_err() {
+            return;
+        }
+        if std::thread::panicking() {
+            self.0.store_now(&bytes);
+        } else {
+            self.0.queue(vec![bytes]);
+        }
+    }
+
+    /// Waits until every envelope handed over so far is on disk.
+    fn flush(&self, timeout: Duration) -> bool {
+        self.0.flush(timeout)
     }
 }
 
@@ -167,7 +207,7 @@ fn prepare_breadcrumb(mut breadcrumb: Breadcrumb) -> Option<Breadcrumb> {
 
 /// Writes reports still waiting in memory to disk, for shells that exit the process without
 /// dropping the [`ErrorReportsGuard`].
-pub fn flush_error_reports() {
+pub(crate) fn flush_error_reports() {
     if let Some(client) = sentry::Hub::main().client() {
         client.flush(Some(FLUSH_TIMEOUT));
     }

@@ -36,8 +36,12 @@ mod startup_commands;
 mod swap_orchestrator;
 mod systems;
 mod telemetry;
+#[cfg(feature = "telemetry")]
+mod telemetry_outbox;
 #[cfg(test)]
 mod tests;
+#[cfg_attr(not(feature = "telemetry"), path = "usage_reports_disabled.rs")]
+mod usage_reports;
 mod world_factory;
 
 pub use composition::init_bevy;
@@ -45,7 +49,6 @@ pub use diagnostic_bundle::{BundleOptions, BundleResult, ShowfileMode, write_bun
 pub use diagnostic_logs::{DiagnosticLogMode, DiagnosticLogPage, collect_diagnostic_logs};
 pub use diagnostic_showfile::{DiagnosticShowfile, capture_showfile};
 pub use engine_log_time::EngineLogTimer;
-pub use error_reports::flush_error_reports;
 pub use logging::{RuntimeGuard, initialize};
 pub use runtime_config::load_runtime_config;
 pub use session::{run_bevy_session, run_headless};
@@ -60,6 +63,22 @@ pub use systems::showfile_events::export::{
     PreparedShowfileExport, ShowfileExportPolicy, prepare_showfile_export,
 };
 pub use world_factory::{WorldBootstrap, WorldFactory};
+
+/// The program hosting the engine, which usage reports name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostShell {
+    /// The desktop app, whose own window shows the web UI.
+    Desktop,
+    /// The headless server, reached only from browsers.
+    Headless,
+}
+
+/// Writes error and usage reports still waiting in memory to disk, for shells that exit the
+/// process without dropping the [`RuntimeGuard`].
+pub fn flush_reports() {
+    error_reports::flush_error_reports();
+    usage_reports::flush_usage_reports();
+}
 
 /// Validate showfile JSON by parsing it through the runtime snapshot loader path.
 #[doc(hidden)]

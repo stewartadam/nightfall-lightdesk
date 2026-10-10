@@ -68,10 +68,10 @@ pub mod prelude {
     pub use crate::resources::ExclusiveResource;
     pub use crate::resources::network_stats::{NetworkOutputSendFailure, NetworkStats};
     pub use crate::settings::{
-        AvailableAudioDevices, DeskSettings, PanelLayoutArrangement, PanelLayoutRename,
-        PanelLayoutVisibility, SelectionFlattenPolicy, SequenceReorderRenumberPolicy,
-        SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel, TelemetryConsent,
-        TelemetryState, TimeDisplayPreference, TimelinePlacementPreference,
+        AvailableAudioDevices, DeskSettings, GraphicsReport, PanelLayoutArrangement,
+        PanelLayoutRename, PanelLayoutVisibility, ReportedGraphics, SelectionFlattenPolicy,
+        SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
+        TelemetryConsent, TelemetryState, TimeDisplayPreference, TimelinePlacementPreference,
     };
     pub use crate::systems::relations::apply_virtual_relations;
     pub use crate::systems::vdim::{
@@ -175,6 +175,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<IoRuntimeSettings>();
         app.init_resource::<nightfall_io::ExternalControlState>();
         app.init_resource::<crate::settings::TelemetryState>();
+        app.init_resource::<crate::settings::ReportedGraphics>();
         app.init_resource::<AvailableAudioDevices>();
         app.init_resource::<AvailableUsbDmxDevices>();
         app.init_resource::<Controls>();

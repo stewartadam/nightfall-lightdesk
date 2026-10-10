@@ -158,9 +158,11 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
-          # The ERROR_REPORTS_DSN repository variable is compiled into published releases only, so
-          # every other build reports nowhere. The address only accepts new reports.
+          # The ERROR_REPORTS_DSN and USAGE_REPORTS_URL repository variables are compiled into
+          # published releases only, so every other build reports nowhere. They are variables, not
+          # secrets: each ships inside the app and only accepts new reports.
           NIGHTFALL_ERROR_REPORTS_DSN: ${{ needs.prepare.outputs.publish == 'true' && vars.ERROR_REPORTS_DSN || '' }}
+          NIGHTFALL_USAGE_REPORTS_URL: ${{ needs.prepare.outputs.publish == 'true' && vars.USAGE_REPORTS_URL || '' }}
           # Line tables let the error service resolve crash addresses to functions and lines.
           # They are kept out of the installers: macOS and Windows write them beside the
           # executable, and the Linux bundle hook splits them out before packaging.
@@ -170,15 +172,22 @@ jobs:
           projectPath: desktop/app-tauri
           tauriScript: pnpm exec tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --locked
-      - name: Verify the release reports errors
+      - name: Verify the release reports errors and usage
         if: needs.prepare.outputs.publish == 'true'
         shell: bash
         env:
           DESKTOP_TARGET: ${{ matrix.target }}
           ERROR_REPORTS_DSN: ${{ vars.ERROR_REPORTS_DSN }}
+          USAGE_REPORTS_URL: ${{ vars.USAGE_REPORTS_URL }}
         run: |
-          if [ -z "$ERROR_REPORTS_DSN" ]; then
-            echo "::error::Set the ERROR_REPORTS_DSN repository variable before publishing a release"
+          for variable in ERROR_REPORTS_DSN USAGE_REPORTS_URL; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Set the $variable repository variable before publishing a release"
+              exit 1
+            fi
+          done
+          if ! [[ "$USAGE_REPORTS_URL" =~ ^https://[^:@/]+:[^@/]+@[^/]+/track$ ]]; then
+            echo "::error::USAGE_REPORTS_URL must look like https://<client id>:<client secret>@<host>/track"
             exit 1
           fi
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
@@ -186,6 +195,10 @@ jobs:
           [ -f "$binary" ] || binary="$binary.exe"
           if ! grep -qF "$ERROR_REPORTS_DSN" "$binary"; then
             echo "::error::The release build does not contain the error report address"
+            exit 1
+          fi
+          if ! grep -qF "$USAGE_REPORTS_URL" "$binary"; then
+            echo "::error::The release build does not contain the usage report address"
             exit 1
           fi
       - name: Stage debug symbols

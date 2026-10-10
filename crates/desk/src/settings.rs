@@ -248,6 +248,42 @@ pub struct TelemetryState {
     pub error: Option<String>,
 }
 
+/// Graphics hardware the desktop app's own window renders with, which only the web view can see.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct GraphicsReport {
+    /// Graphics processor model as the web view names it, when it names one.
+    pub gpu: Option<String>,
+    /// Rendering API the visualizer can use, such as `WebGPU` or `WebGL 2`.
+    pub backend: String,
+}
+
+impl GraphicsReport {
+    /// Longest text kept from a client-supplied field.
+    const MAX_FIELD_LENGTH: usize = 160;
+
+    /// Returns the report with surrounding whitespace removed, empty names dropped, and each
+    /// field cut to a bounded length, since any connected client can send one.
+    pub fn sanitized(&self) -> Self {
+        let clean = |value: &str| {
+            let value = value.trim();
+            let end = value
+                .char_indices()
+                .nth(Self::MAX_FIELD_LENGTH)
+                .map_or(value.len(), |(index, _)| index);
+            value[..end].to_string()
+        };
+        Self {
+            gpu: self.gpu.as_deref().map(clean).filter(|gpu| !gpu.is_empty()),
+            backend: clean(&self.backend),
+        }
+    }
+}
+
+/// The most recent graphics report from the desktop app's window, kept out of client sync.
+#[derive(Debug, Default, Clone, PartialEq, Eq, bevy_ecs::prelude::Resource)]
+pub struct ReportedGraphics(pub Option<GraphicsReport>);
+
 /// Commands for modifying desk-wide settings
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
@@ -264,6 +300,8 @@ pub enum SettingsCommand {
     SetTelemetryConsent(TelemetryConsent),
     /// Replaces the anonymous telemetry identifier with a new random one.
     ResetTelemetryInstallId,
+    /// Records the graphics hardware the desktop app's window renders with, for usage reports.
+    ReportGraphics(GraphicsReport),
     /// Set whether network DMX output is enabled
     SetNetworkOutputEnabled(bool),
     /// Set whether network DMX input is enabled
