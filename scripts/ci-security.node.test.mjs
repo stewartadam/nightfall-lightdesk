@@ -125,7 +125,10 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       const key = `${file}/${id}`;
       assert.deepEqual(job.permissions ?? {}, exceptions[key] ?? {}, key);
       assert.notEqual(job.secrets, "inherit", key);
-      if (file !== "release.yml" && id !== "release" && id !== "preview") {
+      if (
+        file !== "release.yml" &&
+        !["release", "preview", "symbols"].includes(id)
+      ) {
         assert.doesNotMatch(JSON.stringify(job), /secrets\./);
         if (!exceptions[key]) {
           assert.doesNotMatch(JSON.stringify(job), /github\.token/);
@@ -200,6 +203,32 @@ test("browser previews deploy same-run artifacts without source or build tools",
     assert.equal(step.with?.gitHubToken, undefined);
     assert.equal(step.with?.preCommands, undefined);
     assert.equal(step.with?.postCommands, undefined);
+    assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
+  }
+});
+
+/** The symbol uploader holds only the error service token, verifies its tool, and treats symbols as data. */
+test("debug symbols upload same-run artifacts with a pinned, verified tool", () => {
+  const symbols = workflows["ci.yml"].jobs.symbols;
+  assert.equal(symbols.needs, "desktop");
+  assert.equal(
+    symbols.if,
+    "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+  );
+  assert.deepEqual(symbols.permissions ?? {}, {});
+  assert.deepEqual(
+    symbols.steps.filter((step) => step.uses).map((step) => step.uses),
+    ["actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"],
+  );
+  assert.deepEqual(JSON.stringify(symbols).match(/secrets\.[A-Z_]+/g), [
+    "secrets.GLITCHTIP_AUTH_TOKEN",
+  ]);
+  const download = symbols.steps.find((step) => step.env?.CLI_SHA256);
+  assert.match(download.env.CLI_SHA256, /^[a-f0-9]{64}$/);
+  assert.match(download.run, /sha256sum --check --strict/);
+  for (const step of symbols.steps) {
+    assert.equal(step.with?.["run-id"], undefined);
+    assert.equal(step.with?.["github-token"], undefined);
     assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
   }
 });

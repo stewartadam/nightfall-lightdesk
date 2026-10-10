@@ -159,6 +159,47 @@ jobs:
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+  symbols:
+    name: Upload debug symbols
+    needs: desktop
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Uploads only this run's symbol files as data, with a token limited to the error service;
+    # see docs/ci-security.md.
+    steps:
+      - name: Download the debug symbols
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: debug-symbols-*-${{ github.sha }}
+          path: debug-symbols
+      - name: Download the pinned GlitchTip CLI
+        env:
+          CLI_URL: https://gitlab.com/glitchtip/glitchtip-cli/-/jobs/artifacts/v1.0.0/raw/artifacts/glitchtip-cli-linux-x86_64?job=build-linux-x86_64
+          CLI_SHA256: de1c035aa61931a6265d7b29b1614781dfee925466142a907508cb097082dfef
+        run: |
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/glitchtip-cli" "$CLI_URL"
+          echo "$CLI_SHA256  $RUNNER_TEMP/glitchtip-cli" | sha256sum --check --strict
+          chmod +x "$RUNNER_TEMP/glitchtip-cli"
+      - name: Upload the symbols to the error service
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.GLITCHTIP_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.GLITCHTIP_ORG }}
+          SENTRY_PROJECT: ${{ vars.GLITCHTIP_PROJECT }}
+          ERROR_REPORTS_DSN: ${{ vars.ERROR_REPORTS_DSN }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "::error::Set the GLITCHTIP_AUTH_TOKEN secret and the GLITCHTIP_ORG and GLITCHTIP_PROJECT variables to upload debug symbols"
+            exit 1
+          fi
+          host="${ERROR_REPORTS_DSN#*@}"
+          host="${host%%/*}"
+          if [[ ! "$host" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::Cannot read the error service host from ERROR_REPORTS_DSN"
+            exit 1
+          fi
+          "$RUNNER_TEMP/glitchtip-cli" debug-files upload --url "https://$host" --wait debug-symbols
+
   browser-demo:
     name: Browser demo
     needs: [scope, selection, wasm-bridge, browser-runtime]

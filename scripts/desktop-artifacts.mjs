@@ -10,12 +10,14 @@ import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   copyFileSync,
+  cpSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { noticesJson, renderNotices } from "./distribution-notices.mjs";
 
@@ -25,20 +27,26 @@ export const desktopTargets = [
     target: "aarch64-apple-darwin",
     bundles: "app,dmg",
     extensions: [".dmg"],
+    debugSymbols: "nightfall-app.dSYM",
   },
   {
     runner: "windows-2022",
     target: "x86_64-pc-windows-msvc",
     bundles: "nsis",
     extensions: [".exe"],
+    debugSymbols: "nightfall_app.pdb",
   },
   {
     runner: "ubuntu-22.04",
     target: "x86_64-unknown-linux-gnu",
     bundles: "deb,appimage",
     extensions: [".deb", ".AppImage"],
+    debugSymbols: "nightfall-app.debug",
   },
 ];
+
+/** Name of the desktop executable Cargo builds for every target. */
+const desktopExecutable = "nightfall-app";
 
 /** Requires matching app versions and permits publication only for an exact version-tag push. */
 export function desktopReleasePolicy(version, crateVersion, eventName, ref) {
@@ -86,6 +94,73 @@ export function desktopArtifactPlan(target, version, artifactPaths) {
       source: matches[0],
       filename: `nightfall-v${version}-${target}${extension}`,
     };
+  });
+}
+
+/**
+ * Locates a target's release build output and the debug symbols the error service needs to
+ * turn crash addresses into function names and lines. macOS and Windows builds write their
+ * symbols beside the executable; on Linux they are split out of it before packaging.
+ */
+export function desktopDebugSymbols(target, targetDirectory) {
+  const platform = desktopTargets.find((entry) => entry.target === target);
+  if (!platform) throw new Error(`Unknown desktop target: ${target}`);
+  const releaseDirectory = join(targetDirectory, target, "release");
+  return {
+    executable: join(releaseDirectory, desktopExecutable),
+    symbols: join(releaseDirectory, platform.debugSymbols),
+    split: target.endsWith("-linux-gnu"),
+  };
+}
+
+/** Returns Cargo's target directory for this workspace. */
+function cargoTargetDirectory() {
+  return JSON.parse(
+    execFileSync("cargo", ["metadata", "--format-version=1", "--no-deps"], {
+      encoding: "utf8",
+    }),
+  ).target_directory;
+}
+
+/**
+ * Moves the Linux executable's debug information into a separate file before Tauri packages
+ * it, so installers stay small while the symbols can still be uploaded. The executable keeps
+ * a link to the file, and must carry a build ID, which is how the error service matches the
+ * two. Other targets already keep their symbols outside the executable.
+ */
+function splitDebugSymbols() {
+  const target = process.env.TAURI_ENV_TARGET_TRIPLE;
+  if (!target || process.env.TAURI_ENV_DEBUG === "true") return;
+  const { executable, symbols, split } = desktopDebugSymbols(
+    target,
+    cargoTargetDirectory(),
+  );
+  if (!split) return;
+  const notes = execFileSync("readelf", ["--notes", executable], {
+    encoding: "utf8",
+  });
+  if (!notes.includes("Build ID")) {
+    throw new Error(`${executable} has no build ID to match its debug symbols`);
+  }
+  execFileSync("objcopy", ["--only-keep-debug", executable, symbols]);
+  execFileSync("objcopy", [
+    "--strip-debug",
+    `--add-gnu-debuglink=${symbols}`,
+    executable,
+  ]);
+}
+
+/** Copies the target's debug symbols into the workflow-artifact directory for upload. */
+function stageDebugSymbols() {
+  const { symbols } = desktopDebugSymbols(
+    process.env.DESKTOP_TARGET,
+    cargoTargetDirectory(),
+  );
+  if (!existsSync(symbols))
+    throw new Error(`Release build has no debug symbols at ${symbols}`);
+  mkdirSync("desktop-debug-symbols", { recursive: true });
+  cpSync(symbols, join("desktop-debug-symbols", basename(symbols)), {
+    recursive: true,
   });
 }
 
@@ -218,8 +293,10 @@ if (
   if (process.argv[2] === "prepare") prepareDesktopBuild();
   else if (process.argv[2] === "stage") stageDesktopBuild();
   else if (process.argv[2] === "combine-notices") stageCombinedNotices();
+  else if (process.argv[2] === "split-debug-symbols") splitDebugSymbols();
+  else if (process.argv[2] === "stage-debug-symbols") stageDebugSymbols();
   else
     throw new Error(
-      "Usage: node scripts/desktop-artifacts.mjs prepare|stage|combine-notices",
+      "Usage: node scripts/desktop-artifacts.mjs prepare|stage|combine-notices|split-debug-symbols|stage-debug-symbols",
     );
 }

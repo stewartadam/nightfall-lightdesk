@@ -77,6 +77,13 @@ Publication (fresh runner; contents: write; no Apple credentials)
   authority, only a token limited to Workers Scripts edits and a
   `pull-requests: write` GitHub token, and never acquires source or build caches.
   Fork PRs never select a preview, so they never reach this credential.
+- **Debug symbols:** on version tags, a fresh runner downloads this run's debug
+  symbol artifacts as data and uploads them to the error service so crash stack
+  traces resolve to functions and lines. It holds only `GLITCHTIP_AUTH_TOKEN`,
+  which should be limited to uploading project files, and no GitHub permissions.
+  It runs one installed tool, an exact `glitchtip-cli` release whose SHA-256 is
+  pinned in the workflow and checked before use; it never acquires source or
+  build caches.
 
 Only version-tag **pushes** enter signing/publication. PRs (including same-repo
 PRs), branch pushes, and manual runs never do. The build validates that the tag
