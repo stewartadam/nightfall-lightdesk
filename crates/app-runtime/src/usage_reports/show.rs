@@ -13,10 +13,11 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     hash::{Hash, Hasher},
+    net::Ipv4Addr,
 };
 
 use nightfall_fixtures::prelude::{Fixture, InputSource};
-use nightfall_io::prelude::{BindingTransport, OutputTransport};
+use nightfall_io::prelude::{ArtNetDelivery, BindingTransport, OutputTransport, SacnDelivery};
 use nightfall_showfile::ShowfileSnapshot;
 use nightfall_timecode::prelude::TimecodeSource;
 use rustc_hash::FxHasher;
@@ -85,10 +86,6 @@ impl ShowSummary {
             }
         }
 
-        #[cfg_attr(
-            not(any(feature = "midi", feature = "osc")),
-            allow(unused_mut, reason = "MIDI and OSC entries are compiled out")
-        )]
         let mut counts = BTreeMap::from([
             ("fixtures", snapshot.fixtures.len()),
             ("fixtures_gdtf", gdtf_fixtures),
@@ -172,6 +169,9 @@ impl ShowSummary {
         features.insert("input_midi", !snapshot.midi_mappings.is_empty());
         #[cfg(feature = "osc")]
         features.insert("input_osc", !snapshot.osc_mappings.is_empty());
+        let network = NetworkOutputs::new(outputs);
+        counts.extend(network.counts());
+        features.extend(network.features());
 
         let mut interfaces = BTreeSet::new();
         for target in &snapshot.io_settings.usb_dmx_outputs.targets {
@@ -250,6 +250,84 @@ impl ShowSummary {
     }
 }
 
+/// How a show's patch reaches each output protocol: the universes it sends on and how frames
+/// are delivered. Unicast destinations are only counted, never listed, since they are
+/// addresses on the operator's network.
+#[derive(Default)]
+struct NetworkOutputs {
+    sacn_universes: BTreeSet<u16>,
+    artnet_universes: BTreeSet<u16>,
+    usb_dmx_universes: BTreeSet<u16>,
+    sacn_multicast: bool,
+    artnet_broadcast: bool,
+    sacn_unicast_targets: HashSet<Ipv4Addr>,
+    artnet_unicast_targets: HashSet<Ipv4Addr>,
+}
+
+impl NetworkOutputs {
+    /// Sorts the patched transport and universe pairs by protocol and delivery mode.
+    fn new(outputs: &PatchedOutputs) -> Self {
+        let mut network = Self::default();
+        for (transport, universe) in &outputs.transport_universes {
+            match transport {
+                OutputTransport::Sacn { mode } => {
+                    network.sacn_universes.insert(*universe);
+                    match mode {
+                        SacnDelivery::Multicast => network.sacn_multicast = true,
+                        SacnDelivery::Unicast { ip } => {
+                            network.sacn_unicast_targets.insert(*ip);
+                        }
+                    }
+                }
+                OutputTransport::ArtNet { mode } => {
+                    network.artnet_universes.insert(*universe);
+                    match mode {
+                        ArtNetDelivery::Broadcast => network.artnet_broadcast = true,
+                        ArtNetDelivery::Unicast { ip } => {
+                            network.artnet_unicast_targets.insert(*ip);
+                        }
+                    }
+                }
+                OutputTransport::Udmx { .. } => {
+                    network.usb_dmx_universes.insert(*universe);
+                }
+                OutputTransport::Disabled => {}
+            }
+        }
+        network
+    }
+
+    /// Universes driven per protocol, and how many unicast destinations each protocol sends to.
+    fn counts(&self) -> [(&'static str, usize); 5] {
+        [
+            ("output_universes_sacn", self.sacn_universes.len()),
+            ("output_universes_artnet", self.artnet_universes.len()),
+            ("output_universes_usb_dmx", self.usb_dmx_universes.len()),
+            (
+                "output_unicast_targets_sacn",
+                self.sacn_unicast_targets.len(),
+            ),
+            (
+                "output_unicast_targets_artnet",
+                self.artnet_unicast_targets.len(),
+            ),
+        ]
+    }
+
+    /// Which delivery modes each network protocol uses.
+    fn features(&self) -> [(&'static str, bool); 4] {
+        [
+            ("output_sacn_multicast", self.sacn_multicast),
+            ("output_sacn_unicast", !self.sacn_unicast_targets.is_empty()),
+            ("output_artnet_broadcast", self.artnet_broadcast),
+            (
+                "output_artnet_unicast",
+                !self.artnet_unicast_targets.is_empty(),
+            ),
+        ]
+    }
+}
+
 /// Cuts a USB interface label down to its model name, dropping the ` (vvvv:pppp)` vendor and
 /// product pair and anything after it, such as a serial number or bus location.
 fn usb_model_name(label: &str) -> &str {
@@ -281,7 +359,7 @@ fn into_map(value: Value) -> Map<String, Value> {
 #[cfg(test)]
 mod tests {
     use nightfall_fixtures::prelude::{InputBinding, InputTarget};
-    use nightfall_io::prelude::{SacnDelivery, UsbDmxOutputTarget};
+    use nightfall_io::prelude::UsbDmxOutputTarget;
 
     use super::*;
 
@@ -374,6 +452,10 @@ mod tests {
         assert_eq!(show["output_sacn"], true);
         assert_eq!(show["output_artnet"], false);
         assert_eq!(show["output_usb_dmx"], true);
+        assert_eq!(show["output_universes_sacn"], 1);
+        assert_eq!(show["output_universes_usb_dmx"], 1);
+        assert_eq!(show["output_sacn_multicast"], true);
+        assert_eq!(show["output_sacn_unicast"], false);
         assert_eq!(show["input_sacn"], true);
 
         let names: Vec<_> = events[1..]
@@ -398,6 +480,48 @@ mod tests {
         assert_eq!(names.len(), 3);
         let serialized = serde_json::to_string(&events).unwrap();
         assert!(!serialized.contains("Venue Name") && !serialized.contains("Imported"));
+    }
+
+    /// Universes and delivery modes are reported per protocol, and unicast destinations are
+    /// counted without their addresses appearing anywhere in the report.
+    #[test]
+    fn reports_network_outputs_per_protocol() {
+        let (snapshot, _) = show();
+        let sacn_unicast = |ip: [u8; 4]| OutputTransport::Sacn {
+            mode: SacnDelivery::Unicast { ip: ip.into() },
+        };
+        let artnet_unicast = |ip: [u8; 4]| OutputTransport::ArtNet {
+            mode: ArtNetDelivery::Unicast { ip: ip.into() },
+        };
+        let outputs = PatchedOutputs {
+            console_universes: BTreeSet::from([1, 2, 3]),
+            transport_universes: HashSet::from([
+                (
+                    OutputTransport::Sacn {
+                        mode: SacnDelivery::Multicast,
+                    },
+                    1,
+                ),
+                (sacn_unicast([10, 0, 0, 7]), 1),
+                (sacn_unicast([10, 0, 0, 8]), 2),
+                (artnet_unicast([10, 0, 0, 9]), 3),
+                (artnet_unicast([10, 0, 0, 9]), 4),
+            ]),
+        };
+        let events = ShowSummary::new(&snapshot, origin, &outputs).events();
+        let show = &events[0].1;
+        assert_eq!(show["output_universes"], 5);
+        assert_eq!(show["output_universes_sacn"], 2);
+        assert_eq!(show["output_universes_artnet"], 2);
+        assert_eq!(show["output_universes_usb_dmx"], 0);
+        assert_eq!(show["output_unicast_targets_sacn"], 2);
+        assert_eq!(show["output_unicast_targets_artnet"], 1);
+        assert_eq!(show["output_sacn_multicast"], true);
+        assert_eq!(show["output_sacn_unicast"], true);
+        assert_eq!(show["output_artnet_broadcast"], false);
+        assert_eq!(show["output_artnet_unicast"], true);
+        let serialized = serde_json::to_string(&events).unwrap();
+        assert!(!serialized.contains("10.0.0"));
     }
 
     /// USB labels lose the vendor and product pair and the serial number or bus location after
