@@ -2368,21 +2368,28 @@ fn seed_world(world: &mut World) {
     world
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0001),
             device_name: "Grid".to_string(),
-            channel: 176,
-            note: 36,
-            velocity: None,
-            action: set_control_action(1),
+            source: MidiSource::ControlChange {
+                channel: 0,
+                controller: 36,
+            },
+            behavior: nightfall_actions::ControlBehavior::Press,
+            action: control_level_action(1),
         }]);
     #[cfg(feature = "osc")]
     world
         .resource_mut::<OscMappings>()
         .set_mappings(vec![OscMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0002),
             source: Some("127.0.0.1:9000".to_string()),
             address: "/grid/fader".to_string(),
             arg_index: Some(1),
-            arg_value: Some("0.5".to_string()),
-            action: set_control_action(2),
+            arg_value: None,
+            release_value: None,
+            range: None,
+            behavior: nightfall_actions::ControlBehavior::Press,
+            action: control_level_action(2),
         }]);
 
     {
@@ -2667,6 +2674,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     global_variables,
                     desk_settings,
                     io_settings,
+                    controller_mapping_mode: _,
                 } = &mut showfile_load_state;
 
                 load_showfile_in_place(
@@ -2716,6 +2724,34 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
 
 fn load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) {
     try_load_snapshot_in_place(world, snapshot).expect("in-place load should succeed");
+}
+
+/// Verifies loading a show in place ends every client's controller mapping mode and
+/// publishes a new show generation, which tells mapping clients why they left.
+#[test]
+fn loading_a_show_ends_controller_mapping_mode() {
+    let mut source_world = setup_world();
+    seed_world(&mut source_world);
+    let snapshot = collect_snapshot(&mut source_world);
+
+    let mut world = setup_world();
+    let mut mode = nightfall_actions::ControllerMappingMode::default();
+    mode.enter(ClientId(7), std::time::Instant::now());
+    let generation = mode.state().show_generation;
+    world.insert_resource(mode);
+
+    world
+        .run_system_once(
+            move |mut state: ShowfileLoadState, mut commands: Commands| {
+                load_showfile_snapshot_from_state(snapshot.clone(), &mut state, &mut commands)
+            },
+        )
+        .expect("load system should run")
+        .expect("load should succeed");
+
+    let mode = world.resource::<nightfall_actions::ControllerMappingMode>();
+    assert!(!mode.is_active());
+    assert_ne!(mode.state().show_generation, generation);
 }
 
 #[test]
@@ -2983,10 +3019,14 @@ fn roundtrip_preserves_midi_mappings() {
     assert_eq!(restored_snapshot.midi_mappings.len(), 1);
     let mapping = &restored_snapshot.midi_mappings[0];
     assert_eq!(mapping.device_name, "Grid");
-    assert_eq!(mapping.channel, 176);
-    assert_eq!(mapping.note, 36);
-    assert_eq!(mapping.velocity, None);
-    assert_eq!(mapping.action, set_control_action(1));
+    assert_eq!(
+        mapping.source,
+        MidiSource::ControlChange {
+            channel: 0,
+            controller: 36
+        }
+    );
+    assert_eq!(mapping.action, control_level_action(1));
 }
 
 /// Verifies OSC input mappings survive showfile save/load snapshot application.
@@ -3007,8 +3047,8 @@ fn roundtrip_preserves_osc_mappings() {
     assert_eq!(mapping.source.as_deref(), Some("127.0.0.1:9000"));
     assert_eq!(mapping.address, "/grid/fader");
     assert_eq!(mapping.arg_index, Some(1));
-    assert_eq!(mapping.arg_value.as_deref(), Some("0.5"));
-    assert_eq!(mapping.action, set_control_action(2));
+    assert_eq!(mapping.arg_value, None);
+    assert_eq!(mapping.action, control_level_action(2));
 }
 
 #[test]

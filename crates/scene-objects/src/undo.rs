@@ -16,8 +16,8 @@ use crate::{
     SceneObjectPlacementRotationUpdate,
 };
 
-impl UndoableOperation for SceneObjectCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for SceneObjectCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let scene_objects = ctx.world.resource::<SceneObjectDataProvider>();
 
         match self {
@@ -43,7 +43,7 @@ impl UndoableOperation for SceneObjectCommand {
                 scene_objects.from_id(*id).ok().map(|scene_object_ref| {
                     Box::new(SceneObjectCommand::StoreSceneObject(
                         scene_object_ref.clone(),
-                    )) as Box<dyn UndoableOperation>
+                    )) as Box<dyn Undoable>
                 })
             }
             SceneObjectCommand::UpdateSceneObjectPlacement { id, .. } => {
@@ -58,7 +58,7 @@ impl UndoableOperation for SceneObjectCommand {
                         rotation: Some(SceneObjectPlacementRotationUpdate::All(
                             old_placement.rotation,
                         )),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 })
             }
             SceneObjectCommand::UpdateSceneObjectProperties { id, .. } => {
@@ -67,7 +67,7 @@ impl UndoableOperation for SceneObjectCommand {
                     Box::new(SceneObjectCommand::UpdateSceneObjectProperties {
                         id: *id,
                         properties: scene_object_ref.properties.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 })
             }
         }

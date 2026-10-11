@@ -100,9 +100,9 @@ impl IngressCommand for BlueprintCommand {}
 
 /// Runtime actions for blueprint operations derived from user command plans.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub enum BlueprintAction {
+pub enum BlueprintOperation {
     /// Store or update a blueprint payload prepared by planner/runtime handlers.
     StoreBlueprint(Blueprint),
 }
 
-impl EngineAction for BlueprintAction {}
+impl EngineOperation for BlueprintOperation {}

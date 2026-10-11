@@ -17,13 +17,19 @@ import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { useSharedStore } from "../../lib/use-shared-store";
 import { clips, groups, masters } from "../../state/appStores";
 import * as types from "../../types";
+import { Mappable } from "../io";
+import {
+  masterHoldControl,
+  masterLevelControl,
+  masterToggleControl,
+} from "./model/control-actions";
 import {
   allFixturesTarget,
   allInstancesTarget,
-  buildSetMasterLevelCommand,
+  buildCommitMasterLevelCommand,
+  buildMasterLevelUpdate,
   buildSetMasterModeCommand,
   buildStoreMasterCommand,
-  buildToggleMasterCommand,
   clipPlaybackTarget,
   groupTarget,
   masterLevelMax,
@@ -34,7 +40,11 @@ import {
   sortedMasters,
   targetLabel,
 } from "./model/master-model";
-import { newMasterUid, sendMasterCommand } from "./services/master-commands";
+import {
+  newMasterUid,
+  sendMasterCommand,
+  sendMasterUpdate,
+} from "./services/master-commands";
 
 const MASTER_DRAG_TYPE = "application/x-master";
 
@@ -81,6 +91,33 @@ export default function MastersPanel(
     },
     { accepts: (payload) => payload.type === "master" },
   );
+
+  /** Levels captured when each master's slider drag began, keyed by master ID. */
+  const dragStartLevels = new Map<number, number>();
+
+  /** Streams a dragged master level without creating undo history for each step. */
+  const dragMasterLevel = (master: types.Master, levelPercent: number) => {
+    const id = master.identifiers.id;
+    if (!dragStartLevels.has(id)) dragStartLevels.set(id, master.level_percent);
+    sendMasterUpdate(buildMasterLevelUpdate(id, levelPercent));
+  };
+
+  /** Commits the released slider level as one undoable change from the drag start. */
+  const commitMasterLevel = (master: types.Master, levelPercent: number) => {
+    const id = master.identifiers.id;
+    const fromPercent = dragStartLevels.get(id) ?? master.level_percent;
+    dragStartLevels.delete(id);
+    sendMasterCommand(
+      buildCommitMasterLevelCommand(id, fromPercent, levelPercent),
+    );
+  };
+
+  /** Defines a master's level slider, streaming drags and committing one undo per drag. */
+  const levelControl = (master: types.Master) =>
+    masterLevelControl(master, `${master.identifiers.label} level`, {
+      drag: dragMasterLevel,
+      commit: commitMasterLevel,
+    });
 
   /** Creates an all-fixtures master from the panel toolbar. */
   const createGlobalMaster = () => {
@@ -294,22 +331,30 @@ export default function MastersPanel(
                   </td>
                   <td>
                     <div class="flex items-center gap-2">
-                      <input
-                        type="range"
-                        min="0"
-                        max={masterLevelMax(master)}
-                        step="1"
-                        value={master.level_percent}
-                        class="w-full"
-                        onInput={(event) =>
-                          sendMasterCommand(
-                            buildSetMasterLevelCommand(
-                              master.identifiers.id,
+                      <Mappable
+                        class="flex w-full"
+                        label={`${master.identifiers.label} level`}
+                        choices={() => [levelControl(master)]}
+                      >
+                        <input
+                          type="range"
+                          min="0"
+                          max={masterLevelMax(master)}
+                          step="1"
+                          value={master.level_percent}
+                          class="w-full"
+                          onInput={(event) =>
+                            levelControl(master).handlers.drag(
                               Number(event.currentTarget.value),
-                            ),
-                          )
-                        }
-                      />
+                            )
+                          }
+                          onChange={(event) =>
+                            levelControl(master).handlers.commit(
+                              Number(event.currentTarget.value),
+                            )
+                          }
+                        />
+                      </Mappable>
                       <span class="w-11 text-right font-mono text-xs text-neutral-400">
                         {Math.round(master.level_percent)}%
                       </span>
@@ -317,17 +362,27 @@ export default function MastersPanel(
                   </td>
                   <td class="text-right">
                     <Show when={master.mode?.type === "Toggle"}>
-                      <Button
-                        size="compact"
-                        type="button"
-                        onClick={() =>
-                          sendMasterCommand(
-                            buildToggleMasterCommand(master.identifiers.id),
-                          )
-                        }
+                      <Mappable
+                        class="inline-flex"
+                        label={`toggle ${master.identifiers.label}`}
+                        choices={() => [
+                          masterToggleControl(master, sendMasterCommand),
+                          masterHoldControl(master),
+                        ]}
                       >
-                        Toggle
-                      </Button>
+                        <Button
+                          size="compact"
+                          type="button"
+                          onClick={() =>
+                            masterToggleControl(
+                              master,
+                              sendMasterCommand,
+                            ).handlers.toggle()
+                          }
+                        >
+                          Toggle
+                        </Button>
+                      </Mappable>
                     </Show>
                   </td>
                 </tr>

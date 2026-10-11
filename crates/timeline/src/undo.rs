@@ -14,8 +14,8 @@ use nightfall_undo::prelude::*;
 
 use crate::prelude::*;
 
-impl UndoableOperation for TimelineCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for TimelineCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let timelines = ctx.world.resource::<DataProvider<Timeline>>();
         match self {
             // CRUD operations
@@ -127,12 +127,12 @@ impl UndoableOperation for TimelineCommand {
                     Box::new(TimelineCommand::StoreTimelineMarker {
                         timeline_id: *timeline_id,
                         marker: existing_marker.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 } else {
                     Box::new(TimelineCommand::DeleteTimelineMarker {
                         timeline_id: *timeline_id,
                         marker_uid: marker.uid,
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 }
             }),
             TimelineCommand::DeleteTimelineMarker {
@@ -151,7 +151,7 @@ impl UndoableOperation for TimelineCommand {
                             Box::new(TimelineCommand::StoreTimelineMarker {
                                 timeline_id: *timeline_id,
                                 marker,
-                            }) as Box<dyn UndoableOperation>
+                            }) as Box<dyn Undoable>
                         })
                 }),
             TimelineCommand::StoreTimelineRegion {
@@ -166,12 +166,12 @@ impl UndoableOperation for TimelineCommand {
                     Box::new(TimelineCommand::StoreTimelineRegion {
                         timeline_id: *timeline_id,
                         region: existing_region.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 } else {
                     Box::new(TimelineCommand::DeleteTimelineRegion {
                         timeline_id: *timeline_id,
                         region_uid: region.uid,
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 }
             }),
             TimelineCommand::DeleteTimelineRegion {
@@ -190,7 +190,7 @@ impl UndoableOperation for TimelineCommand {
                             Box::new(TimelineCommand::StoreTimelineRegion {
                                 timeline_id: *timeline_id,
                                 region,
-                            }) as Box<dyn UndoableOperation>
+                            }) as Box<dyn Undoable>
                         })
                 }),
             TimelineCommand::SetTimelineLoopRange { timeline_id, .. } => {
@@ -198,32 +198,32 @@ impl UndoableOperation for TimelineCommand {
                     Box::new(TimelineCommand::SetTimelineLoopRange {
                         timeline_id: *timeline_id,
                         loop_range: timeline_ref.loop_range.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 })
             }
             TimelineCommand::InsertRecordedActions { timeline_id, .. } => {
                 timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
                     let timeline: Timeline = (*timeline_ref).clone();
-                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn UndoableOperation>
+                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
                 })
             }
             TimelineCommand::DeleteRecordedActions { timeline_id, .. } => {
                 timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
                     let timeline: Timeline = (*timeline_ref).clone();
-                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn UndoableOperation>
+                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
                 })
             }
             TimelineCommand::NudgeTimelineSelection { timeline_id, .. } => {
                 timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
                     let timeline: Timeline = (*timeline_ref).clone();
-                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn UndoableOperation>
+                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
                 })
             }
             TimelineCommand::DeleteTimeline(id) => {
                 // Capture full timeline before deletion
                 timelines.from_id(*id).ok().map(|timeline_ref| {
                     let timeline: Timeline = (*timeline_ref).clone();
-                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn UndoableOperation>
+                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
                 })
             }
             TimelineCommand::RenameTimeline { id, new_id } => {
@@ -238,6 +238,9 @@ impl UndoableOperation for TimelineCommand {
             // but the timeline state (position, triggers fired, etc.) is transient
             TimelineCommand::StartTimeline(_)
             | TimelineCommand::StopTimeline(_)
+            | TimelineCommand::PlayTimeline(_)
+            | TimelineCommand::PauseTimeline(_)
+            | TimelineCommand::TogglePlayback(_)
             | TimelineCommand::SetTimelineRecording { .. }
             | TimelineCommand::RequestBeatgridDetection { .. }
             | TimelineCommand::ApplyBeatgridProposal { .. }
@@ -342,6 +345,9 @@ impl UndoableOperation for TimelineCommand {
                 format!("Rename Timeline {} → {}", id, new_id)
             }
             TimelineCommand::StartTimeline(id) => format!("Start Timeline {}", id),
+            TimelineCommand::PlayTimeline(id) => format!("Play Timeline {}", id),
+            TimelineCommand::PauseTimeline(id) => format!("Pause Timeline {}", id),
+            TimelineCommand::TogglePlayback(id) => format!("Toggle Timeline {} Playback", id),
             TimelineCommand::StopTimeline(id) => format!("Stop Timeline {}", id),
             TimelineCommand::RequestBeatgridDetection { timeline_id } => {
                 format!("Request Beatgrid Detection {}", timeline_id)
@@ -362,25 +368,24 @@ impl UndoableOperation for TimelineCommand {
     }
 }
 
-impl UndoableOperation for TimelineAction {
+impl Undoable for TimelineOperation {
     /// Captures persisted timeline state before an undoable internal mutation.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
-        let TimelineAction::InsertRecordedActions { timeline_id, .. } = self else {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
+        let TimelineOperation::InsertRecordedActions { timeline_id, .. } = self else {
             return None;
         };
         let timelines = ctx.world.resource::<DataProvider<Timeline>>();
         timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
-            Box::new(TimelineCommand::StoreTimeline((*timeline_ref).clone()))
-                as Box<dyn UndoableOperation>
+            Box::new(TimelineCommand::StoreTimeline((*timeline_ref).clone())) as Box<dyn Undoable>
         })
     }
 
     /// Describes the internal mutation in the operator-visible undo stack.
     fn description(&self) -> String {
         match self {
-            TimelineAction::Start(id) => format!("Start Timeline {id}"),
-            TimelineAction::Stop(id) => format!("Stop Timeline {id}"),
-            TimelineAction::InsertRecordedActions { timeline_id, .. } => {
+            TimelineOperation::Start(id) => format!("Start Timeline {id}"),
+            TimelineOperation::Stop(id) => format!("Stop Timeline {id}"),
+            TimelineOperation::InsertRecordedActions { timeline_id, .. } => {
                 format!("Insert Recorded Timeline Actions {timeline_id}")
             }
         }
@@ -553,7 +558,7 @@ mod tests {
                 label: "Recorded".to_string(),
                 position: Duration::from_millis(100),
                 duration: Duration::from_millis(1000),
-                action: ActionKind::StartClip(Uuid::new_v4()),
+                action: ActionKind::StartClip(Uuid::new_v4()).to_reference(),
             }],
         }
         .inverse(&UndoContext { world: &world })

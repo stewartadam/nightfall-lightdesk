@@ -24,42 +24,86 @@ pub const CLIP_STOP_ACTION_ID: &str = "clip.stop";
 /// Stable action ID for advancing a clip.
 pub const CLIP_GO_ACTION_ID: &str = "clip.go";
 
-/// Persisted clip target interpreted by desk-owned action registrations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(tag = "type", content = "data")]
-pub enum ClipTarget {
-    /// User-facing numeric clip identifier.
-    Id(u32),
-    /// Persistent clip UID.
-    Uid(Uuid),
-}
+/// Stable action ID for moving a sequence clip back one cue.
+pub const CLIP_BACK_ACTION_ID: &str = "clip.back";
+
+/// Stable action ID for jumping a sequence clip to a cue.
+pub const CLIP_GOTO_ACTION_ID: &str = "clip.goto";
+
+/// Stable action ID for setting a clip's playback rate.
+pub const CLIP_SET_RATE_ACTION_ID: &str = "clip.set-rate";
 
 /// Persisted arguments shared by clip lifecycle actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct ClipActionArguments {
-    /// Clip addressed by the action.
-    pub target: ClipTarget,
+    /// Persistent UID of the addressed clip.
+    #[typeshare(serialized_as = "String")]
+    pub clip: Uuid,
+}
+
+/// Persisted arguments for jumping a sequence clip to a cue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ClipGotoActionArguments {
+    /// Persistent UID of the addressed clip.
+    #[typeshare(serialized_as = "String")]
+    pub clip: Uuid,
+    /// One-based cue position to jump to.
+    pub cue_index: u32,
+}
+
+/// Persisted arguments for setting a clip's playback rate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct ClipRateActionArguments {
+    /// Persistent UID of the addressed clip.
+    #[typeshare(serialized_as = "String")]
+    pub clip: Uuid,
+    /// Playback clock rate multiplier.
+    pub rate: f32,
 }
 
 /// Creates a persisted start-clip action reference.
-pub fn start_clip_action(target: ClipTarget) -> ActionReference {
-    clip_action_reference(CLIP_START_ACTION_ID, target)
+pub fn start_clip_action(clip: Uuid) -> ActionReference {
+    clip_action_reference(CLIP_START_ACTION_ID, clip)
 }
 
 /// Creates a persisted stop-clip action reference.
-pub fn stop_clip_action(target: ClipTarget) -> ActionReference {
-    clip_action_reference(CLIP_STOP_ACTION_ID, target)
+pub fn stop_clip_action(clip: Uuid) -> ActionReference {
+    clip_action_reference(CLIP_STOP_ACTION_ID, clip)
 }
 
 /// Creates a persisted go-clip action reference.
-pub fn go_clip_action(target: ClipTarget) -> ActionReference {
-    clip_action_reference(CLIP_GO_ACTION_ID, target)
+pub fn go_clip_action(clip: Uuid) -> ActionReference {
+    clip_action_reference(CLIP_GO_ACTION_ID, clip)
 }
 
-/// Creates a clip lifecycle action reference with its typed target argument.
-fn clip_action_reference(action_id: &str, target: ClipTarget) -> ActionReference {
-    ActionReference::with_arguments(action_id, &ClipActionArguments { target })
+/// Creates a persisted back-clip action reference.
+pub fn back_clip_action(clip: Uuid) -> ActionReference {
+    clip_action_reference(CLIP_BACK_ACTION_ID, clip)
+}
+
+/// Creates a persisted go-to-cue action reference.
+pub fn goto_clip_action(clip: Uuid, cue_index: u32) -> ActionReference {
+    ActionReference::with_arguments(
+        CLIP_GOTO_ACTION_ID,
+        &ClipGotoActionArguments { clip, cue_index },
+    )
+    .expect("clip goto arguments should serialize")
+}
+
+/// Creates a persisted clip-rate action reference.
+pub fn set_clip_rate_action(clip: Uuid, rate: f32) -> ActionReference {
+    ActionReference::with_arguments(
+        CLIP_SET_RATE_ACTION_ID,
+        &ClipRateActionArguments { clip, rate },
+    )
+    .expect("clip rate arguments should serialize")
+}
+
+/// Creates a clip lifecycle action reference with its typed clip argument.
+fn clip_action_reference(action_id: &str, clip: Uuid) -> ActionReference {
+    ActionReference::with_arguments(action_id, &ClipActionArguments { clip })
         .expect("clip action arguments should serialize")
 }

@@ -18,7 +18,7 @@ use bevy_ecs::{prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_clips::{
-    Clip, ClipAction, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip, Source,
+    Clip, ClipOperation, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip, Source,
     log_clip_lookup_failure,
 };
 use nightfall_compositor::prelude::*;
@@ -33,7 +33,7 @@ use nightfall_instances::{
 #[cfg(test)]
 use nightfall_instances::{InstanceClockDiscontinuity, InstanceClockSource};
 use nightfall_playback_planner::{PlaybackPositionSource, PlaybackReconstructionTiming};
-use nightfall_undo::prelude::{UndoEntry, UndoManager, UndoableOperation};
+use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

@@ -15,10 +15,11 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall_actions::{ActionAppExt, ActionDescriptor};
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
 
-use crate::action_model::{ProgrammerAction, UserCommand};
+use crate::action_model::{ProgrammerOperation, UserCommand};
 use crate::resources::Programmer;
 
 pub mod action_model;
@@ -34,7 +35,7 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::ProgrammerPlugin;
     pub use crate::action_model::{
-        AttributeFilter, ClearCommand, ClearTarget, ProgrammerAction, ReleaseCommand,
+        AttributeFilter, ClearCommand, ClearTarget, ProgrammerOperation, ReleaseCommand,
         ReleaseTarget, Scope, UserCommand,
     };
     pub use crate::command_planner::{ProgrammerCommandPlanner, ProgrammerPlanContext};
@@ -48,17 +49,25 @@ pub mod prelude {
 
 /// Plugin for adding programmer functionality to the app
 pub struct ProgrammerPlugin;
+/// Stable action ID for clearing the programmer.
+pub const PROGRAMMER_CLEAR_ACTION_ID: &str = "programmer.clear";
+
 impl Plugin for ProgrammerPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering ProgrammerPlugin");
         register_ingress_command::<events::ProgrammerCommand>(app);
         register_ingress_command::<UserCommand>(app);
-        register_engine_action::<ProgrammerAction>(app);
+        register_engine_operation::<ProgrammerOperation>(app);
+        app.register_command_action::<serde::de::IgnoredAny, events::ProgrammerCommand, _>(
+            ActionDescriptor::new(PROGRAMMER_CLEAR_ACTION_ID, "Clear programmer", "Programmer")
+                .with_description("Clears the programmer selection and values"),
+            |_world, _arguments| Ok(events::ProgrammerCommand::ClearProgrammer),
+        );
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::ProgrammerAstConverter,
         >();
-        register_engine_action::<undo::RestoreProgrammerState>(app);
-        register_engine_action::<undo::RemoveProgrammerInstructionByUuid>(app);
+        register_engine_operation::<undo::RestoreProgrammerState>(app);
+        register_engine_operation::<undo::RemoveProgrammerInstructionByUuid>(app);
 
         register_command_deserializer::<events::ProgrammerCommand>(
             app,
@@ -89,10 +98,10 @@ impl Plugin for ProgrammerPlugin {
             .register::<events::ProgrammerCommand>();
         app.world_mut()
             .resource_mut::<UndoRegistry>()
-            .register_action::<undo::RestoreProgrammerState>();
+            .register_operation::<undo::RestoreProgrammerState>();
         app.world_mut()
             .resource_mut::<UndoRegistry>()
-            .register_action::<undo::RemoveProgrammerInstructionByUuid>();
+            .register_operation::<undo::RemoveProgrammerInstructionByUuid>();
 
         app.add_systems(
             Update,
@@ -100,7 +109,7 @@ impl Plugin for ProgrammerPlugin {
                 .after(
                     nightfall_desk::systems::event_handlers::desk_events::expand_pending_eval_commands,
                 )
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+                .in_set(PendingCommandExpansion),
         );
 
         app.add_systems(

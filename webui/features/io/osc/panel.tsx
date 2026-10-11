@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { Button } from "../../../components/ui/visual-language/button";
 import DataGrid, {
@@ -38,27 +38,73 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
-import { engineRuntime } from "../../../lib/engine-runtime";
-import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   oscLastEvent,
   oscListenerStatus,
+  oscMappingDiagnostics,
   oscMappings,
   oscSources,
+  pushToast,
 } from "../../../state/appStores";
-import type { OscMapping, OscType } from "../../../types";
 import {
-  cloneOscAction,
-  formatOscAction,
-  parseOscAction,
-} from "./model/action-format";
+  ActionInputKind,
+  type ActionReference,
+  ActionSurface,
+  ControlBehavior,
+  type InvocationError,
+  type OscMapping,
+  type OscType,
+} from "../../../types";
+import {
+  ActionPicker,
+  actionInputKind,
+  findCatalogEntry,
+  formatActionReference,
+  useActionTargetNames,
+  useBindableActionCatalog,
+} from "../../actions";
+import { BehaviorSelect } from "../components/behavior-select";
+import {
+  actionBehaviors,
+  actionSupportsBehavior,
+  behaviorCell,
+  behaviorFilterText,
+  editedBehavior,
+} from "../model/binding-behaviors";
+import {
+  formatBehavior,
+  type OscGesture,
+  oscBindingProblem,
+  oscMappingFromGesture,
+  trackOscGesture,
+} from "../model/controller-mapping-builders";
+import {
+  announceReplacedMappings,
+  deleteOscMapping,
+  upsertOscMapping,
+} from "../model/controller-mappings";
+import {
+  diagnosticsByMapping,
+  mappingStatusCell,
+  mappingStatusText,
+} from "../model/mapping-diagnostics";
+import { editOscRange, formatOscRangeEnd } from "../model/osc-value-range";
+
+/** Input kinds an OSC message can drive: pulses and booleans as buttons, numbers as faders. */
+const OSC_INPUT_KINDS = [
+  ActionInputKind.Trigger,
+  ActionInputKind.Momentary,
+  ActionInputKind.Absolute,
+];
 
 export interface OscInputPanelProps extends BasePanelComponentProps {}
 
 interface OscMappingRow {
   mapping: OscMapping;
   index: number;
+  /** Why the mapping cannot currently invoke its action, when the backend diagnosed it. */
+  error?: InvocationError;
 }
 
 const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
@@ -68,6 +114,13 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     width: 160,
     filter: { value: (row) => row.mapping.source ?? "*" },
     ...alwaysVisibleColumnMeta("Identity", "Source"),
+  },
+  {
+    title: "Status",
+    id: "status",
+    width: 200,
+    filter: { value: (row) => mappingStatusText(row.error) },
+    ...columnVisibilityMeta("Binding", "Status"),
   },
   {
     title: "Address",
@@ -91,10 +144,40 @@ const columns: FilterableGridColumn<OscMappingRow, VisibilityGridColumn>[] = [
     ...columnVisibilityMeta("Binding", "Arg Match"),
   },
   {
+    title: "Release Match",
+    id: "release_value",
+    width: 120,
+    filter: { value: (row) => row.mapping.release_value ?? "" },
+    ...columnVisibilityMeta("Binding", "Release Match"),
+  },
+  {
+    title: "Min",
+    id: "range_min",
+    width: 70,
+    filter: { kind: "number", value: (row) => row.mapping.range?.min },
+    ...columnVisibilityMeta("Binding", "Min"),
+  },
+  {
+    title: "Max",
+    id: "range_max",
+    width: 70,
+    filter: { kind: "number", value: (row) => row.mapping.range?.max },
+    ...columnVisibilityMeta("Binding", "Max"),
+  },
+  {
+    title: "Behavior",
+    id: "behavior",
+    width: 130,
+    filter: {
+      value: (row) => behaviorFilterText(formatBehavior(row.mapping.behavior)),
+    },
+    ...columnVisibilityMeta("Binding", "Behavior"),
+  },
+  {
     title: "Action",
     id: "action",
     width: 260,
-    filter: { value: (row) => formatOscAction(row.mapping.action) },
+    filter: { value: (row) => row.mapping.action.id },
     ...columnVisibilityMeta("Binding", "Action"),
   },
 ];
@@ -150,21 +233,78 @@ function parseArgIndex(value: string): number | undefined | null {
   return parsed;
 }
 
-function cloneMapping(mapping: OscMapping): OscMapping {
-  return {
-    source: mapping.source,
-    address: mapping.address,
-    arg_index: mapping.arg_index,
-    arg_value: mapping.arg_value,
-    action: cloneOscAction(mapping.action),
-  };
+/**
+ * Returns a mapping with one text cell edit applied, the reason a value range edit is
+ * invalid, or undefined for other invalid input.
+ */
+function editedMapping(
+  mapping: OscMapping,
+  columnId: string | undefined,
+  value: string,
+): OscMapping | { error: string } | undefined {
+  const trimmed = value.trim();
+  switch (columnId) {
+    case "source":
+      return { ...mapping, source: trimmed === "" ? undefined : trimmed };
+    case "address":
+      return { ...mapping, address: value };
+    case "arg_index": {
+      const parsed = parseArgIndex(value);
+      return parsed === null ? undefined : { ...mapping, arg_index: parsed };
+    }
+    case "arg_value":
+      return { ...mapping, arg_value: trimmed === "" ? undefined : trimmed };
+    case "release_value":
+      return {
+        ...mapping,
+        release_value: trimmed === "" ? undefined : trimmed,
+      };
+    case "range_min":
+    case "range_max": {
+      const edit = editOscRange(
+        mapping.range,
+        columnId === "range_min" ? "min" : "max",
+        value,
+      );
+      return edit.ok ? { ...mapping, range: edit.range } : edit;
+    }
+    default:
+      return undefined;
+  }
 }
 
 export default function OscInputPanel(props: OscInputPanelProps) {
   const $oscSources = useStore(oscSources);
   const $oscMappings = useStore(oscMappings);
+  const $oscMappingDiagnostics = useStore(oscMappingDiagnostics);
   const $oscLastEvent = useStore(oscLastEvent);
   const $oscListenerStatus = useStore(oscListenerStatus);
+  const $actionCatalog = useBindableActionCatalog();
+  const targetNames = useActionTargetNames();
+  const [lastEventAction, setLastEventAction] = createSignal<
+    ActionReference | undefined
+  >();
+  const [chosenBehavior, setLastEventBehavior] = createSignal(
+    ControlBehavior.Press,
+  );
+  /** Returns the catalog entry of the action chosen for the last input. */
+  const lastEventEntry = createMemo(() => {
+    const action = lastEventAction();
+    return action ? findCatalogEntry($actionCatalog(), action.id) : undefined;
+  });
+  /** Returns the chosen behavior, or Press when the chosen action does not support it. */
+  const lastEventBehavior = () =>
+    actionBehaviors(lastEventEntry()).includes(chosenBehavior())
+      ? chosenBehavior()
+      : ControlBehavior.Press;
+  // The touch starts with the first message received while the panel is open. Seeding it
+  // from an earlier message, such as a release, would record the next press as the release.
+  const [gesture, setGesture] = createSignal<OscGesture | undefined>();
+  // Every received message extends the touch, even when it repeats the previous one.
+  const unsubscribeGesture = oscLastEvent.listen((event) => {
+    if (event) setGesture((current) => trackOscGesture(current, event));
+  });
+  onCleanup(unsubscribeGesture);
   const panelId = props.id;
 
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -176,9 +316,15 @@ export default function OscInputPanel(props: OscInputPanelProps) {
   const displayColumns = createMemo(() => {
     return filterVisibleColumns(columns, panelId);
   });
-  const mappingRows = createMemo<OscMappingRow[]>(() =>
-    $oscMappings().map((mapping, index) => ({ mapping, index })),
-  );
+  /** Pairs each mapping with its backend diagnostic, if it cannot currently run. */
+  const mappingRows = createMemo<OscMappingRow[]>(() => {
+    const errorFor = diagnosticsByMapping($oscMappingDiagnostics());
+    return $oscMappings().map((mapping, index) => ({
+      mapping,
+      index,
+      error: errorFor(mapping.id),
+    }));
+  });
   const filterColumns = createMemo(() => filterColumnsFromMetadata(columns));
   const { clearSelection } = createRowSelectionHelpers(selection, setSelection);
   /** Returns OSC mapping rows targeted by row markers, active cells, or cell ranges. */
@@ -204,7 +350,7 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     createKeyedDataGridCellProvider({
       rows: displayRows(),
       columns: displayColumns(),
-      rowKey: (row) => row.index,
+      rowKey: (row) => row.mapping.id,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row, column }): GridCell => {
         const rowData = row.mapping;
@@ -244,15 +390,47 @@ export default function OscInputPanel(props: OscInputPanelProps) {
               displayData: rowData.arg_value ?? "",
               data: rowData.arg_value ?? "",
             };
-          case "action": {
-            const actionStr = formatOscAction(rowData.action);
+          case "release_value":
             return {
               kind: GridCellKind.Text,
               allowOverlay: true,
+              displayData: rowData.release_value ?? "",
+              data: rowData.release_value ?? "",
+            };
+          case "range_min":
+          case "range_max": {
+            const text = formatOscRangeEnd(
+              rowData.range,
+              colId === "range_min" ? "min" : "max",
+            );
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: true,
+              displayData: text,
+              data: text,
+            };
+          }
+          case "behavior":
+            return behaviorCell(
+              formatBehavior(rowData.behavior),
+              findCatalogEntry($actionCatalog(), rowData.action.id),
+            );
+          case "action": {
+            const actionStr = formatActionReference(
+              rowData.action,
+              $actionCatalog(),
+              targetNames,
+            );
+            return {
+              kind: GridCellKind.Text,
+              allowOverlay: false,
+              readonly: true,
               displayData: actionStr,
               data: actionStr,
             };
           }
+          case "status":
+            return mappingStatusCell(row.error);
           default:
             return {
               kind: GridCellKind.Loading,
@@ -263,12 +441,20 @@ export default function OscInputPanel(props: OscInputPanelProps) {
     }),
   );
 
+  /**
+   * Applies one edited cell, a Behavior dropdown or a text cell, to every targeted mapping
+   * and upserts each result. A behavior skips rows whose action does not support it.
+   */
   const handleCellEdited = (cell: Item, newValue: GridCell) => {
     const [col, row] = cell;
     const colId = displayColumns()[col]?.id;
-    const mappings = $oscMappings();
     const visibleRows = displayRows();
-    if (row >= visibleRows.length || newValue.kind !== GridCellKind.Text) {
+    const behavior =
+      colId === "behavior" ? editedBehavior(newValue) : undefined;
+    if (
+      row >= visibleRows.length ||
+      (newValue.kind !== GridCellKind.Text && behavior === undefined)
+    ) {
       return;
     }
 
@@ -278,99 +464,78 @@ export default function OscInputPanel(props: OscInputPanelProps) {
       row,
       visibleRows.length,
     );
-    const value = String(newValue.data ?? "");
-
-    const currentMappings = mappings.map(cloneMapping);
+    const value =
+      newValue.kind === GridCellKind.Text ? String(newValue.data ?? "") : "";
     for (const targetRow of rowsToEdit) {
-      const originalIndex = visibleRows[targetRow]?.index;
-      if (originalIndex === undefined) continue;
-      const rowData = { ...currentMappings[originalIndex] };
-      switch (colId) {
-        case "source":
-          rowData.source = value.trim() === "" ? undefined : value.trim();
-          break;
-        case "address":
-          rowData.address = value;
-          break;
-        case "arg_index": {
-          const parsed = parseArgIndex(value);
-          if (parsed === null) {
-            continue;
-          }
-          rowData.arg_index = parsed;
-          break;
-        }
-        case "arg_value": {
-          const trimmed = value.trim();
-          rowData.arg_value = trimmed === "" ? undefined : trimmed;
-          break;
-        }
-        case "action": {
-          const parsed = parseOscAction(value);
-          if (parsed) {
-            rowData.action = parsed;
-          }
-          break;
-        }
+      const mapping = visibleRows[targetRow]?.mapping;
+      if (!mapping) continue;
+      const entry = findCatalogEntry($actionCatalog(), mapping.action.id);
+      if (behavior && !actionSupportsBehavior(entry, behavior)) continue;
+      const edited = behavior
+        ? { ...mapping, behavior }
+        : editedMapping(mapping, colId, value);
+      if (!edited) continue;
+      if ("error" in edited) {
+        pushToast("error", edited.error);
+        return;
       }
-      currentMappings[originalIndex] = cloneMapping(rowData);
+      void upsertOscMapping(edited).then(announceReplacedMappings);
     }
-
-    setStoreAction(oscMappings, "Update OSC Mappings", currentMappings);
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
   };
 
+  /** Returns the single selected mapping row, when exactly one is selected. */
+  const selectedMapping = createMemo(() => {
+    const rows = selectedRows();
+    if (rows.length !== 1) return undefined;
+    return displayRows()[rows[0]];
+  });
+
+  /** Replaces the action of the selected mapping. */
+  const updateSelectedAction = (action: ActionReference) => {
+    const row = selectedMapping();
+    if (row) {
+      void upsertOscMapping({ ...row.mapping, action }).then(
+        announceReplacedMappings,
+      );
+    }
+  };
+
+  /** Deletes every selected mapping by ID. */
   const deleteSelected = () => {
-    const indices = selectedRows();
-    if (indices.length === 0) return;
-
     const visibleRows = displayRows();
-    const sortedIndices = indices
-      .map((index) => visibleRows[index]?.index)
-      .filter((index): index is number => index !== undefined)
-      .sort((a, b) => b - a);
-    const currentMappings = $oscMappings().map(cloneMapping);
-    for (const index of sortedIndices) {
-      currentMappings.splice(index, 1);
-    }
+    const ids = selectedRows()
+      .map((index) => visibleRows[index]?.mapping.id)
+      .filter((id): id is string => id !== undefined);
     clearGridSelection();
-
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    for (const id of ids) void deleteOscMapping(id);
   };
 
+  /** Binds, with the chosen behavior, the last touched OSC control to the action chosen beside it. */
   const applyLastEvent = () => {
-    const event = $oscLastEvent();
-    if (!event) return;
-
-    const currentMappings = $oscMappings().map(cloneMapping);
-    currentMappings.push({
-      source: undefined,
-      address: event.address,
-      arg_index: event.args.length > 0 ? 0 : undefined,
-      arg_value:
-        event.args.length > 0 ? formatArgValue(event.args[0]) : undefined,
-      action: parseOscAction("StartClip(1)")!,
-    });
-
-    engineRuntime.sendCommand({
-      module: "OscCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    const last = $oscLastEvent();
+    const touch =
+      gesture() ?? (last ? trackOscGesture(undefined, last) : undefined);
+    const action = lastEventAction();
+    if (!touch || !action) return;
+    const inputKind = actionInputKind($actionCatalog(), action);
+    const problem = oscBindingProblem(
+      touch,
+      action,
+      inputKind,
+      lastEventBehavior(),
+      formatActionReference(action, $actionCatalog(), targetNames),
+    );
+    if (problem) {
+      pushToast("info", problem);
+      return;
+    }
+    const mapping = oscMappingFromGesture(
+      touch,
+      action,
+      inputKind,
+      lastEventBehavior(),
+    );
+    void upsertOscMapping(mapping).then(announceReplacedMappings);
   };
 
   return (
@@ -424,14 +589,32 @@ export default function OscInputPanel(props: OscInputPanelProps) {
                   {$oscLastEvent()?.args.map(formatArgValue).join(", ")}
                 </span>
               </div>
-              <Button
-                size="compact"
-                variant="primary"
-                class="shrink-0"
-                onClick={applyLastEvent}
-              >
-                Add Mapping
-              </Button>
+              <div class="flex flex-wrap items-center gap-2">
+                <ActionPicker
+                  label="Action for last input"
+                  value={lastEventAction()}
+                  inputKinds={OSC_INPUT_KINDS}
+                  surface={ActionSurface.Osc}
+                  includeUiActions
+                  onChange={setLastEventAction}
+                  onIncomplete={() => setLastEventAction(undefined)}
+                />
+                <BehaviorSelect
+                  value={lastEventBehavior()}
+                  behaviors={actionBehaviors(lastEventEntry())}
+                  inputKind={lastEventEntry()?.descriptor.input}
+                  onChange={setLastEventBehavior}
+                />
+                <Button
+                  size="compact"
+                  variant="primary"
+                  class="shrink-0"
+                  disabled={!lastEventAction()}
+                  onClick={applyLastEvent}
+                >
+                  Add Mapping
+                </Button>
+              </div>
             </div>
           </div>
         </Show>
@@ -445,9 +628,8 @@ export default function OscInputPanel(props: OscInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">OSC Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Leave Source blank to match any sender. Action format:
-                StartClip(1), StopClip(2), GoClip(3), SetControl(1), TapTempo,
-                Eval(clip 1 go)
+                Leave Source blank to match any sender, and Min/Max blank to
+                infer fader units. Select one mapping to change its action.
               </p>
             </div>
           }
@@ -479,6 +661,22 @@ export default function OscInputPanel(props: OscInputPanelProps) {
           }
         />
 
+        <Show when={selectedMapping()}>
+          {(row) => (
+            <div class="flex items-center gap-2 border-b border-gray-700 px-3 py-2">
+              <span class="text-xs text-gray-400">Selected action</span>
+              <ActionPicker
+                label="Selected mapping action"
+                value={row().mapping.action}
+                inputKinds={OSC_INPUT_KINDS}
+                surface={ActionSurface.Osc}
+                includeUiActions
+                onChange={updateSelectedAction}
+              />
+            </div>
+          )}
+        </Show>
+
         <div class="flex-1 min-h-0">
           <DataGrid
             rows={displayRows().length}
@@ -499,8 +697,8 @@ export default function OscInputPanel(props: OscInputPanelProps) {
 
         <Show when={mappingRows().length === 0}>
           <div class="p-4 text-center text-gray-500 text-sm">
-            No OSC mappings configured. Send OSC input and click "Add Mapping"
-            to create one.
+            No OSC mappings configured. Send OSC input, choose an action, and
+            click "Add Mapping" to create one.
           </div>
         </Show>
       </div>

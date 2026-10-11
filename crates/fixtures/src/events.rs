@@ -54,12 +54,12 @@ pub fn handle_set_dmx_channels(
 /// Handle RestoreFixtureSnapshot commands to recreate a deleted fixture.
 pub fn handle_restore_fixture_snapshot(
     mut commands: Commands,
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreFixtureSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreFixtureSnapshot>>,
     mut data_provider: ResMut<FixtureDataProviderExt>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         let fixture = snapshot.fixture.clone();
         let fixture_uid = fixture.identifiers.uid;
         tracing::debug!(
@@ -126,13 +126,13 @@ fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> b
 
 /// Handle RestoreBindingSnapshot commands to restore fixture binding configuration.
 pub fn handle_restore_binding_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreBindingSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreBindingSnapshot>>,
     data_provider: Res<FixtureDataProviderExt>,
     mut output_bindings: ResMut<OutputBindings>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         tracing::debug!(
             "Restoring binding snapshot for fixture {}",
             snapshot.fixture_id
@@ -167,14 +167,14 @@ pub fn handle_restore_binding_snapshot(
 
 /// Handle RestorePatchBindingsSnapshot commands to restore all patch bindings.
 pub fn handle_restore_patch_bindings_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestorePatchBindingsSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestorePatchBindingsSnapshot>>,
     mut input_bindings: ResMut<InputBindings>,
     mut output_bindings: ResMut<OutputBindings>,
     mut disabled_bindings: ResMut<DisabledBindings>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         tracing::debug!("Restoring patch bindings snapshot");
 
         input_bindings.bindings = snapshot.input_bindings.clone();
@@ -186,13 +186,13 @@ pub fn handle_restore_patch_bindings_snapshot(
 
 /// Handle RestoreOffsetSnapshot commands to restore fixture parameter offset.
 pub fn handle_restore_offset_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreOffsetSnapshot>>,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreOffsetSnapshot>>,
     mut data_provider: ResMut<FixtureDataProviderExt>,
     mut parameter_query: Query<InstanceMut<Parameter>>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        let snapshot = &event.action.0;
+        let snapshot = &event.operation.0;
         tracing::debug!(
             fixture_id = snapshot.fixture_id,
             attribute = ?snapshot.attribute,
@@ -276,12 +276,14 @@ pub fn handle_restore_offset_snapshot(
 
 /// Handle RestoreColorPathDefaultsSnapshot commands to restore fixture default assignments.
 pub fn handle_restore_color_path_defaults_snapshot(
-    mut events: MessageReader<EngineActionEnvelope<crate::undo::RestoreColorPathDefaultsSnapshot>>,
+    mut events: MessageReader<
+        EngineOperationEnvelope<crate::undo::RestoreColorPathDefaultsSnapshot>,
+    >,
     mut data_provider: ResMut<FixtureDataProviderExt>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        data_provider.replace_color_path_defaults(event.action.0.defaults.clone());
+        data_provider.replace_color_path_defaults(event.operation.0.defaults.clone());
         succeed_action(&mut responder, event.command_id);
     }
 }

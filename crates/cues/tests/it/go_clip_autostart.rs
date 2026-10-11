@@ -20,19 +20,19 @@ use bevy_ecs::{
 use moonshine_kind::{Instance, InstanceRef};
 use nightfall::prelude::*;
 use nightfall_clips::{
-    Clip, ClipAction, ClipCommand, MaterializedClip, Source, clip_action_from_command,
+    Clip, ClipCommand, ClipOperation, MaterializedClip, Source, clip_action_from_command,
 };
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_cues::events::handle_events;
 use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueCommand, CueInstruction, CueLifecycleAction, MaterializedSequence,
-    Sequence, SequencePlaybackAction,
+    BoundCueInstruction, Cue, CueCommand, CueInstruction, CueLifecycleOperation,
+    MaterializedSequence, Sequence, SequencePlaybackOperation,
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome,
-    CommandReply, CommandResult, CommandTracker, DataProvider, EngineActionEnvelope,
-    FinishedCommand, OperationResult, PendingEngineActionBuffer, ReplyTarget,
+    CommandReply, CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope,
+    FinishedCommand, OperationResult, PendingEngineOperationBuffer, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -45,7 +45,7 @@ use uuid::Uuid;
 
 /// Registers command context carried by test clip actions.
 fn register_clip_commands(
-    mut commands: MessageReader<EngineActionEnvelope<ClipAction>>,
+    mut commands: MessageReader<EngineOperationEnvelope<ClipOperation>>,
     mut tracker: ResMut<CommandTracker>,
 ) {
     for command in commands.read() {
@@ -62,18 +62,18 @@ fn register_clip_commands(
 }
 
 /// Converts a clip command fixture into a tracked concrete action.
-fn clip_action(command: ClipCommand) -> EngineActionEnvelope<ClipAction> {
+fn clip_action(command: ClipCommand) -> EngineOperationEnvelope<ClipOperation> {
     let command_id = CommandId::new();
     let action = clip_action_from_command(&command)
         .expect("test clip command should map to a runtime action");
-    EngineActionEnvelope::for_command_context(command_id, command_id.into(), action)
+    EngineOperationEnvelope::for_command_context(command_id, command_id.into(), action)
 }
 
 fn setup_app() -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<CueCommand>>();
-    app.add_message::<EngineActionEnvelope<CueLifecycleAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
@@ -84,7 +84,7 @@ fn setup_app() -> App {
     app.init_resource::<DataProvider<Cue>>();
     app.init_resource::<DataProvider<Group>>();
     app.insert_resource(FixtureDataProviderExt::default());
-    app.init_resource::<PendingEngineActionBuffer>();
+    app.init_resource::<PendingEngineOperationBuffer>();
     app.init_resource::<CommandTracker>();
 
     app.add_systems(Update, (register_clip_commands, handle_events).chain());
@@ -555,15 +555,15 @@ fn go_clip_with_missing_sequence_target_queues_action_before_completion() {
 
     let queued = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert_eq!(queued.len(), 1);
     assert!(matches!(
         queued[0]
-            .action
+            .operation
             .as_any()
-            .downcast_ref::<SequencePlaybackAction>(),
-        Some(SequencePlaybackAction::Go { instance_id: queued_instance_id })
+            .downcast_ref::<SequencePlaybackOperation>(),
+        Some(SequencePlaybackOperation::Go { instance_id: queued_instance_id })
             if *queued_instance_id == instance_id
     ));
 }
@@ -608,15 +608,15 @@ fn back_clip_with_missing_sequence_target_queues_action_before_completion() {
 
     let queued = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert_eq!(queued.len(), 1);
     assert!(matches!(
         queued[0]
-            .action
+            .operation
             .as_any()
-            .downcast_ref::<SequencePlaybackAction>(),
-        Some(SequencePlaybackAction::Back { instance_id: queued_instance_id })
+            .downcast_ref::<SequencePlaybackOperation>(),
+        Some(SequencePlaybackOperation::Back { instance_id: queued_instance_id })
             if *queued_instance_id == instance_id
     ));
 }
@@ -789,7 +789,7 @@ fn go_clip_queues_start_then_go_when_not_running() {
 
     let queued_after_go = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
 
     assert!(
@@ -952,7 +952,7 @@ fn goto_clip_queues_start_then_goto_when_not_running() {
 
     let queued_after_goto = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert!(
         queued_after_goto.is_empty(),
@@ -1416,7 +1416,7 @@ fn go_then_stop_in_same_tick_cancels_pending_sequence_go() {
 
     let queued_after_go_stop = app
         .world_mut()
-        .resource_mut::<PendingEngineActionBuffer>()
+        .resource_mut::<PendingEngineOperationBuffer>()
         .drain();
     assert!(
         queued_after_go_stop.is_empty(),

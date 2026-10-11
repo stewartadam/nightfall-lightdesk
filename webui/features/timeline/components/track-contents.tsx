@@ -10,7 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { Key } from "@solid-primitives/keyed";
 import { createMemo, createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import { useCommand } from "../../../components/providers/command-registry";
+import { useUiAction } from "../../../components/providers/command-registry";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
@@ -47,6 +47,7 @@ import {
   INSERTABLE_ACTIONS,
   type InsertableActionType,
 } from "../model/insertion/action-catalog";
+import { timelineActionReference } from "../model/timeline-action-kind";
 import type { ActionDragPreview } from "./action";
 import { InsertActionPicker } from "./insertion/insert-action-picker";
 import { Track } from "./track";
@@ -379,15 +380,32 @@ const TrackContents = (props: TrackListProps) => {
       label: selectedTarget.label,
       position: msToDuration(intent.positionMs),
       duration: msToDuration(DEFAULT_ACTION_DURATION_MS),
-      action: buildActionKind(
-        actionType,
-        selectedTarget.uid,
-        defaults?.cueIndex ?? selectedTarget.cueIndex ?? 1,
-        defaults?.rate,
+      action: timelineActionReference(
+        buildActionKind(
+          actionType,
+          selectedTarget.uid,
+          defaults?.cueIndex ?? selectedTarget.cueIndex ?? 1,
+          defaults?.rate,
+        ),
       ),
     };
 
     ctx.actions.insertAction(intent.trackId, action);
+  };
+
+  /** Inserts a registered catalog action at the picker's timeline position. */
+  const insertReferenceAction = (
+    reference: types.ActionReference,
+    label: string,
+    intent: InsertionIntent,
+  ) => {
+    ctx.actions.insertAction(intent.trackId, {
+      id: createActionId(),
+      label,
+      position: msToDuration(intent.positionMs),
+      duration: msToDuration(DEFAULT_ACTION_DURATION_MS),
+      action: reference,
+    });
   };
 
   const deleteSelectedAction = () => {
@@ -492,7 +510,7 @@ const TrackContents = (props: TrackListProps) => {
     componentId: props.componentId,
   });
 
-  useCommand({
+  useUiAction({
     id: `timeline.insert-action.${props.componentId || "global"}`,
     name: "Insert Timeline Action",
     description: "Insert a timeline action at cursor or playhead",
@@ -645,6 +663,10 @@ const TrackContents = (props: TrackListProps) => {
                   cueIndex,
                   rate,
                 });
+                setPickerIntent(undefined);
+              }}
+              onInsertReference={(reference, label) => {
+                insertReferenceAction(reference, label, intent());
                 setPickerIntent(undefined);
               }}
             />

@@ -17,20 +17,20 @@ use nightfall_fixtures::selection::SelectionResolver;
 use nightfall_instances::InstanceKind;
 use nightfall_instances::{
     InstanceClock, InstanceCommand, InstanceControlUpdate, InstanceControls, InstanceId,
-    InstanceMetadata, PlaybackAction, PlaybackReleaseAction, PlaybackScope,
+    InstanceMetadata, PlaybackOperation, PlaybackReleaseOperation, PlaybackScope,
 };
 
 /// Applies typed playback actions to materialized parameters and DMX state.
 pub fn handle_events(
     data_provider: Res<FixtureDataProviderExt>,
-    mut events: MessageReader<EngineActionEnvelope<PlaybackAction>>,
+    mut events: MessageReader<EngineOperationEnvelope<PlaybackOperation>>,
     mut results: MessageWriter<OperationResult<(), CommandError>>,
     mut parameter_query: Query<InstanceMut<Parameter>>,
     selection_resolver: SelectionResolver,
     mut dmx_universes: Option<ResMut<ConsoleDmxUniverses>>,
 ) {
     for event in events.read() {
-        let PlaybackAction::ReleaseParameters { scope } = &event.action;
+        let PlaybackOperation::ReleaseParameters { scope } = &event.operation;
         if let PlaybackScope::Selection(selection_expression) = scope {
             let selection = selection_resolver
                 .resolve_expr(selection_expression)
@@ -66,7 +66,7 @@ pub fn handle_events(
 pub fn handle_playback_commands(
     mut commands: Commands,
     mut commands_from_ingress: MessageReader<CommandEnvelope<InstanceCommand>>,
-    mut release_actions: MessageReader<EngineActionEnvelope<PlaybackReleaseAction>>,
+    mut release_actions: MessageReader<EngineOperationEnvelope<PlaybackReleaseOperation>>,
     instance_index: Res<InstanceIndex>,
     instance_query: Query<(
         Entity,
@@ -95,7 +95,7 @@ pub fn handle_playback_commands(
 
     for event in release_actions.read() {
         if let Err(error) = apply_playback_release(
-            &event.action,
+            &event.operation,
             &mut commands,
             &instance_index,
             &instance_query,
@@ -125,25 +125,25 @@ fn apply_playback_command(
 ) -> Result<(), CommandError> {
     match command {
         InstanceCommand::Stop(instance_id) => apply_playback_release(
-            &PlaybackReleaseAction::One(*instance_id),
+            &PlaybackReleaseOperation::One(*instance_id),
             commands,
             instance_index,
             instance_query,
         ),
         InstanceCommand::StopAll => apply_playback_release(
-            &PlaybackReleaseAction::All,
+            &PlaybackReleaseOperation::All,
             commands,
             instance_index,
             instance_query,
         ),
         InstanceCommand::StopByKind(kind) => apply_playback_release(
-            &PlaybackReleaseAction::ByKind(kind.clone()),
+            &PlaybackReleaseOperation::ByKind(kind.clone()),
             commands,
             instance_index,
             instance_query,
         ),
         InstanceCommand::StopByTag(tag) => apply_playback_release(
-            &PlaybackReleaseAction::ByTag(tag.clone()),
+            &PlaybackReleaseOperation::ByTag(tag.clone()),
             commands,
             instance_index,
             instance_query,
@@ -185,7 +185,7 @@ fn apply_playback_command(
 
 /// Applies one concrete playback release action.
 fn apply_playback_release(
-    action: &PlaybackReleaseAction,
+    action: &PlaybackReleaseOperation,
     commands: &mut Commands,
     instance_index: &InstanceIndex,
     instance_query: &Query<(
@@ -197,7 +197,7 @@ fn apply_playback_release(
     )>,
 ) -> Result<(), CommandError> {
     match action {
-        PlaybackReleaseAction::One(instance_id) => {
+        PlaybackReleaseOperation::One(instance_id) => {
             let playback = instance_index
                 .get(instance_id)
                 .and_then(|entity| instance_query.get(entity).ok())
@@ -219,7 +219,7 @@ fn apply_playback_release(
             }
         }
 
-        PlaybackReleaseAction::All => {
+        PlaybackReleaseOperation::All => {
             tracing::debug!("Stopping all instances");
             for (entity, instance_id, _metadata, controls, release_marker) in instance_query.iter()
             {
@@ -229,7 +229,7 @@ fn apply_playback_release(
             Ok(())
         }
 
-        PlaybackReleaseAction::ByKind(kind) => {
+        PlaybackReleaseOperation::ByKind(kind) => {
             tracing::debug!(kind = ?kind, "Stopping instances by kind");
             for (entity, instance_id, metadata, controls, release_marker) in instance_query.iter() {
                 if &metadata.kind == kind {
@@ -240,7 +240,7 @@ fn apply_playback_release(
             Ok(())
         }
 
-        PlaybackReleaseAction::ByTag(tag) => {
+        PlaybackReleaseOperation::ByTag(tag) => {
             tracing::debug!(tag = %tag, "Stopping instances by tag");
             for (entity, instance_id, metadata, controls, release_marker) in instance_query.iter() {
                 if metadata.tags.contains(tag) {
@@ -356,12 +356,12 @@ mod tests {
     #[test]
     fn parameter_release_action_reports_completion() {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<PlaybackAction>>();
+        app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
         app.add_message::<OperationResult<(), CommandError>>();
         app.insert_resource(FixtureDataProviderExt::default());
         app.insert_resource(DataProvider::<Group>::default());
         app.add_systems(Update, handle_events);
-        let action = EngineActionEnvelope::detached(PlaybackAction::ReleaseParameters {
+        let action = EngineOperationEnvelope::detached(PlaybackOperation::ReleaseParameters {
             scope: PlaybackScope::All,
         });
         let operation_id = action.operation_id;
@@ -410,7 +410,7 @@ mod tests {
     fn stop_command_falls_back_to_instance_query_when_index_is_stale() {
         let mut app = App::new();
         add_command_lifecycle(&mut app);
-        app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
+        app.add_message::<EngineOperationEnvelope<PlaybackReleaseOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.add_systems(Update, handle_playback_commands);
 
@@ -425,10 +425,10 @@ mod tests {
             .id();
 
         app.world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<PlaybackReleaseAction>>>()
-            .write(EngineActionEnvelope::detached(PlaybackReleaseAction::One(
-                instance_id,
-            )));
+            .resource_mut::<Messages<EngineOperationEnvelope<PlaybackReleaseOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                PlaybackReleaseOperation::One(instance_id),
+            ));
         app.update();
 
         assert!(
@@ -442,7 +442,7 @@ mod tests {
     fn stop_command_resumes_paused_playback_for_release() {
         let mut app = App::new();
         add_command_lifecycle(&mut app);
-        app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
+        app.add_message::<EngineOperationEnvelope<PlaybackReleaseOperation>>();
         let instance_id = InstanceId::new();
         let playback = app
             .world_mut()
@@ -462,10 +462,10 @@ mod tests {
         app.add_systems(Update, handle_playback_commands);
 
         app.world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<PlaybackReleaseAction>>>()
-            .write(EngineActionEnvelope::detached(PlaybackReleaseAction::One(
-                instance_id,
-            )));
+            .resource_mut::<Messages<EngineOperationEnvelope<PlaybackReleaseOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                PlaybackReleaseOperation::One(instance_id),
+            ));
         app.update();
 
         let controls = app
@@ -481,7 +481,7 @@ mod tests {
     fn missing_playback_stop_returns_failure() {
         let mut app = App::new();
         add_command_lifecycle(&mut app);
-        app.add_message::<EngineActionEnvelope<PlaybackReleaseAction>>();
+        app.add_message::<EngineOperationEnvelope<PlaybackReleaseOperation>>();
         app.insert_resource(InstanceIndex::default());
         app.add_systems(Update, handle_playback_commands);
         let command_id = submit(&mut app, InstanceCommand::Stop(InstanceId::new()));

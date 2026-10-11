@@ -17,12 +17,14 @@ import { engineRuntime } from "../../../lib/engine-runtime";
 import { controls, masters, pushToast } from "../../../state/appStores";
 import type {
   Clip,
-  ClipCommand,
   ControlCommand,
   ControlUpdate,
   Master,
-  MasterCommand,
 } from "../../../types";
+import {
+  controlFaderControl,
+  controlGoControl,
+} from "../model/control-actions";
 import { Control } from "./control";
 
 const commandClient = new CommandClient(engineRuntime);
@@ -41,7 +43,7 @@ export function Controls(props: ControlsProps): JSX.Element {
   const $controls = useStore(controls);
   const $masters = useStore(masters);
 
-  /** Sends a tracked control assignment command and surfaces backend or transport failure. */
+  /** Sends a tracked control command and surfaces backend or transport failure. */
   const sendCommand = async (command: ControlCommand): Promise<void> => {
     try {
       const result = await commandClient.submitCommand(
@@ -61,16 +63,6 @@ export function Controls(props: ControlsProps): JSX.Element {
   /** Sends a continuous control update without command lifecycle bookkeeping. */
   const sendUpdate = (update: ControlUpdate): void => {
     engineRuntime.sendUpdate("ControlUpdate", update, false);
-  };
-
-  /** Sends an clip command to the backend command bus. */
-  const sendClipCommand = (command: ClipCommand) => {
-    engineRuntime.sendCommand({ module: "ClipCommand", command });
-  };
-
-  /** Sends a master command to the backend command bus. */
-  const sendMasterCommand = (command: MasterCommand) => {
-    engineRuntime.sendCommand({ module: "MasterCommand", command });
   };
 
   return (
@@ -107,41 +99,6 @@ export function Controls(props: ControlsProps): JSX.Element {
             /** Returns whether the assigned clip is currently active. */
             const isClipActive = () => getAssignedClipEntry()?.[1] ?? false;
 
-            /** Runs the assigned clip or toggles a toggle-mode master. */
-            const handleGo = () => {
-              const master = getAssignedMaster();
-              if (master) {
-                if (master.mode?.type === "Toggle") {
-                  sendMasterCommand({
-                    type: "ToggleMaster",
-                    data: { id: master.identifiers.id },
-                  });
-                }
-                return;
-              }
-
-              const clip = getAssignedClip();
-              if (!clip) return;
-              if (!clip.source) return;
-
-              if (clip.source?.type === "Sequence") {
-                sendClipCommand({
-                  type: isClipActive() ? "GoClip" : "StartClip",
-                  data: { type: "Single", data: clip.identifiers.id },
-                });
-                return;
-              }
-
-              if (isClipActive()) {
-                return;
-              }
-
-              sendClipCommand({
-                type: "StartClip",
-                data: { type: "Single", data: clip.identifiers.id },
-              });
-            };
-
             return (
               <Control
                 index={controlIndex}
@@ -151,13 +108,8 @@ export function Controls(props: ControlsProps): JSX.Element {
                 displayValue={getControlState()?.display_value ?? 0}
                 hardwareValue={getControlState()?.hardware_value ?? 0}
                 consoleValue={getControlState()?.console_value ?? 0}
-                onGo={handleGo}
-                onConsoleValueChange={(value) =>
-                  sendUpdate({
-                    type: "SetConsoleValue",
-                    data: { control_index: controlIndex, value },
-                  })
-                }
+                go={controlGoControl(controlIndex, sendCommand)}
+                fader={controlFaderControl(controlIndex, sendUpdate)}
                 onClipAssign={(clip) =>
                   sendCommand({
                     type: "AssignClip",

@@ -9,7 +9,7 @@
 use std::fmt::{Display, Formatter};
 
 use bevy_ecs::prelude::*;
-pub use nightfall::engine::{EngineAction, EngineIngressMeta, EnginePayload, IngressCommand};
+pub use nightfall::engine::{EngineIngressMeta, EngineOperation, EnginePayload, IngressCommand};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -91,7 +91,7 @@ impl From<UndoId> for Uuid {
     }
 }
 
-/// Identifies one internal engine action or cross-domain request execution.
+/// Identifies one internal engine operation or cross-domain request execution.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct OperationId(#[serde(with = "nightfall::serde_uuid_simple")] pub Uuid);
@@ -138,14 +138,26 @@ pub enum CommandOrigin {
     Cli,
     /// A command submitted by another named remote-control transport.
     Remote(String),
+    /// A command submitted by a bindable action invoked from an automation surface.
+    Automation {
+        /// User-facing name of the invoking surface, such as MIDI or Timeline.
+        surface: String,
+        /// Optional detail identifying the specific source, such as a device or mapping.
+        source: Option<String>,
+    },
 }
 
 /// Transport-assigned identity of one connected client session.
 ///
 /// Hosts allocate identities when a session connects and never accept one from
 /// client-supplied payloads, so a client cannot claim another session's replies.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ClientId(pub u64);
+
+impl ClientId {
+    /// The single client of an embedded browser runtime, which has no websocket sessions.
+    pub const EMBEDDED: Self = Self(0);
+}
 
 impl std::fmt::Display for ClientId {
     /// Formats the identity as its numeric session counter for tracing fields.
@@ -216,25 +228,25 @@ impl<T> CommandEnvelope<T> {
 
 /// Carries one concrete internal action and optional originating command context.
 #[derive(Clone, Debug, Message)]
-pub struct EngineActionEnvelope<T> {
+pub struct EngineOperationEnvelope<T> {
     /// Identity used to correlate the action with its internal result.
     pub operation_id: OperationId,
     /// User command that caused this action, when one exists.
     pub command_id: Option<CommandId>,
     /// Undo group that owns mutations produced by this action, when applicable.
     pub undo_id: Option<UndoId>,
-    /// Domain-owned concrete action payload.
-    pub action: T,
+    /// Domain-owned concrete operation payload.
+    pub operation: T,
 }
 
-impl<T> EngineActionEnvelope<T> {
+impl<T> EngineOperationEnvelope<T> {
     /// Creates an action that is not the descendant of a user command.
     pub fn detached(action: T) -> Self {
         Self {
             operation_id: OperationId::new(),
             command_id: None,
             undo_id: None,
-            action,
+            operation: action,
         }
     }
 
@@ -249,7 +261,7 @@ impl<T> EngineActionEnvelope<T> {
             operation_id,
             command_id,
             undo_id,
-            action,
+            operation: action,
         }
     }
 
@@ -264,7 +276,7 @@ impl<T> EngineActionEnvelope<T> {
             operation_id: OperationId::new(),
             command_id: Some(command_id),
             undo_id: Some(undo_id),
-            action,
+            operation: action,
         }
     }
 }
@@ -343,8 +355,8 @@ impl<T> EventEnvelope<T> {
         }
     }
 
-    /// Creates a fact emitted by one concrete engine action.
-    pub fn for_action<A>(action: &EngineActionEnvelope<A>, event: T) -> Self {
+    /// Creates a fact emitted by one concrete engine operation.
+    pub fn for_action<A>(action: &EngineOperationEnvelope<A>, event: T) -> Self {
         Self {
             operation_id: action.operation_id,
             command_id: action.command_id,
@@ -393,8 +405,8 @@ impl<T> NotificationEnvelope<T> {
         }
     }
 
-    /// Creates an observation emitted by one concrete engine action.
-    pub fn for_action<A>(action: &EngineActionEnvelope<A>, notification: T) -> Self {
+    /// Creates an observation emitted by one concrete engine operation.
+    pub fn for_action<A>(action: &EngineOperationEnvelope<A>, notification: T) -> Self {
         Self {
             operation_id: action.operation_id,
             command_id: action.command_id,
@@ -419,7 +431,7 @@ impl<T> NotificationEnvelope<T> {
     }
 }
 
-/// Reports the typed internal outcome of one engine action or request.
+/// Reports the typed internal outcome of one engine operation or request.
 #[derive(Clone, Debug, Message)]
 pub struct OperationResult<T, E> {
     /// Internal operation whose execution finished.
@@ -471,7 +483,7 @@ mod tests {
             ReplyTarget::ClientBroadcast,
         );
 
-        let action = EngineActionEnvelope::for_command(&command, "persist cue");
+        let action = EngineOperationEnvelope::for_command(&command, "persist cue");
 
         assert_eq!(action.command_id, Some(command.command_id));
         assert_eq!(action.undo_id, Some(command.undo_id));
@@ -503,7 +515,7 @@ mod tests {
         let operation_id = OperationId::new();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
-        let action = EngineActionEnvelope::with_context(
+        let action = EngineOperationEnvelope::with_context(
             operation_id,
             Some(command_id),
             Some(undo_id),

@@ -11,7 +11,7 @@
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_undo::prelude::{UndoEntry, UndoManager, UndoableOperation};
+use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 
 use crate::object_crud::apply_object_crud_command;
 
@@ -40,17 +40,17 @@ fn validate_blueprint_delete(
     ))
 }
 
-/// Handles BlueprintAction runtime operations.
+/// Handles BlueprintOperation runtime operations.
 pub fn action_events(
-    mut actions_reader: MessageReader<EngineActionEnvelope<BlueprintAction>>,
+    mut actions_reader: MessageReader<EngineOperationEnvelope<BlueprintOperation>>,
     mut blueprint_data_provider: ResMut<DataProvider<Blueprint>>,
     mut undo_manager: ResMut<UndoManager>,
     mut results: MessageWriter<OperationResult<(), CommandError>>,
     mut definition_changes: MessageWriter<BlueprintDefinitionChange>,
 ) {
     for event in actions_reader.read() {
-        let result = match &event.action {
-            BlueprintAction::StoreBlueprint(blueprint) => {
+        let result = match &event.operation {
+            BlueprintOperation::StoreBlueprint(blueprint) => {
                 let inverse = blueprint_data_provider
                     .from_id(blueprint.identifiers.id)
                     .ok()
@@ -61,7 +61,7 @@ pub fn action_events(
                         if let Some(undo_id) = event.undo_id {
                             undo_manager.push(
                                 UndoEntry {
-                                    command: Box::new(inverse) as Box<dyn UndoableOperation>,
+                                    command: Box::new(inverse) as Box<dyn Undoable>,
                                     description: format!(
                                         "Store Blueprint {}",
                                         blueprint.identifiers.id

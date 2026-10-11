@@ -13,8 +13,8 @@ use nightfall_undo::prelude::*;
 
 use crate::prelude::{Fx, FxCommand, StepFx, StepFxCommand};
 
-impl UndoableOperation for FxCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for FxCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let fx_provider = ctx.world.resource::<DataProvider<Fx>>();
 
         match self {
@@ -36,14 +36,14 @@ impl UndoableOperation for FxCommand {
                 // Capture full fx before deletion
                 fx_provider.from_id(*id).ok().map(|fx_ref| {
                     let fx: Fx = (*fx_ref).clone();
-                    Box::new(FxCommand::StoreFx(fx)) as Box<dyn UndoableOperation>
+                    Box::new(FxCommand::StoreFx(fx)) as Box<dyn Undoable>
                 })
             }
             FxCommand::RenameFx { id, new_id } => fx_provider.from_id(*id).ok().map(|_| {
                 Box::new(FxCommand::RenameFx {
                     id: *new_id,
                     new_id: *id,
-                }) as Box<dyn UndoableOperation>
+                }) as Box<dyn Undoable>
             }),
         }
     }
@@ -57,8 +57,8 @@ impl UndoableOperation for FxCommand {
     }
 }
 
-impl UndoableOperation for StepFxCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for StepFxCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let stored = |predicate: &dyn Fn(&StepFx) -> bool| {
             ctx.world.iter_entities().find_map(|entity| {
                 entity
@@ -71,37 +71,30 @@ impl UndoableOperation for StepFxCommand {
         match self {
             StepFxCommand::Create(step_fx) => {
                 stored(&|existing| existing.identifiers.uid == step_fx.identifiers.uid)
-                    .map(|existing| {
-                        Box::new(StepFxCommand::Store(existing)) as Box<dyn UndoableOperation>
-                    })
+                    .map(|existing| Box::new(StepFxCommand::Store(existing)) as Box<dyn Undoable>)
                     .or_else(|| {
                         stored(&|existing| existing.identifiers.id == step_fx.identifiers.id)
                             .is_none()
                             .then(|| {
                                 Box::new(StepFxCommand::Delete(step_fx.identifiers.id))
-                                    as Box<dyn UndoableOperation>
+                                    as Box<dyn Undoable>
                             })
                     })
             }
             StepFxCommand::Store(step_fx) => {
                 stored(&|existing| existing.identifiers.uid == step_fx.identifiers.uid)
-                    .map(|existing| {
-                        Box::new(StepFxCommand::Store(existing)) as Box<dyn UndoableOperation>
-                    })
+                    .map(|existing| Box::new(StepFxCommand::Store(existing)) as Box<dyn Undoable>)
                     .or_else(|| {
                         stored(&|existing| existing.identifiers.id == step_fx.identifiers.id)
                             .is_none()
                             .then(|| {
                                 Box::new(StepFxCommand::Delete(step_fx.identifiers.id))
-                                    as Box<dyn UndoableOperation>
+                                    as Box<dyn Undoable>
                             })
                     })
             }
-            StepFxCommand::Delete(id) => {
-                stored(&|existing| existing.identifiers.id == *id).map(|existing| {
-                    Box::new(StepFxCommand::Store(existing)) as Box<dyn UndoableOperation>
-                })
-            }
+            StepFxCommand::Delete(id) => stored(&|existing| existing.identifiers.id == *id)
+                .map(|existing| Box::new(StepFxCommand::Store(existing)) as Box<dyn Undoable>),
             StepFxCommand::Start(_) | StepFxCommand::Stop(_) | StepFxCommand::SetRate { .. } => {
                 None
             }
@@ -143,7 +136,7 @@ mod tests {
     }
 
     /// Extracts a Step FX command from a boxed undo operation.
-    fn inverse_step_fx_command(command: Box<dyn UndoableOperation>) -> StepFxCommand {
+    fn inverse_step_fx_command(command: Box<dyn Undoable>) -> StepFxCommand {
         *command
             .into_any()
             .downcast::<StepFxCommand>()

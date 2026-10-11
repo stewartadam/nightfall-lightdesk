@@ -26,7 +26,7 @@ use serde_json::Value;
 use serde_with::DisplayFromStr;
 use uuid::Uuid;
 
-use crate::action_model::{ProgrammerAction, UserCommand};
+use crate::action_model::{ProgrammerOperation, UserCommand};
 use crate::events::ProgrammerCommand;
 use crate::prelude::Programmer;
 use crate::undo::RestoreProgrammerState;
@@ -229,8 +229,8 @@ fn resolved_programmer_instruction_values(
 /// to connected clients for immediate UI updates.
 pub fn forward_programmer_commands(
     mut events: MessageReader<CommandEnvelope<ProgrammerCommand>>,
-    mut restore_events: MessageReader<EngineActionEnvelope<RestoreProgrammerState>>,
-    mut action_events: MessageReader<EngineActionEnvelope<ProgrammerAction>>,
+    mut restore_events: MessageReader<EngineOperationEnvelope<RestoreProgrammerState>>,
+    mut action_events: MessageReader<EngineOperationEnvelope<ProgrammerOperation>>,
     mut blueprint_changes: MessageReader<BlueprintDefinitionChange>,
     programmer: Res<Programmer>,
     blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
@@ -250,12 +250,12 @@ pub fn forward_programmer_commands(
 
     for event in action_events.read() {
         if matches!(
-            event.action,
-            ProgrammerAction::ClearSelection
-                | ProgrammerAction::ClearValues { .. }
-                | ProgrammerAction::ReleaseValues { .. }
+            event.operation,
+            ProgrammerOperation::ClearSelection
+                | ProgrammerOperation::ClearValues { .. }
+                | ProgrammerOperation::ReleaseValues { .. }
         ) {
-            tracing::debug!("forward_programmer_commands: observed ProgrammerAction");
+            tracing::debug!("forward_programmer_commands: observed ProgrammerOperation");
             should_update = true;
         }
     }

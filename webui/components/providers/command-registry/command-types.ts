@@ -9,12 +9,15 @@
 import type { KeyboardShortcutOptions } from "../../../lib/keyboardShortcuts";
 import type { AppIcon } from "../../ui/icon";
 
-interface CommandExecutionContext {
-  source: "palette" | "shortcut";
+/** Describes what invoked a UI action. */
+export interface UiActionExecutionContext {
+  /** Surface that invoked the action. */
+  source: "palette" | "shortcut" | "keybinding" | "midi" | "osc";
+  /** Originating DOM event, when the action was invoked from the browser. */
   event?: KeyboardEvent | MouseEvent;
 }
 
-export interface CommandAction {
+export interface UiAction {
   id: string;
   name: string;
   description?: string;
@@ -22,13 +25,17 @@ export interface CommandAction {
   shortcutAliases?: string[];
   shortcutOptions?: KeyboardShortcutOptions;
   icon?: AppIcon;
-  execute: (context?: CommandExecutionContext) => void;
+  execute: (context?: UiActionExecutionContext) => void;
   category?: string;
+  /**
+   * Runs from the command palette even while a controller is armed in mapping mode, instead
+   * of binding the armed control to it. Set for actions that steer mapping mode itself.
+   */
+  runsWhileArmed?: boolean;
 }
 
 export interface CommandPaletteContextType {
-  registerCommand: (command: CommandAction) => () => void;
-  unregisterCommand: (id: string) => void;
+  registerAction: (command: UiAction) => () => void;
   showPalette: () => void;
   hidePalette: () => void;
   isOpen: () => boolean;
@@ -37,7 +44,7 @@ export interface CommandPaletteContextType {
 /**
  * Returns every keyboard shortcut that should execute a command.
  */
-export function getCommandShortcutKeys(command: CommandAction): string[] {
+export function getCommandShortcutKeys(command: UiAction): string[] {
   const shortcutKeys = [
     ...(command.shortcut ? [command.shortcut] : []),
     ...(command.shortcutAliases ?? []),

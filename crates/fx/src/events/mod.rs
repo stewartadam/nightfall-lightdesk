@@ -21,7 +21,7 @@ pub use commands::{
     FxStepDraft, FxStepSequenceDraft, StepFxCommand, StepFxCommandResult, StepFxCommandValueSource,
     StepFxDraft,
 };
-pub use playback::{FxPlaybackAction, handle_events, handle_step_fx_playback_commands};
+pub use playback::{FxPlaybackOperation, handle_events, handle_step_fx_playback_commands};
 pub use preview::{
     FxPreviewUpdate, PreviewMaterializedFx, PreviewStepFxDefinition, PreviewStepFxPlayback,
     StepFxPreviewSessionId, StepFxPreviewUpdate, handle_preview_commands,

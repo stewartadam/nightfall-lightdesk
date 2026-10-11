@@ -26,7 +26,7 @@ use uuid::Uuid;
 fn setup_app() -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<ProgrammerCommand>>();
-    app.add_message::<EngineActionEnvelope<BlueprintAction>>();
+    app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
@@ -466,13 +466,13 @@ fn blueprint_capture_expands_overlapping_fixture_and_element_selections() {
 
     let actions = app
         .world_mut()
-        .resource_mut::<bevy_ecs::prelude::Messages<EngineActionEnvelope<BlueprintAction>>>()
+        .resource_mut::<bevy_ecs::prelude::Messages<EngineOperationEnvelope<BlueprintOperation>>>()
         .drain()
         .collect::<Vec<_>>();
     let [action] = actions.as_slice() else {
         panic!("capture should enqueue exactly one Blueprint action");
     };
-    let BlueprintAction::StoreBlueprint(stored) = &action.action;
+    let BlueprintOperation::StoreBlueprint(stored) = &action.operation;
     assert_eq!(
         stored.values.get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
@@ -634,7 +634,7 @@ fn blueprint_capture_rejects_empty_and_conflicting_values() {
     );
     assert!(
         app.world_mut()
-            .resource_mut::<bevy_ecs::prelude::Messages<EngineActionEnvelope<BlueprintAction>>>()
+            .resource_mut::<bevy_ecs::prelude::Messages<EngineOperationEnvelope<BlueprintOperation>>>()
             .drain()
             .next()
             .is_none()
@@ -677,13 +677,13 @@ fn blueprint_capture_retains_fanned_intent() {
 
     let actions = app
         .world_mut()
-        .resource_mut::<bevy_ecs::prelude::Messages<EngineActionEnvelope<BlueprintAction>>>()
+        .resource_mut::<bevy_ecs::prelude::Messages<EngineOperationEnvelope<BlueprintOperation>>>()
         .drain()
         .collect::<Vec<_>>();
     let [action] = actions.as_slice() else {
         panic!("fanned capture should enqueue one Blueprint action");
     };
-    let BlueprintAction::StoreBlueprint(stored) = &action.action;
+    let BlueprintOperation::StoreBlueprint(stored) = &action.operation;
     assert_eq!(stored.values.get(&Attribute::Red), Some(&fan));
 }
 
@@ -724,13 +724,13 @@ fn blueprint_capture_flattens_referenced_programmer_values() {
 
     let actions = app
         .world_mut()
-        .resource_mut::<bevy_ecs::prelude::Messages<EngineActionEnvelope<BlueprintAction>>>()
+        .resource_mut::<bevy_ecs::prelude::Messages<EngineOperationEnvelope<BlueprintOperation>>>()
         .drain()
         .collect::<Vec<_>>();
     let [action] = actions.as_slice() else {
         panic!("referenced capture should enqueue one Blueprint action");
     };
-    let BlueprintAction::StoreBlueprint(stored) = &action.action;
+    let BlueprintOperation::StoreBlueprint(stored) = &action.operation;
     assert_eq!(stored.values, source.values);
     assert_ne!(stored.identifiers.uid, source_uid);
 }

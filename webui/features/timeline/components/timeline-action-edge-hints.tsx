@@ -7,8 +7,8 @@
  */
 
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
-import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
+import type { TimelineActionKind } from "../model/timeline-action-kind";
 import { getMarkerStyle } from "./action";
 
 const EDGE_HINT_BAND_HEIGHT_PX = 10;
@@ -22,7 +22,7 @@ type TimelineActionEdgeHintEdge = "top" | "bottom";
 interface TimelineActionEdgeHint {
   key: string;
   edge: TimelineActionEdgeHintEdge;
-  actionType: types.ActionKind["type"];
+  actionType: TimelineActionKind["type"];
   left: number;
   width: number;
   count: number;
@@ -39,7 +39,7 @@ interface TimelineActionEdgeHintsProps {
 /** Creates a stable grouping key for nearby offscreen action hints. */
 function actionEdgeHintBucketKey(
   edge: TimelineActionEdgeHintEdge,
-  actionType: types.ActionKind["type"],
+  actionType: TimelineActionKind["type"],
   left: number,
 ): string {
   return `${edge}:${actionType}:${Math.round(left / EDGE_HINT_BUCKET_WIDTH_PX)}`;
@@ -48,7 +48,7 @@ function actionEdgeHintBucketKey(
 /** Returns the action type stored on a rendered action, if it is valid. */
 function actionActionTypeFromElement(
   element: HTMLElement,
-): types.ActionKind["type"] | undefined {
+): TimelineActionKind["type"] | undefined {
   const actionType = element.dataset.actionType;
   switch (actionType) {
     case "FireCue":

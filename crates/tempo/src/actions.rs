@@ -6,20 +6,20 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Mappable MIDI and OSC actions for the show tempo.
+//! Bindable actions for the show tempo.
 //!
-//! Each action applies on a press only: a MIDI note-off or a zero OSC value is ignored, so a
-//! pad mapped to tap tempo registers one tap per hit.
+//! Every tempo action is a trigger, so a pad mapped to tap tempo registers one tap per hit and
+//! its release is ignored before it reaches the tempo.
 
 use bevy_app::App;
 use bevy_ecs::prelude::World;
 use nightfall_actions::{
-    ActionDescriptor, ActionId, ActionInput, ActionInvocation, ActionReference, ActionRegistry,
-    ActionSurface, InvocationDispatch, InvocationError,
+    ActionAppExt, ActionDescriptor, ActionInvocation, ActionParameter, ActionParameterKind,
+    ActionReference, InvocationDispatch, InvocationError,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
+use crate::engine::{MAX_BPM, MIN_BPM};
 use crate::{ShowTempo, TempoCommand};
 
 /// Stable action ID for one tap of tap tempo.
@@ -32,6 +32,13 @@ pub const TEMPO_SET_ACTION_ID: &str = "tempo.set";
 pub const TEMPO_MULTIPLY_ACTION_ID: &str = "tempo.multiply";
 /// Stable action ID for nudging the phase by a number of beats.
 pub const TEMPO_NUDGE_ACTION_ID: &str = "tempo.nudge";
+
+/// Category grouping the tempo actions in pickers and the command palette.
+const TEMPO_CATEGORY: &str = "Tempo";
+/// Largest tempo multiplier offered by the action picker, and the inverse of the smallest.
+const MAX_TEMPO_FACTOR: f64 = 16.0;
+/// Largest phase nudge in beats offered by the action picker, in either direction.
+const MAX_NUDGE_BEATS: f64 = 16.0;
 
 /// Arguments for the set-tempo action.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -67,124 +74,98 @@ pub fn tap_tempo_action() -> ActionReference {
         .expect("empty arguments should serialize")
 }
 
-/// Registers every tempo action with the shared action registry.
+/// Registers every tempo action in the shared action catalog.
 pub fn register_tempo_actions(app: &mut App) {
-    let Some(mut registry) = app.world_mut().get_resource_mut::<ActionRegistry>() else {
-        tracing::warn!("ActionRegistry unavailable; tempo actions are not mappable");
-        return;
-    };
-    registry.register::<NoArguments, _>(
-        descriptor(
-            TEMPO_TAP_ACTION_ID,
-            "Tap tempo",
-            json!({ "type": "object" }),
-        ),
-        |world, _: NoArguments, invocation| tap_on_press(world, invocation),
-    );
-    registry.register::<NoArguments, _>(
-        descriptor(
+    app.register_action::<NoArguments, _>(
+        ActionDescriptor::new(TEMPO_TAP_ACTION_ID, "Tap tempo", TEMPO_CATEGORY)
+            .with_description("Registers one beat; repeated taps set the tempo"),
+        |world, _, invocation| tap(world, invocation),
+    )
+    .register_action::<NoArguments, _>(
+        ActionDescriptor::new(
             TEMPO_RESYNC_ACTION_ID,
             "Resync tempo to downbeat",
-            json!({ "type": "object" }),
+            TEMPO_CATEGORY,
+        )
+        .with_description("Eases the bar so its downbeat lands on the press"),
+        |world, _, _| apply(world, TempoCommand::Resync),
+    )
+    .register_action::<TempoSetActionArguments, _>(
+        ActionDescriptor::new(TEMPO_SET_ACTION_ID, "Set tempo", TEMPO_CATEGORY).with_parameter(
+            ActionParameter::required(
+                "bpm",
+                "BPM",
+                ActionParameterKind::Number {
+                    min: MIN_BPM,
+                    max: MAX_BPM,
+                },
+            ),
         ),
-        |world, _: NoArguments, invocation| apply_on_press(world, invocation, TempoCommand::Resync),
-    );
-    registry.register::<TempoSetActionArguments, _>(
-        descriptor(TEMPO_SET_ACTION_ID, "Set tempo", number_schema("bpm")),
-        |world, arguments, invocation| {
-            apply_on_press(world, invocation, TempoCommand::SetBpm(arguments.bpm))
-        },
-    );
-    registry.register::<TempoMultiplyActionArguments, _>(
-        descriptor(
-            TEMPO_MULTIPLY_ACTION_ID,
-            "Multiply tempo",
-            number_schema("factor"),
-        ),
-        |world, arguments, invocation| {
-            apply_on_press(world, invocation, TempoCommand::Multiply(arguments.factor))
-        },
-    );
-    registry.register::<TempoNudgeActionArguments, _>(
-        descriptor(
-            TEMPO_NUDGE_ACTION_ID,
-            "Nudge tempo phase",
-            number_schema("beats"),
-        ),
-        |world, arguments, invocation| {
-            apply_on_press(world, invocation, TempoCommand::Nudge(arguments.beats))
-        },
+        |world, arguments, _| apply(world, TempoCommand::SetBpm(arguments.bpm)),
+    )
+    .register_action::<TempoMultiplyActionArguments, _>(
+        ActionDescriptor::new(TEMPO_MULTIPLY_ACTION_ID, "Multiply tempo", TEMPO_CATEGORY)
+            .with_description("Scales the tempo, e.g. 2 for double time or 0.5 for half time")
+            .with_parameter(ActionParameter::required(
+                "factor",
+                "Factor",
+                ActionParameterKind::Number {
+                    min: 1.0 / MAX_TEMPO_FACTOR,
+                    max: MAX_TEMPO_FACTOR,
+                },
+            )),
+        |world, arguments, _| apply(world, TempoCommand::Multiply(arguments.factor)),
+    )
+    .register_action::<TempoNudgeActionArguments, _>(
+        ActionDescriptor::new(TEMPO_NUDGE_ACTION_ID, "Nudge tempo phase", TEMPO_CATEGORY)
+            .with_description("Shifts the beat phase earlier or later without changing the tempo")
+            .with_parameter(ActionParameter::required(
+                "beats",
+                "Beats",
+                ActionParameterKind::Number {
+                    min: -MAX_NUDGE_BEATS,
+                    max: MAX_NUDGE_BEATS,
+                },
+            )),
+        |world, arguments, _| apply(world, TempoCommand::Nudge(arguments.beats)),
     );
 }
 
-/// Applies a tempo command when the invocation is a press, ignoring releases.
-fn apply_on_press(
-    world: &mut World,
-    invocation: &ActionInvocation,
-    command: TempoCommand,
-) -> Result<InvocationDispatch, InvocationError> {
-    if !is_press(&invocation.input) {
-        return Ok(InvocationDispatch::Succeeded { output: None });
-    }
+/// Validates a tempo command and applies it to the show tempo.
+fn apply(world: &mut World, command: TempoCommand) -> Result<InvocationDispatch, InvocationError> {
     command
         .validate()
         .map_err(|message| InvocationError::new("tempo.invalid_argument", message))?;
-    world
-        .get_resource_mut::<ShowTempo>()
-        .ok_or_else(|| InvocationError::new("tempo.unavailable", "Show tempo is unavailable"))?
-        .apply(&command, None);
-    Ok(InvocationDispatch::Succeeded { output: None })
+    show_tempo(world)?.apply(&command, None);
+    Ok(InvocationDispatch::succeeded())
 }
 
-/// Registers a tap when the invocation is a press, timed from when the surface received
-/// the input so the wait for the next frame does not skew the tempo.
-fn tap_on_press(
+/// Registers a tap, timed from when the surface received the input when it recorded that, so
+/// the wait for the next frame does not skew the tempo.
+fn tap(
     world: &mut World,
     invocation: &ActionInvocation,
 ) -> Result<InvocationDispatch, InvocationError> {
     let Some(received_at) = invocation.received_at else {
-        return apply_on_press(world, invocation, TempoCommand::Tap(None));
+        return apply(world, TempoCommand::Tap(None));
     };
-    if is_press(&invocation.input) {
-        world
-            .get_resource_mut::<ShowTempo>()
-            .ok_or_else(|| InvocationError::new("tempo.unavailable", "Show tempo is unavailable"))?
-            .tap_at(received_at);
-    }
-    Ok(InvocationDispatch::Succeeded { output: None })
+    show_tempo(world)?.tap_at(received_at);
+    Ok(InvocationDispatch::succeeded())
 }
 
-/// Returns whether an input represents a press rather than a release.
-fn is_press(input: &ActionInput) -> bool {
-    match input {
-        ActionInput::Trigger => true,
-        ActionInput::Scalar(value) => *value > 0.0,
-    }
-}
-
-/// Builds a descriptor for a tempo action available from MIDI and OSC.
-fn descriptor(id: &str, label: &str, argument_schema: Value) -> ActionDescriptor {
-    ActionDescriptor {
-        id: ActionId::new(id),
-        label: label.to_string(),
-        allowed_surfaces: vec![ActionSurface::Midi, ActionSurface::Osc],
-        argument_schema,
-    }
-}
-
-/// Builds a JSON Schema for an object with one required number property.
-fn number_schema(property: &str) -> Value {
-    json!({
-        "type": "object",
-        "required": [property],
-        "properties": { property: { "type": "number" } }
-    })
+/// Borrows the show tempo, failing the invocation when the tempo plugin is not installed.
+fn show_tempo(world: &mut World) -> Result<bevy_ecs::world::Mut<'_, ShowTempo>, InvocationError> {
+    world
+        .get_resource_mut::<ShowTempo>()
+        .ok_or_else(|| InvocationError::new("tempo.unavailable", "Show tempo is unavailable"))
 }
 
 #[cfg(test)]
 mod tests {
     use bevy_ecs::message::Messages;
-    use nightfall_actions::{ActionsPlugin, InvocationOutcome, InvocationResult};
+    use nightfall_actions::{
+        ActionInput, ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult,
+    };
 
     use super::*;
 
@@ -209,7 +190,7 @@ mod tests {
             .outcome
     }
 
-    /// Verifies a MIDI press applies the tempo action and a release does not.
+    /// Verifies a MIDI release is ignored and the press applies the tempo action.
     #[test]
     fn set_tempo_applies_on_press_only() {
         let mut app = tempo_action_app();
@@ -221,7 +202,7 @@ mod tests {
 
         invoke(
             &mut app,
-            ActionInvocation::scalar(action.clone(), ActionSurface::Midi, 0.0),
+            ActionInvocation::new(action.clone(), ActionSurface::Midi, ActionInput::Release),
         );
         assert_eq!(
             app.world().resource::<ShowTempo>().snapshot().target_bpm,
@@ -230,7 +211,7 @@ mod tests {
 
         invoke(
             &mut app,
-            ActionInvocation::scalar(action, ActionSurface::Midi, 1.0),
+            ActionInvocation::new(action, ActionSurface::Midi, ActionInput::Press),
         );
         assert_eq!(
             app.world().resource::<ShowTempo>().snapshot().target_bpm,

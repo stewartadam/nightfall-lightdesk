@@ -10,14 +10,14 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_actions::ActionsPlugin;
-use nightfall_clips::{ClipAction, ClipCommand, InstanceIndex, RestoreClipSource};
+use nightfall_clips::{ClipCommand, ClipOperation, InstanceIndex, RestoreClipSource};
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
 #[cfg(feature = "fx-module-host")]
 use nightfall_fx_module::FxModuleRuntimeNotification;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, InstanceCommand, InstanceControlUpdate,
-    PlaybackAction, PlaybackReleaseAction,
+    PlaybackOperation, PlaybackReleaseOperation,
 };
 use nightfall_io::{AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState};
 use nightfall_undo::{UndoPlugin, prelude::*};
@@ -48,9 +48,10 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
-        CONTROL_SET_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
-        DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
-        desk_eval_command_for_action, set_control_action,
+        CONTROL_GO_ACTION_ID, CONTROL_LEVEL_ACTION_ID, ControlActionArguments,
+        MASTER_LEVEL_ACTION_ID, MASTER_OFF_ACTION_ID, MASTER_ON_ACTION_ID, MASTER_TOGGLE_ACTION_ID,
+        MasterActionArguments, control_go_action, control_level_action, master_level_action,
+        master_toggle_action,
     };
     pub use crate::controls::{
         ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
@@ -58,8 +59,8 @@ pub mod prelude {
     pub use crate::desk_command::{
         DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
     };
-    pub use crate::group_command::GroupAction;
     pub use crate::group_command::GroupCommand;
+    pub use crate::group_command::GroupOperation;
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
         MasterCommand, MasterKind, MasterMode, MasterTarget,
@@ -104,15 +105,15 @@ impl Plugin for DeskPlugin {
         automation_actions::register_desk_actions(app);
 
         register_ingress_command::<DeskCommand>(app);
-        register_engine_action::<EvalAction>(app);
+        register_engine_operation::<EvalOperation>(app);
         register_ingress_command::<ClipCommand>(app);
-        register_engine_action::<ClipAction>(app);
+        register_engine_operation::<ClipOperation>(app);
         register_ingress_command::<GroupCommand>(app);
-        app.add_message::<EngineActionEnvelope<GroupAction>>();
+        app.add_message::<EngineOperationEnvelope<GroupOperation>>();
         register_ingress_command::<MasterCommand>(app);
         app.add_message::<masters::MasterUpdate>();
         register_ingress_command::<BlueprintCommand>(app);
-        app.add_message::<EngineActionEnvelope<BlueprintAction>>();
+        app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
         app.add_message::<BlueprintDefinitionChange>();
         app.init_resource::<BlueprintReferenceIndex>();
         app.init_resource::<websocket::LayerStackPublication>();
@@ -128,8 +129,8 @@ impl Plugin for DeskPlugin {
         register_ingress_command::<SettingsCommand>(app);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
         register_ingress_command::<InstanceCommand>(app);
-        register_engine_action::<PlaybackAction>(app);
-        register_engine_action::<PlaybackReleaseAction>(app);
+        register_engine_operation::<PlaybackOperation>(app);
+        register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
         register_ingress_command::<ControlCommand>(app);
         app.add_message::<ControlUpdate>();
@@ -159,6 +160,7 @@ impl Plugin for DeskPlugin {
             websocket::deserialize_control_command,
         );
         register_update_deserializer(app, "ControlUpdate", websocket::deserialize_control_update);
+        register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::DeskAstConverter>(
         );
@@ -190,26 +192,31 @@ impl Plugin for DeskPlugin {
             registry.register::<GroupCommand>();
             registry.register::<MasterCommand>();
             registry.register::<ClipCommand>();
-            registry.register_action::<RestoreClipSource>();
+            registry.register_operation::<RestoreClipSource>();
         }
 
         // Register event dispatchers for undo helper commands
-        register_engine_action::<RestoreClipSource>(app);
+        register_engine_operation::<RestoreClipSource>(app);
 
         // Process scheduled commands before the undo system processes pending commands
         // This ensures commands that have reached their scheduled time are moved to
         // PendingCommandBuffer before undo processing
         app.add_systems(
             Update,
-            systems::scheduled_commands::process_scheduled_commands
-                .after(InputHandling)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+            systems::scheduled_commands::process_scheduled_commands.in_set(PendingCommandExpansion),
         );
         app.add_systems(
             Update,
             systems::event_handlers::desk_events::expand_pending_eval_commands
                 .after(systems::scheduled_commands::process_scheduled_commands)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+                .in_set(DeskEventSet::EvalExpansion)
+                .in_set(PendingCommandExpansion),
+        );
+        app.add_systems(
+            Update,
+            controls::expand_control_go_commands
+                .after(systems::event_handlers::desk_events::expand_pending_eval_commands)
+                .in_set(PendingCommandExpansion),
         );
 
         // Maintain InstanceIndex on spawn/despawn, and sync clip active state

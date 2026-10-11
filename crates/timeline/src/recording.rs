@@ -14,16 +14,16 @@ use std::time::Duration;
 use bevy_ecs::prelude::*;
 #[cfg(test)]
 use nightfall_clips::Clip;
-use nightfall_clips::{ClipAction, ClipLookup, ClipLookupSnapshot};
+use nightfall_clips::{ClipLookup, ClipLookupSnapshot, ClipOperation};
 use nightfall_engine::prelude::{
-    CommandEnvelope, DynEngineActionEnvelope, EngineActionEnvelope, OperationId,
-    PendingEngineActionBuffer, UndoId,
+    CommandEnvelope, DynEngineOperationEnvelope, EngineOperationEnvelope, OperationId,
+    PendingEngineOperationBuffer, UndoId,
 };
 use nightfall_timecode::prelude::{TimecodeEvent, TimecodeGenerator};
 use uuid::Uuid;
 
 use crate::components::MaterializedTimeline;
-use crate::prelude::{Action, ActionKind, TimelineAction, TimelineCommand};
+use crate::prelude::{Action, ActionKind, TimelineCommand, TimelineOperation};
 
 /// Runtime recording state for one timeline.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -230,11 +230,11 @@ impl TimelineRecordingSessions {
 
 /// Writes a detached clip action and marks it as timeline-originated.
 pub fn write_timeline_clip_action(
-    writer: &mut MessageWriter<EngineActionEnvelope<ClipAction>>,
+    writer: &mut MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     origins: &mut TimelineCommandOrigins,
-    action: ClipAction,
+    action: ClipOperation,
 ) {
-    let event = EngineActionEnvelope::detached(action);
+    let event = EngineOperationEnvelope::detached(action);
     origins.mark_clip_operation_id(event.operation_id);
     writer.write(event);
 }
@@ -295,7 +295,7 @@ fn create_recorded_action(position: Duration, recorded_action: &RecordedClipActi
         label: recorded_action.label(),
         position: rounded_duration_millis(position),
         duration: Duration::from_millis(1000),
-        action: recorded_action.action.clone(),
+        action: recorded_action.action.to_reference(),
     }
 }
 
@@ -329,13 +329,13 @@ fn resolve_clip_action(
 }
 
 fn recorded_actions_from_clip_action(
-    action: &ClipAction,
+    action: &ClipOperation,
     clip_lookup: &ClipLookupSnapshot,
 ) -> Vec<RecordedClipAction> {
     let mut actions = Vec::new();
     match action {
-        ClipAction::Start(id_expr)
-        | ClipAction::StartAtTiming {
+        ClipOperation::Start(id_expr)
+        | ClipOperation::StartAtTiming {
             clip_id: id_expr, ..
         } => {
             for id in id_expr.expand() {
@@ -344,8 +344,8 @@ fn recorded_actions_from_clip_action(
                 }
             }
         }
-        ClipAction::Stop(id_expr)
-        | ClipAction::StopAtTiming {
+        ClipOperation::Stop(id_expr)
+        | ClipOperation::StopAtTiming {
             clip_id: id_expr, ..
         } => {
             for id in id_expr.expand() {
@@ -354,7 +354,7 @@ fn recorded_actions_from_clip_action(
                 }
             }
         }
-        ClipAction::Go(id_expr) => {
+        ClipOperation::Go(id_expr) => {
             for id in id_expr.expand() {
                 if let Some(action) =
                     resolve_clip_action(id, ActionKind::AdvanceSequence, clip_lookup)
@@ -363,7 +363,7 @@ fn recorded_actions_from_clip_action(
                 }
             }
         }
-        ClipAction::Back(clip_id) => {
+        ClipOperation::Back(clip_id) => {
             for id in clip_id.expand() {
                 if let Some(action) = resolve_clip_action(id, ActionKind::BackSequence, clip_lookup)
                 {
@@ -371,7 +371,7 @@ fn recorded_actions_from_clip_action(
                 }
             }
         }
-        ClipAction::SetRate { clip_id, rate } => {
+        ClipOperation::SetRate { clip_id, rate } => {
             for id in clip_id.expand() {
                 if let Some(action) = resolve_clip_action(
                     id,
@@ -382,10 +382,10 @@ fn recorded_actions_from_clip_action(
                 }
             }
         }
-        ClipAction::Goto {
+        ClipOperation::Goto {
             clip_id, position, ..
         }
-        | ClipAction::RenderAt {
+        | ClipOperation::RenderAt {
             clip_id, position, ..
         } => {
             for id in clip_id.expand() {
@@ -408,17 +408,17 @@ fn recorded_actions_from_clip_action(
 fn queue_recording_session_insert(
     timeline_id: u32,
     session: TimelineRecordingSession,
-    pending_actions: &mut PendingEngineActionBuffer,
+    pending_actions: &mut PendingEngineOperationBuffer,
 ) {
     if session.actions.is_empty() {
         return;
     }
 
-    pending_actions.push(DynEngineActionEnvelope::with_context(
+    pending_actions.push(DynEngineOperationEnvelope::with_context(
         OperationId::new(),
         None,
         Some(UndoId::new()),
-        Box::new(TimelineAction::InsertRecordedActions {
+        Box::new(TimelineOperation::InsertRecordedActions {
             timeline_id,
             track_id: session.target_track_id,
             actions: session.actions,
@@ -428,7 +428,7 @@ fn queue_recording_session_insert(
 
 /// Record externally originated clip actions into armed timelines.
 pub fn record_timeline_actions_system(
-    mut clip_events: MessageReader<EngineActionEnvelope<ClipAction>>,
+    mut clip_events: MessageReader<EngineOperationEnvelope<ClipOperation>>,
     command_origins: Res<TimelineCommandOrigins>,
     mut recording_states: ResMut<TimelineRecordingStates>,
     mut recording_sessions: ResMut<TimelineRecordingSessions>,
@@ -489,7 +489,7 @@ pub fn record_timeline_actions_system(
             continue;
         }
         recorded_actions.extend(recorded_actions_from_clip_action(
-            &event.action,
+            &event.operation,
             &clip_snapshot,
         ));
     }
@@ -515,10 +515,10 @@ pub fn record_timeline_actions_system(
 pub fn finish_timeline_recording_sessions_system(
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
-    mut timeline_actions: MessageReader<EngineActionEnvelope<TimelineAction>>,
+    mut timeline_actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     mut recording_states: ResMut<TimelineRecordingStates>,
     mut recording_sessions: ResMut<TimelineRecordingSessions>,
-    mut pending_actions: ResMut<PendingEngineActionBuffer>,
+    mut pending_actions: ResMut<PendingEngineOperationBuffer>,
 ) {
     let mut finish_timeline_ids = HashSet::new();
     let mut disable_timeline_ids = HashSet::new();
@@ -560,7 +560,7 @@ pub fn finish_timeline_recording_sessions_system(
     }
 
     for event in timeline_actions.read() {
-        if let TimelineAction::Stop(timeline_id) = event.action {
+        if let TimelineOperation::Stop(timeline_id) = event.operation {
             finish_timeline_ids.insert(timeline_id);
             disable_timeline_ids.insert(timeline_id);
         }
@@ -586,7 +586,9 @@ pub fn clear_timeline_command_origins(mut command_origins: ResMut<TimelineComman
 mod tests {
     use bevy_app::prelude::*;
     use nightfall::prelude::{IdExpr, Identifiers};
-    use nightfall_engine::prelude::{DataProvider, OperationId, PendingEngineActionBuffer, UndoId};
+    use nightfall_engine::prelude::{
+        DataProvider, OperationId, PendingEngineOperationBuffer, UndoId,
+    };
     use nightfall_timecode::TimecodeCommand;
     use nightfall_timecode::prelude::TimecodeGenerator;
     use nightfall_undo::prelude::{UndoManager, UndoRegistry};
@@ -612,14 +614,15 @@ mod tests {
 
     fn setup_recording_app() -> App {
         let mut app = App::new();
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
+        crate::install_timeline_test_actions(&mut app);
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_message::<TimecodeEvent>();
         app.add_message::<CommandEnvelope<TimelineCommand>>();
-        app.add_message::<EngineActionEnvelope<TimelineAction>>();
+        app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
         app.init_resource::<TimelineRecordingStates>();
         app.init_resource::<TimelineRecordingSessions>();
         app.init_resource::<TimelineCommandOrigins>();
-        app.init_resource::<PendingEngineActionBuffer>();
+        app.init_resource::<PendingEngineOperationBuffer>();
         app.init_resource::<UndoManager>();
         app.init_resource::<UndoRegistry>();
         app.insert_resource(DataProvider::<Timeline>::default());
@@ -628,7 +631,7 @@ mod tests {
             .register::<TimelineCommand>();
         app.world_mut()
             .resource_mut::<UndoRegistry>()
-            .register_action::<TimelineAction>();
+            .register_operation::<TimelineOperation>();
         app.add_systems(
             Update,
             (
@@ -690,13 +693,13 @@ mod tests {
     fn finish_recording_and_take_insert(
         app: &mut App,
         command: TimecodeCommand,
-    ) -> Option<TimelineAction> {
+    ) -> Option<TimelineOperation> {
         app.world_mut().write_message(timecode_command(command));
         app.update();
 
         let actions = app
             .world_mut()
-            .resource_mut::<PendingEngineActionBuffer>()
+            .resource_mut::<PendingEngineOperationBuffer>()
             .drain();
         assert!(
             actions.len() <= 1,
@@ -712,15 +715,18 @@ mod tests {
                 "recording persistence should remain independently undoable"
             );
             *action
-                .action
+                .operation
                 .into_any()
-                .downcast::<TimelineAction>()
+                .downcast::<TimelineOperation>()
                 .expect("recording persistence should be a timeline action")
         })
     }
 
     /// Stops recording and returns the queued internal persistence action.
-    fn stop_recording_and_take_insert(app: &mut App, timeline_id: u32) -> Option<TimelineAction> {
+    fn stop_recording_and_take_insert(
+        app: &mut App,
+        timeline_id: u32,
+    ) -> Option<TimelineOperation> {
         finish_recording_and_take_insert(app, TimecodeCommand::StopTimecode(timeline_id))
     }
 
@@ -746,14 +752,14 @@ mod tests {
             .set(42, true, Some("track-1".to_string()));
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Start(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Start(
                 IdExpr::Single(7),
             )));
         app.update();
 
         let command = stop_recording_and_take_insert(&mut app, 42)
             .expect("recording stop should enqueue recorded actions");
-        let TimelineAction::InsertRecordedActions {
+        let TimelineOperation::InsertRecordedActions {
             timeline_id,
             track_id,
             actions,
@@ -766,10 +772,10 @@ mod tests {
         assert_eq!(actions.len(), 1);
         let action = &actions[0];
         assert_eq!(action.position, Duration::from_millis(1250));
-        assert!(matches!(
+        assert_eq!(
             action.action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
     }
 
     #[test]
@@ -792,7 +798,7 @@ mod tests {
         app.update();
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Start(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Start(
                 IdExpr::Single(7),
             )));
         app.update();
@@ -841,7 +847,7 @@ mod tests {
             .set(49, true, Some("track-1".to_string()));
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Start(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Start(
                 IdExpr::Single(8),
             )));
         app.update();
@@ -854,14 +860,14 @@ mod tests {
         assert_eq!(previews[0].timeline_id, 49);
         assert_eq!(previews[0].target_track_id, "track-1");
         assert_eq!(previews[0].actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             previews[0].actions[0].action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
 
         assert!(
             app.world()
-                .resource::<PendingEngineActionBuffer>()
+                .resource::<PendingEngineOperationBuffer>()
                 .is_empty(),
             "recording preview should not enqueue the undoable insert before flush"
         );
@@ -878,7 +884,7 @@ mod tests {
                 label: "Recorded".to_string(),
                 position: Duration::from_millis(100),
                 duration: Duration::from_millis(1000),
-                action: ActionKind::StartClip(Uuid::new_v4()),
+                action: ActionKind::StartClip(Uuid::new_v4()).to_reference(),
             }],
         );
 
@@ -897,14 +903,14 @@ mod tests {
             .set(43, true, None);
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Stop(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Stop(
                 IdExpr::Single(9),
             )));
         app.update();
 
         let command = stop_recording_and_take_insert(&mut app, 43)
             .expect("recording stop should enqueue recorded actions");
-        let TimelineAction::InsertRecordedActions {
+        let TimelineOperation::InsertRecordedActions {
             track_id, actions, ..
         } = command
         else {
@@ -912,10 +918,10 @@ mod tests {
         };
         assert!(track_id.starts_with("recorded-actions-"));
         assert_eq!(actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::StopClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StopClip(clip_uid).to_reference()
+        );
         let recording_states = app.world().resource::<TimelineRecordingStates>();
         assert_eq!(
             recording_states
@@ -939,14 +945,14 @@ mod tests {
             .set(47, true, Some("pending-record-target".to_string()));
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Start(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Start(
                 IdExpr::Single(10),
             )));
         app.update();
 
         let command = stop_recording_and_take_insert(&mut app, 47)
             .expect("recording stop should enqueue recorded actions");
-        let TimelineAction::InsertRecordedActions {
+        let TimelineOperation::InsertRecordedActions {
             track_id, actions, ..
         } = command
         else {
@@ -954,10 +960,10 @@ mod tests {
         };
         assert_eq!(track_id, "pending-record-target");
         assert_eq!(actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
     }
 
     #[test]
@@ -970,11 +976,11 @@ mod tests {
             .set(44, true, None);
 
         let undo_id = UndoId::new();
-        let event = EngineActionEnvelope::with_context(
+        let event = EngineOperationEnvelope::with_context(
             OperationId::new(),
             None,
             Some(undo_id),
-            ClipAction::Go(IdExpr::Single(11)),
+            ClipOperation::Go(IdExpr::Single(11)),
         );
         app.world_mut()
             .resource_mut::<TimelineCommandOrigins>()
@@ -1007,25 +1013,25 @@ mod tests {
             .set(45, true, None);
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Go(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Go(
                 IdExpr::Range { start: 1, end: 2 },
             )));
         app.update();
 
         let command = stop_recording_and_take_insert(&mut app, 45)
             .expect("recording stop should enqueue recorded actions");
-        let TimelineAction::InsertRecordedActions { actions, .. } = command else {
+        let TimelineOperation::InsertRecordedActions { actions, .. } = command else {
             panic!("expected recorded insert command");
         };
         assert_eq!(actions.len(), 2);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::AdvanceSequence(uid) if uid == first_uid
-        ));
-        assert!(matches!(
+            ActionKind::AdvanceSequence(first_uid).to_reference()
+        );
+        assert_eq!(
             actions[1].action,
-            ActionKind::AdvanceSequence(uid) if uid == second_uid
-        ));
+            ActionKind::AdvanceSequence(second_uid).to_reference()
+        );
     }
 
     #[test]
@@ -1050,7 +1056,7 @@ mod tests {
             .set(48, true, Some("track-1".to_string()));
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Start(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Start(
                 IdExpr::Single(12),
             )));
         app.update();
@@ -1058,7 +1064,7 @@ mod tests {
         let command =
             finish_recording_and_take_insert(&mut app, TimecodeCommand::PauseTimecode(48))
                 .expect("recording pause should enqueue recorded actions");
-        let TimelineAction::InsertRecordedActions {
+        let TimelineOperation::InsertRecordedActions {
             timeline_id,
             track_id,
             actions,
@@ -1069,10 +1075,10 @@ mod tests {
         assert_eq!(timeline_id, 48);
         assert_eq!(track_id, "track-1");
         assert_eq!(actions.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             actions[0].action,
-            ActionKind::StartClip(uid) if uid == clip_uid
-        ));
+            ActionKind::StartClip(clip_uid).to_reference()
+        );
         let recording_states = app.world().resource::<TimelineRecordingStates>();
         assert!(
             !recording_states.get(48).is_some_and(|state| state.enabled),
@@ -1102,12 +1108,12 @@ mod tests {
             .set(46, true, Some("track-1".to_string()));
 
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Start(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Start(
                 IdExpr::Single(7),
             )));
         app.update();
         app.world_mut()
-            .write_message(EngineActionEnvelope::detached(ClipAction::Stop(
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::Stop(
                 IdExpr::Single(7),
             )));
         app.update();

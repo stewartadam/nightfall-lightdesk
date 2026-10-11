@@ -23,12 +23,12 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
-    CommandTracker, EngineActionEnvelope, FinishedCommand, ReplyTarget,
+    CommandTracker, EngineOperationEnvelope, FinishedCommand, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::undo::{FixtureSnapshot, ParameterSnapshot, RestoreFixtureSnapshot};
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 use nightfall_io::prelude::*;
 
 /// Installs the command lifecycle resources required by action handlers.
@@ -566,7 +566,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
     let mut app = App::new();
     add_compositor_removal_observers::<Parameter>(&mut app);
     init_command_lifecycle(&mut app);
-    app.add_message::<EngineActionEnvelope<RestoreFixtureSnapshot>>();
+    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.add_systems(
@@ -630,7 +630,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
         }),
     ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(RestoreFixtureSnapshot(
+        .write_message(EngineOperationEnvelope::detached(RestoreFixtureSnapshot(
             FixtureSnapshot {
                 fixture,
                 parameters: vec![ParameterSnapshot {
@@ -1506,8 +1506,8 @@ fn manual_channel_app(value: f32, components: impl Bundle) -> (App, Entity) {
     let mut app = App::new();
     add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
-    app.add_message::<EngineActionEnvelope<DmxAction>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
+    app.add_message::<EngineOperationEnvelope<DmxOperation>>();
     init_command_lifecycle(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(ConsoleDmxUniverses::default());
@@ -1704,8 +1704,8 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     let mut app = App::new();
     add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
-    app.add_message::<EngineActionEnvelope<DmxAction>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
+    app.add_message::<EngineOperationEnvelope<DmxOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
@@ -1822,12 +1822,14 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     const { assert!(MANUAL_ASSERTION_LAYER_PRIORITY.0 > TRANSPORT_INPUT_LAYER_PRIORITY.0) };
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(DmxAction::ReleaseChannels {
-            channels: DmxChannelExpr::Single(DmxChannelRef {
-                universe: 5,
-                address: 13,
-            }),
-        }));
+        .write_message(EngineOperationEnvelope::detached(
+            DmxOperation::ReleaseChannels {
+                channels: DmxChannelExpr::Single(DmxChannelRef {
+                    universe: 5,
+                    address: 13,
+                }),
+            },
+        ));
     app.update();
 
     let parameter = app.world().get::<Parameter>(parameter_entity).unwrap();
@@ -1849,8 +1851,8 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     assert_eq!(parameter.values.current_value, 111.0);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            PlaybackAction::ReleaseParameters {
+        .write_message(EngineOperationEnvelope::detached(
+            PlaybackOperation::ReleaseParameters {
                 scope: PlaybackScope::All,
             },
         ));

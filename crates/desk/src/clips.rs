@@ -8,7 +8,9 @@
 
 //! Desk-owned persistence integration for clip contracts.
 
-pub(crate) use nightfall_clips::{Clip, ClipAction, ClipCommand, ClipSourceRef, MaterializedClip};
+pub(crate) use nightfall_clips::{
+    Clip, ClipCommand, ClipOperation, ClipSourceRef, MaterializedClip,
+};
 
 use crate::object_crud::ObjectCrud;
 

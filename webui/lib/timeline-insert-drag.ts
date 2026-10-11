@@ -6,12 +6,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { ActionKind } from "../types";
-
 export const TIMELINE_INSERT_DRAG_MIME =
   "application/x-nightfall-timeline-insert";
 
-type InsertableActionType = ActionKind["type"];
+/** Timeline action kinds that can be dragged onto a track from another panel. */
+type InsertableActionType =
+  | "FireCue"
+  | "StartClip"
+  | "StopClip"
+  | "AdvanceSequence"
+  | "BackSequence"
+  | "SetClipRate"
+  | "JumpToCue"
+  | "DeskEval";
 
 type TimelineInsertDragSource = "cue" | "clip";
 

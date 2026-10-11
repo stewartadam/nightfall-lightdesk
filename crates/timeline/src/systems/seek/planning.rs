@@ -151,17 +151,16 @@ pub(super) struct TimelineReconstructionPlan {
 pub(super) fn active_replay_start_owners(
     planning_actions: &[TimelinePlanningAction],
     completed_noop_actions: &HashSet<(String, String)>,
-    action_registry: Option<&ActionRegistry>,
 ) -> HashSet<(String, String)> {
     let mut active_start_by_uid: HashMap<Uuid, (String, String)> = HashMap::new();
     let mut ordered_planning_actions = planning_actions.iter().enumerate().collect::<Vec<_>>();
     ordered_planning_actions.sort_by_key(|(index, action)| (action.position, *index));
     for (_, action) in ordered_planning_actions {
-        if let Some(clip_uid) = timeline_stop_clip_uid(&action.action, action_registry) {
+        if let Some(clip_uid) = timeline_stop_clip_uid(&action.action) {
             active_start_by_uid.remove(&clip_uid);
             continue;
         }
-        let Some(clip_uid) = timeline_start_clip_uid(&action.action, action_registry) else {
+        let Some(clip_uid) = timeline_start_clip_uid(&action.action) else {
             continue;
         };
         active_start_by_uid.insert(
@@ -239,7 +238,7 @@ pub(super) fn plan_timeline_reconstruction(
             (
                 track.id.clone(),
                 action.id.clone(),
-                action.action.clone(),
+                action.kind(action_registry),
                 action.position,
                 action.duration,
             )
@@ -262,7 +261,7 @@ pub(super) fn plan_timeline_reconstruction(
     let clip_uid_by_start_owner = planning_actions
         .iter()
         .filter_map(|action| {
-            timeline_start_clip_uid(&action.action, action_registry).map(|clip_uid| {
+            timeline_start_clip_uid(&action.action).map(|clip_uid| {
                 (
                     (action.track_id.clone(), action.action_id.clone()),
                     clip_uid,
@@ -272,35 +271,20 @@ pub(super) fn plan_timeline_reconstruction(
         .collect::<HashMap<_, _>>();
     let clip_uid_by_owner = planning_actions
         .iter()
-        .filter_map(|action| match action.action {
+        .filter_map(|action| match &action.action {
             ActionKind::StartClip(clip_uid)
             | ActionKind::AdvanceSequence(clip_uid)
             | ActionKind::BackSequence(clip_uid) => Some((
                 (action.track_id.clone(), action.action_id.clone()),
-                clip_uid,
+                *clip_uid,
             )),
             ActionKind::SetClipRate { uid, .. } | ActionKind::JumpToCue { uid, .. } => {
-                Some(((action.track_id.clone(), action.action_id.clone()), uid))
+                Some(((action.track_id.clone(), action.action_id.clone()), *uid))
             }
-            ActionKind::FireCue(_) | ActionKind::StopClip(_) | ActionKind::DeskEval(_) => None,
-            ActionKind::RegisteredAction(_) => {
-                normalized_registered_action_kind(&action.action, action_registry)
-                    .and_then(|action| match action {
-                        ActionKind::StartClip(clip_uid)
-                        | ActionKind::AdvanceSequence(clip_uid)
-                        | ActionKind::BackSequence(clip_uid) => Some(clip_uid),
-                        ActionKind::SetClipRate { uid, .. } | ActionKind::JumpToCue { uid, .. } => {
-                            Some(uid)
-                        }
-                        _ => None,
-                    })
-                    .map(|clip_uid| {
-                        (
-                            (action.track_id.clone(), action.action_id.clone()),
-                            clip_uid,
-                        )
-                    })
-            }
+            ActionKind::FireCue(_)
+            | ActionKind::StopClip(_)
+            | ActionKind::DeskEval(_)
+            | ActionKind::RegisteredAction(_) => None,
         })
         .collect::<HashMap<_, _>>();
     let source_by_clip_uid = exec_query
@@ -361,7 +345,6 @@ pub(super) fn plan_timeline_reconstruction(
         timeline_position,
         planning_actions.clone(),
         &planner_resolver,
-        action_registry,
     );
     let evaluated_timeline_state = timeline_plan.evaluate();
     let completed_noop_actions = evaluated_timeline_state
@@ -477,7 +460,7 @@ pub(super) fn plan_timeline_reconstruction(
         })
         .collect::<HashSet<_>>();
     let active_start_owners =
-        active_replay_start_owners(&planning_actions, &completed_noop_actions, action_registry);
+        active_replay_start_owners(&planning_actions, &completed_noop_actions);
     let active_start_positions =
         active_start_positions_by_owner(&planning_actions, &active_start_owners);
     let timeline_start_clip_owners = timeline
@@ -486,7 +469,7 @@ pub(super) fn plan_timeline_reconstruction(
         .iter()
         .flat_map(|track| {
             track.actions.iter().filter_map(|action| {
-                matches!(action.action, ActionKind::StartClip(_))
+                matches!(action.kind(action_registry), ActionKind::StartClip(_))
                     .then_some((track.id.clone(), action.id.clone()))
             })
         })
@@ -528,7 +511,7 @@ mod tests {
         let completed_noop_actions = HashSet::from([completed_owner]);
 
         assert!(
-            active_replay_start_owners(&planning_actions, &completed_noop_actions, None).is_empty(),
+            active_replay_start_owners(&planning_actions, &completed_noop_actions).is_empty(),
             "completed start actions should not be left for live replay"
         );
     }

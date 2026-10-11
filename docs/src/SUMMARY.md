@@ -7,6 +7,7 @@
 - [Show tempo and tap tempo](user-guide/tempo.md)
 - [Color Paths](user-guide/color-paths.md)
 - [Basic command syntax](user-guide/commands.md)
+- [Controllers and keybindings](user-guide/controller-mapping.md)
 - [Panel guide](user-guide/panels/index.md)
   - [Patch](user-guide/panels/patch.md)
   - [Fixture Library](user-guide/panels/fixture-library.md)
@@ -46,3 +47,4 @@
 
 - [CI builds](developer-reference/ci-builds.md)
 - [GDTF regression testing](developer-reference/gdtf-regression-testing.md)
+- [Control layers](developer-reference/control-layers.md)

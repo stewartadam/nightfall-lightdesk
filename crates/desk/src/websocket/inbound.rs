@@ -297,6 +297,16 @@ pub fn deserialize_control_command(
     Ok(())
 }
 
+/// Deserializes and dispatches an untracked master level update from JSON.
+pub fn deserialize_master_update(world: &mut World, json: Value) -> Result<(), String> {
+    let update: crate::masters::MasterUpdate =
+        serde_json::from_value(json).map_err(|e| format!("Failed to parse MasterUpdate: {}", e))?;
+
+    world.write_message(update);
+
+    Ok(())
+}
+
 /// Deserializes and dispatches an untracked control update from JSON.
 pub fn deserialize_control_update(world: &mut World, json: Value) -> Result<(), String> {
     let update: crate::controls::ControlUpdate = serde_json::from_value(json)

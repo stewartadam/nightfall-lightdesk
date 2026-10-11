@@ -146,6 +146,14 @@ impl Master {
         }
     }
 
+    /// Converts a stored level back into the control position that produces it.
+    pub fn control_percent_from_level(kind: MasterKind, level_percent: f32) -> f32 {
+        match kind {
+            MasterKind::InhibitiveIntensity => level_percent.clamp(0.0, 100.0),
+            MasterKind::PlaybackRate => (level_percent / 2.0).clamp(0.0, 100.0),
+        }
+    }
+
     /// Returns whether this master should affect output in the current frame.
     pub fn is_active(&self) -> bool {
         match self.mode {
@@ -192,12 +200,27 @@ pub enum MasterCommand {
         /// Master numeric ID.
         id: u32,
     },
+    /// Commits a level reached through untracked updates as one undoable change.
+    ///
+    /// Continuous drags stream `MasterUpdate::SetLevel`; on release the client commits the
+    /// final level with the level from before the drag so undo restores the starting point.
+    CommitMasterLevel {
+        /// Master numeric ID.
+        id: u32,
+        /// Level in percent before the drag began.
+        from_percent: f32,
+        /// Final level in percent.
+        level_percent: f32,
+    },
 }
 
 impl IngressCommand for MasterCommand {}
 
 /// High-frequency master state changes produced by local control surfaces.
-#[derive(Clone, Debug, Message)]
+#[derive(Clone, Debug, Serialize, Deserialize, Message)]
+#[typeshare::typeshare]
+#[serde(tag = "type", content = "data")]
+#[serde(deny_unknown_fields)]
 pub enum MasterUpdate {
     /// Set a master's level without creating a user-command lifecycle.
     SetLevel {
@@ -265,11 +288,12 @@ pub fn handle_master_commands(
         }
 
         let result = match &command {
-            MasterCommand::SetMasterLevel { id, level_percent } => {
-                update_master_by_id(*id, &mut master_data_provider, |master| {
-                    master.level_percent = clamp_master_level(master.kind, *level_percent);
-                })
-            }
+            MasterCommand::SetMasterLevel { id, level_percent }
+            | MasterCommand::CommitMasterLevel {
+                id, level_percent, ..
+            } => update_master_by_id(*id, &mut master_data_provider, |master| {
+                master.level_percent = clamp_master_level(master.kind, *level_percent);
+            }),
             MasterCommand::SetMasterMode { id, mode } => {
                 update_master_by_id(*id, &mut master_data_provider, |master| {
                     master.mode = mode.clone();
@@ -691,6 +715,43 @@ mod tests {
             .drain()
             .next()
             .expect("master command should return a terminal result")
+    }
+
+    /// Verifies committing a dragged level applies the final level through the command path.
+    #[test]
+    fn commit_master_level_applies_final_level() {
+        let mut app = master_command_app();
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(master(
+                1,
+                MasterTarget::Fixtures(FixtureMasterTarget::All),
+                80.0,
+            ))
+            .expect("master should store");
+        submit_master_command(
+            &mut app,
+            MasterCommand::CommitMasterLevel {
+                id: 1,
+                from_percent: 20.0,
+                level_percent: 80.0,
+            },
+        );
+
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<DataProvider<Master>>()
+                .from_id(1)
+                .expect("master should remain stored")
+                .level_percent,
+            80.0
+        );
+        assert!(matches!(
+            take_master_result(&mut app).outcome,
+            CommandOutcome::Succeeded { .. }
+        ));
     }
 
     /// Verifies master level mutation is visible before terminal success.

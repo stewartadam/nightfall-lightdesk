@@ -40,6 +40,7 @@ mod storage;
 mod systems;
 mod timeline;
 mod timeline_events;
+mod transport;
 mod undo;
 pub mod websocket;
 
@@ -60,9 +61,14 @@ pub mod prelude {
         TimelineLookaheadActionStatuses, TimelineLookaheadMode, TimelineLoopRange, TimelineMarker,
         TimelineNondeterministicSeekBehavior, TimelineRegion, TimelineScrollMode,
         TimelineSeekBehavior, TimelineSelection, TimelineState, TimelineStopBehavior,
-        TimelineTriggerMode, Track,
+        TimelineTriggerMode, Track, validate_timeline_action,
     };
-    pub use crate::{TimelineAction, TimelineCommand};
+    pub use crate::transport::{
+        TIMELINE_FIRE_CUE_ACTION_ID, TIMELINE_PAUSE_ACTION_ID, TIMELINE_PLAY_ACTION_ID,
+        TIMELINE_TOGGLE_PLAYBACK_ACTION_ID, TimelineActionArguments, TimelineFireCueArguments,
+        fire_cue_action, timeline_transport_action,
+    };
+    pub use crate::{TimelineCommand, TimelineOperation};
 }
 
 /// Resource controlling process-wide timeline audio output.
@@ -125,7 +131,7 @@ impl Plugin for TimelinePlugin {
         #[cfg(not(feature = "http"))]
         let _ = self.http_enabled;
         register_ingress_command::<TimelineCommand>(app);
-        register_engine_action::<TimelineAction>(app);
+        register_engine_operation::<TimelineOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimelineAstConverter,
         >();
@@ -158,7 +164,7 @@ impl Plugin for TimelinePlugin {
             .register::<TimelineCommand>();
         app.world_mut()
             .resource_mut::<UndoRegistry>()
-            .register_action::<TimelineAction>();
+            .register_operation::<TimelineOperation>();
         #[cfg(feature = "http")]
         if self.http_enabled {
             app.world_mut()
@@ -192,6 +198,14 @@ impl Plugin for TimelinePlugin {
             )
                 .chain()
                 .after(EventHandling),
+        );
+
+        transport::register_timeline_actions(app);
+        app.add_systems(
+            Update,
+            transport::expand_timeline_transport_commands
+                .after(DeskEventSet::EvalExpansion)
+                .in_set(PendingCommandExpansion),
         );
 
         // WebSocket forwarding and sends owned by timeline plugin
@@ -228,6 +242,15 @@ pub enum TimelineCommand {
 
     /// Deactivate a timeline
     StopTimeline(u32),
+
+    /// Start playback of a timeline and its linked timecode, honoring trigger mode and loop.
+    PlayTimeline(u32),
+
+    /// Pause playback of a timeline and its linked timecode.
+    PauseTimeline(u32),
+
+    /// Play a paused timeline or pause a playing one.
+    TogglePlayback(u32),
 
     /// Store a timeline object
     StoreTimeline(Timeline),
@@ -398,7 +421,7 @@ impl IngressCommand for TimelineCommand {}
 
 /// Concrete internal runtime control for materialized timelines.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum TimelineAction {
+pub enum TimelineOperation {
     /// Activate a materialized timeline by numeric identifier.
     Start(u32),
     /// Deactivate a materialized timeline by numeric identifier.
@@ -414,4 +437,11 @@ pub enum TimelineAction {
     },
 }
 
-impl EngineAction for TimelineAction {}
+impl EngineOperation for TimelineOperation {}
+
+/// Registers the desk and timeline actions that timeline tests resolve stored references with.
+#[cfg(test)]
+pub(crate) fn install_timeline_test_actions(app: &mut App) {
+    nightfall_desk::automation_actions::register_desk_actions(app);
+    transport::register_timeline_actions(app);
+}

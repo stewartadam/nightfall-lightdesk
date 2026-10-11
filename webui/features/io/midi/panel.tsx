@@ -38,26 +38,71 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
-import { engineRuntime } from "../../../lib/engine-runtime";
-import { setStoreAction } from "../../../lib/nanostore-action";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   midiDevices,
   midiLastEvent,
+  midiMappingDiagnostics,
   midiMappings,
 } from "../../../state/appStores";
-import type { MidiMapping } from "../../../types";
 import {
-  cloneMidiAction,
-  formatMidiAction,
-  parseMidiAction,
-} from "./model/action-format";
+  ActionInputKind,
+  type ActionReference,
+  ActionSurface,
+  ControlBehavior,
+  type InvocationError,
+  type MidiMapping,
+} from "../../../types";
+import {
+  ActionPicker,
+  findCatalogEntry,
+  formatActionReference,
+  useActionTargetNames,
+  useBindableActionCatalog,
+} from "../../actions";
+import { BehaviorSelect } from "../components/behavior-select";
+import {
+  actionBehaviors,
+  actionSupportsBehavior,
+  behaviorCell,
+  behaviorFilterText,
+  editedBehavior,
+} from "../model/binding-behaviors";
+import {
+  editedMidiDevice,
+  formatBehavior,
+  midiDeviceCell,
+  midiMappingFromEvent,
+  midiSourceLabel,
+  midiSourceNumber,
+  withMidiChannel,
+  withMidiNumber,
+} from "../model/controller-mapping-builders";
+import {
+  announceReplacedMappings,
+  deleteMidiMapping,
+  upsertMidiMapping,
+} from "../model/controller-mappings";
+import {
+  diagnosticsByMapping,
+  mappingStatusCell,
+  mappingStatusText,
+} from "../model/mapping-diagnostics";
+
+/** Input kinds a MIDI control can drive: notes as buttons, controllers as faders or buttons. */
+const MIDI_INPUT_KINDS = [
+  ActionInputKind.Trigger,
+  ActionInputKind.Momentary,
+  ActionInputKind.Absolute,
+];
 
 export interface MidiInputPanelProps extends BasePanelComponentProps {}
 
 interface MidiMappingRow {
   mapping: MidiMapping;
   index: number;
+  /** Why the mapping cannot currently invoke its action, when the backend diagnosed it. */
+  error?: InvocationError;
 }
 
 const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
@@ -69,53 +114,91 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     ...alwaysVisibleColumnMeta("Identity", "Device"),
   },
   {
+    title: "Status",
+    id: "status",
+    width: 200,
+    filter: { value: (row) => mappingStatusText(row.error) },
+    ...columnVisibilityMeta("Binding", "Status"),
+  },
+  {
+    title: "Control",
+    id: "control",
+    width: 130,
+    filter: { value: (row) => midiSourceLabel(row.mapping.source) },
+    ...columnVisibilityMeta("Binding", "Control"),
+  },
+  {
     title: "Channel",
     id: "channel",
     width: 80,
-    filter: { kind: "number", value: (row) => row.mapping.channel },
+    filter: {
+      kind: "number",
+      value: (row) => row.mapping.source.data.channel + 1,
+    },
     ...columnVisibilityMeta("Binding", "Channel"),
   },
   {
-    title: "Note",
-    id: "note",
+    title: "Number",
+    id: "number",
     width: 80,
-    filter: { kind: "number", value: (row) => row.mapping.note },
-    ...columnVisibilityMeta("Binding", "Note"),
+    filter: {
+      kind: "number",
+      value: (row) => midiSourceNumber(row.mapping.source),
+    },
+    ...columnVisibilityMeta("Binding", "Number"),
   },
   {
-    title: "Velocity",
-    id: "velocity",
-    width: 80,
-    filter: { kind: "number", value: (row) => row.mapping.velocity },
-    ...columnVisibilityMeta("Binding", "Velocity"),
+    title: "Behavior",
+    id: "behavior",
+    width: 130,
+    filter: {
+      value: (row) => behaviorFilterText(formatBehavior(row.mapping.behavior)),
+    },
+    ...columnVisibilityMeta("Binding", "Behavior"),
   },
   {
     title: "Action",
     id: "action",
-    width: 200,
-    filter: { value: (row) => formatMidiAction(row.mapping.action) },
+    width: 240,
+    filter: { value: (row) => row.mapping.action.id },
     ...columnVisibilityMeta("Binding", "Action"),
   },
 ];
 
-/** Deep clone a mapping to ensure it's a plain object that can be sent via postMessage */
-function cloneMapping(m: MidiMapping): MidiMapping {
-  return {
-    device_name: m.device_name,
-    channel: m.channel,
-    note: m.note,
-    velocity: m.velocity,
-    action: cloneMidiAction(m.action),
-  };
-}
-
+/** Renders MIDI devices, the last received message, and editable controller mappings. */
 export default function MidiInputPanel(props: MidiInputPanelProps) {
   const $midiDevices = useStore(midiDevices);
   const $midiMappings = useStore(midiMappings);
   const $midiLastEvent = useStore(midiLastEvent);
+  const $midiMappingDiagnostics = useStore(midiMappingDiagnostics);
+  const $actionCatalog = useBindableActionCatalog();
+  const targetNames = useActionTargetNames();
+  const [lastEventAction, setLastEventAction] = createSignal<
+    ActionReference | undefined
+  >();
+  const [chosenBehavior, setLastEventBehavior] = createSignal(
+    ControlBehavior.Press,
+  );
+  /** Returns the catalog entry of the action chosen for the last input. */
+  const lastEventEntry = createMemo(() => {
+    const action = lastEventAction();
+    return action ? findCatalogEntry($actionCatalog(), action.id) : undefined;
+  });
+  /** Returns the chosen behavior, or Press when the chosen action does not support it. */
+  const lastEventBehavior = () =>
+    actionBehaviors(lastEventEntry()).includes(chosenBehavior())
+      ? chosenBehavior()
+      : ControlBehavior.Press;
   const panelId = props.id;
+  /** Names of the connected MIDI devices, offered in each Device cell. */
+  const connectedDeviceNames = createMemo(() =>
+    $midiDevices().map((device) => device.name),
+  );
+  /** Devices the show's mappings listen to, offered even while unplugged. */
+  const mappedDeviceNames = createMemo(() => [
+    ...new Set($midiMappings().map((mapping) => mapping.device_name)),
+  ]);
 
-  // Row selection state using shared helpers
   const [selection, setSelection] = createSignal<GridSelection>(
     emptyGridSelection(),
   );
@@ -125,15 +208,22 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   const displayColumns = createMemo(() => {
     return filterVisibleColumns(columns, panelId);
   });
-  const mappingRows = createMemo<MidiMappingRow[]>(() =>
-    $midiMappings().map((mapping, index) => ({ mapping, index })),
-  );
+  /** Pairs each mapping with its backend diagnostic, if it cannot currently run. */
+  const mappingRows = createMemo<MidiMappingRow[]>(() => {
+    const errorFor = diagnosticsByMapping($midiMappingDiagnostics());
+    return $midiMappings().map((mapping, index) => ({
+      mapping,
+      index,
+      error: errorFor(mapping.id),
+    }));
+  });
   const filterColumns = createMemo(() => filterColumnsFromMetadata(columns));
   const { clearSelection } = createRowSelectionHelpers(selection, setSelection);
   /** Returns MIDI mapping rows targeted by row markers, active cells, or cell ranges. */
   const selectedRows = (): number[] =>
     getEditTargetRowIndices(selection(), displayRows().length);
 
+  /** Clears both the tracked row selection and the grid's visible selection. */
   const clearGridSelection = () => {
     clearSelection();
     setGridSelection(emptyGridSelection());
@@ -153,50 +243,73 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     createKeyedDataGridCellProvider({
       rows: displayRows(),
       columns: displayColumns(),
-      rowKey: (row) => row.index,
+      rowKey: (row) => row.mapping.id,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row, column }): GridCell => {
-        const rowData = row.mapping;
-        const colId = column.id;
-        switch (colId) {
+        const mapping = row.mapping;
+        switch (column.id) {
           case "device_name":
+            return midiDeviceCell(
+              mapping.device_name,
+              connectedDeviceNames(),
+              mappedDeviceNames(),
+            );
+          case "control": {
+            const label = midiSourceLabel(mapping.source);
             return {
               kind: GridCellKind.Text,
-              allowOverlay: true,
-              displayData: rowData.device_name,
-              data: rowData.device_name,
+              allowOverlay: false,
+              readonly: true,
+              displayData: label,
+              data: label,
             };
+          }
           case "channel":
             return {
               kind: GridCellKind.Number,
-              data: rowData.channel,
-              displayData: String(rowData.channel),
+              data: mapping.source.data.channel + 1,
+              displayData: String(mapping.source.data.channel + 1),
               allowOverlay: true,
             };
-          case "note":
+          case "number": {
+            const value = midiSourceNumber(mapping.source);
+            if (value === undefined) {
+              return {
+                kind: GridCellKind.Text,
+                data: "",
+                displayData: "",
+                allowOverlay: false,
+                readonly: true,
+              };
+            }
             return {
               kind: GridCellKind.Number,
-              data: rowData.note,
-              displayData: String(rowData.note),
-              allowOverlay: true,
-            };
-          case "velocity":
-            return {
-              kind: GridCellKind.Text,
-              allowOverlay: true,
-              displayData:
-                rowData.velocity === null ? "any" : String(rowData.velocity),
-              data: rowData.velocity === null ? "" : String(rowData.velocity),
-            };
-          case "action": {
-            const actionStr = formatMidiAction(rowData.action);
-            return {
-              kind: GridCellKind.Text,
-              data: actionStr,
-              displayData: actionStr,
+              data: value,
+              displayData: String(value),
               allowOverlay: true,
             };
           }
+          case "behavior":
+            return behaviorCell(
+              formatBehavior(mapping.behavior),
+              findCatalogEntry($actionCatalog(), mapping.action.id),
+            );
+          case "action": {
+            const label = formatActionReference(
+              mapping.action,
+              $actionCatalog(),
+              targetNames,
+            );
+            return {
+              kind: GridCellKind.Text,
+              data: label,
+              displayData: label,
+              allowOverlay: false,
+              readonly: true,
+            };
+          }
+          case "status":
+            return mappingStatusCell(row.error);
           default:
             return {
               kind: GridCellKind.Loading,
@@ -207,148 +320,79 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     }),
   );
 
-  /** Handle cell edits */
+  /**
+   * Applies one edited cell to every targeted mapping and upserts each result. A behavior
+   * skips rows whose action does not support it.
+   */
   const handleCellEdited = (cell: Item, newValue: GridCell) => {
     const [col, row] = cell;
     const colId = displayColumns()[col]?.id;
-    const mappings = $midiMappings();
     const visibleRows = displayRows();
-
     if (row >= visibleRows.length) return;
 
-    // Determine which rows to edit based on selection
     const rowsToEdit = getRowsToEdit(
       gridSelection(),
       col,
       row,
       visibleRows.length,
     );
-
-    /** Extract value based on cell kind */
-    const getValue = (): string | number | undefined => {
-      if (newValue.kind === GridCellKind.Text) {
-        return newValue.data;
-      }
-      if (newValue.kind === GridCellKind.Number) {
-        return newValue.data;
-      }
-      return undefined;
-    };
-
-    const value = getValue();
-
-    // Build updated mappings array (deep clone to ensure plain objects for postMessage)
-    const currentMappings = mappings.map(cloneMapping);
-
-    // Apply edit to all target rows
+    const behavior =
+      colId === "behavior" ? editedBehavior(newValue) : undefined;
     for (const targetRow of rowsToEdit) {
-      const originalIndex = visibleRows[targetRow]?.index;
-      if (originalIndex === undefined) continue;
-      const rowData = { ...currentMappings[originalIndex] };
-
-      switch (colId) {
-        case "device_name":
-          if (newValue.kind !== GridCellKind.Text) continue;
-          rowData.device_name = String(value ?? "");
-          break;
-        case "channel":
-          if (newValue.kind !== GridCellKind.Number) continue;
-          rowData.channel = Number(value ?? 144);
-          break;
-        case "note":
-          if (newValue.kind !== GridCellKind.Number) continue;
-          rowData.note = Number(value ?? 0);
-          break;
-        case "velocity": {
-          if (newValue.kind !== GridCellKind.Text) continue;
-          const val = String(value ?? "").trim();
-          rowData.velocity =
-            val === "" || val === "any" ? undefined : Number(val);
-          break;
-        }
-        case "action": {
-          if (newValue.kind !== GridCellKind.Text) continue;
-          const parsed = parseMidiAction(String(value ?? ""));
-          if (parsed) {
-            rowData.action = parsed;
-          }
-          break;
-        }
+      const mapping = visibleRows[targetRow]?.mapping;
+      if (!mapping) continue;
+      if (
+        behavior &&
+        !actionSupportsBehavior(
+          findCatalogEntry($actionCatalog(), mapping.action.id),
+          behavior,
+        )
+      ) {
+        continue;
       }
-
-      currentMappings[originalIndex] = cloneMapping(rowData);
+      const edited = editedMapping(mapping, colId, newValue);
+      if (edited) void upsertMidiMapping(edited).then(announceReplacedMappings);
     }
-
-    // Optimistically update the store immediately for instant UI feedback
-    setStoreAction(midiMappings, "Update MIDI Mappings", currentMappings);
-
-    // Send update to backend
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
   };
 
-  /** Delete selected mappings */
+  /** Deletes every selected mapping by ID. */
   const deleteSelected = () => {
-    const indices = selectedRows();
-    if (indices.length === 0) return;
-
-    // Sort indices in descending order so we delete from the end first
     const visibleRows = displayRows();
-    const sortedIndices = indices
-      .map((index) => visibleRows[index]?.index)
-      .filter((index): index is number => index !== undefined)
-      .sort((a, b) => b - a);
-
-    // Build new mappings array without the selected rows
-    const currentMappings = $midiMappings().map(cloneMapping);
-    for (const idx of sortedIndices) {
-      currentMappings.splice(idx, 1);
-    }
-
+    const ids = selectedRows()
+      .map((index) => visibleRows[index]?.mapping.id)
+      .filter((id): id is string => id !== undefined);
     clearGridSelection();
-
-    // Send update to backend
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+    for (const id of ids) void deleteMidiMapping(id);
   };
 
-  /** Apply last event to a new mapping row */
+  /** Binds, with the chosen behavior, the control that sent the last MIDI message to the chosen action. */
   const applyLastEvent = () => {
     const event = $midiLastEvent();
-    if (!event) return;
+    const action = lastEventAction();
+    if (!event || !action) return;
+    const mapping = midiMappingFromEvent(event, action, lastEventBehavior());
+    if (mapping) void upsertMidiMapping(mapping).then(announceReplacedMappings);
+  };
 
-    // Deep clone existing mappings to ensure plain objects for postMessage
-    const currentMappings = $midiMappings().map(cloneMapping);
-    currentMappings.push({
-      device_name: event.device,
-      channel: event.channel,
-      note: event.note,
-      velocity: event.velocity,
-      action: parseMidiAction("StartClip(1)")!,
-    });
+  /** Returns the single selected mapping row, when exactly one is selected. */
+  const selectedMapping = createMemo(() => {
+    const rows = selectedRows();
+    if (rows.length !== 1) return undefined;
+    return displayRows()[rows[0]];
+  });
 
-    engineRuntime.sendCommand({
-      module: "MidiCommand",
-      command: {
-        type: "StoreMappings",
-        data: currentMappings,
-      },
-    });
+  /** Replaces the action of the selected mapping. */
+  const updateSelectedAction = (action: ActionReference) => {
+    const row = selectedMapping();
+    if (row) {
+      void upsertMidiMapping({ ...row.mapping, action }).then(
+        announceReplacedMappings,
+      );
+    }
   };
 
   return (
     <div class="flex flex-col h-full">
-      {/* Device List Section */}
       <div class="p-3 border-b border-gray-700">
         <h3 class="text-sm font-medium text-gray-300 mb-2">
           Connected MIDI Devices
@@ -370,27 +414,53 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           </div>
         </Show>
 
-        {/* Last Event Quick-Add */}
         <Show when={$midiLastEvent()}>
-          <div class="mt-3 p-2 bg-gray-800 rounded border border-gray-600">
-            <div class="flex items-center justify-between">
-              <div class="text-xs text-gray-400">
-                Last Input:{" "}
-                <span class="font-mono text-green-400">
-                  {$midiLastEvent()?.device} Ch:{$midiLastEvent()?.channel}{" "}
-                  Note:
-                  {$midiLastEvent()?.note} Vel:{$midiLastEvent()?.velocity}
-                </span>
+          {(event) => (
+            <div class="mt-3 p-2 bg-gray-800 rounded border border-gray-600">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="text-xs text-gray-400">
+                  Last Input:{" "}
+                  <span class="font-mono text-green-400">
+                    {event().device}{" "}
+                    {event().source
+                      ? midiSourceLabel(event().source!)
+                      : `Status ${event().channel}`}{" "}
+                    Value {event().velocity}
+                  </span>
+                </div>
+                <Show when={event().source}>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <ActionPicker
+                      label="Action for last input"
+                      value={lastEventAction()}
+                      inputKinds={MIDI_INPUT_KINDS}
+                      surface={ActionSurface.Midi}
+                      includeUiActions
+                      onChange={setLastEventAction}
+                      onIncomplete={() => setLastEventAction(undefined)}
+                    />
+                    <BehaviorSelect
+                      value={lastEventBehavior()}
+                      behaviors={actionBehaviors(lastEventEntry())}
+                      inputKind={lastEventEntry()?.descriptor.input}
+                      onChange={setLastEventBehavior}
+                    />
+                    <Button
+                      size="compact"
+                      variant="primary"
+                      disabled={!lastEventAction()}
+                      onClick={applyLastEvent}
+                    >
+                      Add Mapping
+                    </Button>
+                  </div>
+                </Show>
               </div>
-              <Button size="compact" variant="primary" onClick={applyLastEvent}>
-                Add Mapping
-              </Button>
             </div>
-          </div>
+          )}
         </Show>
       </div>
 
-      {/* Mappings Section */}
       <div class="flex-1 flex flex-col min-h-0">
         <PanelToolbar
           leftClass="min-w-0 flex-1"
@@ -399,8 +469,8 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-300">MIDI Mappings</h3>
               <p class="truncate text-xs text-gray-500">
-                Edit cells to configure. Action format: StartClip(1),
-                StopClip(2), TapTempo, SetTempo(128), etc.
+                Edit cells to change the control. Select one mapping to change
+                its action.
               </p>
             </div>
           }
@@ -432,6 +502,22 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           }
         />
 
+        <Show when={selectedMapping()}>
+          {(row) => (
+            <div class="flex items-center gap-2 border-b border-gray-700 px-3 py-2">
+              <span class="text-xs text-gray-400">Selected action</span>
+              <ActionPicker
+                label="Selected mapping action"
+                value={row().mapping.action}
+                inputKinds={MIDI_INPUT_KINDS}
+                surface={ActionSurface.Midi}
+                includeUiActions
+                onChange={updateSelectedAction}
+              />
+            </div>
+          )}
+        </Show>
+
         <div class="flex-1 min-h-0">
           <DataGrid
             rows={displayRows().length}
@@ -450,14 +536,54 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           />
         </div>
 
-        {/* Empty state */}
         <Show when={mappingRows().length === 0}>
           <div class="p-4 text-center text-gray-500 text-sm">
-            No mappings configured. Press a MIDI button and click "Add Mapping"
-            to create one.
+            No mappings configured. Press a MIDI control, choose an action, and
+            click "Add Mapping" to create one.
           </div>
         </Show>
       </div>
     </div>
   );
+}
+
+/** Returns a mapping with one grid cell edit applied, or undefined for invalid input. */
+function editedMapping(
+  mapping: MidiMapping,
+  columnId: string | undefined,
+  value: GridCell,
+): MidiMapping | undefined {
+  switch (columnId) {
+    case "device_name": {
+      const device = editedMidiDevice(value);
+      return device === undefined
+        ? undefined
+        : { ...mapping, device_name: device };
+    }
+    case "channel": {
+      if (value.kind !== GridCellKind.Number) return undefined;
+      const channel = Number(value.data);
+      if (!Number.isInteger(channel) || channel < 1 || channel > 16) {
+        return undefined;
+      }
+      return {
+        ...mapping,
+        source: withMidiChannel(mapping.source, channel - 1),
+      };
+    }
+    case "number": {
+      if (value.kind !== GridCellKind.Number) return undefined;
+      const number = Number(value.data);
+      if (!Number.isInteger(number) || number < 0 || number > 127) {
+        return undefined;
+      }
+      return { ...mapping, source: withMidiNumber(mapping.source, number) };
+    }
+    case "behavior": {
+      const behavior = editedBehavior(value);
+      return behavior === undefined ? undefined : { ...mapping, behavior };
+    }
+    default:
+      return undefined;
+  }
 }
