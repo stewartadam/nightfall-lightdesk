@@ -18,7 +18,9 @@ use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
 use nightfall_engine::prelude::{
     DebugPanicTarget, is_process_shutdown_requested, maybe_trigger_debug_worker_panic,
 };
-use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
+use nightfall_io::prelude::{
+    ArtNetNodeDirectory, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+};
 use nightfall_service_host::prelude::{ModeWorkerSlot, process_singleton};
 use socket2::{Domain, Protocol, Socket, Type};
 
@@ -132,7 +134,15 @@ pub(crate) struct ArtNetInputWorker {
 }
 
 impl ArtNetInputWorker {
-    pub(crate) fn spawn(binding: ArtNetInputBinding) -> Result<Option<Self>, ()> {
+    /// Binds the Art-Net port and starts the listener thread, which forwards ArtDmx frames to
+    /// subscribers and records ArtPollReply packets in `nodes`.
+    ///
+    /// Returns `Ok(None)` when input is disabled or no interface address resolves, and `Err`
+    /// when the socket cannot be bound or configured.
+    pub(crate) fn spawn(
+        binding: ArtNetInputBinding,
+        nodes: ArtNetNodeDirectory,
+    ) -> Result<Option<Self>, ()> {
         if !binding.enabled {
             tracing::info!("Art-Net input is disabled by effective network input state");
             return Ok(None);
@@ -195,26 +205,7 @@ impl ArtNetInputWorker {
                         }
                     };
 
-                    let Ok(command) = artnet_protocol::ArtCommand::from_buffer(&buffer[..len])
-                    else {
-                        continue;
-                    };
-                    let artnet_protocol::ArtCommand::Output(output) = command else {
-                        continue;
-                    };
-
-                    let mut data = [0u8; MAX_CHANNELS_PER_UNIVERSE];
-                    let payload = output.data.as_ref();
-                    let copy_len = payload.len().min(MAX_CHANNELS_PER_UNIVERSE);
-                    data[..copy_len].copy_from_slice(&payload[..copy_len]);
-
-                    let _ = frame_tx_for_thread.send(ArtNetInputFrame {
-                        universe_id: output.port_address.into(),
-                        sequence: output.sequence,
-                        data,
-                        source_addr,
-                        received_at: Instant::now(),
-                    });
+                    handle_packet(&buffer[..len], source_addr, &frame_tx_for_thread, &nodes);
                 }
                 tracing::debug!("Art-Net input service worker exiting");
             })
@@ -239,6 +230,40 @@ impl ArtNetInputWorker {
             .as_ref()
             .is_some_and(|join_handle| !join_handle.is_finished())
     }
+}
+
+/// Decodes one datagram received on the Art-Net port.
+///
+/// ArtPollReply packets, which nodes send to the Art-Net port in answer to the output worker's
+/// polls, are recorded in the node directory. ArtDmx frames are forwarded to input subscribers;
+/// every other opcode is ignored.
+fn handle_packet(
+    packet: &[u8],
+    source_addr: SocketAddr,
+    frame_tx: &tokio::sync::broadcast::Sender<ArtNetInputFrame>,
+    nodes: &ArtNetNodeDirectory,
+) {
+    if nodes.record_poll_reply(packet, source_addr) {
+        return;
+    }
+    let Ok(artnet_protocol::ArtCommand::Output(output)) =
+        artnet_protocol::ArtCommand::from_buffer(packet)
+    else {
+        return;
+    };
+
+    let mut data = [0u8; MAX_CHANNELS_PER_UNIVERSE];
+    let payload = output.data.as_ref();
+    let copy_len = payload.len().min(MAX_CHANNELS_PER_UNIVERSE);
+    data[..copy_len].copy_from_slice(&payload[..copy_len]);
+
+    let _ = frame_tx.send(ArtNetInputFrame {
+        universe_id: output.port_address.into(),
+        sequence: output.sequence,
+        data,
+        source_addr,
+        received_at: Instant::now(),
+    });
 }
 
 fn init_artnet_input_socket(bind_addr: SocketAddr) -> std::io::Result<UdpSocket> {
@@ -361,7 +386,7 @@ impl ArtNetInputService {
         };
         let has_worker = self.slot.rebind(
             binding,
-            |binding| match ArtNetInputWorker::spawn(binding) {
+            |binding| match ArtNetInputWorker::spawn(binding, ArtNetNodeDirectory::process()) {
                 Ok(worker) => {
                     status = if worker.is_some() {
                         NetworkInputBindStatus::Listening
@@ -508,4 +533,57 @@ mod tests {
     #[cfg(not(unix))]
     #[test]
     fn artnet_input_shared_listeners_receive_broadcast_frames() {}
+
+    /// Feeds `packet` through the listener's decoder and returns the resulting node directory
+    /// and any frame forwarded to input subscribers.
+    fn handle(packet: &[u8]) -> (ArtNetNodeDirectory, Option<ArtNetInputFrame>) {
+        let nodes = ArtNetNodeDirectory::new();
+        let (frame_tx, mut frame_rx) = tokio::sync::broadcast::channel(4);
+        let source = SocketAddr::new(Ipv4Addr::new(10, 0, 0, 42).into(), 6454);
+        handle_packet(packet, source, &frame_tx, &nodes);
+        (nodes, frame_rx.try_recv().ok())
+    }
+
+    /// ArtPollReply packets reaching the input listener are recorded and never forwarded as DMX.
+    #[test]
+    fn poll_reply_is_recorded_not_forwarded() {
+        let reply = artnet_protocol::PollReply {
+            address: Ipv4Addr::new(10, 0, 0, 42),
+            esta_code: 0x414C,
+            ..artnet_protocol::PollReply::default()
+        };
+        let packet = artnet_protocol::ArtCommand::PollReply(Box::new(reply))
+            .write_to_buffer()
+            .expect("poll reply should encode");
+
+        let (nodes, frame) = handle(&packet);
+
+        assert!(frame.is_none());
+        let nodes = nodes.nodes(Instant::now());
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].model.esta_manufacturer, 0x414C);
+    }
+
+    /// ArtDmx frames keep flowing to input subscribers and never touch the node directory.
+    #[test]
+    fn dmx_frame_is_forwarded_to_subscribers() {
+        let output = artnet_protocol::Output {
+            sequence: 7,
+            port_address: artnet_protocol::PortAddress::try_from(3u16)
+                .expect("universe 3 should be a valid port address"),
+            data: vec![255, 128].into(),
+            ..artnet_protocol::Output::default()
+        };
+        let packet = artnet_protocol::ArtCommand::Output(output)
+            .write_to_buffer()
+            .expect("output should encode");
+
+        let (nodes, frame) = handle(&packet);
+
+        let frame = frame.expect("ArtDmx frame should be forwarded");
+        assert_eq!(frame.universe_id, 3);
+        assert_eq!(frame.sequence, 7);
+        assert_eq!(&frame.data[..3], &[255, 128, 0]);
+        assert!(nodes.nodes(Instant::now()).is_empty());
+    }
 }
