@@ -9,7 +9,7 @@
 //! Anonymous usage reports sent to the project's OpenPanel service, only while the operator
 //! has agreed to share them.
 //!
-//! `app_started` goes out at most once a UTC day and carries hardware details; it is what
+//! `hw_profile` goes out at most once a UTC day and carries hardware details; it is what
 //! monthly active installs count. Each show is checked at most once a day, and its snapshot
 //! goes out only when it changed since the last one sent. Reports are queued on disk and
 //! uploaded in the background whenever the service is reachable.
@@ -60,7 +60,7 @@ const FIRST_CHECK_DELAY: Duration = Duration::from_secs(60);
 /// Wait between checks, so a desk left running for days still reports each day.
 const CHECK_INTERVAL: Duration = Duration::from_secs(15 * 60);
 /// Longest the desktop app waits, after the operator starts sharing, for its window to report
-/// the graphics hardware before sending `app_started` without it.
+/// the graphics hardware before sending `hw_profile` without it.
 const GRAPHICS_WAIT: Duration = Duration::from_secs(10 * 60);
 
 /// Whether the operator currently shares usage reports.
@@ -230,7 +230,7 @@ pub(crate) fn add_systems(app: &mut App) {
     app.add_systems(Last, (remember_graphics, check_due_reports));
 }
 
-/// Keeps the desktop window's latest graphics report for `app_started`, across show swaps.
+/// Keeps the desktop window's latest graphics report for `hw_profile`, across show swaps.
 /// The headless server ignores reports, since any browser on the network could send one.
 fn remember_graphics(reported: Res<ReportedGraphics>) {
     if !reported.is_changed()
@@ -259,7 +259,7 @@ fn check_due_reports(mut next_check: Local<Option<Instant>>, mut commands: Comma
     }
 }
 
-/// Queues `app_started` and the open show's snapshot when they are due today.
+/// Queues `hw_profile` and the open show's snapshot when they are due today.
 fn send_due_reports(world: &mut World) {
     let Some(service) = SERVICE.get() else {
         return;
@@ -275,7 +275,7 @@ fn send_due_reports(world: &mut World) {
         return;
     };
 
-    if schedule.app_started_due(&install_id, &today)
+    if schedule.hw_profile_due(&install_id, &today)
         && let Some(hardware) = HARDWARE.get()
     {
         let graphics = GRAPHICS.lock().ok().and_then(|graphics| graphics.clone());
@@ -286,14 +286,14 @@ fn send_due_reports(world: &mut World) {
                 .lock()
                 .is_ok_and(|since| since.elapsed() < GRAPHICS_WAIT);
         if !waiting_for_graphics {
-            let properties = events::app_started(service.shell, hardware, graphics.as_ref());
+            let properties = events::hw_profile(service.shell, hardware, graphics.as_ref());
             if queue(
                 service,
                 &install_id,
                 &timestamp,
-                [("app_started", properties)],
+                [("hw_profile", properties)],
             ) {
-                schedule.record_app_started(&today);
+                schedule.record_hw_profile(&today);
             }
         }
     }
@@ -434,7 +434,7 @@ mod tests {
             .expect("the sample world can be saved")
             .events();
         let (name, show) = &events[0];
-        assert_eq!(*name, "show_snapshot");
+        assert_eq!(*name, "show_analytics");
         assert!(show["fixtures"].as_u64().unwrap() > 0);
         assert!(show["cues"].as_u64().unwrap() > 0);
         assert!(show["console_universes"].as_u64().unwrap() > 0);

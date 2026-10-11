@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Builds the `app_started` event and the request bodies OpenPanel's track API accepts.
+//! Builds the `hw_profile` event and the request bodies OpenPanel's track API accepts.
 
 use nightfall_desk::prelude::GraphicsReport;
 use serde_json::{Map, Value, json};
@@ -81,9 +81,9 @@ pub(crate) fn ram_bucket_gb(bytes: u64) -> Option<u64> {
     Some(1u64 << exponent as u32)
 }
 
-/// Builds the `app_started` properties. The `__os`, `__osVersion`, and `__device` keys fill
+/// Builds the `hw_profile` properties. The `__os`, `__osVersion`, and `__device` keys fill
 /// OpenPanel's built-in operating system and device fields.
-pub(crate) fn app_started(
+pub(crate) fn hw_profile(
     shell: HostShell,
     hardware: &Hardware,
     graphics: Option<&GraphicsReport>,
@@ -157,10 +157,10 @@ mod tests {
         assert_eq!(ram_bucket_gb(20 * GIB), Some(16));
     }
 
-    /// `app_started` carries hardware, graphics, and OpenPanel's device fields, and omits what
+    /// `hw_profile` carries hardware, graphics, and OpenPanel's device fields, and omits what
     /// is unknown.
     #[test]
-    fn app_started_lists_hardware_and_graphics() {
+    fn hw_profile_lists_hardware_and_graphics() {
         let hardware = Hardware {
             os: "macOS".into(),
             os_version: Some("15.1".into()),
@@ -175,7 +175,7 @@ mod tests {
             gpu: Some("Apple M2".into()),
             backend: "WebGPU".into(),
         };
-        let properties = app_started(HostShell::Desktop, &hardware, Some(&graphics));
+        let properties = hw_profile(HostShell::Desktop, &hardware, Some(&graphics));
         assert_eq!(properties["runtime"], "desktop");
         assert_eq!(properties["__os"], "macOS");
         assert_eq!(properties["__osVersion"], "15.1");
@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(properties["graphics_backend"], "WebGPU");
         assert!(!properties.contains_key("os_distribution"));
 
-        let headless = app_started(HostShell::Headless, &hardware, None);
+        let headless = hw_profile(HostShell::Headless, &hardware, None);
         assert_eq!(headless["runtime"], "headless");
         assert!(!headless.contains_key("gpu"));
     }
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn track_body_matches_the_openpanel_api() {
         let body = track_body(
-            "app_started",
+            "hw_profile",
             Map::new(),
             "install-1",
             "2026-10-10T20:00:00Z",
@@ -204,7 +204,7 @@ mod tests {
             json!({
                 "type": "track",
                 "payload": {
-                    "name": "app_started",
+                    "name": "hw_profile",
                     "profileId": "install-1",
                     "properties": {
                         "__timestamp": "2026-10-10T20:00:00Z",

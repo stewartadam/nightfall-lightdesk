@@ -32,7 +32,7 @@ pub(super) struct ShowRecord {
 #[serde(default)]
 struct StoredSchedule {
     install_id: String,
-    app_started_on: Option<String>,
+    hw_profile_on: Option<String>,
     shows: BTreeMap<String, ShowRecord>,
 }
 
@@ -69,15 +69,15 @@ impl Schedule {
         }
     }
 
-    /// Returns whether `app_started` is still due on `today` for `install_id`.
-    pub(super) fn app_started_due(&mut self, install_id: &str, today: &str) -> bool {
+    /// Returns whether `hw_profile` is still due on `today` for `install_id`.
+    pub(super) fn hw_profile_due(&mut self, install_id: &str, today: &str) -> bool {
         self.follow_install_id(install_id);
-        self.stored.app_started_on.as_deref() != Some(today)
+        self.stored.hw_profile_on.as_deref() != Some(today)
     }
 
-    /// Records that `app_started` was sent on `today`.
-    pub(super) fn record_app_started(&mut self, today: &str) {
-        self.stored.app_started_on = Some(today.to_string());
+    /// Records that `hw_profile` was sent on `today`.
+    pub(super) fn record_hw_profile(&mut self, today: &str) {
+        self.stored.hw_profile_on = Some(today.to_string());
         self.save();
     }
 
@@ -126,7 +126,7 @@ impl Schedule {
     /// Forgets every recorded send, so reports go out afresh once sharing is turned back on
     /// after reports still waiting in the queue were discarded.
     pub(super) fn forget(&mut self) {
-        self.stored.app_started_on = None;
+        self.stored.hw_profile_on = None;
         self.stored.shows.clear();
         self.save();
     }
@@ -144,20 +144,20 @@ impl Schedule {
 mod tests {
     use super::*;
 
-    /// `app_started` is due once per day, survives a restart, and is due again for a new
+    /// `hw_profile` is due once per day, survives a restart, and is due again for a new
     /// install identifier.
     #[test]
-    fn app_started_is_due_once_per_day_and_install() {
+    fn hw_profile_is_due_once_per_day_and_install() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("schedule.json");
         let mut schedule = Schedule::load(path.clone());
-        assert!(schedule.app_started_due("a", "2026-10-10"));
-        schedule.record_app_started("2026-10-10");
+        assert!(schedule.hw_profile_due("a", "2026-10-10"));
+        schedule.record_hw_profile("2026-10-10");
 
         let mut schedule = Schedule::load(path);
-        assert!(!schedule.app_started_due("a", "2026-10-10"));
-        assert!(schedule.app_started_due("a", "2026-10-11"));
-        assert!(schedule.app_started_due("b", "2026-10-10"));
+        assert!(!schedule.hw_profile_due("a", "2026-10-10"));
+        assert!(schedule.hw_profile_due("a", "2026-10-11"));
+        assert!(schedule.hw_profile_due("b", "2026-10-10"));
     }
 
     /// A show is checked once a day and its snapshot goes out only when it changed since the
@@ -183,13 +183,13 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("schedule.json");
         let mut schedule = Schedule::load(path.clone());
-        assert!(schedule.app_started_due("a", "2026-10-10"));
-        schedule.record_app_started("2026-10-10");
+        assert!(schedule.hw_profile_due("a", "2026-10-10"));
+        schedule.record_hw_profile("2026-10-10");
         schedule.record_show_check("show", "2026-10-10", 1);
         schedule.forget();
 
         let mut schedule = Schedule::load(path);
-        assert!(schedule.app_started_due("a", "2026-10-10"));
+        assert!(schedule.hw_profile_due("a", "2026-10-10"));
         assert!(schedule.show_due("a", "show", "2026-10-10"));
         assert!(schedule.show_changed("show", 1));
     }

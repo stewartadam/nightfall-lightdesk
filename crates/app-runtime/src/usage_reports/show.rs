@@ -213,7 +213,7 @@ impl ShowSummary {
         hasher.finish()
     }
 
-    /// Builds the events for this show: `show_snapshot` with its counts and features, then one
+    /// Builds the events for this show: `show_analytics` with its counts and features, then one
     /// `show_fixture_model` per library fixture model and one `show_interface` per interface
     /// model, so dashboards can break them down by make or model.
     pub(crate) fn events(&self) -> Vec<UsageEvent> {
@@ -224,7 +224,7 @@ impl ShowSummary {
         for (name, used) in &self.features {
             snapshot.insert((*name).into(), json!(used));
         }
-        let mut events = vec![("show_snapshot", snapshot)];
+        let mut events = vec![("show_analytics", snapshot)];
 
         let mut models: Vec<_> = self.fixture_models.iter().collect();
         models.sort_by(|left, right| right.1.cmp(left.1));
@@ -364,7 +364,7 @@ mod tests {
         let (snapshot, outputs) = show();
         let events = ShowSummary::new(&snapshot, origin, &outputs).events();
         let (name, show) = &events[0];
-        assert_eq!(*name, "show_snapshot");
+        assert_eq!(*name, "show_analytics");
         assert_eq!(show["fixtures"], 5);
         assert_eq!(show["fixtures_gdtf"], 1);
         assert_eq!(show["fixtures_custom"], 1);
