@@ -20,24 +20,21 @@ export const PRIVACY_POLICY_URL = "https://nightfall.live/privacy";
 
 /** What a usage report contains, shown so operators can judge it before agreeing. */
 const USAGE_CONTENTS = [
-  "App version and operating system",
-  "CPU and GPU model, core count, and memory rounded to a size bucket",
-  "Make and model of library fixtures in your patch; custom fixtures only as a count",
-  "How many of each object type your show contains",
-  "Output and input protocols and interface models in use",
+  "App version and operating system information",
+  "Basic hardware information like your CPU, GPU and memory",
+  "Make and model of library fixtures in your patch (custom fixtures names are not recorded)",
+  "Count of each object type your showfile",
+  "Input/output transports in use, and make and model of hardware nodes",
+  "Anonymous ID below, and a random session ID that changes each time Nightfall starts",
+  "Approximate location (country, region, and city) estimated from your IP address. The IP address itself is not stored.",
 ];
 
 /** What an error report contains. */
 const ERROR_CONTENTS = [
-  "Error message and stack trace, with showfile names and any IP addresses in the text removed",
-  "Warnings logged shortly before the error",
-  "App version and the Rust version it was built with",
-  "Operating system name, version, build, and kernel version",
+  "Error with stack trace, along with warnings logged shortly before the error",
+  "App version and operating system information",
   "Computer model and processor architecture",
-  "The names and memory addresses of the app's loaded program files, used to read the stack trace",
-  "The anonymous ID below, and a random session ID that changes each time Nightfall starts",
-  "Errors on another device on your network are marked as such and leave out this computer's details",
-  "Reports not sent yet are deleted as soon as you stop sharing",
+  "Anonymous ID below, and a random session ID that changes each time Nightfall starts",
 ];
 
 /**
@@ -92,45 +89,59 @@ export function PrivacySettings() {
       }
     >
       <p class="text-xs text-gray-400">
-        Read the{" "}
+        Diagnostics can automatically be sent with the goal of making Nightfall
+        more reliable and prioritizing feature development.
+      </p>
+      <p class="mt-6 text-xs text-gray-400">
+        View the{" "}
         <a
           class="text-blue-300 underline"
           href={PRIVACY_POLICY_URL}
           target="_blank"
           rel="noopener noreferrer"
         >
-          privacy policy
+          Nightfall privacy policy
         </a>{" "}
-        for how reports are handled and stored.
+        for more details how data is handled and stored.
       </p>
-      <section aria-label="Usage reports">
-        <ToggleSwitch
-          label="Share anonymous usage reports"
-          ariaLabel="Share anonymous usage reports"
-          checked={shown().share_usage}
-          onChange={(share_usage) => change({ share_usage })}
-        />
-        <p class="mt-2 text-xs text-gray-400">
-          Sent at most once a day. Helps decide which fixtures, hardware and
-          features to support next.
-        </p>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
-          <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
-        </ul>
-      </section>
+      <p class="text-xs text-gray-400">
+        These choices are saved on this computer, independently of your
+        showfile.
+      </p>
+      <p class="text-xs text-gray-400"></p>
+      <p class="text-xs text-gray-400"></p>
       <section aria-label="Error reports">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Error reports</h3>
+        <p class="mt-2 text-xs text-gray-400">
+          Sent when something goes wrong so we can fix common issues.
+        </p>
         <ToggleSwitch
           label="Share error reports"
           ariaLabel="Share error reports"
           checked={shown().share_errors}
           onChange={(share_errors) => change({ share_errors })}
+          class="mt-6 mb-3"
         />
-        <p class="mt-2 text-xs text-gray-400">
-          Sent automatically when something goes wrong, so problems get fixed
-          without you filing a report.
-        </p>
+        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
         <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
           <For each={ERROR_CONTENTS}>{(item) => <li>{item}</li>}</For>
+        </ul>
+      </section>
+      <section aria-label="Usage reports">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Usage reports</h3>
+        <p class="mt-2 text-xs text-gray-400">
+          Helps decide which fixtures, hardware and features to support next.
+        </p>
+        <ToggleSwitch
+          label="Share anonymous usage reports"
+          ariaLabel="Share anonymous usage reports"
+          checked={shown().share_usage}
+          onChange={(share_usage) => change({ share_usage })}
+          class="mt-6 mb-3"
+        />
+        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
+          <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
         </ul>
       </section>
       <section aria-label="Anonymous identifier">
@@ -138,10 +149,9 @@ export function PrivacySettings() {
           Anonymous identifier
         </h3>
         <p class="text-xs text-gray-400">
-          A random ID groups reports from this computer, so monthly installs can
-          be counted. It contains nothing about you. Reports are queued while
-          you are offline and sent later. These choices are saved on this
-          computer, independently of your showfile.
+          A random ID used to identify diagnostics sent by this Nightfall
+          instance. It contains nothing about you, and can be rotated at any
+          time.
         </p>
         <div class="mt-2 flex items-center justify-between gap-3">
           <code
