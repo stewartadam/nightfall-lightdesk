@@ -8,9 +8,9 @@
 
 //! Removes personal paths and showfile names from error reports before they are queued.
 
-use std::path::Path;
+use std::{borrow::Cow, path::Path};
 
-use sentry::protocol::{Breadcrumb, Context, Event, Map, Stacktrace, Value};
+use sentry::protocol::{Breadcrumb, Context, DebugImage, DebugMeta, Event, Map, Stacktrace, Value};
 
 /// Context in which the tracing integration stores a log record's structured fields.
 const TRACING_FIELDS_CONTEXT: &str = "Rust Tracing Fields";
@@ -156,6 +156,7 @@ impl Scrubber {
         for breadcrumb in &mut event.breadcrumbs.values {
             self.breadcrumb(breadcrumb);
         }
+        keep_image_file_names(&mut event.debug_meta);
     }
 
     /// Scrubs source paths in a stack trace and drops captured local variables.
@@ -179,6 +180,31 @@ impl Scrubber {
             .values_mut()
             .for_each(|value| self.value(value));
     }
+}
+
+/// Reduces each loaded executable and library to its file name. The error service matches
+/// uploaded debug symbols by the image's debug identifier, so the folder an image was loaded
+/// from, which can sit inside the operator's home folder, is never needed.
+fn keep_image_file_names(debug_meta: &mut Cow<'static, DebugMeta>) {
+    if debug_meta.images.is_empty() {
+        return;
+    }
+    for image in &mut debug_meta.to_mut().images {
+        let (name, debug_file) = match image {
+            DebugImage::Apple(image) => (&mut image.name, None),
+            DebugImage::Symbolic(image) => (&mut image.name, image.debug_file.as_mut()),
+            _ => continue,
+        };
+        *name = file_name(name);
+        if let Some(debug_file) = debug_file {
+            *debug_file = file_name(debug_file);
+        }
+    }
+}
+
+/// Returns the last component of a Unix or Windows path.
+fn file_name(path: &str) -> String {
+    path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned()
 }
 
 /// Keeps only the structured log fields that describe a failure. Other fields often hold
@@ -471,5 +497,38 @@ mod tests {
                 .as_deref(),
             Some("~/src/main.rs")
         );
+    }
+
+    /// Loaded images keep only their file names, so the install folder never leaves the machine
+    /// while the debug identifiers that match uploaded symbols stay intact.
+    #[test]
+    fn keeps_only_image_file_names() {
+        let id = "3249d99d-0c40-4931-8610-f4e4fb0b6936-1".parse().unwrap();
+        let mut event = Event {
+            debug_meta: Cow::Owned(DebugMeta {
+                images: vec![
+                    sentry::protocol::SymbolicDebugImage {
+                        name: "/home/alice/Apps/nightfall-app".into(),
+                        arch: None,
+                        image_addr: 0.into(),
+                        image_size: 1,
+                        image_vmaddr: 0.into(),
+                        id,
+                        code_id: None,
+                        debug_file: Some(r"C:\Users\alice\nightfall_app.pdb".into()),
+                    }
+                    .into(),
+                ],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        unix_scrubber().event(&mut event);
+        let DebugImage::Symbolic(image) = &event.debug_meta.images[0] else {
+            panic!("image kind changed");
+        };
+        assert_eq!(image.name, "nightfall-app");
+        assert_eq!(image.debug_file.as_deref(), Some("nightfall_app.pdb"));
+        assert_eq!(image.id, id);
     }
 }

@@ -161,6 +161,11 @@ jobs:
           # The ERROR_REPORTS_DSN repository variable is compiled into published releases only, so
           # every other build reports nowhere. The address only accepts new reports.
           NIGHTFALL_ERROR_REPORTS_DSN: ${{ needs.prepare.outputs.publish == 'true' && vars.ERROR_REPORTS_DSN || '' }}
+          # Line tables let the error service resolve crash addresses to functions and lines.
+          # They are kept out of the installers: macOS and Windows write them beside the
+          # executable, and the Linux bundle hook splits them out before packaging.
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+          CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: ${{ runner.os == 'Linux' && 'off' || 'packed' }}
         with:
           projectPath: desktop/app-tauri
           tauriScript: pnpm exec tauri
@@ -183,6 +188,18 @@ jobs:
             echo "::error::The release build does not contain the error report address"
             exit 1
           fi
+      - name: Stage debug symbols
+        env:
+          DESKTOP_TARGET: ${{ matrix.target }}
+        run: node scripts/desktop-artifacts.mjs stage-debug-symbols
+      - name: Upload debug symbols
+        if: needs.prepare.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: debug-symbols-${{ matrix.target }}-${{ github.sha }}
+          path: desktop-debug-symbols
+          if-no-files-found: error
+          retention-days: 7
       - name: Archive the macOS app for isolated signing
         if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
         shell: bash

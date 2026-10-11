@@ -11,11 +11,12 @@
 
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     sync::{LazyLock, Mutex},
     time::Instant,
 };
 
-use axum::{Json, http::StatusCode, routing::post};
+use axum::{Json, extract::ConnectInfo, http::StatusCode, routing::post};
 use nightfall_websocket::prelude::HttpRouteRegistry;
 use sentry::protocol::{Event, Exception, Frame, Level, Mechanism, Stacktrace};
 
@@ -28,6 +29,15 @@ const MAX_MESSAGE_CHARS: usize = 2_000;
 const MAX_NAME_CHARS: usize = 200;
 /// Most stack frames kept from a client report.
 const MAX_FRAMES: usize = 64;
+/// Tag naming which device a web UI report came from.
+const DEVICE_TAG: &str = "webui.device";
+/// [`DEVICE_TAG`] value for the computer running Nightfall.
+const THIS_COMPUTER: &str = "this computer";
+/// [`DEVICE_TAG`] value for a phone, tablet, or computer connected over the network.
+const OTHER_DEVICE: &str = "other device";
+/// Contexts describing the computer running Nightfall, which the error-report client adds to
+/// every report and which would misdescribe a failure on another device.
+const HOST_DEVICE_CONTEXTS: &[&str] = &["os", "device"];
 
 /// Registers the endpoint the web UI posts uncaught errors to. Like every `/api` route it is
 /// limited to the engine machine and paired devices.
@@ -52,11 +62,15 @@ struct ClientError {
     fatal: bool,
 }
 
-/// Captures a web UI failure as an error report. Always answers `204`, since the web UI has
-/// nothing to do differently when reports are off.
-async fn report_client_error(Json(error): Json<ClientError>) -> StatusCode {
+/// Captures a web UI failure as an error report, noting whether it came from the computer
+/// running Nightfall or another device on the network. Always answers `204`, since the web UI
+/// has nothing to do differently when reports are off.
+async fn report_client_error(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(error): Json<ClientError>,
+) -> StatusCode {
     if super::reports_enabled() && CLIENT_LIMITER.admit(&error, Instant::now()) {
-        sentry::capture_event(client_error_event(error));
+        sentry::capture_event(client_error_event(error, !peer.ip().is_loopback()));
     }
     StatusCode::NO_CONTENT
 }
@@ -104,8 +118,9 @@ impl ClientErrorLimiter {
 }
 
 /// Builds the report for a web UI failure, parsing its stack so the error service can group
-/// repeats of the same failure.
-fn client_error_event(error: ClientError) -> Event<'static> {
+/// repeats of the same failure. A failure on another device is tagged as such, so
+/// [`remove_host_details`] can drop the details of the computer running Nightfall from it.
+fn client_error_event(error: ClientError, other_device: bool) -> Event<'static> {
     let stacktrace = error
         .stack
         .as_deref()
@@ -146,9 +161,29 @@ fn client_error_event(error: ClientError) -> Event<'static> {
                 "webui.source".to_owned(),
                 truncate(&error.source, MAX_NAME_CHARS),
             ),
+            (
+                DEVICE_TAG.to_owned(),
+                if other_device {
+                    OTHER_DEVICE
+                } else {
+                    THIS_COMPUTER
+                }
+                .to_owned(),
+            ),
         ]
         .into(),
         ..Default::default()
+    }
+}
+
+/// Removes the operating system and computer model of the machine running Nightfall from a
+/// report about a failure on another device, since the error-report client attaches them to
+/// every report and they say nothing about the device that failed.
+pub(super) fn remove_host_details(event: &mut Event<'static>) {
+    if event.tags.get(DEVICE_TAG).map(String::as_str) == Some(OTHER_DEVICE) {
+        for context in HOST_DEVICE_CONTEXTS {
+            event.contexts.remove(*context);
+        }
     }
 }
 
@@ -258,14 +293,17 @@ mod tests {
     /// The report keeps the error's type, message, and origin, and marks fatal failures.
     #[test]
     fn builds_reports_from_client_errors() {
-        let event = client_error_event(ClientError {
-            source: "timeline worker".into(),
-            kind: "rejection".into(),
-            name: "RangeError".into(),
-            message: "x".repeat(MAX_MESSAGE_CHARS + 10),
-            stack: None,
-            fatal: true,
-        });
+        let event = client_error_event(
+            ClientError {
+                source: "timeline worker".into(),
+                kind: "rejection".into(),
+                name: "RangeError".into(),
+                message: "x".repeat(MAX_MESSAGE_CHARS + 10),
+                stack: None,
+                fatal: true,
+            },
+            false,
+        );
         assert_eq!(event.level, Level::Fatal);
         let exception = &event.exception.values[0];
         assert_eq!(exception.ty, "RangeError");
@@ -284,5 +322,50 @@ mod tests {
             event.tags.get("webui.source").map(String::as_str),
             Some("timeline worker")
         );
+        assert_eq!(
+            event.tags.get(DEVICE_TAG).map(String::as_str),
+            Some(THIS_COMPUTER)
+        );
+    }
+
+    /// Reports from another device lose the host's operating system and model but keep the
+    /// rest; reports from the host computer keep everything.
+    #[test]
+    fn removes_host_details_only_from_other_devices() {
+        /// Builds a report as the error-report client would, with host contexts attached.
+        fn report(other_device: bool) -> Event<'static> {
+            let mut event = client_error_event(
+                ClientError {
+                    source: "app".into(),
+                    kind: "error".into(),
+                    name: "TypeError".into(),
+                    message: "failed".into(),
+                    stack: None,
+                    fatal: false,
+                },
+                other_device,
+            );
+            for name in ["os", "device", "rust"] {
+                event.contexts.insert(
+                    name.into(),
+                    sentry::protocol::Context::Other(Default::default()),
+                );
+            }
+            remove_host_details(&mut event);
+            event
+        }
+
+        let remote = report(true);
+        assert_eq!(
+            remote.tags.get(DEVICE_TAG).map(String::as_str),
+            Some(OTHER_DEVICE)
+        );
+        assert!(!remote.contexts.contains_key("os"));
+        assert!(!remote.contexts.contains_key("device"));
+        assert!(remote.contexts.contains_key("rust"));
+
+        let local = report(false);
+        assert!(local.contexts.contains_key("os"));
+        assert!(local.contexts.contains_key("device"));
     }
 }

@@ -167,7 +167,12 @@ test("privacy settings change sharing choices on the host", async ({
   const installId = settings.getByTestId("telemetry-install-id");
   await expect(installId).toHaveText(/^[0-9a-f-]{36}$/);
   const firstId = await installId.textContent();
-  await settings.getByRole("button", { name: "Reset ID" }).click();
+  const resetId = settings.getByRole("button", { name: "Reset ID" });
+  // Centre the button so the scroll area's edge blur, which swallows clicks, does not cover it.
+  await resetId.evaluate((button) =>
+    button.scrollIntoView({ block: "center" }),
+  );
+  await resetId.click();
   await expect(installId).not.toHaveText(firstId ?? "");
   await settings.screenshot({
     path: testInfo.outputPath("privacy-settings.png"),
