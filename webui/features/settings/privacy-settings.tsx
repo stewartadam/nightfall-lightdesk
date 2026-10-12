@@ -10,8 +10,10 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
+import { writeClipboardText } from "../../lib/clipboard";
 import { engineRuntime } from "../../lib/engine-runtime";
 import { setStoreAction } from "../../lib/nanostore-action";
+import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
 import type { TelemetryConsent } from "../../types";
 
@@ -74,8 +76,24 @@ export function PrivacySettings() {
   /** Records the full choice with one switch changed, which also answers the first-run notice. */
   const change = (patch: Partial<ReturnType<typeof shown>>) =>
     setTelemetryConsent({ ...shown(), ...patch });
-  /** Replaces the Install ID so future reports cannot be linked to past ones. */
-  const resetInstallId = () => {
+  /**
+   * Replaces the Install ID so future reports cannot be linked to past ones. The old ID is
+   * copied to the clipboard first, since it is needed to request deletion of data sent under
+   * it and nothing links it to the new one. If copying fails, the old ID is shown in a
+   * notification that stays until dismissed.
+   */
+  const resetInstallId = async () => {
+    const previousId = state().install_id;
+    try {
+      await writeClipboardText(previousId);
+      pushToast("success", `Copied previous Install ID ${previousId}`);
+    } catch {
+      pushToast(
+        "warning",
+        `Could not copy the previous Install ID. Keep a note of it to request deletion of data sent under it: ${previousId}`,
+        0,
+      );
+    }
     engineRuntime.sendCommand({
       module: "SettingsCommand",
       command: { type: "ResetTelemetryInstallId" },

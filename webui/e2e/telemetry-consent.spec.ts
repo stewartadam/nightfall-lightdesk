@@ -172,8 +172,15 @@ test("privacy settings change sharing choices on the host", async ({
   await resetId.evaluate((button) =>
     button.scrollIntoView({ block: "center" }),
   );
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await resetId.click();
   await expect(installId).not.toHaveText(firstId ?? "");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    firstId,
+  );
+  await expect(
+    page.getByText(`Copied previous Install ID ${firstId}`),
+  ).toBeVisible();
   await settings.screenshot({
     path: testInfo.outputPath("privacy-settings.png"),
   });
