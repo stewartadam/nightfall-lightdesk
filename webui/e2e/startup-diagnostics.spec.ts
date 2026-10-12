@@ -82,7 +82,9 @@ test("collects native diagnostics before the backend connects", async ({
     );
   expect(new Set(Object.values(colors)).size).toBe(5);
   await expect(preview.locator(".italic").first()).toHaveText("state_count");
-  await dialog.getByText("System info", { exact: true }).click();
+  await dialog
+    .getByText("System information included", { exact: true })
+    .click();
   await expect
     .poll(() =>
       dialog.evaluate((element) => {
@@ -105,16 +107,18 @@ test("collects native diagnostics before the backend connects", async ({
   });
   expect(layout.height).toBe(layout.viewport - 32);
   expect(layout.scrollHeight).toBeLessThanOrEqual(layout.clientHeight + 1);
-  expect(layout.first).toBe("DETAILS");
+  expect(layout.first).toBe("P");
   await expect(
-    dialog.getByRole("textbox", { name: "System info" }),
+    dialog.getByRole("textbox", { name: "System information included" }),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("diagnostics-system-info.png"),
   });
-  await dialog.getByText("System info", { exact: true }).click();
+  await dialog
+    .getByText("System information included", { exact: true })
+    .click();
   await dialog.getByRole("button", { name: "Copy System Info" }).click();
-  await expect(page.getByRole("tooltip")).toHaveText("System info copied.");
+  await expect(page.getByRole("tooltip")).toHaveText("✅ System info copied.");
   await expect(page.getByRole("tooltip")).toHaveCSS("opacity", "1");
   await page.screenshot({
     path: testInfo.outputPath("diagnostics-copy-tooltip.png"),

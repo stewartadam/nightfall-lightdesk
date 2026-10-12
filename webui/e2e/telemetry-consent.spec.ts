@@ -105,7 +105,7 @@ test("customizing the telemetry notice saves each choice", async ({
   await sharingNotice(page).getByRole("button", { name: "Customize" }).click();
   const settings = await privacyTab(page);
   const usage = settings.getByRole("switch", {
-    name: "Share anonymous usage reports",
+    name: "Share usage statistics",
   });
   const errors = settings.getByRole("switch", { name: "Share error reports" });
   await expect(usage).toBeChecked();
@@ -146,6 +146,10 @@ test("privacy settings change sharing choices on the host", async ({
   await sharingNotice(page)
     .getByRole("button", { name: "OK", exact: true })
     .click();
+  // Let the host record OK first, so its broadcast cannot revert the switch changed below.
+  await expect
+    .poll(() => storedTelemetry(backendSlot.dataDir))
+    .toMatchObject({ consent: { decided: true, share_usage: true } });
   await page.keyboard.press("ControlOrMeta+,");
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(settings).toBeVisible();
@@ -154,7 +158,7 @@ test("privacy settings change sharing choices on the host", async ({
     settings.getByRole("link", { name: "privacy policy" }),
   ).toHaveAttribute("href", "https://nightfall.live/privacy");
   const usage = settings.getByRole("switch", {
-    name: "Share anonymous usage reports",
+    name: "Share usage statistics",
   });
   await expect(usage).toBeChecked();
   await usage.setChecked(false);
@@ -172,11 +176,23 @@ test("privacy settings change sharing choices on the host", async ({
   await resetId.evaluate((button) =>
     button.scrollIntoView({ block: "center" }),
   );
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await resetId.click();
   await expect(installId).not.toHaveText(firstId ?? "");
-  await settings.screenshot({
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    firstId,
+  );
+  // The tooltip fades in, so wait until it is opaque before capturing it.
+  await expect(
+    page.getByRole("tooltip", { name: "✅ Prior ID copied to clipboard" }),
+  ).toHaveCSS("opacity", "1");
+  await page.screenshot({
     path: testInfo.outputPath("privacy-settings.png"),
   });
+  // The flash ends on its own and the tooltip fades out and unmounts.
+  await expect(
+    page.getByRole("tooltip", { name: "✅ Prior ID copied to clipboard" }),
+  ).toHaveCount(0, { timeout: 5000 });
 });
 
 /** Verifies uncaught page failures reach the engine, which decides whether to report them. */

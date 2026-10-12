@@ -93,6 +93,10 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   const logs = dialog.getByRole("group", { name: "Logs to include" });
   const showfile = dialog.getByRole("group", { name: "Showfile to include" });
   const preview = dialog.getByRole("region", { name: "Log preview" });
+  await expect(dialog).toContainText("Bug reports are public GitHub issues");
+  await expect(
+    dialog.getByRole("link", { name: "hello@nightfall.live" }),
+  ).toHaveAttribute("href", "mailto:hello@nightfall.live");
   await expect(
     logs.getByRole("radio", { name: "Recent warnings/errors" }),
   ).toBeChecked();
@@ -116,6 +120,18 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   expect(JSON.parse(copied).application).toBe("Nightfall");
   expect(JSON.parse(copied).logs).toBeUndefined();
   expect(copied).not.toContain("diagnostic browser warning");
+  const copiedTooltip = page.getByRole("tooltip", {
+    name: "System info copied.",
+  });
+  const announcement = dialog.locator('[aria-live="polite"]', {
+    has: page.getByText("System info copied."),
+  });
+  await expect(copiedTooltip).toHaveCSS("opacity", "1");
+  await expect(announcement).toHaveCount(1);
+  const liveRegion = await announcement.elementHandle();
+  // The flash ends on its own: the tooltip unmounts and the announcement clears.
+  await expect(copiedTooltip).toHaveCount(0, { timeout: 5000 });
+  expect(await liveRegion?.textContent()).toBe("");
   await logs.getByRole("radio", { name: "All logs", exact: true }).check();
   await expect(preview).toContainText("stored backend entry 0");
   await expect(preview).not.toContainText("stored backend entry 299");
