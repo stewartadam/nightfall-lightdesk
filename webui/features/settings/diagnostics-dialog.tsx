@@ -39,6 +39,10 @@ import { collectSystemInfo } from "../../lib/system-info";
 import { isTauriRuntime } from "../../lib/tauri";
 import { activeShellDialog, closeDiagnostics } from "../../state/shell-dialog";
 
+/** Status shown when System Info cannot be copied, so it can be withdrawn after a later copy works. */
+const CLIPBOARD_UNAVAILABLE_STATUS =
+  "Clipboard unavailable. Expand System info above to select and copy it.";
+
 const logModes = [
   { value: "none", label: "None" },
   { value: "recent", label: "Recent warnings/errors" },
@@ -165,10 +169,10 @@ export function DiagnosticsDialog() {
     try {
       await writeClipboardText(systemInfo());
       setCopies((count) => count + 1);
+      // Withdraw an earlier copy failure, leaving any other status in place.
+      if (status() === CLIPBOARD_UNAVAILABLE_STATUS) setStatus("");
     } catch {
-      setStatus(
-        "Clipboard unavailable. Expand System info above to select and copy it.",
-      );
+      setStatus(CLIPBOARD_UNAVAILABLE_STATUS);
     }
   };
 

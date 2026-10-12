@@ -210,9 +210,6 @@ export function PrivacySettings() {
             >
               <span />
             </Tooltip>
-            <span class="sr-only" aria-live="polite">
-              {copies() > 0 ? "Prior ID copied to clipboard" : ""}
-            </span>
           </div>
         </div>
         <Show when={uncopiedId()}>

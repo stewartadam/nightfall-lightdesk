@@ -123,9 +123,15 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   const copiedTooltip = page.getByRole("tooltip", {
     name: "System info copied.",
   });
+  const announcement = dialog.locator('[aria-live="polite"]', {
+    has: page.getByText("System info copied."),
+  });
   await expect(copiedTooltip).toHaveCSS("opacity", "1");
-  // The flash ends on its own and the tooltip fades out and unmounts.
+  await expect(announcement).toHaveCount(1);
+  const liveRegion = await announcement.elementHandle();
+  // The flash ends on its own: the tooltip unmounts and the announcement clears.
   await expect(copiedTooltip).toHaveCount(0, { timeout: 5000 });
+  expect(await liveRegion?.textContent()).toBe("");
   await logs.getByRole("radio", { name: "All logs", exact: true }).check();
   await expect(preview).toContainText("stored backend entry 0");
   await expect(preview).not.toContainText("stored backend entry 299");

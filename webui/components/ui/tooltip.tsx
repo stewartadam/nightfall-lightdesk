@@ -36,10 +36,11 @@ export interface TooltipProps {
   /**
    * Shows the tooltip briefly each time this value changes after mount, then fades it out,
    * e.g. a counter bumped after copying to the clipboard. A change while it is showing
-   * restarts the display period.
+   * restarts the display period. Each flash is also announced to screen readers through a
+   * polite live region.
    */
   flash?: Accessor<unknown>;
-  /** How long a flash keeps the tooltip shown (ms). Default: 2000 */
+  /** How long each flash keeps the tooltip shown (ms), read when the flash starts. Default: 2000 */
   flashMs?: number;
   /** Allow pointer selection and controls inside the tooltip surface. */
   interactive?: boolean;
@@ -437,6 +438,11 @@ export default function Tooltip(props: TooltipProps) {
       onFocusOut={handleBlur}
     >
       {props.children}
+      <Show when={props.flash}>
+        <span class="sr-only" aria-live="polite">
+          {flashing() ? props.content() : ""}
+        </span>
+      </Show>
       <Show when={mounted()}>
         <Portal mount={overlayHost(triggerRef)}>
           <span
