@@ -19,7 +19,7 @@ import type { TelemetryConsent } from "../../types";
 export const PRIVACY_POLICY_URL = "https://nightfall.live/privacy";
 
 /** Contact address for privacy questions and data deletion requests. */
-const PRIVACY_CONTACT_EMAIL = "hello@nightfall.live";
+export const PRIVACY_CONTACT_EMAIL = "hello@nightfall.live";
 
 /** What usage statistics contain, shown so operators can judge them before agreeing. */
 const USAGE_CONTENTS = [
@@ -40,13 +40,6 @@ const ERROR_CONTENTS = [
   "Your Install ID, and a random session ID that changes each time Nightfall starts",
 ];
 
-/** Data that is never sent, whichever choices are made. */
-const NEVER_COLLECTED = [
-  "Showfile contents or custom fixture names, unless you choose to send them in a bug report",
-  "Names or email addresses",
-  "Full IP addresses",
-];
-
 /**
  * Sends the complete consent record, marking the prompt as answered. The local store is
  * updated first so a second toggle made before the backend echoes the first one builds on
@@ -63,43 +56,6 @@ export function setTelemetryConsent(patch: Partial<TelemetryConsent>): void {
     module: "SettingsCommand",
     command: { type: "SetTelemetryConsent", data: consent },
   });
-}
-
-/** Mail link to the privacy contact address, used for deletion requests and private submissions. */
-function ContactEmailLink() {
-  return (
-    <a class="text-blue-300 underline" href={`mailto:${PRIVACY_CONTACT_EMAIL}`}>
-      {PRIVACY_CONTACT_EMAIL}
-    </a>
-  );
-}
-
-/**
- * Explains what Report a Bug and Collect Diagnostics expose. Both features exist whether or
- * not this build can send telemetry, so this is shown independently of telemetry support.
- */
-function BugReportsNotice() {
-  return (
-    <section aria-label="Bug reports and diagnostics">
-      <h3 class="text-sm font-medium text-gray-300 mb-2">
-        Bug reports and diagnostics
-      </h3>
-      <p class="text-xs text-gray-400">
-        Report a Bug and Collect Diagnostics are optional. Collect Diagnostics
-        only creates a file on this computer, which may contain personal
-        information such as usernames, file paths or object labels, along with
-        showfile data like audio and GDTF files.
-      </p>
-      <p class="mt-2 text-xs text-gray-400">
-        Bug reports are filed as public issues on GitHub, so anything you
-        submit, including the system details and error information Nightfall
-        fills in, can be seen by anyone along with your GitHub username. Check
-        logs and showfiles before attaching them, or send them privately to{" "}
-        <ContactEmailLink />. Private submissions are used only to look into the
-        problem you reported and are deleted within 30 days after use.
-      </p>
-    </section>
-  );
 }
 
 /** Edits host-scoped telemetry consent and explains exactly what each report contains. */
@@ -127,118 +83,100 @@ export function PrivacySettings() {
   };
 
   return (
-    <>
-      <Show
-        when={state().available}
-        fallback={
-          <p class="text-sm text-gray-400">
-            Anonymous reports are not available in this version of Nightfall.
-          </p>
-        }
-      >
-        <p class="text-xs text-gray-400">
-          The Nightfall app can automatically share two kinds of data to help
-          fix errors and prioritize feature development: error reports and usage
-          statistics. Each has its own switch, and both can be changed at any
-          time.
+    <Show
+      when={state().available}
+      fallback={
+        <p class="text-sm text-gray-400">
+          Anonymous reports are not available in this version of Nightfall.
         </p>
+      }
+    >
+      <p class="text-xs text-gray-400">
+        The Nightfall app can automatically share two kinds of data to help fix
+        errors and prioritize feature development: error reports and usage
+        statistics. Each has its own switch, and both can be changed at any
+        time.
+      </p>
+      <p class="text-xs text-gray-400">
+        These choices are saved on this computer, independently of your
+        showfile. See the{" "}
+        <a
+          class="text-blue-300 underline"
+          href={PRIVACY_POLICY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Nightfall privacy policy
+        </a>{" "}
+        for where data is stored and how long it is kept.
+      </p>
+      <section aria-label="Usage statistics">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Usage statistics</h3>
+        <p class="mt-2 text-xs text-gray-400">
+          A snapshot of how Nightfall is set up, used to decide what to build
+          next.
+        </p>
+        <ToggleSwitch
+          label="Share usage statistics"
+          ariaLabel="Share usage statistics"
+          checked={shown().share_usage}
+          onChange={(share_usage) => change({ share_usage })}
+          class="mt-6 mb-3"
+        />
+        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
+          <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
+        </ul>
+      </section>
+      <section aria-label="Error reports">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Error reports</h3>
+        <p class="mt-2 text-xs text-gray-400">
+          Sent when something goes wrong, so bugs can be found and fixed.
+          Turning error reports off also deletes any reports still waiting to be
+          sent.
+        </p>
+        <ToggleSwitch
+          label="Share error reports"
+          ariaLabel="Share error reports"
+          checked={shown().share_errors}
+          onChange={(share_errors) => change({ share_errors })}
+          class="mt-6 mb-3"
+        />
+        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
+          <For each={ERROR_CONTENTS}>{(item) => <li>{item}</li>}</For>
+        </ul>
+      </section>
+      <section aria-label="Install ID">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Install ID</h3>
         <p class="text-xs text-gray-400">
-          These choices are saved on this computer, independently of your
-          showfile. See the{" "}
-          <a
-            class="text-blue-300 underline"
-            href={PRIVACY_POLICY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          A random ID created for this Nightfall installation. It is used only
+          to group reports sent from here and is not tied to you as a person.
+        </p>
+        <div class="mt-2 flex items-center justify-between gap-3">
+          <code
+            class="truncate text-xs text-gray-300"
+            data-testid="telemetry-install-id"
           >
-            Nightfall privacy policy
-          </a>{" "}
-          for where data is stored and how long it is kept.
+            {state().install_id}
+          </code>
+          <Button size="compact" onClick={resetInstallId}>
+            Reset ID
+          </Button>
+        </div>
+        <p class="mt-2 text-xs text-gray-400">
+          If you reset your Install ID, you may wish to keep a record of the
+          prior ID. Nothing links the old and new IDs, so data sent under the
+          old ID can only be deleted if you include it in your request.
         </p>
-        <section aria-label="Usage statistics">
-          <h3 class="text-sm font-medium text-gray-300 mb-2">
-            Usage statistics
-          </h3>
-          <p class="mt-2 text-xs text-gray-400">
-            A snapshot of how Nightfall is set up, used to decide what to build
-            next.
+      </section>
+      <Show when={state().error}>
+        {(error) => (
+          <p class="text-xs text-red-300" role="alert">
+            {error()}
           </p>
-          <ToggleSwitch
-            label="Share usage statistics"
-            ariaLabel="Share usage statistics"
-            checked={shown().share_usage}
-            onChange={(share_usage) => change({ share_usage })}
-            class="mt-6 mb-3"
-          />
-          <p class="mt-2 text-xs text-gray-400">
-            Includes information such as:
-          </p>
-          <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
-            <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
-          </ul>
-        </section>
-        <section aria-label="Error reports">
-          <h3 class="text-sm font-medium text-gray-300 mb-2">Error reports</h3>
-          <p class="mt-2 text-xs text-gray-400">
-            Sent when something goes wrong, so bugs can be found and fixed.
-            Turning error reports off also deletes any reports still waiting to
-            be sent.
-          </p>
-          <ToggleSwitch
-            label="Share error reports"
-            ariaLabel="Share error reports"
-            checked={shown().share_errors}
-            onChange={(share_errors) => change({ share_errors })}
-            class="mt-6 mb-3"
-          />
-          <p class="mt-2 text-xs text-gray-400">
-            Includes information such as:
-          </p>
-          <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
-            <For each={ERROR_CONTENTS}>{(item) => <li>{item}</li>}</For>
-          </ul>
-        </section>
-        <section aria-label="Never collected">
-          <h3 class="text-sm font-medium text-gray-300 mb-2">
-            Never collected
-          </h3>
-          <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
-            <For each={NEVER_COLLECTED}>{(item) => <li>{item}</li>}</For>
-          </ul>
-        </section>
-        <section aria-label="Install ID">
-          <h3 class="text-sm font-medium text-gray-300 mb-2">Install ID</h3>
-          <p class="text-xs text-gray-400">
-            A random ID created for this Nightfall installation. It is used only
-            to group reports sent from here and is not tied to you as a person.
-          </p>
-          <p class="mt-2 text-xs text-gray-400">
-            To have your data deleted, email <ContactEmailLink /> with this ID.
-            If you reset it, keep a note of the old one: nothing links the old
-            and new IDs, so data sent under the old ID can only be deleted if
-            you include it in your request.
-          </p>
-          <div class="mt-2 flex items-center justify-between gap-3">
-            <code
-              class="truncate text-xs text-gray-300"
-              data-testid="telemetry-install-id"
-            >
-              {state().install_id}
-            </code>
-            <Button size="compact" onClick={resetInstallId}>
-              Reset ID
-            </Button>
-          </div>
-        </section>
-        <Show when={state().error}>
-          {(error) => (
-            <p class="text-xs text-red-300" role="alert">
-              {error()}
-            </p>
-          )}
-        </Show>
+        )}
       </Show>
-      <BugReportsNotice />
-    </>
+    </Show>
   );
 }

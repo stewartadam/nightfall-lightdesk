@@ -93,6 +93,10 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   const logs = dialog.getByRole("group", { name: "Logs to include" });
   const showfile = dialog.getByRole("group", { name: "Showfile to include" });
   const preview = dialog.getByRole("region", { name: "Log preview" });
+  await expect(dialog).toContainText("Bug reports are public GitHub issues");
+  await expect(
+    dialog.getByRole("link", { name: "hello@nightfall.live" }),
+  ).toHaveAttribute("href", "mailto:hello@nightfall.live");
   await expect(
     logs.getByRole("radio", { name: "Recent warnings/errors" }),
   ).toBeChecked();

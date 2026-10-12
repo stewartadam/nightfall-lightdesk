@@ -37,6 +37,7 @@ import { showfileExportOptions } from "../../lib/showfile-export-options";
 import { collectSystemInfo } from "../../lib/system-info";
 import { isTauriRuntime } from "../../lib/tauri";
 import { activeShellDialog, closeDiagnostics } from "../../state/shell-dialog";
+import { PRIVACY_CONTACT_EMAIL } from "./privacy-settings";
 
 const logModes = [
   { value: "none", label: "None" },
@@ -240,8 +241,22 @@ export function DiagnosticsDialog() {
         </details>
         <p class="text-sm text-neutral-300">
           Download a ZIP with system information and the content you select
-          below. Review it before sharing; files stay on your computer until you
-          attach them to a bug report.
+          below. It stays on this computer until you share it, and may contain
+          personal information such as usernames, file paths or object labels,
+          along with showfile data like audio and GDTF files.
+        </p>
+        <p class="text-sm text-neutral-300">
+          Bug reports are public GitHub issues, so anything attached to one can
+          be seen by anyone. Review the ZIP before attaching it, or email it
+          privately to{" "}
+          <a
+            class="text-blue-300 underline"
+            href={`mailto:${PRIVACY_CONTACT_EMAIL}`}
+          >
+            {PRIVACY_CONTACT_EMAIL}
+          </a>
+          . Private submissions are used only to look into the problem you
+          reported and are deleted within 30 days after use.
         </p>
         <fieldset
           class="shrink-0 space-y-1"

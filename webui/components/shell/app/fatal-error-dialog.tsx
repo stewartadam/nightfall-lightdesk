@@ -52,7 +52,9 @@ function FatalErrorDialog() {
           <DialogBody class="space-y-3 text-sm text-neutral-300">
             <p>
               {failureSummary(current())} Reloading usually recovers. Reporting
-              it helps us fix it.
+              it helps us fix it. Bug reports are public GitHub issues that
+              include the error below and basic system details, so review them
+              before submitting.
             </p>
             <p
               class="rounded-md border border-red-800/70 bg-red-950/50 px-3 py-2 font-mono text-xs text-red-200 [overflow-wrap:anywhere]"
