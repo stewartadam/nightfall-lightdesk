@@ -41,7 +41,7 @@ import { activeShellDialog, closeDiagnostics } from "../../state/shell-dialog";
 
 /** Status shown when System Info cannot be copied, so it can be withdrawn after a later copy works. */
 const CLIPBOARD_UNAVAILABLE_STATUS =
-  "Clipboard unavailable. Expand System info above to select and copy it.";
+  "Clipboard unavailable. Expand System information included above to select and copy it.";
 
 const logModes = [
   { value: "none", label: "None" },
@@ -227,25 +227,20 @@ export function DiagnosticsDialog() {
       onSubmit={() => void download()}
     >
       <div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
-        <details class="shrink-0 text-sm text-neutral-300">
-          <summary class="cursor-pointer">System info</summary>
-          <textarea
-            aria-label="System info"
-            class="mt-2 h-24 resize-none w-full rounded border border-neutral-600 bg-neutral-950 p-3 font-mono text-xs leading-5"
-            value={systemInfo()}
-            readOnly
-            spellcheck={false}
-          />
-        </details>
         <p class="text-sm text-neutral-300">
-          Download a ZIP with system information and the content you select
-          below. It stays on this computer until you share it, and may contain
-          personal information such as usernames, file paths or object labels,
-          along with showfile data like audio and GDTF files.
+          Generating a diagnostic bundle can help Nightfall authors troubleshoot
+          and reproduce your issue. It includes information from your logs and
+          showfile.
         </p>
         <p class="text-sm text-neutral-300">
-          Bug reports are public GitHub issues, so anything attached to one can
-          be seen by anyone. Review the ZIP before attaching it, or email it
+          The diagnostic bundle is saved on this computer until you share it,{" "}
+          <strong>and may contain personal information</strong> such as
+          usernames, file paths or object labels, along with showfile data like
+          audio and GDTF files.
+        </p>
+        <p class="text-sm text-neutral-300">
+          Bug reports are public GitHub issues that can be viewed by anyone.
+          Review the ZIP contents carefully before attaching it, or email it
           privately to{" "}
           <a
             class="text-blue-300 underline"
@@ -256,6 +251,22 @@ export function DiagnosticsDialog() {
           . Private submissions are used only to look into the problem you
           reported and are deleted within 30 days after use.
         </p>
+
+        <div class="my-1 border-t border-slate-200 dark:border-slate-600" />
+
+        <details class="shrink-0 text-sm text-neutral-300">
+          <summary class="cursor-pointer text-sm font-medium">
+            System information included
+          </summary>
+          <textarea
+            aria-label="System information included"
+            class="mt-2 h-24 resize-none w-full rounded border border-neutral-600 bg-neutral-950 p-3 font-mono text-xs leading-5"
+            value={systemInfo()}
+            readOnly
+            spellcheck={false}
+          />
+        </details>
+
         <fieldset
           class="shrink-0 space-y-1"
           aria-describedby="diagnostic-showfile-description"
@@ -429,7 +440,7 @@ export function DiagnosticsDialog() {
             Copy System Info
           </Button>
           <Tooltip
-            content={() => "System info copied."}
+            content={() => "✅ System info copied."}
             flash={copies}
             anchorRect={() => copyButton?.getBoundingClientRect()}
           >

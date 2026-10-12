@@ -25,10 +25,10 @@ let mounted = false;
 /** Explains the failure in one sentence fitting when it happened and whether the app survived. */
 function failureSummary(current: FatalErrorPresentation): string {
   if (!current.afterStartup)
-    return "An unexpected error happened while Nightfall was starting.";
+    return "An error prevented Nightfall from starting";
   return current.recoverable
-    ? "An unexpected error happened while loading."
-    : "An unexpected error stopped the workspace.";
+    ? "An error occurred while loading Nightfall"
+    : "An error stopped the Nightfall session";
 }
 
 /**
@@ -51,10 +51,16 @@ function FatalErrorDialog() {
         >
           <DialogBody class="space-y-3 text-sm text-neutral-300">
             <p>
-              {failureSummary(current())} Reloading usually recovers. Reporting
-              it helps us fix it. Bug reports are public GitHub issues that
-              include the error below and basic system details, so review them
-              before submitting.
+              {failureSummary(current())}. Reloading the application usually
+              recovers.
+            </p>
+            <p>
+              If you encounter this issue repeatedly, reporting it helps us fix
+              it.
+            </p>
+            <p>
+              Bug reports are public GitHub issues that include the error below
+              and basic system details, so review them before submitting.
             </p>
             <p
               class="rounded-md border border-red-800/70 bg-red-950/50 px-3 py-2 font-mono text-xs text-red-200 [overflow-wrap:anywhere]"
