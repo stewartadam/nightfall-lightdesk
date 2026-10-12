@@ -146,6 +146,10 @@ test("privacy settings change sharing choices on the host", async ({
   await sharingNotice(page)
     .getByRole("button", { name: "OK", exact: true })
     .click();
+  // Let the host record OK first, so its broadcast cannot revert the switch changed below.
+  await expect
+    .poll(() => storedTelemetry(backendSlot.dataDir))
+    .toMatchObject({ consent: { decided: true, share_usage: true } });
   await page.keyboard.press("ControlOrMeta+,");
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(settings).toBeVisible();
@@ -178,10 +182,11 @@ test("privacy settings change sharing choices on the host", async ({
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     firstId,
   );
+  // The tooltip fades in, so wait until it is opaque before capturing it.
   await expect(
-    page.getByText(`Copied previous Install ID ${firstId}`),
-  ).toBeVisible();
-  await settings.screenshot({
+    page.getByRole("tooltip", { name: "✅ Prior ID copied to clipboard" }),
+  ).toHaveCSS("opacity", "1");
+  await page.screenshot({
     path: testInfo.outputPath("privacy-settings.png"),
   });
 });

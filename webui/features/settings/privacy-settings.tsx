@@ -7,14 +7,21 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
+import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import { writeClipboardText } from "../../lib/clipboard";
 import { engineRuntime } from "../../lib/engine-runtime";
 import { setStoreAction } from "../../lib/nanostore-action";
 import { PRIVACY_POLICY_URL } from "../../lib/privacy";
-import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
 import type { TelemetryConsent } from "../../types";
 
@@ -71,6 +78,17 @@ export function PrivacySettings() {
   /** Records the full choice with one switch changed, which also answers the first-run notice. */
   const change = (patch: Partial<ReturnType<typeof shown>>) =>
     setTelemetryConsent({ ...shown(), ...patch });
+  /** Whether the "prior ID copied" tooltip is showing over Reset ID. */
+  const [copiedNotice, setCopiedNotice] = createSignal(false);
+  /** A replaced Install ID that could not be copied, shown so the operator can note it down. */
+  const [uncopiedId, setUncopiedId] = createSignal<string>();
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+  let resetButton: HTMLButtonElement | undefined;
+  onCleanup(() => {
+    disposed = true;
+    clearTimeout(copiedTimer);
+  });
   /** The Install ID a reset was requested for, until the backend reports its replacement. */
   const [resettingId, setResettingId] = createSignal<string>();
   /**
@@ -86,27 +104,31 @@ export function PrivacySettings() {
   /**
    * Replaces the Install ID so future reports cannot be linked to past ones. The old ID is
    * copied to the clipboard, since it is needed to request deletion of data sent under it and
-   * nothing links it to the new one. If copying fails, the old ID is shown in a notification
-   * that stays until dismissed. The copy starts within the click, as browsers require, but the
+   * nothing links it to the new one. Success is confirmed by a brief tooltip over the button,
+   * since toasts render beneath the Settings dialog; if copying fails, the old ID stays shown
+   * below the button instead. The copy starts within the click, as browsers require, but the
    * reset does not wait for it, so a stalled clipboard permission prompt cannot block it.
    */
   const resetInstallId = () => {
     const previousId = state().install_id;
     if (!previousId || resettingId()) return;
     setResettingId(previousId);
+    setUncopiedId(undefined);
     const copied = writeClipboardText(previousId);
     engineRuntime.sendCommand({
       module: "SettingsCommand",
       command: { type: "ResetTelemetryInstallId" },
     });
     copied.then(
-      () => pushToast("success", `Copied previous Install ID ${previousId}`),
-      () =>
-        pushToast(
-          "warning",
-          `Could not copy the previous Install ID. Keep a note of it to request deletion of data sent under it: ${previousId}`,
-          0,
-        ),
+      () => {
+        if (disposed) return;
+        setCopiedNotice(true);
+        clearTimeout(copiedTimer);
+        copiedTimer = setTimeout(() => setCopiedNotice(false), 2000);
+      },
+      () => {
+        if (!disposed) setUncopiedId(previousId);
+      },
     );
   };
 
@@ -188,14 +210,34 @@ export function PrivacySettings() {
           >
             {state().install_id}
           </code>
-          <Button
-            size="compact"
-            onClick={resetInstallId}
-            disabled={!state().install_id || resettingId() !== undefined}
-          >
-            Reset ID
-          </Button>
+          <div class="shrink-0">
+            <Button
+              ref={resetButton}
+              size="compact"
+              onClick={resetInstallId}
+              disabled={!state().install_id || resettingId() !== undefined}
+            >
+              Reset ID
+            </Button>
+            <Show when={copiedNotice()}>
+              <Tooltip
+                content={() => "✅ Prior ID copied to clipboard"}
+                forceVisible={() => true}
+                anchorRect={() => resetButton?.getBoundingClientRect()}
+              >
+                <span />
+              </Tooltip>
+            </Show>
+          </div>
         </div>
+        <Show when={uncopiedId()}>
+          {(id) => (
+            <p class="mt-2 text-xs text-amber-300" role="alert">
+              Could not copy the prior ID to the clipboard. Keep a note of it:{" "}
+              <code class="select-all text-gray-300">{id()}</code>
+            </p>
+          )}
+        </Show>
         <p class="mt-2 text-xs text-gray-400">
           If you reset your Install ID, you may wish to keep a record of the
           prior ID. Nothing links the old and new IDs, so data sent under the
