@@ -105,7 +105,7 @@ test("customizing the telemetry notice saves each choice", async ({
   await sharingNotice(page).getByRole("button", { name: "Customize" }).click();
   const settings = await privacyTab(page);
   const usage = settings.getByRole("switch", {
-    name: "Share anonymous usage reports",
+    name: "Share usage statistics",
   });
   const errors = settings.getByRole("switch", { name: "Share error reports" });
   await expect(usage).toBeChecked();
@@ -154,7 +154,7 @@ test("privacy settings change sharing choices on the host", async ({
     settings.getByRole("link", { name: "privacy policy" }),
   ).toHaveAttribute("href", "https://nightfall.live/privacy");
   const usage = settings.getByRole("switch", {
-    name: "Share anonymous usage reports",
+    name: "Share usage statistics",
   });
   await expect(usage).toBeChecked();
   await usage.setChecked(false);

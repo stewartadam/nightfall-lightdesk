@@ -18,14 +18,17 @@ import type { TelemetryConsent } from "../../types";
 /** Public privacy policy describing what Nightfall shares and where it goes. */
 export const PRIVACY_POLICY_URL = "https://nightfall.live/privacy";
 
-/** What a usage report contains, shown so operators can judge it before agreeing. */
+/** Contact address for privacy questions and data deletion requests. */
+const PRIVACY_CONTACT_EMAIL = "hello@nightfall.live";
+
+/** What usage statistics contain, shown so operators can judge them before agreeing. */
 const USAGE_CONTENTS = [
   "App version and operating system information",
   "Basic hardware information like your CPU, GPU and memory",
   "Make and model of library fixtures in your patch (custom fixtures names are not recorded)",
-  "Count of each object type your showfile",
+  "How many of each object type your show contains",
   "Input/output transports in use, and make and model of hardware nodes",
-  "Anonymous ID below, and a random session ID that changes each time Nightfall starts",
+  "Your Install ID, and a random session ID that changes each time Nightfall starts",
   "Approximate location (country, region, and city) estimated from your IP address. The IP address itself is not stored.",
 ];
 
@@ -34,7 +37,14 @@ const ERROR_CONTENTS = [
   "Error with stack trace, along with warnings logged shortly before the error",
   "App version and operating system information",
   "Computer model and processor architecture",
-  "Anonymous ID below, and a random session ID that changes each time Nightfall starts",
+  "Your Install ID, and a random session ID that changes each time Nightfall starts",
+];
+
+/** Data that is never sent, whichever choices are made. */
+const NEVER_COLLECTED = [
+  "Showfile contents or custom fixture names",
+  "Names or email addresses",
+  "Full IP addresses",
 ];
 
 /**
@@ -71,7 +81,7 @@ export function PrivacySettings() {
   /** Records the full choice with one switch changed, which also answers the first-run notice. */
   const change = (patch: Partial<ReturnType<typeof shown>>) =>
     setTelemetryConsent({ ...shown(), ...patch });
-  /** Replaces the anonymous identifier so future reports cannot be linked to past ones. */
+  /** Replaces the Install ID so future reports cannot be linked to past ones. */
   const resetInstallId = () => {
     engineRuntime.sendCommand({
       module: "SettingsCommand",
@@ -89,11 +99,13 @@ export function PrivacySettings() {
       }
     >
       <p class="text-xs text-gray-400">
-        Diagnostics can automatically be sent with the goal of making Nightfall
-        more reliable and prioritizing feature development.
+        Nightfall can send two kinds of anonymous diagnostic data to help fix
+        errors and prioritize feature development. Each has its own switch, and
+        both can be changed at any time.
       </p>
-      <p class="mt-6 text-xs text-gray-400">
-        View the{" "}
+      <p class="text-xs text-gray-400">
+        These choices are saved on this computer, independently of your
+        showfile. See the{" "}
         <a
           class="text-blue-300 underline"
           href={PRIVACY_POLICY_URL}
@@ -102,18 +114,32 @@ export function PrivacySettings() {
         >
           Nightfall privacy policy
         </a>{" "}
-        for more details how data is handled and stored.
+        for where data is stored and how long it is kept.
       </p>
-      <p class="text-xs text-gray-400">
-        These choices are saved on this computer, independently of your
-        showfile.
-      </p>
-      <p class="text-xs text-gray-400"></p>
-      <p class="text-xs text-gray-400"></p>
+      <section aria-label="Usage statistics">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Usage statistics</h3>
+        <p class="mt-2 text-xs text-gray-400">
+          A snapshot of how Nightfall is set up, used to decide what to build
+          next.
+        </p>
+        <ToggleSwitch
+          label="Share usage statistics"
+          ariaLabel="Share usage statistics"
+          checked={shown().share_usage}
+          onChange={(share_usage) => change({ share_usage })}
+          class="mt-6 mb-3"
+        />
+        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
+          <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
+        </ul>
+      </section>
       <section aria-label="Error reports">
         <h3 class="text-sm font-medium text-gray-300 mb-2">Error reports</h3>
         <p class="mt-2 text-xs text-gray-400">
-          Sent when something goes wrong so we can fix common issues.
+          Sent when something goes wrong, so bugs can be found and fixed.
+          Turning error reports off also deletes any reports still waiting to be
+          sent.
         </p>
         <ToggleSwitch
           label="Share error reports"
@@ -127,31 +153,29 @@ export function PrivacySettings() {
           <For each={ERROR_CONTENTS}>{(item) => <li>{item}</li>}</For>
         </ul>
       </section>
-      <section aria-label="Usage reports">
-        <h3 class="text-sm font-medium text-gray-300 mb-2">Usage reports</h3>
-        <p class="mt-2 text-xs text-gray-400">
-          Helps decide which fixtures, hardware and features to support next.
-        </p>
-        <ToggleSwitch
-          label="Share anonymous usage reports"
-          ariaLabel="Share anonymous usage reports"
-          checked={shown().share_usage}
-          onChange={(share_usage) => change({ share_usage })}
-          class="mt-6 mb-3"
-        />
-        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
+      <section aria-label="Never collected">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Never collected</h3>
         <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
-          <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
+          <For each={NEVER_COLLECTED}>{(item) => <li>{item}</li>}</For>
         </ul>
       </section>
-      <section aria-label="Anonymous identifier">
-        <h3 class="text-sm font-medium text-gray-300 mb-2">
-          Anonymous identifier
-        </h3>
+      <section aria-label="Install ID">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">Install ID</h3>
         <p class="text-xs text-gray-400">
-          A random ID used to identify diagnostics sent by this Nightfall
-          instance. It contains nothing about you, and can be rotated at any
-          time.
+          A random ID created for this Nightfall installation. It is used only
+          to group reports sent from here and is not tied to you as a person.
+        </p>
+        <p class="mt-2 text-xs text-gray-400">
+          To have your data deleted, email{" "}
+          <a
+            class="text-blue-300 underline"
+            href={`mailto:${PRIVACY_CONTACT_EMAIL}`}
+          >
+            {PRIVACY_CONTACT_EMAIL}
+          </a>{" "}
+          with this ID. If you reset it, keep a note of the old one: nothing
+          links the old and new IDs, so data sent under the old ID can only be
+          deleted if you include it in your request.
         </p>
         <div class="mt-2 flex items-center justify-between gap-3">
           <code
