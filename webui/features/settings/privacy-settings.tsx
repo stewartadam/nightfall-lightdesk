@@ -93,11 +93,15 @@ export function PrivacySettings() {
   const [resettingId, setResettingId] = createSignal<string>();
   /**
    * Re-enables Reset ID once the backend reports an ID other than the one being replaced, or
-   * reports an error, so a failed reset can be retried.
+   * reports an error, so a failed reset can be retried. On error the ID was not replaced, so
+   * any "keep a note of the prior ID" prompt for it is withdrawn.
    */
   createEffect(() => {
     const current = state();
-    if (current.install_id !== resettingId() || current.error) {
+    if (current.error) {
+      setResettingId(undefined);
+      setUncopiedId(undefined);
+    } else if (current.install_id !== resettingId()) {
       setResettingId(undefined);
     }
   });
@@ -219,15 +223,16 @@ export function PrivacySettings() {
             >
               Reset ID
             </Button>
-            <Show when={copiedNotice()}>
-              <Tooltip
-                content={() => "✅ Prior ID copied to clipboard"}
-                forceVisible={() => true}
-                anchorRect={() => resetButton?.getBoundingClientRect()}
-              >
-                <span />
-              </Tooltip>
-            </Show>
+            <Tooltip
+              content={() => "✅ Prior ID copied to clipboard"}
+              forceVisible={copiedNotice}
+              anchorRect={() => resetButton?.getBoundingClientRect()}
+            >
+              <span />
+            </Tooltip>
+            <span class="sr-only" aria-live="polite">
+              {copiedNotice() ? "Prior ID copied to clipboard" : ""}
+            </span>
           </div>
         </div>
         <Show when={uncopiedId()}>
