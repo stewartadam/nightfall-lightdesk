@@ -209,7 +209,15 @@ test("tab chevrons follow horizontal scrolling and direction", async ({
       (element: HTMLElement) => element.offsetHeight - element.clientHeight,
     ),
   ).toBe(0);
-  await tabs.locator("..").locator('[data-edge="right"]').click();
+  const rightEdge = tabs.locator("..").locator('[data-edge="right"]');
+  const chevron = rightEdge.locator("svg");
+  await expect(chevron).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+  await rightEdge.hover();
+  await expect(chevron).not.toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+  await panel.screenshot({
+    path: testInfo.outputPath("tab-chevron-hover.png"),
+  });
+  await rightEdge.click();
   await expect
     .poll(() => tabs.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(0);
