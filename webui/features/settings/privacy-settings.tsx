@@ -42,7 +42,7 @@ const ERROR_CONTENTS = [
 
 /** Data that is never sent, whichever choices are made. */
 const NEVER_COLLECTED = [
-  "Showfile contents or custom fixture names",
+  "Showfile contents or custom fixture names, unless you choose to send them in a bug report",
   "Names or email addresses",
   "Full IP addresses",
 ];
@@ -158,6 +158,30 @@ export function PrivacySettings() {
         <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
           <For each={NEVER_COLLECTED}>{(item) => <li>{item}</li>}</For>
         </ul>
+      </section>
+      <section aria-label="Bug reports and diagnostics">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">
+          Bug reports and diagnostics
+        </h3>
+        <p class="text-xs text-gray-400">
+          Report a Bug and Collect Diagnostics are optional, and nothing is sent
+          unless you choose to send it. Diagnostics bundles may contain personal
+          information such as usernames, file paths or object labels, along with
+          showfile data like audio and GDTF files.
+        </p>
+        <p class="mt-2 text-xs text-gray-400">
+          Bug reports are filed as public issues on GitHub, so anything you
+          attach and your GitHub username can be seen by anyone. Check logs and
+          showfiles before attaching them, or send them privately to{" "}
+          <a
+            class="text-blue-300 underline"
+            href={`mailto:${PRIVACY_CONTACT_EMAIL}`}
+          >
+            {PRIVACY_CONTACT_EMAIL}
+          </a>
+          . Private submissions are used only to look into the problem you
+          reported and are deleted within 30 days after use.
+        </p>
       </section>
       <section aria-label="Install ID">
         <h3 class="text-sm font-medium text-gray-300 mb-2">Install ID</h3>
