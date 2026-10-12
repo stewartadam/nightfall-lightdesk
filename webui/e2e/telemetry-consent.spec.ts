@@ -153,6 +153,11 @@ test("privacy settings change sharing choices on the host", async ({
   await expect(
     settings.getByRole("link", { name: "privacy policy" }),
   ).toHaveAttribute("href", "https://nightfall.live/privacy");
+  await expect(
+    settings
+      .getByRole("region", { name: "Bug reports and diagnostics" })
+      .getByRole("link", { name: "hello@nightfall.live" }),
+  ).toHaveAttribute("href", "mailto:hello@nightfall.live");
   const usage = settings.getByRole("switch", {
     name: "Share usage statistics",
   });
