@@ -189,6 +189,10 @@ test("privacy settings change sharing choices on the host", async ({
   await page.screenshot({
     path: testInfo.outputPath("privacy-settings.png"),
   });
+  // The flash ends on its own and the tooltip fades out and unmounts.
+  await expect(
+    page.getByRole("tooltip", { name: "✅ Prior ID copied to clipboard" }),
+  ).toHaveCount(0, { timeout: 5000 });
 });
 
 /** Verifies uncaught page failures reach the engine, which decides whether to report them. */

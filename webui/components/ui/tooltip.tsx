@@ -11,6 +11,7 @@ import {
   createEffect,
   createSignal,
   type JSX,
+  on,
   onCleanup,
   Show,
 } from "solid-js";
@@ -32,6 +33,14 @@ export interface TooltipProps {
   animationKey?: Accessor<unknown>;
   /** Force tooltip visibility (used for imperative auto-open cases). */
   forceVisible?: Accessor<boolean>;
+  /**
+   * Shows the tooltip briefly each time this value changes after mount, then fades it out,
+   * e.g. a counter bumped after copying to the clipboard. A change while it is showing
+   * restarts the display period.
+   */
+  flash?: Accessor<unknown>;
+  /** How long a flash keeps the tooltip shown (ms). Default: 2000 */
+  flashMs?: number;
   /** Allow pointer selection and controls inside the tooltip surface. */
   interactive?: boolean;
 }
@@ -81,7 +90,27 @@ export default function Tooltip(props: TooltipProps) {
 
   const forceVisible = () => props.forceVisible?.() ?? false;
 
-  const wantsVisible = () => visible() || forceVisible();
+  const [flashing, setFlashing] = createSignal(false);
+  let flashTimeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  /** Shows the tooltip for the flash period whenever the flash value changes, skipping mount. */
+  createEffect(
+    on(
+      () => props.flash?.(),
+      () => {
+        clearTimeout(flashTimeoutId);
+        setFlashing(true);
+        flashTimeoutId = setTimeout(
+          () => setFlashing(false),
+          props.flashMs ?? 2000,
+        );
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => clearTimeout(flashTimeoutId));
+
+  const wantsVisible = () => visible() || forceVisible() || flashing();
   const OFFSET_PX = 10;
   const VIEWPORT_PADDING_PX = 8;
   const POINTER_SIZE_PX = 8;

@@ -86,9 +86,8 @@ export function DiagnosticsDialog() {
   const [saving, setSaving] = createSignal(false);
   const [logError, setLogError] = createSignal("");
   const [status, setStatus] = createSignal("");
-  const [copied, setCopied] = createSignal(false);
-  let copyTimer: ReturnType<typeof setTimeout> | undefined;
-  let disposed = false;
+  /** Counts System Info copies; each change flashes the confirmation tooltip. */
+  const [copies, setCopies] = createSignal(0);
   let copyButton: HTMLButtonElement | undefined;
   let downloadButton: HTMLButtonElement | undefined;
   let dialogElement: HTMLDivElement | undefined;
@@ -98,8 +97,6 @@ export function DiagnosticsDialog() {
 
   /** Invalidates pending reads after the dialog is disposed. */
   onCleanup(() => {
-    disposed = true;
-    clearTimeout(copyTimer);
     collectionId++;
   });
 
@@ -167,10 +164,7 @@ export function DiagnosticsDialog() {
   const copySystemInfo = async () => {
     try {
       await writeClipboardText(systemInfo());
-      if (disposed) return;
-      setCopied(true);
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => setCopied(false), 2000);
+      setCopies((count) => count + 1);
     } catch {
       setStatus(
         "Clipboard unavailable. Expand System info above to select and copy it.",
@@ -430,15 +424,13 @@ export function DiagnosticsDialog() {
           >
             Copy System Info
           </Button>
-          <Show when={copied()}>
-            <Tooltip
-              content={() => "System info copied."}
-              forceVisible={() => true}
-              anchorRect={() => copyButton?.getBoundingClientRect()}
-            >
-              <span />
-            </Tooltip>
-          </Show>
+          <Tooltip
+            content={() => "System info copied."}
+            flash={copies}
+            anchorRect={() => copyButton?.getBoundingClientRect()}
+          >
+            <span />
+          </Tooltip>
         </div>
         <div class="flex gap-2">
           <DialogCancelButton />

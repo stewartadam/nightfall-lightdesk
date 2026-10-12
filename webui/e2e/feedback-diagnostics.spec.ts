@@ -120,6 +120,12 @@ test("collects selected logs and showfile content in a diagnostic ZIP", async ({
   expect(JSON.parse(copied).application).toBe("Nightfall");
   expect(JSON.parse(copied).logs).toBeUndefined();
   expect(copied).not.toContain("diagnostic browser warning");
+  const copiedTooltip = page.getByRole("tooltip", {
+    name: "System info copied.",
+  });
+  await expect(copiedTooltip).toHaveCSS("opacity", "1");
+  // The flash ends on its own and the tooltip fades out and unmounts.
+  await expect(copiedTooltip).toHaveCount(0, { timeout: 5000 });
   await logs.getByRole("radio", { name: "All logs", exact: true }).check();
   await expect(preview).toContainText("stored backend entry 0");
   await expect(preview).not.toContainText("stored backend entry 299");

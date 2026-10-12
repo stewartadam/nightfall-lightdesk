@@ -7,14 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
@@ -78,17 +71,11 @@ export function PrivacySettings() {
   /** Records the full choice with one switch changed, which also answers the first-run notice. */
   const change = (patch: Partial<ReturnType<typeof shown>>) =>
     setTelemetryConsent({ ...shown(), ...patch });
-  /** Whether the "prior ID copied" tooltip is showing over Reset ID. */
-  const [copiedNotice, setCopiedNotice] = createSignal(false);
+  /** Counts successful copies of a prior ID; each change flashes the confirmation tooltip. */
+  const [copies, setCopies] = createSignal(0);
   /** A replaced Install ID that could not be copied, shown so the operator can note it down. */
   const [uncopiedId, setUncopiedId] = createSignal<string>();
-  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-  let disposed = false;
   let resetButton: HTMLButtonElement | undefined;
-  onCleanup(() => {
-    disposed = true;
-    clearTimeout(copiedTimer);
-  });
   /** The Install ID a reset was requested for, until the backend reports its replacement. */
   const [resettingId, setResettingId] = createSignal<string>();
   /**
@@ -124,15 +111,8 @@ export function PrivacySettings() {
       command: { type: "ResetTelemetryInstallId" },
     });
     copied.then(
-      () => {
-        if (disposed) return;
-        setCopiedNotice(true);
-        clearTimeout(copiedTimer);
-        copiedTimer = setTimeout(() => setCopiedNotice(false), 2000);
-      },
-      () => {
-        if (!disposed) setUncopiedId(previousId);
-      },
+      () => setCopies((count) => count + 1),
+      () => setUncopiedId(previousId),
     );
   };
 
@@ -225,13 +205,13 @@ export function PrivacySettings() {
             </Button>
             <Tooltip
               content={() => "✅ Prior ID copied to clipboard"}
-              forceVisible={copiedNotice}
+              flash={copies}
               anchorRect={() => resetButton?.getBoundingClientRect()}
             >
               <span />
             </Tooltip>
             <span class="sr-only" aria-live="polite">
-              {copiedNotice() ? "Prior ID copied to clipboard" : ""}
+              {copies() > 0 ? "Prior ID copied to clipboard" : ""}
             </span>
           </div>
         </div>
