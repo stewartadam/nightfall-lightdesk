@@ -33,11 +33,11 @@ import {
   formatSystemInfo,
 } from "../../lib/diagnostics";
 import { exportDiagnostics } from "../../lib/diagnostics-export";
+import { PRIVACY_CONTACT_EMAIL } from "../../lib/privacy";
 import { showfileExportOptions } from "../../lib/showfile-export-options";
 import { collectSystemInfo } from "../../lib/system-info";
 import { isTauriRuntime } from "../../lib/tauri";
 import { activeShellDialog, closeDiagnostics } from "../../state/shell-dialog";
-import { PRIVACY_CONTACT_EMAIL } from "./privacy-settings";
 
 const logModes = [
   { value: "none", label: "None" },

@@ -7,21 +7,16 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { writeClipboardText } from "../../lib/clipboard";
 import { engineRuntime } from "../../lib/engine-runtime";
 import { setStoreAction } from "../../lib/nanostore-action";
+import { PRIVACY_POLICY_URL } from "../../lib/privacy";
 import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
 import type { TelemetryConsent } from "../../types";
-
-/** Public privacy policy describing what Nightfall shares and where it goes. */
-export const PRIVACY_POLICY_URL = "https://nightfall.live/privacy";
-
-/** Contact address for privacy questions and data deletion requests. */
-export const PRIVACY_CONTACT_EMAIL = "hello@nightfall.live";
 
 /** What usage statistics contain, shown so operators can judge them before agreeing. */
 const USAGE_CONTENTS = [
@@ -76,28 +71,43 @@ export function PrivacySettings() {
   /** Records the full choice with one switch changed, which also answers the first-run notice. */
   const change = (patch: Partial<ReturnType<typeof shown>>) =>
     setTelemetryConsent({ ...shown(), ...patch });
+  /** The Install ID a reset was requested for, until the backend reports its replacement. */
+  const [resettingId, setResettingId] = createSignal<string>();
+  /**
+   * Re-enables Reset ID once the backend reports an ID other than the one being replaced, or
+   * reports an error, so a failed reset can be retried.
+   */
+  createEffect(() => {
+    const current = state();
+    if (current.install_id !== resettingId() || current.error) {
+      setResettingId(undefined);
+    }
+  });
   /**
    * Replaces the Install ID so future reports cannot be linked to past ones. The old ID is
-   * copied to the clipboard first, since it is needed to request deletion of data sent under
-   * it and nothing links it to the new one. If copying fails, the old ID is shown in a
-   * notification that stays until dismissed.
+   * copied to the clipboard, since it is needed to request deletion of data sent under it and
+   * nothing links it to the new one. If copying fails, the old ID is shown in a notification
+   * that stays until dismissed. The copy starts within the click, as browsers require, but the
+   * reset does not wait for it, so a stalled clipboard permission prompt cannot block it.
    */
-  const resetInstallId = async () => {
+  const resetInstallId = () => {
     const previousId = state().install_id;
-    try {
-      await writeClipboardText(previousId);
-      pushToast("success", `Copied previous Install ID ${previousId}`);
-    } catch {
-      pushToast(
-        "warning",
-        `Could not copy the previous Install ID. Keep a note of it to request deletion of data sent under it: ${previousId}`,
-        0,
-      );
-    }
+    if (!previousId || resettingId()) return;
+    setResettingId(previousId);
+    const copied = writeClipboardText(previousId);
     engineRuntime.sendCommand({
       module: "SettingsCommand",
       command: { type: "ResetTelemetryInstallId" },
     });
+    copied.then(
+      () => pushToast("success", `Copied previous Install ID ${previousId}`),
+      () =>
+        pushToast(
+          "warning",
+          `Could not copy the previous Install ID. Keep a note of it to request deletion of data sent under it: ${previousId}`,
+          0,
+        ),
+    );
   };
 
   return (
@@ -178,7 +188,11 @@ export function PrivacySettings() {
           >
             {state().install_id}
           </code>
-          <Button size="compact" onClick={resetInstallId}>
+          <Button
+            size="compact"
+            onClick={resetInstallId}
+            disabled={!state().install_id || resettingId() !== undefined}
+          >
             Reset ID
           </Button>
         </div>
