@@ -808,10 +808,10 @@ const BACKEND_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 /// then exits the app itself. If the backend does not stop in time, the app exits anyway.
 ///
 /// Tauri ends the process right after the final exit event without returning to `main`, so
-/// error reports still in memory are written to disk then.
+/// reports still in memory are written to disk then.
 fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &AtomicBool) {
     if matches!(event, tauri::RunEvent::Exit) {
-        app_runtime::flush_error_reports();
+        app_runtime::flush_reports();
         return;
     }
     let tauri::RunEvent::ExitRequested { api, .. } = event else {

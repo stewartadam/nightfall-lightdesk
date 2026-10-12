@@ -15,6 +15,7 @@ import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
 import {
   AboutDialog,
+  GraphicsReporter,
   SettingsOverlay,
   TelemetryConsentPrompt,
 } from "../../../features/settings";
@@ -54,6 +55,7 @@ function ShellRuntime() {
       <AboutDialog />
       <SettingsOverlay />
       <TelemetryConsentPrompt />
+      <GraphicsReporter />
       <SelectionFlattenConfirmModal />
     </>
   );

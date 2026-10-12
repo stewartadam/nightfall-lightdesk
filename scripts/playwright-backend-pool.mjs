@@ -294,8 +294,9 @@ export async function startPlaywrightTestBackend({
       environment: {
         RUST_LOG: process.env.NIGHTFALL_PLAYWRIGHT_RUST_LOG ?? "error",
         NIGHTFALL_DATA_DIR: dataDir,
-        // Tests that turn error reports on must never reach the project's error service.
+        // Tests that turn reports on must never reach the project's services.
         NIGHTFALL_ERROR_REPORTS_DSN: "",
+        NIGHTFALL_USAGE_REPORTS_URL: "",
         NIGHTFALL_INPUT_ARTNET: "false",
         NIGHTFALL_INPUT_SACN_ENABLED: "false",
         NIGHTFALL_OUTPUT_ARTNET: "false",

@@ -47,6 +47,7 @@ const TIMELINE_AUDIO_ENABLED_ENV: &str = "NIGHTFALL_TIMELINE_AUDIO_ENABLED";
 const FATAL_SHUTDOWN_GRACE_ENV: &str = "NIGHTFALL_FATAL_SHUTDOWN_GRACE_MS";
 const DISABLE_WATCHDOG_ENV: &str = "NIGHTFALL_DISABLE_FATAL_SHUTDOWN_WATCHDOG";
 const ERROR_REPORTS_DSN_ENV: &str = "NIGHTFALL_ERROR_REPORTS_DSN";
+const USAGE_REPORTS_URL_ENV: &str = "NIGHTFALL_USAGE_REPORTS_URL";
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
 /// Fully resolved startup configuration consumed by Nightfall binaries.
@@ -80,6 +81,10 @@ pub struct RuntimeConfig {
     /// reporting off. `None` keeps the built-in service. Test harnesses and forks use it so
     /// their failures never reach the project's service.
     pub error_reports_dsn: Option<String>,
+    /// Usage report service (`https://<client id>:<client secret>@<host>/track`) that replaces
+    /// the one built into the binary; an empty value turns usage reports off. `None` keeps the
+    /// built-in service.
+    pub usage_reports_url: Option<String>,
 }
 
 impl Default for RuntimeConfig {
@@ -152,6 +157,7 @@ impl RuntimeConfig {
             },
             log_filter: normalize_optional_string(layer.log_filter),
             error_reports_dsn: layer.error_reports_dsn,
+            usage_reports_url: layer.usage_reports_url,
         }
     }
 }
@@ -220,6 +226,8 @@ pub struct RuntimeConfigOverrides {
     pub log_filter: Option<String>,
     /// Overrides the error report service when present; empty turns reporting off.
     pub error_reports_dsn: Option<String>,
+    /// Overrides the usage report service when present; empty turns usage reports off.
+    pub usage_reports_url: Option<String>,
 }
 
 /// Loads dotenv and inherited environment values without modifying the process environment.
@@ -329,6 +337,7 @@ struct ConfigLayer {
     watchdog_disabled: Option<bool>,
     log_filter: Option<String>,
     error_reports_dsn: Option<String>,
+    usage_reports_url: Option<String>,
 }
 
 impl ConfigLayer {
@@ -364,6 +373,9 @@ impl ConfigLayer {
             error_reports_dsn: values
                 .get(ERROR_REPORTS_DSN_ENV)
                 .map(|value| value.trim().to_string()),
+            usage_reports_url: values
+                .get(USAGE_REPORTS_URL_ENV)
+                .map(|value| value.trim().to_string()),
         })
     }
 
@@ -397,6 +409,7 @@ impl ConfigLayer {
         apply_override(&mut self.watchdog_disabled, overrides.watchdog_disabled);
         apply_override(&mut self.log_filter, overrides.log_filter);
         apply_override(&mut self.error_reports_dsn, overrides.error_reports_dsn);
+        apply_override(&mut self.usage_reports_url, overrides.usage_reports_url);
     }
 }
 
@@ -518,6 +531,19 @@ mod tests {
             RuntimeConfig::from_values([(EXPERIMENTAL_FLOWS_ENV, "maybe")], Default::default())
                 .is_err()
         );
+    }
+
+    /// An unset usage service keeps the built-in one, while an empty value is kept so it can
+    /// turn usage reports off.
+    #[test]
+    fn usage_reports_url_distinguishes_unset_from_empty() {
+        let unset =
+            RuntimeConfig::from_values(std::iter::empty::<(&str, &str)>(), Default::default())
+                .unwrap();
+        assert_eq!(unset.usage_reports_url, None);
+        let empty =
+            RuntimeConfig::from_values([(USAGE_REPORTS_URL_ENV, "")], Default::default()).unwrap();
+        assert_eq!(empty.usage_reports_url.as_deref(), Some(""));
     }
 
     /// An unset error service keeps the built-in one, while an empty value is kept so it can

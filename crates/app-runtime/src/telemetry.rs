@@ -124,12 +124,20 @@ pub(crate) struct TelemetryPlugin {
 }
 
 impl Plugin for TelemetryPlugin {
-    /// Installs the shared host and the systems that load and persist its state.
+    /// Installs the shared host, the systems that load and persist its state, and the usage
+    /// report schedule.
     fn build(&self, app: &mut App) {
         app.insert_resource(self.host.clone())
             .add_systems(Startup, load_telemetry_state)
             .add_systems(Last, persist_telemetry_state);
+        crate::usage_reports::add_systems(app);
     }
+}
+
+/// Applies the operator's choices to error and usage reports alike.
+pub(crate) fn apply_consent(state: &TelemetryState) {
+    crate::error_reports::apply_consent(state);
+    crate::usage_reports::apply_consent(state);
 }
 
 /// Startup system that replaces the default (unavailable) state with the session's preferences.
@@ -137,13 +145,13 @@ fn load_telemetry_state(host: Res<TelemetryHost>, mut state: ResMut<TelemetrySta
     *state = host.snapshot();
 }
 
-/// Saves consent or identifier changes as soon as a command applies them. Error reporting
-/// follows the new choice even when saving fails, so turning reports off always takes effect.
+/// Saves consent or identifier changes as soon as a command applies them. Reporting follows
+/// the new choice even when saving fails, so turning reports off always takes effect.
 fn persist_telemetry_state(host: Res<TelemetryHost>, mut state: ResMut<TelemetryState>) {
     if !state.is_changed() || state.is_added() {
         return;
     }
-    crate::error_reports::apply_consent(&state);
+    apply_consent(&state);
     let error = host.save(&state);
     if state.error != error {
         state.error = error;
@@ -234,6 +242,6 @@ mod tests {
             second.world().resource::<TelemetryState>().consent,
             chosen_consent()
         );
-        crate::error_reports::apply_consent(&TelemetryState::default());
+        apply_consent(&TelemetryState::default());
     }
 }

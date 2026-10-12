@@ -14,7 +14,8 @@ mod web_ui;
 
 /// Starts the desktop shell and retains the logging guard until shutdown.
 fn main() {
-    let (log_config, runtime_config, _runtime_guard) = app_runtime::initialize();
+    let (log_config, runtime_config, _runtime_guard) =
+        app_runtime::initialize(app_runtime::HostShell::Desktop);
     desktop_shell::run_tauri(log_config, runtime_config);
     tracing::info!("Application exiting");
 }

@@ -27,7 +27,7 @@ use nightfall_io::prelude::{
 
 use crate::panel_layouts;
 use crate::prelude::DeskSettings;
-use crate::settings::{AvailableAudioDevices, SettingsCommand, TelemetryState};
+use crate::settings::{AvailableAudioDevices, ReportedGraphics, SettingsCommand, TelemetryState};
 
 #[derive(Clone, Debug)]
 enum SettingsCommandOutcome {
@@ -74,6 +74,7 @@ pub struct SettingsCommandParams<'w> {
     io_settings: ResMut<'w, IoRuntimeSettings>,
     external_control: ResMut<'w, nightfall_io::ExternalControlState>,
     telemetry: ResMut<'w, TelemetryState>,
+    reported_graphics: ResMut<'w, ReportedGraphics>,
     binding_validation_settings: ResMut<'w, BindingValidationSettings>,
     input_universe_stale_timeout: ResMut<'w, InputUniverseStaleTimeout>,
     input_universe_visibility_mode: ResMut<'w, InputUniverseVisibilityMode>,
@@ -145,6 +146,12 @@ pub fn handle_events(
             SettingsCommand::ResetTelemetryInstallId => {
                 if params.telemetry.available {
                     params.telemetry.install_id = uuid::Uuid::new_v4().to_string();
+                }
+                SettingsCommandOutcome::Applied
+            }
+            SettingsCommand::ReportGraphics(report) => {
+                if params.telemetry.available {
+                    params.reported_graphics.0 = Some(report.sanitized());
                 }
                 SettingsCommandOutcome::Applied
             }
@@ -463,6 +470,7 @@ mod command_tests {
         app.init_resource::<IoRuntimeSettings>();
         app.init_resource::<nightfall_io::ExternalControlState>();
         app.init_resource::<TelemetryState>();
+        app.init_resource::<ReportedGraphics>();
         app.init_resource::<BindingValidationSettings>();
         app.init_resource::<InputUniverseStaleTimeout>();
         app.init_resource::<InputUniverseVisibilityMode>();
@@ -566,6 +574,53 @@ mod command_tests {
         assert_eq!(state.consent, consent);
         assert_ne!(state.install_id, "before");
         assert!(uuid::Uuid::parse_str(&state.install_id).is_ok());
+    }
+
+    /// Verifies graphics reports are kept only where usage reports can be sent, and that each
+    /// field is trimmed and bounded because any connected client may send one.
+    #[test]
+    fn graphics_reports_are_sanitized_and_require_available_host() {
+        let mut app = settings_command_app();
+        let report = crate::settings::GraphicsReport {
+            gpu: Some(format!("  Apple M2 {}  ", "x".repeat(400))),
+            backend: " WebGPU ".into(),
+        };
+        submit_command(&mut app, SettingsCommand::ReportGraphics(report.clone()));
+        app.update();
+        assert_eq!(take_result(&mut app).outcome, CommandOutcome::succeeded());
+        assert_eq!(app.world().resource::<ReportedGraphics>().0, None);
+
+        app.world_mut().resource_mut::<TelemetryState>().available = true;
+        submit_command(&mut app, SettingsCommand::ReportGraphics(report));
+        app.update();
+        let stored = app
+            .world()
+            .resource::<ReportedGraphics>()
+            .0
+            .clone()
+            .unwrap();
+        assert_eq!(stored.backend, "WebGPU");
+        let gpu = stored.gpu.unwrap();
+        assert!(gpu.starts_with("Apple M2 x"));
+        assert_eq!(gpu.chars().count(), 160);
+
+        submit_command(
+            &mut app,
+            SettingsCommand::ReportGraphics(crate::settings::GraphicsReport {
+                gpu: Some("   ".into()),
+                backend: "WebGL 2".into(),
+            }),
+        );
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<ReportedGraphics>()
+                .0
+                .clone()
+                .unwrap()
+                .gpu,
+            None
+        );
     }
 
     /// Verifies a setting mutation is visible before terminal success is published.
