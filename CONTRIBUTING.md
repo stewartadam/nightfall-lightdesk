@@ -20,6 +20,7 @@ Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
     - [Git hooks](#git-hooks)
     - [Optional tools](#optional-tools)
   - [Running Nightfall](#running-nightfall)
+  - [Error reports](#error-reports)
   - [Quality checks and browser tests](#quality-checks-and-browser-tests)
     - [Visualizer optics and performance tests](#visualizer-optics-and-performance-tests)
   - [Building the documentation](#building-the-documentation)
@@ -476,6 +477,21 @@ To start the desktop application with Tauri:
 ```sh
 pnpm tauri dev
 ```
+
+### Error reports
+
+Only official release builds send error reports. The error service address is
+compiled in from the `ERROR_REPORTS_DSN` repository variable when the desktop
+workflow publishes a release, so development builds, pull request builds, and
+builds from a fork or your own checkout have no address and send nothing, even
+when error reports are turned on in **Settings > Privacy**. Building without the
+`telemetry` Cargo feature removes error reporting entirely.
+
+To test reporting against your own GlitchTip or Sentry project, set
+`NIGHTFALL_ERROR_REPORTS_DSN` to its DSN in `.env` before starting the backend.
+An empty value turns reporting off in a build that has an address compiled in.
+What reports contain and how operators opt in is described in the
+[privacy policy](https://nightfall.live/privacy).
 
 ### Package scripts
 
