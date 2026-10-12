@@ -39,6 +39,8 @@
 }
 .nf-scroll-edge[data-visible="true"] {
   opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
 }
 .nf-scroll-edge::before {
   content: "";
@@ -61,7 +63,15 @@
   width: 10px;
   height: 10px;
   flex-shrink: 0;
+  box-sizing: content-box;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--nf-corner-radius, 5px);
   filter: drop-shadow(0 0 2px var(--nf-scroll-surface));
+  transition:
+    color 100ms ease-out,
+    border-color 100ms ease-out,
+    background-color 100ms ease-out;
 }
 .nf-scroll-edge[data-edge="top"],
 .nf-scroll-edge[data-edge="bottom"] {
@@ -99,4 +109,13 @@
 .nf-scroll-edge[data-edge="right"] {
   --nf-scroll-direction: to left;
   right: 0;
+}
+/* Outlines the chevron like a button so the clickable edge reads as an action on hover. */
+.nf-scroll-edge[data-visible="true"]:hover svg {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--nf-scroll-surface);
+}
+:root[data-reduced-motion="true"] .nf-scroll-edge svg {
+  transition: none;
 }

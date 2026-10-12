@@ -22,6 +22,11 @@
   gap: 8px;
   scroll-padding-inline: 12px;
   padding: 8px;
+  /* The edge chevrons signal overflow, so the scrollbar would only add height. */
+  scrollbar-width: none;
+}
+.nf-segmented-tabs-viewport::-webkit-scrollbar {
+  display: none;
 }
 .nf-segmented-tabs-viewport[data-density="compact"] {
   gap: 3px;

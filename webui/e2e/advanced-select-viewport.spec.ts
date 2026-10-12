@@ -33,6 +33,15 @@ test("searchable selects keep overflow hints below search", async ({
     '.nf-scroll-indicators[style*="position: fixed"] [data-edge="top"][data-visible="true"]',
   );
   await expect(top).toBeVisible();
+  const scrolledToEnd = await menu.evaluate((element) => element.scrollTop);
+  await top.click();
+  await expect(menu).toBeVisible();
+  await expect
+    .poll(() => menu.evaluate((element) => element.scrollTop))
+    .toBeLessThan(scrolledToEnd);
+  await menu.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
   const search = menu.getByPlaceholder("Search options");
   const searchBox = await search.boundingBox();
   const hintBox = await top.boundingBox();
