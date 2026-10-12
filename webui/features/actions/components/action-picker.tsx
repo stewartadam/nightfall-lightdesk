@@ -149,7 +149,7 @@ export function ActionPicker(props: ActionPickerProps): JSX.Element {
   /** Renders a target selector for an object-reference parameter. */
   const targetSelect = (
     parameter: types.ActionParameter,
-    options: ActionTargetOption[],
+    options: readonly ActionTargetOption[],
   ) => (
     <NativeSelect
       density="compact"
