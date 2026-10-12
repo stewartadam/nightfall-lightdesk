@@ -25,7 +25,6 @@
 import { LogLevelPriority } from "@loglayer/shared";
 import { ConsoleTransport, LogLayer, LogLevel } from "loglayer";
 import { serializeError } from "serialize-error";
-import "./diagnostic-console";
 
 /**
  * Extended message data type that accepts any value for logging.

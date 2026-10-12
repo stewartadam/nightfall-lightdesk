@@ -6,8 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { isTauri } from "@tauri-apps/api/core";
-import { debug, error, info, trace, warn } from "@tauri-apps/plugin-log";
 import { formatDiagnosticValue } from "./diagnostic-format";
 
 export type ConsoleLogLevel =
@@ -61,14 +59,4 @@ export function forwardDiagnosticConsole(
     events?.removeEventListener("error", onError);
     events?.removeEventListener("unhandledrejection", onRejection);
   };
-}
-
-if (isTauri()) {
-  const nativeLoggers = { log: info, info, debug, trace, warn, error };
-  const dispose = forwardDiagnosticConsole(
-    console,
-    (level, message) => nativeLoggers[level](message),
-    window,
-  );
-  import.meta.hot?.dispose(dispose);
 }
