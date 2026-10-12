@@ -39,6 +39,11 @@
 }
 .nf-scroll-edge[data-visible="true"] {
   opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.nf-scroll-edge[data-visible="true"]:hover {
+  color: var(--accent);
 }
 .nf-scroll-edge::before {
   content: "";

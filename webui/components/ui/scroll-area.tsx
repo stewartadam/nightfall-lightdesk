@@ -32,7 +32,11 @@ interface ScrollIndicatorsProps {
   class?: string;
 }
 
-/** Observes an existing viewport and decorates only edges with content beyond it. */
+/**
+ * Observes an existing viewport and decorates only edges with content beyond it. A visible edge
+ * owns the pointer, so content beneath its blur cannot be hovered or clicked; clicking the edge
+ * scrolls toward it and wheel input over it still scrolls the viewport.
+ */
 export function ScrollIndicators(props: ScrollIndicatorsProps) {
   const edgeElements: Partial<Record<(typeof edges)[number], HTMLSpanElement>> =
     {};
@@ -142,36 +146,6 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
       window.addEventListener("resize", schedule);
     }
 
-    /** Rejects pointer activation beneath visible blur without intercepting native wheel or touch panning. */
-    function blockCoveredPointer(event: MouseEvent) {
-      if (event.type === "click" && event.detail === 0) return;
-      const covered = edges.some((edge) => {
-        if (!overflow()[edge]) return false;
-        const bounds = edgeElements[edge]?.getBoundingClientRect();
-        return (
-          bounds &&
-          event.clientX >= bounds.left &&
-          event.clientX < bounds.right &&
-          event.clientY >= bounds.top &&
-          event.clientY < bounds.bottom
-        );
-      });
-      if (!covered) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-
-    const blockedEvents = [
-      "pointerdown",
-      "click",
-      "dblclick",
-      "auxclick",
-      "contextmenu",
-      "dragstart",
-    ] as const;
-    for (const type of blockedEvents) {
-      viewport.addEventListener(type, blockCoveredPointer, true);
-    }
     onCleanup(() => {
       cancelAnimationFrame(frame);
       resize.disconnect();
@@ -180,11 +154,61 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
       viewport.removeEventListener("load", schedule, true);
       window.removeEventListener("scroll", schedule, true);
       window.removeEventListener("resize", schedule);
-      for (const type of blockedEvents) {
-        viewport.removeEventListener(type, blockCoveredPointer, true);
-      }
     });
   });
+
+  /**
+   * Scrolls the viewport toward a clicked edge by roughly one visible page, less the space both
+   * edges cover so content that was hidden under the far edge is not skipped. Animates unless
+   * the app prefers reduced motion.
+   */
+  function scrollTowards(edge: (typeof edges)[number]) {
+    const viewport = props.viewport;
+    const horizontal = edge === "left" || edge === "right";
+    const client = horizontal ? viewport.clientWidth : viewport.clientHeight;
+    const bounds = edgeElements[edge]?.getBoundingClientRect();
+    const cover = (horizontal ? bounds?.width : bounds?.height) ?? 0;
+    const sign = edge === "left" || edge === "top" ? -1 : 1;
+    const distance = sign * Math.max(client - 2 * cover, client / 2);
+    viewport.scrollBy({
+      left: horizontal ? distance : 0,
+      top: horizontal ? 0 : distance,
+      behavior:
+        viewport.ownerDocument.documentElement.dataset.reducedMotion === "true"
+          ? "auto"
+          : "smooth",
+    });
+  }
+
+  /**
+   * Forwards wheel and trackpad scrolling over an edge to the viewport, which would otherwise
+   * not scroll because visible edges capture the pointer above it. When the viewport cannot
+   * move any further, the event is left alone so it chains to enclosing scroll containers.
+   * Shift+wheel scrolls horizontally, matching native behaviour in browsers that report it as
+   * vertical delta.
+   */
+  function forwardWheel(event: WheelEvent) {
+    const viewport = props.viewport;
+    const scale =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? viewport.clientHeight
+          : 1;
+    const sideways = event.shiftKey && event.deltaX === 0;
+    const { scrollLeft, scrollTop } = viewport;
+    viewport.scrollBy({
+      left: (sideways ? event.deltaY : event.deltaX) * scale,
+      top: (sideways ? 0 : event.deltaY) * scale,
+      behavior: "instant",
+    });
+    if (
+      viewport.scrollLeft !== scrollLeft ||
+      viewport.scrollTop !== scrollTop
+    ) {
+      event.preventDefault();
+    }
+  }
 
   return (
     <div
@@ -198,6 +222,7 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
     >
       <For each={edges}>
         {(edge) => (
+          // biome-ignore lint/a11y/useKeyWithClickEvents: A pointer shortcut only; keyboard users scroll the focusable viewport or its children directly.
           <span
             ref={(element) => {
               edgeElements[edge] = element;
@@ -205,6 +230,15 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
             class="nf-scroll-edge"
             data-edge={edge}
             data-visible={overflow()[edge]}
+            onMouseDown={(event) => event.preventDefault()}
+            onContextMenu={(event) => event.preventDefault()}
+            onClick={(event) => {
+              // Portaled overlays sit outside their widget, so window-level outside-click
+              // handlers (e.g. Preline's select) would otherwise close the menu being scrolled.
+              event.stopPropagation();
+              scrollTowards(edge);
+            }}
+            onWheel={forwardWheel}
           >
             <CaretRightIcon weight="bold" />
           </span>
