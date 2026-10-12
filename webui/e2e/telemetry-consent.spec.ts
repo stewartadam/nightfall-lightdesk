@@ -104,6 +104,10 @@ test("customizing the telemetry notice saves each choice", async ({
   await openApp(page);
   await sharingNotice(page).getByRole("button", { name: "Customize" }).click();
   const settings = await privacyTab(page);
+  // The tab strip overflows the dialog, so the selected tab must be scrolled into view.
+  await expect(settings.getByRole("tab", { name: "Privacy" })).toBeInViewport({
+    ratio: 1,
+  });
   const usage = settings.getByRole("switch", {
     name: "Share anonymous usage reports",
   });
