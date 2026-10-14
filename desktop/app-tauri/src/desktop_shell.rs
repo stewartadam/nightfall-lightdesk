@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
-use std::{collections::HashSet, process::Command};
 
 use app_runtime::{monitor_bevy_session, run_bevy_session};
 use nightfall::constants::APP_LOG_FILE_NAME;
@@ -216,173 +216,23 @@ pub(super) fn resolve_open_log_file_path() -> Result<std::path::PathBuf, String>
     Ok(resolve_open_data_dir_path()?.join(APP_LOG_FILE_NAME))
 }
 
-/// Reveal a filesystem path with the current platform's file explorer.
+/// Opens a directory in the platform's file explorer.
 pub(super) fn open_path_in_file_explorer(path: &Path) -> Result<(), String> {
-    let (program, args) = file_explorer_command(path)?;
-    spawn_open_command(
-        program,
-        args,
-        &format!("file explorer for {}", path.display()),
-    )
+    tauri_plugin_opener::open_path(path, None::<&str>)
+        .map_err(|error| format!("failed to open {}: {error}", path.display()))
 }
 
 /// Open the application log file with the platform's default file handler.
 pub(super) fn open_log_file() -> Result<(), String> {
     let log_path = resolve_open_log_file_path()?;
-
-    #[cfg(target_os = "windows")]
-    {
-        return open_with_shell_execute(log_path.as_os_str());
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let (program, args) = file_open_command(&log_path)?;
-        spawn_open_command(
-            program,
-            args,
-            &format!("default application for {}", log_path.display()),
-        )
-    }
-}
-
-#[cfg(target_os = "windows")]
-/// Open a file or URL with its Windows association without invoking a command shell.
-fn open_with_shell_execute(target: &std::ffi::OsStr) -> Result<(), String> {
-    use std::{ffi::OsStr, iter::once, os::windows::ffi::OsStrExt, ptr::null_mut};
-
-    let operation: Vec<u16> = OsStr::new("open").encode_wide().chain(once(0)).collect();
-    let file: Vec<u16> = target.encode_wide().chain(once(0)).collect();
-    let result = unsafe {
-        shell_execute_w(
-            null_mut(),
-            operation.as_ptr(),
-            file.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            1,
-        )
-    };
-
-    if result <= 32 {
-        return Err(format!(
-            "failed to open {} with its default application (ShellExecuteW returned {result})",
-            target.to_string_lossy()
-        ));
-    }
-
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-#[link(name = "shell32")]
-unsafe extern "system" {
-    #[link_name = "ShellExecuteW"]
-    fn shell_execute_w(
-        hwnd: *mut std::ffi::c_void,
-        operation: *const u16,
-        file: *const u16,
-        parameters: *const u16,
-        directory: *const u16,
-        show_command: i32,
-    ) -> isize;
-}
-
-/// Construct the platform-specific command used to reveal a filesystem path.
-pub(super) fn file_explorer_command(
-    path: &Path,
-) -> Result<(&'static str, Vec<std::ffi::OsString>), String> {
-    #[cfg(target_os = "windows")]
-    {
-        return Ok(("explorer.exe", vec![path.as_os_str().to_owned()]));
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        return Ok(("open", vec![path.as_os_str().to_owned()]));
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        return Ok(("xdg-open", vec![path.as_os_str().to_owned()]));
-    }
-
-    #[allow(unreachable_code)]
-    Err(format!(
-        "opening the data directory is not supported on this platform: {}",
-        std::env::consts::OS
-    ))
-}
-
-#[cfg(not(target_os = "windows"))]
-/// Construct the platform-specific command used to open a file with its associated application.
-pub(super) fn file_open_command(
-    path: &Path,
-) -> Result<(&'static str, Vec<std::ffi::OsString>), String> {
-    #[cfg(target_os = "macos")]
-    {
-        return Ok(("open", vec![path.as_os_str().to_owned()]));
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        return Ok(("xdg-open", vec![path.as_os_str().to_owned()]));
-    }
-
-    #[allow(unreachable_code)]
-    Err(format!(
-        "opening files is not supported on this platform: {}",
-        std::env::consts::OS
-    ))
+    tauri_plugin_opener::open_path(&log_path, None::<&str>)
+        .map_err(|error| format!("failed to open {}: {error}", log_path.display()))
 }
 
 /// Open an external URL with the current platform's default browser.
 pub(super) fn open_url_in_browser(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        open_with_shell_execute(std::ffi::OsStr::new(url))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let (program, args) = url_open_command(url)?;
-        spawn_open_command(program, args, &format!("browser for {url}"))
-    }
-}
-
-/// Spawn a detached platform command and report launch failures with context.
-pub(super) fn spawn_open_command(
-    program: &str,
-    args: Vec<std::ffi::OsString>,
-    target_description: &str,
-) -> Result<(), String> {
-    Command::new(program)
-        .args(args)
-        .spawn()
-        .map_err(|error| format!("failed to launch {target_description}: {error}"))?;
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-/// Construct the platform-specific command used to open an external URL.
-pub(super) fn url_open_command(
-    url: &str,
-) -> Result<(&'static str, Vec<std::ffi::OsString>), String> {
-    #[cfg(target_os = "macos")]
-    {
-        return Ok(("open", vec![std::ffi::OsString::from(url)]));
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        return Ok(("xdg-open", vec![std::ffi::OsString::from(url)]));
-    }
-
-    #[allow(unreachable_code)]
-    Err(format!(
-        "opening URLs is not supported on this platform: {}",
-        std::env::consts::OS
-    ))
+    tauri_plugin_opener::open_url(url, None::<&str>)
+        .map_err(|error| format!("failed to open browser for {url}: {error}"))
 }
 
 /// Build one native menu item with a stable action identifier and accelerator.
@@ -988,8 +838,6 @@ async fn collect_diagnostic_logs(
 
 #[cfg(test)]
 mod platform_tests {
-    use std::path::Path;
-
     use super::*;
     static PROCESS_CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     /// Verifies the open-data helper creates the typed configured directory.
@@ -1039,52 +887,6 @@ mod platform_tests {
 
         nightfall::set_nightfall_data_dir(None);
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp root");
-    }
-
-    /// Passes the requested directory to the platform file explorer as one argument.
-    #[test]
-    fn file_explorer_command_matches_current_platform() {
-        let path = Path::new("test-dir");
-        let (program, args) = file_explorer_command(path).expect("file explorer command");
-
-        #[cfg(target_os = "windows")]
-        assert_eq!(program, "explorer.exe");
-        #[cfg(target_os = "macos")]
-        assert_eq!(program, "open");
-        #[cfg(target_os = "linux")]
-        assert_eq!(program, "xdg-open");
-
-        assert_eq!(args, vec![path.as_os_str().to_owned()]);
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    #[test]
-    /// Preserve the log path as one argument to the platform file launcher.
-    fn file_open_command_matches_current_platform() {
-        let path = Path::new("test-log.txt");
-        let (program, args) = super::file_open_command(path).expect("file open command");
-
-        #[cfg(target_os = "macos")]
-        assert_eq!(program, "open");
-        #[cfg(target_os = "linux")]
-        assert_eq!(program, "xdg-open");
-
-        assert_eq!(args, vec![path.as_os_str().to_owned()]);
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    #[test]
-    /// Preserve the complete external URL as one argument to the platform browser launcher.
-    fn url_open_command_matches_current_platform() {
-        let url = "https://github.com/example/project/issues/new?title=Bug%20report&body=Details%0AUnicode%20%E2%9C%93";
-        let (program, args) = super::url_open_command(url).expect("url open command");
-
-        #[cfg(target_os = "macos")]
-        assert_eq!(program, "open");
-        #[cfg(target_os = "linux")]
-        assert_eq!(program, "xdg-open");
-
-        assert_eq!(args, vec![std::ffi::OsString::from(url)]);
     }
 }
 
