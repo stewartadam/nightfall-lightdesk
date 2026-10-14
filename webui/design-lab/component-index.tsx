@@ -13,6 +13,7 @@ import "./component-index.css";
 
 /** General interface patterns; specialized catalog entries belong to Custom widgets. */
 const coreDemoIds = new Set([
+  "alerts",
   "animations",
   "buttons",
   "command-palette",

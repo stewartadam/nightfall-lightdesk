@@ -17,6 +17,21 @@ Reusable components own their visual rules alongside their implementation. Dialo
 
 The accent picker and buttons in `visual-language` follow the same shared-component pattern. Extend these production components when introducing another application or lab use case.
 
+## Alerts
+
+Use `Alert` from `alert` for inline, blockquote-style callouts inside panels and dialogs, the equivalent of GitHub Markdown's `[!NOTE]` callouts. Tailwind and Preline ship no alert component, so this one owns the colored start border, tinted background, icon and title styling.
+
+- `variant` is one of `note` (blue, the default), `tip` (green), `important` (violet), `warning` (amber) or `caution` (red). Use `caution` for errors.
+- `title` adds a bold heading in the accent color. Without it, the icon aligns with the first line of text.
+- `density="compact"` suits dense dialogs and property rows. `icon` replaces the variant icon, or hides it with `false`.
+- Children stack with a small gap, so paragraphs and an action button can sit together.
+- `border` places the accent stripe on the `left` (default), on the `top` (Flowbite's border accent) or nowhere (`none`, tint only).
+- `show` toggles the alert with an enter/exit animation instead of mounting it conditionally, so it can animate out. `transition` picks `fade` (default), `slide` or `none`, and `transitionMs` sets the length (150 ms by default). Reduced motion skips the animation.
+- `flash` takes an accessor; each time its value changes the alert shows for `flashMs` (2000 ms by default), like the tooltip's flash. With `flash` set and no `show`, the alert stays hidden between flashes.
+- The alert has no live-region role of its own. Pass `role="alert"` for errors that appear after an action, or `role="status"` for polite updates.
+
+Use toasts for transient feedback and `Alert` for messages that belong to the surrounding content. Full-width strip banners at the top of a panel are not alerts.
+
 ## Toolbars
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups.

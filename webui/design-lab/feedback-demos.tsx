@@ -7,6 +7,7 @@
  */
 
 import { createSignal, For } from "solid-js";
+import { Alert } from "../components/ui/alert";
 import { Sparkline } from "../components/ui/sparkline";
 import Tooltip from "../components/ui/tooltip";
 import { Button } from "../components/ui/visual-language/button";
@@ -106,6 +107,77 @@ export function TooltipDemo() {
       <p class="field-help" role="status">
         Preview count: {count()}
       </p>
+    </section>
+  );
+}
+
+/** Shows every inline alert kind, density and border, plus toggled transitions and a timed flash. */
+export function AlertDemo() {
+  const [shown, setShown] = createSignal(true);
+  const [saves, setSaves] = createSignal(0);
+  return (
+    <section class="properties lab-panel" aria-label="Alert examples">
+      <div class="eyebrow">ALERTS</div>
+      <h2>Inline callouts, in context.</h2>
+      <div class="widget-alert-stack">
+        <Alert variant="note" title="Note">
+          Fixtures patched to the same universe share one output stream.
+        </Alert>
+        <Alert variant="tip" title="Tip">
+          Hold Shift while dragging a fader for fine adjustments.
+        </Alert>
+        <Alert variant="important" title="Important">
+          Changes to the patch apply to every cue that uses these fixtures.
+        </Alert>
+        <Alert variant="warning" title="Warning">
+          This showfile was saved by a newer version of Nightfall.
+        </Alert>
+        <Alert variant="caution" title="Caution">
+          <p>Deleting this sequence also removes the clips that play it.</p>
+          <Button variant="danger" size="compact">
+            Delete sequence
+          </Button>
+        </Alert>
+      </div>
+      <div class="eyebrow">COMPACT, NO TITLE</div>
+      <div class="widget-alert-stack">
+        <Alert variant="note" density="compact">
+          Untitled alerts align the icon with the first line of text.
+        </Alert>
+        <Alert variant="warning" density="compact">
+          No WebAssembly modules found in this showfile.
+        </Alert>
+        <Alert variant="caution" density="compact" icon={false}>
+          Icons can be hidden when space is tight.
+        </Alert>
+      </div>
+      <div class="eyebrow">BORDERS</div>
+      <div class="widget-alert-stack">
+        <Alert variant="tip" border="left">
+          Left border, the blockquote default.
+        </Alert>
+        <Alert variant="tip" border="top">
+          Top border, like Flowbite's border accent.
+        </Alert>
+        <Alert variant="tip" border="none">
+          No border, tint only.
+        </Alert>
+      </div>
+      <div class="eyebrow">TRANSITIONS AND FLASH</div>
+      <div class="widget-alert-actions">
+        <Button onClick={() => setShown(!shown())}>
+          {shown() ? "Hide" : "Show"} warning
+        </Button>
+        <Button onClick={() => setSaves(saves() + 1)}>Save</Button>
+      </div>
+      <div class="widget-alert-stack">
+        <Alert variant="warning" transition="slide" show={shown()}>
+          Slides in and out over 150 ms when toggled.
+        </Alert>
+        <Alert variant="tip" role="alert" flash={saves} flashMs={1500}>
+          Saved. This confirmation shows for 1.5 s after each save.
+        </Alert>
+      </div>
     </section>
   );
 }
