@@ -45,7 +45,9 @@ or extracted WASM files without the applicable notices.
 
 The Vite development server displays an explicitly labelled preview of installed
 production dependencies, including build tools. Its preview is not the release
-inventory and does not require Cargo or a completed build.
+inventory and does not require Cargo or a completed build. `pnpm tauri dev` writes
+the same preview to `webui/dist/notices/` when that directory has no notices yet,
+because Tauri requires every bundle resource to exist even in development builds.
 
 ## Updating dependencies
 

@@ -23,6 +23,9 @@ import {
   documentFor,
   frontendNotices,
   legalFiles,
+  noticesJson,
+  noticesText,
+  packageDevelopmentNotices,
   renderNotices,
   rustNotices,
   textHash,
@@ -209,6 +212,32 @@ test("distribution contains full Preline terms and upstream artwork copyright", 
 /** Normalize Windows checkouts when verifying pinned legal texts. */
 test("notice hashes are independent of checkout line endings", () => {
   assert.equal(textHash("one\ntwo\n"), textHash("one\r\ntwo\r\n"));
+});
+
+/**
+ * `tauri dev` needs the notices bundle resource to exist; the development preview fills it
+ * without a frontend build, and never replaces notices a real build already wrote.
+ */
+test("development notices fill a missing resource without replacing real notices", () => {
+  const outDir = mkdtempSync(join(tmpdir(), "nightfall-dev-notices-"));
+  try {
+    packageDevelopmentNotices(outDir);
+    const document = JSON.parse(
+      readFileSync(join(outDir, "notices", noticesJson), "utf8"),
+    );
+    assert.match(document.distribution, /^Development preview/);
+    assert.ok(existsSync(join(outDir, "notices", noticesText)));
+    assert.ok(existsSync(join(outDir, "notices", "NIGHTFALL-LICENSE.txt")));
+
+    writeFileSync(join(outDir, "notices", noticesJson), "release");
+    packageDevelopmentNotices(outDir);
+    assert.equal(
+      readFileSync(join(outDir, "notices", noticesJson), "utf8"),
+      "release",
+    );
+  } finally {
+    rmSync(outDir, { recursive: true });
+  }
 });
 
 /** Fail rather than silently choosing between inconsistent inventories of one dependency. */

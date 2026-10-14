@@ -9,7 +9,7 @@
       "cwd": "../../webui"
     },
     "beforeDevCommand": {
-      "script": "pnpm run dev",
+      "script": "node ../scripts/distribution-notices.mjs --development && pnpm run dev",
       "cwd": "../../webui"
     },
     "frontendDist": "../../webui/dist",
