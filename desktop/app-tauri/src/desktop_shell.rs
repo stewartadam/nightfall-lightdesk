@@ -720,19 +720,63 @@ pub(super) fn next_window_label<R: Runtime>(app: &tauri::AppHandle<R>) -> String
     }
 }
 
+/// Returns the window template from the Tauri config that every app window is built from.
+fn template_window_config<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<tauri::utils::config::WindowConfig, String> {
+    app.config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .ok_or_else(|| "tauri config does not define a template window".to_string())
+}
+
+/// Reports whether a popup target should be handed to the system instead of being dropped.
+///
+/// Only web pages and mail links leave the app; other schemes (`about:`, `file:`,
+/// `javascript:` and the app's own asset protocols) could expose local content or
+/// run outside the webview's sandbox.
+fn is_external_link(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "mailto")
+}
+
+/// Builds an app window from `config` that sends popup requests to the system browser.
+///
+/// The webview never opens its own child windows: `target="_blank"` links and
+/// `window.open` calls are denied in-app, and http(s)/mailto targets are passed to
+/// the platform's default handler instead. Without this, WKWebView and WebKitGTK
+/// silently ignore those requests.
+fn build_app_window<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    config: &tauri::utils::config::WindowConfig,
+) -> Result<WebviewWindow<R>, String> {
+    WebviewWindowBuilder::from_config(app, config)
+        .map_err(|error| format!("failed to create window builder: {error}"))?
+        .on_new_window(|url, _features| {
+            if !is_external_link(&url) {
+                tracing::warn!(%url, "Blocked a popup with a non-web URL");
+            } else if let Err(error) = open_url_in_browser(url.as_str()) {
+                tracing::error!(%url, "Failed to open link in the system browser: {error}");
+            }
+            tauri::webview::NewWindowResponse::Deny
+        })
+        .build()
+        .map_err(|error| format!("failed to create window: {error}"))
+}
+
+/// Creates the first app window, which the Tauri config leaves to the shell so it gets the popup handler.
+fn create_main_window<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
+    build_app_window(app, &template_window_config(app)?)?;
+    Ok(())
+}
+
 /// Create a desktop window using the configured frontend entry point and dimensions.
 pub(super) fn create_new_window<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
-    let Some(window_config) = app.config().app.windows.first() else {
-        return Err("tauri config does not define a template window".to_string());
-    };
-
-    let mut window_config = window_config.clone();
+    let mut window_config = template_window_config(app)?;
     window_config.label = next_window_label(app);
 
-    let window = WebviewWindowBuilder::from_config(app, &window_config)
-        .map_err(|error| format!("failed to create window builder: {error}"))?
-        .build()
-        .map_err(|error| format!("failed to create window: {error}"))?;
+    let window = build_app_window(app, &window_config)?;
 
     window
         .set_focus()
@@ -865,6 +909,7 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
                     ))
                 })?)
             };
+            create_main_window(app.handle()).map_err(std::io::Error::other)?;
             let web_ui = (!tauri::is_dev())
                 .then(|| crate::web_ui::embedded_web_ui(app))
                 .flatten();
@@ -915,6 +960,19 @@ mod diagnostics_tests {
                 .is_err()
         );
         assert!(super::validate_bug_report_url("file:///tmp/report").is_err());
+    }
+
+    /// Popups to web pages and mail links reach the system, while local or script URLs stay blocked.
+    #[test]
+    fn only_web_and_mail_popups_leave_the_app() {
+        let external = |url: &str| super::is_external_link(&tauri::Url::parse(url).unwrap());
+        assert!(external("https://nightfall.live/privacy"));
+        assert!(external("http://192.168.1.20:3030/"));
+        assert!(external("mailto:hello@nightfall.live"));
+        assert!(!external("about:blank"));
+        assert!(!external("file:///etc/passwd"));
+        assert!(!external("javascript:alert(1)"));
+        assert!(!external("tauri://localhost/index.html"));
     }
 }
 
