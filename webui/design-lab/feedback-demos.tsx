@@ -7,6 +7,7 @@
  */
 
 import { createSignal, For } from "solid-js";
+import { Alert } from "../components/ui/alert";
 import { Sparkline } from "../components/ui/sparkline";
 import Tooltip from "../components/ui/tooltip";
 import { Button } from "../components/ui/visual-language/button";
@@ -106,6 +107,48 @@ export function TooltipDemo() {
       <p class="field-help" role="status">
         Preview count: {count()}
       </p>
+    </section>
+  );
+}
+
+/** Shows every inline alert kind at both densities, with and without titles, icons and actions. */
+export function AlertDemo() {
+  return (
+    <section class="properties lab-panel" aria-label="Alert examples">
+      <div class="eyebrow">ALERTS</div>
+      <h2>Inline callouts, in context.</h2>
+      <div class="widget-alert-stack">
+        <Alert variant="note" title="Note">
+          Fixtures patched to the same universe share one output stream.
+        </Alert>
+        <Alert variant="tip" title="Tip">
+          Hold Shift while dragging a fader for fine adjustments.
+        </Alert>
+        <Alert variant="important" title="Important">
+          Changes to the patch apply to every cue that uses these fixtures.
+        </Alert>
+        <Alert variant="warning" title="Warning">
+          This showfile was saved by a newer version of Nightfall.
+        </Alert>
+        <Alert variant="caution" title="Caution">
+          <p>Deleting this sequence also removes the clips that play it.</p>
+          <Button variant="danger" size="compact">
+            Delete sequence
+          </Button>
+        </Alert>
+      </div>
+      <div class="eyebrow">COMPACT, NO TITLE</div>
+      <div class="widget-alert-stack">
+        <Alert variant="note" density="compact">
+          Untitled alerts align the icon with the first line of text.
+        </Alert>
+        <Alert variant="warning" density="compact">
+          No WebAssembly modules found in this showfile.
+        </Alert>
+        <Alert variant="caution" density="compact" icon={false}>
+          Icons can be hidden when space is tight.
+        </Alert>
+      </div>
     </section>
   );
 }

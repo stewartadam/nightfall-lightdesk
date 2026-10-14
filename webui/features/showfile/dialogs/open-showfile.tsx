@@ -23,7 +23,9 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+
 import { Dynamic } from "solid-js/web";
+import { Alert } from "../../../components/ui/alert";
 import { Dialog, DialogBody } from "../../../components/ui/dialog";
 import { SearchPickerOption } from "../../../components/ui/search-picker";
 import Tooltip from "../../../components/ui/tooltip";
@@ -305,11 +307,8 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
 
           <Show when={!isLoading() && error()}>
             {(message) => (
-              <div
-                role="alert"
-                class="space-y-3 rounded border border-red-900/60 bg-red-950/30 px-4 py-4"
-              >
-                <p class="text-sm text-red-200">{message()}</p>
+              <Alert variant="caution" role="alert">
+                <p>{message()}</p>
                 <Button
                   variant="danger"
                   type="button"
@@ -317,7 +316,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                 >
                   Retry
                 </Button>
-              </div>
+              </Alert>
             )}
           </Show>
 

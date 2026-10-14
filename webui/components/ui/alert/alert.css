@@ -1,0 +1,71 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+@layer components {
+  .nf-alert {
+    --nf-alert-accent: var(--color-accent-blue);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-inline-start: 4px solid var(--nf-alert-accent);
+    border-start-end-radius: var(--radius-sm);
+    border-end-end-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--nf-alert-accent) 12%, transparent);
+    color: var(--color-neutral-100);
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: start;
+  }
+  .nf-alert[data-density="compact"] {
+    gap: 8px;
+    padding: 6px 10px;
+    border-inline-start-width: 3px;
+    font-size: 12px;
+  }
+  .nf-alert[data-variant="tip"] {
+    --nf-alert-accent: var(--color-accent-green);
+  }
+  .nf-alert[data-variant="important"] {
+    --nf-alert-accent: var(--color-accent-violet);
+  }
+  .nf-alert[data-variant="warning"] {
+    --nf-alert-accent: var(--color-warning);
+  }
+  .nf-alert[data-variant="caution"] {
+    --nf-alert-accent: var(--color-accent-red);
+  }
+  .nf-alert-icon {
+    flex-shrink: 0;
+    width: 1.15em;
+    height: 1.15em;
+    /* Centre the icon on the first line of text. */
+    margin-block-start: calc((1.45em - 1.15em) / 2);
+    color: var(--nf-alert-accent);
+  }
+  .nf-alert-body {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    overflow-wrap: anywhere;
+  }
+  .nf-alert-body > * {
+    margin: 0;
+  }
+  .nf-alert-title {
+    color: var(--nf-alert-accent);
+    font-weight: 600;
+  }
+  .nf-alert-body a {
+    color: inherit;
+    text-decoration: underline;
+  }
+}

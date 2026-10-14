@@ -16,6 +16,7 @@ import {
   fatalErrorTitle,
 } from "../../../lib/uncaught-error-reporter";
 import { openDiagnostics } from "../../../state/shell-dialog";
+import { Alert } from "../../ui/alert";
 import { Dialog, DialogBody, DialogFooter } from "../../ui/dialog";
 import { Button } from "../../ui/visual-language/button";
 
@@ -62,12 +63,14 @@ function FatalErrorDialog() {
               Bug reports are public GitHub issues that include the error below
               and basic system details, so review them before submitting.
             </p>
-            <p
-              class="rounded-md border border-red-800/70 bg-red-950/50 px-3 py-2 font-mono text-xs text-red-200 [overflow-wrap:anywhere]"
+            <Alert
+              variant="caution"
+              density="compact"
+              class="font-mono"
               role="alert"
             >
               {formatErrorHeadline(current().report)}
-            </p>
+            </Alert>
             <Show when={current().report.stack}>
               {(stack) => (
                 <details class="text-xs text-neutral-400">

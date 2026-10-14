@@ -27,7 +27,7 @@ test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== "passed") return;
   await page.setViewportSize({ width: 900, height: 1200 });
   const panel = page.getByRole("region", {
-    name: /^(Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
+    name: /^(Alert|Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
   });
   await panel.scrollIntoViewIfNeeded();
   expect(
@@ -285,5 +285,35 @@ test("tooltip catalog displays placements and interactive content", async ({
   await page.screenshot({
     path: testInfo.outputPath("tooltip-interactive.png"),
     fullPage: true,
+  });
+});
+
+/** Verifies each alert kind draws its own accent border, that titles and icons are optional, and captures the catalog. */
+test("alerts render every kind with a distinct accent border", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Alerts", "Alert examples");
+  const alerts = panel.locator(".nf-alert");
+  await expect(alerts).toHaveCount(8);
+  const borders = await alerts.evaluateAll((elements) =>
+    elements
+      .slice(0, 5)
+      .map((element) => getComputedStyle(element).borderInlineStartColor),
+  );
+  expect(new Set(borders).size).toBe(5);
+  await expect(panel.locator(".nf-alert-title")).toHaveText([
+    "Note",
+    "Tip",
+    "Important",
+    "Warning",
+    "Caution",
+  ]);
+  await expect(alerts.nth(7).locator(".nf-alert-icon")).toHaveCount(0);
+  await expect(
+    alerts.nth(4).getByRole("button", { name: "Delete sequence" }),
+  ).toBeVisible();
+  await panel.screenshot({
+    path: testInfo.outputPath("alerts.png"),
+    animations: "disabled",
   });
 });

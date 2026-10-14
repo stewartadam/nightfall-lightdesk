@@ -8,6 +8,7 @@
 
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
+import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -178,10 +179,10 @@ export function ModuleFxDialog(props: ModuleFxDialogProps) {
           />
         </label>
         <Show when={props.modules.length === 0}>
-          <div class="rounded border border-yellow-800 bg-yellow-950/40 px-3 py-2 text-sm text-yellow-100">
+          <Alert variant="warning">
             No WebAssembly modules found in this showfile or the app data
             fx-modules directory.
-          </div>
+          </Alert>
         </Show>
       </DialogBody>
       <DialogFooter>

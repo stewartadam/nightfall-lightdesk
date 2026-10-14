@@ -77,3 +77,8 @@
   padding-left: 18px;
   list-style: disc;
 }
+.widget-alert-stack {
+  display: grid;
+  gap: 10px;
+  margin-block: 12px 20px;
+}
