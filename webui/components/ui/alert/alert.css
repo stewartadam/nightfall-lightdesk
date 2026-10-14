@@ -22,11 +22,25 @@
     line-height: 1.45;
     text-align: start;
   }
+  .nf-alert[data-border="top"] {
+    border-inline-start: 0;
+    border-block-start: 4px solid var(--nf-alert-accent);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  }
+  .nf-alert[data-border="none"] {
+    border: 0;
+    border-radius: var(--radius-sm);
+  }
   .nf-alert[data-density="compact"] {
     gap: 8px;
     padding: 6px 10px;
-    border-inline-start-width: 3px;
     font-size: 12px;
+  }
+  .nf-alert[data-density="compact"][data-border="left"] {
+    border-inline-start-width: 3px;
+  }
+  .nf-alert[data-density="compact"][data-border="top"] {
+    border-block-start-width: 3px;
   }
   .nf-alert[data-variant="tip"] {
     --nf-alert-accent: var(--color-accent-green);
@@ -67,5 +81,15 @@
   .nf-alert-body a {
     color: inherit;
     text-decoration: underline;
+  }
+}
+
+/* Unlayered so the app's reduced-motion setting outranks the tw-animate-css utilities. */
+:root[data-reduced-motion="true"] .nf-alert {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-reduced-motion="false"]) .nf-alert {
+    animation: none;
   }
 }

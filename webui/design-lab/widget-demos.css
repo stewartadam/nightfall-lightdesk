@@ -82,3 +82,8 @@
   gap: 10px;
   margin-block: 12px 20px;
 }
+.widget-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -111,8 +111,10 @@ export function TooltipDemo() {
   );
 }
 
-/** Shows every inline alert kind at both densities, with and without titles, icons and actions. */
+/** Shows every inline alert kind, density and border, plus toggled transitions and a timed flash. */
 export function AlertDemo() {
+  const [shown, setShown] = createSignal(true);
+  const [saves, setSaves] = createSignal(0);
   return (
     <section class="properties lab-panel" aria-label="Alert examples">
       <div class="eyebrow">ALERTS</div>
@@ -147,6 +149,33 @@ export function AlertDemo() {
         </Alert>
         <Alert variant="caution" density="compact" icon={false}>
           Icons can be hidden when space is tight.
+        </Alert>
+      </div>
+      <div class="eyebrow">BORDERS</div>
+      <div class="widget-alert-stack">
+        <Alert variant="tip" border="left">
+          Left border, the blockquote default.
+        </Alert>
+        <Alert variant="tip" border="top">
+          Top border, like Flowbite's border accent.
+        </Alert>
+        <Alert variant="tip" border="none">
+          No border, tint only.
+        </Alert>
+      </div>
+      <div class="eyebrow">TRANSITIONS AND FLASH</div>
+      <div class="widget-alert-actions">
+        <Button onClick={() => setShown(!shown())}>
+          {shown() ? "Hide" : "Show"} warning
+        </Button>
+        <Button onClick={() => setSaves(saves() + 1)}>Save</Button>
+      </div>
+      <div class="widget-alert-stack">
+        <Alert variant="warning" transition="slide" show={shown()}>
+          Slides in and out over 150 ms when toggled.
+        </Alert>
+        <Alert variant="tip" role="alert" flash={saves} flashMs={1500}>
+          Saved. This confirmation shows for 1.5 s after each save.
         </Alert>
       </div>
     </section>

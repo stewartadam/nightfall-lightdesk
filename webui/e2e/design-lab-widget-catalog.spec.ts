@@ -288,13 +288,13 @@ test("tooltip catalog displays placements and interactive content", async ({
   });
 });
 
-/** Verifies each alert kind draws its own accent border, that titles and icons are optional, and captures the catalog. */
+/** Verifies alert kinds, border placements, optional titles and icons, the exit transition and timed flashes, and captures the catalog. */
 test("alerts render every kind with a distinct accent border", async ({
   page,
 }, testInfo) => {
   const panel = await openDemo(page, "Alerts", "Alert examples");
   const alerts = panel.locator(".nf-alert");
-  await expect(alerts).toHaveCount(8);
+  await expect(alerts).toHaveCount(12);
   const borders = await alerts.evaluateAll((elements) =>
     elements
       .slice(0, 5)
@@ -312,8 +312,37 @@ test("alerts render every kind with a distinct accent border", async ({
   await expect(
     alerts.nth(4).getByRole("button", { name: "Delete sequence" }),
   ).toBeVisible();
+  const borderWidths = await alerts.evaluateAll((elements) =>
+    elements.slice(8, 11).map((element) => {
+      const style = getComputedStyle(element);
+      return [style.borderInlineStartWidth, style.borderBlockStartWidth];
+    }),
+  );
+  expect(borderWidths).toEqual([
+    ["4px", "0px"],
+    ["0px", "4px"],
+    ["0px", "0px"],
+  ]);
   await panel.screenshot({
     path: testInfo.outputPath("alerts.png"),
     animations: "disabled",
   });
+
+  const warning = panel.locator(".nf-alert", { hasText: "Slides in and out" });
+  await expect(warning).toHaveCSS("animation-name", "enter");
+  await panel.getByRole("button", { name: "Hide warning" }).click();
+  await expect(warning).toHaveAttribute("data-state", "closed");
+  await expect(warning).toHaveCount(0);
+  await panel.getByRole("button", { name: "Show warning" }).click();
+  await expect(warning).toBeVisible();
+
+  const saved = panel.getByRole("alert").filter({ hasText: "Saved." });
+  await expect(saved).toHaveCount(0);
+  await panel.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(saved).toBeVisible();
+  await panel.screenshot({
+    path: testInfo.outputPath("alerts-flash.png"),
+    animations: "disabled",
+  });
+  await expect(saved).toHaveCount(0, { timeout: 4000 });
 });
