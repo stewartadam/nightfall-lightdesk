@@ -36,7 +36,8 @@ the shared web assets once, then runs this on each packaging runner:
 pnpm run package:notices aarch64-apple-darwin
 ```
 
-Use the actual installer target. The Tauri resource map includes the notices
+Use the actual installer target. Without an argument or `TAURI_ENV_TARGET_TRIPLE`,
+the command uses the Rust host triple, which suits local builds. The Tauri resource map includes the notices
 directory, and the same files are embedded with the frontend. Desktop artifact
 staging checks the target and publishes an additional notice text file next to
 each platform's installers. Browser-demo packaging checks its web inventory and
@@ -45,7 +46,9 @@ or extracted WASM files without the applicable notices.
 
 The Vite development server displays an explicitly labelled preview of installed
 production dependencies, including build tools. Its preview is not the release
-inventory and does not require Cargo or a completed build.
+inventory and does not require Cargo or a completed build. `pnpm tauri dev` writes
+the same preview to `webui/dist/notices/` when that directory has no notices yet,
+because Tauri requires every bundle resource to exist even in development builds.
 
 ## Updating dependencies
 

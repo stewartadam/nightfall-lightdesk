@@ -526,7 +526,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `gdtf:bench` | Check the pinned bench archives against their committed expectations. |
 | `gdtf:corpus` | Check that every GDTF file in `NIGHTFALL_GDTF_CORPUS_DIR` converts or is rejected cleanly. |
 | `fx-module:install` | Build an FX module and install it into the application data directory. |
-| `package:notices` | Generate dependency notices for a desktop target triple. |
+| `package:notices` | Generate dependency notices for a desktop target triple (defaults to the Rust host triple). |
 | `package:sample-audio` | Copy the sample tracks next to a standalone backend executable. |
 
 ### Quality checks and browser tests
