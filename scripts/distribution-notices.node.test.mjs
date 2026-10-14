@@ -22,6 +22,7 @@ import {
   collectRust,
   documentFor,
   frontendNotices,
+  hostTriple,
   legalFiles,
   noticesJson,
   noticesText,
@@ -238,6 +239,17 @@ test("development notices fill a missing resource without replacing real notices
   } finally {
     rmSync(outDir, { recursive: true });
   }
+});
+
+/** Local packaging without an explicit target uses the host triple reported by rustc. */
+test("host triple comes from rustc's verbose version output", () => {
+  const output =
+    "rustc 1.0.0\nbinary: rustc\nhost: aarch64-apple-darwin\nrelease: 1.0.0\n";
+  assert.equal(
+    hostTriple(() => output),
+    "aarch64-apple-darwin",
+  );
+  assert.throws(() => hostTriple(() => "rustc 1.0.0\n"), /host triple/);
 });
 
 /** Fail rather than silently choosing between inconsistent inventories of one dependency. */

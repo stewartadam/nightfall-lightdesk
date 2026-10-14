@@ -463,6 +463,18 @@ function writeNotices(directory, document) {
 }
 
 /**
+ * Return the Rust host triple from `rustc -vV`, so local desktop notices match the
+ * machine building the installer when no target is given.
+ */
+export function hostTriple(run = execFileSync) {
+  const host = run("rustc", ["-vV"], { cwd: projectRoot, encoding: "utf8" })
+    .split("\n")
+    .find((line) => line.startsWith("host: "));
+  if (!host) throw new Error("rustc -vV did not report a host triple");
+  return host.slice("host: ".length).trim();
+}
+
+/**
  * Write the labelled development preview into `outDir`'s notices directory so `tauri dev`
  * finds the bundle resource without a production frontend build or a Rust license scan.
  * Skips an existing directory so it never replaces notices from a real build.
@@ -481,11 +493,9 @@ if (
   if (process.argv[2] === "--development") {
     packageDevelopmentNotices(outDir);
   } else {
-    const target = process.argv[2] ?? process.env.TAURI_ENV_TARGET_TRIPLE;
-    if (!target)
-      throw new Error(
-        "Desktop notices require a target triple argument or TAURI_ENV_TARGET_TRIPLE",
-      );
-    packageNotices(outDir, target);
+    packageNotices(
+      outDir,
+      process.argv[2] ?? process.env.TAURI_ENV_TARGET_TRIPLE ?? hostTriple(),
+    );
   }
 }
