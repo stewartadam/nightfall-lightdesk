@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { NativeSelect } from "../../components/ui/form-controls";
+import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { AccentPicker } from "../../components/ui/visual-language/accent-picker";
 import { TabAlignmentSelect } from "../../components/ui/visual-language/tab-alignment-select";
@@ -21,75 +22,103 @@ import {
 export function AppearanceSettings() {
   const appearance = useStore(appearanceSettings);
   return (
-    <section class="space-y-6" aria-label="Appearance preferences">
-      <AccentPicker
-        value={appearance().accent}
-        onChange={(accent) => setAppearanceSetting("accent", accent.value)}
-      />
-      <ToggleSwitch
+    <SettingsSection footer="Appearance changes apply immediately and are saved on this device.">
+      <div class="pb-3">
+        <AccentPicker
+          value={appearance().accent}
+          onChange={(accent) => setAppearanceSetting("accent", accent.value)}
+        />
+      </div>
+      <SettingsRow
         label="Table gridlines"
-        ariaLabel="Table gridlines"
-        layout="switch-end"
-        checked={appearance().gridlines}
-        onChange={(enabled) => setAppearanceSetting("gridlines", enabled)}
-      />
-      <ToggleSwitch
+        description="Draws lines between the rows and columns of tables."
+      >
+        {(field) => (
+          <ToggleSwitch
+            id={field.id}
+            describedBy={field.describedBy}
+            ariaLabel="Table gridlines"
+            layout="switch-only"
+            checked={appearance().gridlines}
+            onChange={(enabled) => setAppearanceSetting("gridlines", enabled)}
+          />
+        )}
+      </SettingsRow>
+      <SettingsRow
         label="Mute accents in unfocused panels"
-        ariaLabel="Mute accents in unfocused panels"
-        layout="switch-end"
-        checked={appearance().muteUnfocusedAccents}
-        onChange={(enabled) =>
-          setAppearanceSetting("muteUnfocusedAccents", enabled)
-        }
-      />
-      <label class="block">
-        <span class="text-sm text-gray-300">Panel tab position</span>
-        <NativeSelect
-          value={appearance().tabPosition}
-          onChange={(event) =>
-            setAppearanceSetting(
-              "tabPosition",
-              event.currentTarget.value === "bottom" ? "bottom" : "top",
-            )
-          }
-          class="mt-1"
-        >
-          <option value="top">Top</option>
-          <option value="bottom">Bottom</option>
-        </NativeSelect>
-      </label>
-      <TabAlignmentSelect
-        value={appearance().tabAlignment}
-        onChange={(alignment) =>
-          setAppearanceSetting("tabAlignment", alignment)
-        }
-      />
-      <label class="block">
-        <span class="text-sm text-gray-300">Reduced motion</span>
-        <NativeSelect
-          value={appearance().reducedMotion}
-          aria-label="Reduced motion"
-          onChange={(event) =>
-            setAppearanceSetting(
-              "reducedMotion",
-              event.currentTarget.value as ReducedMotionPreference,
-            )
-          }
-          class="mt-1"
-          aria-describedby="reduced-motion-help"
-        >
-          <option value="auto">Auto</option>
-          <option value="on">On</option>
-          <option value="off">Off</option>
-        </NativeSelect>
-      </label>
-      <p id="reduced-motion-help" class="text-xs text-gray-500">
-        Auto follows your system preference. On reduces animations; Off allows
-        them.
-      </p>
-      <p class="text-xs text-gray-500">
-        Appearance changes apply immediately and are saved on this device.
-      </p>
-    </section>
+        description="Shows panels you are not working in with a grey accent, so the focused one stands out."
+      >
+        {(field) => (
+          <ToggleSwitch
+            id={field.id}
+            describedBy={field.describedBy}
+            ariaLabel="Mute accents in unfocused panels"
+            layout="switch-only"
+            checked={appearance().muteUnfocusedAccents}
+            onChange={(enabled) =>
+              setAppearanceSetting("muteUnfocusedAccents", enabled)
+            }
+          />
+        )}
+      </SettingsRow>
+      <SettingsRow
+        label="Panel tab position"
+        description="Shows panel tabs above or below their content."
+      >
+        {(field) => (
+          <NativeSelect
+            id={field.id}
+            aria-describedby={field.describedBy}
+            value={appearance().tabPosition}
+            onChange={(event) =>
+              setAppearanceSetting(
+                "tabPosition",
+                event.currentTarget.value === "bottom" ? "bottom" : "top",
+              )
+            }
+          >
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
+          </NativeSelect>
+        )}
+      </SettingsRow>
+      <SettingsRow
+        label="Tab alignment"
+        description="Places tabs along each panel group's tab strip. Justify fills the strip."
+      >
+        {(field) => (
+          <TabAlignmentSelect
+            id={field.id}
+            describedBy={field.describedBy}
+            value={appearance().tabAlignment}
+            onChange={(alignment) =>
+              setAppearanceSetting("tabAlignment", alignment)
+            }
+          />
+        )}
+      </SettingsRow>
+      <SettingsRow
+        label="Reduced motion"
+        description="Auto follows your system preference. On reduces animations; Off allows them."
+      >
+        {(field) => (
+          <NativeSelect
+            id={field.id}
+            aria-describedby={field.describedBy}
+            value={appearance().reducedMotion}
+            onChange={(event) =>
+              setAppearanceSetting(
+                "reducedMotion",
+                event.currentTarget.value as ReducedMotionPreference,
+              )
+            }
+          >
+            <option value="auto">Auto</option>
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </NativeSelect>
+        )}
+      </SettingsRow>
+    </SettingsSection>
   );
 }

@@ -63,7 +63,7 @@ test("appearance settings update panels and portals and survive reload", async (
   await dialog.getByLabel("Panel tab position").selectOption("bottom");
   await expect(
     dialog
-      .locator(".nf-switch", { hasText: "Table gridlines" })
+      .locator(".nf-settings-row", { hasText: "Table gridlines" })
       .locator(".nf-switch-track"),
   ).toHaveCSS("background-color", "rgb(176, 128, 255)");
   await expect

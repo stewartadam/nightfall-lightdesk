@@ -90,6 +90,14 @@ Use `NumericStepper` for a numeric draft with decrement/increment buttons. Suppl
 
 Use `InputGroup` and `InputSuffix` from `form-controls` to attach units to fields under one border and focus ring. Keep units outside the editable value. The shared stepper and waveform rate editor compose this same field shell.
 
+## Settings rows
+
+Use `SettingsRow` from `settings-row` for one setting in a preferences surface: its `label` and optional `description` sit on the left and the control is aligned to the right edge, centered beside them. The row renders its control through a child function that receives `id` and `describedBy`; pass them to the control (`id`/`aria-describedby` on fields, `id`/`describedBy` on a `switch-only` `ToggleSwitch`) so the title labels it and the description describes it. Set `labelControl={false}` when the control is a button or read-only content whose own text names it. `details` runs full width beneath the row, for lists, notes and errors, and `heading` makes the title a section heading.
+
+Group rows in `SettingsSection`, which adds an optional `title` heading that also names the section, divides each direct child from the next with a thin line, and takes a `footer` note. A row wrapped in a labelled `<section>` divides like a bare row. Fields and selects in a row size to their content; give sliders and other wide controls an explicit width. The control wraps beneath the text when the row is too narrow for both.
+
+Settings, the About dialog's update choice and the design lab's switch examples use these rows.
+
 ## Search pickers
 
 Use `SearchPickerSurface`, `SearchPickerInput`, and `SearchPickerOption` from `search-picker` for command and destination lists. The surface composes the shared dialog frame, the search field composes `InputGroup` and `Input`, and rich option rows share accent, hover, focus, and disabled states. Supply `selected` on the active option and native `disabled` for unavailable actions. Callers own filtering, keyboard navigation, result semantics, positioning, and dismissal. Put removable filter tokens in the input's `leading` slot and optional back actions or hints in its `trailing` slot. Keep result viewports shrinkable (`min-height: 0`) and constrain the surface to available viewport space.

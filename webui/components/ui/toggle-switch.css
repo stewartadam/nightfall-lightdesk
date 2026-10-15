@@ -22,20 +22,6 @@
   width: 100%;
   justify-content: space-between;
 }
-.nf-switch-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.nf-switch-description {
-  color: var(--muted, #a0a7aa);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.nf-switch[data-layout="switch-end"]:has(.nf-switch-description) {
-  gap: 16px;
-}
 /* Lines content up with the label text of a `switch-left` switch above it. */
 .nf-switch-label-inset {
   padding-inline-start: calc(var(--nf-switch-width) + var(--nf-switch-gap));

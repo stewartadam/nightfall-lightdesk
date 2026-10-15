@@ -13,9 +13,11 @@ import {
   createMemo,
   createSignal,
   For,
+  type JSX,
   onCleanup,
   Show,
 } from "solid-js";
+import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
@@ -65,28 +67,47 @@ export function setTelemetryConsent(patch: Partial<TelemetryConsent>): void {
 }
 
 /**
- * Titles a Privacy section with its switch as a settings row: a heading-styled label with its
- * description beneath on the left, and the switch on the right. The heading is named by the label
- * alone, so the description is not read as part of it.
+ * Titles a Privacy section with its switch as a settings row whose title is the section's
+ * heading, with the description beneath it and the switch on the right. `details` runs full
+ * width beneath, such as what a report contains.
  */
 function SectionSwitch(props: {
   label: string;
   description: string;
   checked: boolean;
+  details?: JSX.Element;
   onChange: (enabled: boolean) => void;
 }) {
   return (
-    <h3 aria-label={props.label}>
-      <ToggleSwitch
-        label={props.label}
-        ariaLabel={props.label}
-        description={props.description}
-        layout="switch-end"
-        labelClass="text-sm font-medium text-gray-300"
-        checked={props.checked}
-        onChange={props.onChange}
-      />
-    </h3>
+    <SettingsRow
+      heading
+      label={props.label}
+      description={props.description}
+      details={props.details}
+    >
+      {(field) => (
+        <ToggleSwitch
+          id={field.id}
+          describedBy={field.describedBy}
+          ariaLabel={props.label}
+          layout="switch-only"
+          checked={props.checked}
+          onChange={props.onChange}
+        />
+      )}
+    </SettingsRow>
+  );
+}
+
+/** Lists what a kind of report includes, beneath its switch. */
+function ReportContents(props: { items: string[] }) {
+  return (
+    <div class="space-y-1.5 text-xs text-gray-400">
+      <p>Includes information such as:</p>
+      <ul class="list-disc space-y-1 pl-5">
+        <For each={props.items}>{(item) => <li>{item}</li>}</For>
+      </ul>
+    </div>
   );
 }
 
@@ -94,31 +115,34 @@ function SectionSwitch(props: {
 export function PrivacySettings() {
   return (
     <>
-      <p class="text-xs text-gray-400">
-        The Nightfall app can share data to help fix errors and prioritize
-        feature development. Sharing data is optional and can be disabled at any
-        time.
-      </p>
-      <p class="text-xs text-gray-400">
-        These privacy choices are saved on this computer, independently of your
-        showfile.
-      </p>
-      <p class="text-xs text-gray-400">
-        See the{" "}
-        <a
-          class="text-blue-300 underline"
-          href={PRIVACY_POLICY_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Nightfall privacy policy
-        </a>{" "}
-        for what data is captured, where it is stored, and how long it is kept.
-      </p>
-      <div class="divide-y divide-gray-700/70">
+      <div class="space-y-2 text-xs text-gray-400">
+        <p>
+          The Nightfall app can share data to help fix errors and prioritize
+          feature development. Sharing data is optional and can be disabled at
+          any time.
+        </p>
+        <p>
+          These privacy choices are saved on this computer, independently of
+          your showfile.
+        </p>
+        <p>
+          See the{" "}
+          <a
+            class="text-blue-300 underline"
+            href={PRIVACY_POLICY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Nightfall privacy policy
+          </a>{" "}
+          for what data is captured, where it is stored, and how long it is
+          kept.
+        </p>
+      </div>
+      <SettingsSection>
         <UpdateSettings />
         <TelemetrySettings />
-      </div>
+      </SettingsSection>
     </>
   );
 }
@@ -202,90 +226,85 @@ function TelemetrySettings() {
     <Show
       when={state().available}
       fallback={
-        <p class="py-4 text-sm text-gray-400">
+        <p class="py-2.5 text-sm text-gray-400">
           Sharing data is not supported in this version of Nightfall.
         </p>
       }
     >
-      <section aria-label="Usage statistics" class="py-4">
+      <section aria-label="Usage statistics">
         <SectionSwitch
           label="Share usage statistics"
           description="Information about how Nightfall is setup to help decide what to build next."
           checked={shown().share_usage}
           onChange={(share_usage) => change({ share_usage })}
+          details={<ReportContents items={USAGE_CONTENTS} />}
         />
-        <div class="mt-2 space-y-2 text-xs text-gray-400">
-          <p>Includes information such as:</p>
-          <ul class="list-disc space-y-1 pl-5">
-            <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
-          </ul>
-        </div>
       </section>
-      <section aria-label="Error reports" class="py-4">
+      <section aria-label="Error reports">
         <SectionSwitch
           label="Share error reports"
           description="Send error information and logs when something goes wrong, to help find and fix bugs."
           checked={shown().share_errors}
           onChange={(share_errors) => change({ share_errors })}
+          details={<ReportContents items={ERROR_CONTENTS} />}
         />
-        <div class="mt-2 space-y-2 text-xs text-gray-400">
-          <p>Includes information such as:</p>
-          <ul class="list-disc space-y-1 pl-5">
-            <For each={ERROR_CONTENTS}>{(item) => <li>{item}</li>}</For>
-          </ul>
-        </div>
       </section>
-      <section aria-label="Install ID" class="py-4">
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <h3 class="text-sm font-medium text-gray-300">Install ID</h3>
-          <p class="text-xs leading-[1.45] text-gray-400">
-            A random ID for this Nightfall installation sent with every report.
-            It is used only to group reports sent by Nightfall and is not tied
-            to you as a person.
-          </p>
-          <div class="mt-1 flex min-w-0 items-center gap-1.5">
-            <code
-              class="truncate text-xs text-gray-300"
-              data-testid="telemetry-install-id"
-            >
-              {state().install_id}
-            </code>
-            <Tooltip
-              content={() =>
-                confirming() ? "✅ Prior ID copied to clipboard" : "Reset ID"
-              }
-              flash={copies}
-              flashMs={COPY_CONFIRMATION_MS}
-            >
-              <Button
-                size="icon"
-                variant="subtle"
-                class="size-6!"
-                aria-label="Reset ID"
-                onClick={resetInstallId}
-                disabled={!state().install_id || resettingId() !== undefined}
+      <section aria-label="Install ID">
+        <SettingsRow
+          heading
+          label="Install ID"
+          labelControl={false}
+          description="A random ID for this Nightfall installation sent with every report. It is used only to group reports sent by Nightfall and is not tied to you as a person."
+          details={
+            <div class="space-y-1.5 text-xs text-gray-400">
+              <Show when={uncopiedId()}>
+                {(id) => (
+                  <p class="text-amber-300" role="alert">
+                    Could not copy the prior ID to the clipboard. Keep a note of
+                    it: <code class="select-all text-gray-300">{id()}</code>
+                  </p>
+                )}
+              </Show>
+              <p>
+                Keep a record of your prior Install ID if you wish to request
+                data deletion. Nothing links the old and new ID.
+              </p>
+            </div>
+          }
+        >
+          {() => (
+            <>
+              <code
+                class="truncate text-xs text-gray-300"
+                data-testid="telemetry-install-id"
               >
-                <ArrowClockwiseIcon class="size-3.5" aria-hidden />
-              </Button>
-            </Tooltip>
-          </div>
-        </div>
-        <Show when={uncopiedId()}>
-          {(id) => (
-            <p class="mt-2 text-xs text-amber-300" role="alert">
-              Could not copy the prior ID to the clipboard. Keep a note of it:{" "}
-              <code class="select-all text-gray-300">{id()}</code>
-            </p>
+                {state().install_id}
+              </code>
+              <Tooltip
+                content={() =>
+                  confirming() ? "✅ Prior ID copied to clipboard" : "Reset ID"
+                }
+                flash={copies}
+                flashMs={COPY_CONFIRMATION_MS}
+              >
+                <Button
+                  size="icon"
+                  variant="subtle"
+                  class="size-6!"
+                  aria-label="Reset ID"
+                  onClick={resetInstallId}
+                  disabled={!state().install_id || resettingId() !== undefined}
+                >
+                  <ArrowClockwiseIcon class="size-3.5" aria-hidden />
+                </Button>
+              </Tooltip>
+            </>
           )}
-        </Show>
-        <p class="mt-2 text-xs text-gray-400">
-          Keep a record of your prior Install ID if you wish to request data
-          deletion. Nothing links the old and new ID.
-        </p>
+        </SettingsRow>
       </section>
       <Show when={state().error}>
         {(error) => (
-          <p class="py-4 text-xs text-red-300" role="alert">
+          <p class="py-2.5 text-xs text-red-300" role="alert">
             {error()}
           </p>
         )}
@@ -314,20 +333,20 @@ function UpdateSettings() {
   return (
     <Show when={update()}>
       {(current) => (
-        <section aria-label="Updates" class="py-4">
+        <section aria-label="Updates">
           <SectionSwitch
             label="Allow update checks"
             description="When enabled, Nightfall can check nightfall.live for new app versions. Choose how updates are managed in the About dialog."
             checked={current().checkForUpdates}
             onChange={setChecks}
+            details={
+              actionError() ? (
+                <p class="text-xs text-amber-300" role="alert">
+                  {actionError()}
+                </p>
+              ) : undefined
+            }
           />
-          <Show when={actionError()}>
-            {(error) => (
-              <p class="mt-2 text-xs text-amber-300" role="alert">
-                {error()}
-              </p>
-            )}
-          </Show>
         </section>
       )}
     </Show>

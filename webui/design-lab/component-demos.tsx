@@ -180,10 +180,14 @@ export function DockingDemo(props: {
         </div>
       </div>
       <div class="property-section">
-        <TabAlignmentSelect
-          value={props.alignment}
-          onChange={props.onAlignment}
-        />
+        <label class="block">
+          <span class="text-sm text-gray-300">Tab alignment</span>
+          <TabAlignmentSelect
+            class="mt-1"
+            value={props.alignment}
+            onChange={props.onAlignment}
+          />
+        </label>
         <p class="field-help">
           Applies to regular and edge groups. Justify fills the tab strip.
         </p>

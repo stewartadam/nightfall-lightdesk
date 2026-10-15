@@ -1,0 +1,50 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding-block: 10px;
+}
+/* Divides a section's entries, whether rows or wrappers such as a labelled region around one. */
+.nf-settings-rows > * + * {
+  border-top: 1px solid var(--line, #34383b);
+}
+.nf-settings-row-text {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+/* The control hugs the right edge, and stays there when it wraps beneath the text. */
+.nf-settings-row-control {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  margin-inline-start: auto;
+}
+/* Fields size to their content instead of filling the row, up to a width that leaves room for the title. */
+.nf-settings-row-control
+> :is(select, input:not([type="checkbox"], [type="range"])) {
+  width: auto;
+  max-width: 15rem;
+}
+.nf-settings-row-control > input[type="number"] {
+  width: 6.5rem;
+}
+.nf-settings-row-details {
+  flex-basis: 100%;
+  min-width: 0;
+}
