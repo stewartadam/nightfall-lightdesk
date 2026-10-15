@@ -272,6 +272,7 @@ pub struct ClauseRules {
     pub children_mode: ChildrenMode,
     pub children: &'static [ChildRule],
     pub slots: &'static [SlotRule],
+    pub frontier: FrontierRules,
 }
 
 /// Declares whether a clause's children can be combined.
@@ -303,6 +304,8 @@ pub struct SlotRule {
 /// cannot be expressed this way is named through [`ConditionHookId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClauseCondition {
+    /// Always satisfied.
+    Always,
     /// Never satisfied: the target is only entered by other means, such as the root head.
     Never,
     /// The slot has at least one fill in the given scope.
@@ -336,18 +339,73 @@ pub enum ConditionHookId {
     BezierShapingOpen,
 }
 
-/// Rules for a clause without conditional children or slots.
-pub const NO_RULES: &ClauseRules = &ClauseRules {
+/// How the autocomplete frontier sequences a clause's slots and children.
+///
+/// By default the frontier offers the first pending slot, then any available children in
+/// grammar order. These flags adjust that order for clauses whose syntax needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrontierRules {
+    /// Children offered on their own, ahead of this clause's slots, while they are available,
+    /// not yet entered, and their condition holds.
+    pub eager_children: &'static [ChildRule],
+    /// While this clause's first required slot is pending, also offer its other required slots.
+    pub offer_required_slots_together: bool,
+    /// As a child: once reachable, the parent offers only this clause's entry until it is entered.
+    pub blocks_parent_until_entered: bool,
+    /// As a child: alongside the clause entry, also offer its first slot directly.
+    pub project_initial_slot: bool,
+}
+
+/// Frontier ordering with no adjustments.
+const DEFAULT_FRONTIER: FrontierRules = FrontierRules {
+    eager_children: &[],
+    offer_required_slots_together: false,
+    blocks_parent_until_entered: false,
+    project_initial_slot: false,
+};
+
+/// Rules for a clause without conditional children or slots; base for the other rule tables.
+const DEFAULT_RULES: ClauseRules = ClauseRules {
     children_mode: ChildrenMode::Any,
     children: &[],
     slots: &[],
+    frontier: DEFAULT_FRONTIER,
 };
+
+/// Rules for a clause without conditional children or slots.
+pub const NO_RULES: &ClauseRules = &DEFAULT_RULES;
 
 /// Rules for a clause whose children are mutually exclusive alternatives.
 const ONE_OF_CHILDREN: &ClauseRules = &ClauseRules {
     children_mode: ChildrenMode::OneOf,
-    children: &[],
-    slots: &[],
+    ..DEFAULT_RULES
+};
+
+/// Rules for a child clause whose first slot is offered alongside its entry.
+const PROJECT_INITIAL_SLOT: &ClauseRules = &ClauseRules {
+    frontier: FrontierRules {
+        project_initial_slot: true,
+        ..DEFAULT_FRONTIER
+    },
+    ..DEFAULT_RULES
+};
+
+/// Rules for a child clause the parent must enter before offering anything after it.
+const BLOCKS_PARENT_UNTIL_ENTERED: &ClauseRules = &ClauseRules {
+    frontier: FrontierRules {
+        blocks_parent_until_entered: true,
+        ..DEFAULT_FRONTIER
+    },
+    ..DEFAULT_RULES
+};
+
+/// `channel` offers its value alongside the channel expression, for `channel 1 @ 50`.
+const CHANNEL_OVERRIDE_RULES: &ClauseRules = &ClauseRules {
+    frontier: FrontierRules {
+        offer_required_slots_together: true,
+        ..DEFAULT_FRONTIER
+    },
+    ..DEFAULT_RULES
 };
 
 /// Shorthand for a child rule in the const rule tables below.
@@ -376,7 +434,6 @@ const fn has(clause: ClauseId) -> ClauseCondition {
 }
 
 const RELEASE_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
     children: &[
         // Stale inputs is a whole-command target and cannot mix with channel or attribute
         // targets; channel targets must come before attribute targets.
@@ -400,11 +457,10 @@ const RELEASE_RULES: &ClauseRules = &ClauseRules {
             ClauseCondition::Not(&has(ClauseId::ReleaseStaleInputs)),
         ),
     ],
-    slots: &[],
+    ..DEFAULT_RULES
 };
 
 const PROGRAMMER_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
     children: &[
         // Entered only through a selection-source root head, never as a follow-up child.
         child_when(ClauseId::ProgrammerSelectionSource, ClauseCondition::Never),
@@ -454,20 +510,22 @@ const PROGRAMMER_RULES: &ClauseRules = &ClauseRules {
             ])),
         ),
     ],
-    slots: &[],
+    ..DEFAULT_RULES
 };
 
 const PROGRAMMER_TIMINGS_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
     children: &[child_when(
         ClauseId::ProgrammerTimingOverride,
         own_filled(SlotId::TimingsKeyword),
     )],
-    slots: &[],
+    frontier: FrontierRules {
+        project_initial_slot: true,
+        ..DEFAULT_FRONTIER
+    },
+    ..DEFAULT_RULES
 };
 
 const FX_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
     children: &[
         // `fx module ...` and `fx <id> ...` are separate command shapes.
         child_when(
@@ -495,11 +553,10 @@ const FX_RULES: &ClauseRules = &ClauseRules {
             ]),
         ),
     ],
-    slots: &[],
+    ..DEFAULT_RULES
 };
 
 const PATCH_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
     children: &[child_when(
         ClauseId::PatchTarget,
         has(ClauseId::PatchSource),
@@ -508,6 +565,7 @@ const PATCH_RULES: &ClauseRules = &ClauseRules {
         slot_when(SlotId::PatchPriority, has(ClauseId::PatchTarget)),
         slot_when(SlotId::PatchClone, has(ClauseId::PatchTarget)),
     ],
+    ..DEFAULT_RULES
 };
 
 /// Object types whose store command takes a plain identifier after the type.
@@ -526,7 +584,6 @@ const STORE_FX_PAYLOAD_READY: ClauseCondition = ClauseCondition::All(&[
 ]);
 
 const STORE_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
     children: &[
         child_when(
             ClauseId::StoreColorPath,
@@ -592,6 +649,12 @@ const STORE_RULES: &ClauseRules = &ClauseRules {
             ]),
         ),
     ],
+    // `store fixture` continues straight into the fixture definition.
+    frontier: FrontierRules {
+        eager_children: &[child_when(ClauseId::StoreFixture, ClauseCondition::Always)],
+        ..DEFAULT_FRONTIER
+    },
+    ..DEFAULT_RULES
 };
 
 const STORE_FIXTURE_RULES: &ClauseRules = &ClauseRules {
@@ -606,41 +669,36 @@ const STORE_FIXTURE_RULES: &ClauseRules = &ClauseRules {
             own_filled(SlotId::StoreFixtureIdentifier),
         ),
     ],
-    slots: &[],
+    ..DEFAULT_RULES
 };
 
 /// An attribute qualifier keyword (`attr`) cannot follow the attribute list it introduces.
 const QUALIFIER_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     slots: &[slot_when(
         SlotId::QualifierKeyword,
         ClauseCondition::Not(&own_filled(SlotId::QualifierAttributeList)),
     )],
+    ..DEFAULT_RULES
 };
 
 const CLEAR_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     slots: &[slot_when(
         SlotId::ClearTarget,
         ClauseCondition::Not(&has(ClauseId::ClearAttributes)),
     )],
+    ..DEFAULT_RULES
 };
 
 const CUE_BLOCK_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     // Only `block` (not `unblock`) can overwrite existing tracking.
     slots: &[slot_when(
         SlotId::CueOverwrite,
         own_is(SlotId::CommandHead, &[TokenId::Block]),
     )],
+    ..DEFAULT_RULES
 };
 
 const RENAME_OBJECTS_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     slots: &[
         slot_when(
             SlotId::RenameSource,
@@ -648,6 +706,7 @@ const RENAME_OBJECTS_RULES: &ClauseRules = &ClauseRules {
         ),
         slot_when(SlotId::RenameTarget, own_filled(SlotId::RenameSource)),
     ],
+    ..DEFAULT_RULES
 };
 
 /// `rm patch` takes source/target endpoints instead of an object identifier.
@@ -655,8 +714,6 @@ const RM_IS_PATCH: ClauseCondition = own_is(SlotId::RmObjectType, &[TokenId::Pat
 const RM_TARGET_STARTED: ClauseCondition = own_filled(SlotId::PatchTargetEndpoint);
 
 const RM_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     slots: &[
         slot_when(
             SlotId::RmObjectIdentifier,
@@ -692,11 +749,10 @@ const RM_RULES: &ClauseRules = &ClauseRules {
             ClauseCondition::All(&[RM_IS_PATCH, RM_TARGET_STARTED]),
         ),
     ],
+    ..DEFAULT_RULES
 };
 
 const STEP_FX_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     // `groups` is only offered between the duration and the first step definition.
     slots: &[
         slot_when(
@@ -712,15 +768,23 @@ const STEP_FX_RULES: &ClauseRules = &ClauseRules {
             own_filled(SlotId::StepFxGroupsKeyword),
         ),
     ],
+    // `store fx 1 step` must name its selection before anything else.
+    frontier: FrontierRules {
+        eager_children: &[child_when(
+            ClauseId::StepFxSelection,
+            own_filled(SlotId::StoreFxAction),
+        )],
+        ..DEFAULT_FRONTIER
+    },
+    ..DEFAULT_RULES
 };
 
 const STEP_FX_SELECTION_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     slots: &[slot_when(
         SlotId::StepFxSelectionTransform,
         own_filled(SlotId::StepFxSelectionIdentifier),
     )],
+    ..DEFAULT_RULES
 };
 
 /// While a Bezier curve is open, only the shaping slot can take input.
@@ -728,13 +792,16 @@ const BEZIER_CLOSED: ClauseCondition =
     ClauseCondition::Not(&ClauseCondition::Hook(ConditionHookId::BezierShapingOpen));
 
 const STEP_FX_STEP_DEFINITION_RULES: &ClauseRules = &ClauseRules {
-    children_mode: ChildrenMode::Any,
-    children: &[],
     slots: &[
         slot_when(SlotId::StepFxStepAttribute, BEZIER_CLOSED),
         slot_when(SlotId::StepFxAttributeBaseline, BEZIER_CLOSED),
         slot_when(SlotId::StepFxStepValues, BEZIER_CLOSED),
     ],
+    frontier: FrontierRules {
+        blocks_parent_until_entered: true,
+        ..DEFAULT_FRONTIER
+    },
+    ..DEFAULT_RULES
 };
 
 /// One child-clause relationship in the static grammar hierarchy.
@@ -1575,7 +1642,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::ProgrammerSelection),
         children: EMPTY_CHILDREN,
         slots: PROGRAMMER_SELECTION_IDENTIFIER_SLOTS,
-        rules: NO_RULES,
+        rules: BLOCKS_PARENT_UNTIL_ENTERED,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1593,7 +1660,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::ProgrammerAttributeActions),
         children: EMPTY_CHILDREN,
         slots: PROGRAMMER_SET_ATTR_ITEM_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1638,7 +1705,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Fx),
         children: EMPTY_CHILDREN,
         slots: FX_IDENTIFIER_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1647,7 +1714,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Fx),
         children: EMPTY_CHILDREN,
         slots: FX_ACTION_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1737,7 +1804,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Clip),
         children: EMPTY_CHILDREN,
         slots: CLIP_ACTION_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1746,7 +1813,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: CHANNEL_OVERRIDE_SLOTS,
-        rules: NO_RULES,
+        rules: CHANNEL_OVERRIDE_RULES,
         entry: ClauseEntryKind::RootCommandHead(CHANNEL_HEADS),
     },
     ClauseSchema {
@@ -1818,7 +1885,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Flow),
         children: EMPTY_CHILDREN,
         slots: FLOW_ACTION_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1845,7 +1912,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Timecode),
         children: EMPTY_CHILDREN,
         slots: TIMECODE_ACTION_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1872,7 +1939,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Timeline),
         children: EMPTY_CHILDREN,
         slots: TIMELINE_ACTION_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -2007,7 +2074,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Recall),
         children: EMPTY_CHILDREN,
         slots: RECALL_CUE_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -2016,7 +2083,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Recall),
         children: EMPTY_CHILDREN,
         slots: RECALL_BLUEPRINT_SLOTS,
-        rules: NO_RULES,
+        rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {

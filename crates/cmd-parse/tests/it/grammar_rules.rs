@@ -11,8 +11,8 @@ use std::collections::BTreeSet;
 use nightfall_cmd_parse::parser::analysis::TokenId;
 use nightfall_cmd_parse::slots::catalog::slot_spec;
 use nightfall_cmd_parse::slots::contracts::{
-    ClauseCondition, ClauseEntryKind, ClauseId, ClauseSchema, SlotId, SlotScope, clause_schema,
-    command_grammar,
+    ClauseCondition, ClauseEntryKind, ClauseId, ClauseSchema, SlotCardinality, SlotId, SlotScope,
+    clause_schema, command_grammar,
 };
 
 /// Collects the slots owned by a clause and, for subtree scope, by all of its descendants.
@@ -58,7 +58,7 @@ fn accepted_tokens(schema: &ClauseSchema, slot: SlotId) -> Vec<TokenId> {
 /// declare, slots outside the condition's scope, or keywords the slot can never hold.
 fn condition_problems(schema: &ClauseSchema, condition: &ClauseCondition) -> Vec<String> {
     match condition {
-        ClauseCondition::Never | ClauseCondition::Hook(_) => Vec::new(),
+        ClauseCondition::Always | ClauseCondition::Never | ClauseCondition::Hook(_) => Vec::new(),
         ClauseCondition::HasAnyChild => {
             if schema.children.is_empty() {
                 vec![format!(
@@ -150,6 +150,52 @@ fn clause_rules_reference_declared_children_and_slots() {
     assert!(
         problems.is_empty(),
         "invalid clause rules:\n{}",
+        problems.join("\n")
+    );
+}
+
+/// Frontier rules only name declared children, child-only flags sit on clauses that have a
+/// parent, and slot pairing is only requested by clauses with more than one required slot.
+#[test]
+fn frontier_rules_fit_the_grammar() {
+    let mut problems = Vec::new();
+    for schema in command_grammar().clauses {
+        let frontier = &schema.rules.frontier;
+        for eager in frontier.eager_children {
+            if !schema
+                .children
+                .iter()
+                .any(|spec| spec.clause == eager.clause)
+            {
+                problems.push(format!(
+                    "{:?} eagerly offers undeclared child {:?}",
+                    schema.id, eager.clause
+                ));
+            }
+            problems.extend(condition_problems(schema, &eager.when));
+        }
+        let is_child = schema.parent.is_some();
+        if frontier.blocks_parent_until_entered && !is_child {
+            problems.push(format!("{:?} is a root but blocks a parent", schema.id));
+        }
+        if frontier.project_initial_slot && (!is_child || schema.slots.is_empty()) {
+            problems.push(format!("{:?} projects an initial slot it lacks", schema.id));
+        }
+        let required_slots = schema
+            .slots
+            .iter()
+            .filter(|slot| slot.cardinality == SlotCardinality::Required)
+            .count();
+        if frontier.offer_required_slots_together && required_slots < 2 {
+            problems.push(format!(
+                "{:?} pairs required slots but has {required_slots}",
+                schema.id
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "invalid frontier rules:\n{}",
         problems.join("\n")
     );
 }

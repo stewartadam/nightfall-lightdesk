@@ -51,12 +51,13 @@ pub(in crate::parser) fn slot_is_available_in_branch(
 }
 
 /// Evaluates one grammar condition for a clause instance in the branch.
-fn condition_holds(
+pub(in crate::parser) fn condition_holds(
     branch: &ParseBranchState<'_>,
     clause: &ClauseInstance,
     condition: &ClauseCondition,
 ) -> bool {
     match condition {
+        ClauseCondition::Always => true,
         ClauseCondition::Never => false,
         ClauseCondition::Filled(scope, slot) => {
             scoped_fills(branch, clause, *scope, *slot).next().is_some()
@@ -113,7 +114,7 @@ fn clause_node<'b>(
 }
 
 /// Iterates the observed tree nodes directly under the given clause instance.
-fn child_nodes<'b>(
+pub(in crate::parser) fn child_nodes<'b>(
     branch: &'b ParseBranchState<'_>,
     clause: &ClauseInstance,
 ) -> impl Iterator<Item = &'b ClauseNode> + 'b {
