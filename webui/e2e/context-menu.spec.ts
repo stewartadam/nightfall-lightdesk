@@ -325,8 +325,8 @@ function ownedTimeline(): object {
     tracks: [
       ownedTrack(CUE_TRACK_ID, "FX Track", [
         ownedTimelineItem(CUE_ITEM_ID, `Cue ${CUE_ID}`, 1, {
-          type: "FireCue",
-          data: CUE_UID,
+          id: "timeline.fire-cue",
+          arguments: { cue: CUE_UID },
         }),
       ]),
       ownedTrack(SEQUENCE_TRACK_ID, "Sequence Track", [
@@ -334,22 +334,22 @@ function ownedTimeline(): object {
           SEQUENCE_START_ITEM_ID,
           `Exec ${SEQUENCE_CLIP_ID}`,
           3,
-          { type: "StartClip", data: SEQUENCE_CLIP_UID },
+          { id: "clip.start", arguments: { clip: SEQUENCE_CLIP_UID } },
         ),
         ownedTimelineItem(
           SEQUENCE_GO_ITEM_ID,
           `Go ${SEQUENCE_ID}.${CUE_ID}`,
           5,
           {
-            type: "AdvanceSequence",
-            data: SEQUENCE_CLIP_UID,
+            id: "clip.go",
+            arguments: { clip: SEQUENCE_CLIP_UID },
           },
         ),
       ]),
       ownedTrack(FLOW_TRACK_ID, "Flow Track", [
         ownedTimelineItem(FLOW_START_ITEM_ID, `Exec ${FLOW_CLIP_ID}`, 7, {
-          type: "StartClip",
-          data: FLOW_CLIP_UID,
+          id: "clip.start",
+          arguments: { clip: FLOW_CLIP_UID },
         }),
       ]),
     ],
@@ -583,6 +583,35 @@ async function waitForTimelineStoreItems(
     { uid: timelineUid, ids: itemIds },
     { timeout: 20_000 },
   );
+}
+
+/**
+ * Waits until a track's mute or solo flag reaches the canonical timeline store.
+ * Each change re-renders the track headers, so menus must open only after it lands.
+ */
+async function waitForTimelineTrackFlag(
+  page: Page,
+  timelineUid: string,
+  trackId: string,
+  flag: "muted" | "solo",
+  value: boolean,
+): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          ({ uid, flaggedTrackId, flagName }) => {
+            const stores = (window as any).appStores;
+            const timeline = stores.timelines.get()[uid];
+            return timeline.tracks.find(
+              (track: any) => track.id === flaggedTrackId,
+            )?.[flagName];
+          },
+          { uid: timelineUid, flaggedTrackId: trackId, flagName: flag },
+        ),
+      { message: `Track ${trackId} should have ${flag} = ${value}` },
+    )
+    .toBe(value);
 }
 
 /** Waits until a renamed track label reaches the canonical timeline store. */
@@ -1019,6 +1048,10 @@ test("timeline track header context menu can mute, solo, and remove tracks", asy
   expect(fxTrackId).toBeTruthy();
   if (!fxTrackId) throw new Error("Expected FX track id");
 
+  const storedTimeline = await page.evaluateHandle(
+    (uid) => (window as any).appStores.timelines.get()[uid],
+    timelineUid,
+  );
   await page.evaluate(
     async ({ uid, trackId }) => {
       const stores = (window as any).appStores;
@@ -1040,6 +1073,14 @@ test("timeline track header context menu can mute, solo, and remove tracks", asy
     },
     { uid: timelineUid, trackId: fxTrackId },
   );
+  // The stored timeline echo re-renders the track headers, which would close a
+  // menu opened before it lands.
+  await page.waitForFunction(
+    ({ uid, previous }) =>
+      (window as any).appStores.timelines.get()[uid] !== previous,
+    { uid: timelineUid, previous: storedTimeline },
+  );
+  await storedTimeline.dispose();
 
   await dispatchItemContextMenu(fxHeader.locator("[data-track-header-handle]"));
   let menu = page.locator('[data-menu-kind="context"]');
@@ -1058,22 +1099,7 @@ test("timeline track header context menu can mute, solo, and remove tracks", asy
   ).toBeVisible();
 
   await menu.getByRole("menuitem", { name: "Mute Track M" }).click();
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(
-          ({ uid: innerUid, trackId: innerTrackId }) => {
-            const stores = (window as any).appStores;
-            const timeline = stores.timelines.get()[innerUid];
-            return timeline.tracks.find(
-              (track: any) => track.id === innerTrackId,
-            )?.muted;
-          },
-          { uid: timelineUid, trackId: fxTrackId },
-        ),
-      { message: "FX track should be muted after menu action" },
-    )
-    .toBe(true);
+  await waitForTimelineTrackFlag(page, timelineUid, fxTrackId, "muted", true);
   await dispatchItemContextMenu(fxHeader.locator("[data-track-header-handle]"));
   menu = page.locator('[data-menu-kind="context"]');
   await expect(
@@ -1083,26 +1109,12 @@ test("timeline track header context menu can mute, solo, and remove tracks", asy
     menu.getByRole("menuitem", { name: "Unmute Track M" }),
   ).toHaveCount(0);
   await menu.getByRole("menuitem", { name: "Mute Track M" }).click();
+  await waitForTimelineTrackFlag(page, timelineUid, fxTrackId, "muted", false);
 
   await dispatchItemContextMenu(fxHeader.locator("[data-track-header-handle]"));
   menu = page.locator('[data-menu-kind="context"]');
   await menu.getByRole("menuitem", { name: "Solo Track S" }).click();
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(
-          ({ uid: innerUid, trackId: innerTrackId }) => {
-            const stores = (window as any).appStores;
-            const timeline = stores.timelines.get()[innerUid];
-            return timeline.tracks.find(
-              (track: any) => track.id === innerTrackId,
-            )?.solo;
-          },
-          { uid: timelineUid, trackId: fxTrackId },
-        ),
-      { message: "FX track should be soloed after menu action" },
-    )
-    .toBe(true);
+  await waitForTimelineTrackFlag(page, timelineUid, fxTrackId, "solo", true);
   await dispatchItemContextMenu(fxHeader.locator("[data-track-header-handle]"));
   menu = page.locator('[data-menu-kind="context"]');
   await expect(
@@ -1112,6 +1124,7 @@ test("timeline track header context menu can mute, solo, and remove tracks", asy
     menu.getByRole("menuitem", { name: "Unsolo Track S" }),
   ).toHaveCount(0);
   await menu.getByRole("menuitem", { name: "Solo Track S" }).click();
+  await waitForTimelineTrackFlag(page, timelineUid, fxTrackId, "solo", false);
 
   await fxHeader.getByRole("button", { name: "Mute", exact: true }).click();
   await expect(
