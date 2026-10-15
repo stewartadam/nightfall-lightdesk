@@ -63,10 +63,21 @@ Publication (fresh runner; contents: write; no Apple credentials)
   notarizes, and staples that DMG. A temporary keychain is removed on exit.
   The current app has no bundled frameworks or nested application bundles;
   adding those requires reviewing extraction and inside-out signing support.
+- **Update signing:** publishing a release runs `desktop-updates.yml`. A fresh
+  Linux runner downloads the four update packages (the signed macOS app archive,
+  Windows installer, Debian package, and AppImage) from that release as data and
+  signs each one with the updater key. This key is release authority: every
+  installed app accepts what it signs. The job holds only
+  `TAURI_SIGNING_PRIVATE_KEY` and its password, and a read-only token. It runs
+  system tools and one installed tool, an exact minisign release whose SHA-256 is
+  pinned in the workflow and checked before use. It checks each signature against
+  the `TAURI_SIGNING_PUBLIC_KEY` variable, removes the decoded key on exit, and
+  writes `latest.json`. A second runner, which never sees the key, checks that the
+  manifest names the published version and replaces it on the `updater` release.
 - **Publish:** another fresh runner downloads the installers, notices, and release
-  notes as data. It requires exactly four installers and one combined notices file,
+  notes as data. It requires exactly the four installers, the macOS update archive, and one combined notices file,
   rejects empty files and links, computes checksums, and uploads them to a draft
-  release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. Only this
+  release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. In the tag workflow, only this
   job uses a write-capable GitHub token; the reusable-workflow caller supplies
   that permission ceiling, while the signer retains `permissions: {}`.
 - **Preview:** for same-repository PRs, a fresh runner downloads this run's
