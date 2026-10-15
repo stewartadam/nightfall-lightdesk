@@ -144,4 +144,5 @@ export type AnyWsMessage =
   | types.EngineClientMessage
   | DeskCommandWsMessage
   | types.SceneObjectWsMessage
+  | types.ReferenceWsMessage
   | AnyCommand;

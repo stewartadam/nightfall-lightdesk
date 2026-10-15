@@ -487,6 +487,21 @@ export const dmxUniverseList = atom<types.DmxUniverseSummary[]>([]);
 export const dmxUniverseChannels = atom<types.DmxUniverseChannels[]>([]);
 // Universes whose channel values this client asks the backend for
 export const dmxUniverseWatch = atom<types.DmxUniverseKey[]>([]);
+// Reference counts and missing references across the show, broadcast by the backend
+export const referenceHealth = atom<types.ReferenceHealth>({
+  summary: {
+    object_count: 0,
+    reference_count: 0,
+    issue_count: 0,
+    prunable_issue_count: 0,
+    affected_object_count: 0,
+  },
+  issues: [],
+});
+// Every reference in the show, sent only while referenceListWatch is set
+export const referenceList = atom<types.ReferenceEntry[]>([]);
+// Whether this client asks the backend for referenceList (see features/references/services)
+export const referenceListWatch = atom(false);
 export const inputContributionTrace = atom<types.OutboundInputContribution[]>(
   [],
 );
@@ -1129,6 +1144,9 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     dmxUniverseList,
     dmxUniverseChannels,
     dmxUniverseWatch,
+    referenceHealth,
+    referenceList,
+    referenceListWatch,
     inputContributionTrace,
     activeInstances,
     controls,

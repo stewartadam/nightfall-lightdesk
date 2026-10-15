@@ -8,7 +8,14 @@
 
 import { useStore } from "@nanostores/solid";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import {
   Checkbox,
   Input,
@@ -17,27 +24,8 @@ import {
 import PanelToolbar from "../../components/ui/panel-toolbar";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { ToolbarButton } from "../../components/ui/toolbar-button";
-import {
-  networkDmxOutputsFromSettings,
-  usbDmxOutputsFromSettings,
-} from "../../lib/network-dmx-output-targets";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
-import { buildReferenceAudit } from "../../lib/reference-audit";
-import { useShallowStore } from "../../lib/use-shallow-store";
-import { useSharedStore } from "../../lib/use-shared-store";
-import {
-  bindings,
-  blueprints,
-  cues,
-  fixtures,
-  flows,
-  fx,
-  fxModules,
-  groups,
-  sequences,
-  stepFx,
-} from "../../state/appStores";
-import { $ioSettings } from "../../state/settings";
+import { referenceHealth, referenceList } from "../../state/appStores";
 import {
   ReferenceHealthTable,
   ReferenceSummaryCell,
@@ -50,27 +38,24 @@ import {
   type ReferenceDomainFilter,
   type ReferencePanelTab,
 } from "./model/reference-panel-model";
-import { pruneReferenceSelections } from "./services/prune-references";
+import { pruneMissingFixtureReferences } from "./services/prune-references";
+import { watchReferenceList } from "./services/reference-list-watch";
 
 interface ReferencesPanelProps extends BasePanelComponentProps {
   initialPanelId: string;
 }
 
-/** Provides a showfile reference explorer and object-health audit panel. */
+/**
+ * Shows every reference in the show and the missing ones, as audited by the backend. The panel
+ * asks for the full reference list while it is open; the health counts and issues reach every
+ * client regardless.
+ */
 export default function ReferencesPanel(_props: ReferencesPanelProps) {
   const tabsId = createUniqueId();
   const contentId = `${tabsId}-content`;
-  const $fixtures = useSharedStore(fixtures);
-  const $groups = useSharedStore(groups);
-  const $cues = useShallowStore(cues);
-  const $sequences = useShallowStore(sequences);
-  const $fx = useSharedStore(fx);
-  const $stepFx = useStore(stepFx);
-  const $fxModules = useStore(fxModules);
-  const $flows = useStore(flows);
-  const $bindings = useStore(bindings);
-  const $blueprints = useStore(blueprints);
-  const $ioSettingsStore = useStore($ioSettings);
+  const $health = useStore(referenceHealth);
+  const $references = useStore(referenceList);
+  onCleanup(watchReferenceList());
   const [activeTab, setActiveTab] =
     createSignal<ReferencePanelTab>("references");
   const [domainFilter, setDomainFilter] =
@@ -78,29 +63,10 @@ export default function ReferencesPanel(_props: ReferencesPanelProps) {
   const [searchText, setSearchText] = createSignal("");
   const [missingOnly, setMissingOnly] = createSignal(false);
 
-  /** Captures the current store values as a single audit input object. */
-  const auditInputs = createMemo(() => ({
-    fixtures: $fixtures(),
-    groups: $groups(),
-    cues: $cues(),
-    sequences: $sequences(),
-    fx: $fx(),
-    stepFx: $stepFx(),
-    fxModules: $fxModules(),
-    flows: $flows(),
-    blueprints: $blueprints(),
-    outputBindings: $bindings().output,
-    networkDmxOutputs: networkDmxOutputsFromSettings($ioSettingsStore()),
-    usbDmxOutputs: usbDmxOutputsFromSettings($ioSettingsStore()),
-  }));
-
-  /** Computes reference and health rows from the hydrated showfile stores. */
-  const audit = createMemo(() => buildReferenceAudit(auditInputs()));
-
   /** Filters reference rows by toolbar controls. */
   const filteredReferences = createMemo(() =>
     filterReferences(
-      audit().references,
+      $references(),
       domainFilter(),
       searchText(),
       missingOnly(),
@@ -109,7 +75,7 @@ export default function ReferencesPanel(_props: ReferencesPanelProps) {
 
   /** Filters health rows by toolbar controls. */
   const filteredIssues = createMemo(() =>
-    filterReferenceIssues(audit().issues, domainFilter(), searchText()),
+    filterReferenceIssues($health().issues, domainFilter(), searchText()),
   );
 
   /** Counts visible rows that the prune command can repair. */
@@ -117,8 +83,9 @@ export default function ReferencesPanel(_props: ReferencesPanelProps) {
     () => filteredIssues().filter((issue) => issue.prunable).length,
   );
 
-  /** Prunes repairable missing selections through feature command services. */
-  const applyPrune = () => pruneReferenceSelections(auditInputs());
+  /** Prunes every repairable missing fixture reference in the show, not only the visible ones. */
+  const applyPrune = () =>
+    void pruneMissingFixtureReferences($health().summary.prunable_issue_count);
 
   return (
     <div
@@ -180,7 +147,7 @@ export default function ReferencesPanel(_props: ReferencesPanelProps) {
               tooltip="Prune missing resolved fixture refs"
               variant="danger"
               size="labeled"
-              disabled={audit().summary.prunableIssueCount === 0}
+              disabled={$health().summary.prunable_issue_count === 0}
               onClick={applyPrune}
             >
               <TrashIcon class="h-4 w-4" aria-hidden />
@@ -193,19 +160,19 @@ export default function ReferencesPanel(_props: ReferencesPanelProps) {
       <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 border-b border-neutral-800 bg-neutral-950 p-2 text-sm">
         <ReferenceSummaryCell
           label="Objects"
-          value={audit().summary.objectCount}
+          value={$health().summary.object_count}
         />
         <ReferenceSummaryCell
           label="References"
-          value={audit().summary.referenceCount}
+          value={$health().summary.reference_count}
         />
         <ReferenceSummaryCell
           label="Missing"
-          value={audit().summary.issueCount}
+          value={$health().summary.issue_count}
         />
         <ReferenceSummaryCell
           label="Affected"
-          value={audit().summary.affectedObjectCount}
+          value={$health().summary.affected_object_count}
         />
         <ReferenceSummaryCell label="Prunable" value={visiblePrunableCount()} />
       </div>

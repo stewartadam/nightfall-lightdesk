@@ -89,6 +89,8 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "ProgrammerSelection",
   "ProgrammerSpatialSelection",
   "ProgrammerState",
+  "ReferenceHealth",
+  "ReferenceList",
   "ResyncComplete",
   "RuntimeCapabilities",
   "SceneObjectCommand",
@@ -131,6 +133,7 @@ async function createRegistry() {
       setBackendAppState: () => {},
       requestBackendSessionState: () => {},
       sendDmxUniverseWatch: () => {},
+      sendReferenceListWatch: () => {},
     },
   });
 }

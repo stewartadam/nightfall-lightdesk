@@ -11,9 +11,6 @@
 use std::collections::HashMap;
 
 use nightfall::prelude::*;
-use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
-use nightfall_flow::prelude::*;
 use nightfall_selection::{
     SelectionDataSource, SelectionFixture, SelectionGroup, SelectionResolver,
 };
@@ -103,78 +100,15 @@ pub fn stabilize_showfile_group_refs(snapshot: &mut ShowfileSnapshot) -> Vec<Str
     let data_source = SnapshotGroupDataSource::new(&snapshot.groups);
     let resolver = SelectionResolver::new(&data_source);
     let mut warnings = Vec::new();
+    let mut stabilize = |selection: &mut SpatialSelection| {
+        let stabilized = resolver.stabilize_group_refs_selection(selection);
+        warnings.extend(stabilized.issues);
+        *selection = stabilized.value;
+    };
 
-    for cue in &mut snapshot.cues {
-        stabilize_cue_group_refs(cue, &resolver, &mut warnings);
-    }
-    for sequence in &mut snapshot.sequences {
-        stabilize_cue_group_refs(&mut sequence.setup_cue, &resolver, &mut warnings);
-        stabilize_cue_group_refs(&mut sequence.release_cue, &resolver, &mut warnings);
-    }
-    for group in &mut snapshot.groups {
-        stabilize_spatial_group_refs(&mut group.selection, &resolver, &mut warnings);
-    }
-    for master in &mut snapshot.masters {
-        if let MasterTarget::Fixtures(FixtureMasterTarget::Selection(selection)) =
-            &mut master.target
-        {
-            stabilize_spatial_group_refs(selection, &resolver, &mut warnings);
-        }
-    }
-    for fx in &mut snapshot.fx {
-        stabilize_spatial_group_refs(&mut fx.selection, &resolver, &mut warnings);
-    }
-    for fx_module in &mut snapshot.fx_module {
-        stabilize_spatial_group_refs(&mut fx_module.selection, &resolver, &mut warnings);
-    }
-    for step_fx in &mut snapshot.step_fx {
-        stabilize_spatial_group_refs(&mut step_fx.selection, &resolver, &mut warnings);
-    }
-    for flow in &mut snapshot.flows {
-        stabilize_flow_group_refs(flow, &resolver, &mut warnings);
+    for source in snapshot.reference_sources_mut() {
+        source.visit_selections_mut(&mut stabilize);
     }
 
     warnings
-}
-
-/// Normalize group aliases stored in cue and cue-part instructions.
-fn stabilize_cue_group_refs(
-    cue: &mut Cue,
-    resolver: &SelectionResolver<'_>,
-    warnings: &mut Vec<String>,
-) {
-    for instruction in &mut cue.instructions {
-        stabilize_spatial_group_refs(&mut instruction.selection, resolver, warnings);
-    }
-    for part in &mut cue.parts {
-        for instruction in &mut part.instructions {
-            stabilize_spatial_group_refs(&mut instruction.selection, resolver, warnings);
-        }
-    }
-}
-
-/// Normalize group aliases stored in flow port default values.
-fn stabilize_flow_group_refs(
-    flow: &mut FlowDefinition,
-    resolver: &SelectionResolver<'_>,
-    warnings: &mut Vec<String>,
-) {
-    for node in &mut flow.nodes {
-        for port in &mut node.ports {
-            if let Some(FlowValue::Selection(selection)) = &mut port.default_value {
-                stabilize_spatial_group_refs(selection, resolver, warnings);
-            }
-        }
-    }
-}
-
-/// Replace resolvable authored aliases in one spatial selection and collect warnings.
-fn stabilize_spatial_group_refs(
-    selection: &mut SpatialSelection,
-    resolver: &SelectionResolver<'_>,
-    warnings: &mut Vec<String>,
-) {
-    let stabilized = resolver.stabilize_group_refs_selection(selection);
-    warnings.extend(stabilized.issues);
-    *selection = stabilized.value;
 }

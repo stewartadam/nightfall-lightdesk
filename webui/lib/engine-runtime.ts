@@ -42,6 +42,8 @@ import {
   clearSelectionFlattenConfirmation,
   cueDefinitionsLoaded,
   dmxUniverseWatch,
+  referenceList,
+  referenceListWatch,
   runtimeCapabilities,
   selectionFlattenConfirmation,
   sequenceDefinitionsLoaded,
@@ -454,6 +456,7 @@ const mainThreadMessageHandlers = createMainThreadMessageHandlerRegistry({
     requestBackendSessionState: () =>
       engineRuntime.requestBackendSessionState(),
     sendDmxUniverseWatch,
+    sendReferenceListWatch,
   },
 });
 
@@ -954,6 +957,23 @@ function sendDmxUniverseWatch(
 
 const stopDmxUniverseWatchSync = dmxUniverseWatch.listen(sendDmxUniverseWatch);
 
+/**
+ * Tells the backend whether this client wants the full reference list, which it then sends
+ * after every change. Stopping the watch also drops the list this client holds.
+ */
+function sendReferenceListWatch(references: boolean): void {
+  if (!references && referenceList.get().length > 0) {
+    setStoreAction(referenceList, "Stop watching references", []);
+  }
+  if (!engineRuntime.isRunning) return;
+  const watch: types.ReferenceWatch = { references };
+  engineRuntime.sendUpdate("ReferenceWatch", watch, false);
+}
+
+const stopReferenceListWatchSync = referenceListWatch.listen(
+  sendReferenceListWatch,
+);
+
 export {
   backendAppState,
   connectionStatus,
@@ -981,6 +1001,7 @@ if (import.meta.hot) {
     data.backendAppState = backendAppState;
     data.setBackendAppState = setBackendAppState;
     stopDmxUniverseWatchSync();
+    stopReferenceListWatchSync();
     log.info("HMR dispose: disconnecting WebSocket");
     engineRuntime.stop();
   });

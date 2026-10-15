@@ -29,6 +29,7 @@ nightfall-flow = { path = "../flow", default-features = false }
 nightfall-fx = { path = "../fx" }
 nightfall-instances = { path = "../instances" }
 nightfall-programmer = { path = "../programmer" }
+nightfall-references = { path = "../references" }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-showfile = { path = "../showfile" }
 nightfall-tempo = { path = "../tempo" }

@@ -19,6 +19,7 @@ use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
 use nightfall_fx_module::prelude::*;
 use nightfall_programmer::prelude::*;
+use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::*;
 use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
@@ -78,6 +79,7 @@ impl PluginGroup for FxPlugins {
             .add(FxPlugin)
             .add(FxModulePlugin)
             .add(FlowPlugin)
+            .add(ReferencesPlugin)
     }
 }
 

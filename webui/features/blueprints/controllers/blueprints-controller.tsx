@@ -343,7 +343,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       return;
     }
 
-    const cueId = dependent.match(/^cues:cue (\d+) /)?.[1];
+    const cueId = dependent.match(/^objects:cue (\d+)(?: |$)/)?.[1];
     if (cueId) {
       const cue = Object.values($cues()).find(
         (candidate) => candidate.identifiers.id === Number(cueId),
@@ -357,7 +357,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       return;
     }
 
-    const sequenceId = dependent.match(/^cues:sequence (\d+) /)?.[1];
+    const sequenceId = dependent.match(/^objects:sequence (\d+)(?: |$)/)?.[1];
     if (!sequenceId) return;
     const sequence = Object.values($sequences()).find(
       (candidate) => candidate.identifiers.id === Number(sequenceId),

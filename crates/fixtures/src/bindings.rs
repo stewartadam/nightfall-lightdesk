@@ -11,8 +11,10 @@
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::{Component, Entity, Resource};
+use nightfall::prelude::SpatialSelection;
 use nightfall_io::BindingTransport;
 use nightfall_io::OutputTransport;
+use nightfall_selection::{HeldReference, ReferenceSource};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -63,6 +65,17 @@ pub struct OutputBinding {
     /// If true, fixtures sharing a target universe all start at the target address instead of
     /// being packed one after another.
     pub clone: bool,
+}
+
+/// Reports the output transport target of a transport binding.
+impl ReferenceSource for OutputBinding {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        if let OutputTarget::Transport { target, .. } = &self.target {
+            visit("target.target", HeldReference::OutputTarget(target));
+        }
+    }
+
+    fn visit_selections_mut(&mut self, _visit: &mut dyn FnMut(&mut SpatialSelection)) {}
 }
 
 /// Input binding source.

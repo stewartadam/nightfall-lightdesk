@@ -30,6 +30,7 @@ nightfall-io = { path = "../io" }
 nightfall-lookahead = { path = "../lookahead" }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-selection = { path = "../selection" }
 nightfall-undo = { path = "../undo" }
 serde_json.workspace = true
 serde.workspace = true

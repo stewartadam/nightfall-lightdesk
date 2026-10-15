@@ -32,6 +32,7 @@ use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
 use nightfall_fx::prelude::{FxPlugin, StoredFxModule};
 use nightfall_programmer::prelude::ProgrammerPlugin;
+use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
 use nightfall_tempo::prelude::TempoPlugin;
 use nightfall_timecode::prelude::TimecodePlugin;
@@ -220,6 +221,7 @@ impl BrowserEngine {
         app.add_plugins(FxPlugin);
         app.init_resource::<DataProvider<StoredFxModule>>();
         app.add_plugins(FlowPlugin);
+        app.add_plugins(ReferencesPlugin);
         app.add_plugins(TimecodePlugin);
         app.add_plugins(TimelinePlugin::browser_demo());
         set_construction_stage(7);

@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 
 use nightfall::prelude::{HasIdentifiers, Identifiers, SpatialSelection};
+use nightfall_selection::{HeldReference, ReferenceSource};
 use serde::{Deserialize, Serialize};
 
 /// Stored component FX definition owned by a showfile independently of its runtime host.
@@ -30,5 +31,16 @@ impl HasIdentifiers for StoredFxModule {
     /// Return the stable identifiers used by showfile providers and references.
     fn identifiers(&self) -> &Identifiers {
         &self.identifiers
+    }
+}
+
+/// Reports the selection owned by the stored FX module.
+impl ReferenceSource for StoredFxModule {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        visit("selection", HeldReference::Selection(&self.selection));
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        visit(&mut self.selection);
     }
 }

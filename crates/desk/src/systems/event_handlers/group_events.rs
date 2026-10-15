@@ -77,10 +77,47 @@ pub fn action_events(
     }
 }
 
-/// Handles GroupCommand CRUD operations
+/// Rejects deleting a group that other objects still reference.
+fn validate_group_delete(
+    command: &GroupCommand,
+    provider: &DataProvider<Group>,
+    reference_index: &GroupReferenceIndex,
+) -> Result<(), CommandError> {
+    let GroupCommand::DeleteGroup(id) = command else {
+        return Ok(());
+    };
+    let Ok(group) = provider.from_id(*id) else {
+        return Ok(());
+    };
+    let dependents = reference_index.dependents(group.identifiers.uid);
+    if dependents.is_empty() {
+        return Ok(());
+    }
+    let descriptions = dependents
+        .iter()
+        .map(|dependent| {
+            dependent
+                .split_once(':')
+                .map_or(dependent.as_str(), |(_, description)| description)
+        })
+        .collect::<Vec<_>>();
+    Err(CommandError::new(
+        "group.delete_referenced",
+        format!(
+            "Cannot delete group {id} because it is referenced by: {}",
+            descriptions.join(", ")
+        ),
+    ))
+}
+
+/// Handles GroupCommand CRUD operations.
+///
+/// Deleting a group that other objects reference fails, except when undo or redo replays the
+/// deletion.
 pub fn crud_events(
     mut events_reader: MessageReader<CommandEnvelope<GroupCommand>>,
     mut group_storage: ParamSet<(SpatialSelectionResolver, ResMut<DataProvider<Group>>)>,
+    reference_index: Res<GroupReferenceIndex>,
     mut responder: CommandResponder,
 ) {
     for event in events_reader.read() {
@@ -91,8 +128,15 @@ pub fn crud_events(
             }
             command => command.clone(),
         };
-        let result = apply_object_crud_command::<Group>(&command, &mut group_storage.p1())
-            .expect("every GroupCommand variant is a CRUD command");
+        let guard = if responder.is_undo_replay(event.command_id) {
+            Ok(())
+        } else {
+            validate_group_delete(&command, &group_storage.p1(), &reference_index)
+        };
+        let result = guard.and_then(|()| {
+            apply_object_crud_command::<Group>(&command, &mut group_storage.p1())
+                .expect("every GroupCommand variant is a CRUD command")
+        });
         let response = match result {
             Ok(()) => responder.succeed(event.command_id),
             Err(error) => responder.fail(event.command_id, error),
@@ -120,6 +164,7 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<DataProvider<Group>>();
         app.init_resource::<FixtureDataProviderExt>();
+        app.init_resource::<GroupReferenceIndex>();
         app.init_resource::<CommandTracker>();
         app.add_message::<CommandEnvelope<GroupCommand>>();
         app.add_message::<CommandResult>();
@@ -206,6 +251,68 @@ mod tests {
             SelectionExpr::Group(GroupRefExpr::ByUid {
                 uid: referenced_uid,
             })
+        );
+    }
+
+    /// Stores group 4 and records `cue 1 (Look)` as an object that references it.
+    fn referenced_group_app() -> (App, Uuid) {
+        let mut app = group_app();
+        let group_uid = Uuid::from_u128(4);
+        let mut group = Group::default();
+        group.identifiers.id = 4;
+        group.identifiers.uid = group_uid;
+        app.world_mut()
+            .resource_mut::<DataProvider<Group>>()
+            .add(group)
+            .expect("group should store");
+        app.world_mut()
+            .resource_mut::<GroupReferenceIndex>()
+            .replace_source("objects", [(group_uid, "cue 1 (Look)".to_owned())]);
+        (app, group_uid)
+    }
+
+    /// Verifies a group other objects reference cannot be deleted and the error names them.
+    #[test]
+    fn referenced_group_cannot_be_deleted() {
+        let (mut app, group_uid) = referenced_group_app();
+        submit(&mut app, GroupCommand::DeleteGroup(4));
+
+        app.update();
+
+        let result = take_result(&mut app);
+        assert!(matches!(
+            result.outcome,
+            CommandOutcome::Failed(error)
+                if error.code == "group.delete_referenced"
+                    && error.message.ends_with("referenced by: cue 1 (Look)")
+        ));
+        assert!(
+            app.world()
+                .resource::<DataProvider<Group>>()
+                .get(group_uid)
+                .is_ok()
+        );
+    }
+
+    /// Verifies undo and redo replays may delete a referenced group, so restoring an earlier
+    /// state never fails on the guard.
+    #[test]
+    fn undo_replay_deletes_referenced_group() {
+        let (mut app, group_uid) = referenced_group_app();
+        let command_id = submit(&mut app, GroupCommand::DeleteGroup(4));
+        app.world_mut()
+            .resource_mut::<CommandTracker>()
+            .mark_undo_replay(command_id);
+
+        app.update();
+
+        let result = take_result(&mut app);
+        assert!(matches!(result.outcome, CommandOutcome::Succeeded { .. }));
+        assert!(
+            app.world()
+                .resource::<DataProvider<Group>>()
+                .get(group_uid)
+                .is_err()
         );
     }
 
