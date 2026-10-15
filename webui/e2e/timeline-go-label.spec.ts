@@ -28,6 +28,7 @@ const TIMELINE_UID = "c9630000000000000000000000000006";
 const TRACK_ID = "go-label-track";
 const GO_A_ID = "go-label-go-a";
 const GO_B_ID = "go-label-go-b";
+const JUMP_ID = "go-label-jump";
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -54,12 +55,12 @@ function emptyCue(id: number, uid: string, label: string): object {
   };
 }
 
-/** Builds the three-step non-wrapping sequence advanced by the timeline Go actions. */
-function sequence(): object {
+/** Builds the non-wrapping sequence advanced by the timeline Go actions, in step order. */
+function sequence(steps: string[] = CUE_UIDS): object {
   const zero = { type: "Fixed", data: { secs: 0, nanos: 0 } };
   return {
     identifiers: { id: SEQUENCE_ID, uid: SEQUENCE_UID, label: "Go Labels" },
-    steps: CUE_UIDS,
+    steps,
     wrap: false,
     release_on_start: false,
     setup_cue: emptyCue(0, SETUP_CUE_UID, "Setup"),
@@ -87,7 +88,7 @@ function timelineAction(id: string, second: number, action: object): object {
   };
 }
 
-/** Builds a timeline that starts the clip and then advances it twice. */
+/** Builds a timeline that starts the clip, advances it twice, then jumps to step 2. */
 function timeline(): object {
   return {
     identifiers: { id: TIMELINE_ID, uid: TIMELINE_UID, label: "Go Labels" },
@@ -118,6 +119,10 @@ function timeline(): object {
           timelineAction(GO_B_ID, 3, {
             id: "clip.go",
             arguments: { clip: CLIP_UID },
+          }),
+          timelineAction(JUMP_ID, 6, {
+            id: "clip.goto",
+            arguments: { clip: CLIP_UID, cue_index: 2 },
           }),
         ],
       },
@@ -245,4 +250,28 @@ test("timeline Go label follows its position after dragging", async ({
   await expect(goA).toContainText(`Go ${SEQUENCE_ID}.3: Go Labels Clip`);
   await expect(goB).toContainText(`Go ${SEQUENCE_ID}.2: Go Labels Clip`);
   await page.screenshot({ path: testInfo.outputPath("go-labels-after.png") });
+});
+
+/** Verifies a Jump To Cue chip names the cue now at its step after the sequence is reordered. */
+test("timeline jump label follows sequence reordering", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  const surface = await openGoLabelTimeline(page, backendSlot.backendPort);
+  const jump = actionChip(surface, JUMP_ID);
+
+  await expect(jump).toContainText(`Jump ${SEQUENCE_ID}.2: Go Labels Clip`);
+
+  await sendCommand(page, {
+    module: "CueCommand",
+    command: {
+      type: "StoreSequence",
+      data: sequence([CUE_UIDS[1], CUE_UIDS[0], CUE_UIDS[2]]),
+    },
+  });
+
+  await expect(jump).toContainText(`Jump ${SEQUENCE_ID}.1: Go Labels Clip`);
+  await page.screenshot({
+    path: testInfo.outputPath("jump-label-reordered.png"),
+  });
 });

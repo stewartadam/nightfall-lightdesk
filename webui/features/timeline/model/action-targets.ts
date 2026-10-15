@@ -315,6 +315,23 @@ function sequenceCueEditorTarget(
   );
 }
 
+/** Formats a sequence and cue as the operator-facing `sequence.cue` number, if both exist. */
+function sequenceCueRef(
+  index: ActionTargetIndex,
+  sequenceUid: string | undefined,
+  cueUid: string | undefined,
+): string | undefined {
+  if (!sequenceUid || !cueUid) return undefined;
+  const sequenceId = index.sequenceMapByUid.get(
+    normalizeActionTargetUid(sequenceUid),
+  )?.identifiers.id;
+  const cueId = index.cueMapByUid.get(normalizeActionTargetUid(cueUid))
+    ?.identifiers.id;
+  return sequenceId !== undefined && cueId !== undefined
+    ? `${sequenceId}.${cueId}`
+    : undefined;
+}
+
 /** Returns the cue UID at a 1-based step position of a clip's sequence. */
 function sequenceStepCueUid(
   index: ActionTargetIndex,
@@ -371,6 +388,8 @@ export function resolveActionEditorTarget(
  *
  * Go and Back show the sequence cue the backend resolved for the action's timeline position,
  * so the number follows the action when it is moved; without one they show only the clip.
+ * Jump shows the cue currently at its stored step, so it stays right when the sequence is
+ * reordered.
  */
 export function resolveActionDisplayLabel(
   action: TimelineActionKind,
@@ -420,21 +439,30 @@ export function resolveActionDisplayLabel(
       if (!clipTuple) return fallbackLabel;
       const clip = clipTuple[0];
       const verb = action.type === "AdvanceSequence" ? "Go" : "Back";
-      const sequenceId = sequenceTarget
-        ? index.sequenceMapByUid.get(
-            normalizeActionTargetUid(sequenceTarget.sequence_uid),
-          )?.identifiers.id
-        : undefined;
-      const cueId = sequenceTarget?.cue_uid
-        ? index.cueMapByUid.get(
-            normalizeActionTargetUid(sequenceTarget.cue_uid),
-          )?.identifiers.id
-        : undefined;
-
-      if (sequenceId !== undefined && cueId !== undefined) {
-        return `${verb} ${sequenceId}.${cueId}: ${clip.identifiers.label}`;
-      }
-      return `${verb}: ${clip.identifiers.label}`;
+      const cueRef = sequenceCueRef(
+        index,
+        sequenceTarget?.sequence_uid,
+        sequenceTarget?.cue_uid,
+      );
+      return cueRef
+        ? `${verb} ${cueRef}: ${clip.identifiers.label}`
+        : `${verb}: ${clip.identifiers.label}`;
+    }
+    case "JumpToCue": {
+      const clipTuple = index.clipMapByUid.get(
+        normalizeActionTargetUid(action.data.uid),
+      );
+      const source = clipTuple?.[0].source;
+      if (!clipTuple || source?.type !== "Sequence") return fallbackLabel;
+      const cueRef = sequenceCueRef(
+        index,
+        sequenceTarget?.sequence_uid ?? source.data,
+        sequenceTarget?.cue_uid ??
+          sequenceStepCueUid(index, action.data.uid, action.data.cue_index),
+      );
+      return cueRef
+        ? `Jump ${cueRef}: ${clipTuple[0].identifiers.label}`
+        : fallbackLabel;
     }
     case "DeskEval":
       return `Eval: ${action.data}`;
