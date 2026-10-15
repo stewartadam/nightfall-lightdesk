@@ -7,11 +7,23 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import { writeClipboardText } from "../../lib/clipboard";
+import {
+  $desktopUpdate,
+  setDesktopUpdateChecks,
+} from "../../lib/desktop-updates";
 import { engineRuntime } from "../../lib/engine-runtime";
 import { setStoreAction } from "../../lib/nanostore-action";
 import { PRIVACY_POLICY_URL } from "../../lib/privacy";
@@ -20,21 +32,18 @@ import type { TelemetryConsent } from "../../types";
 
 /** What usage statistics contain, shown so operators can judge them before agreeing. */
 const USAGE_CONTENTS = [
-  "App version and operating system information",
-  "Basic hardware information like your CPU, GPU and memory",
-  "Make and model of library fixtures in your patch (custom fixtures names are not recorded)",
-  "How many of each object type your show contains",
-  "Input/output transports in use, and make and model of hardware nodes",
-  "Your Install ID, and a random session ID that changes each time Nightfall starts",
-  "Approximate location (country, region, and city) estimated from your IP address. The IP address itself is not stored.",
+  "App version, operating system and basic hardware information",
+  "Showfile metadata, like counts of object types",
+  "Make and model of patched fixtures or I/O hardware.",
 ];
+
+/** How long the reset button confirms that the prior Install ID was copied (ms). */
+const COPY_CONFIRMATION_MS = 2000;
 
 /** What an error report contains. */
 const ERROR_CONTENTS = [
-  "Error with stack trace, along with warnings logged shortly before the error",
-  "App version and operating system information",
-  "Computer model and processor architecture",
-  "Your Install ID, and a random session ID that changes each time Nightfall starts",
+  "The error, its stack trace and recent warnings",
+  "App version, operating system, and processor information",
 ];
 
 /**
@@ -55,8 +64,67 @@ export function setTelemetryConsent(patch: Partial<TelemetryConsent>): void {
   });
 }
 
+/**
+ * Titles a Privacy section with its switch as a settings row: a heading-styled label with its
+ * description beneath on the left, and the switch on the right. The heading is named by the label
+ * alone, so the description is not read as part of it.
+ */
+function SectionSwitch(props: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <h3 aria-label={props.label}>
+      <ToggleSwitch
+        label={props.label}
+        ariaLabel={props.label}
+        description={props.description}
+        layout="switch-end"
+        labelClass="text-sm font-medium text-gray-300"
+        checked={props.checked}
+        onChange={props.onChange}
+      />
+    </h3>
+  );
+}
+
 /** Edits host-scoped telemetry consent and explains exactly what each report contains. */
 export function PrivacySettings() {
+  return (
+    <>
+      <p class="text-xs text-gray-400">
+        The Nightfall app can share data to help fix errors and prioritize
+        feature development. Sharing data is optional and can be disabled at any
+        time.
+      </p>
+      <p class="text-xs text-gray-400">
+        These privacy choices are saved on this computer, independently of your
+        showfile.
+      </p>
+      <p class="text-xs text-gray-400">
+        See the{" "}
+        <a
+          class="text-blue-300 underline"
+          href={PRIVACY_POLICY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Nightfall privacy policy
+        </a>{" "}
+        for what data is captured, where it is stored, and how long it is kept.
+      </p>
+      <div class="divide-y divide-gray-700/70">
+        <UpdateSettings />
+        <TelemetrySettings />
+      </div>
+    </>
+  );
+}
+
+/** Explains and edits the two kinds of anonymous reports and the Install ID. */
+function TelemetrySettings() {
   const state = useStore($telemetryState);
   /**
    * Choices the switches show. Before the operator answers, they show the proposed choice of
@@ -73,9 +141,26 @@ export function PrivacySettings() {
     setTelemetryConsent({ ...shown(), ...patch });
   /** Counts successful copies of a prior ID; each change flashes the confirmation tooltip. */
   const [copies, setCopies] = createSignal(0);
+  /**
+   * Whether the reset button's tooltip shows the copy confirmation instead of its "Reset ID"
+   * hint. One tooltip carries both, so the hint shown on hover or focus never overlaps the
+   * confirmation the click produces.
+   */
+  const [confirming, setConfirming] = createSignal(false);
+  let confirmTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(confirmTimeoutId));
+  /** Shows the copy confirmation for as long as the tooltip flashes it, then the hint again. */
+  const confirmCopy = () => {
+    clearTimeout(confirmTimeoutId);
+    setConfirming(true);
+    setCopies((count) => count + 1);
+    confirmTimeoutId = setTimeout(
+      () => setConfirming(false),
+      COPY_CONFIRMATION_MS,
+    );
+  };
   /** A replaced Install ID that could not be copied, shown so the operator can note it down. */
   const [uncopiedId, setUncopiedId] = createSignal<string>();
-  let resetButton: HTMLButtonElement | undefined;
   /** The Install ID a reset was requested for, until the backend reports its replacement. */
   const [resettingId, setResettingId] = createSignal<string>();
   /**
@@ -97,8 +182,8 @@ export function PrivacySettings() {
    * copied to the clipboard, since it is needed to request deletion of data sent under it and
    * nothing links it to the new one. Success is confirmed by a brief tooltip over the button,
    * since toasts render beneath the Settings dialog; if copying fails, the old ID stays shown
-   * below the button instead. The copy starts within the click, as browsers require, but the
-   * reset does not wait for it, so a stalled clipboard permission prompt cannot block it.
+   * below the Install ID row instead. The copy starts within the click, as browsers require,
+   * but the reset does not wait for it, so a stalled clipboard permission prompt cannot block it.
    */
   const resetInstallId = () => {
     const previousId = state().install_id;
@@ -110,105 +195,78 @@ export function PrivacySettings() {
       module: "SettingsCommand",
       command: { type: "ResetTelemetryInstallId" },
     });
-    copied.then(
-      () => setCopies((count) => count + 1),
-      () => setUncopiedId(previousId),
-    );
+    copied.then(confirmCopy, () => setUncopiedId(previousId));
   };
 
   return (
     <Show
       when={state().available}
       fallback={
-        <p class="text-sm text-gray-400">
-          Anonymous reports are not available in this version of Nightfall.
+        <p class="py-4 text-sm text-gray-400">
+          Sharing data is not supported in this version of Nightfall.
         </p>
       }
     >
-      <p class="text-xs text-gray-400">
-        The Nightfall app can automatically share two kinds of data to help fix
-        errors and prioritize feature development: error reports and usage
-        statistics. Each has its own switch, and both can be changed at any
-        time.
-      </p>
-      <p class="text-xs text-gray-400">
-        These choices are saved on this computer, independently of your
-        showfile. See the{" "}
-        <a
-          class="text-blue-300 underline"
-          href={PRIVACY_POLICY_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Nightfall privacy policy
-        </a>{" "}
-        for where data is stored and how long it is kept.
-      </p>
-      <section aria-label="Usage statistics">
-        <h3 class="text-sm font-medium text-gray-300 mb-2">Usage statistics</h3>
-        <p class="mt-2 text-xs text-gray-400">
-          A snapshot of how Nightfall is set up, used to decide what to build
-          next.
-        </p>
-        <ToggleSwitch
+      <section aria-label="Usage statistics" class="py-4">
+        <SectionSwitch
           label="Share usage statistics"
-          ariaLabel="Share usage statistics"
+          description="Information about how Nightfall is setup to help decide what to build next."
           checked={shown().share_usage}
           onChange={(share_usage) => change({ share_usage })}
-          class="mt-6 mb-3"
         />
-        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
-          <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
-        </ul>
+        <div class="mt-2 space-y-2 text-xs text-gray-400">
+          <p>Includes information such as:</p>
+          <ul class="list-disc space-y-1 pl-5">
+            <For each={USAGE_CONTENTS}>{(item) => <li>{item}</li>}</For>
+          </ul>
+        </div>
       </section>
-      <section aria-label="Error reports">
-        <h3 class="text-sm font-medium text-gray-300 mb-2">Error reports</h3>
-        <p class="mt-2 text-xs text-gray-400">
-          Sent when something goes wrong, so bugs can be found and fixed.
-          Turning error reports off also deletes any reports still waiting to be
-          sent.
-        </p>
-        <ToggleSwitch
+      <section aria-label="Error reports" class="py-4">
+        <SectionSwitch
           label="Share error reports"
-          ariaLabel="Share error reports"
+          description="Send error information and logs when something goes wrong, to help find and fix bugs."
           checked={shown().share_errors}
           onChange={(share_errors) => change({ share_errors })}
-          class="mt-6 mb-3"
         />
-        <p class="mt-2 text-xs text-gray-400">Includes information such as:</p>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-400">
-          <For each={ERROR_CONTENTS}>{(item) => <li>{item}</li>}</For>
-        </ul>
+        <div class="mt-2 space-y-2 text-xs text-gray-400">
+          <p>Includes information such as:</p>
+          <ul class="list-disc space-y-1 pl-5">
+            <For each={ERROR_CONTENTS}>{(item) => <li>{item}</li>}</For>
+          </ul>
+        </div>
       </section>
-      <section aria-label="Install ID">
-        <h3 class="text-sm font-medium text-gray-300 mb-2">Install ID</h3>
-        <p class="text-xs text-gray-400">
-          A random ID created for this Nightfall installation. It is used only
-          to group reports sent from here and is not tied to you as a person.
-        </p>
-        <div class="mt-2 flex items-center justify-between gap-3">
-          <code
-            class="truncate text-xs text-gray-300"
-            data-testid="telemetry-install-id"
-          >
-            {state().install_id}
-          </code>
-          <div class="shrink-0">
-            <Button
-              ref={resetButton}
-              size="compact"
-              onClick={resetInstallId}
-              disabled={!state().install_id || resettingId() !== undefined}
+      <section aria-label="Install ID" class="py-4">
+        <div class="flex min-w-0 flex-col gap-0.5">
+          <h3 class="text-sm font-medium text-gray-300">Install ID</h3>
+          <p class="text-xs leading-[1.45] text-gray-400">
+            A random ID for this Nightfall installation sent with every report.
+            It is used only to group reports sent by Nightfall and is not tied
+            to you as a person.
+          </p>
+          <div class="mt-1 flex min-w-0 items-center gap-1.5">
+            <code
+              class="truncate text-xs text-gray-300"
+              data-testid="telemetry-install-id"
             >
-              Reset ID
-            </Button>
+              {state().install_id}
+            </code>
             <Tooltip
-              content={() => "✅ Prior ID copied to clipboard"}
+              content={() =>
+                confirming() ? "✅ Prior ID copied to clipboard" : "Reset ID"
+              }
               flash={copies}
-              anchorRect={() => resetButton?.getBoundingClientRect()}
+              flashMs={COPY_CONFIRMATION_MS}
             >
-              <span />
+              <Button
+                size="icon"
+                variant="subtle"
+                class="size-6!"
+                aria-label="Reset ID"
+                onClick={resetInstallId}
+                disabled={!state().install_id || resettingId() !== undefined}
+              >
+                <ArrowClockwiseIcon class="size-3.5" aria-hidden />
+              </Button>
             </Tooltip>
           </div>
         </div>
@@ -221,18 +279,57 @@ export function PrivacySettings() {
           )}
         </Show>
         <p class="mt-2 text-xs text-gray-400">
-          If you reset your Install ID, you may wish to keep a record of the
-          prior ID. Nothing links the old and new IDs, so data sent under the
-          old ID can only be deleted if you include it in your request.
+          Keep a record of your prior Install ID if you wish to request data
+          deletion. Nothing links the old and new ID.
         </p>
       </section>
       <Show when={state().error}>
         {(error) => (
-          <p class="text-xs text-red-300" role="alert">
+          <p class="py-4 text-xs text-red-300" role="alert">
             {error()}
           </p>
         )}
       </Show>
+    </Show>
+  );
+}
+
+/**
+ * Lets the operator turn update checks off entirely, including the check in the About dialog,
+ * where update status and installs are managed. Shown in the desktop app only, since browsers
+ * and other devices have nothing to update.
+ */
+function UpdateSettings() {
+  const update = useStore($desktopUpdate);
+  /** Error from the last switch change, cleared by the next attempt. */
+  const [actionError, setActionError] = createSignal<string>();
+  /** Saves the update check choice and shows why it failed, if it does. */
+  const setChecks = (enabled: boolean) => {
+    setActionError(undefined);
+    setDesktopUpdateChecks(enabled).catch((error) =>
+      setActionError(String(error)),
+    );
+  };
+
+  return (
+    <Show when={update()}>
+      {(current) => (
+        <section aria-label="Updates" class="py-4">
+          <SectionSwitch
+            label="Allow update checks"
+            description="When enabled, Nightfall can check nightfall.live for new app versions. Choose how updates are managed in the About dialog."
+            checked={current().checkForUpdates}
+            onChange={setChecks}
+          />
+          <Show when={actionError()}>
+            {(error) => (
+              <p class="mt-2 text-xs text-amber-300" role="alert">
+                {error()}
+              </p>
+            )}
+          </Show>
+        </section>
+      )}
     </Show>
   );
 }

@@ -34,6 +34,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://nightfall.live/api/v1/updates/alpha/{{target}}/{{arch}}/{{bundle_type}}/{{current_version}}"
+      ],
+      "pubkey": "",
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "category": "GraphicsAndDesign",

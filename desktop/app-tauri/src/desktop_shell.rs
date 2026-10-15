@@ -699,11 +699,13 @@ const BACKEND_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Holds a quit, or the last window closing, until the backend has saved and stopped.
 ///
 /// The first exit request asks the backend to save the draft and stop; the backend thread
-/// then exits the app itself. If the backend does not stop in time, the app exits anyway.
+/// then exits the app itself. If the backend does not stop in time, the app exits anyway. Once
+/// the backend has stopped the deadline no longer applies, so installing an update, which may
+/// wait on a system password prompt, is never cut short.
 ///
 /// Tauri ends the process right after the final exit event without returning to `main`, so
 /// reports still in memory are written to disk then.
-fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &AtomicBool) {
+fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &Arc<AtomicBool>) {
     if matches!(event, tauri::RunEvent::Exit) {
         app_runtime::flush_reports();
         return;
@@ -716,8 +718,12 @@ fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &Atom
     }
     api.prevent_exit();
     if request_graceful_exit("desktop app quit") {
-        std::thread::spawn(|| {
+        let backend_stopped = backend_stopped.clone();
+        std::thread::spawn(move || {
             std::thread::sleep(BACKEND_EXIT_TIMEOUT);
+            if backend_stopped.load(Ordering::Acquire) {
+                return;
+            }
             tracing::error!("Backend did not stop in time after quit; exiting anyway");
             std::process::exit(1);
         });
@@ -728,9 +734,11 @@ fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &Atom
 pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
     let backend_stopped = Arc::new(AtomicBool::new(false));
     let backend_stopped_for_setup = backend_stopped.clone();
-    tauri::Builder::default()
+    let update_controller = Arc::new(crate::updates::UpdateController::load());
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().skip_logger().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(crate::updates::plugin())
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("backend-config")
                 .js_init_script(format!(
@@ -738,7 +746,10 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
                     runtime_config.server_port
                 ))
                 .build(),
-        )
+        );
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(crate::updates::debug::plugin());
+    builder
         .menu(build_tauri_menu)
         .on_menu_event(handle_tauri_menu_event)
         .invoke_handler(tauri::generate_handler![
@@ -747,9 +758,25 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
             export_diagnostics,
             export_showfile,
             open_bug_report,
-            collect_diagnostic_logs
+            collect_diagnostic_logs,
+            crate::updates::update_state,
+            crate::updates::set_update_checks,
+            crate::updates::set_update_mode,
+            crate::updates::check_for_updates,
+            crate::updates::download_update,
+            crate::updates::restart_to_update,
+            #[cfg(debug_assertions)]
+            crate::updates::debug::debug_update_state,
+            #[cfg(debug_assertions)]
+            crate::updates::debug::debug_update_preset,
+            #[cfg(debug_assertions)]
+            crate::updates::debug::debug_update_presets,
+            #[cfg(debug_assertions)]
+            crate::updates::debug::debug_reset_update_state
         ])
+        .manage(update_controller.clone())
         .setup(move |app| {
+            crate::updates::start(app.handle(), update_controller);
             runtime_config.resource_dir = if tauri::is_dev() {
                 None
             } else {
@@ -788,6 +815,11 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
                 });
 
                 backend_stopped_for_setup.store(true, Ordering::Release);
+                // After a clean exit, a downloaded update installs if the operator chose to restart
+                // into it, or on any quit when automatic installs are on. Only a restart returns true.
+                if exit_code == 0 && crate::updates::install_pending_update(&app_handle) {
+                    return;
+                }
                 app_handle.exit(exit_code);
             });
             Ok(())

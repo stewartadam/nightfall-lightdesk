@@ -111,7 +111,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await expect(privacy).toBeInViewport({ ratio: 1 });
   await expect(
     dialog.getByText(
-      "Anonymous reports are not available in this version of Nightfall.",
+      "Sharing data is not supported in this version of Nightfall.",
     ),
   ).toBeVisible();
   await privacy.press("ArrowRight");

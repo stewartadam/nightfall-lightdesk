@@ -32,13 +32,18 @@ import {
   openDataDirectory,
 } from "../../lib/tauri";
 import { pushToast, serverVersion } from "../../state/appStores";
+import { AboutUpdateStatus, createAboutUpdates } from "./about-updates";
 import ThirdPartyNotices from "./third-party-notices";
 
 const log = getLogger(import.meta.url);
-/** Presents application metadata, data-directory actions and bundled licenses. */
+/**
+ * Presents application metadata, desktop update status and controls, data-directory actions
+ * and bundled licenses.
+ */
 export function AboutDialog() {
   const { isAboutOpen, closeAbout } = useAppShell();
   const connectedVersion = useStore(serverVersion);
+  const updates = createAboutUpdates();
   const [isOpeningDataDirectory, setIsOpeningDataDirectory] =
     createSignal(false);
   const [isThirdPartyLicensesOpen, setIsThirdPartyLicensesOpen] =
@@ -52,9 +57,9 @@ export function AboutDialog() {
   const dataDirectoryActionLabel = () =>
     showOpenDataDirectory
       ? isOpeningDataDirectory()
-        ? "Opening Data Directory..."
-        : "Open Data Directory"
-      : "Copy Data Directory Path";
+        ? "Opening..."
+        : "Open"
+      : "Copy Path";
 
   /** Resolves the directory tooltip, including environments without a local path. */
   const dataDirectoryPath = () => {
@@ -128,12 +133,16 @@ export function AboutDialog() {
             <img
               src={`${import.meta.env.BASE_URL}logo.svg`}
               alt={`${APP_NAME} logo`}
-              class="size-16 rounded-xl border border-gray-700 bg-[#0B1020] p-2 shadow-inner"
+              class="size-18 rounded-xl border border-gray-700 bg-[#0B1020] p-2 shadow-inner"
             />
             <div class="min-w-0">
               <h3 class="text-xl font-semibold text-gray-50">{APP_NAME}</h3>
               <p class="text-sm text-gray-400">
                 Lighting control and visualization
+              </p>
+              <p class="text-sm text-gray-400">
+                <span innerHTML={APP_COPYRIGHT}></span>, licensed under{" "}
+                {APP_LICENSE}.
               </p>
             </div>
           </div>
@@ -141,7 +150,11 @@ export function AboutDialog() {
           <div class="grid gap-3 rounded-lg border border-gray-700 bg-gray-900/60 p-4 text-sm">
             <div class="flex items-center justify-between gap-3">
               <span class="text-gray-400">Version</span>
-              <span class="font-mono text-gray-100">{displayedVersion()}</span>
+              <div class="flex items-center gap-3">
+                <span class="font-mono text-gray-100">
+                  {displayedVersion()}
+                </span>
+              </div>
             </div>
             <div class="flex items-center justify-between gap-3">
               <span class="text-gray-400">Build ID</span>
@@ -157,44 +170,49 @@ export function AboutDialog() {
               </span>
             </div>
             <div class="flex items-center justify-between gap-3">
-              <span class="text-gray-400">License</span>
-              <span class="text-gray-100">{APP_LICENSE}</span>
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-gray-400">Copyright</span>
-              <span class="text-gray-100" innerHTML={APP_COPYRIGHT} />
+              <span class="text-gray-400">Data directory</span>
+              <span
+                data-testid="data-directory"
+                class="min-w-0 truncate font-mono text-gray-100"
+              >
+                <div class="flex justify-end">
+                  <Tooltip
+                    position="top"
+                    content={() => (
+                      <span class="block max-w-[min(28rem,calc(100vw-2rem))] whitespace-normal break-all text-left font-mono">
+                        {dataDirectoryPath()}
+                      </span>
+                    )}
+                  >
+                    <Button
+                      size="compact"
+                      type="button"
+                      class="items-center gap-2"
+                      disabled={
+                        showOpenDataDirectory && isOpeningDataDirectory()
+                      }
+                      onClick={() =>
+                        void (showOpenDataDirectory
+                          ? handleOpenDataDirectory()
+                          : handleCopyDataDirectoryPath())
+                      }
+                    >
+                      <Dynamic
+                        component={
+                          showOpenDataDirectory ? FolderOpenIcon : CopyIcon
+                        }
+                        class="size-4"
+                        aria-hidden
+                      />
+                      <span>{dataDirectoryActionLabel()}</span>
+                    </Button>
+                  </Tooltip>
+                </div>
+              </span>
             </div>
           </div>
 
-          <div class="flex justify-end">
-            <Tooltip
-              position="top"
-              content={() => (
-                <span class="block max-w-[min(28rem,calc(100vw-2rem))] whitespace-normal break-all text-left font-mono">
-                  {dataDirectoryPath()}
-                </span>
-              )}
-            >
-              <Button
-                size="compact"
-                type="button"
-                class="items-center gap-2"
-                disabled={showOpenDataDirectory && isOpeningDataDirectory()}
-                onClick={() =>
-                  void (showOpenDataDirectory
-                    ? handleOpenDataDirectory()
-                    : handleCopyDataDirectoryPath())
-                }
-              >
-                <Dynamic
-                  component={showOpenDataDirectory ? FolderOpenIcon : CopyIcon}
-                  class="size-4"
-                  aria-hidden
-                />
-                <span>{dataDirectoryActionLabel()}</span>
-              </Button>
-            </Tooltip>
-          </div>
+          <AboutUpdateStatus updates={updates} />
 
           <div class="space-y-3 rounded-lg border border-gray-700 bg-gray-900/40 p-4">
             <h4 class="text-sm font-semibold text-gray-100">
