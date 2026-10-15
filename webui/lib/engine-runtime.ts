@@ -116,6 +116,7 @@ import {
   showTempo,
   stepFx,
   timecodes,
+  timelineActionKey,
   timelineBeatgridDetectionStatus,
   timelineBeatgridPreview,
   timelineBeatgridProposals,
@@ -123,6 +124,7 @@ import {
   timelineLookaheadActionStatuses,
   timelineRecordingPreviews,
   timelineRecordingStates,
+  timelineSequenceActionTargets,
   timelineStopEvent,
   timelines,
   type WsPullStats,
@@ -555,6 +557,20 @@ function queueWorkerMessage(raw: AnyWsMessage) {
     () => dispatchMessage(raw),
     { messageType: raw.type },
   );
+}
+
+/** Groups per-action timeline records by timeline UID, then by {@link timelineActionKey}. */
+function groupByTimelineAction<
+  T extends { timeline_uid: string; track_id: string; action_id: string },
+>(records: T[]): Record<string, Record<string, T>> {
+  const grouped: Record<string, Record<string, T>> = {};
+  for (const record of records) {
+    grouped[record.timeline_uid] ??= {};
+    grouped[record.timeline_uid][
+      timelineActionKey(record.track_id, record.action_id)
+    ] = record;
+  }
+  return grouped;
 }
 
 /** Helper to convert array to UID-keyed map */
@@ -1056,20 +1072,21 @@ function dispatchMessage(raw: AnyWsMessage) {
     }
 
     case "TimelineLookaheadActionStatuses": {
-      const statusMap: Record<
-        string,
-        Record<string, types.TimelineLookaheadActionStatus>
-      > = {};
-      for (const status of raw.data as types.TimelineLookaheadActionStatus[]) {
-        statusMap[status.timeline_uid] ??= {};
-        statusMap[status.timeline_uid][
-          JSON.stringify([status.track_id, status.action_id])
-        ] = status;
-      }
       setStoreAction(
         timelineLookaheadActionStatuses,
         "Receive TimelineLookaheadActionStatuses",
-        statusMap,
+        groupByTimelineAction(
+          raw.data as types.TimelineLookaheadActionStatus[],
+        ),
+      );
+      break;
+    }
+
+    case "TimelineSequenceActionTargets": {
+      setStoreAction(
+        timelineSequenceActionTargets,
+        "Receive TimelineSequenceActionTargets",
+        groupByTimelineAction(raw.data as types.TimelineSequenceActionTarget[]),
       );
       break;
     }

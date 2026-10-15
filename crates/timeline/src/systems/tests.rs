@@ -1396,3 +1396,4 @@ mod seek_fire_cue;
 mod seek_materializers;
 mod seek_navigation;
 mod sequence_scenarios;
+mod sequence_targets;

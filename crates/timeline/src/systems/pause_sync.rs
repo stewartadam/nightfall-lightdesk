@@ -10,7 +10,7 @@ use super::planner_adapter::{
     planned_source_for_clip, timeline_instance_clock_source, tracked_action_position,
 };
 use super::*;
-use crate::timeline::Track;
+use crate::timeline::{Timeline, Track};
 
 /// Playback controls and clocks synchronized with a timeline pause state.
 type TimelineInstanceControlData = (
@@ -366,7 +366,7 @@ fn planned_clip_playback_sync_states(
     plan_timeline_at(
         timeline.timeline.identifiers.uid,
         timeline_position,
-        timeline_planning_actions(timeline, action_registry),
+        timeline_planning_actions(&timeline.timeline, action_registry),
         resolver,
     )
     .instances
@@ -382,14 +382,15 @@ fn planned_clip_playback_sync_states(
     .collect()
 }
 
-/// Converts authored track actions into the source-agnostic planning action DTO.
-fn timeline_planning_actions<'a>(
-    timeline: &'a MaterializedTimeline,
+/// Converts the actions of tracks that take part in playback into the planning action DTO.
+///
+/// Muted tracks, and unsoloed tracks while any track is soloed, are skipped.
+pub(super) fn timeline_planning_actions<'a>(
+    timeline: &'a Timeline,
     action_registry: Option<&'a ActionRegistry>,
 ) -> impl Iterator<Item = TimelinePlanningAction> + 'a {
-    let solo_mode = timeline.timeline.tracks.iter().any(|track| track.solo);
+    let solo_mode = timeline.tracks.iter().any(|track| track.solo);
     timeline
-        .timeline
         .tracks
         .iter()
         .filter(move |track| timeline_track_is_active(track, solo_mode))

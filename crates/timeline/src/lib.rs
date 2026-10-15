@@ -60,8 +60,9 @@ pub mod prelude {
         TimelineLookaheadActionStatus, TimelineLookaheadActionStatusKind,
         TimelineLookaheadActionStatuses, TimelineLookaheadMode, TimelineLoopRange, TimelineMarker,
         TimelineNondeterministicSeekBehavior, TimelineRegion, TimelineScrollMode,
-        TimelineSeekBehavior, TimelineSelection, TimelineState, TimelineStopBehavior,
-        TimelineTriggerMode, Track, validate_timeline_action,
+        TimelineSeekBehavior, TimelineSelection, TimelineSequenceActionTarget,
+        TimelineSequenceActionTargets, TimelineState, TimelineStopBehavior, TimelineTriggerMode,
+        Track, validate_timeline_action,
     };
     pub use crate::transport::{
         TIMELINE_FIRE_CUE_ACTION_ID, TIMELINE_PAUSE_ACTION_ID, TIMELINE_PLAY_ACTION_ID,
@@ -150,6 +151,7 @@ impl Plugin for TimelinePlugin {
         app.init_resource::<systems::TimelinePausedPlaybackRates>();
         app.init_resource::<systems::TimelineReconstructionDeferredFlush>();
         app.init_resource::<timeline::TimelineLookaheadActionStatuses>();
+        app.init_resource::<timeline::TimelineSequenceActionTargets>();
         #[cfg(feature = "audio")]
         app.insert_resource(TimelineAudioOutputEnabled(self.audio_enabled));
         #[cfg(not(feature = "audio"))]
@@ -220,8 +222,13 @@ impl Plugin for TimelinePlugin {
                 websocket::send_timeline_recording_states_on_change,
                 websocket::send_timeline_recording_previews_on_change,
                 websocket::send_timeline_lookahead_item_statuses_on_change,
+                websocket::send_timeline_sequence_action_targets_on_change,
             )
                 .in_set(ClientOutput),
+        );
+        app.add_systems(
+            Update,
+            systems::update_timeline_sequence_action_targets_system.after(EventHandling),
         );
 
         app.add_systems(

@@ -20,7 +20,8 @@ use crate::TimelineCommand;
 use crate::recording::{TimelineRecordingSessions, TimelineRecordingStates};
 use crate::timeline::{
     BeatgridDetectionFailed, BeatgridDetectionReady, BeatgridDetectionStarted, Timeline,
-    TimelineLookaheadActionStatus, TimelineLookaheadActionStatuses,
+    TimelineLookaheadActionStatus, TimelineLookaheadActionStatuses, TimelineSequenceActionTarget,
+    TimelineSequenceActionTargets,
 };
 
 /// Wrapper for serializing timeline messages with WsOutbound-compatible format
@@ -36,6 +37,8 @@ enum TimelineWsMessage<'a> {
     TimelineRecordingPreviews(&'a [crate::recording::TimelineRecordingPreview]),
     /// Runtime lookahead eligibility state for timeline actions
     TimelineLookaheadActionStatuses(&'a [TimelineLookaheadActionStatus]),
+    /// Sequence cue each timeline Go, Back, and jump action lands on
+    TimelineSequenceActionTargets(&'a [TimelineSequenceActionTarget]),
     /// A timeline command for reactive UI handling
     #[allow(dead_code)]
     TimelineCommand(&'a TimelineCommand),
@@ -223,6 +226,30 @@ pub fn send_timeline_lookahead_item_statuses(
     tracing::trace!("Sending timeline lookahead action statuses to websocket clients");
 }
 
+/// Send resolved sequence navigation targets when changed.
+pub fn send_timeline_sequence_action_targets_on_change(
+    targets: Res<TimelineSequenceActionTargets>,
+    broadcaster: Res<ClientEventSink>,
+) {
+    if !targets.is_changed() {
+        return;
+    }
+
+    send_timeline_sequence_action_targets(&targets, &broadcaster);
+}
+
+/// Send resolved sequence navigation targets to UI.
+pub fn send_timeline_sequence_action_targets(
+    targets: &TimelineSequenceActionTargets,
+    broadcaster: &ClientEventSink,
+) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &TimelineWsMessage::TimelineSequenceActionTargets(&targets.targets),
+    );
+    tracing::trace!("Sending timeline sequence action targets to websocket clients");
+}
+
 /// Broadcast beatgrid detection started.
 pub fn broadcast_beatgrid_detection_started(
     broadcaster: &ClientEventSink,
@@ -263,6 +290,7 @@ pub fn handle_resync_state(
     recording_states: Res<TimelineRecordingStates>,
     recording_sessions: Res<TimelineRecordingSessions>,
     lookahead_statuses: Res<TimelineLookaheadActionStatuses>,
+    sequence_action_targets: Res<TimelineSequenceActionTargets>,
     broadcaster: Res<ClientEventSink>,
 ) {
     let should_resync = events.read().next().is_some();
@@ -275,6 +303,7 @@ pub fn handle_resync_state(
     send_timeline_recording_states(&recording_states, &broadcaster);
     send_timeline_recording_previews(&recording_sessions, &broadcaster);
     send_timeline_lookahead_item_statuses(&lookahead_statuses, &broadcaster);
+    send_timeline_sequence_action_targets(&sequence_action_targets, &broadcaster);
 }
 
 #[cfg(test)]

@@ -23,8 +23,8 @@ use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, ResolvedElementParameter};
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_playback_planner::{
-    PlannedPlaybackInterval, PlannedPlaybackInterventionKind, PlaybackDurationProfile,
-    PlaybackExtent, PlaybackReconstructionTiming,
+    PlannedPlaybackInterval, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
+    PlaybackDurationProfile, PlaybackExtent, PlaybackReconstructionTiming,
 };
 use nightfall_selection::filter_existing_selection;
 use partially::Partial;
@@ -110,18 +110,36 @@ impl SequenceTimelineSeekPlayback {
         let Some(Source::Sequence(sequence_uid)) = &clip.source else {
             return None;
         };
-        let sequence_data_provider = sequence_data_provider?;
-        let Ok(sequence) = sequence_data_provider.get(*sequence_uid) else {
-            return None;
-        };
+        Self::from_sequence_uid(
+            clip_id,
+            *sequence_uid,
+            sequence_data_provider?,
+            cue_data_provider,
+            fixture_data_provider,
+            selection_resolver,
+            started_at,
+        )
+    }
+
+    /// Builds seek playback state for a stored sequence, resolving its cue steps.
+    ///
+    /// Returns `None` when the sequence or any of its step cues is missing.
+    pub fn from_sequence_uid(
+        clip_id: u32,
+        sequence_uid: Uuid,
+        sequence_data_provider: &DataProvider<Sequence>,
+        cue_data_provider: &DataProvider<Cue>,
+        fixture_data_provider: &FixtureDataProviderExt,
+        selection_resolver: &SpatialSelectionResolver<'_>,
+        started_at: Duration,
+    ) -> Option<Self> {
+        let sequence = sequence_data_provider.get(sequence_uid).ok()?;
         let steps = sequence
             .steps
             .iter()
             .map(|cue_uid| cue_data_provider.get(cue_uid.0).map(|cue| cue.clone()))
-            .collect::<Result<Vec<_>, _>>();
-        let Ok(steps) = steps else {
-            return None;
-        };
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
         Self::from_sequence_steps(
             clip_id,
             &sequence,
@@ -240,6 +258,23 @@ impl SequenceTimelineSeekPlayback {
         interval: &PlannedPlaybackInterval,
         evaluated_at_timeline: Duration,
     ) {
+        self.replay_planned_interventions_until(interval, evaluated_at_timeline, |_, _| {});
+        self.advance_autonomous_until_source_position(
+            interval.playback_position_at(evaluated_at_timeline),
+        );
+    }
+
+    /// Replays a planned interval's sequence interventions up to an evaluation position.
+    ///
+    /// Autonomous sequence rules run between interventions exactly as seek replay applies them,
+    /// and `on_intervention` receives each intervention with the cue position it leaves the
+    /// sequence on. Autonomous advances after the final intervention are not applied.
+    pub fn replay_planned_interventions_until(
+        &mut self,
+        interval: &PlannedPlaybackInterval,
+        evaluated_at_timeline: Duration,
+        mut on_intervention: impl FnMut(&PlannedPlaybackIntervention, u32),
+    ) {
         let mut interventions = interval
             .explicit_interventions
             .iter()
@@ -261,11 +296,8 @@ impl SequenceTimelineSeekPlayback {
                 }
                 PlannedPlaybackInterventionKind::Stop => {}
             }
+            on_intervention(intervention, self.position);
         }
-
-        self.advance_autonomous_until_source_position(
-            interval.playback_position_at(evaluated_at_timeline),
-        );
     }
 
     /// Returns the current seek target for materialization.

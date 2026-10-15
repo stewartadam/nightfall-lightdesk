@@ -64,6 +64,7 @@ mod parameters;
 mod pause_sync;
 mod planner_adapter;
 mod seek;
+mod sequence_targets;
 
 pub use lifecycle::{
     PendingStoppedTimelineReleaseClocks, cleanup_timeline_entities,
@@ -90,6 +91,7 @@ pub use seek::{
     handle_timeline_seek_system, mark_timeline_reconstruction_deferred_flush,
     timeline_reconstruction_deferred_flush_requested,
 };
+pub use sequence_targets::update_timeline_sequence_action_targets_system;
 
 /// Returns timeline-specific playback options, preserving source defaults when unset.
 fn instance_options_for_timeline(timeline: &MaterializedTimeline) -> Option<InstanceOptions> {
