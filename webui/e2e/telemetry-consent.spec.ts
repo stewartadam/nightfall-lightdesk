@@ -181,6 +181,8 @@ test("privacy settings change sharing choices on the host", async ({
     button.scrollIntoView({ block: "center" }),
   );
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await resetId.hover();
+  await expect(page.getByRole("tooltip", { name: "Reset ID" })).toBeVisible();
   await resetId.click();
   await expect(installId).not.toHaveText(firstId ?? "");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
@@ -190,6 +192,8 @@ test("privacy settings change sharing choices on the host", async ({
   await expect(
     page.getByRole("tooltip", { name: "✅ Prior ID copied to clipboard" }),
   ).toHaveCSS("opacity", "1");
+  // The "Reset ID" hint the click's focus would show gives way to the confirmation.
+  await expect(page.getByRole("tooltip")).toHaveCount(1);
   await page.screenshot({
     path: testInfo.outputPath("privacy-settings.png"),
   });

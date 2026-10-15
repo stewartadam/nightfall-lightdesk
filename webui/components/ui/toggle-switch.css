@@ -6,32 +6,62 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+:root {
+  --nf-switch-width: 36px;
+  --nf-switch-gap: 8px;
+}
 .nf-switch {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--nf-switch-gap);
   color: var(--muted, #a0a7aa);
   font-size: 12px;
+}
+.nf-switch[data-layout="switch-end"] {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+.nf-switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.nf-switch-description {
+  color: var(--muted, #a0a7aa);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.nf-switch[data-layout="switch-end"]:has(.nf-switch-description) {
+  gap: 16px;
+}
+/* Lines content up with the label text of a `switch-left` switch above it. */
+.nf-switch-label-inset {
+  padding-inline-start: calc(var(--nf-switch-width) + var(--nf-switch-gap));
 }
 .nf-switch-control {
   position: relative;
   display: inline-flex;
-  width: 36px;
+  width: var(--nf-switch-width);
   height: 20px;
   flex-shrink: 0;
+}
+.nf-switch[data-layout="switch-left"] .nf-switch-control {
+  order: -1;
 }
 .nf-switch-control input {
   position: absolute;
   inset: 0;
   z-index: 1;
-  width: 36px;
+  width: var(--nf-switch-width);
   height: 20px;
   margin: 0;
   opacity: 0;
   cursor: pointer;
 }
 .nf-switch-track {
-  width: 36px;
+  width: var(--nf-switch-width);
   height: 20px;
   border: 1px solid var(--line, #34383b);
   border-radius: 999px;

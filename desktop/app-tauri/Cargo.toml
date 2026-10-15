@@ -21,6 +21,7 @@ nightfall-config = { path = "../../crates/config" }
 nightfall-desk = { path = "../../crates/desk", default-features = false }
 nightfall-engine = { path = "../../crates/engine" }
 nightfall-websocket = { path = "../../crates/websocket" }
+semver = "1"
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }
@@ -28,6 +29,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Only `zip` is needed, to unpack macOS updates; HTTPS comes from the reqwest features below.
+tauri-plugin-updater = { version = "2.13", default-features = false, features = ["zip"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 # Selects the unicode-rs IDNA backend for url instead of ICU4X, which removes ~15 crates from the
 # desktop build. See https://docs.rs/crate/idna_adapter/latest
 idna_adapter = "~1.2"

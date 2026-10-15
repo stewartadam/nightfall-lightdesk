@@ -47,6 +47,11 @@ export interface AlertProps
   icon?: AppIcon | false;
   /** `compact` tightens padding and text for dense dialogs and properties. */
   density?: "standard" | "compact";
+  /**
+   * Vertical alignment of the icon with the content: `start` (the default) lines it up with the
+   * first line of text, `center` centers it, for single-row content beside a taller control.
+   */
+  align?: "start" | "center";
   /** Edge that carries the accent stripe: `left` (blockquote, the default), `top`, or `none`. */
   border?: "left" | "top" | "none";
   /**
@@ -84,6 +89,7 @@ export function Alert(props: AlertProps) {
     "title",
     "icon",
     "density",
+    "align",
     "border",
     "show",
     "flash",
@@ -163,6 +169,7 @@ export function Alert(props: AlertProps) {
         class={`nf-alert ${transitionClass()} ${local.class ?? ""}`}
         data-variant={local.variant ?? "note"}
         data-density={local.density ?? "standard"}
+        data-align={local.align ?? "start"}
         data-border={local.border ?? "left"}
         data-state={wantsVisible() ? "open" : "closed"}
         style={{ ...local.style, "--tw-duration": `${transitionMs()}ms` }}

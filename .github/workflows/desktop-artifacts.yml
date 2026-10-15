@@ -163,6 +163,9 @@ jobs:
           # secrets: each ships inside the app and only accepts new reports.
           NIGHTFALL_ERROR_REPORTS_DSN: ${{ needs.prepare.outputs.publish == 'true' && vars.ERROR_REPORTS_DSN || '' }}
           NIGHTFALL_USAGE_REPORTS_URL: ${{ needs.prepare.outputs.publish == 'true' && vars.USAGE_REPORTS_URL || '' }}
+          # Only published releases get the updater's public key, so no other build checks for
+          # updates.
+          NIGHTFALL_UPDATER_PUBKEY: ${{ needs.prepare.outputs.publish == 'true' && vars.TAURI_SIGNING_PUBLIC_KEY || '' }}
           # Line tables let the error service resolve crash addresses to functions and lines.
           # They are kept out of the installers: macOS and Windows write them beside the
           # executable, and the Linux bundle hook splits them out before packaging.
@@ -172,15 +175,16 @@ jobs:
           projectPath: desktop/app-tauri
           tauriScript: pnpm exec tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --locked
-      - name: Verify the release reports errors and usage
+      - name: Verify the release reports errors and usage and can update itself
         if: needs.prepare.outputs.publish == 'true'
         shell: bash
         env:
           DESKTOP_TARGET: ${{ matrix.target }}
           ERROR_REPORTS_DSN: ${{ vars.ERROR_REPORTS_DSN }}
           USAGE_REPORTS_URL: ${{ vars.USAGE_REPORTS_URL }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
         run: |
-          for variable in ERROR_REPORTS_DSN USAGE_REPORTS_URL; do
+          for variable in ERROR_REPORTS_DSN USAGE_REPORTS_URL TAURI_SIGNING_PUBLIC_KEY; do
             if [ -z "${!variable}" ]; then
               echo "::error::Set the $variable repository variable before publishing a release"
               exit 1
@@ -199,6 +203,10 @@ jobs:
           fi
           if ! grep -qF "$USAGE_REPORTS_URL" "$binary"; then
             echo "::error::The release build does not contain the usage report address"
+            exit 1
+          fi
+          if ! grep -qF "$TAURI_SIGNING_PUBLIC_KEY" "$binary"; then
+            echo "::error::The release build does not contain the updater public key"
             exit 1
           fi
       - name: Stage debug symbols

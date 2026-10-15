@@ -52,27 +52,17 @@ test("opens about dialog from the status bar menu", async ({
   await expect(dialog.getByText("Build Name")).toBeVisible();
   await expect(dialog.getByTestId("build-name")).toContainText(/.+/);
   await expect(
-    dialog
-      .locator("span")
-      .filter({ hasText: /^MPL-2\.0$/ })
-      .first(),
+    dialog.getByText(/\u00A9 .* Stewart Adam, licensed under MPL-2\.0\./),
   ).toBeVisible();
-  await expect(dialog.getByText(/\u00A9 .* Stewart Adam/)).toBeVisible();
   await expect(dialog.getByText("Third-Party Notices")).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: "Copy Data Directory Path" }),
-  ).toBeVisible();
-  await dialog
-    .getByRole("button", { name: "Copy Data Directory Path" })
-    .hover();
+  await expect(dialog.getByRole("button", { name: "Copy Path" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Copy Path" }).hover();
   await expect(page.getByText(expectedDataDirectoryPath)).toBeVisible();
   await expect(
     dialog.getByText("Copyright (c) 2026 SquidLab"),
   ).not.toBeVisible();
 
-  await dialog
-    .getByRole("button", { name: "Copy Data Directory Path" })
-    .click();
+  await dialog.getByRole("button", { name: "Copy Path" }).click();
   await expect(
     page.getByText("Copied nightfall data directory path"),
   ).toBeVisible();

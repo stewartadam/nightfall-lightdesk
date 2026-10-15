@@ -70,6 +70,7 @@ rand = { version = "0.10.3" }
 regex = { version = "1.13.1" }
 regex-automata = { version = "0.4.18" }
 regex-syntax = { version = "0.8.11" }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "stream"] }
 schemars = { version = "0.8.22", features = ["preserve_order", "url", "uuid1"] }
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["alloc", "derive", "rc"] }
@@ -173,7 +174,7 @@ mio = { version = "1.2.4", features = ["net", "os-ext"] }
 nix = { version = "0.31.3", features = ["net", "signal"] }
 objc2 = { version = "0.6.5", features = ["disable-encoding-assertions", "exception"] }
 objc2-core-foundation = { version = "0.3.2", features = ["CFBase"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSAffineTransform", "NSAppleEventDescriptor", "NSArray", "NSAttributedString", "NSAutoreleasePool", "NSBundle", "NSCharacterSet", "NSCoder", "NSData", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSException", "NSFileManager", "NSFileWrapper", "NSFormatter", "NSGeometry", "NSHTTPCookie", "NSItemProvider", "NSJSONSerialization", "NSKeyValueCoding", "NSKeyValueObserving", "NSLocale", "NSNotification", "NSNull", "NSObjCRuntime", "NSObject", "NSOrthography", "NSProcessInfo", "NSProgress", "NSRange", "NSRunLoop", "NSSet", "NSStream", "NSString", "NSTextCheckingResult", "NSThread", "NSURL", "NSURLAuthenticationChallenge", "NSURLCredential", "NSURLRequest", "NSURLResponse", "NSURLSession", "NSUUID", "NSUndoManager", "NSUserActivity", "NSValue", "NSZone", "block2", "objc2-core-foundation", "std"] }
+objc2-foundation = { version = "0.3.2" }
 rustix = { version = "1.1.5", features = ["fs", "mm", "param", "stdio", "termios"] }
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }
 
@@ -186,7 +187,7 @@ libc = { version = "0.2.190", features = ["extra_traits"] }
 miniz_oxide = { version = "0.8.9", features = ["simd"] }
 objc2 = { version = "0.6.5", features = ["disable-encoding-assertions", "exception"] }
 objc2-core-foundation = { version = "0.3.2", features = ["CFBase"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSAffineTransform", "NSAppleEventDescriptor", "NSArray", "NSAttributedString", "NSAutoreleasePool", "NSBundle", "NSCharacterSet", "NSCoder", "NSData", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSException", "NSFileManager", "NSFileWrapper", "NSFormatter", "NSGeometry", "NSHTTPCookie", "NSItemProvider", "NSJSONSerialization", "NSKeyValueCoding", "NSKeyValueObserving", "NSLocale", "NSNotification", "NSNull", "NSObjCRuntime", "NSObject", "NSOrthography", "NSProcessInfo", "NSProgress", "NSRange", "NSRunLoop", "NSSet", "NSStream", "NSString", "NSTextCheckingResult", "NSThread", "NSURL", "NSURLAuthenticationChallenge", "NSURLCredential", "NSURLRequest", "NSURLResponse", "NSURLSession", "NSUUID", "NSUndoManager", "NSUserActivity", "NSValue", "NSZone", "block2", "objc2-core-foundation", "std"] }
+objc2-foundation = { version = "0.3.2" }
 
 [target.x86_64-pc-windows-msvc.dependencies]
 getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }

@@ -18,6 +18,7 @@ import {
   GraphicsReporter,
   SettingsOverlay,
   TelemetryConsentPrompt,
+  UpdateNotice,
 } from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
 import { compactViewport } from "../../../state/viewport";
@@ -55,6 +56,7 @@ function ShellRuntime() {
       <AboutDialog />
       <SettingsOverlay />
       <TelemetryConsentPrompt />
+      <UpdateNotice />
       <GraphicsReporter />
       <SelectionFlattenConfirmModal />
     </>

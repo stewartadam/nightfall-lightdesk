@@ -410,7 +410,7 @@ export function SettingsOverlay() {
                 <ToggleSwitch
                   label="Auto-select on attribute set"
                   ariaLabel="Auto-select on attribute set"
-                  class="w-full justify-between"
+                  layout="switch-end"
                   checked={settings().programmer_auto_select}
                   onChange={setProgrammerAutoSelect}
                 />
@@ -731,7 +731,7 @@ export function SettingsOverlay() {
               <ToggleSwitch
                 label="Send only changed parameters (recommended)"
                 ariaLabel="Send only changed parameters (recommended)"
-                class="w-full justify-between"
+                layout="switch-end"
                 checked={!settings().parameter_keyframes_only}
                 onChange={(enabled) => setParameterKeyframesOnly(!enabled)}
               />
@@ -749,7 +749,7 @@ export function SettingsOverlay() {
                 <ToggleSwitch
                   label="Highlight selection"
                   ariaLabel="Highlight selection"
-                  class="w-full justify-between"
+                  layout="switch-end"
                   checked={highlightSelection()}
                   onChange={(enabled) =>
                     setStoreAction(
@@ -762,7 +762,7 @@ export function SettingsOverlay() {
                 <ToggleSwitch
                   label="Show current orbit target"
                   ariaLabel="Show current orbit target"
-                  class="w-full justify-between"
+                  layout="switch-end"
                   checked={showOrbitTargetIndicator()}
                   onChange={(enabled) =>
                     setStoreAction(
