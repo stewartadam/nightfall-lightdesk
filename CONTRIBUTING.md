@@ -267,7 +267,6 @@ cargo install cargo-udeps
 cargo install cargo-edit
 
 # cleanup cache
-cargo install cargo-sweep
 cargo install cargo-cache
 ```
 
