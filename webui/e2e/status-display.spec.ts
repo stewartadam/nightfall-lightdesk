@@ -340,7 +340,7 @@ for (const refreshDuringPress of [false, true]) {
         name: /Owned Status Instance/,
       });
       await expect(instanceRow).toBeVisible();
-      const instanceCells = instanceRow.getByRole("cell");
+      const instanceCells = instanceRow.getByRole("gridcell");
       await expect(instanceCells.nth(2)).toHaveText("Running");
       await expect(instanceCells.nth(3)).toHaveText("Owned Status Clip");
       await expect(instanceCells.nth(6)).toHaveText("1/1 Owned Status Cue");
@@ -364,7 +364,9 @@ for (const refreshDuringPress of [false, true]) {
         });
         await page.mouse.up();
       } else {
-        await stopButton.click();
+        // Keyboard activation must reach the button inside the grid cell.
+        await stopButton.focus();
+        await stopButton.press("Enter");
       }
       await expect
         .poll(() =>
@@ -567,29 +569,29 @@ test("status display renders and sorts effective instance rates", async ({
 
   const activeInstanceTable = page
     .getByRole("region", { name: "Status display content" })
-    .locator("table")
-    .first();
+    .getByRole("grid", { name: "Active instances" });
+  await expect(activeInstanceTable).toHaveAttribute(
+    "data-grid-appearance",
+    "table",
+  );
   const masteredRow = activeInstanceTable.getByRole("row", {
     name: /Master Slowed/,
   });
-  await activeInstanceTable.evaluate((table) => {
-    const scroller = table.parentElement;
-    if (!scroller) throw new Error("Expected instance table scroll container");
-    scroller.scrollLeft = scroller.scrollWidth;
-    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+  const rateHeader = activeInstanceTable.getByRole("columnheader", {
+    name: "Rate",
+    exact: true,
   });
-  await activeInstanceTable.getByRole("button", { name: "Rate" }).click();
+  await rateHeader.click();
+  await expect(rateHeader).toHaveAttribute("aria-sort", "ascending");
   await expect(masteredRow.getByText("0.50x", { exact: true })).toBeVisible();
   await expect(
     masteredRow.getByText("1.00x", { exact: true }),
   ).not.toBeVisible();
 
-  const instanceRows = activeInstanceTable.locator("tbody tr");
+  const instanceRows = activeInstanceTable.locator("[data-grid-row]");
   await expect(instanceRows.first()).toContainText("Master Slowed");
   await expect(instanceRows.nth(1)).toContainText("Authored Fast");
 
-  const originalRow = await masteredRow.elementHandle();
-  if (!originalRow) throw new Error("Expected the mastered instance row");
   await page.evaluate(() => {
     const store = (window as any).appStores.activeInstances;
     const instanceId = "22222222222242228222222222222222";
@@ -601,7 +603,7 @@ test("status display renders and sorts effective instance rates", async ({
   await expect(masteredRow.getByText("2.00x", { exact: true })).toBeVisible();
   await expect(instanceRows.first()).toContainText("Authored Fast");
   await expect(instanceRows.nth(1)).toContainText("Master Slowed");
-  expect(await originalRow.evaluate((row) => row.isConnected)).toBe(true);
+  await expect(rateHeader).toHaveAttribute("aria-sort", "ascending");
 });
 
 /** Ensures constrained panel heights scroll instead of letting sections overlap. */
@@ -629,7 +631,9 @@ test("status display scrolls without overlapping sections at constrained heights
     )
     .toBe(true);
 
-  const activeInstanceTable = scrollRegion.locator("table").first();
+  const activeInstanceTable = scrollRegion.getByRole("grid", {
+    name: "Active instances",
+  });
   const timecodesHeading = scrollRegion.getByRole("heading", {
     name: "Timecodes",
   });

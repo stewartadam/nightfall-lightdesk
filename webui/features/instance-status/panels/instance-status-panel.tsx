@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, createSignal } from "solid-js";
+import { createMemo } from "solid-js";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
@@ -29,9 +29,7 @@ import {
 import {
   compactId,
   compareStatusInstanceRows,
-  type InstanceSortColumn,
   normalizeUid,
-  type SortDirection,
   type StatusInstanceInfo,
 } from "../model/instance-status-model";
 
@@ -45,13 +43,6 @@ export default function StatusDisplayPanel(_props: StatusDisplayPanelProps) {
     timecodes,
     useWorkspaceActivity(),
   );
-  const [playbackSort, setInstanceSort] = createSignal<{
-    column: InstanceSortColumn;
-    direction: SortDirection;
-  }>({
-    column: "priority",
-    direction: "desc",
-  });
 
   /** Projects timecode store entries into rows ordered by operator-facing ID. */
   const timecodeRows = createMemo(() =>
@@ -65,7 +56,7 @@ export default function StatusDisplayPanel(_props: StatusDisplayPanelProps) {
     () => timecodeRows().filter((row) => row.state.is_active).length,
   );
 
-  /** Indexes clip display labels by numeric ID for playback table sorting. */
+  /** Indexes clip display labels by numeric ID for the playback clip column. */
   const clipLabelsById = createMemo(() => {
     const labels = new Map<number, string>();
     for (const [_uid, [clip]] of Object.entries($clips())) {
@@ -116,47 +107,12 @@ export default function StatusDisplayPanel(_props: StatusDisplayPanelProps) {
     return ownerUids.map(ownerLabel).join(", ");
   };
 
-  /** Toggles the active playback sort column and direction. */
-  const toggleInstanceSort = (column: InstanceSortColumn) => {
-    setInstanceSort((current) =>
-      current.column === column
-        ? {
-            column,
-            direction: current.direction === "asc" ? "desc" : "asc",
-          }
-        : {
-            column,
-            direction: column === "priority" ? "desc" : "asc",
-          },
-    );
-  };
-
-  /** Returns the visible sort indicator for one playback column. */
-  const playbackSortIndicator = (column: InstanceSortColumn): string => {
-    const current = playbackSort();
-    if (current.column !== column) return "";
-    return current.direction === "asc" ? "▲" : "▼";
-  };
-
-  /** Sorts active playback rows with stable operator-facing fallbacks. */
-  const playbackRows = createMemo<StatusInstanceInfo[]>(() => {
-    const { column, direction } = playbackSort();
-    return (Object.values($activeInstances()) as StatusInstanceInfo[]).sort(
-      (left, right) => {
-        const result = compareStatusInstanceRows(
-          left,
-          right,
-          column,
-          direction,
-          { clipLabel, ownerLabels },
-        );
-        if (result !== 0) return result;
-        const kindCompare = left.display_kind.localeCompare(right.display_kind);
-        if (kindCompare !== 0) return kindCompare;
-        return (left.name ?? "").localeCompare(right.name ?? "");
-      },
-    );
-  });
+  /** Lists active playback rows in their default order; header clicks sort within the grid. */
+  const playbackRows = createMemo<StatusInstanceInfo[]>(() =>
+    (Object.values($activeInstances()) as StatusInstanceInfo[]).sort(
+      compareStatusInstanceRows,
+    ),
+  );
 
   /** Stops one active playback. */
   const stopPlayback = (instanceId: InstanceId) => {
@@ -196,8 +152,6 @@ export default function StatusDisplayPanel(_props: StatusDisplayPanelProps) {
           rows={playbackRows()}
           clipLabel={clipLabel}
           ownerLabels={ownerLabels}
-          sortIndicator={playbackSortIndicator}
-          onSort={toggleInstanceSort}
           onStop={stopPlayback}
           onStopAll={stopAllInstances}
           onStopKind={stopByKind}

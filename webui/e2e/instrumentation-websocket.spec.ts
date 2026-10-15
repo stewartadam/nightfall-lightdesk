@@ -139,14 +139,14 @@ test("instrumentation panel surfaces websocket backlog lag", async ({
   await expect(panel.getByText("Delivery IDs", { exact: true })).toBeVisible();
   await expect(panel.getByText("1229 / 1234")).toBeVisible();
   await expect(
-    panel.getByRole("cell", { name: "ParameterState" }),
+    panel.getByRole("gridcell", { name: "ParameterState" }),
   ).toBeVisible();
-  const messages = panel.getByRole("table", { name: "Worker message totals" });
-  await expect(messages).toHaveClass(/nf-table/);
-  await expect(messages.getByRole("columnheader").nth(1)).toHaveCSS(
-    "text-align",
-    "right",
-  );
+  const messages = panel.getByRole("grid", { name: "Worker message totals" });
+  await expect(messages).toHaveAttribute("data-grid-appearance", "table");
+  const countHeader = messages.getByRole("columnheader", { name: "Count" });
+  await expect(countHeader).toHaveAttribute("data-align", "right");
+  await countHeader.click();
+  await expect(countHeader).toHaveAttribute("aria-sort", "ascending");
   await messages.scrollIntoViewIfNeeded();
   await page.screenshot({
     path: test.info().outputPath("shared-instrumentation.png"),
@@ -240,7 +240,7 @@ test("websocket delivery lag is exposed as Performance measures", async ({
   });
   await expect(panel.getByText(/not one-way delivery/)).toBeVisible();
   await expect(
-    panel.getByRole("button", { name: "Processing (EMA)" }),
+    panel.getByRole("columnheader", { name: "Processing (EMA)" }),
   ).toBeVisible();
   await page.screenshot({
     path: test.info().outputPath("websocket-timing-stages.png"),

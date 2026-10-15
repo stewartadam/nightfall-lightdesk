@@ -27,34 +27,36 @@ function instanceRow(
   } as StatusInstanceInfo;
 }
 
-/** Verifies numeric priority ordering follows the requested direction. */
-test("status instance sorting orders numeric priorities", () => {
-  const lower = instanceRow({ priority: 10 });
-  const higher = instanceRow({ priority: 20 });
-  const labels = {
-    clipLabel: () => "Unbound",
-    ownerLabels: () => "-",
-  };
+/** Verifies the default order puts the highest priority first and unprioritized rows last. */
+test("status instance default order ranks higher priorities first", () => {
+  const lower = instanceRow({ priority: 10, name: "Lower" });
+  const higher = instanceRow({ priority: 20, name: "Higher" });
+  const unprioritized = instanceRow({ name: "Unprioritized" });
 
-  assert.ok(
-    compareStatusInstanceRows(lower, higher, "priority", "asc", labels) < 0,
-  );
-  assert.ok(
-    compareStatusInstanceRows(lower, higher, "priority", "desc", labels) > 0,
+  assert.deepEqual(
+    [unprioritized, lower, higher]
+      .sort(compareStatusInstanceRows)
+      .map((row) => row.name),
+    ["Higher", "Lower", "Unprioritized"],
   );
 });
 
-/** Verifies owner sorting uses the panel-projected operator labels. */
-test("status instance sorting uses projected owner labels", () => {
-  const left = instanceRow({ instance_id: "left" });
-  const right = instanceRow({ instance_id: "right" });
-  const labels = {
-    clipLabel: () => "Unbound",
-    ownerLabels: (row: StatusInstanceInfo) =>
-      row.instance_id === "left" ? "Alpha" : "Zulu",
-  };
+/** Verifies equal priorities fall back to activation order, then kind and name. */
+test("status instance default order breaks ties by activation, kind and name", () => {
+  const newer = instanceRow({ activation_epoch_ms: 20, name: "Newer" });
+  const older = instanceRow({ activation_epoch_ms: 10, name: "Older" });
+  const fx = instanceRow({ display_kind: "Fx", name: "Alpha" } as never);
+  const cueZulu = instanceRow({ name: "Zulu" });
+  const cueAlpha = instanceRow({ name: "Alpha" });
 
-  assert.ok(
-    compareStatusInstanceRows(left, right, "owners", "asc", labels) < 0,
+  assert.deepEqual(
+    [newer, older].sort(compareStatusInstanceRows).map((row) => row.name),
+    ["Older", "Newer"],
+  );
+  assert.deepEqual(
+    [fx, cueZulu, cueAlpha]
+      .sort(compareStatusInstanceRows)
+      .map((row) => `${row.display_kind} ${row.name}`),
+    ["Cue Alpha", "Cue Zulu", "Fx Alpha"],
   );
 });

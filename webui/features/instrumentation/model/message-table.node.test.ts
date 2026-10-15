@@ -12,8 +12,6 @@ import {
   compareMessageTypeRows,
   formatMeasureName,
   type MessageTypeRow,
-  messageSortIndicator,
-  nextMessageSort,
 } from "./message-table";
 
 const ROWS: MessageTypeRow[] = [
@@ -51,29 +49,11 @@ test("formatMeasureName removes the nightfall timing scope prefix", () => {
   );
 });
 
-/** Verifies sort changes use operator-friendly default directions. */
-test("nextMessageSort toggles active columns and defaults numeric sorts descending", () => {
+/** Verifies the default order lists the busiest message types first and breaks rate ties by name. */
+test("compareMessageTypeRows orders by rate, then type", () => {
+  const tied: MessageTypeRow = ["Alpha", { ...ROWS[1]![1], ratePerSec: 1 }];
   assert.deepEqual(
-    nextMessageSort({ column: "type", direction: "asc" }, "type"),
-    { column: "type", direction: "desc" },
-  );
-  assert.deepEqual(
-    nextMessageSort({ column: "type", direction: "asc" }, "count"),
-    { column: "count", direction: "desc" },
-  );
-});
-
-/** Verifies indicators and row comparison follow the active sort. */
-test("message sort helpers project active direction and ordered rows", () => {
-  const sort = { column: "ratePerSec", direction: "desc" } as const;
-  assert.equal(messageSortIndicator(sort, "ratePerSec"), "▼");
-  assert.equal(messageSortIndicator(sort, "type"), "");
-  assert.deepEqual(
-    [...ROWS]
-      .sort((left, right) =>
-        compareMessageTypeRows(left, right, sort.column, sort.direction),
-      )
-      .map(([type]) => type),
-    ["ParameterState", "CueList"],
+    [...ROWS, tied].sort(compareMessageTypeRows).map(([type]) => type),
+    ["ParameterState", "Alpha", "CueList"],
   );
 });

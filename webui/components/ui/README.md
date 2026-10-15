@@ -64,16 +64,19 @@ Use `table` for native HTML data tables. `Table` owns header/cell typography, sp
 - `density="compact"` is the default; use `density="comfortable"` for spacious tables. `columnGuides` enables vertical dividers and `stickyHeader={false}` disables sticky headers.
 - Use `TableScroll` with an `aria-label` for a keyboard-scrollable viewport. The caller sets the available height and any minimum table width.
 - Use `TableEmptyRow` with the full `colSpan` for empty data. Mark selected rows with `data-selected="true"`. Virtual spacer rows use `data-table-spacer="true"` and `aria-hidden="true"` so they receive no padding, borders or hover styling.
-- Sorting, row identity, selection, resizing and virtualization remain with the caller. Existing sortable headers retain their buttons and should expose `aria-sort` on the header.
-- Use `DataGrid`/`CrudListDataGrid` for spreadsheet interactions. Use `DataGrid` with `readOnly` for fixed-height monitoring tables that need shared resizing, virtualization, selection, copying or sorting. Keep native `Table` for wrapped detail content or embedded form controls that need native table semantics.
+- `Table` has no sorting, row identity, selection, resizing or virtualization. When a table needs sortable columns, use a read-only `DataGrid` instead of hand-rolling header sort buttons.
+- Use `DataGrid`/`CrudListDataGrid` for spreadsheet interactions. Use `DataGrid` with `readOnly` for monitoring and report tables that need sorting, selection, copying, resizing or virtualization; it looks like `Table`. Keep native `Table` for small static tables, wrapped detail content or embedded form controls that need native table semantics.
 
-The design lab uses the production read-only `DataGrid` for live timecode source status, and production `Table` for the progress examples. References and Reference Health also use read-only `DataGrid`.
+The design lab uses the production read-only `DataGrid` for live timecode source status, and production `Table` for the progress examples. References, Reference Health, Status Display's active instances and the instrumentation message totals also use read-only `DataGrid`.
 
 ### Read-only DataGrid
 
 Import `DataGrid` and `createKeyedDataGridCellProvider` from `components/widgets/data-grid`. Provide unique stable row keys and column IDs. Update the reactive provider when source values change; do not use array positions as identities. The grid owns the TanStack row model, column sizing and virtualization.
 
 - Set `readOnly` to block text/rich editors, boolean toggles, paste and deletion even when source cells advertise editing. Switching a grid to read-only discards any pending editor. Navigation, selection and copying remain available.
+- Read-only grids use `appearance="table"` by default, matching `Table`: row lines instead of cell boxes, small muted headers, row hover, a whole-row selection tint, and sort arrows only on sorted or hovered headers. The active-cell outline shows only while the grid has focus. Pass `appearance="grid"` to keep spreadsheet chrome.
+- `height="content"` sizes the grid to its headers and rows so it flows in a page like `Table`; add a `max-h-*` class to scroll long lists inside the grid. Without it the grid fills its parent.
+- Set `align: "right"` on a `GridColumn` to right-align its header for numeric columns; set `contentAlign: "right"` on the cells.
 - Set `ariaLabel` and optionally `emptyState`. Headers remain visible with an empty row projection.
 - `density="comfortable"` uses 42px rows and `density="compact"` uses 32px rows. An explicit `rowHeight` overrides either. Editable grids retain their 30px default. `columnGuides` overrides the inherited app setting when supplied.
 - Opt individual headers into sorting with `sortableColumns={["name", "count"]}`. Click, Enter and Space cycle ascending, descending and source order. Numeric and boolean cells sort by raw value; text and rich cells use display/copy text with natural, case-insensitive ordering. Loading cells sort last.

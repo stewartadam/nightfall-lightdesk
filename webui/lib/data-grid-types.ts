@@ -29,6 +29,8 @@ export interface GridColumn {
   minWidth?: number;
   /** Caps content measurement so exceptionally long values remain truncated. */
   maxWidth?: number;
+  /** Aligns the header label, matching right-aligned numeric cells in table views. */
+  align?: "left" | "right";
   group?: string;
   icon?: string;
   themeOverride?: Record<string, unknown>;

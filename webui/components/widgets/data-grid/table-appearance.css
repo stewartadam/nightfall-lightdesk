@@ -1,0 +1,67 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/*
+ * Plain table chrome for grids that only present data. It mirrors the shared
+ * native Table (components/ui/table): row lines instead of cell boxes, muted
+ * small-caps headers, row hover, and a row tint for the selection. The cell
+ * outline only appears while the grid has focus, so keyboard copy still shows
+ * which cell is active.
+ */
+[role="grid"][data-grid-appearance="table"] {
+  --data-grid-bg: var(--panel, #191b1d);
+  --data-grid-header-bg: var(--panel, #191b1d);
+  --data-grid-row-line: var(--line, #34383b);
+  --data-grid-row-hover-bg: var(--raised, #222527);
+  background: var(--data-grid-bg);
+  color: var(--text, #ebeeed);
+  font-size: 12px;
+  line-height: 18px;
+}
+[data-grid-appearance="table"]:not(:focus-within) {
+  --data-grid-selection-ring: transparent;
+  --data-grid-selection-divider: transparent;
+}
+[data-grid-appearance="table"] [data-grid-header-row] {
+  border-bottom-color: var(--data-grid-row-line);
+}
+[data-grid-appearance="table"] [role="columnheader"] {
+  border-right-color: var(--data-grid-column-border, transparent);
+  color: var(--muted, #a0a7aa);
+  font-size: 10px;
+  font-weight: 500;
+}
+[data-grid-appearance="table"] [role="columnheader"][aria-sort] {
+  cursor: pointer;
+}
+[data-grid-appearance="table"] [data-grid-sort-indicator="none"] {
+  opacity: 0;
+}
+[data-grid-appearance="table"]
+  [role="columnheader"]:is(:hover, :focus-visible)
+  [data-grid-sort-indicator="none"] {
+  opacity: 0.6;
+}
+[data-grid-appearance="table"] [role="gridcell"] {
+  border-right-color: var(--data-grid-column-border, transparent);
+  border-bottom-color: var(--data-grid-row-line);
+  cursor: default;
+}
+[data-grid-appearance="table"] [data-grid-row] > [aria-hidden="true"] {
+  border-bottom-color: var(--data-grid-row-line);
+}
+[data-grid-appearance="table"] [data-grid-row]:hover {
+  --data-grid-bg: var(--data-grid-row-hover-bg);
+}
+[data-grid-appearance="table"] [data-grid-row][data-selected="true"] {
+  --data-grid-bg: var(--data-grid-selected-bg, var(--accent-soft));
+}
+[data-grid-resize-handle]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
