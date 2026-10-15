@@ -23,7 +23,7 @@ import type { AnyWsMessage } from "./types";
 
 const log = getLogger(import.meta.url);
 
-/** Registers fixture, patch binding, group, and fixture-library handlers. */
+/** Registers fixture, patch binding, geometry, and group snapshot handlers. */
 export function registerFixtureHandlers(
   registry: WsMessageHandlerRegistry<AnyWsMessage>,
 ): void {
@@ -73,16 +73,6 @@ export function registerFixtureHandlers(
 
   registry.register("FixtureCommand", (message) => {
     handleFixtureCommand(message.data as unknown as types.FixtureCommand);
-  });
-
-  registry.register("FixtureLibraryCommand", (message) => {
-    handleFixtureLibraryCommand(
-      message.data as unknown as types.FixtureLibraryCommand,
-    );
-  });
-
-  registry.register("GroupCommand", (message) => {
-    handleGroupCommand(message.data as unknown as types.GroupCommand);
   });
 }
 
@@ -223,49 +213,4 @@ function handleFixtureCommand(command: types.FixtureCommand) {
         command.type,
       );
   }
-}
-
-/** Logs fixture-library command acknowledgements whose data arrives in later messages. */
-function handleFixtureLibraryCommand(command: types.FixtureLibraryCommand) {
-  log.trace("Handling FixtureLibraryCommand:", command);
-
-  switch (command.type) {
-    case "CreateFixtureFromLibrary": {
-      // Server echoes this back after processing - no action needed on client
-      // The fixture will be sent via FixtureCommand/StoreFixture
-      log.trace(
-        `CreateFixtureFromLibrary acknowledged for ${command.data.make} ${command.data.model}`,
-      );
-      break;
-    }
-
-    case "CreateFixturesFromLibrary": {
-      log.trace(
-        `CreateFixturesFromLibrary acknowledged for ${command.data.fixtures.length} ${command.data.make} ${command.data.model}`,
-      );
-      break;
-    }
-
-    case "GetFixtureProfile": {
-      // Server echoes this back - response comes via separate message
-      log.trace("GetFixtureProfile acknowledged");
-      break;
-    }
-
-    default:
-      log.warn(`Unhandled FixtureLibraryCommand: ${command.type}`);
-  }
-}
-
-/** Ignores optimistic group mutations in favor of backend provider snapshots. */
-function handleGroupCommand(command: types.GroupCommand) {
-  log.trace("Handling GroupCommand:", command);
-
-  // CRUD commands (StoreGroup, RenameGroup, DeleteGroup) are not processed here.
-  // Instead, we receive full GroupDefinitions when the backend DataProvider changes.
-  // This prevents optimistic updates that show stale data when commands fail.
-  log.trace(
-    "Ignoring GroupCommand (handled via GroupDefinitions):",
-    command.type,
-  );
 }

@@ -209,14 +209,8 @@ pub(super) enum DeskWsMessage<'a> {
     DeskCommand(&'a DeskCommand),
     /// UI-only notification
     UiNotification(&'a UiNotification),
-    /// A group command
-    #[allow(dead_code)]
-    GroupCommand(&'a GroupCommand),
     /// An clip command
     ClipCommand(&'a ClipCommand),
-    /// A blueprint command
-    #[allow(dead_code)]
-    BlueprintCommand(&'a BlueprintCommand),
     /// Layer stack with computed values (sorted by priority)
     LayerStack(&'a OutboundLayerStack),
     /// Engine performance metrics

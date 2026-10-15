@@ -17,14 +17,11 @@ import {
   programmerState,
 } from "../../state/appStores";
 import type * as types from "../../types";
-import { getLogger } from "../logger";
 import { setStoreAction } from "../nanostore-action";
 import { valueSourceToProcessedParameterValue } from "../value-source";
 import { arrayToUidMap } from "./handler-utils";
 import type { WsMessageHandlerRegistry } from "./message-registry";
 import type { AnyWsMessage } from "./types";
-
-const log = getLogger(import.meta.url);
 
 /** Processed programmer attribute value shown in programmer rows. */
 type ProgrammerAttributeValue = ProgrammerRow["attributes"][string];
@@ -35,7 +32,7 @@ type ProgrammerStateData = Extract<
   { type: "ProgrammerState" }
 >["data"];
 
-/** Registers programmer state, selection, and blueprint handlers. */
+/** Registers programmer state, selection, and blueprint snapshot handlers. */
 export function registerProgrammerHandlers(
   registry: WsMessageHandlerRegistry<AnyWsMessage>,
 ): void {
@@ -84,10 +81,6 @@ export function registerProgrammerHandlers(
         message.data.map((entry) => [entry.blueprint_uid, entry.dependents]),
       ),
     );
-  });
-
-  registry.register("BlueprintCommand", (message) => {
-    handleBlueprintCommand(message.data as unknown as types.BlueprintCommand);
   });
 }
 
@@ -150,17 +143,4 @@ function programmerRowsFromState(data: ProgrammerStateData): ProgrammerRow[] {
       conflicts: conflicts.size > 0 ? conflicts : undefined,
     };
   });
-}
-
-/** Ignores optimistic blueprint mutations in favor of backend provider snapshots. */
-function handleBlueprintCommand(command: types.BlueprintCommand) {
-  log.trace("Handling BlueprintCommand:", command);
-
-  // CRUD commands (StoreBlueprint, RenameBlueprint, DeleteBlueprint) are not processed here.
-  // Instead, we receive full BlueprintDefinitions when the backend DataProvider changes.
-  // This prevents optimistic updates that show stale data when commands fail.
-  log.trace(
-    "Ignoring BlueprintCommand (handled via BlueprintDefinitions):",
-    command.type,
-  );
 }
