@@ -84,7 +84,8 @@ fn ensure_clause_node(
     id
 }
 
-fn filled_value_from_consumed_item(item: &ConsumedSemanticItem) -> FilledValue {
+/// Resolves a consumed item to the keyword it named, or its raw lexeme when it named none.
+pub(crate) fn filled_value_from_consumed_item(item: &ConsumedSemanticItem) -> FilledValue {
     match &item.normalized_value {
         Some(NormalizedFilledValue::Keyword(token)) => FilledValue::Token(*token),
         _ => token_id_for_text(item.surface.as_str())

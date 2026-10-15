@@ -9,6 +9,7 @@
 //! Schema-driven structural clause parser facade and coordinator.
 
 mod branch_execution;
+mod conditions;
 mod continuation;
 mod contracts;
 mod grammar_mapping;
@@ -24,6 +25,7 @@ use std::marker::PhantomData;
 
 pub(in crate::parser) use branch_execution::*;
 pub use branch_execution::{execute_branches_from_tokens, seed_branch_from_head};
+pub(in crate::parser) use conditions::*;
 pub(in crate::parser) use continuation::*;
 pub use contracts::*;
 pub(in crate::parser) use grammar_mapping::*;
@@ -44,7 +46,7 @@ use super::structural_fx::{
     filled_value_for_fx_rate_followup, fx_rate_requires_followup, promote_ready_step_fx_definition,
 };
 use super::structural_tempo::{filled_value_for_tempo_followup, tempo_action_requires_followup};
-use super::structural_tree::clause_tree_from_branch;
+use super::structural_tree::{clause_tree_from_branch, filled_value_from_consumed_item};
 use crate::lexicon::aliases::{AliasCanonicalizationContext, canonicalize_token};
 use crate::lexicon::tokens::canonical_text;
 use crate::lexicon::tokens::token_id_for_text;

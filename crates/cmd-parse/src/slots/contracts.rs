@@ -261,7 +261,481 @@ pub struct ClauseSchema {
     pub children: &'static [ClauseChildSpec],
     pub slots: &'static [ClauseSlotSpec],
     pub entry: ClauseEntryKind,
+    pub rules: &'static ClauseRules,
 }
+
+/// Conditional grammar rules that decide when a clause's children and slots may be used.
+///
+/// Children and slots without a rule are always available, subject to their cardinality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClauseRules {
+    pub children_mode: ChildrenMode,
+    pub children: &'static [ChildRule],
+    pub slots: &'static [SlotRule],
+}
+
+/// Declares whether a clause's children can be combined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChildrenMode {
+    /// Any mix of children, each limited only by its own cardinality and rule.
+    Any,
+    /// The children are alternatives: once one is entered, only that child can continue.
+    OneOf,
+}
+
+/// Availability rule for one child clause, evaluated against the parent clause instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChildRule {
+    pub clause: ClauseId,
+    pub when: ClauseCondition,
+}
+
+/// Availability rule for one slot, evaluated against the clause instance that owns it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotRule {
+    pub slot: SlotId,
+    pub when: ClauseCondition,
+}
+
+/// Predicate over one clause instance in a parse branch.
+///
+/// Conditions are const data so the grammar stays declarative and inspectable; logic that
+/// cannot be expressed this way is named through [`ConditionHookId`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClauseCondition {
+    /// Never satisfied: the target is only entered by other means, such as the root head.
+    Never,
+    /// The slot has at least one fill in the given scope.
+    Filled(SlotScope, SlotId),
+    /// The slot has a fill in the given scope whose keyword is one of the tokens.
+    FilledWith(SlotScope, SlotId, &'static [TokenId]),
+    /// The clause instance has a direct child of this clause kind.
+    HasChild(ClauseId),
+    /// The clause instance has at least one direct child.
+    HasAnyChild,
+    Not(&'static ClauseCondition),
+    All(&'static [ClauseCondition]),
+    Any(&'static [ClauseCondition]),
+    /// Named parser logic for rules that do not fit the declarative forms.
+    Hook(ConditionHookId),
+}
+
+/// Which consumed items a slot condition looks at, relative to the evaluated clause instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotScope {
+    /// Fills owned by the clause instance itself.
+    Own,
+    /// Fills owned by the clause instance or any of its descendants.
+    Subtree,
+}
+
+/// Parser-defined conditions that are referenced by name from the grammar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConditionHookId {
+    /// A Bezier shaping expression has been opened but not yet closed with `)`.
+    BezierShapingOpen,
+}
+
+/// Rules for a clause without conditional children or slots.
+pub const NO_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    slots: &[],
+};
+
+/// Rules for a clause whose children are mutually exclusive alternatives.
+const ONE_OF_CHILDREN: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::OneOf,
+    children: &[],
+    slots: &[],
+};
+
+/// Shorthand for a child rule in the const rule tables below.
+const fn child_when(clause: ClauseId, when: ClauseCondition) -> ChildRule {
+    ChildRule { clause, when }
+}
+
+/// Shorthand for a slot rule in the const rule tables below.
+const fn slot_when(slot: SlotId, when: ClauseCondition) -> SlotRule {
+    SlotRule { slot, when }
+}
+
+/// Shorthand for "the slot has a fill owned by this clause".
+const fn own_filled(slot: SlotId) -> ClauseCondition {
+    ClauseCondition::Filled(SlotScope::Own, slot)
+}
+
+/// Shorthand for "this clause's own fill of the slot is one of the tokens".
+const fn own_is(slot: SlotId, tokens: &'static [TokenId]) -> ClauseCondition {
+    ClauseCondition::FilledWith(SlotScope::Own, slot, tokens)
+}
+
+/// Shorthand for "this clause instance already has a child of the given kind".
+const fn has(clause: ClauseId) -> ClauseCondition {
+    ClauseCondition::HasChild(clause)
+}
+
+const RELEASE_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[
+        // Stale inputs is a whole-command target and cannot mix with channel or attribute
+        // targets; channel targets must come before attribute targets.
+        child_when(
+            ClauseId::ReleaseStaleInputs,
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                has(ClauseId::ReleaseStaleInputs),
+                has(ClauseId::ReleaseChannel),
+                has(ClauseId::ReleaseAttributes),
+            ])),
+        ),
+        child_when(
+            ClauseId::ReleaseChannel,
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                has(ClauseId::ReleaseStaleInputs),
+                has(ClauseId::ReleaseAttributes),
+            ])),
+        ),
+        child_when(
+            ClauseId::ReleaseAttributes,
+            ClauseCondition::Not(&has(ClauseId::ReleaseStaleInputs)),
+        ),
+    ],
+    slots: &[],
+};
+
+const PROGRAMMER_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[
+        // Entered only through a selection-source root head, never as a follow-up child.
+        child_when(ClauseId::ProgrammerSelectionSource, ClauseCondition::Never),
+        // A color path assignment replaces the attribute, placement and timing parts and is
+        // only defined for fixture selections.
+        child_when(
+            ClauseId::ProgrammerColorPath,
+            ClauseCondition::All(&[
+                ClauseCondition::FilledWith(
+                    SlotScope::Subtree,
+                    SlotId::SelectionType,
+                    &[TokenId::Fixture],
+                ),
+                ClauseCondition::Not(&ClauseCondition::Any(&[
+                    has(ClauseId::ProgrammerAttributeActions),
+                    has(ClauseId::ProgrammerPlacement3d),
+                    has(ClauseId::ProgrammerTimings),
+                ])),
+            ]),
+        ),
+        child_when(
+            ClauseId::ProgrammerSelection,
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                ClauseCondition::Filled(SlotScope::Subtree, SlotId::SelectionSource),
+                has(ClauseId::ProgrammerColorPath),
+            ])),
+        ),
+        child_when(
+            ClauseId::ProgrammerTimings,
+            ClauseCondition::Not(&has(ClauseId::ProgrammerColorPath)),
+        ),
+        // Attribute actions and 3D placement are alternatives, and timings close both.
+        child_when(
+            ClauseId::ProgrammerAttributeActions,
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                has(ClauseId::ProgrammerPlacement3d),
+                has(ClauseId::ProgrammerTimings),
+                has(ClauseId::ProgrammerColorPath),
+            ])),
+        ),
+        child_when(
+            ClauseId::ProgrammerPlacement3d,
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                has(ClauseId::ProgrammerAttributeActions),
+                has(ClauseId::ProgrammerTimings),
+                has(ClauseId::ProgrammerColorPath),
+            ])),
+        ),
+    ],
+    slots: &[],
+};
+
+const PROGRAMMER_TIMINGS_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[child_when(
+        ClauseId::ProgrammerTimingOverride,
+        own_filled(SlotId::TimingsKeyword),
+    )],
+    slots: &[],
+};
+
+const FX_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[
+        // `fx module ...` and `fx <id> ...` are separate command shapes.
+        child_when(
+            ClauseId::FxModule,
+            ClauseCondition::Not(&ClauseCondition::Filled(
+                SlotScope::Subtree,
+                SlotId::FxIdentifier,
+            )),
+        ),
+        child_when(
+            ClauseId::FxIdentifier,
+            ClauseCondition::Not(&ClauseCondition::Filled(
+                SlotScope::Subtree,
+                SlotId::FxModuleKeyword,
+            )),
+        ),
+        child_when(
+            ClauseId::FxAction,
+            ClauseCondition::All(&[
+                ClauseCondition::Filled(SlotScope::Subtree, SlotId::FxIdentifier),
+                ClauseCondition::Not(&ClauseCondition::Filled(
+                    SlotScope::Subtree,
+                    SlotId::FxModuleKeyword,
+                )),
+            ]),
+        ),
+    ],
+    slots: &[],
+};
+
+const PATCH_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[child_when(
+        ClauseId::PatchTarget,
+        has(ClauseId::PatchSource),
+    )],
+    slots: &[
+        slot_when(SlotId::PatchPriority, has(ClauseId::PatchTarget)),
+        slot_when(SlotId::PatchClone, has(ClauseId::PatchTarget)),
+    ],
+};
+
+/// Object types whose store command takes a plain identifier after the type.
+const STORE_IDENTIFIER_OBJECT_TYPES: &[TokenId] = &[
+    TokenId::Clip,
+    TokenId::Flow,
+    TokenId::Fx,
+    TokenId::Timecode,
+    TokenId::Timeline,
+];
+
+/// Step FX and FX module payloads both follow `store fx <id>` and exclude each other.
+const STORE_FX_PAYLOAD_READY: ClauseCondition = ClauseCondition::All(&[
+    own_is(SlotId::StoreObjectType, &[TokenId::Fx]),
+    own_filled(SlotId::StoreObjectIdentifier),
+]);
+
+const STORE_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[
+        child_when(
+            ClauseId::StoreColorPath,
+            own_is(SlotId::StoreObjectType, &[TokenId::Path]),
+        ),
+        child_when(
+            ClauseId::StoreBlueprint,
+            own_is(SlotId::StoreObjectType, &[TokenId::Blueprint]),
+        ),
+        child_when(
+            ClauseId::StoreFixture,
+            own_is(SlotId::StoreObjectType, &[TokenId::Fixture]),
+        ),
+        child_when(
+            ClauseId::StepFx,
+            ClauseCondition::All(&[
+                STORE_FX_PAYLOAD_READY,
+                ClauseCondition::Not(&has(ClauseId::StoreFxModule)),
+            ]),
+        ),
+        child_when(
+            ClauseId::StoreFxModule,
+            ClauseCondition::All(&[
+                STORE_FX_PAYLOAD_READY,
+                ClauseCondition::Not(&has(ClauseId::StepFx)),
+            ]),
+        ),
+    ],
+    // The object type picks which of the store slots apply.
+    slots: &[
+        slot_when(
+            SlotId::StoreObjectType,
+            ClauseCondition::Not(&own_filled(SlotId::StoreObjectType)),
+        ),
+        slot_when(
+            SlotId::StoreObjectIdentifier,
+            ClauseCondition::All(&[
+                own_is(SlotId::StoreObjectType, STORE_IDENTIFIER_OBJECT_TYPES),
+                ClauseCondition::Not(&ClauseCondition::HasAnyChild),
+            ]),
+        ),
+        slot_when(
+            SlotId::StoreObjectPayload,
+            own_is(SlotId::StoreObjectType, &[TokenId::Flow]),
+        ),
+        slot_when(
+            SlotId::StoreCueRef,
+            own_is(SlotId::StoreObjectType, &[TokenId::Cue]),
+        ),
+        slot_when(
+            SlotId::StoreMode,
+            own_is(SlotId::StoreObjectType, &[TokenId::Cue]),
+        ),
+        slot_when(
+            SlotId::StoreGroupIdentifier,
+            own_is(SlotId::StoreObjectType, &[TokenId::Group]),
+        ),
+        slot_when(
+            SlotId::StoreBlueprintIdentifier,
+            ClauseCondition::All(&[
+                own_is(SlotId::StoreObjectType, &[TokenId::Blueprint]),
+                ClauseCondition::Not(&ClauseCondition::HasAnyChild),
+            ]),
+        ),
+    ],
+};
+
+const STORE_FIXTURE_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::OneOf,
+    children: &[
+        child_when(
+            ClauseId::StoreFixturePayload,
+            own_filled(SlotId::StoreFixtureIdentifier),
+        ),
+        child_when(
+            ClauseId::StoreFixtureOffset,
+            own_filled(SlotId::StoreFixtureIdentifier),
+        ),
+    ],
+    slots: &[],
+};
+
+/// An attribute qualifier keyword (`attr`) cannot follow the attribute list it introduces.
+const QUALIFIER_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    slots: &[slot_when(
+        SlotId::QualifierKeyword,
+        ClauseCondition::Not(&own_filled(SlotId::QualifierAttributeList)),
+    )],
+};
+
+const CLEAR_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    slots: &[slot_when(
+        SlotId::ClearTarget,
+        ClauseCondition::Not(&has(ClauseId::ClearAttributes)),
+    )],
+};
+
+const CUE_BLOCK_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    // Only `block` (not `unblock`) can overwrite existing tracking.
+    slots: &[slot_when(
+        SlotId::CueOverwrite,
+        own_is(SlotId::CommandHead, &[TokenId::Block]),
+    )],
+};
+
+const RENAME_OBJECTS_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    slots: &[
+        slot_when(
+            SlotId::RenameSource,
+            ClauseCondition::Not(&own_filled(SlotId::RenameTarget)),
+        ),
+        slot_when(SlotId::RenameTarget, own_filled(SlotId::RenameSource)),
+    ],
+};
+
+/// `rm patch` takes source/target endpoints instead of an object identifier.
+const RM_IS_PATCH: ClauseCondition = own_is(SlotId::RmObjectType, &[TokenId::Patch]);
+const RM_TARGET_STARTED: ClauseCondition = own_filled(SlotId::PatchTargetEndpoint);
+
+const RM_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    slots: &[
+        slot_when(
+            SlotId::RmObjectIdentifier,
+            ClauseCondition::Not(&RM_IS_PATCH),
+        ),
+        slot_when(
+            SlotId::PatchSourceEndpoint,
+            ClauseCondition::All(&[RM_IS_PATCH, ClauseCondition::Not(&RM_TARGET_STARTED)]),
+        ),
+        slot_when(
+            SlotId::PatchSourceUniverse,
+            ClauseCondition::All(&[
+                RM_IS_PATCH,
+                own_filled(SlotId::PatchSourceEndpoint),
+                ClauseCondition::Not(&RM_TARGET_STARTED),
+            ]),
+        ),
+        slot_when(
+            SlotId::PatchSourceAddress,
+            ClauseCondition::All(&[
+                RM_IS_PATCH,
+                own_filled(SlotId::PatchSourceEndpoint),
+                ClauseCondition::Not(&RM_TARGET_STARTED),
+            ]),
+        ),
+        slot_when(SlotId::PatchTargetEndpoint, RM_IS_PATCH),
+        slot_when(
+            SlotId::PatchPriority,
+            ClauseCondition::All(&[RM_IS_PATCH, RM_TARGET_STARTED]),
+        ),
+        slot_when(
+            SlotId::PatchClone,
+            ClauseCondition::All(&[RM_IS_PATCH, RM_TARGET_STARTED]),
+        ),
+    ],
+};
+
+const STEP_FX_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    // `groups` is only offered between the duration and the first step definition.
+    slots: &[
+        slot_when(
+            SlotId::StepFxGroupsKeyword,
+            ClauseCondition::All(&[
+                has(ClauseId::StepFxDuration),
+                ClauseCondition::Not(&has(ClauseId::StepFxStepDefinition)),
+                ClauseCondition::Not(&own_filled(SlotId::StepFxGroupsKeyword)),
+            ]),
+        ),
+        slot_when(
+            SlotId::StepFxGroupsValue,
+            own_filled(SlotId::StepFxGroupsKeyword),
+        ),
+    ],
+};
+
+const STEP_FX_SELECTION_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    slots: &[slot_when(
+        SlotId::StepFxSelectionTransform,
+        own_filled(SlotId::StepFxSelectionIdentifier),
+    )],
+};
+
+/// While a Bezier curve is open, only the shaping slot can take input.
+const BEZIER_CLOSED: ClauseCondition =
+    ClauseCondition::Not(&ClauseCondition::Hook(ConditionHookId::BezierShapingOpen));
+
+const STEP_FX_STEP_DEFINITION_RULES: &ClauseRules = &ClauseRules {
+    children_mode: ChildrenMode::Any,
+    children: &[],
+    slots: &[
+        slot_when(SlotId::StepFxStepAttribute, BEZIER_CLOSED),
+        slot_when(SlotId::StepFxAttributeBaseline, BEZIER_CLOSED),
+        slot_when(SlotId::StepFxStepValues, BEZIER_CLOSED),
+    ],
+};
 
 /// One child-clause relationship in the static grammar hierarchy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1010,6 +1484,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Rename),
         children: &[],
         slots: RENAME_SLOTS,
+        rules: RENAME_OBJECTS_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1027,6 +1502,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1038,6 +1514,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
             slot: SlotId::SelectionSource,
             cardinality: SlotCardinality::Required,
         }],
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1071,6 +1548,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(&[TokenId::Set]),
     },
     ClauseSchema {
@@ -1079,6 +1557,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: PROGRAMMER_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: PROGRAMMER_RULES,
         entry: ClauseEntryKind::RootCommandHead(PROGRAMMER_HEADS),
     },
     ClauseSchema {
@@ -1087,6 +1566,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Programmer),
         children: PROGRAMMER_SELECTION_CHILDREN,
         slots: PROGRAMMER_SELECTION_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1095,6 +1575,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::ProgrammerSelection),
         children: EMPTY_CHILDREN,
         slots: PROGRAMMER_SELECTION_IDENTIFIER_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1103,6 +1584,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Programmer),
         children: PROGRAMMER_ATTRIBUTE_ACTIONS_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1111,6 +1593,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::ProgrammerAttributeActions),
         children: EMPTY_CHILDREN,
         slots: PROGRAMMER_SET_ATTR_ITEM_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1119,6 +1602,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Programmer),
         children: PROGRAMMER_TIMINGS_CHILDREN,
         slots: PROGRAMMER_TIMINGS_SLOTS,
+        rules: PROGRAMMER_TIMINGS_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1127,6 +1611,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::ProgrammerTimings),
         children: EMPTY_CHILDREN,
         slots: PROGRAMMER_TIMING_OVERRIDE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1135,6 +1620,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Programmer),
         children: EMPTY_CHILDREN,
         slots: PROGRAMMER_PLACEMENT_3D_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Keyword(&[TokenId::ThreeD]),
     },
     ClauseSchema {
@@ -1143,6 +1629,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: FX_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: FX_RULES,
         entry: ClauseEntryKind::RootCommandHead(FX_HEADS),
     },
     ClauseSchema {
@@ -1151,6 +1638,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Fx),
         children: EMPTY_CHILDREN,
         slots: FX_IDENTIFIER_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1159,6 +1647,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Fx),
         children: EMPTY_CHILDREN,
         slots: FX_ACTION_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1167,6 +1656,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Store),
         children: STEP_FX_CHILDREN,
         slots: STORE_STEP_FX_SLOTS,
+        rules: STEP_FX_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1175,6 +1665,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::StepFx),
         children: EMPTY_CHILDREN,
         slots: STEP_FX_SELECTION_SLOTS,
+        rules: STEP_FX_SELECTION_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1183,6 +1674,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::StepFx),
         children: EMPTY_CHILDREN,
         slots: STEP_FX_DURATION_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1191,6 +1683,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::StepFx),
         children: EMPTY_CHILDREN,
         slots: STEP_FX_STEP_DEFINITION_SLOTS,
+        rules: STEP_FX_STEP_DEFINITION_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1199,6 +1692,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: PATCH_CHILDREN,
         slots: PATCH_SLOTS,
+        rules: PATCH_RULES,
         entry: ClauseEntryKind::RootCommandHead(PATCH_HEADS),
     },
     ClauseSchema {
@@ -1207,6 +1701,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Patch),
         children: EMPTY_CHILDREN,
         slots: PATCH_SOURCE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1215,6 +1710,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Patch),
         children: EMPTY_CHILDREN,
         slots: PATCH_TARGET_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1223,6 +1719,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: CLIP_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(CLIP_HEADS),
     },
     ClauseSchema {
@@ -1231,6 +1728,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Clip),
         children: EMPTY_CHILDREN,
         slots: CLIP_IDENTIFIER_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1239,6 +1737,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Clip),
         children: EMPTY_CHILDREN,
         slots: CLIP_ACTION_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1247,6 +1746,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: CHANNEL_OVERRIDE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(CHANNEL_HEADS),
     },
     ClauseSchema {
@@ -1255,6 +1755,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: RELEASE_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: RELEASE_RULES,
         entry: ClauseEntryKind::RootCommandHead(RELEASE_HEADS),
     },
     ClauseSchema {
@@ -1263,6 +1764,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Release),
         children: EMPTY_CHILDREN,
         slots: RELEASE_CHANNEL_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1271,6 +1773,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Release),
         children: EMPTY_CHILDREN,
         slots: RELEASE_ATTRIBUTES_SLOTS,
+        rules: QUALIFIER_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1279,6 +1782,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: CLEAR_CHILDREN,
         slots: CLEAR_SLOTS,
+        rules: CLEAR_RULES,
         entry: ClauseEntryKind::RootCommandHead(CLEAR_HEADS),
     },
     ClauseSchema {
@@ -1287,6 +1791,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Clear),
         children: EMPTY_CHILDREN,
         slots: CLEAR_ATTRIBUTES_SLOTS,
+        rules: QUALIFIER_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1295,6 +1800,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: FLOW_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(FLOW_HEADS),
     },
     ClauseSchema {
@@ -1303,6 +1809,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Flow),
         children: EMPTY_CHILDREN,
         slots: FLOW_IDENTIFIER_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1311,6 +1818,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Flow),
         children: EMPTY_CHILDREN,
         slots: FLOW_ACTION_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1319,6 +1827,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: TIMECODE_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(TIMECODE_HEADS),
     },
     ClauseSchema {
@@ -1327,6 +1836,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Timecode),
         children: EMPTY_CHILDREN,
         slots: TIMECODE_IDENTIFIER_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1335,6 +1845,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Timecode),
         children: EMPTY_CHILDREN,
         slots: TIMECODE_ACTION_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1343,6 +1854,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: TIMELINE_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(TIMELINE_HEADS),
     },
     ClauseSchema {
@@ -1351,6 +1863,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Timeline),
         children: EMPTY_CHILDREN,
         slots: TIMELINE_IDENTIFIER_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1359,6 +1872,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Timeline),
         children: EMPTY_CHILDREN,
         slots: TIMELINE_ACTION_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1367,6 +1881,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: RM_SLOTS,
+        rules: RM_RULES,
         entry: ClauseEntryKind::RootCommandHead(RM_HEADS),
     },
     ClauseSchema {
@@ -1384,6 +1899,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
             },
         ],
         slots: &[],
+        rules: ONE_OF_CHILDREN,
         entry: ClauseEntryKind::RootCommandHead(RENAME_HEADS),
     },
     ClauseSchema {
@@ -1392,6 +1908,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: STORE_CHILDREN,
         slots: STORE_SLOTS,
+        rules: STORE_RULES,
         entry: ClauseEntryKind::RootCommandHead(STORE_HEADS),
     },
     ClauseSchema {
@@ -1400,6 +1917,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Store),
         children: STORE_BLUEPRINT_CHILDREN,
         slots: STORE_BLUEPRINT_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1408,6 +1926,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::StoreBlueprint),
         children: EMPTY_CHILDREN,
         slots: STORE_BLUEPRINT_FILTER_SLOTS,
+        rules: QUALIFIER_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1416,6 +1935,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Store),
         children: STORE_FIXTURE_CHILDREN,
         slots: STORE_FIXTURE_SLOTS,
+        rules: STORE_FIXTURE_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1424,6 +1944,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::StoreFixture),
         children: EMPTY_CHILDREN,
         slots: STORE_FIXTURE_PAYLOAD_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1432,6 +1953,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::StoreFixture),
         children: EMPTY_CHILDREN,
         slots: STORE_FIXTURE_OFFSET_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1440,6 +1962,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: LOG_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: ONE_OF_CHILDREN,
         entry: ClauseEntryKind::RootCommandHead(LOG_HEADS),
     },
     ClauseSchema {
@@ -1448,6 +1971,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Log),
         children: EMPTY_CHILDREN,
         slots: LOG_LEVEL_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1456,6 +1980,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Log),
         children: EMPTY_CHILDREN,
         slots: LOG_FILTER_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1464,6 +1989,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Log),
         children: EMPTY_CHILDREN,
         slots: LOG_FIXTURE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1472,6 +1998,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: RECALL_CHILDREN,
         slots: EMPTY_SLOTS,
+        rules: ONE_OF_CHILDREN,
         entry: ClauseEntryKind::RootCommandHead(RECALL_HEADS),
     },
     ClauseSchema {
@@ -1480,6 +2007,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Recall),
         children: EMPTY_CHILDREN,
         slots: RECALL_CUE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1488,6 +2016,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Recall),
         children: EMPTY_CHILDREN,
         slots: RECALL_BLUEPRINT_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1496,6 +2025,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: DEBUG_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(DEBUG_HEADS),
     },
     ClauseSchema {
@@ -1504,6 +2034,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: SLEEP_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(SLEEP_HEADS),
     },
     ClauseSchema {
@@ -1512,6 +2043,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: FPS_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(FPS_HEADS),
     },
     ClauseSchema {
@@ -1520,6 +2052,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: TEMPO_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(TEMPO_HEADS),
     },
     ClauseSchema {
@@ -1528,6 +2061,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Store),
         children: EMPTY_CHILDREN,
         slots: STORE_FX_MODULE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1549,6 +2083,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1557,6 +2092,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: None,
         children: EMPTY_CHILDREN,
         slots: &[],
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(&[
             TokenId::Help,
             TokenId::Quit,
@@ -1573,6 +2109,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
             slot: SlotId::ShowfileName,
             cardinality: SlotCardinality::Repeated,
         }],
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(&[TokenId::Save, TokenId::Load]),
     },
     ClauseSchema {
@@ -1584,6 +2121,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
             slot: SlotId::NewShowfileType,
             cardinality: SlotCardinality::Required,
         }],
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(&[TokenId::New]),
     },
     ClauseSchema {
@@ -1601,6 +2139,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Optional,
             },
         ],
+        rules: CUE_BLOCK_RULES,
         entry: ClauseEntryKind::RootCommandHead(&[TokenId::Block, TokenId::Unblock]),
     },
     ClauseSchema {
@@ -1622,6 +2161,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1636,6 +2176,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
             slot: SlotId::PathIdentifier,
             cardinality: SlotCardinality::Required,
         }],
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1653,6 +2194,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1670,6 +2212,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -1691,6 +2234,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(&[TokenId::Cue]),
     },
     ClauseSchema {
@@ -1712,6 +2256,7 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
                 cardinality: SlotCardinality::Required,
             },
         ],
+        rules: NO_RULES,
         entry: ClauseEntryKind::RootCommandHead(&[TokenId::Copy]),
     },
 ];
@@ -1751,6 +2296,11 @@ pub const fn clause_children(clause: ClauseId) -> &'static [ClauseChildSpec] {
 /// Returns the static slot definitions owned by a clause.
 pub const fn clause_slots(clause: ClauseId) -> &'static [ClauseSlotSpec] {
     clause_schema(clause).slots
+}
+
+/// Returns the conditional availability rules for a clause's children and slots.
+pub const fn clause_rules(clause: ClauseId) -> &'static ClauseRules {
+    clause_schema(clause).rules
 }
 
 /// Returns the semantic hook family responsible for a clause subtree.
