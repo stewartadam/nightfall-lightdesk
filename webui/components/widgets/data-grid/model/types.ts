@@ -48,6 +48,13 @@ interface DataGridBaseProps {
   rows: number;
   /** Disables all editing and deletion while preserving navigation, selection and copying. */
   readOnly?: boolean;
+  /**
+   * Chooses the surrounding chrome. `grid` draws spreadsheet cell borders and a
+   * cell selection outline for editing; `table` draws row lines, row hover and a
+   * row-tinted selection so status and report views read like a plain table.
+   * Defaults to `table` for read-only grids and `grid` otherwise.
+   */
+  appearance?: "grid" | "table";
   density?: "comfortable" | "compact";
   columnGuides?: boolean;
   ariaLabel?: string;
@@ -99,7 +106,12 @@ interface DataGridBaseProps {
   rowMarkers?: "none" | "checkbox";
   freezeColumns?: number;
   width?: number | string;
-  height?: number | string;
+  /**
+   * Pixel or CSS height, filling the parent by default. `"content"` sizes the
+   * grid to its headers and rows so it flows like a plain table; cap it with a
+   * max-height class to keep long lists scrolling inside the grid.
+   */
+  height?: number | "content" | (string & {});
   rowHeight?: number;
   primaryColumnIndex?: number;
   decorationInvalidateKey?: unknown;

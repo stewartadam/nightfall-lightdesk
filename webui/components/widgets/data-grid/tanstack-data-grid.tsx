@@ -62,7 +62,7 @@ import { selectionFromState } from "./model/selection-model";
 import { dataGridTableFeatures } from "./model/table-features";
 import type { DataGridProps, HeaderCellView, TableRow } from "./model/types";
 import { createDataGridPointerEventController } from "./pointer-event-controller";
-import "./read-only.css";
+import "./table-appearance.css";
 import { createDataGridSelectionController } from "./selection-controller";
 import {
   createDataGridViewportController,
@@ -72,6 +72,7 @@ import {
 
 const MARKER_WIDTH = 34;
 const HEADER_ROW_HEIGHT = 30;
+const EMPTY_STATE_HEIGHT = 52;
 const DEFAULT_ROW_HEIGHT = 30;
 const DATA_GRID_MEASURE_PREFIX = "nightfall:data-grid.";
 const METRIC_FRAGMENT_PATTERN = /[^a-zA-Z0-9_-]/g;
@@ -114,6 +115,8 @@ export default function TanStackDataGrid(props: DataGridProps) {
   let handledScrollRequestId: number | undefined;
   const columnMeasurementContext = createColumnMeasurementContext();
   const [horizontalScrollLeft, setHorizontalScrollLeft] = createSignal(0);
+  const [horizontalScrollbarHeight, setHorizontalScrollbarHeight] =
+    createSignal(0);
   const [computedStyleVisible, setComputedStyleVisible] = createSignal(true);
   const [cellUpdateVersion, setCellUpdateVersion] = createSignal(0);
   let cachedCellProvider: ReturnType<DataGridProps["cellProvider"]> | undefined;
@@ -692,6 +695,35 @@ export default function TanStackDataGrid(props: DataGridProps) {
     selectionState,
     selectCell,
   } = selectionController;
+  /** Resolves the chrome style, letting read-only grids present as plain tables by default. */
+  const appearance = () =>
+    props.appearance ?? (props.readOnly ? "table" : "grid");
+  /** Collects the display rows that hold selected cells so table chrome can tint whole rows. */
+  const rowsWithSelection = createMemo(() => {
+    const rows = new Set(selectedRowSet());
+    const range = currentSelection()?.range;
+    if (range) {
+      for (let row = range.y; row < range.y + range.height; row += 1) {
+        rows.add(row);
+      }
+    }
+    return rows;
+  });
+  /**
+   * Resolves the root height. A content-height grid adds up its header rows,
+   * virtual row extent (or empty state) and any horizontal scrollbar so it
+   * occupies exactly the space a native table would.
+   */
+  const rootHeight = () => {
+    if (props.height !== "content") return styleSize(props.height, "100%");
+    const body =
+      tableRows().length === 0
+        ? props.emptyState
+          ? EMPTY_STATE_HEIGHT
+          : 0
+        : rowVirtualizer.getTotalSize();
+    return `${headerRows().length * HEADER_ROW_HEIGHT + body + horizontalScrollbarHeight()}px`;
+  };
   const currentRangeData = createMemo(() => {
     const range = currentSelection()?.range;
     if (!range) return "";
@@ -1036,6 +1068,17 @@ export default function TanStackDataGrid(props: DataGridProps) {
 
   /** Installs document keyboard listeners and visibility instrumentation. */
   onMount(() => {
+    const scrollElement = scrollRef;
+    if (props.height === "content" && scrollElement) {
+      /** Tracks the horizontal scrollbar so a content-height grid never hides its last row. */
+      const scrollbarObserver = new ResizeObserver(() =>
+        setHorizontalScrollbarHeight(
+          scrollElement.offsetHeight - scrollElement.clientHeight,
+        ),
+      );
+      scrollbarObserver.observe(scrollElement);
+      onCleanup(() => scrollbarObserver.disconnect());
+    }
     document.addEventListener("keydown", handleDocumentGridKeyDown, true);
     document.addEventListener("keydown", handleDocumentKeyDown, true);
     const visibilityRoot = rootRef;
@@ -1101,6 +1144,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
       role="grid"
       aria-readonly={props.readOnly === true}
       aria-label={props.ariaLabel}
+      data-grid-appearance={appearance()}
       data-column-guides={props.columnGuides}
       tabIndex={0}
       data-selection-range={currentRangeData()}
@@ -1111,7 +1155,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
       onPaste={handlePaste}
       style={{
         width: styleSize(props.width, "100%"),
-        height: styleSize(props.height, "100%"),
+        height: rootHeight(),
         "--data-grid-column-border":
           props.columnGuides === undefined
             ? undefined
@@ -1170,11 +1214,20 @@ export default function TanStackDataGrid(props: DataGridProps) {
               />
             </div>
           </Show>
-          <div class="sticky top-0 z-30 bg-[#212121]">
+          <div
+            data-grid-header-rows
+            class="sticky top-0 z-30"
+            style={{ background: "var(--data-grid-header-bg, #212121)" }}
+          >
             <For each={headerRows()}>
               {(headerRow) => {
                 return (
-                  <div class="flex h-[30px] border-b border-white/20">
+                  // biome-ignore lint/a11y/useFocusableInteractive: Grid rows are structural; keyboard focus stays on the grid and its cells.
+                  <div
+                    role="row"
+                    data-grid-header-row
+                    class="flex h-[30px] border-b border-white/20"
+                  >
                     <Show when={markerEnabled() && headerRow.depth === 0}>
                       <div
                         class="sticky left-0 z-40 flex shrink-0 items-center justify-center border-r border-white/20 bg-[#212121]"
@@ -1241,7 +1294,8 @@ export default function TanStackDataGrid(props: DataGridProps) {
             <EmptyState
               variant="inline"
               role="status"
-              class="sticky left-0 w-fit max-w-full p-4"
+              class="sticky left-0 w-fit max-w-full px-4"
+              style={{ height: `${EMPTY_STATE_HEIGHT}px` }}
               title={props.emptyState}
             />
           </Show>
@@ -1256,7 +1310,13 @@ export default function TanStackDataGrid(props: DataGridProps) {
                 if (rowIndex() === undefined) return null;
                 const virtualRow = () => virtualRowByIndex().get(rowModelIndex);
                 return (
+                  // biome-ignore lint/a11y/useFocusableInteractive: Grid rows are structural; keyboard focus stays on the grid and its cells.
                   <div
+                    role="row"
+                    data-grid-row
+                    data-selected={
+                      rowsWithSelection().has(rowModelIndex) ? "true" : "false"
+                    }
                     class="absolute left-0 flex"
                     style={{
                       height: `${virtualRow()?.size ?? rowHeight()}px`,

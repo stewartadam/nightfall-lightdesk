@@ -6,41 +6,104 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { Collapsible } from "../../../components/ui/collapsible";
 import { Table, TableScroll } from "../../../components/ui/table";
-import { Button } from "../../../components/ui/visual-language/button";
+import DataGrid, {
+  createKeyedDataGridCellProvider,
+} from "../../../components/widgets/data-grid";
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+} from "../../../lib/data-grid-types";
 import type {
   PerformanceMeasureStats,
   WsStats,
 } from "../../../state/appStores";
-import type { MessageSortColumn, MessageTypeRow } from "../model/message-table";
+import type { MessageTypeRow, MessageTypeStats } from "../model/message-table";
 import { formatNumber, getDeliveryLagColor } from "../model/metrics";
 import { MetricCard } from "./metric-sections";
 
 interface WebSocketMetricsSectionProps {
   measures: Record<string, PerformanceMeasureStats>;
-  getSortIndicator: (column: MessageSortColumn) => string;
   rows: MessageTypeRow[];
   stats: WsStats | null;
-  toggleSort: (column: MessageSortColumn) => void;
 }
 
-const MESSAGE_COLUMNS: {
-  column: MessageSortColumn;
-  label: string;
-  leftAligned?: boolean;
-}[] = [
-  { column: "type", label: "Type", leftAligned: true },
-  { column: "count", label: "Count" },
-  { column: "ratePerSec", label: "Rate/s" },
-  { column: "avgDecodeMs", label: "Decode (EMA)" },
-  { column: "avgProcessMs", label: "Processing (EMA)" },
-  { column: "dropped", label: "Drop (cum.)" },
+const MESSAGE_COLUMNS: GridColumn[] = [
+  { id: "type", title: "Type", width: 180, sizing: "fixed" },
+  { id: "count", title: "Count", width: 88, sizing: "fixed", align: "right" },
+  {
+    id: "ratePerSec",
+    title: "Rate/s",
+    width: 88,
+    sizing: "fixed",
+    align: "right",
+  },
+  {
+    id: "avgDecodeMs",
+    title: "Decode (EMA)",
+    width: 112,
+    sizing: "fixed",
+    align: "right",
+  },
+  {
+    id: "avgProcessMs",
+    title: "Processing (EMA)",
+    width: 128,
+    sizing: "fixed",
+    align: "right",
+  },
+  {
+    id: "dropped",
+    title: "Drop (cum.)",
+    width: 104,
+    sizing: "fixed",
+    align: "right",
+  },
 ];
+
+/** Shows the warning tone used for messages that were coalesced or discarded. */
+const DROPPED_THEME = { textDark: "#eab308" };
+
+/** Projects one message-type aggregate into a typed, sortable cell for a totals column. */
+function messageCell(
+  [type, stats]: MessageTypeRow,
+  column: GridColumn,
+): GridCell {
+  if (column.id === "type")
+    return { kind: GridCellKind.Text, data: type, contentAlign: "left" };
+  const value = stats[column.id as keyof MessageTypeStats];
+  const display =
+    column.id === "ratePerSec"
+      ? formatNumber(value, 1)
+      : column.id === "avgDecodeMs" || column.id === "avgProcessMs"
+        ? formatNumber(value, 2, " ms")
+        : String(value);
+  return {
+    kind: GridCellKind.Number,
+    data: value,
+    displayData: display,
+    copyData: display,
+    contentAlign: "right",
+    themeOverride:
+      column.id === "dropped" && value > 0 ? DROPPED_THEME : undefined,
+  };
+}
 
 /** Presents websocket delivery health, pull cadence, and sortable type totals. */
 export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
+  /** Keys aggregates by message type so a header sort follows each type as totals update. */
+  const messageProvider = createMemo(() =>
+    createKeyedDataGridCellProvider({
+      rows: props.rows,
+      columns: MESSAGE_COLUMNS,
+      rowKey: ([type]) => type,
+      columnKey: (column) => column.id!,
+      getCellContent: ({ row, column }) => messageCell(row, column),
+    }),
+  );
   return (
     <Collapsible
       lazy
@@ -283,71 +346,18 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             resynchronization. Delivery IDs show main-thread received / worker
             staged.
           </p>
-          <TableScroll
-            aria-label="Worker message totals scroll area"
-            class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800"
-          >
-            <Table aria-label="Worker message totals">
-              <thead>
-                <tr>
-                  <For each={MESSAGE_COLUMNS}>
-                    {({ column, label, leftAligned }) => (
-                      <th
-                        scope="col"
-                        class={leftAligned ? "text-left" : "text-right"}
-                      >
-                        <Button
-                          size="compact"
-                          variant="subtle"
-                          type="button"
-                          class="w-full"
-                          style={{
-                            "justify-content": leftAligned
-                              ? "flex-start"
-                              : "flex-end",
-                          }}
-                          onClick={() => props.toggleSort(column)}
-                        >
-                          <span>{label}</span>
-                          <span class="w-2 text-right text-[10px]">
-                            {props.getSortIndicator(column)}
-                          </span>
-                        </Button>
-                      </th>
-                    )}
-                  </For>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={props.rows}>
-                  {([type, stats]) => (
-                    <tr>
-                      <td class="max-w-[120px] truncate font-mono" title={type}>
-                        {type}
-                      </td>
-                      <td class="text-right font-mono">{stats.count}</td>
-                      <td class="text-right font-mono">
-                        {formatNumber(stats.ratePerSec, 1)}
-                      </td>
-                      <td class="text-right font-mono">
-                        {formatNumber(stats.avgDecodeMs, 2, " ms")}
-                      </td>
-                      <td class="text-right font-mono">
-                        {formatNumber(stats.avgProcessMs, 2, " ms")}
-                      </td>
-                      <td
-                        class={`text-right font-mono ${
-                          stats.dropped > 0 ? "text-yellow-500" : ""
-                        }`}
-                      >
-                        {stats.dropped}
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </Table>
-          </TableScroll>
+          <div class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+            <DataGrid
+              ariaLabel="Worker message totals"
+              readOnly
+              columns={MESSAGE_COLUMNS}
+              rows={props.rows.length}
+              cellProvider={messageProvider}
+              sortableColumns={MESSAGE_COLUMNS.map((column) => column.id!)}
+              height="content"
+              class="max-h-[420px]"
+            />
+          </div>
         </div>
       </Show>
     </Collapsible>

@@ -251,3 +251,38 @@ test("inline grid editors use the cell selection perimeter", async ({
     await editor.press("Escape");
   }
 });
+
+/** Verifies read-only grids default to plain table chrome: row lines, hidden idle sort arrows and a whole-row selection tint. */
+test("read-only grid presents as a plain table", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.goto("/design-lab.html");
+  await page
+    .getByRole("navigation", { name: "Component index" })
+    .getByRole("button", { name: /Data grid/ })
+    .click();
+  const panel = page.getByRole("region", { name: "Data grid example" });
+  const editable = panel.getByRole("grid");
+  await expect(editable).toHaveAttribute("data-grid-appearance", "grid");
+  await panel.getByRole("tab", { name: "Read-only status" }).click();
+  const grid = panel.getByRole("grid", { name: "Timecode source status" });
+  await expect(grid).toHaveAttribute("data-grid-appearance", "table");
+  const idleArrow = grid
+    .getByRole("columnheader", { name: "Source", exact: true })
+    .locator('[data-grid-sort-indicator="none"]');
+  await expect(idleArrow).toHaveCSS("opacity", "0");
+  const source = grid.getByRole("gridcell", { name: "Main show", exact: true });
+  await expect(source).toHaveCSS("border-right-color", "rgba(0, 0, 0, 0)");
+  await source.click();
+  const row = grid.getByRole("row", { name: /Main show/ });
+  await expect(row).toHaveAttribute("data-selected", "true");
+  const tint = await source.evaluate(
+    (cell) => getComputedStyle(cell).backgroundColor,
+  );
+  await expect(
+    row.getByRole("gridcell", { name: "30 fps", exact: true }),
+  ).toHaveCSS("background-color", tint);
+  await page.screenshot({
+    path: testInfo.outputPath("read-only-table-appearance.png"),
+    fullPage: true,
+  });
+});

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, createSignal } from "solid-js";
+import { createMemo } from "solid-js";
 import { clearPerformanceMeasures } from "../../../lib/performance-measure-collector";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
@@ -32,11 +32,7 @@ import { VisualizerMetricsSection } from "../components/visualizer-metrics-secti
 import { WebSocketMetricsSection } from "../components/websocket-metrics-section";
 import {
   compareMessageTypeRows,
-  type MessageSort,
-  type MessageSortColumn,
   type MessageTypeRow,
-  messageSortIndicator,
-  nextMessageSort,
 } from "../model/message-table";
 import { downloadJson } from "../services/download-json";
 
@@ -75,18 +71,12 @@ export function InstrumentationController() {
     performanceMeasureStats,
     useWorkspaceActivity(),
   );
-  const [messageSort, setMessageSort] = createSignal<MessageSort>({
-    column: "ratePerSec",
-    direction: "desc",
-  });
-
-  /** Sorts websocket message aggregates for the active table column. */
+  /** Lists websocket message aggregates busiest first; header clicks sort within the grid. */
   const sortedMessageTypes = createMemo(() => {
     const stats = $wsStats();
     if (!stats?.byType) return [];
-    const { column, direction } = messageSort();
     return (Object.entries(stats.byType) as MessageTypeRow[]).sort(
-      (left, right) => compareMessageTypeRows(left, right, column, direction),
+      compareMessageTypeRows,
     );
   });
 
@@ -96,15 +86,6 @@ export function InstrumentationController() {
       left.name.localeCompare(right.name),
     ),
   );
-
-  /** Updates the websocket message table sort from a column header. */
-  const toggleMessageSort = (column: MessageSortColumn) => {
-    setMessageSort((current) => nextMessageSort(current, column));
-  };
-
-  /** Returns the active sort marker for a websocket table column. */
-  const getSortIndicator = (column: MessageSortColumn) =>
-    messageSortIndicator(messageSort(), column);
 
   /** Downloads the current instrumentation snapshot for baseline revisioning. */
   const downloadPerformanceBaseline = () => {
@@ -151,10 +132,8 @@ export function InstrumentationController() {
         />
         <WebSocketMetricsSection
           measures={$performanceMeasureStats()}
-          getSortIndicator={getSortIndicator}
           rows={sortedMessageTypes()}
           stats={$wsStats()}
-          toggleSort={toggleMessageSort}
         />
       </div>
     </div>

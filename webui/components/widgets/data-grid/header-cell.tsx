@@ -8,7 +8,10 @@
 
 import { type JSX, Show } from "solid-js";
 import type { GroupHeaderClickedEventArgs } from "../../../lib/data-grid-types";
-import type { DataGridTableHeader } from "./model/column-model";
+import {
+  type DataGridTableHeader,
+  sourceGridColumn,
+} from "./model/column-model";
 import type { HeaderCellView } from "./model/types";
 
 const HEADER_BACKGROUND = "var(--data-grid-header-bg, #212121)";
@@ -47,6 +50,10 @@ export interface HeaderCellProps {
 
 /** Renders one TanStack header cell, including selection and resize affordances. */
 export function HeaderCell(props: HeaderCellProps) {
+  /** Right-aligns a leaf header whose source column asks for it, keeping the sort arrow beside the label. */
+  const alignRight = () =>
+    props.header.subHeaders.length === 0 &&
+    sourceGridColumn(props.header.column)?.align === "right";
   /** Enables sorting only for an explicitly sortable leaf header. */
   const canSort = () =>
     props.header.subHeaders.length === 0 && props.header.column.getCanSort();
@@ -174,7 +181,8 @@ export function HeaderCell(props: HeaderCellProps) {
       }
       tabIndex={0}
       data-selected={isHeaderSelected() ? "true" : "false"}
-      class={`relative flex shrink-0 items-center overflow-hidden border-r border-white/20 bg-[#212121] px-2 font-semibold text-neutral-300 ${props.sticky ? "sticky z-40" : ""}`}
+      data-align={alignRight() ? "right" : undefined}
+      class={`relative flex shrink-0 items-center overflow-hidden border-r border-white/20 bg-[#212121] px-2 font-semibold text-neutral-300 ${alignRight() ? "flex-row-reverse" : ""} ${props.sticky ? "sticky z-40" : ""}`}
       data-grid-header-id={props.headerId}
       style={{
         width: `var(${props.widthVariable})`,
@@ -200,7 +208,11 @@ export function HeaderCell(props: HeaderCellProps) {
         {props.content}
       </span>
       <Show when={canSort()}>
-        <span aria-hidden="true" class="ml-auto pl-2 text-xs">
+        <span
+          aria-hidden="true"
+          data-grid-sort-indicator={props.header.column.getIsSorted() || "none"}
+          class={`text-xs ${alignRight() ? "pr-1" : "ml-auto pl-2"}`}
+        >
           {props.header.column.getIsSorted() === "asc"
             ? "↑"
             : props.header.column.getIsSorted() === "desc"

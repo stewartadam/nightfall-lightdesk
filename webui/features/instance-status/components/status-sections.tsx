@@ -20,7 +20,15 @@ import {
   TableScroll,
 } from "../../../components/ui/table";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import { Button } from "../../../components/ui/visual-language/button";
+import DataGrid, {
+  createKeyedDataGridCellProvider,
+  type DataGridRichCellExtension,
+} from "../../../components/widgets/data-grid";
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+} from "../../../lib/data-grid-types";
 import { durationToMs, formatSMPTETime } from "../../../lib/time-format";
 import {
   InstanceKind,
@@ -34,7 +42,6 @@ import {
   formatInstanceNext,
   formatInstancePosition,
   formatPercent,
-  type InstanceSortColumn,
   instanceKindClass,
   instanceKindLabel,
   instanceStateClass,
@@ -54,8 +61,6 @@ export type ActiveInstancesSectionProps = {
   rows: StatusInstanceInfo[];
   clipLabel: (clipId: number | null | undefined) => string;
   ownerLabels: (instance: StatusInstanceInfo) => string;
-  sortIndicator: (column: InstanceSortColumn) => string;
-  onSort: (column: InstanceSortColumn) => void;
   onStop: (instanceId: StatusInstanceInfo["instance_id"]) => void;
   onStopAll: () => void;
   onStopKind: (kind: InstanceKindType) => void;
@@ -89,36 +94,190 @@ function StatusIconButton(props: StatusIconButtonProps) {
   );
 }
 
-/** Renders one sortable instance table heading. */
-function InstanceSortHeading(props: {
-  column: InstanceSortColumn;
-  label: string;
-  class?: string;
-  indicator: string;
-  onSort: (column: InstanceSortColumn) => void;
-}) {
-  return (
-    <th scope="col" class={props.class}>
-      <Button
-        size="compact"
-        variant="subtle"
-        type="button"
-        onClick={() => props.onSort(props.column)}
-      >
-        <span>{props.label}</span>
-        <span class="w-2 text-right text-[10px]">{props.indicator}</span>
-      </Button>
-    </th>
-  );
+const INSTANCE_ROW_HEIGHT = 44;
+const INSTANCE_COLUMNS: GridColumn[] = [
+  { id: "kind", title: "Kind", width: 112, sizing: "fixed" },
+  { id: "instance", title: "Instance", width: 192, sizing: "fixed" },
+  { id: "state", title: "State", width: 128, sizing: "fixed" },
+  { id: "clip", title: "Clip", width: 144, sizing: "fixed" },
+  { id: "owners", title: "Owners", width: 144, sizing: "fixed" },
+  { id: "priority", title: "Priority", width: 96, sizing: "fixed" },
+  { id: "position", title: "Position", width: 200, sizing: "fixed" },
+  { id: "intensity", title: "Int", width: 80, sizing: "fixed" },
+  { id: "rate", title: "Rate", width: 80, sizing: "fixed" },
+  { id: "tags", title: "Tags", width: 120, sizing: "fixed" },
+  { id: "stop", title: "Stop", width: 56, sizing: "fixed" },
+];
+const SORTABLE_INSTANCE_COLUMNS = INSTANCE_COLUMNS.flatMap((column) =>
+  column.id === "stop" ? [] : [column.id!],
+);
+
+type InstanceCellData =
+  | { kind: "instance-pill"; className: string }
+  | { kind: "instance-lines"; secondary: string; mono: boolean }
+  | { kind: "instance-stop"; instanceId: StatusInstanceInfo["instance_id"] };
+
+/** Builds a rich instance cell whose copy and sort value is its primary text. */
+function instanceCell(data: InstanceCellData, copyData: string): GridCell {
+  return { kind: GridCellKind.Custom, data, copyData };
+}
+
+/** Builds a plain text instance cell, optionally in the monospace value style. */
+function instanceTextCell(value: string, mono = false): GridCell {
+  return mono
+    ? instanceCell({ kind: "instance-lines", secondary: "", mono }, value)
+    : { kind: GridCellKind.Text, data: value, contentAlign: "left" };
+}
+
+/** Builds a numeric instance cell that sorts by value while showing formatted text; missing values show a dash. */
+function instanceNumberCell(
+  value: number | undefined,
+  display: string,
+): GridCell {
+  if (value === undefined) return instanceTextCell("-", true);
+  return {
+    kind: GridCellKind.Number,
+    data: value,
+    displayData: display,
+    copyData: display,
+    contentAlign: "left",
+  };
+}
+
+/** Projects one instance snapshot into the cell for a status column. */
+function activeInstanceCell(
+  instance: StatusInstanceInfo,
+  column: GridColumn,
+  labels: Pick<ActiveInstancesSectionProps, "clipLabel" | "ownerLabels">,
+): GridCell {
+  switch (column.id) {
+    case "kind":
+      return instanceCell(
+        {
+          kind: "instance-pill",
+          className: instanceKindClass(instance.display_kind),
+        },
+        instanceKindLabel(instance.display_kind),
+      );
+    case "instance":
+      return instanceCell(
+        {
+          kind: "instance-lines",
+          secondary: compactId(instance.instance_id),
+          mono: false,
+        },
+        instance.name ?? "Instance",
+      );
+    case "state":
+      return instanceCell(
+        { kind: "instance-pill", className: instanceStateClass(instance) },
+        instanceStateLabel(instance),
+      );
+    case "clip":
+      return instanceTextCell(labels.clipLabel(instance.bound_clip_id));
+    case "owners":
+      return instanceTextCell(labels.ownerLabels(instance));
+    case "priority":
+      return instanceNumberCell(
+        instance.priority,
+        String(instance.priority ?? "-"),
+      );
+    case "position":
+      return instanceCell(
+        {
+          kind: "instance-lines",
+          secondary: formatInstanceNext(instance),
+          mono: true,
+        },
+        formatInstancePosition(instance),
+      );
+    case "intensity":
+      return instanceNumberCell(
+        instance.intensity_scale,
+        formatPercent(instance.intensity_scale),
+      );
+    case "rate":
+      return instanceNumberCell(
+        instance.effective_rate,
+        `${instance.effective_rate.toFixed(2)}x`,
+      );
+    case "tags":
+      return instanceTextCell(
+        instance.tags.length > 0 ? instance.tags.join(", ") : "-",
+      );
+    default:
+      return instanceCell(
+        { kind: "instance-stop", instanceId: instance.instance_id },
+        "",
+      );
+  }
+}
+
+/** Renders the instance table's pills, two-line values and per-row stop action. */
+function activeInstanceExtension(
+  onStop: (instanceId: StatusInstanceInfo["instance_id"]) => void,
+): DataGridRichCellExtension {
+  return {
+    id: "active-instance",
+    matches: (cell) =>
+      cell.kind === GridCellKind.Custom &&
+      String((cell.data as { kind?: string }).kind).startsWith("instance-"),
+    isEditable: () => false,
+    render: ({ cell }) => {
+      if (cell.kind !== GridCellKind.Custom) return null;
+      const data = cell.data as InstanceCellData;
+      if (data.kind === "instance-pill")
+        return (
+          <span
+            class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${data.className}`}
+          >
+            {cell.copyData}
+          </span>
+        );
+      if (data.kind === "instance-stop")
+        return (
+          <StatusIconButton
+            label="Stop instance"
+            icon={StopIcon}
+            onClick={() => onStop(data.instanceId)}
+            variant="danger"
+          />
+        );
+      return (
+        <div class="min-w-0">
+          <div
+            class={`truncate text-neutral-100 ${data.mono ? "font-mono" : ""}`}
+          >
+            {cell.copyData}
+          </div>
+          <Show when={data.secondary}>
+            <div
+              class={`truncate text-[11px] text-neutral-500 ${data.mono ? "" : "font-mono"}`}
+            >
+              {data.secondary}
+            </div>
+          </Show>
+        </div>
+      );
+    },
+    renderEditor: () => null,
+  };
 }
 
 /** Presents active instance status and stop controls without owning app state. */
 export function ActiveInstancesSection(props: ActiveInstancesSectionProps) {
-  /** Keeps row identity tied to playback IDs while snapshots update cell values. */
-  const instancesById = createMemo(
-    () =>
-      new Map(props.rows.map((instance) => [instance.instance_id, instance])),
+  /** Keys cells by playback ID so selection and sorting follow instances across snapshots. */
+  const provider = createMemo(() =>
+    createKeyedDataGridCellProvider({
+      rows: props.rows,
+      columns: INSTANCE_COLUMNS,
+      rowKey: (row) => row.instance_id,
+      columnKey: (column) => column.id!,
+      getCellContent: ({ row, column }) =>
+        activeInstanceCell(row, column, props),
+    }),
   );
+  const extensions = [activeInstanceExtension((id) => props.onStop(id))];
 
   return (
     <section class="min-h-0 shrink-0">
@@ -154,174 +313,21 @@ export function ActiveInstancesSection(props: ActiveInstancesSectionProps) {
         </div>
       </div>
 
-      <TableScroll
-        aria-label="Active instances scroll area"
-        class="border border-neutral-800"
-      >
-        <Table
-          aria-label="Active instances"
-          class="min-w-[1180px] table-fixed text-left"
-        >
-          <thead>
-            <tr>
-              <InstanceSortHeading
-                class="w-28"
-                column="kind"
-                label="Kind"
-                indicator={props.sortIndicator("kind")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-48"
-                column="instance"
-                label="Instance"
-                indicator={props.sortIndicator("instance")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-32"
-                column="state"
-                label="State"
-                indicator={props.sortIndicator("state")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-36"
-                column="clip"
-                label="Clip"
-                indicator={props.sortIndicator("clip")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-36"
-                column="owners"
-                label="Owners"
-                indicator={props.sortIndicator("owners")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-24"
-                column="priority"
-                label="Priority"
-                indicator={props.sortIndicator("priority")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-60"
-                column="position"
-                label="Position"
-                indicator={props.sortIndicator("position")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-20"
-                column="intensity"
-                label="Int"
-                indicator={props.sortIndicator("intensity")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                class="w-20"
-                column="rate"
-                label="Rate"
-                indicator={props.sortIndicator("rate")}
-                onSort={props.onSort}
-              />
-              <InstanceSortHeading
-                column="tags"
-                label="Tags"
-                indicator={props.sortIndicator("tags")}
-                onSort={props.onSort}
-              />
-              <th
-                scope="col"
-                class="w-12 text-center"
-                aria-label="Stop instance"
-                title="Stop instance"
-              >
-                <StopIcon class="mx-auto size-3" aria-hidden />
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <Show
-              when={props.rows.length > 0}
-              fallback={
-                <TableEmptyRow colSpan={11}>No active instances</TableEmptyRow>
-              }
-            >
-              <For each={[...instancesById().keys()]}>
-                {(instanceId) => (
-                  <Show when={instancesById().get(instanceId)}>
-                    {(instance) => (
-                      <tr>
-                        <td>
-                          <span
-                            class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${instanceKindClass(instance().display_kind)}`}
-                          >
-                            {instanceKindLabel(instance().display_kind)}
-                          </span>
-                        </td>
-                        <td>
-                          <div class="truncate text-neutral-100">
-                            {instance().name ?? "Instance"}
-                          </div>
-                          <div class="truncate font-mono text-[11px] text-neutral-500">
-                            {compactId(instance().instance_id)}
-                          </div>
-                        </td>
-                        <td class="truncate">
-                          <span
-                            class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${instanceStateClass(instance())}`}
-                          >
-                            {instanceStateLabel(instance())}
-                          </span>
-                        </td>
-                        <td class="truncate">
-                          {props.clipLabel(instance().bound_clip_id)}
-                        </td>
-                        <td class="truncate">
-                          {props.ownerLabels(instance())}
-                        </td>
-                        <td class="font-mono">{instance().priority ?? "-"}</td>
-                        <td>
-                          <div class="truncate font-mono text-neutral-100">
-                            {formatInstancePosition(instance())}
-                          </div>
-                          <Show when={formatInstanceNext(instance())}>
-                            <div class="truncate text-[11px] text-neutral-500">
-                              {formatInstanceNext(instance())}
-                            </div>
-                          </Show>
-                        </td>
-                        <td class="font-mono">
-                          {formatPercent(instance().intensity_scale)}
-                        </td>
-                        <td class="font-mono">
-                          {instance().effective_rate.toFixed(2)}x
-                        </td>
-                        <td class="truncate">
-                          {instance().tags.length > 0
-                            ? instance().tags.join(", ")
-                            : "-"}
-                        </td>
-                        <td class="text-center">
-                          <StatusIconButton
-                            label="Stop instance"
-                            icon={StopIcon}
-                            onClick={() => props.onStop(instance().instance_id)}
-                            variant="danger"
-                          />
-                        </td>
-                      </tr>
-                    )}
-                  </Show>
-                )}
-              </For>
-            </Show>
-          </tbody>
-        </Table>
-      </TableScroll>
+      <div class="border border-neutral-800">
+        <DataGrid
+          ariaLabel="Active instances"
+          readOnly
+          columns={INSTANCE_COLUMNS}
+          rows={props.rows.length}
+          cellProvider={provider}
+          richCellExtensions={extensions}
+          sortableColumns={SORTABLE_INSTANCE_COLUMNS}
+          rowHeight={INSTANCE_ROW_HEIGHT}
+          height="content"
+          class="max-h-[60vh]"
+          emptyState="No active instances"
+        />
+      </div>
     </section>
   );
 }
