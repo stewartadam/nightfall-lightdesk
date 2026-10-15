@@ -7,24 +7,12 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
-import { ArrowsInIcon } from "@squidlab/phosphor-solid/arrows-in";
-import { ArrowsOutIcon } from "@squidlab/phosphor-solid/arrows-out";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   type CreateComponentOptions,
   createDockview,
   type DockviewApi,
-  type DockviewGroupPanel,
-  type DockviewWillDropEvent,
-  type EdgeGroupPosition,
-  type GroupPanelPartInitParameters,
-  getPanelData,
-  type IContentRenderer,
-  type ITabRenderer,
-  type PanelTransfer,
 } from "dockview";
-import type { ParentComponent, Setter } from "solid-js";
+import type { ParentComponent } from "solid-js";
 import {
   createEffect,
   createMemo,
@@ -39,402 +27,44 @@ import {
   restoreSerializedLayout,
   type SerializedLayout,
 } from "../../../../lib/dockview-layout";
-import { areExperimentalFlowsEnabled } from "../../../../lib/experimental-features";
-import { isVisualizerDefaultPanelEnabled } from "../../../../lib/feature-flags";
 import { openErrorBugReport } from "../../../../lib/feedback";
-import { clearLayout, loadLayout } from "../../../../lib/layoutStorage";
+import { loadLayout } from "../../../../lib/layoutStorage";
 import { getLogger } from "../../../../lib/logger";
 import {
-  type PanelDefinition,
-  panelDefinitionByName,
-} from "../../../../lib/panel-definitions";
-import {
-  getPanelLivenessEntries,
-  type PanelLivenessEntry,
-} from "../../../../lib/panel-liveness";
-import {
-  type BasePanelComponentProps,
   getComponentNames,
   getComponentRegistration,
 } from "../../../../lib/panel-registry";
-import {
-  type PanelTabStatus,
-  subscribePanelTabStatus,
-} from "../../../../lib/panel-tab-status";
 import { describeUncaughtError } from "../../../../lib/uncaught-error";
+import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { appearanceSettings } from "../../../../state/appearance";
-import { openContextMenu } from "../../../providers/context-menu";
-import { type AppIcon, renderIconComponent } from "../../../ui/icon";
 import { Button } from "../../../ui/visual-language/button";
-import { backgroundPanelMounts } from "./background-panel-mounts";
 import { bindCompactPresentation } from "./compact-presentation";
+import { createDeadPanelController } from "./dead-panel-controller";
+import { createDefaultLayout } from "./default-layout";
 import { visualLanguageDockTheme } from "./dockview-host";
-import { bindPanelAppearance } from "./panel-appearance";
+import {
+  edgeDropTargetClasses,
+  edgeDropTargetSelectionClasses,
+  edgeDropTargetStyle,
+} from "./edge-drop-geometry";
+import { createEdgeGroupDropController } from "./edge-group-drop-controller";
+import { IconTabRenderer } from "./icon-tab-renderer";
 import { bindPanelClipping } from "./panel-clipping";
 import { bindPanelConstraints } from "./panel-constraints";
+import {
+  type PortalEntry,
+  type SolidComponentType,
+  SolidRenderer,
+} from "./solid-panel-renderer";
 import "./dockview-app.css";
-
-import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
+import "dockview/dist/styles/dockview.css";
 
 const log = getLogger(import.meta.url);
 
-import "dockview/dist/styles/dockview.css";
-
-const EDGE_DROP_TARGET_SIZE = 35;
-const EDGE_DROP_HOLD_DELAY_MS = 500;
-const HIDDEN_EDGE_GROUP_PADDING = 16;
-export const EDGE_GROUP_COLLAPSED_SIZE = 34;
-const PANEL_LIVENESS_CLOSE_DELAY_MS = 0;
 const DOCKVIEW_ROOT_EDGE_ACTIVATION_SIZE = 10;
 const DOCKVIEW_ROOT_EDGE_OVERLAY_SIZE = 20;
-const DEFAULT_EDGE_GROUP_POSITIONS = [
-  "left",
-  "bottom",
-  "right",
-] as const satisfies readonly EdgeGroupPosition[];
 
-type DefaultEdgeGroupPosition = (typeof DEFAULT_EDGE_GROUP_POSITIONS)[number];
-
-const DEFAULT_EDGE_GROUP_IDS: Record<DefaultEdgeGroupPosition, string> = {
-  bottom: "edge-Console",
-  left: "edge-Clips",
-  right: "edge-Properties",
-};
-
-type SolidComponentType = ParentComponent<BasePanelComponentProps>;
-let nextPortalEntryId = 0;
-
-/**
- * Direct renderer for SolidJS components
- */
-class SolidRenderer implements IContentRenderer {
-  private id?: string;
-  private portalEntryId?: number;
-  private readonly _container: HTMLElement;
-  private readonly _renderRoot: HTMLElement;
-  private component: SolidComponentType;
-  private panelAppearance?: ReturnType<typeof bindPanelAppearance>;
-  /** Visibility subscription held until the panel content mounts. */
-  private pendingMount?: { dispose: () => void };
-  /** Removes this panel from the background mount queue. */
-  private cancelBackgroundMount?: () => void;
-
-  /** Binds renderer ownership to one workspace rather than the app-wide panel ID. */
-  constructor(
-    component: SolidComponentType,
-    private setPortals: Setter<PortalEntry[]>,
-    private panelComponentById: Map<string, string>,
-  ) {
-    this.component = component;
-
-    this._container = document.createElement("div");
-    this._container.className = "h-full";
-
-    this._renderRoot = document.createElement("div");
-    this._renderRoot.className = "h-full overflow-auto";
-
-    this._container.appendChild(this._renderRoot);
-  }
-
-  get element(): HTMLElement {
-    return this._container;
-  }
-
-  /**
-   * Keeps panel appearance tied to Dockview's active panel and mounts the panel
-   * content. Visible panels mount right away; background tabs and collapsed
-   * edge panels mount later in the background, one per idle period, so
-   * restoring a large layout shows the visible panels first. A hidden panel
-   * that is opened before its turn mounts immediately.
-   */
-  init(parameters: GroupPanelPartInitParameters): void {
-    this.panelAppearance = bindPanelAppearance(this._container, parameters.api);
-    // Track panel identity
-    this.id = parameters.api.id;
-    const visibility = parameters.api.onDidVisibilityChange((event) => {
-      if (event.isVisible) this.mountOnce(parameters);
-    });
-    this.pendingMount = visibility;
-    // Dockview reports every panel visible while it builds a group and hides
-    // background tabs once the whole layout is restored, so decide afterwards.
-    queueMicrotask(() => {
-      if (!this.pendingMount) return;
-      if (parameters.api.isVisible) {
-        this.mountOnce(parameters);
-        return;
-      }
-      this.cancelBackgroundMount = backgroundPanelMounts.schedule(() => {
-        this.cancelBackgroundMount = undefined;
-        this.mountOnce(parameters);
-      });
-    });
-  }
-
-  /** Mounts the panel content unless it is already mounted or disposed. */
-  private mountOnce(parameters: GroupPanelPartInitParameters): void {
-    if (!this.pendingMount) return;
-    this.pendingMount.dispose();
-    this.pendingMount = undefined;
-    this.cancelBackgroundMount?.();
-    this.cancelBackgroundMount = undefined;
-    this.mount(parameters);
-  }
-
-  /** Queues a portal that renders the panel component into this renderer's root. */
-  private mount(parameters: GroupPanelPartInitParameters): void {
-    const portalEntryId = nextPortalEntryId++;
-    this.portalEntryId = portalEntryId;
-    // Queue up a portal into the main root, converting the parameters passed to the panel component into props
-    this.setPortals((prev) => [
-      ...prev,
-      {
-        portalEntryId,
-        id: parameters.api.id,
-        component: this.component,
-        props: {
-          id: parameters.api.id,
-          initialPanelId: parameters.api.id,
-          panelApi: parameters.api,
-          ...parameters.params,
-        },
-        mount: this._renderRoot,
-      },
-    ]);
-  }
-
-  /** Releases the appearance subscription and removes the panel's Solid portal. */
-  dispose(): void {
-    this.panelAppearance?.dispose();
-    this.pendingMount?.dispose();
-    this.pendingMount = undefined;
-    this.cancelBackgroundMount?.();
-    this.cancelBackgroundMount = undefined;
-    // Remove this panel's portal entry
-    if (this.id && this.portalEntryId !== undefined) {
-      const portalEntryId = this.portalEntryId;
-      this.panelComponentById.delete(this.id);
-      this.setPortals((prev) =>
-        prev.filter((p) => p.portalEntryId !== portalEntryId),
-      );
-    }
-  }
-}
-
-class IconTabRenderer implements ITabRenderer {
-  private readonly _element: HTMLElement;
-  private readonly _content: HTMLDivElement;
-  private readonly _icon: HTMLSpanElement;
-  private readonly _label: HTMLSpanElement;
-  private readonly _action: HTMLDivElement;
-  private readonly _closeIcon: HTMLSpanElement;
-  private _title = "";
-  private _iconComponent: AppIcon | undefined;
-  private _status: PanelTabStatus | undefined;
-  private _onDidTitleChange?: { dispose: () => void };
-  private _removeStatusSubscription?: () => void;
-  private _removePointerDown?: () => void;
-  private _removeClick?: () => void;
-  private _removeContextMenu?: () => void;
-
-  /** Creates a tab using the component registrations of its own workspace. */
-  constructor(private panelComponentById: Map<string, string>) {
-    this._element = document.createElement("div");
-    this._element.className = "dv-default-tab";
-
-    this._content = document.createElement("div");
-    this._content.className = "dv-default-tab-content";
-    this._content.style.display = "inline-flex";
-    this._content.style.alignItems = "center";
-    this._content.style.gap = "6px";
-
-    this._icon = document.createElement("span");
-    this._icon.setAttribute("aria-hidden", "true");
-    this._icon.style.width = "14px";
-    this._icon.style.height = "14px";
-    this._icon.style.display = "inline-block";
-    this._icon.style.flexShrink = "0";
-
-    this._label = document.createElement("span");
-    this._label.style.overflow = "hidden";
-    this._label.style.textOverflow = "ellipsis";
-
-    this._action = document.createElement("div");
-    this._action.className = "dv-default-tab-action";
-    this._closeIcon = document.createElement("span");
-    this._closeIcon.setAttribute("aria-hidden", "true");
-    this._closeIcon.style.width = "14px";
-    this._closeIcon.style.height = "14px";
-    this._closeIcon.style.display = "inline-block";
-    this._action.appendChild(this._closeIcon);
-    renderIconComponent(this._closeIcon, XIcon, "size-3.5");
-
-    this._content.appendChild(this._icon);
-    this._content.appendChild(this._label);
-    this._element.appendChild(this._content);
-    this._element.appendChild(this._action);
-    this.render();
-  }
-
-  get element(): HTMLElement {
-    return this._element;
-  }
-
-  init(parameters: GroupPanelPartInitParameters): void {
-    this._title = parameters.title ?? "";
-    this._element.dataset.dockviewPanelId = parameters.api.id;
-    const componentName =
-      this.panelComponentById.get(parameters.api.id) ??
-      parameters.containerApi.getPanel(parameters.api.id)?.view
-        .contentComponent;
-    this._iconComponent = componentName
-      ? getComponentRegistration(componentName)?.icon
-      : undefined;
-
-    this._onDidTitleChange = parameters.api.onDidTitleChange((event) => {
-      this._title = event.title ?? "";
-      this.render();
-    });
-    this._removeStatusSubscription = subscribePanelTabStatus(
-      parameters.api.id,
-      (status) => {
-        this._status = status;
-        this.render();
-      },
-    );
-    const onPointerDown = (event: PointerEvent) => {
-      event.preventDefault();
-    };
-    this._action.addEventListener("pointerdown", onPointerDown);
-    this._removePointerDown = () => {
-      this._action.removeEventListener("pointerdown", onPointerDown);
-    };
-
-    const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented) {
-        return;
-      }
-      event.preventDefault();
-      parameters.api.close();
-    };
-    this._action.addEventListener("click", onClick);
-    this._removeClick = () => {
-      this._action.removeEventListener("click", onClick);
-    };
-
-    const onContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      parameters.api.setActive();
-
-      const panelsInGroup = () => [...parameters.api.group.panels];
-      openContextMenu({
-        x: event.clientX,
-        y: event.clientY,
-        items: [
-          {
-            id: "close",
-            label: "Close",
-            icon: XIcon,
-            onSelect: () => parameters.api.close(),
-          },
-          {
-            id: "close-others",
-            label: "Close Others in Group",
-            disabled: panelsInGroup().length <= 1,
-            onSelect: () => {
-              for (const panel of panelsInGroup()) {
-                if (panel.api.id !== parameters.api.id) {
-                  panel.api.close();
-                }
-              }
-            },
-          },
-          {
-            id: "close-group",
-            label: "Close All in Group",
-            onSelect: () => {
-              for (const panel of panelsInGroup()) {
-                panel.api.close();
-              }
-            },
-          },
-          { id: "dock-tab-separator", type: "separator" },
-          {
-            id: "maximize",
-            label: parameters.api.isMaximized()
-              ? "Restore Group"
-              : "Maximize Group",
-            icon: parameters.api.isMaximized() ? ArrowsInIcon : ArrowsOutIcon,
-            onSelect: () => {
-              if (parameters.api.isMaximized()) {
-                parameters.api.exitMaximized();
-              } else {
-                parameters.api.maximize();
-              }
-            },
-          },
-        ],
-      });
-    };
-    this._element.addEventListener("contextmenu", onContextMenu);
-    this._removeContextMenu = () => {
-      this._element.removeEventListener("contextmenu", onContextMenu);
-    };
-
-    this.render();
-  }
-
-  dispose(): void {
-    this._onDidTitleChange?.dispose();
-    this._onDidTitleChange = undefined;
-    this._removeStatusSubscription?.();
-    this._removeStatusSubscription = undefined;
-    this._removePointerDown?.();
-    this._removePointerDown = undefined;
-    this._removeClick?.();
-    this._removeClick = undefined;
-    this._removeContextMenu?.();
-    this._removeContextMenu = undefined;
-    renderIconComponent(this._icon, undefined, "size-3.5");
-  }
-
-  /** Renders the registered panel icon or its transient activity replacement. */
-  private render(): void {
-    if (this._label.textContent !== this._title) {
-      this._label.textContent = this._title;
-    }
-    this._element.setAttribute(
-      "aria-label",
-      this._status === "saving" ? `${this._title}, saving` : this._title,
-    );
-    if (this._status) this._icon.dataset.panelTabStatus = this._status;
-    else delete this._icon.dataset.panelTabStatus;
-
-    const iconComponent =
-      this._status === "saving" ? ArrowsClockwiseIcon : this._iconComponent;
-    if (iconComponent) {
-      renderIconComponent(
-        this._icon,
-        iconComponent,
-        this._status === "saving" ? "size-3.5 animate-spin" : "size-3.5",
-      );
-      this._icon.style.display = "inline-block";
-    } else {
-      renderIconComponent(this._icon, undefined, "size-3.5");
-      this._icon.style.display = "none";
-    }
-  }
-}
-
-// Define a structure for portal entries
-interface PortalEntry {
-  portalEntryId: number;
-  id: string;
-  component: SolidComponentType;
-  props: object;
-  mount: HTMLElement;
-}
-
+/** Placeholder panel content shown when a layout names an unregistered component. */
 function ComponentMissing(props: { message: string }) {
   return (
     <div class="p-2">
@@ -450,270 +80,13 @@ function ComponentMissing(props: { message: string }) {
   );
 }
 
+/** Returns whether a context-menu target should keep the browser's native menu. */
 function isNativeEditableContextTarget(target: EventTarget | null): boolean {
   const element = target instanceof Element ? target : null;
   if (!element) return false;
   return Boolean(
     element.closest("input, textarea, select, [contenteditable='true']"),
   );
-}
-
-/** Returns whether a Dockview drop position belongs to a default edge group. */
-function isDefaultEdgeGroupPosition(
-  position: string,
-): position is DefaultEdgeGroupPosition {
-  return (DEFAULT_EDGE_GROUP_POSITIONS as readonly string[]).includes(position);
-}
-
-/** Returns the Dockview group backing one of the default edge slots. */
-function getDefaultEdgeGroup(
-  api: DockviewApi,
-  position: DefaultEdgeGroupPosition,
-): DockviewGroupPanel | undefined {
-  return api.groups.find(
-    (group) => group.id === DEFAULT_EDGE_GROUP_IDS[position],
-  );
-}
-
-/** Hides default edge groups that currently have no panels. */
-function hideEmptyDefaultEdgeGroups(api: DockviewApi): void {
-  for (const edgePosition of DEFAULT_EDGE_GROUP_POSITIONS) {
-    const group = getDefaultEdgeGroup(api, edgePosition);
-    if (group && group.panels.length === 0) {
-      api.setEdgeGroupVisible(edgePosition, false);
-    }
-  }
-}
-
-/** Returns whether the app should expose a custom drop target for an edge. */
-function isHiddenDefaultEdgeDropTarget(
-  api: DockviewApi,
-  position: DefaultEdgeGroupPosition,
-  sourcePosition?: DefaultEdgeGroupPosition,
-): boolean {
-  if (position === sourcePosition) return false;
-
-  const group = getDefaultEdgeGroup(api, position);
-  return Boolean(
-    group && group.panels.length === 0 && !api.isEdgeGroupVisible(position),
-  );
-}
-
-/** Returns hidden, empty default edge groups that can receive custom drops. */
-function getHiddenDefaultEdgeDropTargets(
-  api: DockviewApi,
-  sourcePosition?: DefaultEdgeGroupPosition,
-): DefaultEdgeGroupPosition[] {
-  return DEFAULT_EDGE_GROUP_POSITIONS.filter((position) =>
-    isHiddenDefaultEdgeDropTarget(api, position, sourcePosition),
-  );
-}
-
-/** Returns the CSS classes for an invisible app-owned edge drop target. */
-function edgeDropTargetClasses(position: DefaultEdgeGroupPosition): string {
-  const base = "absolute z-50 bg-transparent";
-
-  switch (position) {
-    case "left":
-      return `${base} bottom-0 left-0 top-0`;
-    case "right":
-      return `${base} bottom-0 right-0 top-0`;
-    case "bottom":
-      return `${base} bottom-0 left-0 right-0`;
-  }
-}
-
-/** Returns the inline size for an app-owned edge drop target. */
-function edgeDropTargetStyle(position: DefaultEdgeGroupPosition) {
-  if (position === "bottom") {
-    return {
-      height: `${EDGE_DROP_TARGET_SIZE}px`,
-    };
-  }
-
-  return {
-    width: `${EDGE_DROP_TARGET_SIZE}px`,
-  };
-}
-
-/** Returns Dockview selection classes for the app-owned edge drop highlight. */
-function edgeDropTargetSelectionClasses(
-  position: DefaultEdgeGroupPosition,
-): string {
-  const base = "dv-drop-target-selection";
-
-  switch (position) {
-    case "left":
-      return `${base} dv-drop-target-left dv-drop-target-small-horizontal`;
-    case "right":
-      return `${base} dv-drop-target-right dv-drop-target-small-horizontal`;
-    case "bottom":
-      return `${base} dv-drop-target-bottom dv-drop-target-small-vertical`;
-  }
-}
-
-/** Insets empty hidden side edges while reserving space for any armed drop target. */
-function dockviewHostStyle(
-  armedPosition: DefaultEdgeGroupPosition | undefined,
-  hiddenPositions: DefaultEdgeGroupPosition[],
-) {
-  /** Keeps the drag preview inset larger than the resting workspace padding. */
-  const inset = (position: DefaultEdgeGroupPosition) =>
-    `${armedPosition === position ? EDGE_DROP_TARGET_SIZE : hiddenPositions.includes(position) ? HIDDEN_EDGE_GROUP_PADDING : 0}px`;
-
-  return {
-    bottom: armedPosition === "bottom" ? `${EDGE_DROP_TARGET_SIZE}px` : "0px",
-    left: inset("left"),
-    right: inset("right"),
-  };
-}
-
-/** Returns whether the instant edge-drop modifier is pressed. */
-function isEdgeDropModifierPressed(
-  event: DragEvent | MouseEvent | PointerEvent,
-): boolean {
-  return event.altKey;
-}
-
-/** Resolves a pointer coordinate to one of the app-owned edge drop bands. */
-function getEdgeDropPositionFromPoint(
-  element: HTMLElement,
-  clientX: number,
-  clientY: number,
-  targetPositions: readonly DefaultEdgeGroupPosition[],
-): DefaultEdgeGroupPosition | undefined {
-  const rect = element.getBoundingClientRect();
-  const insideX = clientX >= rect.left && clientX <= rect.right;
-  const insideY = clientY >= rect.top && clientY <= rect.bottom;
-  if (!insideX || !insideY) return undefined;
-
-  if (
-    clientX <= rect.left + EDGE_DROP_TARGET_SIZE &&
-    targetPositions.includes("left")
-  ) {
-    return "left";
-  }
-  if (
-    clientX >= rect.right - EDGE_DROP_TARGET_SIZE &&
-    targetPositions.includes("right")
-  ) {
-    return "right";
-  }
-  if (
-    clientY >= rect.bottom - EDGE_DROP_TARGET_SIZE &&
-    targetPositions.includes("bottom")
-  ) {
-    return "bottom";
-  }
-  return undefined;
-}
-
-/** Returns whether a Dockview transfer can be routed to a default edge group. */
-function canMovePanelTransferToDefaultEdgeGroup(
-  api: DockviewApi,
-  position: DefaultEdgeGroupPosition,
-  data: PanelTransfer | undefined = getPanelData(),
-): boolean {
-  if (!data || data.viewId !== api.id) return false;
-
-  const targetGroup = getDefaultEdgeGroup(api, position);
-  const sourceGroup = api.groups.find((group) => group.id === data.groupId);
-  return Boolean(
-    targetGroup && sourceGroup && sourceGroup.id !== targetGroup.id,
-  );
-}
-
-/** Moves a Dockview drag transfer into one of the default edge groups. */
-function movePanelTransferToDefaultEdgeGroup(
-  api: DockviewApi,
-  position: DefaultEdgeGroupPosition,
-  data: PanelTransfer | undefined = getPanelData(),
-): boolean {
-  if (!data) return false;
-  if (!canMovePanelTransferToDefaultEdgeGroup(api, position, data)) {
-    return false;
-  }
-  const targetGroup = getDefaultEdgeGroup(api, position);
-  const sourceGroup = api.groups.find((group) => group.id === data.groupId);
-  if (!targetGroup || !sourceGroup) return false;
-
-  api.setEdgeGroupVisible(position, true);
-  api.getEdgeGroup(position)?.expand();
-
-  if (data.panelId !== null) {
-    api.getPanel(data.panelId)?.api.moveTo({
-      group: targetGroup,
-      position: "center",
-    });
-    hideEmptyDefaultEdgeGroups(api);
-    return true;
-  }
-
-  if (data.tabGroupId) {
-    const sourceTabGroup = api
-      .getTabGroups({ groupId: data.groupId })
-      .find((tabGroup) => tabGroup.id === data.tabGroupId);
-    if (!sourceTabGroup) return false;
-
-    const panelIds = [...sourceTabGroup.panelIds];
-    for (const panelId of panelIds) {
-      api.getPanel(panelId)?.api.moveTo({
-        group: targetGroup,
-        position: "center",
-      });
-    }
-
-    if (panelIds.length > 1) {
-      const targetTabGroup = api.createTabGroup({
-        color: sourceTabGroup.color,
-        componentParams: sourceTabGroup.componentParams,
-        groupId: targetGroup.id,
-        label: sourceTabGroup.label,
-      });
-
-      for (const panelId of panelIds) {
-        api.addPanelToTabGroup({
-          groupId: targetGroup.id,
-          panelId,
-          tabGroupId: targetTabGroup.id,
-        });
-      }
-
-      if (sourceTabGroup.collapsed) {
-        targetTabGroup.collapse();
-      }
-    }
-
-    hideEmptyDefaultEdgeGroups(api);
-    return true;
-  }
-
-  sourceGroup.api.moveTo({
-    group: targetGroup,
-    position: "center",
-  });
-  hideEmptyDefaultEdgeGroups(api);
-  return true;
-}
-
-/** Moves root-edge drops into hidden edge groups instead of regular groups. */
-function handleDefaultEdgeDrop(
-  api: DockviewApi,
-  event: DockviewWillDropEvent,
-  shouldRouteToEdgeGroup: (
-    position: DefaultEdgeGroupPosition,
-    nativeEvent: DragEvent | PointerEvent,
-  ) => boolean,
-): void {
-  if (event.kind !== "edge") return;
-  if (!isDefaultEdgeGroupPosition(event.position)) return;
-  if (!shouldRouteToEdgeGroup(event.position, event.nativeEvent)) return;
-
-  if (
-    movePanelTransferToDefaultEdgeGroup(api, event.position, event.getData())
-  ) {
-    event.preventDefault();
-  }
 }
 
 /** Exposes the mounted workspace to layout activation and reset commands. */
@@ -746,97 +119,14 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
   // parent ref is only available after onMount
   // Signal used to re-render component after onMount()
   const [api, setApi] = createSignal<DockviewApi | null>(null);
-  const [hiddenEdgePositions, setHiddenEdgePositions] = createSignal<
-    DefaultEdgeGroupPosition[]
-  >([], {
-    /** Avoids relayout when resizing leaves the same edges hidden. */
-    equals: (previous, next) => previous.join() === next.join(),
-  });
-  const [edgeDropTargetsActive, setEdgeDropTargetsActive] = createSignal(false);
-  const [edgeDropPreviewPosition, setEdgeDropPreviewPosition] =
-    createSignal<DefaultEdgeGroupPosition>();
   const [hasSessionLayout, setHasSessionLayout] = createSignal(false);
-  const [edgeDropArmedPosition, setEdgeDropArmedPosition] =
-    createSignal<DefaultEdgeGroupPosition>();
-  const [edgeDropTargetPositions, setEdgeDropTargetPositions] = createSignal<
-    DefaultEdgeGroupPosition[]
-  >([]);
-  const pendingLivenessClosePanelIds = new Set<string>();
-  let livenessCloseTimer: ReturnType<typeof setTimeout> | undefined;
 
-  /** Returns whether a liveness registration currently requests panel closure. */
-  const shouldCloseDeadPanel = (entry: PanelLivenessEntry) =>
-    entry.closeWhenDead !== false && !entry.isAlive();
-
-  /** Closes panels that remain dead after the liveness close delay. */
-  const closePendingDeadPanels = () => {
-    livenessCloseTimer = undefined;
-    const dockApi = api();
-    if (!dockApi) {
-      pendingLivenessClosePanelIds.clear();
-      return;
-    }
-
-    const deadPanelIds = new Set(
-      getPanelLivenessEntries()
-        .filter(
-          (entry) =>
-            entry.workspaceActive === workspaceActive &&
-            pendingLivenessClosePanelIds.has(entry.panelId),
-        )
-        .filter(shouldCloseDeadPanel)
-        .map((entry) => entry.panelId),
-    );
-    pendingLivenessClosePanelIds.clear();
-
-    for (const panelId of deadPanelIds) {
-      try {
-        dockApi.getPanel(panelId)?.api.close();
-      } catch (error) {
-        log.warn("Ignoring stale liveness panel close request", error);
-      }
-    }
-  };
-
-  /** Schedules a panel close pass outside the current reactive update. */
-  const scheduleDeadPanelClose = (panelId: string) => {
-    pendingLivenessClosePanelIds.add(panelId);
-    if (livenessCloseTimer !== undefined) return;
-    livenessCloseTimer = setTimeout(
-      closePendingDeadPanels,
-      PANEL_LIVENESS_CLOSE_DELAY_MS,
-    );
-  };
-
-  /** Watches mounted panel liveness predicates and delegates stale closes. */
-  createEffect(() => {
-    if (!api()) return;
-
-    for (const entry of getPanelLivenessEntries()) {
-      if (
-        entry.workspaceActive === workspaceActive &&
-        shouldCloseDeadPanel(entry)
-      ) {
-        scheduleDeadPanelClose(entry.panelId);
-      }
-    }
-  });
-
-  /** Cancels shell-owned panel liveness work when DockApp unmounts. */
-  onCleanup(() => {
-    if (livenessCloseTimer !== undefined) {
-      clearTimeout(livenessCloseTimer);
-    }
-    pendingLivenessClosePanelIds.clear();
-  });
+  const edgeDrop = createEdgeGroupDropController({ api });
+  createDeadPanelController({ api, workspaceActive });
 
   onMount(() => {
     log.trace("DockApp mounting");
     if (!parentRef || !dockviewHostRef) return;
-    let edgeDropHoldTimeout: ReturnType<typeof setTimeout> | undefined;
-    let edgeDropHoldPosition: DefaultEdgeGroupPosition | undefined;
-    let edgeDropPreviewStartedAt: number | undefined;
-    let edgeDropDragEndTarget: HTMLElement | undefined;
     let dockviewApiPublished = false;
     let publishApiFrame: number | undefined;
     let publishApiResizeObserver: ResizeObserver | undefined;
@@ -936,224 +226,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       setHasSessionLayout(false);
     }
 
-    const disposeEdgeDrop = dockApi.onWillDrop((event) => {
-      handleDefaultEdgeDrop(dockApi, event, (position, nativeEvent) => {
-        if (!edgeDropTargetPositions().includes(position)) {
-          return false;
-        }
-
-        return (
-          edgeDropArmedPosition() === position ||
-          (edgeDropPreviewPosition() === position &&
-            edgeDropPreviewStartedAt !== undefined &&
-            performance.now() - edgeDropPreviewStartedAt >=
-              EDGE_DROP_HOLD_DELAY_MS) ||
-          isEdgeDropModifierPressed(nativeEvent)
-        );
-      });
-    });
-    const disposeHideEmptyAfterRemove = dockApi.onDidRemovePanel(() => {
-      hideEmptyDefaultEdgeGroups(dockApi);
-    });
-    const disposeHideEmptyAfterMove = dockApi.onDidMovePanel(() => {
-      hideEmptyDefaultEdgeGroups(dockApi);
-    });
-    const disposeHideEmptyAfterRestore = dockApi.onDidLayoutFromJSON(() => {
-      hideEmptyDefaultEdgeGroups(dockApi);
-    });
-    /** Refreshes resting insets after panels, visibility, or restored layouts change. */
-    const syncHiddenEdgePositions = () => {
-      setHiddenEdgePositions(getHiddenDefaultEdgeDropTargets(dockApi));
-    };
-    const disposeHiddenEdgePadding = dockApi.onDidLayoutChange(
-      syncHiddenEdgePositions,
-    );
-    syncHiddenEdgePositions();
-    const clearEdgeDropHold = () => {
-      if (edgeDropHoldTimeout !== undefined) {
-        clearTimeout(edgeDropHoldTimeout);
-        edgeDropHoldTimeout = undefined;
-      }
-      edgeDropHoldPosition = undefined;
-    };
-    const resetEdgeDropAffordance = () => {
-      clearEdgeDropHold();
-      setEdgeDropPreviewPosition(undefined);
-      edgeDropPreviewStartedAt = undefined;
-      setEdgeDropArmedPosition(undefined);
-    };
-    const updateEdgeDropAffordance = (
-      event: DragEvent | MouseEvent | PointerEvent,
-    ) => {
-      if (!edgeDropTargetsActive()) return;
-
-      const edgePosition = getEdgeDropPositionFromPoint(
-        parentRef,
-        event.clientX,
-        event.clientY,
-        edgeDropTargetPositions(),
-      );
-      if (!edgePosition) {
-        resetEdgeDropAffordance();
-        return;
-      }
-
-      if (edgeDropPreviewPosition() !== edgePosition) {
-        edgeDropPreviewStartedAt = performance.now();
-        setEdgeDropPreviewPosition(edgePosition);
-      }
-      if (edgeDropArmedPosition() && edgeDropArmedPosition() !== edgePosition) {
-        setEdgeDropArmedPosition(undefined);
-      }
-
-      if (isEdgeDropModifierPressed(event)) {
-        clearEdgeDropHold();
-        setEdgeDropArmedPosition(edgePosition);
-        return;
-      }
-
-      if (
-        edgeDropArmedPosition() === edgePosition ||
-        edgeDropHoldPosition === edgePosition
-      ) {
-        return;
-      }
-
-      clearEdgeDropHold();
-      edgeDropHoldPosition = edgePosition;
-      edgeDropHoldTimeout = setTimeout(() => {
-        if (
-          edgeDropTargetsActive() &&
-          edgeDropPreviewPosition() === edgePosition
-        ) {
-          setEdgeDropArmedPosition(edgePosition);
-        }
-        edgeDropHoldTimeout = undefined;
-        edgeDropHoldPosition = undefined;
-      }, EDGE_DROP_HOLD_DELAY_MS);
-    };
-    const handleWindowEdgeDragTracking = (
-      event: DragEvent | MouseEvent | PointerEvent,
-    ) => {
-      updateEdgeDropAffordance(event);
-    };
-    const disableEdgeDropTargets = () => {
-      setEdgeDropTargetsActive(false);
-      resetEdgeDropAffordance();
-      setEdgeDropTargetPositions([]);
-      window.removeEventListener(
-        "dragover",
-        handleWindowEdgeDragTracking,
-        true,
-      );
-      window.removeEventListener(
-        "pointermove",
-        handleWindowEdgeDragTracking,
-        true,
-      );
-      window.removeEventListener(
-        "mousemove",
-        handleWindowEdgeDragTracking,
-        true,
-      );
-      window.removeEventListener("mouseup", handleWindowEdgeDrop, true);
-      window.removeEventListener("pointerup", handleWindowEdgeDrop, true);
-      edgeDropDragEndTarget?.removeEventListener(
-        "dragend",
-        handleWindowEdgeDrop,
-      );
-      edgeDropDragEndTarget = undefined;
-    };
-    const handleWindowEdgeDrop = (
-      event: DragEvent | MouseEvent | PointerEvent,
-    ) => {
-      if (!edgeDropTargetsActive()) return;
-
-      const edgePosition = getEdgeDropPositionFromPoint(
-        parentRef,
-        event.clientX,
-        event.clientY,
-        edgeDropTargetPositions(),
-      );
-      if (
-        edgePosition &&
-        (edgeDropArmedPosition() === edgePosition ||
-          (edgeDropPreviewPosition() === edgePosition &&
-            edgeDropPreviewStartedAt !== undefined &&
-            performance.now() - edgeDropPreviewStartedAt >=
-              EDGE_DROP_HOLD_DELAY_MS) ||
-          isEdgeDropModifierPressed(event)) &&
-        movePanelTransferToDefaultEdgeGroup(dockApi, edgePosition)
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-
-      disableEdgeDropTargets();
-    };
-    const enableEdgeDropTargets = (
-      nativeEvent: DragEvent | PointerEvent,
-      sourcePosition?: DefaultEdgeGroupPosition,
-    ) => {
-      const targetPositions = getHiddenDefaultEdgeDropTargets(
-        dockApi,
-        sourcePosition,
-      );
-      setEdgeDropTargetPositions(targetPositions);
-      if (targetPositions.length === 0) return;
-
-      setEdgeDropTargetsActive(true);
-
-      const target = nativeEvent.target;
-      if (target instanceof HTMLElement) {
-        edgeDropDragEndTarget = target;
-        target.addEventListener("dragend", handleWindowEdgeDrop, {
-          once: true,
-        });
-      }
-      window.addEventListener("dragover", handleWindowEdgeDragTracking, {
-        capture: true,
-      });
-      window.addEventListener("pointermove", handleWindowEdgeDragTracking, {
-        capture: true,
-      });
-      window.addEventListener("mousemove", handleWindowEdgeDragTracking, {
-        capture: true,
-      });
-      window.addEventListener("mouseup", handleWindowEdgeDrop, {
-        capture: true,
-        once: true,
-      });
-      window.addEventListener("pointerup", handleWindowEdgeDrop, {
-        capture: true,
-        once: true,
-      });
-    };
-    const disposeEnableEdgeDropOnPanelDrag = dockApi.onWillDragPanel(
-      (event) => {
-        const location = event.panel.api.location;
-        const sourcePosition =
-          location.type === "edge" &&
-          isDefaultEdgeGroupPosition(location.position)
-            ? location.position
-            : undefined;
-        enableEdgeDropTargets(event.nativeEvent, sourcePosition);
-      },
-    );
-    const disposeEnableEdgeDropOnGroupDrag = dockApi.onWillDragGroup(
-      (event) => {
-        const location = event.group.api.location;
-        const sourcePosition =
-          location.type === "edge" &&
-          isDefaultEdgeGroupPosition(location.position)
-            ? location.position
-            : undefined;
-        enableEdgeDropTargets(event.nativeEvent, sourcePosition);
-      },
-    );
-    const disposeDisableEdgeDropAfterDrop = dockApi.onDidDrop(
-      disableEdgeDropTargets,
-    );
+    const edgeDropBinding = edgeDrop.bind(dockApi, parentRef);
 
     /** Publishes the Dockview API after the host has measurable dimensions. */
     const publishDockviewApi = () => {
@@ -1167,7 +240,11 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       setApi(dockApi);
       props.onReady({
         api: dockApi,
-        reset: () => createDefaultLayout(dockApi),
+        reset: () =>
+          createDefaultLayout(dockApi, {
+            host: dockviewHostRef,
+            compact: props.compact,
+          }),
         hasSessionLayout,
       });
       dockviewApiPublished = true;
@@ -1198,261 +275,11 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       }
       disposeTabPositionAfterRestore.dispose();
       for (const binding of panelSizing) binding.dispose();
-      disposeEdgeDrop.dispose();
-      disposeHideEmptyAfterRemove.dispose();
-      disposeHideEmptyAfterMove.dispose();
-      disposeHideEmptyAfterRestore.dispose();
-      disposeHiddenEdgePadding.dispose();
-      disposeEnableEdgeDropOnPanelDrag.dispose();
-      disposeEnableEdgeDropOnGroupDrag.dispose();
-      disposeDisableEdgeDropAfterDrop.dispose();
+      edgeDropBinding.dispose();
       setApi(null);
       dockApi.dispose();
     });
   });
-
-  /** Seeds the performance workspace with visible clips, show objects, and visualization. */
-  function createDefaultLayout(api: DockviewApi) {
-    /** Removes structural edge slots that survive Dockview's panel clear. */
-    const removeDefaultEdgeGroups = () => {
-      for (const edgePosition of DEFAULT_EDGE_GROUP_POSITIONS) {
-        if (api.getEdgeGroup(edgePosition)) {
-          api.removeEdgeGroup(edgePosition);
-        }
-      }
-    };
-
-    /** Opens clips when the three columns fit, keeping utility panels collapsed. */
-    const applyDefaultEdgeState = () => {
-      for (const edgePosition of ["bottom", "right"] as const) {
-        api.getEdgeGroup(edgePosition)?.collapse();
-      }
-      if (expandClips) api.getEdgeGroup("left")?.expand();
-      else api.getEdgeGroup("left")?.collapse();
-    };
-
-    // Clear the saved layout and panel UI. A compact workspace never persists,
-    // so it leaves the docked session for when the window widens again.
-    if (!props.compact) clearLayout();
-    removeDefaultEdgeGroups();
-    api.clear();
-
-    /** Adds a registered panel and reports missing components or docking failures. */
-    const addPanel = <T extends Record<string, unknown>>(
-      definition: PanelDefinition,
-      position: {
-        direction: string;
-        referencePanel?: string;
-        referenceGroup?: string;
-      } = {
-        direction: "right",
-      },
-      params: T = {} as T,
-      inactive = false,
-    ) => {
-      const { componentName, panelId, title } = definition;
-      // Verify component exists before trying to create it
-      const registration = getComponentRegistration(componentName);
-      if (!registration) {
-        const available = getComponentNames().join(", ");
-        log.error(
-          `Attempted to create panel with unregistered component: ${componentName}`,
-          {
-            panelId,
-            availableComponents: available,
-          },
-        );
-        throw new Error(
-          `Cannot create panel: component "${componentName}" is not registered. Available: ${available}`,
-        );
-      }
-
-      log.debug(`Creating panel ${panelId} with component ${componentName}`);
-
-      try {
-        return api.addPanel({
-          id: panelId,
-          component: componentName,
-          title,
-          position,
-          params,
-          inactive,
-        });
-      } catch (error) {
-        log.error(
-          `Failed to create panel ${panelId} with component ${componentName}:`,
-          error,
-        );
-        throw error;
-      }
-    };
-
-    /** Creates a permanent collapsible edge group and seeds its first panel. */
-    const addEdgePanel = (
-      edgePosition: EdgeGroupPosition,
-      groupId: string,
-      definition: PanelDefinition,
-      initialSize: number,
-    ) => {
-      api.addEdgeGroup(edgePosition, {
-        collapsedSize: EDGE_GROUP_COLLAPSED_SIZE,
-        id: groupId,
-        initialSize,
-        minimumSize:
-          edgePosition === "left" || edgePosition === "right"
-            ? definition.minWidth
-            : definition.minHeight,
-      });
-
-      return addPanel(
-        definition,
-        {
-          referenceGroup: groupId,
-          direction: "within",
-        },
-        {},
-        true,
-      );
-    };
-
-    const width = dockviewHostRef?.clientWidth ?? api.width;
-    const height = dockviewHostRef?.clientHeight ?? api.height;
-    const clipsWidth = Math.max(550, Math.round(width * 0.28));
-    const visualizerEnabled = isVisualizerDefaultPanelEnabled();
-    const gridMinimumWidth =
-      panelDefinitionByName("GroupsPanel").minWidth +
-      (visualizerEnabled ? panelDefinitionByName("Visualizer").minWidth : 0);
-    const expandClips =
-      width >=
-      clipsWidth +
-        gridMinimumWidth +
-        EDGE_GROUP_COLLAPSED_SIZE +
-        4 * (visualLanguageDockTheme.gap ?? 0);
-
-    addEdgePanel(
-      "left",
-      DEFAULT_EDGE_GROUP_IDS.left,
-      panelDefinitionByName("ClipList"),
-      clipsWidth,
-    );
-
-    addEdgePanel(
-      "bottom",
-      DEFAULT_EDGE_GROUP_IDS.bottom,
-      panelDefinitionByName("StatusDisplay"),
-      260,
-    );
-
-    addEdgePanel(
-      "right",
-      DEFAULT_EDGE_GROUP_IDS.right,
-      panelDefinitionByName("PropertiesInspector"),
-      340,
-    );
-
-    for (const componentName of [
-      "ProgrammerGrid",
-      "SelectionVisualizer",
-      "FixtureGrid",
-      "PatchEditor",
-    ] as const) {
-      addPanel(
-        panelDefinitionByName(componentName),
-        {
-          referenceGroup: DEFAULT_EDGE_GROUP_IDS.bottom,
-          direction: "within",
-        },
-        {},
-        true,
-      );
-    }
-
-    for (const componentName of [
-      "TapPattern",
-      "CommandLine",
-      "Instrumentation",
-    ] as const) {
-      addPanel(
-        panelDefinitionByName(componentName),
-        {
-          referenceGroup: DEFAULT_EDGE_GROUP_IDS.right,
-          direction: "within",
-        },
-        {},
-        true,
-      );
-    }
-
-    const groupsPanel = addPanel(panelDefinitionByName("GroupsPanel"), {
-      direction: "left",
-    });
-
-    addPanel(
-      panelDefinitionByName("SequenceList"),
-      {
-        referencePanel: groupsPanel.id,
-        direction: "within",
-      },
-      {},
-      true,
-    );
-
-    addPanel(
-      panelDefinitionByName("FxList"),
-      {
-        referencePanel: groupsPanel.id,
-        direction: "within",
-      },
-      {},
-      true,
-    );
-
-    if (areExperimentalFlowsEnabled()) {
-      addPanel(
-        panelDefinitionByName("FlowList"),
-        {
-          referencePanel: groupsPanel.id,
-          direction: "within",
-        },
-        {},
-        true,
-      );
-    }
-
-    addPanel(panelDefinitionByName("TimelinesPanel"), {
-      referencePanel: groupsPanel.id,
-      direction: "below",
-    });
-
-    // Add the visualizer beside the entire vertically split center column.
-    if (visualizerEnabled) {
-      addPanel(panelDefinitionByName("Visualizer"), {
-        direction: "right",
-      });
-    }
-
-    groupsPanel.api.setActive();
-    applyDefaultEdgeState();
-
-    if (width > 0 && height > 0) {
-      requestAnimationFrame(() => {
-        applyDefaultEdgeState();
-        api.layout(width, height, true);
-        groupsPanel.api.setSize({
-          height: Math.round((height - EDGE_GROUP_COLLAPSED_SIZE) / 2),
-        });
-        const visualizer = api.getPanel("panel-Visualizer");
-        visualizer?.api.setSize({
-          width: Math.round(
-            (width -
-              (expandClips ? clipsWidth : EDGE_GROUP_COLLAPSED_SIZE) -
-              EDGE_GROUP_COLLAPSED_SIZE) *
-              0.43,
-          ),
-        });
-      });
-    }
-  }
 
   return (
     <div
@@ -1467,70 +294,31 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
         ref={dockviewHostRef}
         class="absolute left-0 right-0 top-0 bottom-0 transition-[left,right,bottom] duration-150 ease-out"
         data-testid="dockview-host"
-        style={dockviewHostStyle(
-          edgeDropArmedPosition(),
-          hiddenEdgePositions(),
-        )}
+        style={edgeDrop.hostStyle()}
       />
-      {edgeDropTargetsActive() && (
-        <For each={edgeDropTargetPositions()}>
+      {edgeDrop.targetsActive() && (
+        <For each={edgeDrop.targetPositions()}>
           {(edgePosition) => (
             <div
               aria-hidden="true"
               class={edgeDropTargetClasses(edgePosition)}
               classList={{
-                "pointer-events-auto": edgeDropArmedPosition() === edgePosition,
-                "pointer-events-none": edgeDropArmedPosition() !== edgePosition,
+                "pointer-events-auto":
+                  edgeDrop.armedPosition() === edgePosition,
+                "pointer-events-none":
+                  edgeDrop.armedPosition() !== edgePosition,
               }}
               data-testid={`dockview-edge-drop-zone-${edgePosition}`}
-              onDragOver={(event) => {
-                const dockApi = api();
-                if (!dockApi || edgeDropArmedPosition() !== edgePosition)
-                  return;
-                if (
-                  !canMovePanelTransferToDefaultEdgeGroup(dockApi, edgePosition)
-                ) {
-                  return;
-                }
-                event.preventDefault();
-                event.stopPropagation();
-                if (event.dataTransfer) {
-                  event.dataTransfer.dropEffect = "move";
-                }
-              }}
-              onDrop={(event) => {
-                const dockApi = api();
-                if (!dockApi || edgeDropArmedPosition() !== edgePosition)
-                  return;
-                if (
-                  movePanelTransferToDefaultEdgeGroup(dockApi, edgePosition)
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setEdgeDropTargetsActive(false);
-                  setEdgeDropPreviewPosition(undefined);
-                  setEdgeDropArmedPosition(undefined);
-                  setEdgeDropTargetPositions([]);
-                }
-              }}
-              onPointerUp={(event) => {
-                const dockApi = api();
-                if (!dockApi || edgeDropArmedPosition() !== edgePosition)
-                  return;
-                if (
-                  movePanelTransferToDefaultEdgeGroup(dockApi, edgePosition)
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setEdgeDropTargetsActive(false);
-                  setEdgeDropPreviewPosition(undefined);
-                  setEdgeDropArmedPosition(undefined);
-                  setEdgeDropTargetPositions([]);
-                }
-              }}
+              onDragOver={(event) =>
+                edgeDrop.handleZoneDragOver(event, edgePosition)
+              }
+              onDrop={(event) => edgeDrop.handleZoneDrop(event, edgePosition)}
+              onPointerUp={(event) =>
+                edgeDrop.handleZoneDrop(event, edgePosition)
+              }
               style={edgeDropTargetStyle(edgePosition)}
             >
-              {edgeDropArmedPosition() === edgePosition && (
+              {edgeDrop.armedPosition() === edgePosition && (
                 <div class="nightfall-dockview-edge-drop-target dv-drop-target h-full w-full">
                   <div class="dv-drop-target-dropzone">
                     <div class={edgeDropTargetSelectionClasses(edgePosition)} />
