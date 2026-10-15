@@ -119,20 +119,6 @@ export default function AppMenu(props: {
         Export Showfile
       </DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem icon={GearIcon} onClick={openSettings} shortcut="⌘,">
-        Settings
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={QuestionIcon}
-        onClick={showShortcutsPopup}
-        shortcut="⇧?"
-      >
-        Keyboard Shortcuts
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem icon={InfoIcon} onClick={openAbout}>
-        About
-      </DropdownMenuItem>
       <DropdownMenuItem
         icon={QuestionIcon}
         onClick={() => openFeedbackPage("feedback")}
@@ -164,6 +150,20 @@ export default function AppMenu(props: {
           Collect Diagnostics
         </DropdownMenuItem>
       </DropdownMenuSubmenu>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem icon={GearIcon} onClick={openSettings} shortcut="⌘,">
+        Settings
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        icon={QuestionIcon}
+        onClick={showShortcutsPopup}
+        shortcut="⇧?"
+      >
+        Keyboard Shortcuts
+      </DropdownMenuItem>
+      <DropdownMenuItem icon={InfoIcon} onClick={openAbout}>
+        About
+      </DropdownMenuItem>
     </DropdownMenu>
   );
 }

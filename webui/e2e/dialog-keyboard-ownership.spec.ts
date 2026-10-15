@@ -68,8 +68,8 @@ test("enter inside settings keeps the dialog open", async ({ page }) => {
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(settings).toBeVisible();
 
-  const firstCheckbox = settings.getByRole("checkbox").first();
-  await firstCheckbox.focus();
+  const firstSwitch = settings.getByRole("switch").first();
+  await firstSwitch.focus();
   await page.keyboard.press("Enter");
   await expect(settings).toBeVisible();
 

@@ -69,6 +69,51 @@ export function SwitchDemo() {
           Disabled controls retain their on or off state.
         </p>
       </div>
+      <div class="widget-sample-card" data-testid="switch-layouts">
+        <div class="section-label">Layouts</div>
+        <div class="widget-switch-stack">
+          <ToggleSwitch
+            label="Switch right"
+            ariaLabel="Switch right layout"
+            checked={input()}
+            onChange={setInput}
+          />
+          <ToggleSwitch
+            label="Switch end"
+            ariaLabel="Switch end layout"
+            layout="switch-end"
+            checked={input()}
+            onChange={setInput}
+          />
+          <ToggleSwitch
+            label="Switch end with a description"
+            ariaLabel="Settings row layout"
+            layout="switch-end"
+            labelClass="text-sm font-medium text-gray-300"
+            description="A settings row: title and explanation on the left, switch centered on the right."
+            checked={input()}
+            onChange={setInput}
+          />
+          <ToggleSwitch
+            ariaLabel="Switch only layout"
+            layout="switch-only"
+            checked={input()}
+            onChange={setInput}
+          />
+          <ToggleSwitch
+            label="Switch left, as a section heading"
+            ariaLabel="Switch left layout"
+            layout="switch-left"
+            labelClass="text-sm font-medium text-gray-300"
+            checked={input()}
+            onChange={setInput}
+          />
+          <p class="field-help nf-switch-label-inset">
+            Content under a switch-left heading lines up with its label using
+            nf-switch-label-inset.
+          </p>
+        </div>
+      </div>
     </section>
   );
 }

@@ -51,6 +51,17 @@ test("settings, tile and timeline menus share their visual treatment", async ({
   await page.locator('[title="Menu"]').click();
   const dropdown = page.locator('[data-menu-kind="dropdown"]');
   await expect(dropdown).toBeVisible();
+  // Help items sit above the app items, and About is last.
+  const labels = (await dropdown.getByRole("button").allInnerTexts()).map(
+    (text) => text.split("\n")[0].trim(),
+  );
+  expect(labels.slice(-5)).toEqual([
+    "Give Feedback",
+    "Troubleshooting",
+    "Settings",
+    "Keyboard Shortcuts",
+    "About",
+  ]);
   const appearance = await menuAppearance(dropdown);
   const troubleshooting = dropdown.getByRole("button", {
     name: "Troubleshooting",

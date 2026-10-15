@@ -29,14 +29,14 @@ export function AppearanceSettings() {
       <ToggleSwitch
         label="Table gridlines"
         ariaLabel="Table gridlines"
-        class="w-full justify-between"
+        layout="switch-end"
         checked={appearance().gridlines}
         onChange={(enabled) => setAppearanceSetting("gridlines", enabled)}
       />
       <ToggleSwitch
         label="Mute accents in unfocused panels"
         ariaLabel="Mute accents in unfocused panels"
-        class="w-full justify-between"
+        layout="switch-end"
         checked={appearance().muteUnfocusedAccents}
         onChange={(enabled) =>
           setAppearanceSetting("muteUnfocusedAccents", enabled)

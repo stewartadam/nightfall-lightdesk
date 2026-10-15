@@ -87,6 +87,63 @@ test("transport switches expose independent and disabled states", async ({
   ).toHaveCount(1);
 });
 
+/**
+ * Verifies each switch layout places the switch where it promises: after the label, at the far
+ * edge, alone, or before the label with inset content lining up under the label text.
+ */
+test("switch layouts place the switch around its label", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Switches", "Switch examples");
+  const layouts = panel.getByTestId("switch-layouts");
+  /** Returns the bounding boxes of a layout's label text and switch track. */
+  const boxes = async (name: string) => {
+    const row = layouts.locator("label.nf-switch", {
+      has: page.getByRole("switch", { name }),
+    });
+    const track = await row.locator(".nf-switch-track").boundingBox();
+    const label = row.locator(".nf-switch-label");
+    return {
+      row: await row.boundingBox(),
+      track,
+      label: (await label.count()) ? await label.boundingBox() : null,
+    };
+  };
+
+  const right = await boxes("Switch right layout");
+  expect(right.track!.x).toBeGreaterThan(right.label!.x + right.label!.width);
+
+  const end = await boxes("Switch end layout");
+  const card = await layouts.locator(".widget-switch-stack").boundingBox();
+  expect(end.track!.x + end.track!.width).toBeCloseTo(card!.x + card!.width, 0);
+
+  const row = await boxes("Settings row layout");
+  expect(row.track!.x + row.track!.width).toBeCloseTo(card!.x + card!.width, 0);
+  expect(row.track!.y + row.track!.height / 2).toBeCloseTo(
+    row.row!.y + row.row!.height / 2,
+    0,
+  );
+  await expect(
+    layouts.getByRole("switch", { name: "Settings row layout" }),
+  ).toHaveAccessibleDescription(/A settings row/);
+
+  const only = await boxes("Switch only layout");
+  expect(only.label).toBeNull();
+
+  const left = await boxes("Switch left layout");
+  expect(left.track!.x + left.track!.width).toBeLessThan(left.label!.x);
+  const inset = await layouts
+    .locator(".nf-switch-label-inset")
+    .evaluate(
+      (element) =>
+        element.getBoundingClientRect().left +
+        Number.parseFloat(getComputedStyle(element).paddingInlineStart),
+    );
+  expect(inset).toBeCloseTo(left.label!.x, 0);
+
+  await layouts.screenshot({ path: testInfo.outputPath("switch-layouts.png") });
+});
+
 /** Checks keyboard and pointer fader changes, reference markers, reset, and initial or dynamic locks. */
 test("vertical faders synchronize keyboard pointer and reset values", async ({
   page,
