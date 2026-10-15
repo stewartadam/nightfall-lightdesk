@@ -25,6 +25,7 @@
     "gdtf:bench": "cargo test -p nightfall-fixture-library --lib gdtf_bench -- --ignored",
     "gdtf:corpus": "cargo test --release -p nightfall-fixture-library --lib gdtf_corpus -- --ignored --nocapture",
     "gdtf:fetch": "node scripts/fetch-gdtf-bench.mjs",
+    "icons:generate": "node scripts/generate-app-icons.mjs",
     "knip": "knip",
     "lint": "biome check webui/ --formatter-enabled=false",
     "package:notices": "node scripts/distribution-notices.mjs",
