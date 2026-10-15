@@ -13,7 +13,6 @@ use nightfall::prelude::{
     ElementSelectorExpr, FixtureRangeExpr, SelectionExpr, UnresolvedFixtureRef,
 };
 use nightfall_dmx::prelude::Attribute;
-use nightfall_engine::command_traits;
 use nightfall_engine::prelude::{EngineOperation, EnginePayload, IngressCommand};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -336,12 +335,6 @@ impl UserCommand {
                 }
             },
         }
-    }
-}
-
-impl command_traits::CliCommand for UserCommand {
-    fn to_cli(&self) -> Option<String> {
-        self.to_cli_command()
     }
 }
 

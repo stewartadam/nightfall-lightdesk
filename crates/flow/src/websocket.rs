@@ -101,16 +101,6 @@ pub fn send_flows(
     );
 }
 
-/// Send node templates on resync.
-pub fn send_node_templates(registry: Res<FlowNodeRegistry>, broadcaster: Res<ClientEventSink>) {
-    let templates = registry.list();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FlowWsMessage::FlowNodeTemplates(&templates),
-    );
-}
-
 /// Handle ResyncState by sending flow definitions and node templates immediately.
 pub fn handle_resync_state(
     mut events: MessageReader<ResyncRequested>,

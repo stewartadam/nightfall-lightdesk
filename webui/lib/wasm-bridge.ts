@@ -179,11 +179,6 @@ export interface SpatialProjectionResponse {
   issues: string[];
 }
 
-export interface SpannedSpatialProjectionRequest {
-  spans: types.FixtureRef[][];
-  clauses: types.SpatialClause[];
-}
-
 interface SpatialSelectionResolutionRequest {
   selection: types.SpatialSelection;
   fixtures: Array<{
@@ -377,27 +372,6 @@ export async function projectResolvedSpatialSelection(
     ) as SpatialProjectionResponse;
   } catch (error) {
     log.error("Failed to project spatial selection:", error);
-    return null;
-  }
-}
-
-/** Projects explicit source spans through the shared Rust spatial replay implementation. */
-export async function projectSpannedSpatialSelection(
-  request: SpannedSpatialProjectionRequest,
-): Promise<SpatialProjectionResponse | null> {
-  try {
-    await initWasm();
-
-    if (!wasmModule) {
-      log.error("WASM module not loaded");
-      return null;
-    }
-
-    return wasmModule.project_spanned_spatial_selection(
-      JSON.stringify(request),
-    ) as SpatialProjectionResponse;
-  } catch (error) {
-    log.error("Failed to project spanned spatial selection:", error);
     return null;
   }
 }

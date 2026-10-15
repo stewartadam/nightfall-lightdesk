@@ -19,7 +19,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
-uuid.workspace = true
 zip = { version = "9.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]

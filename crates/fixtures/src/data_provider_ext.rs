@@ -10,7 +10,7 @@
 use std::sync::{RwLock, RwLockReadGuard};
 
 use bevy_ecs::prelude::*;
-use dashmap::{DashMap, iter::Iter};
+use dashmap::DashMap;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
@@ -73,17 +73,6 @@ impl FixtureDataProviderExt {
                 })
                 .clone()
         }
-    }
-
-    /// Returns the fixture reference for a given parameter entity.
-    pub fn fixture_ref_for_parameter(&self, parameter: &Instance<Parameter>) -> FixtureRef {
-        self.try_fixture_ref_for_parameter(parameter)
-            .unwrap_or_else(|| {
-                panic!(
-                    "failed to obtain element reference for parameter {:?}",
-                    parameter
-                )
-            })
     }
 
     /// Looks up a fixture reference by parameter, returning None if not found.
@@ -247,11 +236,6 @@ impl FixtureDataProviderExt {
                 color_path_id: *entry.value(),
             })
             .collect()
-    }
-
-    /// Returns an iterator over the parameter map.
-    pub fn iter_parameter_map(&self) -> Iter<'_, FixtureRef, Vec<Instance<Parameter>>> {
-        self.parameter_map.iter()
     }
 
     /// Returns the number of elements for a fixture, or None if fixture not found.

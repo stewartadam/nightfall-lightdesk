@@ -87,7 +87,6 @@ const CLIP_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
         placeholder: Some(ValueKind::NumericDigit),
     },
 ];
-const CLIP_PLAYBACK_SHAPE_SLOT_IDS: &[SlotId] = &[SlotId::ClipIdentifier, SlotId::ClipAction];
 
 const FLOW_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
     ParseShapeSlotSpec {
@@ -101,7 +100,6 @@ const FLOW_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
         placeholder: Some(ValueKind::IdentifierExpression),
     },
 ];
-const FLOW_PLAYBACK_SHAPE_SLOT_IDS: &[SlotId] = &[SlotId::FlowIdentifier, SlotId::FlowAction];
 
 const TIMECODE_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
     ParseShapeSlotSpec {
@@ -115,8 +113,6 @@ const TIMECODE_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
         placeholder: None,
     },
 ];
-const TIMECODE_PLAYBACK_SHAPE_SLOT_IDS: &[SlotId] =
-    &[SlotId::TimecodeIdentifier, SlotId::TimecodeAction];
 
 const TIMELINE_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
     ParseShapeSlotSpec {
@@ -130,8 +126,6 @@ const TIMELINE_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
         placeholder: None,
     },
 ];
-const TIMELINE_PLAYBACK_SHAPE_SLOT_IDS: &[SlotId] =
-    &[SlotId::TimelineIdentifier, SlotId::TimelineAction];
 
 const CLIP_PLAYBACK_SHAPE: InstanceCommandParseShape = InstanceCommandParseShape {
     slots: CLIP_PLAYBACK_SHAPE_SLOTS,
@@ -175,7 +169,6 @@ const RM_OBJECT_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
         placeholder: Some(ValueKind::NumericDigit),
     },
 ];
-const RM_OBJECT_SHAPE_SLOT_IDS: &[SlotId] = &[SlotId::RmObjectType, SlotId::RmObjectIdentifier];
 
 const RENAME_OBJECT_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
     ParseShapeSlotSpec {
@@ -194,11 +187,6 @@ const RENAME_OBJECT_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
         placeholder: Some(ValueKind::IdentifierExpression),
     },
 ];
-const RENAME_OBJECT_SHAPE_SLOT_IDS: &[SlotId] = &[
-    SlotId::RenameObjectType,
-    SlotId::RenameSource,
-    SlotId::RenameTarget,
-];
 
 const DEBUG_OBJECT_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
     ParseShapeSlotSpec {
@@ -212,8 +200,6 @@ const DEBUG_OBJECT_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
         placeholder: Some(ValueKind::IdentifierExpression),
     },
 ];
-const DEBUG_OBJECT_SHAPE_SLOT_IDS: &[SlotId] =
-    &[SlotId::DebugObjectType, SlotId::DebugObjectIdentifier];
 
 const RM_OBJECT_SHAPE: ObjectCommandParseShape = ObjectCommandParseShape {
     slots: RM_OBJECT_SHAPE_SLOTS,
@@ -238,41 +224,10 @@ pub fn playback_command_parse_shape(
     }
 }
 
-pub fn playback_command_parse_shape_for_slot(
-    slot: SlotId,
-) -> Option<&'static InstanceCommandParseShape> {
-    match slot {
-        SlotId::ClipIdentifier | SlotId::ClipAction => Some(playback_command_parse_shape(
-            InstanceCommandParseShapeId::Clip,
-        )),
-        SlotId::FlowIdentifier | SlotId::FlowAction => Some(playback_command_parse_shape(
-            InstanceCommandParseShapeId::Flow,
-        )),
-        SlotId::TimecodeIdentifier | SlotId::TimecodeAction => Some(playback_command_parse_shape(
-            InstanceCommandParseShapeId::Timecode,
-        )),
-        SlotId::TimelineIdentifier | SlotId::TimelineAction => Some(playback_command_parse_shape(
-            InstanceCommandParseShapeId::Timeline,
-        )),
-        _ => None,
-    }
-}
-
 pub fn playback_command_parse_shape_slots(
     shape_id: InstanceCommandParseShapeId,
 ) -> &'static [ParseShapeSlotSpec] {
     playback_command_parse_shape(shape_id).slots
-}
-
-pub fn playback_command_parse_shape_slot_ids(
-    shape_id: InstanceCommandParseShapeId,
-) -> &'static [SlotId] {
-    match shape_id {
-        InstanceCommandParseShapeId::Clip => CLIP_PLAYBACK_SHAPE_SLOT_IDS,
-        InstanceCommandParseShapeId::Flow => FLOW_PLAYBACK_SHAPE_SLOT_IDS,
-        InstanceCommandParseShapeId::Timecode => TIMECODE_PLAYBACK_SHAPE_SLOT_IDS,
-        InstanceCommandParseShapeId::Timeline => TIMELINE_PLAYBACK_SHAPE_SLOT_IDS,
-    }
 }
 
 pub fn object_command_parse_shape(
@@ -285,35 +240,8 @@ pub fn object_command_parse_shape(
     }
 }
 
-pub fn object_command_parse_shape_for_slot(
-    slot: SlotId,
-) -> Option<&'static ObjectCommandParseShape> {
-    match slot {
-        SlotId::RmObjectType | SlotId::RmObjectIdentifier => {
-            Some(object_command_parse_shape(ObjectCommandParseShapeId::Rm))
-        }
-        SlotId::RenameObjectType | SlotId::RenameSource | SlotId::RenameTarget => Some(
-            object_command_parse_shape(ObjectCommandParseShapeId::Rename),
-        ),
-        SlotId::DebugObjectType | SlotId::DebugObjectIdentifier => {
-            Some(object_command_parse_shape(ObjectCommandParseShapeId::Debug))
-        }
-        _ => None,
-    }
-}
-
 pub fn object_command_parse_shape_slots(
     shape_id: ObjectCommandParseShapeId,
 ) -> &'static [ParseShapeSlotSpec] {
     object_command_parse_shape(shape_id).slots
-}
-
-pub fn object_command_parse_shape_slot_ids(
-    shape_id: ObjectCommandParseShapeId,
-) -> &'static [SlotId] {
-    match shape_id {
-        ObjectCommandParseShapeId::Rm => RM_OBJECT_SHAPE_SLOT_IDS,
-        ObjectCommandParseShapeId::Rename => RENAME_OBJECT_SHAPE_SLOT_IDS,
-        ObjectCommandParseShapeId::Debug => DEBUG_OBJECT_SHAPE_SLOT_IDS,
-    }
 }

@@ -94,17 +94,6 @@ impl EncodedClientMessage {
         })
     }
 
-    /// Create from raw bytes (discriminator + payload already combined).
-    pub fn from_raw(data: Vec<u8>) -> Option<Self> {
-        if data.is_empty() {
-            return None;
-        }
-        Some(Self {
-            discriminator: data[0],
-            payload: data[1..].to_vec(),
-        })
-    }
-
     /// Convert to bytes ready for transport delivery.
     ///
     /// Format: [discriminator byte][CBOR payload]
@@ -589,11 +578,6 @@ impl CommandDeserializerRegistry {
     /// Check if a deserializer is registered for a module.
     pub fn contains(&self, module_name: &str) -> bool {
         self.deserializers.contains_key(module_name)
-    }
-
-    /// Get the list of registered module names.
-    pub fn registered_modules(&self) -> impl Iterator<Item = &str> {
-        self.deserializers.keys().map(|s| s.as_str())
     }
 }
 

@@ -273,12 +273,6 @@ export function clearLayout(): boolean {
   return persistState(state);
 }
 
-export function listStoredLayouts(): StoredPanelLayout[] {
-  return loadState()
-    .layouts.slice()
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
 /**
  * Return named layouts in their showfile serialization shape.
  */
@@ -359,38 +353,6 @@ export function storeCurrentLayout(
   return persistState(state) ? stored : null;
 }
 
-export function overwriteStoredLayout(
-  dockApi: DockviewApi,
-  id: string,
-): StoredPanelLayout | null {
-  const state = loadState();
-  const index = state.layouts.findIndex((layout) => layout.id === id);
-  if (index === -1) {
-    return null;
-  }
-
-  const existing = state.layouts[index];
-  const serialized = createSerializedLayout(dockApi);
-  const updated: StoredPanelLayout = {
-    ...serialized,
-    id: existing.id,
-    name: existing.name,
-    shownInSwitcher: existing.shownInSwitcher,
-    createdAt: existing.createdAt,
-    updatedAt: nowMs(),
-  };
-
-  state.layouts = [
-    ...state.layouts.slice(0, index),
-    updated,
-    ...state.layouts.slice(index + 1),
-  ];
-  state.sessionLayout = serialized;
-  state.activeLayoutId = id;
-
-  return persistState(state) ? updated : null;
-}
-
 /** Records a successfully restored layout without overwriting the named snapshot. */
 export function commitActiveLayout(
   id: string,
@@ -399,101 +361,6 @@ export function commitActiveLayout(
   const state = loadState();
   state.sessionLayout = cloneSerializedLayout(layout);
   state.activeLayoutId = id;
-  return persistState(state);
-}
-
-export function loadStoredLayout(id: string): SerializedLayout | null {
-  const state = loadState();
-  const layout = state.layouts.find((entry) => entry.id === id);
-  if (!layout) {
-    return null;
-  }
-
-  const sessionLayout = cloneSerializedLayout(layout);
-  state.sessionLayout = sessionLayout;
-  state.activeLayoutId = id;
-
-  return persistState(state) ? sessionLayout : null;
-}
-
-export function renameStoredLayout(
-  id: string,
-  name: string,
-): StoredPanelLayout | null {
-  const normalizedName = normalizeName(name);
-  if (!normalizedName) {
-    return null;
-  }
-
-  const state = loadState();
-  const index = state.layouts.findIndex((layout) => layout.id === id);
-  if (index === -1) {
-    return null;
-  }
-
-  const updated: StoredPanelLayout = {
-    ...state.layouts[index],
-    name: normalizedName,
-    updatedAt: nowMs(),
-  };
-  state.layouts = [
-    ...state.layouts.slice(0, index),
-    updated,
-    ...state.layouts.slice(index + 1),
-  ];
-
-  return persistState(state) ? updated : null;
-}
-
-export function duplicateStoredLayout(
-  id: string,
-  name: string,
-): StoredPanelLayout | null {
-  const normalizedName = normalizeName(name);
-  if (!normalizedName) {
-    return null;
-  }
-
-  const state = loadState();
-  const source = state.layouts.find((layout) => layout.id === id);
-  if (!source) {
-    return null;
-  }
-
-  const timestamp = nowMs();
-  const duplicate: StoredPanelLayout = {
-    ...cloneSerializedLayout(source),
-    id: createLayoutId(),
-    name: normalizedName,
-    shownInSwitcher: true,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-
-  state.layouts = [...state.layouts, duplicate];
-
-  return persistState(state) ? duplicate : null;
-}
-
-export function deleteStoredLayout(id: string): boolean {
-  const state = loadState();
-  const nextLayouts = state.layouts.filter((layout) => layout.id !== id);
-  if (nextLayouts.length === state.layouts.length) {
-    return false;
-  }
-
-  state.layouts = nextLayouts;
-  if (state.activeLayoutId === id) {
-    state.activeLayoutId = null;
-  }
-
-  return persistState(state);
-}
-
-export function clearStoredLayouts(): boolean {
-  const state = loadState();
-  state.activeLayoutId = null;
-  state.layouts = [];
   return persistState(state);
 }
 

@@ -141,11 +141,6 @@ impl FlowRuntime {
         Ok(true)
     }
 
-    /// Emit a trigger on a trigger port.
-    pub fn emit_trigger(&mut self, port: FlowPortRef) -> Result<(), String> {
-        self.emit_trigger_count(port, 1)
-    }
-
     /// Emit multiple trigger events on a trigger port.
     pub fn emit_trigger_count(&mut self, port: FlowPortRef, count: u32) -> Result<(), String> {
         if count == 0 {

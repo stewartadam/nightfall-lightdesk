@@ -274,11 +274,6 @@ export function transitionAppLifecycle(
   }
 }
 
-/** Returns whether startup UI should still suppress interactive overlays. */
-export function isAppLifecycleStartupActive(): boolean {
-  return appLifecycle.get().phase !== "interactive";
-}
-
 if (import.meta.hot) {
   import.meta.hot.on("vite:beforeFullReload", () => {
     preserveViteFullReloadLifecycleState();

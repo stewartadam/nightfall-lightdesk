@@ -51,11 +51,6 @@ impl<T> PartialResult<T> {
         !self.issues.is_empty()
     }
 
-    /// Adds an issue to this result.
-    pub fn add_issue(&mut self, issue: impl Into<String>) {
-        self.issues.push(issue.into());
-    }
-
     /// Consumes the result, returning just the value and discarding issues.
     pub fn into_value(self) -> T {
         self.value
@@ -86,11 +81,6 @@ impl<T> PartialResult<T> {
             value: combine(self.value, other.value),
             issues,
         }
-    }
-
-    /// Extends this result's issues with issues from another result.
-    pub fn extend_issues(&mut self, other: &PartialResult<impl Sized>) {
-        self.issues.extend(other.issues.iter().cloned());
     }
 }
 

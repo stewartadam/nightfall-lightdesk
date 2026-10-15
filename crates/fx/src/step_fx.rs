@@ -323,20 +323,6 @@ pub enum DurationInput {
     Percentage(#[serde_as(as = "PercentageAsF64")] Percentage),
 }
 
-impl DurationInput {
-    /// Converts valid positive input to the canonical duration per beat.
-    pub fn to_duration(&self) -> Option<Duration> {
-        match self {
-            Self::Seconds(seconds) => StepFxTiming::from_seconds(*seconds),
-            Self::Bpm(bpm) => StepFxTiming::from_bpm(*bpm),
-            Self::Hz(hz) => StepFxTiming::from_hz(*hz),
-            Self::Milliseconds(milliseconds) => StepFxTiming::from_milliseconds(*milliseconds),
-            Self::Percentage(percentage) => StepFxTiming::from_seconds(percentage.as_f32()),
-        }
-        .map(|timing| timing.beat_duration)
-    }
-}
-
 /// One lane's independently sampled absolute and relative contributions.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FxLaneSample {
@@ -671,21 +657,6 @@ impl StepFx {
                 )
             })
             .unwrap_or_default()
-    }
-
-    /// Samples all lanes for one resolved non-empty selection index.
-    pub fn sample_for_selection_index(
-        &self,
-        elapsed: Duration,
-        selection_index: usize,
-        selection_index_count: usize,
-    ) -> Vec<FxLaneSample> {
-        self.sample_for_selection_index_with_offsets(
-            elapsed,
-            selection_index,
-            selection_index_count,
-            &StepFxLanePhaseOffsets::default(),
-        )
     }
 
     /// Samples all lanes while applying runtime-only continuity corrections.

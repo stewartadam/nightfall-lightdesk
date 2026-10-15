@@ -14,7 +14,6 @@
 }
 .design-lab.compact {
   --panel-padding: 12px;
-  --cell-padding: 6px;
 }
 .masthead {
   flex-shrink: 0;

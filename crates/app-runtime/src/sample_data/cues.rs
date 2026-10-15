@@ -9,7 +9,7 @@
 use super::*;
 
 /// Seed the half-scale absolute cue sequence and its clip.
-#[allow(unused_mut, dead_code)]
+#[allow(unused_mut)]
 pub(super) fn add_abs_128_cue(world: &mut World) {
     let mut system_state: SystemState<(
         ResMut<FixtureDataProviderExt>,
@@ -190,7 +190,7 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
 }
 
 /// Seed the full-scale absolute cue sequence and its clip.
-#[allow(unused_mut, dead_code)]
+#[allow(unused_mut)]
 pub(super) fn add_abs_255_cue(world: &mut World) {
     let mut system_state: SystemState<(
         Commands,
@@ -411,7 +411,7 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
 }
 
 /// Seed the first relative-value cue sequence and its clip.
-#[allow(unused_mut, dead_code)]
+#[allow(unused_mut)]
 pub(super) fn add_rel_cue(world: &mut World) {
     let mut system_state: SystemState<(
         ResMut<FixtureDataProviderExt>,
@@ -568,7 +568,7 @@ pub(super) fn add_rel_cue(world: &mut World) {
 }
 
 /// Seed a cue sequence demonstrating per-fixture fanned transition timing.
-#[allow(unused_mut, dead_code)]
+#[allow(unused_mut)]
 pub(super) fn add_fanned_timing_cue(world: &mut World) {
     let mut system_state: SystemState<(
         ResMut<FixtureDataProviderExt>,
