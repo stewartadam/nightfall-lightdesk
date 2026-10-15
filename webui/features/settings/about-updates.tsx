@@ -11,6 +11,7 @@ import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import { type Accessor, createMemo, createSignal, For, Show } from "solid-js";
 import { Alert } from "../../components/ui/alert";
 import { NativeSelect } from "../../components/ui/form-controls";
+import { SettingsRow } from "../../components/ui/settings-row";
 import { Button } from "../../components/ui/visual-language/button";
 import {
   $desktopUpdate,
@@ -423,43 +424,38 @@ export function AboutUpdateStatus(props: { updates: AboutUpdates }) {
               </p>
             }
           >
-            {/* Title and choice share a row; the explanation runs full width beneath them. */}
-            <div class="flex items-center justify-between gap-4 border-t border-gray-700/70 pt-3">
-              <label
-                for="update-mode"
-                class="min-w-0 text-sm font-medium text-gray-300"
-              >
-                When an update is available
-              </label>
-              <NativeSelect
-                id="update-mode"
-                class="w-auto shrink-0"
-                value={update().updateMode}
-                aria-describedby="update-mode-help"
-                onChange={(event) => {
-                  const select = event.currentTarget;
-                  const mode = select.value as DesktopUpdateMode;
-                  props.updates.run(
-                    () =>
-                      setDesktopUpdateMode(mode).catch((error) => {
-                        // The store keeps the old mode, so Solid won't write it back to the DOM.
-                        select.value = update().updateMode;
-                        throw error;
-                      }),
-                    "Couldn't save your update settings.",
-                  );
-                }}
-              >
-                <For each={UPDATE_MODE_OPTIONS}>
-                  {(option) => (
-                    <option value={option.value}>{option.label}</option>
-                  )}
-                </For>
-              </NativeSelect>
-            </div>
-            <p id="update-mode-help" class="text-xs text-gray-400">
-              Updates never install while Nightfall is running.
-            </p>
+            <SettingsRow
+              class="border-t border-gray-700/70"
+              label="When an update is available"
+              description="Updates never install while Nightfall is running."
+            >
+              {(field) => (
+                <NativeSelect
+                  id={field.id}
+                  value={update().updateMode}
+                  aria-describedby={field.describedBy}
+                  onChange={(event) => {
+                    const select = event.currentTarget;
+                    const mode = select.value as DesktopUpdateMode;
+                    props.updates.run(
+                      () =>
+                        setDesktopUpdateMode(mode).catch((error) => {
+                          // The store keeps the old mode, so Solid won't write it back to the DOM.
+                          select.value = update().updateMode;
+                          throw error;
+                        }),
+                      "Couldn't save your update settings.",
+                    );
+                  }}
+                >
+                  <For each={UPDATE_MODE_OPTIONS}>
+                    {(option) => (
+                      <option value={option.value}>{option.label}</option>
+                    )}
+                  </For>
+                </NativeSelect>
+              )}
+            </SettingsRow>
           </Show>
           <Show when={update().checkForUpdates}>
             <p class="text-xs text-gray-400">

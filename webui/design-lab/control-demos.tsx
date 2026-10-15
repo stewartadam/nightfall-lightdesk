@@ -7,6 +7,8 @@
  */
 
 import { createSignal } from "solid-js";
+import { NativeSelect } from "../components/ui/form-controls";
+import { SettingsRow, SettingsSection } from "../components/ui/settings-row";
 import { ToggleSwitch } from "../components/ui/toggle-switch";
 import { VerticalRangeSlider } from "../components/ui/vertical-range-slider";
 import { Button } from "../components/ui/visual-language/button";
@@ -86,15 +88,6 @@ export function SwitchDemo() {
             onChange={setInput}
           />
           <ToggleSwitch
-            label="Switch end with a description"
-            ariaLabel="Settings row layout"
-            layout="switch-end"
-            labelClass="text-sm font-medium text-gray-300"
-            description="A settings row: title and explanation on the left, switch centered on the right."
-            checked={input()}
-            onChange={setInput}
-          />
-          <ToggleSwitch
             ariaLabel="Switch only layout"
             layout="switch-only"
             checked={input()}
@@ -113,6 +106,43 @@ export function SwitchDemo() {
             nf-switch-label-inset.
           </p>
         </div>
+      </div>
+      <div class="widget-sample-card" data-testid="settings-rows">
+        <SettingsSection title="Settings rows">
+          <SettingsRow
+            label="Settings row switch"
+            description="Title and explanation on the left, control aligned to the right edge."
+          >
+            {(field) => (
+              <ToggleSwitch
+                id={field.id}
+                describedBy={field.describedBy}
+                ariaLabel="Settings row switch"
+                layout="switch-only"
+                checked={input()}
+                onChange={setInput}
+              />
+            )}
+          </SettingsRow>
+          <SettingsRow
+            label="Settings row select"
+            description="Selects and fields size to their content."
+          >
+            {(field) => (
+              <NativeSelect id={field.id} aria-describedby={field.describedBy}>
+                <option>Until quit</option>
+                <option>Per session</option>
+              </NativeSelect>
+            )}
+          </SettingsRow>
+          <SettingsRow
+            label="Settings row action"
+            description="Buttons keep their own name, so the title does not label them."
+            labelControl={false}
+          >
+            {() => <Button size="compact">Manage</Button>}
+          </SettingsRow>
+        </SettingsSection>
       </div>
     </section>
   );

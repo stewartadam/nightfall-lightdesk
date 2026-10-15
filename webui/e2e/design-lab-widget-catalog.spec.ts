@@ -117,16 +117,6 @@ test("switch layouts place the switch around its label", async ({
   const card = await layouts.locator(".widget-switch-stack").boundingBox();
   expect(end.track!.x + end.track!.width).toBeCloseTo(card!.x + card!.width, 0);
 
-  const row = await boxes("Settings row layout");
-  expect(row.track!.x + row.track!.width).toBeCloseTo(card!.x + card!.width, 0);
-  expect(row.track!.y + row.track!.height / 2).toBeCloseTo(
-    row.row!.y + row.row!.height / 2,
-    0,
-  );
-  await expect(
-    layouts.getByRole("switch", { name: "Settings row layout" }),
-  ).toHaveAccessibleDescription(/A settings row/);
-
   const only = await boxes("Switch only layout");
   expect(only.label).toBeNull();
 
@@ -142,6 +132,44 @@ test("switch layouts place the switch around its label", async ({
   expect(inset).toBeCloseTo(left.label!.x, 0);
 
   await layouts.screenshot({ path: testInfo.outputPath("switch-layouts.png") });
+});
+
+/**
+ * Verifies settings rows put every control at the right edge, centered beside its title, with
+ * the title labelling the control and the description describing it, except for action buttons,
+ * which keep their own name.
+ */
+test("settings rows align controls to the right edge", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Switches", "Switch examples");
+  const rows = panel.getByTestId("settings-rows");
+  const right = await rows
+    .locator(".nf-settings-rows")
+    .evaluate((element) => element.getBoundingClientRect().right);
+  const controls = [
+    page.getByRole("switch", { name: "Settings row switch" }),
+    page.getByRole("combobox", { name: "Settings row select" }),
+    page.getByRole("button", { name: "Manage" }),
+  ];
+  for (const control of controls) {
+    const row = rows.locator(".nf-settings-row", { has: control });
+    await expect(row).toHaveCount(1);
+    const slot = await row.locator(".nf-settings-row-control").boundingBox();
+    const box = await row.boundingBox();
+    expect(slot!.x + slot!.width).toBeCloseTo(right, 0);
+    expect(slot!.y + slot!.height / 2).toBeCloseTo(box!.y + box!.height / 2, 0);
+  }
+  await expect(controls[0]).toHaveAccessibleDescription(
+    /Title and explanation/,
+  );
+  await expect(controls[1]).toHaveAccessibleDescription(
+    /size to their content/,
+  );
+  await expect(
+    rows.locator(".nf-settings-rows > .nf-settings-row").nth(1),
+  ).toHaveCSS("border-top-width", "1px");
+  await rows.screenshot({ path: testInfo.outputPath("settings-rows.png") });
 });
 
 /** Checks keyboard and pointer fader changes, reference markers, reset, and initial or dynamic locks. */
