@@ -134,20 +134,13 @@ impl SequenceTimelineSeekPlayback {
         started_at: Duration,
     ) -> Option<Self> {
         let sequence = sequence_data_provider.get(sequence_uid).ok()?;
-        let steps = sequence
-            .steps
-            .iter()
-            .map(|cue_uid| cue_data_provider.get(cue_uid.0).map(|cue| cue.clone()))
-            .collect::<Result<Vec<_>, _>>()
-            .ok()?;
-        Self::from_sequence_steps(
-            clip_id,
+        let step_timings = stored_sequence_step_timings(
             &sequence,
-            &steps,
+            cue_data_provider,
             fixture_data_provider,
             selection_resolver,
-            started_at,
-        )
+        )?;
+        Self::from_step_timings(clip_id, sequence.wrap, started_at, step_timings)
     }
 
     /// Builds seek playback state from already resolved step timings.
@@ -876,6 +869,31 @@ fn sequence_step_timings(
             }
         })
         .collect()
+}
+
+/// Resolves seek replay timings for every step of a stored sequence.
+///
+/// Returns `None` when any step cue is missing. Resolving timings materializes each cue's
+/// selection, so callers replaying the same sequence repeatedly should resolve them once and
+/// build playbacks with [`SequenceTimelineSeekPlayback::from_step_timings`].
+pub fn stored_sequence_step_timings(
+    sequence: &Sequence,
+    cue_data_provider: &DataProvider<Cue>,
+    fixture_data_provider: &FixtureDataProviderExt,
+    selection_resolver: &SpatialSelectionResolver,
+) -> Option<Vec<SequenceTimelineStepTiming>> {
+    let steps = sequence
+        .steps
+        .iter()
+        .map(|cue_uid| cue_data_provider.get(cue_uid.0).map(|cue| cue.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    Some(sequence_step_timings(
+        sequence,
+        &steps,
+        fixture_data_provider,
+        selection_resolver,
+    ))
 }
 
 /// Applies a sequence's default timing beneath a cue's explicit timing overrides.

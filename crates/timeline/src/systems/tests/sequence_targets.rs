@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
+
 use super::*;
 use crate::prelude::TimelineSequenceActionTargets;
 use crate::systems::update_timeline_sequence_action_targets_system;
@@ -20,6 +22,8 @@ fn setup_sequence_target_app() -> (App, Uuid, Vec<Uuid>) {
     app.init_resource::<DataProvider<Group>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<TimelineSequenceActionTargets>();
+    app.add_message::<CueDefinitionChange>();
+    app.add_message::<SequenceDefinitionChange>();
     app.add_systems(Update, update_timeline_sequence_action_targets_system);
 
     let clip_uid = Uuid::new_v4();
@@ -189,5 +193,103 @@ fn sequence_action_targets_skip_muted_tracks() {
     assert_eq!(
         resolved_targets(&app),
         vec![("go".to_owned(), Some(cues[1]))]
+    );
+}
+
+/// Verifies an edit to a navigated sequence re-resolves targets from the cached replay inputs.
+#[test]
+fn sequence_action_targets_follow_sequence_edits() {
+    let (mut app, clip_uid, cues) = setup_sequence_target_app();
+    let timeline_uid = Uuid::new_v4();
+    store_timeline(
+        &mut app,
+        navigation_timeline(
+            timeline_uid,
+            &[
+                ("start", ActionKind::StartClip(clip_uid), 1),
+                ("go", ActionKind::AdvanceSequence(clip_uid), 2),
+            ],
+        ),
+    );
+    app.update();
+    assert_eq!(
+        resolved_targets(&app),
+        vec![("go".to_owned(), Some(cues[1]))]
+    );
+
+    let sequence_uid = app
+        .world()
+        .resource::<TimelineSequenceActionTargets>()
+        .targets[0]
+        .sequence_uid;
+    let mut sequence = app
+        .world()
+        .resource::<DataProvider<Sequence>>()
+        .get(sequence_uid)
+        .expect("sequence should exist")
+        .clone();
+    sequence.steps.swap(1, 2);
+    {
+        let mut provider = app.world_mut().resource_mut::<DataProvider<Sequence>>();
+        provider
+            .remove(&sequence_uid)
+            .expect("sequence should be removable");
+        provider
+            .add(sequence.clone())
+            .expect("sequence should insert");
+    }
+    app.world_mut()
+        .write_message(SequenceDefinitionChange::Updated(Box::new(sequence)));
+    app.update();
+
+    assert_eq!(
+        resolved_targets(&app),
+        vec![("go".to_owned(), Some(cues[2]))]
+    );
+}
+
+/// Verifies a cue edit outside every navigated sequence leaves published targets untouched.
+#[test]
+fn sequence_action_targets_skip_unrelated_cue_edits() {
+    let (mut app, clip_uid, _) = setup_sequence_target_app();
+    store_timeline(
+        &mut app,
+        navigation_timeline(
+            Uuid::new_v4(),
+            &[
+                ("start", ActionKind::StartClip(clip_uid), 1),
+                ("go", ActionKind::AdvanceSequence(clip_uid), 2),
+            ],
+        ),
+    );
+    app.update();
+    app.update();
+
+    let unrelated = Cue {
+        identifiers: Identifiers {
+            id: 99,
+            uid: Uuid::new_v4(),
+            label: "Unrelated".to_owned(),
+        },
+        ..Default::default()
+    };
+    app.world_mut()
+        .resource_mut::<DataProvider<Cue>>()
+        .add(unrelated.clone())
+        .expect("unrelated cue should insert");
+    app.world_mut()
+        .write_message(CueDefinitionChange::Updated(Box::new(unrelated)));
+    app.world_mut()
+        .resource_mut::<TimelineSequenceActionTargets>()
+        .targets
+        .clear();
+    app.update();
+
+    assert!(
+        app.world()
+            .resource::<TimelineSequenceActionTargets>()
+            .targets
+            .is_empty(),
+        "an unrelated cue edit should not trigger a recompute"
     );
 }

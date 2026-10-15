@@ -8,6 +8,9 @@
 
 //! Resolves which sequence cue each timeline navigation action lands on.
 
+use nightfall_cues::prelude::{SequenceTimelineStepTiming, stored_sequence_step_timings};
+use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
+
 use super::pause_sync::timeline_planning_actions;
 use super::planner_adapter::{
     TimelinePlannerResolver, planned_source_for_clip, playback_duration_profile_for_source,
@@ -38,40 +41,121 @@ pub struct TimelineSequenceActionTargetInputs<'w, 's> {
     selection_resolver: SpatialSelectionResolver<'w>,
 }
 
-impl TimelineSequenceActionTargetInputs<'_, '_> {
-    /// Returns whether any definition that can move a navigation target changed this frame.
-    fn changed(&self) -> bool {
-        self.timeline_data_provider.is_changed()
-            || self.clip_change_query.iter().next().is_some()
-            || self
-                .sequence_data_provider
-                .as_ref()
-                .is_some_and(|provider| provider.is_changed())
-            || self.cue_data_provider.is_changed()
-            || self.fixture_data_provider.is_changed()
-            || self.group_data_provider.is_changed()
+/// Change notifications that say which cue and sequence definitions were edited.
+#[derive(SystemParam)]
+pub struct TimelineSequenceDefinitionChanges<'w, 's> {
+    /// Committed cue definition edits.
+    cues: MessageReader<'w, 's, CueDefinitionChange>,
+    /// Committed sequence definition edits.
+    sequences: MessageReader<'w, 's, SequenceDefinitionChange>,
+    /// Clips despawned since the last run.
+    removed_clips: RemovedComponents<'w, 's, Clip>,
+}
+
+/// Replay inputs resolved for one sequence, reused across recomputes until its cues change.
+struct ResolvedSequenceTiming {
+    /// Whether the sequence wraps from its last step back to the first.
+    wrap: bool,
+    /// Cue UIDs in step order.
+    steps: Vec<Uuid>,
+    /// Seek replay timing of each step, or `None` when a step cue is missing.
+    step_timings: Option<Vec<SequenceTimelineStepTiming>>,
+    /// Planner extents of the whole sequence.
+    duration_profile: PlaybackDurationProfile,
+}
+
+/// Per-system cache of resolved sequence timings and the sequences last navigated.
+#[derive(Default)]
+pub struct TimelineSequenceActionTargetCache {
+    /// Whether targets were computed at least once.
+    initialized: bool,
+    /// Resolved timing per sequence UID.
+    sequences: HashMap<Uuid, ResolvedSequenceTiming>,
+    /// Sequences played by clips that a Go, Back, or jump action steered on the last recompute.
+    navigated_sequences: HashSet<Uuid>,
+}
+
+impl TimelineSequenceActionTargetCache {
+    /// Drops cached timing for the given sequences and any cached sequence containing the
+    /// given cues, returning whether a navigated sequence was affected.
+    fn invalidate(&mut self, sequence_uids: &[Uuid], cue_uids: &[Uuid]) -> bool {
+        let stale = self
+            .sequences
+            .iter()
+            .filter(|(sequence_uid, timing)| {
+                sequence_uids.contains(sequence_uid)
+                    || timing
+                        .steps
+                        .iter()
+                        .any(|cue_uid| cue_uids.contains(cue_uid))
+            })
+            .map(|(sequence_uid, _)| *sequence_uid)
+            .collect::<Vec<_>>();
+        for sequence_uid in &stale {
+            self.sequences.remove(sequence_uid);
+        }
+        sequence_uids
+            .iter()
+            .chain(&stale)
+            .any(|sequence_uid| self.navigated_sequences.contains(sequence_uid))
     }
 }
 
 /// Recomputes the cue every Go, Back, and jump timeline action leaves its sequence on.
 ///
-/// Runs only when timelines, clips, sequences, cues, fixtures, or groups change, and only
-/// replaces the published targets when the result differs so clients are not re-sent identical
-/// data.
+/// Timeline and clip edits always recompute. Cue and sequence edits only recompute when they
+/// touch a sequence a navigation action steers, and resolved sequence timings are cached so a
+/// sequence restarted many times on a timeline is resolved once. Fixture and group edits, and
+/// bulk replacements such as a showfile load, drop the cache. Published targets are only
+/// replaced when the result differs so clients are not re-sent identical data.
 pub fn update_timeline_sequence_action_targets_system(
     inputs: TimelineSequenceActionTargetInputs,
-    mut removed_clips: RemovedComponents<Clip>,
+    mut changes: TimelineSequenceDefinitionChanges,
     mut targets: ResMut<TimelineSequenceActionTargets>,
-    mut initialized: Local<bool>,
+    mut cache: Local<TimelineSequenceActionTargetCache>,
 ) {
-    let clips_removed = removed_clips.read().count() > 0;
-    if *initialized && !clips_removed && !inputs.changed() {
+    let changed_cues = changes
+        .cues
+        .read()
+        .map(|change| match change {
+            CueDefinitionChange::Updated(cue) => cue.identifiers.uid,
+            CueDefinitionChange::Removed { uid } => *uid,
+        })
+        .collect::<Vec<_>>();
+    let changed_sequences = changes
+        .sequences
+        .read()
+        .map(|change| match change {
+            SequenceDefinitionChange::Updated(sequence) => sequence.identifiers.uid,
+            SequenceDefinitionChange::Removed { uid } => *uid,
+        })
+        .collect::<Vec<_>>();
+    let clips_removed = changes.removed_clips.read().count() > 0;
+
+    let sequences_changed = inputs
+        .sequence_data_provider
+        .as_ref()
+        .is_some_and(|provider| provider.is_changed());
+    let bulk_definition_change = (inputs.cue_data_provider.is_changed() && changed_cues.is_empty())
+        || (sequences_changed && changed_sequences.is_empty());
+    let timing_inputs_changed = inputs.fixture_data_provider.is_changed()
+        || inputs.group_data_provider.is_changed()
+        || bulk_definition_change;
+    if timing_inputs_changed {
+        cache.sequences.clear();
+    }
+    let navigated_definition_changed = cache.invalidate(&changed_sequences, &changed_cues);
+    let structure_changed = !cache.initialized
+        || inputs.timeline_data_provider.is_changed()
+        || inputs.clip_change_query.iter().next().is_some()
+        || clips_removed;
+    if !structure_changed && !timing_inputs_changed && !navigated_definition_changed {
         return;
     }
-    *initialized = true;
+    cache.initialized = true;
 
     targets.set_if_neq(TimelineSequenceActionTargets {
-        targets: resolve_timeline_sequence_action_targets(&inputs),
+        targets: resolve_timeline_sequence_action_targets(&inputs, &mut cache),
     });
 }
 
@@ -85,10 +169,43 @@ fn navigation_clip_uid(action: &ActionKind) -> Option<Uuid> {
     }
 }
 
+/// Returns the cached replay inputs for a sequence, resolving and caching them when missing.
+fn resolved_sequence_timing<'a>(
+    cache: &'a mut HashMap<Uuid, ResolvedSequenceTiming>,
+    sequence_uid: Uuid,
+    sequence_data_provider: &DataProvider<Sequence>,
+    inputs: &TimelineSequenceActionTargetInputs,
+) -> Option<&'a ResolvedSequenceTiming> {
+    if !cache.contains_key(&sequence_uid) {
+        let sequence = sequence_data_provider.get(sequence_uid).ok()?;
+        let timing = ResolvedSequenceTiming {
+            wrap: sequence.wrap,
+            steps: sequence.steps.iter().map(|cue_uid| cue_uid.0).collect(),
+            step_timings: stored_sequence_step_timings(
+                &sequence,
+                &inputs.cue_data_provider,
+                &inputs.fixture_data_provider,
+                &inputs.selection_resolver,
+            ),
+            duration_profile: playback_duration_profile_for_source(
+                PlannedPlaybackSource::Sequence(sequence_uid),
+                &inputs.cue_data_provider,
+                Some(sequence_data_provider),
+                &inputs.fixture_data_provider,
+                &inputs.selection_resolver,
+            ),
+        };
+        cache.insert(sequence_uid, timing);
+    }
+    cache.get(&sequence_uid)
+}
+
 /// Replays every timeline definition and collects its navigation action targets.
 fn resolve_timeline_sequence_action_targets(
     inputs: &TimelineSequenceActionTargetInputs,
+    cache: &mut TimelineSequenceActionTargetCache,
 ) -> Vec<TimelineSequenceActionTarget> {
+    cache.navigated_sequences.clear();
     let Some(sequence_data_provider) = inputs.sequence_data_provider.as_deref() else {
         return Vec::new();
     };
@@ -109,11 +226,6 @@ fn resolve_timeline_sequence_action_targets(
         return Vec::new();
     }
 
-    let navigated_clip_uids = timelines
-        .iter()
-        .flat_map(|(_, actions)| actions.iter())
-        .filter_map(|action| navigation_clip_uid(&action.action))
-        .collect::<HashSet<_>>();
     let source_by_clip_uid = inputs
         .clips
         .iter()
@@ -121,25 +233,33 @@ fn resolve_timeline_sequence_action_targets(
             planned_source_for_clip(clip).map(|source| (clip.identifiers.uid, source))
         })
         .collect::<HashMap<_, _>>();
-    let duration_by_source = navigated_clip_uids
+    cache.navigated_sequences = timelines
         .iter()
-        .filter_map(|clip_uid| source_by_clip_uid.get(clip_uid).copied())
-        .filter(|source| matches!(source, PlannedPlaybackSource::Sequence(_)))
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .map(|source| {
-            (
-                source,
-                playback_duration_profile_for_source(
-                    source,
-                    &inputs.cue_data_provider,
-                    Some(sequence_data_provider),
-                    &inputs.fixture_data_provider,
-                    &inputs.selection_resolver,
-                ),
-            )
+        .flat_map(|(_, actions)| actions.iter())
+        .filter_map(|action| navigation_clip_uid(&action.action))
+        .filter_map(|clip_uid| match source_by_clip_uid.get(&clip_uid) {
+            Some(PlannedPlaybackSource::Sequence(sequence_uid)) => Some(*sequence_uid),
+            _ => None,
         })
         .collect();
+    let navigated_sequences = &cache.navigated_sequences;
+    cache
+        .sequences
+        .retain(|sequence_uid, _| navigated_sequences.contains(sequence_uid));
+    let mut duration_by_source = HashMap::new();
+    for sequence_uid in cache.navigated_sequences.clone() {
+        if let Some(timing) = resolved_sequence_timing(
+            &mut cache.sequences,
+            sequence_uid,
+            sequence_data_provider,
+            inputs,
+        ) {
+            duration_by_source.insert(
+                PlannedPlaybackSource::Sequence(sequence_uid),
+                timing.duration_profile,
+            );
+        }
+    }
     let resolver = TimelinePlannerResolver {
         source_by_clip_uid,
         duration_by_source,
@@ -151,8 +271,7 @@ fn resolve_timeline_sequence_action_targets(
             timeline_sequence_action_targets(
                 timeline_uid,
                 planning_actions,
-                sequence_data_provider,
-                inputs,
+                &cache.sequences,
                 &resolver,
             )
         })
@@ -174,8 +293,7 @@ fn resolve_timeline_sequence_action_targets(
 fn timeline_sequence_action_targets(
     timeline_uid: Uuid,
     planning_actions: Vec<TimelinePlanningAction>,
-    sequence_data_provider: &DataProvider<Sequence>,
-    inputs: &TimelineSequenceActionTargetInputs,
+    sequences: &HashMap<Uuid, ResolvedSequenceTiming>,
     resolver: &TimelinePlannerResolver,
 ) -> Vec<TimelineSequenceActionTarget> {
     let end = planning_actions
@@ -193,17 +311,17 @@ fn timeline_sequence_action_targets(
         if interval.explicit_interventions.is_empty() {
             continue;
         }
-        let Ok(sequence) = sequence_data_provider.get(sequence_uid) else {
+        let Some(timing) = sequences.get(&sequence_uid) else {
             continue;
         };
-        let Some(mut playback) = SequenceTimelineSeekPlayback::from_sequence_uid(
+        let Some(step_timings) = timing.step_timings.clone() else {
+            continue;
+        };
+        let Some(mut playback) = SequenceTimelineSeekPlayback::from_step_timings(
             0,
-            sequence_uid,
-            sequence_data_provider,
-            &inputs.cue_data_provider,
-            &inputs.fixture_data_provider,
-            &inputs.selection_resolver,
+            timing.wrap,
             interval.started_at_timeline,
+            step_timings,
         ) else {
             continue;
         };
@@ -213,8 +331,8 @@ fn timeline_sequence_action_targets(
             }
             let cue_uid = position
                 .checked_sub(1)
-                .and_then(|index| sequence.steps.get(index as usize))
-                .map(|cue_uid| cue_uid.0);
+                .and_then(|index| timing.steps.get(index as usize))
+                .copied();
             targets.push(TimelineSequenceActionTarget {
                 timeline_uid,
                 track_id: intervention.owner.track_id.clone(),

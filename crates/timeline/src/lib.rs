@@ -44,6 +44,10 @@ mod transport;
 mod undo;
 pub mod websocket;
 
+/// Resolves the sequence cue each Go, Back, and jump timeline action lands on; exposed for
+/// benchmarks, and scheduled by [`TimelinePlugin`].
+pub use crate::systems::update_timeline_sequence_action_targets_system;
+
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::TimelinePlugin;
