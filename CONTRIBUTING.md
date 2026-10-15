@@ -165,7 +165,9 @@ pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
 See [distribution notices](docs/src/developer-reference/distribution-notices.md)
 for packaging and dependency-update requirements.
 
-Run `cargo install --locked typeshare-cli --version 1.13.3` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env` and `.cargo/config.toml`; it chooses a backend port, configures the shared Playwright browser location, and enables the Cargo settings expected by the build. Those settings include `KACHE_CACHE_EXECUTABLES=0`, which keeps the kache build cache from storing binaries and test harnesses: on macOS each store runs `dsymutil` for ~20s on the app-runtime executables, while relinking them on a cache hit takes a few seconds. Export `KACHE_CACHE_EXECUTABLES=1` to opt back in. The script overwrites those files, so run it once for a new checkout rather than over an environment you have customized.
+Run `cargo install --locked typeshare-cli --version 1.13.3` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env`; it chooses a backend port and configures the shared Playwright browser location. It overwrites that file, so run it once for a new checkout rather than over an environment you have customized.
+
+If you use [kache](https://github.com/kunobi-ninja/kache) as your `rustc` wrapper on macOS, set `cache_executables = false` under `[cache]` in `~/.config/kache/config.toml`. Each time kache stores a binary or test harness it runs `dsymutil`, which takes ~20s for each app-runtime executable, while relinking them on a cache hit takes a few seconds.
 
 The backend port is `NIGHTFALL_PORT` in `.env`; Vite uses the following port. For example, `NIGHTFALL_PORT=3544` gives a web UI at `http://localhost:3545`. Keep the existing Cargo target directory, including when another worktree is building. A build lock means another build is using those artifacts.
 
