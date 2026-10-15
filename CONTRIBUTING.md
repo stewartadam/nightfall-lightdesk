@@ -507,6 +507,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `tauri` | Run the Tauri CLI, for example `pnpm tauri dev`, `pnpm tauri build [-d]` or `pnpm tauri bundle`. |
 | `wasm`, `wasm:bridge`, `wasm:demo` | Build both WASM packages, only the bridge the web UI needs, or only the embedded demo engine. Release by default; pass `--dev` for a faster debug build. |
 | `typeshare` | Regenerate `webui/types/index.ts` from the Rust types. |
+| `icons:generate` | Regenerate the desktop and mobile app icons from `webui/public/logo.svg`; the macOS icon is placed on Apple's icon grid. |
 | `lint` | Run Biome lints on the web UI. |
 | `typecheck` | Type-check the TypeScript projects. |
 | `autofix`, `autofix:ts`, `autofix:rs` | Apply Biome, rustfmt and Clippy fixes. |
