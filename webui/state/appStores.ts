@@ -25,6 +25,7 @@ import type { BrowserDemoRuntimeInfo } from "../lib/engine-runtime-protocol";
 import { setStoreAction } from "../lib/nanostore-action";
 import { registerPanelTabStatus } from "../lib/panel-tab-status";
 import type { ParameterStreamStats } from "../lib/parameter-stream";
+import type { ReferenceListByOwner } from "../lib/reference-list";
 import type { SelectionTarget } from "../lib/selection-targets";
 import { testHooksEnabled } from "../lib/test-mode";
 import type { LayerState } from "../lib/ws/types";
@@ -498,8 +499,8 @@ export const referenceHealth = atom<types.ReferenceHealth>({
   },
   issues: [],
 });
-// Every reference in the show, sent only while referenceListWatch is set
-export const referenceList = atom<types.ReferenceEntry[]>([]);
+// Every reference in the show by owning object, sent only while referenceListWatch is set
+export const referenceList = atom<ReferenceListByOwner>(new Map());
 // Whether this client asks the backend for referenceList (see features/references/services)
 export const referenceListWatch = atom(false);
 export const inputContributionTrace = atom<types.OutboundInputContribution[]>(

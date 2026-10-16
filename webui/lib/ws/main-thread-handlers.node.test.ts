@@ -91,6 +91,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "ProgrammerState",
   "ReferenceHealth",
   "ReferenceList",
+  "ReferenceListUpdate",
   "ResyncComplete",
   "RuntimeCapabilities",
   "SceneObjectCommand",

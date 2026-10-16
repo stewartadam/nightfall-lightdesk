@@ -8,20 +8,24 @@
 
 //! Outgoing references held by authored objects, and the audit that checks them.
 //!
-//! Each object type reports what it references through [`ReferenceSource`]. The
-//! [`ReferenceAuditor`] checks every reported reference against a [`ReferenceLookup`] of live
-//! fixtures, groups, Blueprints and output targets, and builds a [`ReferenceReport`] with one
-//! entry per reference and one issue per missing target.
+//! Each object type reports what it references through [`ReferenceSource`]. [`audit_owner`]
+//! checks every reference one object reports against a [`ReferenceLookup`] of live fixtures,
+//! groups, Blueprints and output targets, producing one entry per reference and one issue per
+//! missing target. A [`ReferenceBook`] keeps the audit of every object, so a change re-audits
+//! only the objects it affects.
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use nightfall::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod book;
 #[cfg(test)]
 mod tests;
+
+pub use book::{OwnerKey, ReferenceBook};
 
 /// Object families whose references the audit checks.
 #[typeshare::typeshare]
@@ -269,36 +273,71 @@ pub struct ReferenceSummary {
     pub affected_object_count: u32,
 }
 
-/// Result of auditing every reference-bearing object.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ReferenceReport {
-    /// Counts across the audit.
-    pub summary: ReferenceSummary,
-    /// Every reference, ordered by target, owner and path.
+/// Result of auditing the references of one object.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OwnerReferences {
+    /// Object holding the references.
+    pub owner: ReferenceOwner,
+    /// Every reference the object holds, in traversal order.
     pub references: Vec<ReferenceEntry>,
-    /// Every missing reference, ordered by owner, path and target.
+    /// Every missing reference the object holds, in traversal order.
     pub issues: Vec<ReferenceIssue>,
-    /// Descriptions of the objects that reference each live group, by group UID.
-    pub group_dependents: BTreeMap<Uuid, BTreeSet<String>>,
-    /// Descriptions of the objects that reference each Blueprint, by Blueprint UID.
-    pub blueprint_dependents: BTreeMap<Uuid, BTreeSet<String>>,
+    /// UIDs of the live groups the object references, other than itself.
+    pub group_dependencies: BTreeSet<Uuid>,
+    /// UIDs of the live Blueprints the object references.
+    pub blueprint_dependencies: BTreeSet<Uuid>,
+    /// Lookup entries the audit read; a change to any of them can change this result.
+    pub lookups: HashSet<LookupKey>,
+}
+
+/// One entry of a [`ReferenceLookup`] that an audit can read.
+///
+/// The audit of an object records every entry it reads, and the lookup setters return the
+/// entries they changed, so callers re-audit exactly the objects a target change affects.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum LookupKey {
+    /// Fixture by UID.
+    FixtureUid(Uuid),
+    /// Fixture by user-facing ID.
+    FixtureId(u32),
+    /// Group by UID.
+    GroupUid(Uuid),
+    /// Group by user-facing ID.
+    GroupId(u32),
+    /// Group by label.
+    GroupLabel(String),
+    /// Blueprint by UID.
+    Blueprint(Uuid),
+    /// Output transport target by identifier.
+    OutputTarget(String),
 }
 
 /// Fixture identity and size as the audit sees it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct LookupFixture {
     id: u32,
     element_count: u32,
 }
 
+/// Group identity as the audit sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LookupGroup {
+    id: u32,
+    label: String,
+}
+
 /// Live targets references are checked against.
+///
+/// Built once and then kept current with the `set_*` methods, which report the entries each
+/// change affected.
 #[derive(Clone, Debug, Default)]
 pub struct ReferenceLookup {
     fixtures_by_uid: HashMap<Uuid, LookupFixture>,
-    fixture_elements_by_id: HashMap<u32, u32>,
-    group_ids_by_uid: HashMap<Uuid, u32>,
+    fixtures_by_id: HashMap<u32, (Uuid, u32)>,
+    groups_by_uid: HashMap<Uuid, LookupGroup>,
     group_uids_by_id: HashMap<u32, Uuid>,
-    group_uids_by_label: HashMap<String, Uuid>,
+    /// Groups sharing each label, by ID then UID; the lowest group ID wins.
+    group_uids_by_label: HashMap<String, BTreeSet<(u32, Uuid)>>,
     blueprints: HashSet<Uuid>,
     output_targets: HashSet<String>,
 }
@@ -306,23 +345,17 @@ pub struct ReferenceLookup {
 impl ReferenceLookup {
     /// Registers a patched fixture.
     pub fn add_fixture(&mut self, uid: Uuid, id: u32, element_count: u32) {
-        self.fixtures_by_uid
-            .insert(uid, LookupFixture { id, element_count });
-        self.fixture_elements_by_id.insert(id, element_count);
+        self.set_fixture(uid, Some((id, element_count)));
     }
 
-    /// Registers a stored group. When two groups share a label, the first registered wins.
+    /// Registers a stored group.
     pub fn add_group(&mut self, uid: Uuid, id: u32, label: &str) {
-        self.group_ids_by_uid.insert(uid, id);
-        self.group_uids_by_id.insert(id, uid);
-        self.group_uids_by_label
-            .entry(label.to_owned())
-            .or_insert(uid);
+        self.set_group(uid, Some((id, label)));
     }
 
     /// Registers a stored Blueprint.
     pub fn add_blueprint(&mut self, uid: Uuid) {
-        self.blueprints.insert(uid);
+        self.set_blueprint(uid, true);
     }
 
     /// Registers an output transport target identifier that resolves to a configured output.
@@ -330,9 +363,106 @@ impl ReferenceLookup {
         self.output_targets.insert(target.into());
     }
 
-    /// Returns the element count of the fixture with user-facing `fixture_id`.
-    fn fixture_elements(&self, fixture_id: u32) -> Option<u32> {
-        self.fixture_elements_by_id.get(&fixture_id).copied()
+    /// Sets the ID and element count of fixture `uid`, or removes it when `fixture` is none.
+    ///
+    /// Returns the entries whose answer changed; an empty list means audits are unaffected.
+    pub fn set_fixture(&mut self, uid: Uuid, fixture: Option<(u32, u32)>) -> Vec<LookupKey> {
+        let fixture = fixture.map(|(id, element_count)| LookupFixture { id, element_count });
+        let previous = self.fixtures_by_uid.get(&uid).copied();
+        if previous == fixture {
+            return Vec::new();
+        }
+        let mut changed = vec![LookupKey::FixtureUid(uid)];
+        if let Some(previous) = previous {
+            self.fixtures_by_uid.remove(&uid);
+            if self
+                .fixtures_by_id
+                .get(&previous.id)
+                .is_some_and(|(owner, _)| *owner == uid)
+            {
+                self.fixtures_by_id.remove(&previous.id);
+            }
+            changed.push(LookupKey::FixtureId(previous.id));
+        }
+        if let Some(fixture) = fixture {
+            self.fixtures_by_uid.insert(uid, fixture);
+            self.fixtures_by_id
+                .insert(fixture.id, (uid, fixture.element_count));
+            if previous.is_none_or(|previous| previous.id != fixture.id) {
+                changed.push(LookupKey::FixtureId(fixture.id));
+            }
+        }
+        changed
+    }
+
+    /// Sets the ID and label of group `uid`, or removes it when `group` is none.
+    ///
+    /// Returns the entries whose answer changed; an empty list means audits are unaffected.
+    pub fn set_group(&mut self, uid: Uuid, group: Option<(u32, &str)>) -> Vec<LookupKey> {
+        let previous = self.groups_by_uid.get(&uid);
+        if previous.map(|group| (group.id, group.label.as_str())) == group {
+            return Vec::new();
+        }
+        let mut changed = vec![LookupKey::GroupUid(uid)];
+        if let Some(previous) = self.groups_by_uid.remove(&uid) {
+            if self.group_uids_by_id.get(&previous.id) == Some(&uid) {
+                self.group_uids_by_id.remove(&previous.id);
+            }
+            if let Some(uids) = self.group_uids_by_label.get_mut(&previous.label) {
+                uids.remove(&(previous.id, uid));
+                if uids.is_empty() {
+                    self.group_uids_by_label.remove(&previous.label);
+                }
+            }
+            changed.push(LookupKey::GroupId(previous.id));
+            changed.push(LookupKey::GroupLabel(previous.label));
+        }
+        if let Some((id, label)) = group {
+            self.groups_by_uid.insert(
+                uid,
+                LookupGroup {
+                    id,
+                    label: label.to_owned(),
+                },
+            );
+            self.group_uids_by_id.insert(id, uid);
+            self.group_uids_by_label
+                .entry(label.to_owned())
+                .or_default()
+                .insert((id, uid));
+            changed.push(LookupKey::GroupId(id));
+            changed.push(LookupKey::GroupLabel(label.to_owned()));
+        }
+        changed
+    }
+
+    /// Sets whether Blueprint `uid` exists.
+    ///
+    /// Returns the entries whose answer changed; an empty list means audits are unaffected.
+    pub fn set_blueprint(&mut self, uid: Uuid, exists: bool) -> Vec<LookupKey> {
+        let changed = if exists {
+            self.blueprints.insert(uid)
+        } else {
+            self.blueprints.remove(&uid)
+        };
+        if changed {
+            vec![LookupKey::Blueprint(uid)]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Replaces the output transport target identifiers that resolve to a configured output.
+    ///
+    /// Returns the entries whose answer changed; an empty list means audits are unaffected.
+    pub fn set_output_targets(&mut self, targets: HashSet<String>) -> Vec<LookupKey> {
+        let changed = self
+            .output_targets
+            .symmetric_difference(&targets)
+            .map(|target| LookupKey::OutputTarget(target.clone()))
+            .collect();
+        self.output_targets = targets;
+        changed
     }
 
     /// Returns whether a resolved fixture reference names a live fixture and element.
@@ -352,65 +482,82 @@ fn element_exists(index: u32, element_count: u32) -> bool {
     index >= 1 && index <= element_count
 }
 
-/// Builds a [`ReferenceReport`] from the objects passed to [`ReferenceAuditor::audit`].
-pub struct ReferenceAuditor<'a> {
-    lookup: &'a ReferenceLookup,
-    report: ReferenceReport,
-}
-
-impl<'a> ReferenceAuditor<'a> {
-    /// Starts an audit against `lookup`.
-    pub fn new(lookup: &'a ReferenceLookup) -> Self {
-        Self {
-            lookup,
-            report: ReferenceReport::default(),
-        }
-    }
-
-    /// Audits every reference `source` holds, attributing them to `owner`.
-    pub fn audit(&mut self, owner: ReferenceOwner, source: &dyn ReferenceSource) {
-        self.report.summary.object_count += 1;
-        let mut audit = OwnerAudit {
-            lookup: self.lookup,
-            owner: &owner,
-            report: &mut self.report,
-        };
-        source.visit_references(&mut |path, reference| audit.reference(path, reference));
-    }
-
-    /// Sorts the report and fills in its summary.
-    pub fn finish(mut self) -> ReferenceReport {
-        let report = &mut self.report;
-        report.references.sort_by(compare_entries);
-        report.issues.sort_by(compare_issues);
-        report.summary.reference_count = report.references.len() as u32;
-        report.summary.issue_count = report.issues.len() as u32;
-        report.summary.prunable_issue_count =
-            report.issues.iter().filter(|issue| issue.prunable).count() as u32;
-        report.summary.affected_object_count = report
-            .issues
-            .iter()
-            .map(|issue| (issue.source.domain, issue.source.uid.as_str()))
-            .collect::<HashSet<_>>()
-            .len() as u32;
-        self.report
-    }
+/// Checks every reference `source` holds against `lookup`, attributing them to `owner`.
+pub fn audit_owner(
+    lookup: &ReferenceLookup,
+    owner: ReferenceOwner,
+    source: &dyn ReferenceSource,
+) -> OwnerReferences {
+    let mut audit = OwnerAudit {
+        lookup,
+        report: OwnerReferences {
+            owner,
+            references: Vec::new(),
+            issues: Vec::new(),
+            group_dependencies: BTreeSet::new(),
+            blueprint_dependencies: BTreeSet::new(),
+            lookups: HashSet::new(),
+        },
+    };
+    source.visit_references(&mut |path, reference| audit.reference(path, reference));
+    audit.report
 }
 
 /// Audit state for the references of one owner.
 struct OwnerAudit<'r> {
     lookup: &'r ReferenceLookup,
-    owner: &'r ReferenceOwner,
-    report: &'r mut ReferenceReport,
+    report: OwnerReferences,
 }
 
 impl OwnerAudit<'_> {
+    /// Returns the ID and element count of the fixture with `uid`, recording the read.
+    fn fixture_by_uid(&mut self, uid: Uuid) -> Option<LookupFixture> {
+        self.report.lookups.insert(LookupKey::FixtureUid(uid));
+        self.lookup.fixtures_by_uid.get(&uid).copied()
+    }
+
+    /// Returns the element count of the fixture with user-facing `fixture_id`, recording the read.
+    fn fixture_elements(&mut self, fixture_id: u32) -> Option<u32> {
+        self.report.lookups.insert(LookupKey::FixtureId(fixture_id));
+        self.lookup
+            .fixtures_by_id
+            .get(&fixture_id)
+            .map(|(_, element_count)| *element_count)
+    }
+
+    /// Returns the user-facing ID of the group with `uid`, recording the read.
+    fn group_id_by_uid(&mut self, uid: Uuid) -> Option<u32> {
+        self.report.lookups.insert(LookupKey::GroupUid(uid));
+        self.lookup.groups_by_uid.get(&uid).map(|group| group.id)
+    }
+
+    /// Returns the UID of the group with user-facing `group_id`, recording the read.
+    fn group_uid_by_id(&mut self, group_id: u32) -> Option<Uuid> {
+        self.report.lookups.insert(LookupKey::GroupId(group_id));
+        self.lookup.group_uids_by_id.get(&group_id).copied()
+    }
+
+    /// Returns the UID of the lowest-ID group labelled `label`, recording the read.
+    fn group_uid_by_label(&mut self, label: &str) -> Option<Uuid> {
+        self.report
+            .lookups
+            .insert(LookupKey::GroupLabel(label.to_owned()));
+        self.lookup
+            .group_uids_by_label
+            .get(label)
+            .and_then(|uids| uids.first())
+            .map(|(_, uid)| *uid)
+    }
+
     /// Checks one reported reference.
     fn reference(&mut self, path: &str, reference: HeldReference<'_>) {
         match reference {
             HeldReference::Selection(selection) => self.selection(selection, path),
             HeldReference::Group(uid) => self.group(&GroupRefExpr::ByUid { uid }, path),
             HeldReference::Blueprint(blueprint_uid) => {
+                self.report
+                    .lookups
+                    .insert(LookupKey::Blueprint(blueprint_uid));
                 let exists = self.lookup.blueprints.contains(&blueprint_uid);
                 let target = ReferenceTarget::Blueprint { blueprint_uid };
                 self.record(
@@ -420,14 +567,13 @@ impl OwnerAudit<'_> {
                     ReferenceIssueReason::MissingBlueprintUid,
                 );
                 if exists {
-                    self.report
-                        .blueprint_dependents
-                        .entry(blueprint_uid)
-                        .or_default()
-                        .insert(self.owner.description());
+                    self.report.blueprint_dependencies.insert(blueprint_uid);
                 }
             }
             HeldReference::OutputTarget(target) => {
+                self.report
+                    .lookups
+                    .insert(LookupKey::OutputTarget(target.to_owned()));
                 let exists = self.lookup.output_targets.contains(target);
                 let target = ReferenceTarget::OutputTarget {
                     target: target.to_owned(),
@@ -459,7 +605,7 @@ impl OwnerAudit<'_> {
     /// Records one reference row.
     fn entry(&mut self, path: &str, target: ReferenceTarget, exists: bool) {
         self.report.references.push(ReferenceEntry {
-            source: self.owner.clone(),
+            source: self.report.owner.clone(),
             path: path.to_owned(),
             target,
             status: if exists {
@@ -479,7 +625,7 @@ impl OwnerAudit<'_> {
         prunable: bool,
     ) {
         self.report.issues.push(ReferenceIssue {
-            source: self.owner.clone(),
+            source: self.report.owner.clone(),
             path: path.to_owned(),
             target,
             reason,
@@ -538,7 +684,7 @@ impl OwnerAudit<'_> {
 
     /// Audits one resolved fixture reference, which pruning removes when its target is missing.
     fn resolved_fixture(&mut self, fixture_ref: &FixtureRef, path: &str) {
-        let Some(fixture) = self.lookup.fixtures_by_uid.get(&fixture_ref.fixture_uid) else {
+        let Some(fixture) = self.fixture_by_uid(fixture_ref.fixture_uid) else {
             let target = ReferenceTarget::FixtureUid {
                 fixture_uid: fixture_ref.fixture_uid,
             };
@@ -570,7 +716,7 @@ impl OwnerAudit<'_> {
             fixture_id,
             element_index,
         };
-        let Some(element_count) = self.lookup.fixture_elements(fixture_id) else {
+        let Some(element_count) = self.fixture_elements(fixture_id) else {
             self.entry(path, target, false);
             let fixture = ReferenceTarget::Fixture {
                 fixture_id,
@@ -597,7 +743,7 @@ impl OwnerAudit<'_> {
     /// Every element gets a reference row; a missing fixture gets one issue rather than one per
     /// element.
     fn fixture_map_targets(&mut self, fixture_id: u32, element_indexes: &[u32], path: &str) {
-        let element_count = self.lookup.fixture_elements(fixture_id);
+        let element_count = self.fixture_elements(fixture_id);
         for &element_index in element_indexes {
             let exists = element_count.is_some_and(|count| element_exists(element_index, count));
             self.entry(
@@ -638,7 +784,7 @@ impl OwnerAudit<'_> {
     /// Follows the same rules as selection resolution, except that missing fixtures inside the
     /// range are kept as whole-fixture targets so the audit can report them.
     fn expand_fixture_range(
-        &self,
+        &mut self,
         start: &UnresolvedFixtureRef,
         end: &UnresolvedFixtureRef,
     ) -> Vec<UnresolvedFixtureRef> {
@@ -647,7 +793,7 @@ impl OwnerAudit<'_> {
         let whole_fixtures = lower.element_index.is_none() && upper.element_index.is_none();
         let mut targets = Vec::new();
         for fixture_id in lower.fixture_id..=upper.fixture_id {
-            let element_count = match self.lookup.fixture_elements(fixture_id) {
+            let element_count = match self.fixture_elements(fixture_id) {
                 Some(element_count) if !whole_fixtures => element_count,
                 _ => {
                     targets.push(UnresolvedFixtureRef {
@@ -701,8 +847,8 @@ impl OwnerAudit<'_> {
     /// Audits one group reference expression and every expression nested in it.
     fn group(&mut self, group_ref: &GroupRefExpr, path: &str) {
         match group_ref {
-            GroupRefExpr::ByUid { uid } => match self.lookup.group_ids_by_uid.get(uid) {
-                Some(&group_id) => self.live_group(*uid, group_id, path),
+            GroupRefExpr::ByUid { uid } => match self.group_id_by_uid(*uid) {
+                Some(group_id) => self.live_group(*uid, group_id, path),
                 None => {
                     let target = ReferenceTarget::GroupUid { group_uid: *uid };
                     self.record(path, target, false, ReferenceIssueReason::MissingGroupUid);
@@ -714,8 +860,8 @@ impl OwnerAudit<'_> {
                     self.group_by_id(group_id, path);
                 }
             }
-            GroupRefExpr::ByLabel(label) => match self.lookup.group_uids_by_label.get(label) {
-                Some(&uid) => {
+            GroupRefExpr::ByLabel(label) => match self.group_uid_by_label(label) {
+                Some(uid) => {
                     let target = ReferenceTarget::GroupLabel {
                         label: label.clone(),
                     };
@@ -751,8 +897,8 @@ impl OwnerAudit<'_> {
 
     /// Audits one group named by user-facing ID.
     fn group_by_id(&mut self, group_id: u32, path: &str) {
-        match self.lookup.group_uids_by_id.get(&group_id) {
-            Some(&uid) => self.live_group(uid, group_id, path),
+        match self.group_uid_by_id(group_id) {
+            Some(uid) => self.live_group(uid, group_id, path),
             None => {
                 let target = ReferenceTarget::Group { group_id };
                 self.record(path, target, false, ReferenceIssueReason::MissingGroupId);
@@ -768,15 +914,11 @@ impl OwnerAudit<'_> {
 
     /// Records the owner as a dependent of the group, unless the owner is that group.
     fn add_group_dependent(&mut self, uid: Uuid) {
-        if self.owner.domain == ReferenceDomain::Group && self.owner.uid == uid.simple().to_string()
-        {
+        let owner = &self.report.owner;
+        if owner.domain == ReferenceDomain::Group && owner.uid == uid.simple().to_string() {
             return;
         }
-        self.report
-            .group_dependents
-            .entry(uid)
-            .or_default()
-            .insert(self.owner.description());
+        self.report.group_dependencies.insert(uid);
     }
 }
 
@@ -789,17 +931,8 @@ fn inclusive_range(start: u32, end: u32) -> Vec<u32> {
     }
 }
 
-/// Orders references by target, owner domain, owner ID and path.
-fn compare_entries(left: &ReferenceEntry, right: &ReferenceEntry) -> Ordering {
-    left.target
-        .cmp(&right.target)
-        .then_with(|| left.source.domain.cmp(&right.source.domain))
-        .then_with(|| left.source.id.cmp(&right.source.id))
-        .then_with(|| left.path.cmp(&right.path))
-}
-
 /// Orders issues by owner domain, owner ID, path and target.
-fn compare_issues(left: &ReferenceIssue, right: &ReferenceIssue) -> Ordering {
+pub(crate) fn compare_issues(left: &ReferenceIssue, right: &ReferenceIssue) -> Ordering {
     left.source
         .domain
         .cmp(&right.source.domain)

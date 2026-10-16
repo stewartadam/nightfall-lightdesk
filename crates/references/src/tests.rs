@@ -31,7 +31,7 @@ fn report_app() -> (App, async_channel::Receiver<OutboundFrame>) {
         Update,
         (
             forget_disconnected_watchers,
-            rebuild_reference_report,
+            update_reference_report,
             queue_health_on_resync,
             send_reference_report,
         )
@@ -85,6 +85,7 @@ fn resolved_with_missing_fixture() -> SelectionExpr {
 }
 
 /// A published report message as a client decodes it.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", content = "data")]
 enum Decoded {
@@ -92,7 +93,16 @@ enum Decoded {
         summary: ReferenceSummary,
         issues: Vec<ReferenceIssue>,
     },
-    ReferenceList(Vec<ReferenceEntry>),
+    ReferenceList(Vec<DecodedOwner>),
+    ReferenceListUpdate(Vec<DecodedOwner>),
+}
+
+/// The references of one object in a list or list update message.
+#[derive(Debug, Deserialize)]
+struct DecodedOwner {
+    domain: ReferenceDomain,
+    uid: String,
+    references: Vec<ReferenceEntry>,
 }
 
 /// Decodes every published frame with the audience it was addressed to.
@@ -141,8 +151,8 @@ fn store_change_broadcasts_health_once() {
     assert!(drain(&rx).is_empty(), "unchanged report was resent");
 }
 
-/// Only watching clients receive the full list, a watcher gets it again after every change, and
-/// unwatching or disconnecting stops it.
+/// Only watching clients receive the full list, a watcher then gets only the objects each change
+/// touched, and unwatching or disconnecting stops it.
 #[test]
 fn list_reaches_only_watchers() {
     let (mut app, rx) = report_app();
@@ -158,20 +168,25 @@ fn list_reaches_only_watchers() {
     else {
         panic!("expected the list for client 7 only, got {published:?}");
     };
-    assert_eq!(list.len(), 2);
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].domain, ReferenceDomain::Group);
+    assert_eq!(list[0].references.len(), 2);
 
     add_group(&mut app, 2, SelectionExpr::Group(GroupRefExpr::ById(1)));
     app.update();
-    let audiences: Vec<_> = drain(&rx)
-        .into_iter()
-        .map(|(audience, decoded)| (audience, matches!(decoded, Decoded::ReferenceList(_))))
-        .collect();
+    let published = drain(&rx);
+    let [
+        (Audience::All, Decoded::ReferenceHealth { .. }),
+        (Audience::Client(ClientId(7)), Decoded::ReferenceListUpdate(owners)),
+    ] = published.as_slice()
+    else {
+        panic!("expected health and an update for client 7, got {published:?}");
+    };
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0].uid, Uuid::from_u128(102).simple().to_string());
     assert_eq!(
-        audiences,
-        vec![
-            (Audience::All, false),
-            (Audience::Client(ClientId(7)), true)
-        ]
+        owners[0].references[0].target,
+        ReferenceTarget::Group { group_id: 1 }
     );
 
     app.world_mut().write_message(ClientDisconnected {
@@ -189,10 +204,10 @@ fn list_reaches_only_watchers() {
     );
 }
 
-/// Moving a master's level, as a fader does every frame, does not re-audit the show, while
-/// changing what the master is scoped to does.
+/// Moving a master's level, as a fader does every frame, publishes nothing because the master's
+/// references are unchanged, while changing what the master is scoped to does.
 #[test]
-fn master_level_changes_do_not_rebuild() {
+fn master_level_changes_publish_nothing() {
     let (mut app, rx) = report_app();
     let mut master = Master::default();
     master.identifiers.id = 1;
@@ -267,12 +282,133 @@ fn report_feeds_group_index() {
         vec!["objects:group 2 (Group 2)".to_owned()]
     );
     assert!(index.dependents(Uuid::from_u128(102)).is_empty());
-    let report = app.world().resource::<ReferenceReportState>().report();
+    let book = app.world().resource::<ReferenceReportState>().book();
     assert!(
-        report
-            .references
-            .iter()
+        book.owners()
+            .flat_map(|owner| &owner.references)
             .any(|entry| entry.target == ReferenceTarget::Group { group_id: 1 })
+    );
+
+    app.world_mut()
+        .resource_mut::<DataProvider<Group>>()
+        .remove(&Uuid::from_u128(102))
+        .expect("group should remove");
+    app.update();
+    let index = app.world().resource::<GroupReferenceIndex>();
+    assert!(index.dependents(Uuid::from_u128(101)).is_empty());
+}
+
+/// Renumbering a fixture re-audits only the objects that reference it, and a watcher receives
+/// just those objects.
+#[test]
+fn fixture_change_reaudits_only_its_readers() {
+    let (mut app, rx) = report_app();
+    add_fixture(&mut app);
+    add_group(&mut app, 1, resolved_with_missing_fixture());
+    add_group(&mut app, 2, SelectionExpr::Resolved(Vec::new()));
+    watch(&mut app, 7, true);
+    app.update();
+    drain(&rx);
+
+    let mut fixture = app
+        .world()
+        .resource::<FixtureDataProviderExt>()
+        .inner
+        .get(Uuid::from_u128(1))
+        .expect("fixture should exist")
+        .clone();
+    fixture.identifiers.id = 5;
+    app.world_mut()
+        .resource_mut::<FixtureDataProviderExt>()
+        .inner
+        .add(fixture)
+        .expect("fixture should store");
+    app.update();
+
+    let published = drain(&rx);
+    let [(Audience::Client(ClientId(7)), Decoded::ReferenceListUpdate(owners))] =
+        published.as_slice()
+    else {
+        panic!("expected only an update for client 7, got {published:?}");
+    };
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0].uid, Uuid::from_u128(101).simple().to_string());
+    assert_eq!(
+        owners[0].references[0].target,
+        ReferenceTarget::Fixture {
+            fixture_id: 5,
+            element_index: Some(1)
+        }
+    );
+}
+
+/// A client that starts watching gets the full list from a whole-show audit, while a client
+/// already watching an unchanged show is sent nothing.
+#[test]
+fn starting_a_watch_sends_only_that_client_the_list() {
+    let (mut app, rx) = report_app();
+    add_fixture(&mut app);
+    add_group(&mut app, 1, resolved_with_missing_fixture());
+    watch(&mut app, 7, true);
+    app.update();
+    drain(&rx);
+
+    watch(&mut app, 8, true);
+    app.update();
+
+    let published = drain(&rx);
+    assert!(
+        matches!(
+            published.as_slice(),
+            [(Audience::Client(ClientId(8)), Decoded::ReferenceList(owners))] if owners.len() == 1
+        ),
+        "expected the list for client 8 only, got {published:?}"
+    );
+}
+
+/// Deleting an object sends watchers an empty reference list for it, and clearing a store, as a
+/// showfile load does, re-audits the whole show.
+#[test]
+fn removed_objects_and_cleared_stores_update_the_report() {
+    let (mut app, rx) = report_app();
+    add_fixture(&mut app);
+    add_group(&mut app, 1, resolved_with_missing_fixture());
+    add_group(&mut app, 2, resolved_with_missing_fixture());
+    watch(&mut app, 7, true);
+    app.update();
+    drain(&rx);
+
+    app.world_mut()
+        .resource_mut::<DataProvider<Group>>()
+        .remove(&Uuid::from_u128(102))
+        .expect("group should remove");
+    app.update();
+    let published = drain(&rx);
+    let [
+        (Audience::All, Decoded::ReferenceHealth { summary, .. }),
+        (Audience::Client(ClientId(7)), Decoded::ReferenceListUpdate(owners)),
+    ] = published.as_slice()
+    else {
+        panic!("expected health and an update for client 7, got {published:?}");
+    };
+    assert_eq!(summary.issue_count, 1);
+    assert_eq!(owners.len(), 1);
+    assert!(owners[0].references.is_empty());
+
+    app.world_mut()
+        .resource_mut::<DataProvider<Group>>()
+        .clear();
+    app.update();
+    let published = drain(&rx);
+    assert!(
+        matches!(
+            published.as_slice(),
+            [
+                (Audience::All, Decoded::ReferenceHealth { summary, .. }),
+                (Audience::Client(ClientId(7)), Decoded::ReferenceListUpdate(_)),
+            ] if summary.object_count == 0 && summary.issue_count == 0
+        ),
+        "expected an empty report after the clear, got {published:?}"
     );
 }
 
@@ -370,4 +506,84 @@ fn prune_without_missing_refs_succeeds() {
         .expect("prune should finish");
     assert_eq!(result.command_id, envelope.command_id);
     assert!(matches!(result.outcome, CommandOutcome::Succeeded { .. }));
+}
+
+/// Measures report updates and their messages on a show with 2,000 four-element fixtures and
+/// 2,000 groups of 50 resolved fixture references each (100,000 references): opening the panel
+/// (a whole-show audit), editing one group, and renumbering one fixture. Prints the timings. Run
+/// with `cargo test -p nightfall-references -- --ignored --nocapture`.
+#[test]
+#[ignore = "benchmark"]
+fn benchmark_report_updates() {
+    let (mut app, rx) = report_app();
+    {
+        let mut fixtures = app.world_mut().resource_mut::<FixtureDataProviderExt>();
+        for id in 1..=2_000u32 {
+            fixtures
+                .inner
+                .add(Fixture {
+                    identifiers: Identifiers {
+                        id,
+                        uid: Uuid::from_u128(u128::from(id)),
+                        label: format!("Fixture {id}"),
+                    },
+                    elements: vec![Default::default(); 4],
+                    ..Default::default()
+                })
+                .expect("fixture should store");
+        }
+    }
+    for id in 1..=2_000u32 {
+        let refs = (0..50u32)
+            .map(|offset| FixtureRef {
+                fixture_uid: Uuid::from_u128(u128::from((id + offset) % 2_000 + 1)),
+                index: Some(offset % 4 + 1),
+            })
+            .collect();
+        add_group(&mut app, id, SelectionExpr::Resolved(refs));
+    }
+    let timed = |app: &mut App, label: &str| {
+        let started = std::time::Instant::now();
+        app.update();
+        let elapsed = started.elapsed();
+        let sizes: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|frame| frame.bytes.len())
+            .collect();
+        println!("{label}: {elapsed:?}, message bytes {sizes:?}");
+    };
+    timed(&mut app, "first audit");
+    timed(&mut app, "idle frame");
+    watch(&mut app, 7, true);
+    timed(&mut app, "panel open");
+
+    for round in 0..3u32 {
+        add_group(
+            &mut app,
+            1,
+            SelectionExpr::Resolved(vec![FixtureRef {
+                fixture_uid: Uuid::from_u128(u128::from(round + 1)),
+                index: None,
+            }]),
+        );
+        timed(&mut app, &format!("group edit {round}"));
+    }
+    for round in 0..3u32 {
+        let mut fixture = app
+            .world()
+            .resource::<FixtureDataProviderExt>()
+            .inner
+            .get(Uuid::from_u128(1_000))
+            .expect("fixture should exist")
+            .clone();
+        fixture.identifiers.id = 3_000 + round;
+        app.world_mut()
+            .resource_mut::<FixtureDataProviderExt>()
+            .inner
+            .add(fixture)
+            .expect("fixture should store");
+        timed(&mut app, &format!("fixture renumber {round}"));
+    }
+    watch(&mut app, 7, false);
+    add_group(&mut app, 2, SelectionExpr::Resolved(Vec::new()));
+    timed(&mut app, "group edit, panel closed");
 }

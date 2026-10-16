@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::collections::BTreeMap;
+
 use super::*;
 
 /// Reference source holding an arbitrary list of references, standing in for domain objects.
@@ -67,17 +69,50 @@ fn owner(domain: ReferenceDomain, id: u32) -> ReferenceOwner {
     )
 }
 
-/// Audits each `(owner, source)` pair against `lookup`.
-fn audit(lookup: &ReferenceLookup, sources: &[(ReferenceOwner, TestSource)]) -> ReferenceReport {
-    let mut auditor = ReferenceAuditor::new(lookup);
-    for (owner, source) in sources {
-        auditor.audit(owner.clone(), source);
+/// Show-wide view of a [`ReferenceBook`], shaped for assertions.
+struct Report {
+    summary: ReferenceSummary,
+    issues: Vec<ReferenceIssue>,
+    group_dependents: BTreeMap<Uuid, BTreeSet<String>>,
+    blueprint_dependents: BTreeMap<Uuid, BTreeSet<String>>,
+}
+
+impl Report {
+    /// Reads the counts, sorted issues and dependents out of `book`.
+    fn of(book: &ReferenceBook) -> Self {
+        /// Groups `(target, description)` pairs by target.
+        fn grouped(pairs: Vec<(Uuid, String)>) -> BTreeMap<Uuid, BTreeSet<String>> {
+            let mut grouped = BTreeMap::<Uuid, BTreeSet<String>>::new();
+            for (uid, description) in pairs {
+                grouped.entry(uid).or_default().insert(description);
+            }
+            grouped
+        }
+        Self {
+            summary: book.summary().clone(),
+            issues: book.issues(),
+            group_dependents: grouped(book.group_dependents()),
+            blueprint_dependents: grouped(book.blueprint_dependents()),
+        }
     }
-    auditor.finish()
+}
+
+/// Audits each `(owner, source)` pair against `lookup` into a fresh book.
+fn audit_book(lookup: &ReferenceLookup, sources: &[(ReferenceOwner, TestSource)]) -> ReferenceBook {
+    let mut book = ReferenceBook::default();
+    for (owner, source) in sources {
+        book.insert(audit_owner(lookup, owner.clone(), source));
+    }
+    book
+}
+
+/// Audits each `(owner, source)` pair against `lookup` and reports the show-wide result.
+fn audit(lookup: &ReferenceLookup, sources: &[(ReferenceOwner, TestSource)]) -> Report {
+    Report::of(&audit_book(lookup, sources))
 }
 
 /// Returns the issue reasons in report order.
-fn reasons(report: &ReferenceReport) -> Vec<ReferenceIssueReason> {
+fn reasons(report: &Report) -> Vec<ReferenceIssueReason> {
     report.issues.iter().map(|issue| issue.reason).collect()
 }
 
@@ -483,4 +518,106 @@ fn prunes_missing_resolved_refs_everywhere_in_a_selection() {
         selection.union[0].source,
         SelectionExpr::Resolved(vec![live])
     );
+}
+
+/// Verifies lookup setters report exactly the entries whose answer changed, and nothing when a
+/// target is re-registered unchanged.
+#[test]
+fn lookup_setters_report_changed_entries() {
+    let mut lookup = ReferenceLookup::default();
+    assert_eq!(
+        lookup.set_fixture(uid(1), Some((1, 4))),
+        vec![LookupKey::FixtureUid(uid(1)), LookupKey::FixtureId(1)]
+    );
+    assert!(lookup.set_fixture(uid(1), Some((1, 4))).is_empty());
+    assert_eq!(
+        lookup.set_fixture(uid(1), Some((2, 4))),
+        vec![
+            LookupKey::FixtureUid(uid(1)),
+            LookupKey::FixtureId(1),
+            LookupKey::FixtureId(2)
+        ]
+    );
+    assert_eq!(
+        lookup.set_fixture(uid(1), None),
+        vec![LookupKey::FixtureUid(uid(1)), LookupKey::FixtureId(2)]
+    );
+
+    lookup.add_group(uid(10), 1, "Front");
+    assert!(lookup.set_group(uid(10), Some((1, "Front"))).is_empty());
+    let changed = lookup.set_group(uid(10), Some((1, "Back")));
+    assert!(changed.contains(&LookupKey::GroupLabel("Front".to_owned())));
+    assert!(changed.contains(&LookupKey::GroupLabel("Back".to_owned())));
+
+    assert_eq!(
+        lookup.set_blueprint(uid(20), true),
+        vec![LookupKey::Blueprint(uid(20))]
+    );
+    assert!(lookup.set_blueprint(uid(20), true).is_empty());
+
+    lookup.add_output_target("artnet:1");
+    assert_eq!(
+        lookup.set_output_targets(HashSet::from(["artnet:1".to_owned(), "sacn:2".to_owned()])),
+        vec![LookupKey::OutputTarget("sacn:2".to_owned())]
+    );
+}
+
+/// Verifies a lookup change finds only the objects that read it, and re-auditing them keeps the
+/// running counts in step with a fresh audit.
+#[test]
+fn book_reaudits_only_readers_of_changed_lookups() {
+    let mut lookup = ReferenceLookup::default();
+    lookup.add_fixture(uid(1), 1, 1);
+    lookup.add_fixture(uid(2), 2, 1);
+    let fixture_source = |fixture: u128| {
+        TestSource::selection(SelectionExpr::Resolved(vec![FixtureRef {
+            fixture_uid: uid(fixture),
+            index: None,
+        }]))
+    };
+    let sources = [
+        (owner(ReferenceDomain::Cue, 1), fixture_source(1)),
+        (owner(ReferenceDomain::Cue, 2), fixture_source(2)),
+    ];
+    let mut book = audit_book(&lookup, &sources);
+    assert_eq!(book.summary().issue_count, 0);
+
+    let changed = lookup.set_fixture(uid(1), None);
+    let readers = book.readers(&changed);
+    assert_eq!(
+        readers,
+        HashSet::from([OwnerKey::of(&owner(ReferenceDomain::Cue, 1))])
+    );
+    let previous = book.insert(audit_owner(&lookup, sources[0].0.clone(), &sources[0].1));
+    assert!(previous.is_some_and(|previous| previous.issues.is_empty()));
+
+    assert_eq!(book.summary(), audit_book(&lookup, &sources).summary());
+    assert_eq!(book.summary().affected_object_count, 1);
+    assert_eq!(book.summary().prunable_issue_count, 1);
+
+    book.remove(&OwnerKey::of(&sources[0].0));
+    assert_eq!(book.summary().object_count, 1);
+    assert_eq!(book.summary().issue_count, 0);
+    assert!(book.readers(&[LookupKey::FixtureUid(uid(1))]).is_empty());
+}
+
+/// Verifies a label shared by several groups resolves to the lowest group ID, and removing that
+/// group marks the label changed so its readers move to the next group.
+#[test]
+fn shared_group_labels_resolve_to_the_lowest_id() {
+    let mut lookup = ReferenceLookup::default();
+    lookup.add_group(uid(11), 2, "Wash");
+    lookup.add_group(uid(10), 1, "Wash");
+    let source = TestSource::selection(SelectionExpr::Group(GroupRefExpr::ByLabel(
+        "Wash".to_owned(),
+    )));
+    let cue = owner(ReferenceDomain::Cue, 1);
+
+    let before = audit_owner(&lookup, cue.clone(), &source);
+    assert_eq!(before.group_dependencies, BTreeSet::from([uid(10)]));
+
+    let changed = lookup.set_group(uid(10), None);
+    assert!(before.lookups.iter().any(|lookup| changed.contains(lookup)));
+    let after = audit_owner(&lookup, cue, &source);
+    assert_eq!(after.group_dependencies, BTreeSet::from([uid(11)]));
 }

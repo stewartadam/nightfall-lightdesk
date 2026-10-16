@@ -8,17 +8,22 @@
 
 //! Show-wide reference report for the References panel, delete guards and dependency lists.
 //!
-//! Whenever a reference-bearing store changes, the engine audits every object's references (see
-//! [`nightfall_selection::ReferenceAuditor`]) and keeps the result. Clients get two messages:
+//! The engine keeps the audit of every reference-bearing object in a
+//! [`nightfall_selection::ReferenceBook`]. When stores change, it re-audits only the objects that
+//! changed and the objects whose references read a fixture, group, Blueprint or output target
+//! that changed. Opening the References panel audits the whole show once, so the panel starts
+//! from a fresh result. Clients get these messages:
 //!
-//! - `ReferenceHealth`, broadcast to every client, carries the summary counts and the missing
-//!   references. It stays small however large the show is.
+//! - `ReferenceHealth`, broadcast to every client when the counts or missing references change,
+//!   carries the summary counts and the missing references. It stays small however large the
+//!   show is.
 //! - `ReferenceList` carries every reference, and only reaches clients that ask for it through
 //!   [`REFERENCE_WATCH_MODULE`], such as an open References panel. A large show holds tens of
-//!   thousands of fixture references, so broadcasting the full list on every edit would cost
-//!   every client far more than it needs.
+//!   thousands of fixture references, so it is sent once when the client starts watching.
+//! - `ReferenceListUpdate` then carries the references of the objects whose references changed,
+//!   so an edit costs watchers only the objects it touched.
 //!
-//! The report also feeds [`BlueprintReferenceIndex`] and [`GroupReferenceIndex`], which the
+//! The book also feeds [`BlueprintReferenceIndex`] and [`GroupReferenceIndex`], which the
 //! Blueprint and group delete guards read, and `ReferenceCommand::PruneMissingFixtureRefs`
 //! removes missing resolved fixture references from every object under one undo step.
 
@@ -27,16 +32,21 @@ mod sources;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_selection::{ReferenceEntry, ReferenceIssue, ReferenceReport, ReferenceSummary};
+use nightfall_selection::{
+    OwnerKey, OwnerReferences, ReferenceBook, ReferenceDomain, ReferenceEntry, ReferenceIssue,
+    ReferenceOwner, ReferenceSummary,
+};
 pub use prune::ReferenceCommand;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 pub use sources::ReferenceSources;
+use sources::{AuditCursor, AuditUpdate};
+use uuid::Uuid;
 
 /// Update module a client sends to choose whether it receives the full reference list.
 pub const REFERENCE_WATCH_MODULE: &str = "ReferenceWatch";
@@ -48,7 +58,7 @@ const INDEX_SOURCE: &str = "objects";
 #[typeshare::typeshare]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReferenceWatch {
-    /// Whether the sender receives `ReferenceList` messages.
+    /// Whether the sender receives `ReferenceList` and `ReferenceListUpdate` messages.
     pub references: bool,
 }
 
@@ -62,6 +72,18 @@ pub struct ReferenceHealth<'a> {
     pub issues: &'a [ReferenceIssue],
 }
 
+/// Every reference one object holds.
+#[typeshare::typeshare]
+#[derive(Debug, Serialize)]
+pub struct OwnerReferenceList<'a> {
+    /// Object family of the owner.
+    pub domain: ReferenceDomain,
+    /// Stable identity of the owner.
+    pub uid: &'a str,
+    /// Every reference the owner holds; empty when it holds none or no longer exists.
+    pub references: &'a [ReferenceEntry],
+}
+
 /// Reference report messages sent to clients.
 #[derive(Serialize)]
 #[serde(tag = "type", content = "data")]
@@ -69,45 +91,144 @@ pub struct ReferenceHealth<'a> {
 pub enum ReferenceWsMessage<'a> {
     /// Summary counts and missing references.
     ReferenceHealth(ReferenceHealth<'a>),
-    /// Every reference in the show, for clients that watch it.
-    ReferenceList(&'a [ReferenceEntry]),
+    /// Every object that holds references, for a client that starts watching.
+    ReferenceList(Vec<OwnerReferenceList<'a>>),
+    /// Objects whose references changed since the last list or update, for watching clients.
+    ReferenceListUpdate(Vec<OwnerReferenceList<'a>>),
 }
 
 /// Engine-side state of the reference report.
 #[derive(Resource, Default)]
 pub struct ReferenceReportState {
-    /// Latest audit.
-    report: ReferenceReport,
+    /// Latest audit of every object.
+    book: ReferenceBook,
+    /// How far the book has followed the stores.
+    cursor: AuditCursor,
+    /// Every missing reference in report order, as last broadcast.
+    issues: Vec<ReferenceIssue>,
+    /// Whether the next update audits every object.
+    full_audit_requested: bool,
     /// Whether the health message must be broadcast at the next client output.
     health_pending: bool,
     /// Clients that receive the full reference list.
     watchers: HashSet<Audience>,
-    /// Watchers that must be sent the list at the next client output.
+    /// Watchers that must be sent the full list at the next client output.
     list_pending: HashSet<Audience>,
+    /// Objects whose references changed since watchers were last sent the list or an update.
+    list_updates: BTreeSet<OwnerKey>,
+}
+
+/// What storing a batch of audits changed.
+#[derive(Default)]
+struct AppliedAudits {
+    /// Whether any object's missing references changed.
+    issues: bool,
+    /// Whether any object's group or Blueprint dependencies, or how it is described, changed.
+    dependents: bool,
 }
 
 impl ReferenceReportState {
-    /// Returns the latest audit.
-    pub fn report(&self) -> &ReferenceReport {
-        &self.report
+    /// Returns the latest audit of every object.
+    pub fn book(&self) -> &ReferenceBook {
+        &self.book
     }
 
-    /// Replaces the audit and queues it for every client.
-    fn replace(&mut self, report: ReferenceReport) {
-        self.report = report;
-        self.health_pending = true;
-        self.list_pending.extend(self.watchers.iter().copied());
+    /// Stores a batch of audits, queueing the messages they change.
+    fn apply(&mut self, update: AuditUpdate) -> AppliedAudits {
+        let summary_before = self.book.summary().clone();
+        let mut applied = AppliedAudits::default();
+        let mut seen = update.full.then(HashSet::new);
+        for (key, audit) in update.audits {
+            if let Some(seen) = &mut seen {
+                seen.insert(key.clone());
+            }
+            let previous = match audit {
+                Some(audit) => self.book.insert(audit),
+                None => self.book.remove(&key),
+            };
+            self.record_change(key, previous.as_ref(), &mut applied);
+        }
+        if let Some(seen) = seen {
+            for removed in self.book.retain(|key| seen.contains(key)) {
+                self.record_change(OwnerKey::of(&removed.owner), Some(&removed), &mut applied);
+            }
+        }
+        if applied.issues {
+            self.issues = self.book.issues();
+        }
+        if applied.issues || *self.book.summary() != summary_before {
+            self.health_pending = true;
+        }
+        applied
     }
 
-    /// Starts or stops sending the full reference list to `audience`.
+    /// Compares an object's stored audit with `previous`, queueing a list update for watchers and
+    /// noting in `applied` what else changed.
+    fn record_change(
+        &mut self,
+        key: OwnerKey,
+        previous: Option<&OwnerReferences>,
+        applied: &mut AppliedAudits,
+    ) {
+        /// Returns the references of an audit, or none for a missing one.
+        fn references(audit: Option<&OwnerReferences>) -> &[ReferenceEntry] {
+            audit.map_or(&[], |audit| &audit.references)
+        }
+        /// Returns the missing references of an audit, or none for a missing one.
+        fn issues(audit: Option<&OwnerReferences>) -> &[ReferenceIssue] {
+            audit.map_or(&[], |audit| &audit.issues)
+        }
+        /// Returns what the reverse indexes store for an audit.
+        fn dependents(
+            audit: Option<&OwnerReferences>,
+        ) -> Option<(&ReferenceOwner, &BTreeSet<Uuid>, &BTreeSet<Uuid>)> {
+            audit.map(|audit| {
+                (
+                    &audit.owner,
+                    &audit.group_dependencies,
+                    &audit.blueprint_dependencies,
+                )
+            })
+        }
+        let current = self.book.get(&key);
+        applied.issues |= issues(previous) != issues(current);
+        applied.dependents |= dependents(previous) != dependents(current);
+        if !self.watchers.is_empty() && references(previous) != references(current) {
+            self.list_updates.insert(key);
+        }
+    }
+
+    /// Starts or stops sending the full reference list to `audience`. Starting audits the whole
+    /// show before the list is sent.
     fn watch(&mut self, audience: Audience, references: bool) {
         if references {
             self.watchers.insert(audience);
             self.list_pending.insert(audience);
+            self.full_audit_requested = true;
         } else {
             self.watchers.remove(&audience);
             self.list_pending.remove(&audience);
+            if self.watchers.is_empty() {
+                self.list_updates.clear();
+            }
         }
+    }
+
+    /// Returns the references of the objects `keys` name, for a list or update message.
+    fn owner_lists<'a>(
+        &'a self,
+        keys: impl IntoIterator<Item = &'a OwnerKey>,
+    ) -> Vec<OwnerReferenceList<'a>> {
+        keys.into_iter()
+            .map(|key| OwnerReferenceList {
+                domain: key.domain,
+                uid: &key.uid,
+                references: self
+                    .book
+                    .get(key)
+                    .map_or(&[][..], |audit| &audit.references),
+            })
+            .collect()
     }
 }
 
@@ -130,7 +251,7 @@ impl Plugin for ReferencesPlugin {
             Update,
             (
                 forget_disconnected_watchers.in_set(EventHandling),
-                rebuild_reference_report
+                update_reference_report
                     .after(EventHandling)
                     .before(ResyncHandling),
                 queue_health_on_resync.in_set(ResyncHandling),
@@ -140,39 +261,34 @@ impl Plugin for ReferencesPlugin {
     }
 }
 
-/// Re-audits every reference when a reference-bearing store changed, and refreshes the reverse
-/// indexes the delete guards read.
-pub fn rebuild_reference_report(
+/// Re-audits the objects that store changes affect, or the whole show when a client starts
+/// watching or a store was replaced, and refreshes the reverse indexes the delete guards read.
+pub fn update_reference_report(
     mut sources: ReferenceSources,
     mut state: ResMut<ReferenceReportState>,
     mut blueprint_index: ResMut<BlueprintReferenceIndex>,
     mut group_index: ResMut<GroupReferenceIndex>,
 ) {
-    if !sources.is_changed() {
+    let full = state.full_audit_requested;
+    let state = &mut *state;
+    let Some(update) = sources.audit_changes(&mut state.cursor, &state.book, full) else {
         return;
-    }
-    let report = sources.audit();
+    };
+    state.full_audit_requested = false;
+    let full = update.full;
+    let audited = update.audits.len();
+    let applied = state.apply(update);
     tracing::debug!(
-        references = report.summary.reference_count,
-        issues = report.summary.issue_count,
-        "reference_report_rebuilt"
+        full,
+        audited,
+        references = state.book.summary().reference_count,
+        issues = state.book.summary().issue_count,
+        "reference_report_updated"
     );
-    blueprint_index.replace_source(INDEX_SOURCE, dependents(&report.blueprint_dependents));
-    group_index.replace_source(INDEX_SOURCE, dependents(&report.group_dependents));
-    state.replace(report);
-}
-
-/// Flattens a dependents map into the `(target, description)` pairs a reverse index stores.
-fn dependents(
-    map: &std::collections::BTreeMap<uuid::Uuid, std::collections::BTreeSet<String>>,
-) -> Vec<(uuid::Uuid, String)> {
-    map.iter()
-        .flat_map(|(uid, descriptions)| {
-            descriptions
-                .iter()
-                .map(move |description| (*uid, description.clone()))
-        })
-        .collect()
+    if applied.dependents {
+        blueprint_index.replace_source(INDEX_SOURCE, state.book.blueprint_dependents());
+        group_index.replace_source(INDEX_SOURCE, state.book.group_dependents());
+    }
 }
 
 /// Queues the health message for a client that resyncs.
@@ -185,9 +301,9 @@ fn queue_health_on_resync(
     }
 }
 
-/// Publishes queued health and list messages.
+/// Publishes queued health, list and list update messages.
 fn send_reference_report(mut state: ResMut<ReferenceReportState>, sink: Res<ClientEventSink>) {
-    if !state.health_pending && state.list_pending.is_empty() {
+    if !state.health_pending && state.list_pending.is_empty() && state.list_updates.is_empty() {
         return;
     }
     let state = &mut *state;
@@ -195,18 +311,31 @@ fn send_reference_report(mut state: ResMut<ReferenceReportState>, sink: Res<Clie
         sink.publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &ReferenceWsMessage::ReferenceHealth(ReferenceHealth {
-                summary: &state.report.summary,
-                issues: &state.report.issues,
+                summary: state.book.summary(),
+                issues: &state.issues,
             }),
         );
     }
-    for audience in state.list_pending.drain() {
-        sink.publish_to(
-            audience,
-            DISCRIMINATOR_NON_DROPPABLE,
-            &ReferenceWsMessage::ReferenceList(&state.report.references),
-        );
+    let list_updates = std::mem::take(&mut state.list_updates);
+    if !list_updates.is_empty() {
+        let message = ReferenceWsMessage::ReferenceListUpdate(state.owner_lists(&list_updates));
+        for audience in state.watchers.difference(&state.list_pending) {
+            sink.publish_to(*audience, DISCRIMINATOR_NON_DROPPABLE, &message);
+        }
     }
+    if !state.list_pending.is_empty() {
+        let owners = state
+            .book
+            .owners()
+            .filter(|audit| !audit.references.is_empty())
+            .map(|audit| OwnerKey::of(&audit.owner))
+            .collect::<Vec<_>>();
+        let message = ReferenceWsMessage::ReferenceList(state.owner_lists(&owners));
+        for audience in &state.list_pending {
+            sink.publish_to(*audience, DISCRIMINATOR_NON_DROPPABLE, &message);
+        }
+    }
+    state.list_pending.clear();
 }
 
 /// Applies a client's [`REFERENCE_WATCH_MODULE`] update.

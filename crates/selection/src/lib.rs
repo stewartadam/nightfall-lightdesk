@@ -23,9 +23,10 @@ pub use contracts::{
 };
 pub use linear::SelectionResolver;
 pub use references::{
-    HeldReference, ReferenceAuditor, ReferenceDomain, ReferenceEntry, ReferenceIssue,
-    ReferenceIssueReason, ReferenceLookup, ReferenceOwner, ReferenceReport, ReferenceSource,
-    ReferenceStatus, ReferenceSummary, ReferenceTarget, prune_missing_fixture_refs,
+    HeldReference, LookupKey, OwnerKey, OwnerReferences, ReferenceBook, ReferenceDomain,
+    ReferenceEntry, ReferenceIssue, ReferenceIssueReason, ReferenceLookup, ReferenceOwner,
+    ReferenceSource, ReferenceStatus, ReferenceSummary, ReferenceTarget, audit_owner,
+    prune_missing_fixture_refs,
 };
 pub use spatial::SpatialSelectionResolver;
 pub use validation::{

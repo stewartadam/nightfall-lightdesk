@@ -958,12 +958,13 @@ function sendDmxUniverseWatch(
 const stopDmxUniverseWatchSync = dmxUniverseWatch.listen(sendDmxUniverseWatch);
 
 /**
- * Tells the backend whether this client wants the full reference list, which it then sends
- * after every change. Stopping the watch also drops the list this client holds.
+ * Tells the backend whether this client wants the full reference list, which it then keeps
+ * current with an update after every change. Stopping the watch also drops the list this client
+ * holds.
  */
 function sendReferenceListWatch(references: boolean): void {
-  if (!references && referenceList.get().length > 0) {
-    setStoreAction(referenceList, "Stop watching references", []);
+  if (!references && referenceList.get().size > 0) {
+    setStoreAction(referenceList, "Stop watching references", new Map());
   }
   if (!engineRuntime.isRunning) return;
   const watch: types.ReferenceWatch = { references };

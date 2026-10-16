@@ -25,6 +25,7 @@ import PanelToolbar from "../../components/ui/panel-toolbar";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { ToolbarButton } from "../../components/ui/toolbar-button";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
+import { flattenReferenceList } from "../../lib/reference-list";
 import { referenceHealth, referenceList } from "../../state/appStores";
 import {
   ReferenceHealthTable,
@@ -63,14 +64,12 @@ export default function ReferencesPanel(_props: ReferencesPanelProps) {
   const [searchText, setSearchText] = createSignal("");
   const [missingOnly, setMissingOnly] = createSignal(false);
 
+  /** Flattens the per-object reference map into rows ordered by object. */
+  const references = createMemo(() => flattenReferenceList($references()));
+
   /** Filters reference rows by toolbar controls. */
   const filteredReferences = createMemo(() =>
-    filterReferences(
-      $references(),
-      domainFilter(),
-      searchText(),
-      missingOnly(),
-    ),
+    filterReferences(references(), domainFilter(), searchText(), missingOnly()),
   );
 
   /** Filters health rows by toolbar controls. */

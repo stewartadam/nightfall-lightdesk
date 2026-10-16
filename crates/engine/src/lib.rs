@@ -85,7 +85,7 @@ pub mod prelude {
         ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
         CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
     };
-    pub use crate::data_provider::{DataProvider, DataStoreError};
+    pub use crate::data_provider::{DataChanges, DataProvider, DataRevision, DataStoreError};
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
     pub use crate::parse_command_string;

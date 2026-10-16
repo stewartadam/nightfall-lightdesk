@@ -145,7 +145,7 @@ fn prune_store_commands(
             stores.push(Box::new(FxCommand::StoreFx(fx)));
         }
     }
-    for step_fx in &sources.step_fx {
+    for (_, step_fx) in &sources.step_fx {
         if let Some(step_fx) = pruned(step_fx, lookup) {
             stores.push(Box::new(StepFxCommand::Store(step_fx)));
         }
