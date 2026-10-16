@@ -169,3 +169,107 @@ for (const geometryDriven of [false, true]) {
     );
   });
 }
+
+/** Seen obliquely at close range, the dark physical cells must not depth fight the coplanar luminous row into a stippled bar. */
+test("lit LED bar cells are not occluded by their own dark lenses", async ({
+  page,
+}, testInfo) => {
+  const errors = await openOpticsFixture(page);
+  const result = await page.evaluate(async () => {
+    const T = await window.__nightfallHarness.load("three");
+    const { readPixels, renderFrames, retainCanvas, verifyBackend } =
+      await window.__nightfallHarness.load("optics");
+    const { FixtureLayout } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).types;
+    const { buildFixtureWithoutGeometry } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).rendererRegistry;
+    const { resolveQualityProfile } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).qualityProfile;
+    const { disposeLedBar, updateLedBarColors } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).ledBarRenderer;
+    const { createRenderer } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).renderer;
+    const width = 400;
+    const height = 300;
+    const renderer = createRenderer({
+      canvas: document.querySelector("canvas")!,
+      devicePixelRatio: 1,
+    });
+    renderer.setSize(width, height);
+    await renderer.init();
+    const backend = await verifyBackend(renderer, undefined);
+    const scene = new T.Scene();
+    scene.background = new T.Color(0);
+    const camera = new T.PerspectiveCamera(50, width / height, 0.1, 40);
+    // Close enough that the row needs no transverse expansion, at a grazing angle like an elevated stage view.
+    camera.position.set(-0.6, 0.35, 1);
+    camera.lookAt(0, -0.07, 0);
+    const scenePass = T.pass(scene, camera);
+    const pipeline = new T.RenderPipeline(renderer);
+    pipeline.outputNode = scenePass.getTextureNode();
+    const elements = Array.from({ length: 40 }, (_, i) => ({
+      label: `Pixel ${i}`,
+      parameters: [],
+    }));
+    const fixture = buildFixtureWithoutGeometry(
+      "lens-bar",
+      elements,
+      undefined,
+      resolveQualityProfile("medium"),
+      FixtureLayout.LedBar,
+    )!;
+    const ledBar = { ...fixture, ledBarData: fixture.ledBarData! };
+    if (!ledBar.ledBarData.filteredRow)
+      throw new Error("Expected a filtered emitter row");
+    scene.add(fixture.group);
+    updateLedBarColors(
+      ledBar,
+      new Map(
+        elements.map((element) => [
+          element.label,
+          { red: 0, green: 0, blue: 1, intensity: 1 },
+        ]),
+      ),
+    );
+    /** Sums blue output over the whole frame, which contains only the lit bar on black. */
+    const capture = async (name: string) => {
+      await renderFrames(renderer, 4, () => pipeline.render());
+      retainCanvas(name, renderer.domElement);
+      const pixels = readPixels(renderer.domElement, {
+        x: 0,
+        y: 0,
+        width,
+        height,
+      });
+      let total = 0;
+      for (let i = 2; i < pixels.length; i += 4) total += pixels[i];
+      return total;
+    };
+    try {
+      const withLenses = await capture("led-bar-with-lenses");
+      ledBar.ledBarData.cellMesh.visible = false;
+      const withoutLenses = await capture("led-bar-without-lenses");
+      return { backend, withLenses, withoutLenses };
+    } finally {
+      disposeLedBar(ledBar);
+      scenePass.dispose();
+      pipeline.dispose();
+      renderer.dispose();
+    }
+  });
+  annotateBackend(testInfo, result.backend);
+  await expectWithArtifacts(
+    testInfo,
+    { page, artifacts: { "led-bar-lenses.json": result } },
+    () => {
+      expect(errors).toEqual([]);
+      expect(result.withoutLenses).toBeGreaterThan(0);
+      expect(result.withLenses / result.withoutLenses).toBeGreaterThan(0.95);
+    },
+  );
+});
