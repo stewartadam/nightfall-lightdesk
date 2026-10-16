@@ -9,11 +9,11 @@
 use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
 
 use super::*;
-use crate::prelude::TimelineSequenceActionTargets;
-use crate::systems::update_timeline_sequence_action_targets_system;
+use crate::prelude::TimelinePlannedCuesByAction;
+use crate::systems::update_timeline_planned_cues_system;
 
 /// Builds an app with one four-cue manual sequence clip, returning the clip and cue UIDs.
-fn setup_sequence_target_app() -> (App, Uuid, Vec<Uuid>) {
+fn setup_planned_cue_app() -> (App, Uuid, Vec<Uuid>) {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
     app.init_resource::<DataProvider<Timeline>>();
@@ -21,10 +21,10 @@ fn setup_sequence_target_app() -> (App, Uuid, Vec<Uuid>) {
     app.init_resource::<DataProvider<Sequence>>();
     app.init_resource::<DataProvider<Group>>();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<TimelineSequenceActionTargets>();
+    app.init_resource::<TimelinePlannedCuesByAction>();
     app.add_message::<CueDefinitionChange>();
     app.add_message::<SequenceDefinitionChange>();
-    app.add_systems(Update, update_timeline_sequence_action_targets_system);
+    app.add_systems(Update, update_timeline_planned_cues_system);
 
     let clip_uid = Uuid::new_v4();
     let sequence_uid = Uuid::new_v4();
@@ -105,19 +105,19 @@ fn store_timeline(app: &mut App, timeline: Timeline) {
 }
 
 /// Returns each resolved navigation action ID with the cue UID it lands on.
-fn resolved_targets(app: &App) -> Vec<(String, Option<Uuid>)> {
+fn resolved_planned_cues(app: &App) -> Vec<(String, Option<Uuid>)> {
     app.world()
-        .resource::<TimelineSequenceActionTargets>()
-        .targets
+        .resource::<TimelinePlannedCuesByAction>()
+        .cues
         .iter()
-        .map(|target| (target.action_id.clone(), target.cue_uid))
+        .map(|planned| (planned.action_id.clone(), planned.cue_uid))
         .collect()
 }
 
-/// Verifies Go and Back targets follow timeline order, and update when an action is moved.
+/// Verifies Go and Back planned cues follow timeline order, and update when an action is moved.
 #[test]
-fn sequence_action_targets_follow_action_position() {
-    let (mut app, clip_uid, cues) = setup_sequence_target_app();
+fn planned_cues_follow_action_position() {
+    let (mut app, clip_uid, cues) = setup_planned_cue_app();
     let timeline_uid = Uuid::new_v4();
     store_timeline(
         &mut app,
@@ -134,7 +134,7 @@ fn sequence_action_targets_follow_action_position() {
     app.update();
 
     assert_eq!(
-        resolved_targets(&app),
+        resolved_planned_cues(&app),
         vec![
             ("back".to_owned(), Some(cues[1])),
             ("go-a".to_owned(), Some(cues[1])),
@@ -157,7 +157,7 @@ fn sequence_action_targets_follow_action_position() {
     app.update();
 
     assert_eq!(
-        resolved_targets(&app),
+        resolved_planned_cues(&app),
         vec![
             ("back".to_owned(), Some(cues[0])),
             ("go-a".to_owned(), Some(cues[1])),
@@ -166,10 +166,10 @@ fn sequence_action_targets_follow_action_position() {
     );
 }
 
-/// Verifies muted tracks neither resolve their own targets nor shift audible ones.
+/// Verifies muted tracks neither resolve their own planned cues nor shift audible ones.
 #[test]
-fn sequence_action_targets_skip_muted_tracks() {
-    let (mut app, clip_uid, cues) = setup_sequence_target_app();
+fn planned_cues_skip_muted_tracks() {
+    let (mut app, clip_uid, cues) = setup_planned_cue_app();
     let timeline_uid = Uuid::new_v4();
     let mut timeline = navigation_timeline(
         timeline_uid,
@@ -191,15 +191,15 @@ fn sequence_action_targets_skip_muted_tracks() {
     app.update();
 
     assert_eq!(
-        resolved_targets(&app),
+        resolved_planned_cues(&app),
         vec![("go".to_owned(), Some(cues[1]))]
     );
 }
 
-/// Verifies an edit to a navigated sequence re-resolves targets from the cached replay inputs.
+/// Verifies an edit to a navigated sequence re-resolves planned cues from the cached replay inputs.
 #[test]
-fn sequence_action_targets_follow_sequence_edits() {
-    let (mut app, clip_uid, cues) = setup_sequence_target_app();
+fn planned_cues_follow_sequence_edits() {
+    let (mut app, clip_uid, cues) = setup_planned_cue_app();
     let timeline_uid = Uuid::new_v4();
     store_timeline(
         &mut app,
@@ -213,15 +213,11 @@ fn sequence_action_targets_follow_sequence_edits() {
     );
     app.update();
     assert_eq!(
-        resolved_targets(&app),
+        resolved_planned_cues(&app),
         vec![("go".to_owned(), Some(cues[1]))]
     );
 
-    let sequence_uid = app
-        .world()
-        .resource::<TimelineSequenceActionTargets>()
-        .targets[0]
-        .sequence_uid;
+    let sequence_uid = app.world().resource::<TimelinePlannedCuesByAction>().cues[0].sequence_uid;
     let mut sequence = app
         .world()
         .resource::<DataProvider<Sequence>>()
@@ -243,15 +239,15 @@ fn sequence_action_targets_follow_sequence_edits() {
     app.update();
 
     assert_eq!(
-        resolved_targets(&app),
+        resolved_planned_cues(&app),
         vec![("go".to_owned(), Some(cues[2]))]
     );
 }
 
-/// Verifies a cue edit outside every navigated sequence leaves published targets untouched.
+/// Verifies a cue edit outside every navigated sequence leaves published planned cues untouched.
 #[test]
-fn sequence_action_targets_skip_unrelated_cue_edits() {
-    let (mut app, clip_uid, _) = setup_sequence_target_app();
+fn planned_cues_skip_unrelated_cue_edits() {
+    let (mut app, clip_uid, _) = setup_planned_cue_app();
     store_timeline(
         &mut app,
         navigation_timeline(
@@ -280,15 +276,15 @@ fn sequence_action_targets_skip_unrelated_cue_edits() {
     app.world_mut()
         .write_message(CueDefinitionChange::Updated(Box::new(unrelated)));
     app.world_mut()
-        .resource_mut::<TimelineSequenceActionTargets>()
-        .targets
+        .resource_mut::<TimelinePlannedCuesByAction>()
+        .cues
         .clear();
     app.update();
 
     assert!(
         app.world()
-            .resource::<TimelineSequenceActionTargets>()
-            .targets
+            .resource::<TimelinePlannedCuesByAction>()
+            .cues
             .is_empty(),
         "an unrelated cue edit should not trigger a recompute"
     );

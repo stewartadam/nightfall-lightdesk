@@ -23,9 +23,9 @@ use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };
 use nightfall_timeline::prelude::{
-    Action, ActionKind, Timeline, TimelineSequenceActionTargets, Track,
+    Action, ActionKind, Timeline, TimelinePlannedCuesByAction, Track,
 };
-use nightfall_timeline::update_timeline_sequence_action_targets_system;
+use nightfall_timeline::update_timeline_planned_cues_system;
 use uuid::Uuid;
 
 const DEFAULT_CUE_COUNTS: &[usize] = &[100, 1_000];
@@ -56,22 +56,22 @@ impl Trigger {
     }
 }
 
-/// Registers the navigation target recompute benchmarks.
-fn bench_sequence_targets(c: &mut Criterion) {
+/// Registers the planned cue recompute benchmarks.
+fn bench_planned_cues(c: &mut Criterion) {
     let cue_counts = configured_counts(
-        "NIGHTFALL_SEQUENCE_TARGETS_BENCH_CUE_COUNTS",
+        "NIGHTFALL_PLANNED_CUES_BENCH_CUE_COUNTS",
         DEFAULT_CUE_COUNTS,
     );
     let start_counts = configured_counts(
-        "NIGHTFALL_SEQUENCE_TARGETS_BENCH_START_COUNTS",
+        "NIGHTFALL_PLANNED_CUES_BENCH_START_COUNTS",
         DEFAULT_START_COUNTS,
     );
-    let mut group = c.benchmark_group("timeline_sequence_targets_recompute");
+    let mut group = c.benchmark_group("timeline_planned_cues_recompute");
 
     for trigger in [Trigger::TimelineEdit, Trigger::FixtureEdit] {
         for &cue_count in &cue_counts {
             for &start_count in &start_counts {
-                let mut app = sequence_targets_app(cue_count, start_count);
+                let mut app = planned_cues_app(cue_count, start_count);
                 let id = format!("{}/cues={cue_count}/starts={start_count}", trigger.name());
                 group.bench_function(BenchmarkId::from_parameter(id), |b| {
                     b.iter(|| {
@@ -88,8 +88,8 @@ fn bench_sequence_targets(c: &mut Criterion) {
                         app.update();
                         black_box(
                             app.world()
-                                .resource::<TimelineSequenceActionTargets>()
-                                .targets
+                                .resource::<TimelinePlannedCuesByAction>()
+                                .cues
                                 .len(),
                         )
                     });
@@ -101,9 +101,9 @@ fn bench_sequence_targets(c: &mut Criterion) {
     group.finish();
 }
 
-/// Builds an app running only the target system over one `cue_count`-step sequence clip that
+/// Builds an app running only the planned cue system over one `cue_count`-step sequence clip that
 /// a timeline starts `start_count` times, each start followed by [`GOS_PER_START`] Go actions.
-fn sequence_targets_app(cue_count: usize, start_count: usize) -> App {
+fn planned_cues_app(cue_count: usize, start_count: usize) -> App {
     let mut app = App::new();
     nightfall_desk::automation_actions::register_desk_actions(&mut app);
     app.init_resource::<DataProvider<Timeline>>();
@@ -111,10 +111,10 @@ fn sequence_targets_app(cue_count: usize, start_count: usize) -> App {
     app.init_resource::<DataProvider<Sequence>>();
     app.init_resource::<DataProvider<nightfall::prelude::Group>>();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<TimelineSequenceActionTargets>();
+    app.init_resource::<TimelinePlannedCuesByAction>();
     app.add_message::<CueDefinitionChange>();
     app.add_message::<SequenceDefinitionChange>();
-    app.add_systems(Update, update_timeline_sequence_action_targets_system);
+    app.add_systems(Update, update_timeline_planned_cues_system);
 
     let fixtures = (0..FIXTURE_COUNT)
         .map(|index| add_fixture(&mut app, index))
@@ -188,11 +188,11 @@ fn sequence_targets_app(cue_count: usize, start_count: usize) -> App {
     app.update();
     assert_eq!(
         app.world()
-            .resource::<TimelineSequenceActionTargets>()
-            .targets
+            .resource::<TimelinePlannedCuesByAction>()
+            .cues
             .len(),
         start_count * GOS_PER_START,
-        "every Go should resolve a target"
+        "every Go should resolve a planned cue"
     );
     app
 }
@@ -281,5 +281,5 @@ fn configured_counts(variable: &str, defaults: &[usize]) -> Vec<usize> {
         .unwrap_or_else(|| defaults.to_vec())
 }
 
-criterion_group!(benches, bench_sequence_targets);
+criterion_group!(benches, bench_planned_cues);
 criterion_main!(benches);

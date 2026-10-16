@@ -57,7 +57,7 @@ export type ActionProps = {
   actionType: TimelineActionKind["type"];
   targetIndex: ActionTargetIndex;
   /** Backend-resolved sequence cue this Go, Back, or jump action lands on. */
-  sequenceTarget?: types.TimelineSequenceActionTarget;
+  plannedCue?: types.TimelinePlannedCue;
   showDurationTrail?: boolean;
   isPlayheadActive?: boolean;
   lookaheadStatus?: types.TimelineLookaheadActionStatusKind;
@@ -509,7 +509,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     resolveActionEditorTarget(
       props.action,
       props.targetIndex,
-      props.sequenceTarget,
+      props.plannedCue,
     );
 
   /** Resolves the clip properties target directly controlled by this action. */
@@ -552,7 +552,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
       props.action,
       props.label,
       props.targetIndex,
-      props.sequenceTarget,
+      props.plannedCue,
     ),
   );
 

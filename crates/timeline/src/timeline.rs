@@ -308,7 +308,7 @@ pub struct TimelineLookaheadActionStatuses {
 /// Resolved by replaying the timeline in position order, so it follows the action when it moves.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[typeshare::typeshare]
-pub struct TimelineSequenceActionTarget {
+pub struct TimelinePlannedCue {
     /// Timeline definition UID that owns the action.
     #[serde(with = "nightfall::serde_uuid_simple")]
     #[typeshare(serialized_as = "String")]
@@ -329,9 +329,9 @@ pub struct TimelineSequenceActionTarget {
 
 /// Resolved sequence cues for every timeline navigation action, across all timelines.
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
-pub struct TimelineSequenceActionTargets {
-    /// Current action targets.
-    pub targets: Vec<TimelineSequenceActionTarget>,
+pub struct TimelinePlannedCuesByAction {
+    /// Planned cue of every Go, Back, and jump action.
+    pub cues: Vec<TimelinePlannedCue>,
 }
 
 /// A selected timeline object that can be edited by shared timeline commands.

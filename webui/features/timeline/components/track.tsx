@@ -14,7 +14,7 @@ import { durationToMs } from "../../../lib/utils";
 import {
   timelineActionKey,
   timelineLookaheadActionStatuses,
-  timelineSequenceActionTargets,
+  timelinePlannedCuesByAction,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
@@ -77,7 +77,7 @@ export type TrackProps = {
 export const Track = (props: TrackProps) => {
   const ctx = useTimelineContext();
   const $lookaheadItemStatuses = useStore(timelineLookaheadActionStatuses);
-  const $sequenceActionTargets = useStore(timelineSequenceActionTargets);
+  const $plannedCues = useStore(timelinePlannedCuesByAction);
 
   const getPositionPx = (
     event: MouseEvent | PointerEvent | DragEvent,
@@ -127,8 +127,8 @@ export const Track = (props: TrackProps) => {
       ?.kind;
 
   /** Returns the backend-resolved sequence cue a Go, Back, or jump action in this track lands on. */
-  const sequenceTargetForAction = (actionId: string) =>
-    $sequenceActionTargets()[ctx.timelineUid]?.[actionKey(props.id, actionId)];
+  const plannedCueForAction = (actionId: string) =>
+    $plannedCues()[ctx.timelineUid]?.[actionKey(props.id, actionId)];
 
   /** Resolves an action's inferred visual duration from its action target. */
   const visualDurationForAction = (action: types.Action) => {
@@ -267,7 +267,7 @@ export const Track = (props: TrackProps) => {
               showDurationTrail={ctx.showDurationTrails()}
               isPlayheadActive={playheadActiveActionId() === action.id}
               lookaheadStatus={lookaheadStatusForAction(action.id)}
-              sequenceTarget={sequenceTargetForAction(action.id)}
+              plannedCue={plannedCueForAction(action.id)}
               trackId={props.id}
               isDragSourceOriginal={props.dragSourceActionKeys?.has(
                 actionKey(props.id, action.id),

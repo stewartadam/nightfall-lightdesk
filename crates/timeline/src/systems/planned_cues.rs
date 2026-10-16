@@ -16,11 +16,11 @@ use super::planner_adapter::{
     TimelinePlannerResolver, planned_source_for_clip, playback_duration_profile_for_source,
 };
 use super::*;
-use crate::prelude::{TimelineSequenceActionTarget, TimelineSequenceActionTargets};
+use crate::prelude::{TimelinePlannedCue, TimelinePlannedCuesByAction};
 
-/// Definitions consulted while replaying timelines to resolve navigation action targets.
+/// Definitions consulted while replaying timelines to resolve planned cues.
 #[derive(SystemParam)]
-pub struct TimelineSequenceActionTargetInputs<'w, 's> {
+pub struct TimelinePlannedCueInputs<'w, 's> {
     /// Registered deterministic action capabilities consulted for authored actions.
     action_registry: Option<Res<'w, ActionRegistry>>,
     /// Authored timeline definitions whose navigation actions are resolved.
@@ -66,8 +66,8 @@ struct ResolvedSequenceTiming {
 
 /// Per-system cache of resolved sequence timings and the sequences last navigated.
 #[derive(Default)]
-pub struct TimelineSequenceActionTargetCache {
-    /// Whether targets were computed at least once.
+pub struct TimelinePlannedCueCache {
+    /// Whether planned cues were computed at least once.
     initialized: bool,
     /// Resolved timing per sequence UID.
     sequences: HashMap<Uuid, ResolvedSequenceTiming>,
@@ -75,7 +75,7 @@ pub struct TimelineSequenceActionTargetCache {
     navigated_sequences: HashSet<Uuid>,
 }
 
-impl TimelineSequenceActionTargetCache {
+impl TimelinePlannedCueCache {
     /// Drops cached timing for the given sequences and any cached sequence containing the
     /// given cues, returning whether a navigated sequence was affected.
     fn invalidate(&mut self, sequence_uids: &[Uuid], cue_uids: &[Uuid]) -> bool {
@@ -106,13 +106,13 @@ impl TimelineSequenceActionTargetCache {
 /// Timeline and clip edits always recompute. Cue and sequence edits only recompute when they
 /// touch a sequence a navigation action steers, and resolved sequence timings are cached so a
 /// sequence restarted many times on a timeline is resolved once. Fixture and group edits, and
-/// bulk replacements such as a showfile load, drop the cache. Published targets are only
+/// bulk replacements such as a showfile load, drop the cache. Published cues are only
 /// replaced when the result differs so clients are not re-sent identical data.
-pub fn update_timeline_sequence_action_targets_system(
-    inputs: TimelineSequenceActionTargetInputs,
+pub fn update_timeline_planned_cues_system(
+    inputs: TimelinePlannedCueInputs,
     mut changes: TimelineSequenceDefinitionChanges,
-    mut targets: ResMut<TimelineSequenceActionTargets>,
-    mut cache: Local<TimelineSequenceActionTargetCache>,
+    mut planned_cues: ResMut<TimelinePlannedCuesByAction>,
+    mut cache: Local<TimelinePlannedCueCache>,
 ) {
     let changed_cues = changes
         .cues
@@ -154,8 +154,8 @@ pub fn update_timeline_sequence_action_targets_system(
     }
     cache.initialized = true;
 
-    targets.set_if_neq(TimelineSequenceActionTargets {
-        targets: resolve_timeline_sequence_action_targets(&inputs, &mut cache),
+    planned_cues.set_if_neq(TimelinePlannedCuesByAction {
+        cues: resolve_timeline_planned_cues(&inputs, &mut cache),
     });
 }
 
@@ -174,7 +174,7 @@ fn resolved_sequence_timing<'a>(
     cache: &'a mut HashMap<Uuid, ResolvedSequenceTiming>,
     sequence_uid: Uuid,
     sequence_data_provider: &DataProvider<Sequence>,
-    inputs: &TimelineSequenceActionTargetInputs,
+    inputs: &TimelinePlannedCueInputs,
 ) -> Option<&'a ResolvedSequenceTiming> {
     if !cache.contains_key(&sequence_uid) {
         let sequence = sequence_data_provider.get(sequence_uid).ok()?;
@@ -200,11 +200,11 @@ fn resolved_sequence_timing<'a>(
     cache.get(&sequence_uid)
 }
 
-/// Replays every timeline definition and collects its navigation action targets.
-fn resolve_timeline_sequence_action_targets(
-    inputs: &TimelineSequenceActionTargetInputs,
-    cache: &mut TimelineSequenceActionTargetCache,
-) -> Vec<TimelineSequenceActionTarget> {
+/// Replays every timeline definition and collects its planned cues.
+fn resolve_timeline_planned_cues(
+    inputs: &TimelinePlannedCueInputs,
+    cache: &mut TimelinePlannedCueCache,
+) -> Vec<TimelinePlannedCue> {
     cache.navigated_sequences.clear();
     let Some(sequence_data_provider) = inputs.sequence_data_provider.as_deref() else {
         return Vec::new();
@@ -265,37 +265,32 @@ fn resolve_timeline_sequence_action_targets(
         duration_by_source,
     };
 
-    let mut targets = timelines
+    let mut planned_cues = timelines
         .into_iter()
         .flat_map(|(timeline_uid, planning_actions)| {
-            timeline_sequence_action_targets(
-                timeline_uid,
-                planning_actions,
-                &cache.sequences,
-                &resolver,
-            )
+            timeline_planned_cues(timeline_uid, planning_actions, &cache.sequences, &resolver)
         })
         .collect::<Vec<_>>();
-    targets.sort_by(|left, right| {
+    planned_cues.sort_by(|left, right| {
         (left.timeline_uid, &left.track_id, &left.action_id).cmp(&(
             right.timeline_uid,
             &right.track_id,
             &right.action_id,
         ))
     });
-    targets
+    planned_cues
 }
 
-/// Replays one timeline's audible actions in position order to resolve its navigation targets.
+/// Replays one timeline's audible actions in position order to resolve its planned cues.
 ///
 /// Uses the same planner and sequence replay as seeking, so autonomous follow and wait cues
 /// between actions advance the sequence exactly as playback would.
-fn timeline_sequence_action_targets(
+fn timeline_planned_cues(
     timeline_uid: Uuid,
     planning_actions: Vec<TimelinePlanningAction>,
     sequences: &HashMap<Uuid, ResolvedSequenceTiming>,
     resolver: &TimelinePlannerResolver,
-) -> Vec<TimelineSequenceActionTarget> {
+) -> Vec<TimelinePlannedCue> {
     let end = planning_actions
         .iter()
         .map(|action| action.position)
@@ -303,7 +298,7 @@ fn timeline_sequence_action_targets(
         .unwrap_or_default();
     let plan = plan_timeline_at(timeline_uid, end, planning_actions, resolver);
 
-    let mut targets = Vec::new();
+    let mut planned_cues = Vec::new();
     for interval in &plan.instances {
         let PlannedPlaybackSource::Sequence(sequence_uid) = interval.source else {
             continue;
@@ -333,7 +328,7 @@ fn timeline_sequence_action_targets(
                 .checked_sub(1)
                 .and_then(|index| timing.steps.get(index as usize))
                 .copied();
-            targets.push(TimelineSequenceActionTarget {
+            planned_cues.push(TimelinePlannedCue {
                 timeline_uid,
                 track_id: intervention.owner.track_id.clone(),
                 action_id: intervention.owner.action_id.clone(),
@@ -342,5 +337,5 @@ fn timeline_sequence_action_targets(
             });
         });
     }
-    targets
+    planned_cues
 }

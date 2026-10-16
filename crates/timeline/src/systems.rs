@@ -62,9 +62,9 @@ mod live;
 mod lookahead;
 mod parameters;
 mod pause_sync;
+mod planned_cues;
 mod planner_adapter;
 mod seek;
-mod sequence_targets;
 
 pub use lifecycle::{
     PendingStoppedTimelineReleaseClocks, cleanup_timeline_entities,
@@ -80,6 +80,7 @@ pub use lookahead::{
 };
 pub use parameters::process_parameters_system;
 pub use pause_sync::{TimelinePausedPlaybackRates, sync_timeline_paused_instance_controls_system};
+pub use planned_cues::update_timeline_planned_cues_system;
 #[cfg(test)]
 use planner_adapter::{
     intervention_reconstruction_timing_from_evaluated_instance,
@@ -91,7 +92,6 @@ pub use seek::{
     handle_timeline_seek_system, mark_timeline_reconstruction_deferred_flush,
     timeline_reconstruction_deferred_flush_requested,
 };
-pub use sequence_targets::update_timeline_sequence_action_targets_system;
 
 /// Returns timeline-specific playback options, preserving source defaults when unset.
 fn instance_options_for_timeline(timeline: &MaterializedTimeline) -> Option<InstanceOptions> {

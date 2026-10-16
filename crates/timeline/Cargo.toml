@@ -52,7 +52,7 @@ name = "planner"
 harness = false
 
 [[bench]]
-name = "sequence_targets"
+name = "planned_cues"
 harness = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

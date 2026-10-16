@@ -354,7 +354,7 @@ function sequenceStepCueUid(
 export function resolveActionEditorTarget(
   action: TimelineActionKind,
   index: ActionTargetIndex,
-  sequenceTarget?: types.TimelineSequenceActionTarget,
+  plannedCue?: types.TimelinePlannedCue,
 ): ActionEditorTarget | undefined {
   switch (action.type) {
     case "FireCue":
@@ -368,16 +368,12 @@ export function resolveActionEditorTarget(
       return sequenceCueEditorTarget(
         index,
         action.data.uid,
-        sequenceTarget?.cue_uid ??
+        plannedCue?.cue_uid ??
           sequenceStepCueUid(index, action.data.uid, action.data.cue_index),
       );
     case "AdvanceSequence":
     case "BackSequence":
-      return sequenceCueEditorTarget(
-        index,
-        action.data,
-        sequenceTarget?.cue_uid,
-      );
+      return sequenceCueEditorTarget(index, action.data, plannedCue?.cue_uid);
     default:
       return undefined;
   }
@@ -395,7 +391,7 @@ export function resolveActionDisplayLabel(
   action: TimelineActionKind,
   fallbackLabel: string,
   index: ActionTargetIndex,
-  sequenceTarget?: types.TimelineSequenceActionTarget,
+  plannedCue?: types.TimelinePlannedCue,
 ): string {
   switch (action.type) {
     case "FireCue": {
@@ -441,8 +437,8 @@ export function resolveActionDisplayLabel(
       const verb = action.type === "AdvanceSequence" ? "Go" : "Back";
       const cueRef = sequenceCueRef(
         index,
-        sequenceTarget?.sequence_uid,
-        sequenceTarget?.cue_uid,
+        plannedCue?.sequence_uid,
+        plannedCue?.cue_uid,
       );
       return cueRef
         ? `${verb} ${cueRef}: ${clip.identifiers.label}`
@@ -456,8 +452,8 @@ export function resolveActionDisplayLabel(
       if (!clipTuple || source?.type !== "Sequence") return fallbackLabel;
       const cueRef = sequenceCueRef(
         index,
-        sequenceTarget?.sequence_uid ?? source.data,
-        sequenceTarget?.cue_uid ??
+        plannedCue?.sequence_uid ?? source.data,
+        plannedCue?.cue_uid ??
           sequenceStepCueUid(index, action.data.uid, action.data.cue_index),
       );
       return cueRef

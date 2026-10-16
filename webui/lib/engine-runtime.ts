@@ -122,9 +122,9 @@ import {
   timelineBeatgridProposals,
   timelineDefinitionsLoaded,
   timelineLookaheadActionStatuses,
+  timelinePlannedCuesByAction,
   timelineRecordingPreviews,
   timelineRecordingStates,
-  timelineSequenceActionTargets,
   timelineStopEvent,
   timelines,
   type WsPullStats,
@@ -1082,11 +1082,11 @@ function dispatchMessage(raw: AnyWsMessage) {
       break;
     }
 
-    case "TimelineSequenceActionTargets": {
+    case "TimelinePlannedCuesByAction": {
       setStoreAction(
-        timelineSequenceActionTargets,
-        "Receive TimelineSequenceActionTargets",
-        groupByTimelineAction(raw.data as types.TimelineSequenceActionTarget[]),
+        timelinePlannedCuesByAction,
+        "Receive TimelinePlannedCuesByAction",
+        groupByTimelineAction(raw.data as types.TimelinePlannedCue[]),
       );
       break;
     }
