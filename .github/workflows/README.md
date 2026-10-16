@@ -107,6 +107,21 @@ Previews stay off while `CLOUDFLARE_PREVIEW_WORKER` is unset. Cloudflare keeps a
 most 100 Previews per Worker on the Free plan and 100 deployments per Preview,
 deleting the oldest automatically, so no cleanup job is needed.
 
+## PR commands
+
+`pr-commands.yml` lets maintainers comment a command on a PR. Only commenters with
+write or admin access can run one. The workflow reacts 👀 when it starts, then 👍
+or 👎 when it finishes.
+
+| Comment | Effect |
+| --- | --- |
+| `/recheck-cla` | Asks cla-assistant.io to revalidate the PR, then waits up to two minutes for the `license/cla` status. Use it when the check is stuck on "Waiting for status to be reported". Works on fork PRs. |
+| `/republish` | Reruns the **Browser preview** job of the PR's latest CI run. If that run's demo artifact expired, it reruns the whole run; if a failed job skipped the preview, it reruns the failed jobs. When CI is still running or never selected a preview, it explains why in a comment instead. |
+
+Both run from the default branch's copy of the workflow, never the PR's, and
+neither checks out PR code. The steps are gated by
+[github/command](https://github.com/github/command), pinned to a commit.
+
 ## Native execution and caching
 
 `ci.yml` runs all native Rust validation in one Linux job so the

@@ -35,6 +35,8 @@ Contributions are welcome under the project's [license](LICENSE). Before a contr
 
 A CLA can look intimidating. Its purpose is to make long-term maintenance practical: as a codebase and its contributor community grow, tracking permissions and contacting every past contributor for a license change can become difficult or impossible. The CLA establishes those permissions up front, including the ability to relicense contributions or offer multiple licenses. You retain ownership and can use and license your own contributions independently; the maintainer can also license them under open-source, commercial, or proprietary terms without seeking further permission or owing payment. Third-party material remains subject to its own license.
 
+If the `license/cla` check on your PR stays at "Waiting for status to be reported", ask a maintainer to comment `/recheck-cla` on it.
+
 Please read the linked CLA and DCO before contributing. Those documents contain the full terms; we link to their maintained versions rather than duplicate them here.
 
 To attest to the DCO, add a sign-off to each commit using your configured Git identity:
