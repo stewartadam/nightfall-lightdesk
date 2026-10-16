@@ -108,7 +108,7 @@ export function Controls(props: ControlsProps): JSX.Element {
                 assignedMaster={getAssignedMaster()}
                 isClipActive={isClipActive()}
                 displayValue={getControlState()?.display_value ?? 0}
-                hardwareValue={getControlState()?.hardware_value ?? 0}
+                hardwareValue={getControlState()?.hardware_value ?? undefined}
                 consoleValue={getControlState()?.console_value ?? 0}
                 button={controlButtonControl(controlIndex, sendCommand)}
                 goChoice={controlGoControl(controlIndex)}

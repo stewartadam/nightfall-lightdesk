@@ -636,6 +636,14 @@ test("slots sharing a clip move together", async ({ backendSlot, page }) => {
 
   await raise(3);
   expect(await sharedLevel()).toBeGreaterThan(1);
+  // Neither slot has a physical fader, so neither shows a hardware position marker.
+  for (const controlIndex of [3, 5]) {
+    await expect(
+      page
+        .locator(`[data-control-index="${controlIndex}"]`)
+        .locator(".vertical-slider-value-marker"),
+    ).toHaveCount(0);
+  }
   await page.locator(".controls").screenshot({
     path: test.info().outputPath("control-shared-clip-sync.png"),
   });

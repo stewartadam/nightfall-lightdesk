@@ -38,8 +38,8 @@ export interface ControlProps {
   isClipActive: boolean;
   /** Backend-authored display value */
   displayValue: number;
-  /** Backend-authored hardware value */
-  hardwareValue: number;
+  /** Position of the slot's physical fader, absent when no physical fader drives the slot */
+  hardwareValue: number | undefined;
   /** Backend-authored console value */
   consoleValue: number;
   /** The slot's button: its press and release and its controller binding. */

@@ -129,7 +129,9 @@ pub struct ControlSnapshot {
     pub index: u32,
     pub assigned_clip_id: Option<u32>,
     pub assigned_master_id: Option<u32>,
-    pub hardware_value: f32,
+    /// Position last reported by the slot's physical fader, or `None` when no physical fader
+    /// has driven the slot.
+    pub hardware_value: Option<f32>,
     pub console_value: f32,
     pub display_value: f32,
     pub is_grabbed: bool,
@@ -163,6 +165,8 @@ struct Control {
     pending_console_sync: bool,
     attached_instance_id: Option<InstanceId>,
     button_mode: ControlButtonMode,
+    /// Whether a physical fader has reported a position for this slot since startup.
+    has_hardware: bool,
 }
 
 impl Default for Control {
@@ -179,6 +183,7 @@ impl Default for Control {
             pending_console_sync: false,
             attached_instance_id: None,
             button_mode: ControlButtonMode::default(),
+            has_hardware: false,
         }
     }
 }
@@ -209,16 +214,20 @@ impl Control {
         self.pending_console_sync = false;
     }
 
-    /// Empties the slot and resets its levels, keeping the button mode for the next assignment.
+    /// Empties the slot and resets its levels, keeping the button mode and whether a physical
+    /// fader drives it, since both belong to the slot rather than to its assignment.
     fn clear(&mut self) {
         *self = Self {
             button_mode: self.button_mode,
+            has_hardware: self.has_hardware,
             ..Self::default()
         };
     }
 
+    /// Returns the level the slot's on-screen fader shows: the console level, unless a physical
+    /// fader holds the slot, in which case the physical position until it is picked up.
     fn display_value(&self, runtime: ControlRuntimeState) -> f32 {
-        if self.is_grabbed {
+        if self.has_hardware && self.is_grabbed {
             self.hardware_value
         } else {
             runtime.console_value
@@ -585,7 +594,7 @@ impl Controls {
                     index: (idx + 1) as u32,
                     assigned_clip_id: slot.assigned_clip_id,
                     assigned_master_id: slot.assigned_master_id,
-                    hardware_value: slot.hardware_value,
+                    hardware_value: slot.has_hardware.then_some(slot.hardware_value),
                     console_value: runtime.console_value,
                     display_value: slot.display_value(runtime),
                     is_grabbed: slot.is_grabbed,
@@ -1081,6 +1090,7 @@ pub fn handle_control_updates(
                     );
                     continue;
                 };
+                slot.has_hardware = true;
 
                 if let Some(master_id) = slot.assigned_master_id {
                     let Some(level_percent) =
@@ -1146,6 +1156,7 @@ pub fn handle_control_updates(
                     );
                     continue;
                 };
+                slot.has_hardware = true;
 
                 if let Some(master_id) = slot.assigned_master_id {
                     let Some(level_percent) =
@@ -2216,6 +2227,64 @@ mod tests {
         );
         assert_eq!(hardware_pickup.intensity_value, Some(0.39));
         assert!(slot.is_grabbed);
+    }
+
+    /// Verifies a slot no physical fader has driven shows the console level, even while its
+    /// stored position from assignment still counts as held, and that a physical fader's
+    /// position is shown once one has reported.
+    #[test]
+    fn display_ignores_stored_position_until_a_physical_fader_reports() {
+        let mut slot = Control::default();
+        slot.reset_to(100.0);
+        let runtime = ControlRuntimeState {
+            console_value: 31.0,
+            is_clip_active: true,
+            attached_instance_id: Some(InstanceId::new()),
+        };
+        assert!(slot.is_grabbed);
+        assert_eq!(slot.display_value(runtime), 31.0);
+
+        slot.has_hardware = true;
+        assert_eq!(slot.display_value(runtime), 100.0);
+
+        slot.clear();
+        assert!(slot.has_hardware);
+    }
+
+    /// Verifies only slots a physical fader has driven report a hardware position, and that an
+    /// on-screen move does not count as one.
+    #[test]
+    fn only_physical_fader_input_reports_a_hardware_position() {
+        let mut app = control_command_app();
+        app.add_message::<ControlUpdate>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
+        app.add_message::<MasterUpdate>();
+        app.add_message::<InstanceControlUpdate>();
+        app.add_systems(Update, handle_control_updates);
+        let update = |app: &mut App, update: ControlUpdate| {
+            app.world_mut().write_message(update);
+            app.update();
+        };
+
+        update(
+            &mut app,
+            ControlUpdate::SetConsoleValue {
+                control_index: 1,
+                value: 40.0,
+            },
+        );
+        update(
+            &mut app,
+            ControlUpdate::SetExternalHardwareValue {
+                control_index: 2,
+                value: 60.0,
+            },
+        );
+
+        let controls = app.world().resource::<Controls>();
+        assert!(!controls.slots[0].has_hardware);
+        assert!(controls.slots[1].has_hardware);
+        assert_eq!(controls.slots[1].hardware_value, 60.0);
     }
 
     /// Verifies a slot pulled to zero on screen keeps following the clip when another slot

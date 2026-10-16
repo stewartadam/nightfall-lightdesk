@@ -17,3 +17,8 @@ test("shows split values when hardware and console meaningfully differ", () => {
 test("hides split values when hardware and console are effectively equal", () => {
   assert.equal(shouldShowDisparateControlValues(49.8, 50), false);
 });
+
+/** A slot no physical fader has driven never shows a hardware marker. */
+test("hides split values when no physical fader drives the slot", () => {
+  assert.equal(shouldShowDisparateControlValues(undefined, 80), false);
+});
