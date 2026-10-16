@@ -56,6 +56,8 @@ export type ActionProps = {
   action: TimelineActionKind;
   actionType: TimelineActionKind["type"];
   targetIndex: ActionTargetIndex;
+  /** Backend-resolved sequence cue this Go, Back, or jump action lands on. */
+  plannedCue?: types.TimelinePlannedCue;
   showDurationTrail?: boolean;
   isPlayheadActive?: boolean;
   lookaheadStatus?: types.TimelineLookaheadActionStatusKind;
@@ -504,7 +506,11 @@ export const Action = (props: ActionProps & { trackId: string }) => {
 
   /** Resolves the editor panel that best matches the current timeline action target. */
   const resolveEditorTarget = () =>
-    resolveActionEditorTarget(props.action, props.label, props.targetIndex);
+    resolveActionEditorTarget(
+      props.action,
+      props.targetIndex,
+      props.plannedCue,
+    );
 
   /** Resolves the clip properties target directly controlled by this action. */
   const resolveClipPropertiesTarget = () =>
@@ -542,7 +548,12 @@ export const Action = (props: ActionProps & { trackId: string }) => {
   };
 
   const displayLabel = createMemo(() =>
-    resolveActionDisplayLabel(props.action, props.label, props.targetIndex),
+    resolveActionDisplayLabel(
+      props.action,
+      props.label,
+      props.targetIndex,
+      props.plannedCue,
+    ),
   );
 
   /** Converts the action duration into a renderable trail width. */

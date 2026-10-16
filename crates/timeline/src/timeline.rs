@@ -303,6 +303,37 @@ pub struct TimelineLookaheadActionStatuses {
     pub statuses: Vec<TimelineLookaheadActionStatus>,
 }
 
+/// Sequence cue a timeline navigation action (Go, Back, or jump) leaves its clip on.
+///
+/// Resolved by replaying the timeline in position order, so it follows the action when it moves.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct TimelinePlannedCue {
+    /// Timeline definition UID that owns the action.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub timeline_uid: Uuid,
+    /// Timeline track that owns the action.
+    pub track_id: String,
+    /// Timeline action identifier.
+    pub action_id: String,
+    /// Sequence played by the action's clip.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub sequence_uid: Uuid,
+    /// Cue the sequence is on after the action runs, or `None` for an empty sequence.
+    #[serde(default, with = "nightfall::serde_option_uuid_simple")]
+    #[typeshare(serialized_as = "Option<String>")]
+    pub cue_uid: Option<Uuid>,
+}
+
+/// Resolved sequence cues for every timeline navigation action, across all timelines.
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub struct TimelinePlannedCuesByAction {
+    /// Planned cue of every Go, Back, and jump action.
+    pub cues: Vec<TimelinePlannedCue>,
+}
+
 /// A selected timeline object that can be edited by shared timeline commands.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]

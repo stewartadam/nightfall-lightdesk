@@ -62,6 +62,7 @@ mod live;
 mod lookahead;
 mod parameters;
 mod pause_sync;
+mod planned_cues;
 mod planner_adapter;
 mod seek;
 
@@ -79,6 +80,7 @@ pub use lookahead::{
 };
 pub use parameters::process_parameters_system;
 pub use pause_sync::{TimelinePausedPlaybackRates, sync_timeline_paused_instance_controls_system};
+pub use planned_cues::update_timeline_planned_cues_system;
 #[cfg(test)]
 use planner_adapter::{
     intervention_reconstruction_timing_from_evaluated_instance,

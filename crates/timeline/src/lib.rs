@@ -44,6 +44,10 @@ mod transport;
 mod undo;
 pub mod websocket;
 
+/// Resolves the sequence cue each Go, Back, and jump timeline action lands on; exposed for
+/// benchmarks, and scheduled by [`TimelinePlugin`].
+pub use crate::systems::update_timeline_planned_cues_system;
+
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::TimelinePlugin;
@@ -59,9 +63,9 @@ pub mod prelude {
         BeatgridProposal, BeatgridSource, ParameterType, Timeline, TimelineLookaheadActionBlocker,
         TimelineLookaheadActionStatus, TimelineLookaheadActionStatusKind,
         TimelineLookaheadActionStatuses, TimelineLookaheadMode, TimelineLoopRange, TimelineMarker,
-        TimelineNondeterministicSeekBehavior, TimelineRegion, TimelineScrollMode,
-        TimelineSeekBehavior, TimelineSelection, TimelineState, TimelineStopBehavior,
-        TimelineTriggerMode, Track, validate_timeline_action,
+        TimelineNondeterministicSeekBehavior, TimelinePlannedCue, TimelinePlannedCuesByAction,
+        TimelineRegion, TimelineScrollMode, TimelineSeekBehavior, TimelineSelection, TimelineState,
+        TimelineStopBehavior, TimelineTriggerMode, Track, validate_timeline_action,
     };
     pub use crate::transport::{
         TIMELINE_FIRE_CUE_ACTION_ID, TIMELINE_PAUSE_ACTION_ID, TIMELINE_PLAY_ACTION_ID,
@@ -150,6 +154,7 @@ impl Plugin for TimelinePlugin {
         app.init_resource::<systems::TimelinePausedPlaybackRates>();
         app.init_resource::<systems::TimelineReconstructionDeferredFlush>();
         app.init_resource::<timeline::TimelineLookaheadActionStatuses>();
+        app.init_resource::<timeline::TimelinePlannedCuesByAction>();
         #[cfg(feature = "audio")]
         app.insert_resource(TimelineAudioOutputEnabled(self.audio_enabled));
         #[cfg(not(feature = "audio"))]
@@ -220,8 +225,13 @@ impl Plugin for TimelinePlugin {
                 websocket::send_timeline_recording_states_on_change,
                 websocket::send_timeline_recording_previews_on_change,
                 websocket::send_timeline_lookahead_item_statuses_on_change,
+                websocket::send_timeline_planned_cues_on_change,
             )
                 .in_set(ClientOutput),
+        );
+        app.add_systems(
+            Update,
+            systems::update_timeline_planned_cues_system.after(EventHandling),
         );
 
         app.add_systems(

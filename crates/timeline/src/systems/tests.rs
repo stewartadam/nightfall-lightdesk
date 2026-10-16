@@ -1391,6 +1391,7 @@ fn assert_values_close(actual: &[f32], expected: &[f32], context: &str) {
 }
 
 mod live_actions;
+mod planned_cues;
 mod seek_controls;
 mod seek_fire_cue;
 mod seek_materializers;

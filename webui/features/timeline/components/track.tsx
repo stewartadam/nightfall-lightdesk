@@ -11,7 +11,11 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { TIMELINE_INSERT_DRAG_MIME } from "../../../lib/timeline-insert-drag";
 import { durationToMs } from "../../../lib/utils";
-import { timelineLookaheadActionStatuses } from "../../../state/appStores";
+import {
+  timelineActionKey,
+  timelineLookaheadActionStatuses,
+  timelinePlannedCuesByAction,
+} from "../../../state/appStores";
 import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
 import { resolveActionVisualDuration } from "../model/action-duration";
@@ -73,6 +77,7 @@ export type TrackProps = {
 export const Track = (props: TrackProps) => {
   const ctx = useTimelineContext();
   const $lookaheadItemStatuses = useStore(timelineLookaheadActionStatuses);
+  const $plannedCues = useStore(timelinePlannedCuesByAction);
 
   const getPositionPx = (
     event: MouseEvent | PointerEvent | DragEvent,
@@ -114,13 +119,16 @@ export const Track = (props: TrackProps) => {
   );
 
   /** Builds the stable key used to identify a source action during preview drags. */
-  const actionKey = (trackId: string, actionId: string) =>
-    JSON.stringify([trackId, actionId]);
+  const actionKey = timelineActionKey;
 
   /** Returns current lookahead status for an action in this track. */
   const lookaheadStatusForAction = (actionId: string) =>
     $lookaheadItemStatuses()[ctx.timelineUid]?.[actionKey(props.id, actionId)]
       ?.kind;
+
+  /** Returns the backend-resolved sequence cue a Go, Back, or jump action in this track lands on. */
+  const plannedCueForAction = (actionId: string) =>
+    $plannedCues()[ctx.timelineUid]?.[actionKey(props.id, actionId)];
 
   /** Resolves an action's inferred visual duration from its action target. */
   const visualDurationForAction = (action: types.Action) => {
@@ -259,6 +267,7 @@ export const Track = (props: TrackProps) => {
               showDurationTrail={ctx.showDurationTrails()}
               isPlayheadActive={playheadActiveActionId() === action.id}
               lookaheadStatus={lookaheadStatusForAction(action.id)}
+              plannedCue={plannedCueForAction(action.id)}
               trackId={props.id}
               isDragSourceOriginal={props.dragSourceActionKeys?.has(
                 actionKey(props.id, action.id),

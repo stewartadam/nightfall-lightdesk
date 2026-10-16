@@ -149,30 +149,6 @@ export function buildActionTargetIndex(
   };
 }
 
-/** Extracts a sequence/cue numeric hint from a stored timeline action label. */
-function parseSequenceCueFromLabel(label: string) {
-  const normalized = label.toLowerCase();
-  const sequenceCueMatch = normalized.match(
-    /(?:seq(?:uence)?\s*)(\d+).*?(?:cue\s*)(\d+)/i,
-  );
-  if (sequenceCueMatch) {
-    return {
-      sequenceId: Number(sequenceCueMatch[1]),
-      cueId: Number(sequenceCueMatch[2]),
-    };
-  }
-
-  const dotMatch = normalized.match(/\b(\d+)\.(\d+)\b/);
-  if (dotMatch) {
-    return {
-      sequenceId: Number(dotMatch[1]),
-      cueId: Number(dotMatch[2]),
-    };
-  }
-
-  return {};
-}
-
 /** Builds the cue editor panel target for a timeline action cue UID. */
 function cueEditorTarget(
   index: ActionTargetIndex,
@@ -322,41 +298,63 @@ export function resolveActionClipPropertiesTarget(
   };
 }
 
-/** Resolves a sequence cue editor target from a clip action and optional cue index. */
+/** Resolves a sequence cue editor target from a clip action and the cue it lands on. */
 function sequenceCueEditorTarget(
   index: ActionTargetIndex,
   clipUid: string,
-  cueIndex?: number,
-  parsedCue?: { sequenceId?: number; cueId?: number },
+  cueUid: string | undefined,
 ) {
   const clipTuple = index.clipMapByUid.get(normalizeActionTargetUid(clipUid));
   const source = clipTuple?.[0].source;
   const sequenceUid = source?.type === "Sequence" ? source.data : undefined;
-  const sequence = sequenceUid
-    ? index.sequenceMapByUid.get(normalizeActionTargetUid(sequenceUid))
-    : undefined;
-  if (!sequence) return undefined;
+  if (!sequenceUid) return undefined;
 
-  const cueUid =
-    parsedCue?.sequenceId === sequence.identifiers.id && parsedCue.cueId
-      ? sequence.steps.find(
-          (stepCueUid) =>
-            index.cueMapByUid.get(normalizeActionTargetUid(stepCueUid))
-              ?.identifiers.id === parsedCue.cueId,
-        )
-      : cueIndex !== undefined
-        ? sequence.steps[Math.max(0, cueIndex - 1)]
-        : undefined;
-
-  if (cueUid) return cueEditorTarget(index, cueUid);
-  return sequenceUid ? sequenceEditorTarget(index, sequenceUid) : undefined;
+  return (
+    (cueUid ? cueEditorTarget(index, cueUid) : undefined) ??
+    sequenceEditorTarget(index, sequenceUid)
+  );
 }
 
-/** Resolves the editor panel that best matches the timeline action target. */
+/** Formats a sequence and cue as the operator-facing `sequence.cue` number, if both exist. */
+function sequenceCueRef(
+  index: ActionTargetIndex,
+  sequenceUid: string | undefined,
+  cueUid: string | undefined,
+): string | undefined {
+  if (!sequenceUid || !cueUid) return undefined;
+  const sequenceId = index.sequenceMapByUid.get(
+    normalizeActionTargetUid(sequenceUid),
+  )?.identifiers.id;
+  const cueId = index.cueMapByUid.get(normalizeActionTargetUid(cueUid))
+    ?.identifiers.id;
+  return sequenceId !== undefined && cueId !== undefined
+    ? `${sequenceId}.${cueId}`
+    : undefined;
+}
+
+/** Returns the cue UID at a 1-based step position of a clip's sequence. */
+function sequenceStepCueUid(
+  index: ActionTargetIndex,
+  clipUid: string,
+  cueIndex: number,
+): string | undefined {
+  const source = index.clipMapByUid.get(normalizeActionTargetUid(clipUid))?.[0]
+    .source;
+  if (source?.type !== "Sequence") return undefined;
+  return index.sequenceMapByUid.get(normalizeActionTargetUid(source.data))
+    ?.steps[Math.max(0, cueIndex - 1)];
+}
+
+/**
+ * Resolves the editor panel that best matches the timeline action target.
+ *
+ * Go, Back, and jump open the cue the backend resolved for the action's timeline position; Go
+ * and Back fall back to the clip's sequence editor while that cue is unknown.
+ */
 export function resolveActionEditorTarget(
   action: TimelineActionKind,
-  label: string,
   index: ActionTargetIndex,
+  plannedCue?: types.TimelinePlannedCue,
 ): ActionEditorTarget | undefined {
   switch (action.type) {
     case "FireCue":
@@ -370,26 +368,30 @@ export function resolveActionEditorTarget(
       return sequenceCueEditorTarget(
         index,
         action.data.uid,
-        action.data.cue_index,
+        plannedCue?.cue_uid ??
+          sequenceStepCueUid(index, action.data.uid, action.data.cue_index),
       );
     case "AdvanceSequence":
     case "BackSequence":
-      return sequenceCueEditorTarget(
-        index,
-        action.data,
-        undefined,
-        parseSequenceCueFromLabel(label),
-      );
+      return sequenceCueEditorTarget(index, action.data, plannedCue?.cue_uid);
     default:
       return undefined;
   }
 }
 
-/** Resolves the visible chip label for a timeline action target. */
+/**
+ * Resolves the visible chip label for a timeline action target.
+ *
+ * Go and Back show the sequence cue the backend resolved for the action's timeline position,
+ * so the number follows the action when it is moved; without one they show only the clip.
+ * Jump shows the cue currently at its stored step, so it stays right when the sequence is
+ * reordered.
+ */
 export function resolveActionDisplayLabel(
   action: TimelineActionKind,
   fallbackLabel: string,
   index: ActionTargetIndex,
+  plannedCue?: types.TimelinePlannedCue,
 ): string {
   switch (action.type) {
     case "FireCue": {
@@ -432,36 +434,31 @@ export function resolveActionDisplayLabel(
       );
       if (!clipTuple) return fallbackLabel;
       const clip = clipTuple[0];
-      const parsed = parseSequenceCueFromLabel(fallbackLabel);
-      const source = clip.source;
-      const sequenceUid = source?.type === "Sequence" ? source.data : undefined;
-      const sequenceId =
-        parsed.sequenceId ??
-        (sequenceUid
-          ? index.sequenceMapByUid.get(normalizeActionTargetUid(sequenceUid))
-              ?.identifiers.id
-          : undefined);
-      const fallbackCueId = sequenceUid
-        ? (() => {
-            const sequence = index.sequenceMapByUid.get(
-              normalizeActionTargetUid(sequenceUid),
-            );
-            if (!sequence) return undefined;
-            const firstCueUid = sequence.steps[0];
-            if (!firstCueUid) return undefined;
-            return index.cueMapByUid.get(normalizeActionTargetUid(firstCueUid))
-              ?.identifiers.id;
-          })()
-        : undefined;
-      const cueId = parsed.cueId ?? fallbackCueId;
-
-      if (sequenceId !== undefined && cueId !== undefined) {
-        return `Go ${sequenceId}.${cueId}: ${clip.identifiers.label}`;
-      }
-      if (sequenceId !== undefined) {
-        return `Go ${sequenceId}.1: ${clip.identifiers.label}`;
-      }
-      return `Go: ${clip.identifiers.label}`;
+      const verb = action.type === "AdvanceSequence" ? "Go" : "Back";
+      const cueRef = sequenceCueRef(
+        index,
+        plannedCue?.sequence_uid,
+        plannedCue?.cue_uid,
+      );
+      return cueRef
+        ? `${verb} ${cueRef}: ${clip.identifiers.label}`
+        : `${verb}: ${clip.identifiers.label}`;
+    }
+    case "JumpToCue": {
+      const clipTuple = index.clipMapByUid.get(
+        normalizeActionTargetUid(action.data.uid),
+      );
+      const source = clipTuple?.[0].source;
+      if (!clipTuple || source?.type !== "Sequence") return fallbackLabel;
+      const cueRef = sequenceCueRef(
+        index,
+        plannedCue?.sequence_uid ?? source.data,
+        plannedCue?.cue_uid ??
+          sequenceStepCueUid(index, action.data.uid, action.data.cue_index),
+      );
+      return cueRef
+        ? `Jump ${cueRef}: ${clipTuple[0].identifiers.label}`
+        : fallbackLabel;
     }
     case "DeskEval":
       return `Eval: ${action.data}`;

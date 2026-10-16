@@ -146,6 +146,15 @@ export interface TimelineStopEvent {
 export interface TimelineLookaheadActionStatusMap {
   [timelineUid: string]: Record<string, types.TimelineLookaheadActionStatus>;
 }
+/** Builds the per-timeline key that identifies one action across its track. */
+export function timelineActionKey(trackId: string, actionId: string): string {
+  return JSON.stringify([trackId, actionId]);
+}
+
+/** Backend-planned cue of each Go, Back, and jump action, keyed by timeline UID then by {@link timelineActionKey}. */
+export interface TimelinePlannedCuesByActionMap {
+  [timelineUid: string]: Record<string, types.TimelinePlannedCue>;
+}
 export interface TimelineBeatgridProposalMap {
   [timelineUid: string]: types.BeatgridProposal;
 }
@@ -404,6 +413,8 @@ export const timelineRecordingPreviews = deepMap<TimelineRecordingPreviewMap>(
 );
 export const timelineLookaheadActionStatuses =
   deepMap<TimelineLookaheadActionStatusMap>({});
+export const timelinePlannedCuesByAction =
+  deepMap<TimelinePlannedCuesByActionMap>({});
 export const timelineBeatgridProposals = deepMap<TimelineBeatgridProposalMap>(
   {},
 );
@@ -1105,6 +1116,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     timelineRecordingStates,
     timelineRecordingPreviews,
     timelineLookaheadActionStatuses,
+    timelinePlannedCuesByAction,
     timelineBeatgridProposals,
     timelineBeatgridDetectionStatus,
     timelineBeatgridPreview,

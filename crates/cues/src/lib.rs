@@ -79,8 +79,9 @@ pub mod prelude {
         lookahead_assertions_for_dark_global_candidates,
     };
     pub use crate::sequence_planning::{
-        SequenceTimelineSeekPlayback, SequenceTimelineSeekTarget,
+        SequenceTimelineSeekPlayback, SequenceTimelineSeekTarget, SequenceTimelineStepTiming,
         sequence_playback_duration_profile, sequence_release_duration_for_clip,
+        stored_sequence_step_timings,
     };
 }
 
