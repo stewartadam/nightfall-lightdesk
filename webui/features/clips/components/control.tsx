@@ -313,38 +313,41 @@ export function Control(props: ControlProps): JSX.Element {
           </div>
         </Show>
       </div>
-      <div class="flex w-full shrink-0 items-stretch gap-0.5">
-        <Mappable
-          class="min-w-0 flex-1"
-          label={`control ${props.index} button`}
-          choices={() => [props.button, props.goChoice]}
+      <Mappable
+        class="w-full shrink-0"
+        label={`control ${props.index} button`}
+        choices={() => [props.button, props.goChoice]}
+      >
+        <Button
+          size="compact"
+          type="button"
+          data-control-button-index={props.index}
+          data-control-button-mode={props.buttonMode}
+          aria-label={`${modeText().label} control ${props.index}`}
+          class="w-full px-1!"
+          disabled={!canPress()}
+          onPointerDown={handlePointerDown}
+          onPointerUp={releaseButton}
+          onPointerCancel={releaseButton}
+          onLostPointerCapture={releaseButton}
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+          onClick={handleClick}
+          onBlur={releaseButton}
+          title={buttonTitle()}
         >
-          <Button
-            size="compact"
-            type="button"
-            data-control-button-index={props.index}
-            data-control-button-mode={props.buttonMode}
-            aria-label={`${modeText().label} control ${props.index}`}
-            class="w-full"
-            disabled={!canPress()}
-            onPointerDown={handlePointerDown}
-            onPointerUp={releaseButton}
-            onPointerCancel={releaseButton}
-            onLostPointerCapture={releaseButton}
-            onKeyDown={handleKeyDown}
-            onKeyUp={handleKeyUp}
-            onClick={handleClick}
-            onBlur={releaseButton}
-            title={buttonTitle()}
-          >
-            {modeText().label}
-          </Button>
-        </Mappable>
+          {modeText().label}
+        </Button>
+      </Mappable>
+      {/* Control number, with the button mode menu beside it */}
+      <div class="grid w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center text-xs font-medium text-neutral-500">
+        <span />
+        <span>{props.index}</span>
         <DropdownMenu
           align="end"
           triggerLabel={`Button mode of control ${props.index}`}
           triggerTitle="Choose what the button does"
-          triggerClass="flex h-full w-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+          triggerClass="ml-auto flex size-5 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
           contentLabel={`Button mode of control ${props.index}`}
           trigger={<CaretDownIcon class="size-3" aria-hidden />}
         >
@@ -373,10 +376,6 @@ export function Control(props: ControlProps): JSX.Element {
             </For>
           </div>
         </DropdownMenu>
-      </div>
-      {/* Control number */}
-      <div class="shrink-0 text-xs text-neutral-500 font-medium">
-        {props.index}
       </div>
     </div>
   );
