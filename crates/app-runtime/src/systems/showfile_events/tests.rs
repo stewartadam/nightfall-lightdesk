@@ -2376,6 +2376,7 @@ fn seed_world(world: &mut World) {
                 controller: 36,
             },
             behavior: nightfall_actions::ControlBehavior::Press,
+            led: Default::default(),
             action: control_level_action(1),
         }]);
     #[cfg(feature = "osc")]
@@ -3205,6 +3206,8 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -3284,6 +3287,8 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -3351,6 +3356,8 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![scene_object_a, scene_object_b],
@@ -4134,6 +4141,8 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         },
         #[cfg(feature = "midi")]
         midi_mappings: vec![],
+        #[cfg(feature = "midi")]
+        midi_feedback_devices: vec![],
         #[cfg(feature = "osc")]
         osc_mappings: vec![],
         scene_objects: vec![],
@@ -4216,6 +4225,8 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -4312,6 +4323,8 @@ fn load_materializes_timecodes_and_timelines() {
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],

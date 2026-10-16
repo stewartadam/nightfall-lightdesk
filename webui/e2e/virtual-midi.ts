@@ -43,6 +43,8 @@ export interface VirtualMidi {
   cc(controller: number, value: number, channel?: number): Promise<void>;
   /** Moves the pitch bend wheel to a 14-bit value (0-16383) on a zero-based channel. */
   pitchBend(value: number, channel?: number): Promise<void>;
+  /** Returns every message the backend has sent to the controller's LEDs, in order. */
+  received(): number[][];
   /** Closes the port by ending the controller's input and waits for it to exit. */
   close(): Promise<void>;
 }
@@ -148,7 +150,12 @@ async function openVirtualMidi(
       );
     }
   };
+  const received: number[][] = [];
   lines.on("line", (line) => {
+    if (line.startsWith("RECV ")) {
+      received.push(JSON.parse(line.slice("RECV ".length)) as number[]);
+      return;
+    }
     const pending = waiting[0];
     if (pending && line === pending.expected) {
       waiting.shift();
@@ -212,6 +219,7 @@ async function openVirtualMidi(
       const clamped = Math.max(0, Math.min(16_383, Math.round(value)));
       return send([0xe0 | channel, clamped & 0x7f, clamped >> 7]);
     },
+    received: () => received.map((message) => [...message]),
     close: async () => {
       child.stdin?.end();
       const timeout = setTimeout(() => child.kill("SIGKILL"), 5_000);

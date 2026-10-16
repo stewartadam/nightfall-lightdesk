@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
+import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { Button } from "../../../components/ui/visual-language/button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
@@ -81,6 +82,7 @@ import {
 import {
   announceReplacedMappings,
   deleteMidiMapping,
+  setMidiDeviceFeedback,
   upsertMidiMapping,
 } from "../model/controller-mappings";
 import {
@@ -163,7 +165,61 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
     filter: { value: (row) => row.mapping.action.id },
     ...columnVisibilityMeta("Binding", "Action"),
   },
+  {
+    title: "LED on",
+    id: "led_on",
+    width: 80,
+    filter: { kind: "number", value: (row) => row.mapping.led?.on },
+    ...columnVisibilityMeta("Binding", "LED on"),
+  },
+  {
+    title: "LED off",
+    id: "led_off",
+    width: 80,
+    filter: { kind: "number", value: (row) => row.mapping.led?.off },
+    ...columnVisibilityMeta("Binding", "LED off"),
+  },
 ];
+
+/** Placeholder shown in an LED value cell the mapping leaves at the desk's default. */
+const LED_DEFAULT_LABEL = "Default";
+
+/**
+ * Builds an editable LED value cell. An unset value is shown as a text placeholder, since
+ * the desk decides the default; typing a number sets it.
+ */
+function ledValueCell(value: number | undefined | null): GridCell {
+  if (value === undefined || value === null) {
+    return {
+      kind: GridCellKind.Text,
+      data: "",
+      displayData: LED_DEFAULT_LABEL,
+      allowOverlay: true,
+    };
+  }
+  return {
+    kind: GridCellKind.Number,
+    data: value,
+    displayData: String(value),
+    allowOverlay: true,
+  };
+}
+
+/**
+ * Reads an edited LED value cell: a MIDI data byte, `null` when cleared back to the default,
+ * or undefined for invalid input.
+ */
+function editedLedValue(cell: GridCell): number | null | undefined {
+  if (cell.kind !== GridCellKind.Number && cell.kind !== GridCellKind.Text) {
+    return undefined;
+  }
+  const text = String(cell.data ?? "").trim();
+  if (text === "" || text === "NaN") return null;
+  const value = Number(text);
+  return Number.isInteger(value) && value >= 0 && value <= 127
+    ? value
+    : undefined;
+}
 
 /** Renders MIDI devices, the last received message, and editable controller mappings. */
 export default function MidiInputPanel(props: MidiInputPanelProps) {
@@ -310,6 +366,10 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           }
           case "status":
             return mappingStatusCell(row.error);
+          case "led_on":
+            return ledValueCell(mapping.led?.on);
+          case "led_off":
+            return ledValueCell(mapping.led?.off);
           default:
             return {
               kind: GridCellKind.Loading,
@@ -406,8 +466,29 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           <div class="space-y-1">
             <For each={$midiDevices()}>
               {(device) => (
-                <div class="bg-gray-800 rounded px-3 py-2">
-                  <span class="text-sm">{device.name}</span>
+                <div
+                  class="flex items-center justify-between gap-3 bg-gray-800 rounded px-3 py-2"
+                  data-testid="midi-device"
+                >
+                  <span class="min-w-0 truncate text-sm">{device.name}</span>
+                  <Show
+                    when={device.hasOutput}
+                    fallback={
+                      <span class="shrink-0 text-xs text-gray-500">
+                        No LED output
+                      </span>
+                    }
+                  >
+                    <ToggleSwitch
+                      class="shrink-0 text-xs"
+                      ariaLabel={`LED feedback for ${device.name}`}
+                      label="LED feedback"
+                      checked={device.feedback}
+                      onChange={(enabled) =>
+                        void setMidiDeviceFeedback(device.name, enabled)
+                      }
+                    />
+                  </Show>
                 </div>
               )}
             </For>
@@ -582,6 +663,16 @@ function editedMapping(
     case "behavior": {
       const behavior = editedBehavior(value);
       return behavior === undefined ? undefined : { ...mapping, behavior };
+    }
+    case "led_on":
+    case "led_off": {
+      const led = editedLedValue(value);
+      if (led === undefined) return undefined;
+      const key = columnId === "led_on" ? "on" : "off";
+      return {
+        ...mapping,
+        led: { ...mapping.led, [key]: led ?? undefined },
+      };
     }
     default:
       return undefined;

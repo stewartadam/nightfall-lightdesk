@@ -95,6 +95,44 @@ pub struct MidiMapping {
     pub behavior: ControlBehavior,
     /// Action invoked by the control.
     pub action: ActionReference,
+    /// Values sent back to the control to light its LED when the device has feedback on.
+    #[serde(default)]
+    pub led: MidiLedValues,
+}
+
+/// Value sent to light an LED when a mapping does not choose one; single-color controllers
+/// read it as fully lit.
+const DEFAULT_LED_ON: u8 = 127;
+
+/// Value sent to darken an LED when a mapping does not choose one.
+const DEFAULT_LED_OFF: u8 = 0;
+
+/// Values a mapping sends back to its control's MIDI address to light or darken its LED.
+///
+/// Most controllers light the LED of a pad or button when they receive a message on the
+/// same note or controller the pad sends. What the value means is device-specific: on/off
+/// for single-color LEDs, a palette index for color pads. Unset values use full on and off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct MidiLedValues {
+    /// Value sent while the action's target is running, enabled or held (0-127).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on: Option<u8>,
+    /// Value sent while the action's target is idle (0-127).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub off: Option<u8>,
+}
+
+impl MidiLedValues {
+    /// Returns the value that lights the LED, clamped to a MIDI data byte.
+    pub fn on_value(self) -> u8 {
+        self.on.unwrap_or(DEFAULT_LED_ON).min(127)
+    }
+
+    /// Returns the value that darkens the LED, clamped to a MIDI data byte.
+    pub fn off_value(self) -> u8 {
+        self.off.unwrap_or(DEFAULT_LED_OFF).min(127)
+    }
 }
 
 /// MIDI event information sent to the UI.
@@ -131,6 +169,13 @@ pub enum MidiCommand {
     UpsertMapping(MidiMapping),
     /// Delete a mapping by its stable ID.
     DeleteMapping(#[typeshare(serialized_as = "String")] Uuid),
+    /// Turn LED and fader feedback to a device on or off.
+    SetDeviceFeedback {
+        /// Input device name, as stored on its mappings.
+        device: String,
+        /// Whether mapped controls on the device are sent their targets' state.
+        enabled: bool,
+    },
 }
 
 impl IngressCommand for MidiCommand {}

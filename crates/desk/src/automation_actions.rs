@@ -14,8 +14,8 @@ use bevy_app::App;
 use bevy_ecs::prelude::{Changed, DetectChanges, Local, Query, RemovedComponents, Res, World};
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
-    ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
-    ActionParameterKind, ActionReference, ActionSurface, DESK_EVAL_ACTION_ID,
+    ActionAppExt, ActionDescriptor, ActionFeedback, ActionInputKind, ActionInvocation,
+    ActionParameter, ActionParameterKind, ActionReference, ActionSurface, DESK_EVAL_ACTION_ID,
     DeskEvalActionArguments, ExternalCommandInvocation, InvocationDispatch, InvocationError,
     submit_command,
 };
@@ -33,7 +33,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::clips::{Clip, ClipCommand};
-use crate::controls::{ControlCommand, ControlUpdate, Controls};
+use crate::controls::{
+    ControlCommand, ControlUpdate, Controls, clip_live_state, master_contributes,
+};
 use crate::desk_command::DeskCommand;
 use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
 
@@ -145,6 +147,10 @@ pub fn register_desk_actions(app: &mut App) {
             })
         },
     )
+    .register_action_feedback::<ClipGotoActionArguments, _>(
+        CLIP_GOTO_ACTION_ID,
+        |world, arguments| clip_feedback(world, arguments.clip),
+    )
     .register_action_capability::<ClipGotoActionArguments, TimelinePlaybackActionPlan, _>(
         CLIP_GOTO_ACTION_ID,
         TimelinePlaybackActionPlan::CAPABILITY,
@@ -194,6 +200,16 @@ pub fn register_desk_actions(app: &mut App) {
                 value: value * 100.0,
             })
         },
+    )
+    .register_action_feedback::<ControlActionArguments, _>(
+        CONTROL_LEVEL_ACTION_ID,
+        |world, arguments| {
+            let (level, active) = control_live_state(world, arguments.control_index)?;
+            Ok(ActionFeedback {
+                level: Some((level / 100.0).clamp(0.0, 1.0)),
+                ..ActionFeedback::active_if(active)
+            })
+        },
     );
     app.register_command_action::<ControlActionArguments, ControlCommand, _>(
         ActionDescriptor::new(CONTROL_GO_ACTION_ID, "Control Go", "Controls")
@@ -203,6 +219,13 @@ pub fn register_desk_actions(app: &mut App) {
             Ok(ControlCommand::Go {
                 control_index: arguments.control_index,
             })
+        },
+    )
+    .register_action_feedback::<ControlActionArguments, _>(
+        CONTROL_GO_ACTION_ID,
+        |world, arguments| {
+            let (_, active) = control_live_state(world, arguments.control_index)?;
+            Ok(ActionFeedback::active_if(active))
         },
     );
     app.register_momentary_command_action::<ControlActionArguments, ControlCommand, _>(
@@ -224,6 +247,13 @@ pub fn register_desk_actions(app: &mut App) {
             })
         },
     );
+    app.register_action_feedback::<ControlActionArguments, _>(
+        CONTROL_BUTTON_ACTION_ID,
+        |world, arguments| {
+            let (_, active) = control_live_state(world, arguments.control_index)?;
+            Ok(ActionFeedback::active_if(active))
+        },
+    );
     app.register_update_action::<MasterActionArguments, MasterUpdate, _>(
         ActionDescriptor::new(MASTER_LEVEL_ACTION_ID, "Master level", "Masters")
             .with_input(ActionInputKind::Absolute)
@@ -236,11 +266,17 @@ pub fn register_desk_actions(app: &mut App) {
             })
         },
     )
-    .register_flash_level::<MasterActionArguments, _>(
+    .register_flash_level::<MasterActionArguments, _>(MASTER_LEVEL_ACTION_ID, |world, arguments| {
+        let master = resolve_master(world, arguments.master)?;
+        Ok(Some(
+            Master::control_percent_from_level(master.kind, master.level_percent) / 100.0,
+        ))
+    })
+    .register_action_feedback::<MasterActionArguments, _>(
         MASTER_LEVEL_ACTION_ID,
         |world, arguments| {
             let master = resolve_master(world, arguments.master)?;
-            Ok(Some(
+            Ok(ActionFeedback::level(
                 Master::control_percent_from_level(master.kind, master.level_percent) / 100.0,
             ))
         },
@@ -269,6 +305,16 @@ pub fn register_desk_actions(app: &mut App) {
             descriptor,
             move |world, arguments| set_master_active(world, arguments.master, active),
         );
+    }
+    for action_id in [
+        MASTER_TOGGLE_ACTION_ID,
+        MASTER_ON_ACTION_ID,
+        MASTER_OFF_ACTION_ID,
+    ] {
+        app.register_action_feedback::<MasterActionArguments, _>(action_id, |world, arguments| {
+            let master = resolve_master(world, arguments.master)?;
+            Ok(ActionFeedback::active_if(master_contributes(&master)))
+        });
     }
     app.register_action::<DeskEvalActionArguments, _>(
         ActionDescriptor::new(DESK_EVAL_ACTION_ID, "Evaluate command", "Desk")
@@ -464,7 +510,25 @@ fn register_clip_action(
                 kind: timeline_kind,
             })
         },
-    );
+    )
+    .register_action_feedback::<ClipActionArguments, _>(&action_id, |world, arguments| {
+        clip_feedback(world, arguments.clip)
+    });
+}
+
+/// Reports a clip as active while it is running.
+fn clip_feedback(world: &World, clip: Uuid) -> Result<ActionFeedback, InvocationError> {
+    let clip_id = resolve_clip_id(world, clip)?;
+    Ok(ActionFeedback::active_if(clip_live_state(world, clip_id).1))
+}
+
+/// Reads a control slot's console level and whether its assignment is running.
+fn control_live_state(world: &World, control_index: u32) -> Result<(f32, bool), InvocationError> {
+    validate_control(world, control_index)?;
+    world
+        .resource::<Controls>()
+        .live_state(world, control_index)
+        .ok_or_else(|| InvocationError::new("control.not_found", "Control does not exist"))
 }
 
 /// Resolves a persisted clip UID to the numeric ID used by runtime commands.

@@ -29,6 +29,10 @@ use crate::{LastMidiEvent, MidiControlTouches, MidiDevices, MidiMappingDiagnosti
 pub struct MidiDevice {
     /// Device name
     pub name: String,
+    /// Whether the device has an output port that LED feedback can be sent to.
+    pub has_output: bool,
+    /// Whether LED feedback is turned on for the device.
+    pub feedback: bool,
 }
 
 /// WebSocket message types for MIDI
@@ -85,7 +89,7 @@ pub fn handle_resync_state(
         return;
     };
 
-    send_device_list(&devices, &broadcaster);
+    send_device_list(&devices, &mappings, &broadcaster);
     send_mappings(&mappings, &broadcaster);
     send_diagnostics(&diagnostics, &broadcaster);
     if let Some(ref event) = last_event.0 {
@@ -111,8 +115,8 @@ pub fn send_midi_state(
     }
 
     // Only send if resources have changed
-    if devices.is_changed() {
-        send_device_list(&devices, &broadcaster);
+    if devices.is_changed() || mappings.is_changed() {
+        send_device_list(&devices, &mappings, &broadcaster);
     }
 
     if mappings.is_changed() {
@@ -135,11 +139,14 @@ pub fn send_midi_state(
 }
 
 /// Send device list to WebSocket clients
-pub(crate) fn send_device_list(devices: &MidiDevices, broadcaster: &ClientEventSink) {
+fn send_device_list(devices: &MidiDevices, mappings: &MidiMappings, broadcaster: &ClientEventSink) {
     let device_list: Vec<MidiDevice> = devices
-        .device_names()
-        .into_iter()
-        .map(|name| MidiDevice { name })
+        .devices()
+        .map(|(name, has_output)| MidiDevice {
+            name: name.to_string(),
+            has_output,
+            feedback: mappings.feedback_devices().contains(name),
+        })
         .collect();
 
     broadcaster.publish(
