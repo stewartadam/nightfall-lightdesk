@@ -16,9 +16,7 @@ use std::{
 use nightfall::prelude::*;
 use nightfall_desk::prelude::*;
 #[cfg(feature = "object-library")]
-use nightfall_object_library::manager::{
-    ObjectLibraryManager, ObjectModelPathScope, decode_object_path, encode_showfile_object_path,
-};
+use nightfall_object_library::showfile;
 use nightfall_scene_objects::prelude::*;
 use nightfall_timeline::prelude::*;
 use uuid::Uuid;
@@ -109,7 +107,7 @@ pub(super) fn copy_imported_scene_object_assets(
                 continue;
             }
 
-            let Some(model_path) = scene_object_model_path_mut(scene_object) else {
+            let Some(model_path) = showfile::scene_object_model_path_mut(scene_object) else {
                 continue;
             };
 
@@ -119,13 +117,18 @@ pub(super) fn copy_imported_scene_object_assets(
             }
 
             let original_model_path = model_path.clone();
-            if let Some(migrated_model_path) = copy_imported_showfile_object_model_path(
+            if let Some(bundle) = showfile::imported_model_bundle(
                 &original_model_path,
                 source_show_data_dir,
                 current_show_data_dir,
-            )? {
-                migrated_model_paths.insert(original_model_path, migrated_model_path.clone());
-                *model_path = migrated_model_path;
+            ) {
+                copy_imported_showfile_asset_file(
+                    &bundle.source,
+                    &bundle.destination,
+                    "scene object bundle",
+                )?;
+                migrated_model_paths.insert(original_model_path, bundle.model_path.clone());
+                *model_path = bundle.model_path;
             }
         }
     }
@@ -170,38 +173,6 @@ where
                 .collect()
         }
     }
-}
-
-/// Copy an imported showfile-scoped scene object model bundle and return its current token.
-#[cfg(feature = "object-library")]
-fn copy_imported_showfile_object_model_path(
-    model_path: &str,
-    source_show_data_dir: &Path,
-    current_show_data_dir: &Path,
-) -> Result<Option<String>, String> {
-    let object_model_path = match decode_object_path(model_path) {
-        Ok(path) => path,
-        Err(_) => return Ok(None),
-    };
-
-    if object_model_path.scope != ObjectModelPathScope::ShowfileData {
-        return Ok(None);
-    }
-
-    let source_bundle_path = source_show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
-        .join(&object_model_path.bundle_filename);
-    let destination_bundle_path = current_show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
-        .join(&object_model_path.bundle_filename);
-
-    copy_imported_showfile_asset_file(
-        &source_bundle_path,
-        &destination_bundle_path,
-        "scene object bundle",
-    )?;
-
-    Ok(Some(encode_showfile_object_path(&destination_bundle_path)))
 }
 
 /// Copy one showfile-scoped asset unless the source and destination are the same file.
@@ -263,127 +234,13 @@ fn is_safe_relative_showfile_path(path: &Path) -> bool {
             .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
-/// Return the mutable object-library model path stored on a scene object.
-#[cfg(feature = "object-library")]
-fn scene_object_model_path_mut(scene_object: &mut SceneObject) -> Option<&mut String> {
-    match &mut scene_object.properties {
-        SceneObjectProperties::StageElement(properties) => Some(&mut properties.model_path),
-        SceneObjectProperties::Custom(properties) => Some(&mut properties.model_path),
-        _ => None,
-    }
-}
-
-/// Return the object-library model path stored on a scene object.
-#[cfg(feature = "object-library")]
-pub(super) fn scene_object_model_path(scene_object: &SceneObject) -> Option<&str> {
-    match &scene_object.properties {
-        SceneObjectProperties::StageElement(properties) => Some(&properties.model_path),
-        SceneObjectProperties::Custom(properties) => Some(&properties.model_path),
-        _ => None,
-    }
-}
-
-/// Copy a library object bundle into the showfile and return the showfile-scoped model token.
-#[cfg(feature = "object-library")]
-pub(super) fn snapshot_library_model_path_for_showfile(
-    model_path: &str,
-    library_path: &Path,
-    show_data_dir: &Path,
-) -> Result<Option<String>, String> {
-    let object_model_path = match decode_object_path(model_path) {
-        Ok(path) => path,
-        Err(_) => return Ok(None),
-    };
-
-    if object_model_path.scope != ObjectModelPathScope::Library {
-        return Ok(None);
-    }
-
-    let source_bundle_path = library_path.join(&object_model_path.bundle_filename);
-    if !source_bundle_path.exists() {
-        return Err(format!(
-            "library bundle {} does not exist",
-            source_bundle_path.display()
-        ));
-    }
-
-    let snapshot_dir = show_data_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
-    std::fs::create_dir_all(&snapshot_dir).map_err(|error| {
-        format!(
-            "failed to create showfile object snapshot directory {}: {}",
-            snapshot_dir.display(),
-            error
-        )
-    })?;
-
-    let snapshot_filename = format!(
-        "{}-{}",
-        Uuid::new_v4().simple(),
-        object_model_path.bundle_filename
-    );
-    let snapshot_path = snapshot_dir.join(snapshot_filename);
-    std::fs::copy(&source_bundle_path, &snapshot_path).map_err(|error| {
-        format!(
-            "failed to copy object bundle {} to {}: {}",
-            source_bundle_path.display(),
-            snapshot_path.display(),
-            error
-        )
-    })?;
-
-    Ok(Some(encode_showfile_object_path(&snapshot_path)))
-}
-
 /// Convert library-scoped scene object paths into showfile-scoped asset snapshots.
 pub(super) fn normalize_scene_object_model_paths_for_showfile(
     scene_objects: &mut [SceneObject],
     show_data_dir: &Path,
 ) {
     #[cfg(feature = "object-library")]
-    {
-        let library_path = match ObjectLibraryManager::get_library_path() {
-            Ok(path) => path,
-            Err(error) => {
-                tracing::warn!(
-                    "Failed to resolve object library path for showfile model snapshots: {}",
-                    error
-                );
-                return;
-            }
-        };
-
-        let mut migrated_model_paths: HashMap<String, String> = HashMap::new();
-        for scene_object in scene_objects {
-            let Some(model_path) = scene_object_model_path_mut(scene_object) else {
-                continue;
-            };
-
-            if let Some(migrated_path) = migrated_model_paths.get(model_path) {
-                *model_path = migrated_path.clone();
-                continue;
-            }
-
-            let original_model_path = model_path.clone();
-            match snapshot_library_model_path_for_showfile(
-                &original_model_path,
-                &library_path,
-                show_data_dir,
-            ) {
-                Ok(Some(snapshot_model_path)) => {
-                    migrated_model_paths.insert(original_model_path, snapshot_model_path.clone());
-                    *model_path = snapshot_model_path;
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    tracing::warn!(
-                        "Failed to snapshot scene object model path {}: {}",
-                        original_model_path,
-                        error
-                    );
-                }
-            }
-        }
-    }
+    nightfall_object_library::showfile::snapshot_library_models(scene_objects, show_data_dir);
 
     #[cfg(not(feature = "object-library"))]
     {
@@ -397,81 +254,17 @@ pub(super) fn remove_orphaned_showfile_object_snapshots(
     show_data_dir: &Path,
 ) -> Result<(), String> {
     #[cfg(feature = "object-library")]
-    {
-        let snapshot_dir = show_data_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
-        let read_dir = match std::fs::read_dir(&snapshot_dir) {
-            Ok(read_dir) => read_dir,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => {
-                return Err(format!(
-                    "failed to read showfile object snapshot directory {}: {}",
-                    snapshot_dir.display(),
-                    error
-                ));
-            }
-        };
-
-        let mut referenced_bundle_filenames: HashSet<String> = HashSet::new();
-        for scene_object in scene_objects {
-            let Some(model_path) = scene_object_model_path(scene_object) else {
-                continue;
-            };
-            let Ok(decoded_path) = decode_object_path(model_path) else {
-                continue;
-            };
-            if decoded_path.scope == ObjectModelPathScope::ShowfileData {
-                referenced_bundle_filenames.insert(decoded_path.bundle_filename);
-            }
-        }
-
-        for entry in read_dir {
-            let entry = entry.map_err(|error| {
-                format!(
-                    "failed to read entry in showfile object snapshot directory {}: {}",
-                    snapshot_dir.display(),
-                    error
-                )
-            })?;
-
-            let file_type = entry.file_type().map_err(|error| {
-                format!(
-                    "failed to read file type for showfile object snapshot {}: {}",
-                    entry.path().display(),
-                    error
-                )
-            })?;
-            if !file_type.is_file() {
-                continue;
-            }
-
-            let file_name = entry.file_name();
-            let file_name = file_name.to_string_lossy();
-            let extension = Path::new(file_name.as_ref())
-                .extension()
-                .and_then(|extension| extension.to_str());
-            if !matches!(extension, Some(extension) if extension.eq_ignore_ascii_case("robj")) {
-                continue;
-            }
-            if referenced_bundle_filenames.contains(file_name.as_ref()) {
-                continue;
-            }
-
-            std::fs::remove_file(entry.path()).map_err(|error| {
-                format!(
-                    "failed to remove orphaned showfile object snapshot {}: {}",
-                    entry.path().display(),
-                    error
-                )
-            })?;
-        }
-    }
+    return nightfall_object_library::showfile::remove_orphaned_model_snapshots(
+        scene_objects,
+        show_data_dir,
+    )
+    .map_err(|error| error.to_string());
 
     #[cfg(not(feature = "object-library"))]
     {
         let _ = (scene_objects, show_data_dir);
+        Ok(())
     }
-
-    Ok(())
 }
 
 /// Return true when a path names a supported timeline audio asset file.

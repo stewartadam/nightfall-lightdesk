@@ -68,10 +68,7 @@ mod storage;
 mod trash;
 
 #[cfg(all(test, feature = "object-library"))]
-use assets::{
-    copy_imported_scene_object_assets, scene_object_model_path,
-    snapshot_library_model_path_for_showfile,
-};
+use assets::copy_imported_scene_object_assets;
 use assets::{
     normalize_scene_object_model_paths_for_showfile, prepare_imported_showfile_assets,
     remove_orphaned_showfile_object_snapshots, remove_orphaned_timeline_audio_assets_after_save,

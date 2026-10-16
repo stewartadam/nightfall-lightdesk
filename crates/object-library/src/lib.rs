@@ -28,6 +28,7 @@ pub mod manager;
 pub mod metadata;
 pub mod plugin;
 pub mod scanner;
+pub mod showfile;
 pub mod watcher;
 pub mod websocket;
 
@@ -79,6 +80,17 @@ pub enum ObjectLibraryError {
     /// JSON parsing error
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// Filesystem error while managing a showfile's object bundles
+    #[error("failed to {action} {}: {source}", path.display())]
+    ShowfileBundle {
+        /// What was being attempted, such as "copy object bundle to"
+        action: &'static str,
+        /// Path the operation failed on
+        path: std::path::PathBuf,
+        /// Underlying IO error
+        source: std::io::Error,
+    },
 }
 
 /// Result type for object library operations

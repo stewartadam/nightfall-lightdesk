@@ -5841,6 +5841,7 @@ dependencies = [
  "tokio",
  "tracing",
  "typeshare",
+ "uuid",
  "zip 9.0.0",
 ]
 

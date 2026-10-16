@@ -354,6 +354,7 @@ fn collect_models(
             use nightfall_object_library::manager::{
                 ObjectModelPathScope, decode_object_path, encode_showfile_object_path,
             };
+            use nightfall_object_library::showfile::SHOWFILE_OBJECT_SNAPSHOTS_DIR;
             let decoded = match decode_object_path(token) {
                 Ok(decoded) => decoded,
                 Err(error) => {
@@ -365,7 +366,7 @@ fn collect_models(
                 ObjectModelPathScope::Library => {
                     if let Some(name) = collector.copy(
                         rooted_reference(&app_data.join("objects"), &decoded.bundle_filename),
-                        "scene-objects",
+                        SHOWFILE_OBJECT_SNAPSHOTS_DIR,
                         None,
                     )? {
                         properties.model_path = encode_showfile_object_path(Path::new(&name));
@@ -373,7 +374,7 @@ fn collect_models(
                 }
                 ObjectModelPathScope::ShowfileData => {
                     if let Err(error) = rooted_reference(
-                        &collector.destination.join("scene-objects"),
+                        &collector.destination.join(SHOWFILE_OBJECT_SNAPSHOTS_DIR),
                         &decoded.bundle_filename,
                     ) {
                         collector.warnings.push(format!("Model {token}: {error}"));

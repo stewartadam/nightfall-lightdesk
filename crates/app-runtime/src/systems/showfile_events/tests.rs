@@ -15,9 +15,9 @@ use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePolicy};
 #[cfg(feature = "object-library")]
-use nightfall_object_library::manager::{
-    ObjectModelPathScope, decode_object_path, encode_object_path, encode_showfile_object_path,
-};
+use nightfall_object_library::manager::{decode_object_path, encode_showfile_object_path};
+#[cfg(feature = "object-library")]
+use nightfall_object_library::showfile::{SHOWFILE_OBJECT_SNAPSHOTS_DIR, scene_object_model_path};
 use nightfall_showfile::{CURRENT_SHOWFILE_VERSION, parse_showfile_snapshot_json};
 use uuid::Uuid;
 
@@ -650,12 +650,12 @@ fn reset_working_draft_from_revision_preserves_saved_showfile() {
         .path()
         .join(SHOWFILE_DRAFTS_DIR)
         .join("default.nightfall-show");
-    let current_assets = show_data_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
+    let current_assets = show_data_dir.join("scene-objects");
     let revision_dir = root
         .path()
         .join("backups")
         .join("default-20260520-010203.nightfall-show");
-    let revision_assets = revision_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
+    let revision_assets = revision_dir.join("scene-objects");
     std::fs::create_dir_all(&current_assets).expect("create current asset dir");
     std::fs::create_dir_all(&revision_assets).expect("create revision asset dir");
     let mut world = setup_world();
@@ -700,14 +700,14 @@ fn reset_working_draft_from_revision_preserves_saved_showfile() {
     );
     assert!(
         show_data_dir
-            .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+            .join("scene-objects")
             .join("current.robj")
             .exists(),
         "saved assets should remain unchanged"
     );
     assert!(
         draft_dir
-            .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+            .join("scene-objects")
             .join("revision.robj")
             .exists(),
         "revision assets should be copied into working state"
@@ -3320,55 +3320,6 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
     assert!(error.contains("multiple versions of scene object asset"));
 }
 
-#[cfg(feature = "object-library")]
-#[test]
-fn snapshot_library_model_path_for_showfile_rewrites_scope_and_copies_bundle() {
-    let temp_root = std::env::temp_dir().join(format!(
-        "nightfall-showfile-events-{}",
-        Uuid::new_v4().simple()
-    ));
-    let library_path = temp_root.join("objects");
-    let show_data_dir = temp_root.join("default.nightfall-show");
-
-    std::fs::create_dir_all(&library_path).expect("create temp library directory");
-    std::fs::create_dir_all(&show_data_dir).expect("create temp show-data directory");
-
-    let library_bundle_path = library_path.join("object-a.robj");
-    std::fs::write(&library_bundle_path, b"bundle").expect("write temp object bundle");
-    let encoded_library_path = encode_object_path(&library_bundle_path);
-
-    let snapshot_model_path = snapshot_library_model_path_for_showfile(
-        &encoded_library_path,
-        &library_path,
-        &show_data_dir,
-    )
-    .expect("snapshot should succeed")
-    .expect("library path should be converted to showfile path");
-
-    let decoded_snapshot_path =
-        decode_object_path(&snapshot_model_path).expect("snapshot path should decode");
-    assert_eq!(
-        decoded_snapshot_path.scope,
-        ObjectModelPathScope::ShowfileData
-    );
-    assert!(
-        decoded_snapshot_path
-            .bundle_filename
-            .ends_with("object-a.robj")
-    );
-
-    let copied_bundle_path = show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
-        .join(decoded_snapshot_path.bundle_filename);
-    assert!(
-        copied_bundle_path.exists(),
-        "expected copied bundle at {}",
-        copied_bundle_path.display()
-    );
-
-    std::fs::remove_dir_all(temp_root).expect("remove temp test directory");
-}
-
 /// Verifies imported showfile scene object bundles are copied into current show-data.
 #[cfg(feature = "object-library")]
 #[test]
@@ -3380,7 +3331,7 @@ fn copy_imported_scene_object_assets_copies_showfile_bundle() {
     let source_show_data_dir = temp_root.join("source-show-data");
     let current_show_data_dir = temp_root.join("current-show-data");
     let source_bundle_path = source_show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+        .join(SHOWFILE_OBJECT_SNAPSHOTS_DIR)
         .join("case.robj");
     std::fs::create_dir_all(source_bundle_path.parent().expect("bundle parent"))
         .expect("create source bundle directory");
@@ -3412,7 +3363,7 @@ fn copy_imported_scene_object_assets_copies_showfile_bundle() {
         decode_object_path(scene_object_model_path(&incoming[0]).expect("model path"))
             .expect("model path should decode");
     let copied_bundle_path = current_show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+        .join(SHOWFILE_OBJECT_SNAPSHOTS_DIR)
         .join(decoded_path.bundle_filename);
     assert_eq!(
         std::fs::read(copied_bundle_path).expect("read copied object bundle"),
@@ -3430,7 +3381,7 @@ fn remove_orphaned_showfile_object_snapshots_keeps_only_referenced_showfile_asse
         Uuid::new_v4().simple()
     ));
     let show_data_dir = temp_root.join("default.nightfall-show");
-    let snapshots_dir = show_data_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
+    let snapshots_dir = show_data_dir.join(SHOWFILE_OBJECT_SNAPSHOTS_DIR);
     std::fs::create_dir_all(&snapshots_dir).expect("create snapshot directory");
 
     let retained_snapshot_path = snapshots_dir.join("keep.robj");
