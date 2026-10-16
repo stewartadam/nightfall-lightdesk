@@ -114,6 +114,18 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
     "ci.yml/release": { contents: "write" },
     "ci.yml/preview": { "pull-requests": "write" },
+    "pr-commands.yml/recheck-cla": {
+      checks: "read",
+      issues: "write",
+      "pull-requests": "write",
+      statuses: "read",
+    },
+    "pr-commands.yml/republish": {
+      actions: "write",
+      checks: "read",
+      issues: "write",
+      "pull-requests": "write",
+    },
     "playwright-full.yml/source": { contents: "read" },
     "desktop-artifacts.yml/release-note-metadata": {
       contents: "read",

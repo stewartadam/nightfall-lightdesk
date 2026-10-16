@@ -1,0 +1,117 @@
+name: PR commands
+
+# Maintainers comment a slash command on a PR to rerun an external check or a CI step.
+# issue_comment runs this file from the default branch, never from the PR, and
+# github/command only proceeds for commenters with write or admin access.
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  recheck-cla:
+    name: Recheck CLA
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/recheck-cla')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: read
+      issues: write
+      pull-requests: write
+      statuses: read
+    steps:
+      - uses: github/command@3442f3fa1efe01bdb024b157083c337902d17372 # v2.0.3
+        id: command
+        with:
+          command: /recheck-cla
+          allow_drafts: true
+          # Outside contributors are the ones who sign the CLA; nothing here checks out their code.
+          allow_forks: true
+          fork_review_bypass: true
+          skip_ci: true
+          skip_reviews: true
+      # cla-assistant.io drops webhooks under load, leaving license/cla unreported.
+      # Its public check URL revalidates the PR and redirects without reporting a result.
+      - name: Ask cla-assistant.io to revalidate the PR
+        if: steps.command.outputs.continue == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.command.outputs.issue_number }}
+          HEAD_SHA: ${{ steps.command.outputs.sha }}
+        run: |
+          curl --fail --silent --show-error --output /dev/null \
+            "https://cla-assistant.io/check/${GH_REPO}?pullRequest=${PR_NUMBER}"
+          for _ in $(seq 24); do
+            status="$(gh api "repos/$GH_REPO/commits/$HEAD_SHA/statuses" \
+              --jq '[.[] | select(.context == "license/cla")][0] // empty | "\(.state): \(.description)"')"
+            if [[ -n "$status" ]]; then
+              echo "license/cla is $status" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::cla-assistant.io did not report license/cla within two minutes"
+          exit 1
+
+  republish:
+    name: Republish browser preview
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/republish')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      checks: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: github/command@3442f3fa1efe01bdb024b157083c337902d17372 # v2.0.3
+        id: command
+        with:
+          command: /republish
+          allow_drafts: true
+          skip_ci: true
+          skip_reviews: true
+      # Reruns the Browser preview job of the PR head's latest CI run, so the deploy
+      # reuses that run's demo artifact. See "Browser previews" in .github/workflows/README.md.
+      - name: Rerun the preview deploy
+        if: steps.command.outputs.continue == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.command.outputs.issue_number }}
+          HEAD_SHA: ${{ steps.command.outputs.sha }}
+        run: |
+          refuse() {
+            echo "::error::$1"
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+              -f body="Cannot republish the preview: $1" > /dev/null
+            exit 1
+          }
+          run="$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=1" \
+            --jq '.workflow_runs[0] // empty | "\(.id) \(.status)"')"
+          read -r run_id run_status <<< "$run"
+          [[ -n "$run_id" ]] || refuse "no CI run exists for ${HEAD_SHA}."
+          [[ "$run_status" == completed ]] || refuse "CI is still running for ${HEAD_SHA}; the preview deploys when it finishes."
+
+          jobs="$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/jobs" --jq '.jobs[]')"
+          preview="$(jq -sr '[.[] | select(.name == "Browser preview")][0] // empty | "\(.id) \(.conclusion)"' <<< "$jobs")"
+          read -r job_id job_conclusion <<< "$preview"
+          artifact="$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/artifacts" \
+            --jq '.artifacts[] | select((.name | startswith("nightfall-browser-demo-")) and (.expired | not)) | .id')"
+
+          if [[ -n "$job_id" && "$job_conclusion" != skipped && -n "$artifact" ]]; then
+            gh api --method POST "repos/$GH_REPO/actions/jobs/$job_id/rerun" > /dev/null
+            echo "Rerunning the Browser preview job of run $run_id" | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [[ -n "$job_id" && "$job_conclusion" != skipped ]]; then
+            # The demo artifact expired, so rebuild it with the whole run.
+            gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun" > /dev/null
+            echo "Rerunning all of run $run_id because its demo artifact expired" | tee -a "$GITHUB_STEP_SUMMARY"
+          elif jq -se 'any(.[]; .conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")' <<< "$jobs" > /dev/null; then
+            # A failed upstream job skipped the preview; rerunning failed jobs reruns their dependents too.
+            gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun-failed-jobs" > /dev/null
+            echo "Rerunning the failed jobs of run $run_id, then the preview" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            refuse "CI did not select a preview for this PR (previews skip fork and Dependabot PRs, and need CLOUDFLARE_PREVIEW_WORKER)."
+          fi

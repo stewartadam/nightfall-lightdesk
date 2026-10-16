@@ -88,6 +88,13 @@ Publication (fresh runner; contents: write; no Apple credentials)
   authority, only a token limited to Workers Scripts edits and a
   `pull-requests: write` GitHub token, and never acquires source or build caches.
   Fork PRs never select a preview, so they never reach this credential.
+- **PR commands:** `pr-commands.yml` runs on PR comments from the default
+  branch's copy of the workflow, never the PR's, and only for commenters with
+  write or admin access (checked by the pinned `github/command` action). It never
+  acquires source or runs project code. `/recheck-cla` only calls the public
+  cla-assistant.io check URL and reads commit statuses. `/republish` holds
+  `actions: write` solely to rerun jobs of the PR's existing CI run, so the rerun
+  keeps that run's own permissions and artifacts.
 - **Debug symbols:** on version tags, a fresh runner downloads this run's debug
   symbol artifacts as data and uploads them to the error service so crash stack
   traces resolve to functions and lines. It holds only `GLITCHTIP_AUTH_TOKEN`,
