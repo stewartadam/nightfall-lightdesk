@@ -10,9 +10,13 @@ import {
   type OwnerReferenceList,
   ReferenceDomain,
   type ReferenceEntry,
+  type ReferenceOwner,
 } from "../types";
 
-/** References the backend reported for each object, keyed by {@link referenceOwnerKey}. */
+/**
+ * References the backend reported for each object, keyed by {@link referenceOwnerKey}, as table
+ * rows that each carry their owner.
+ */
 export type ReferenceListByOwner = ReadonlyMap<string, ReferenceEntry[]>;
 
 /** Order objects are listed in, matching the backend's domain order. */
@@ -43,8 +47,9 @@ export function referenceListFromOwners(
 }
 
 /**
- * Returns a copy of `current` with each object in a `ReferenceListUpdate` replaced. An object
- * reported with no references held none or was deleted, so it is dropped.
+ * Returns a copy of `current` with each object in a `ReferenceListUpdate` replaced. The backend
+ * describes each owner once, so every row of an object shares one owner record. An object reported
+ * with no references held none or was deleted, so it is dropped.
  */
 export function applyReferenceListUpdate(
   current: ReferenceListByOwner,
@@ -56,7 +61,16 @@ export function applyReferenceListUpdate(
     if (owner.references.length === 0) {
       next.delete(key);
     } else {
-      next.set(key, owner.references);
+      const source: ReferenceOwner = {
+        domain: owner.domain,
+        uid: owner.uid,
+        id: owner.id,
+        label: owner.label,
+      };
+      next.set(
+        key,
+        owner.references.map((reference) => ({ source, ...reference })),
+      );
     }
   }
   return next;

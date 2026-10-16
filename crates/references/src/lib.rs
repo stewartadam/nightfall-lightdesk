@@ -39,7 +39,7 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_selection::{
     OwnerKey, OwnerReferences, ReferenceBook, ReferenceDomain, ReferenceEntry, ReferenceIssue,
-    ReferenceOwner, ReferenceSummary,
+    ReferenceOwner, ReferenceStatus, ReferenceSummary, ReferenceTarget,
 };
 pub use prune::ReferenceCommand;
 use serde::{Deserialize, Serialize};
@@ -72,7 +72,7 @@ pub struct ReferenceHealth<'a> {
     pub issues: &'a [ReferenceIssue],
 }
 
-/// Every reference one object holds.
+/// Every reference one object holds, with the owner described once for all of them.
 #[typeshare::typeshare]
 #[derive(Debug, Serialize)]
 pub struct OwnerReferenceList<'a> {
@@ -80,8 +80,36 @@ pub struct OwnerReferenceList<'a> {
     pub domain: ReferenceDomain,
     /// Stable identity of the owner.
     pub uid: &'a str,
+    /// User-facing numeric ID of the owner; 0 when it no longer exists.
+    pub id: u32,
+    /// User-facing label of the owner; empty when it no longer exists.
+    pub label: &'a str,
     /// Every reference the owner holds; empty when it holds none or no longer exists.
-    pub references: &'a [ReferenceEntry],
+    pub references: Vec<ListedReference<'a>>,
+}
+
+/// One reference in a list message. Its owner is the enclosing [`OwnerReferenceList`], so a large
+/// list does not repeat the owner's identity for every reference.
+#[typeshare::typeshare]
+#[derive(Debug, Serialize)]
+pub struct ListedReference<'a> {
+    /// Location of the reference inside the owner, such as `selection.source.Resolved[0]`.
+    pub path: &'a str,
+    /// Target the reference names.
+    pub target: &'a ReferenceTarget,
+    /// Whether the target exists.
+    pub status: ReferenceStatus,
+}
+
+impl<'a> From<&'a ReferenceEntry> for ListedReference<'a> {
+    /// Borrows an audited reference without its owner.
+    fn from(entry: &'a ReferenceEntry) -> Self {
+        Self {
+            path: &entry.path,
+            target: &entry.target,
+            status: entry.status,
+        }
+    }
 }
 
 /// Reference report messages sent to clients.
@@ -220,13 +248,17 @@ impl ReferenceReportState {
         keys: impl IntoIterator<Item = &'a OwnerKey>,
     ) -> Vec<OwnerReferenceList<'a>> {
         keys.into_iter()
-            .map(|key| OwnerReferenceList {
-                domain: key.domain,
-                uid: &key.uid,
-                references: self
-                    .book
-                    .get(key)
-                    .map_or(&[][..], |audit| &audit.references),
+            .map(|key| {
+                let audit = self.book.get(key);
+                OwnerReferenceList {
+                    domain: key.domain,
+                    uid: &key.uid,
+                    id: audit.map_or(0, |audit| audit.owner.id),
+                    label: audit.map_or("", |audit| &audit.owner.label),
+                    references: audit
+                        .map(|audit| audit.references.iter().map(ListedReference::from).collect())
+                        .unwrap_or_default(),
+                }
             })
             .collect()
     }

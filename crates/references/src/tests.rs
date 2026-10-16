@@ -102,7 +102,20 @@ enum Decoded {
 struct DecodedOwner {
     domain: ReferenceDomain,
     uid: String,
-    references: Vec<ReferenceEntry>,
+    id: u32,
+    label: String,
+    references: Vec<DecodedReference>,
+}
+
+/// One reference in a list or list update message, without its owner.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DecodedReference {
+    #[expect(dead_code, reason = "decoded so unknown fields are rejected")]
+    path: String,
+    target: ReferenceTarget,
+    #[expect(dead_code, reason = "decoded so unknown fields are rejected")]
+    status: ReferenceStatus,
 }
 
 /// Decodes every published frame with the audience it was addressed to.
@@ -170,6 +183,7 @@ fn list_reaches_only_watchers() {
     };
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].domain, ReferenceDomain::Group);
+    assert_eq!((list[0].id, list[0].label.as_str()), (1, "Group 1"));
     assert_eq!(list[0].references.len(), 2);
 
     add_group(&mut app, 2, SelectionExpr::Group(GroupRefExpr::ById(1)));
@@ -394,6 +408,7 @@ fn removed_objects_and_cleared_stores_update_the_report() {
     assert_eq!(summary.issue_count, 1);
     assert_eq!(owners.len(), 1);
     assert!(owners[0].references.is_empty());
+    assert_eq!((owners[0].id, owners[0].label.as_str()), (0, ""));
 
     app.world_mut()
         .resource_mut::<DataProvider<Group>>()

@@ -25,9 +25,10 @@ function owner(
   return {
     domain,
     uid,
+    id,
+    label: `Object ${id}`,
     references: paths.map(
-      (path): types.ReferenceEntry => ({
-        source: { domain, uid, id, label: "" },
+      (path): types.ListedReference => ({
         path,
         target: { type: "Fixture", data: { fixture_id: 1 } },
         status: types.ReferenceStatus.Ok,
@@ -66,5 +67,11 @@ test("updates replace changed objects and drop objects with no references", () =
   ]);
 
   assert.deepEqual(rows(updated), ["cue-1:a", "cue-1:a2", "master-3:m"]);
+  assert.deepEqual(flattenReferenceList(updated)[2].source, {
+    domain: types.ReferenceDomain.Master,
+    uid: "master-3",
+    id: 3,
+    label: "Object 3",
+  });
   assert.deepEqual(rows(list), ["cue-1:a", "cue-2:b"]);
 });
