@@ -103,13 +103,3 @@ pub fn dispatch_ast(ast: &ast::CommandAst) -> Result<Vec<DynEnginePayload>, Disp
 
     Err(DispatchError::Unhandled)
 }
-
-/// Return a list of registered converter TypeIds (useful for debug introspection).
-pub fn registered_converters() -> Vec<TypeId> {
-    CONVERTERS
-        .read()
-        .expect("ast dispatch lock poisoned")
-        .iter()
-        .map(|(id, _)| *id)
-        .collect()
-}

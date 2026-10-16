@@ -12,4 +12,3 @@ pub mod api;
 pub mod behavior;
 pub mod composer;
 pub mod formatting;
-pub mod ranking;

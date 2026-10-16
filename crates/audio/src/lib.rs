@@ -98,11 +98,6 @@ impl AudioController {
         false
     }
 
-    /// List all active sink IDs.
-    pub fn list_sinks(&self) -> Vec<AudioSinkId> {
-        self.sinks.keys().copied().collect()
-    }
-
     /// Play the audio in the specified sink.
     pub fn play(&mut self, id: AudioSinkId) -> bool {
         if !self.sinks.contains_key(&id) {

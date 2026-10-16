@@ -157,13 +157,6 @@ pub fn top_level_command_heads() -> &'static [&'static str] {
         .as_slice()
 }
 
-/// Returns whether the text exactly matches a canonical top-level command head.
-pub fn is_exact_top_level_command_head(text: &str) -> bool {
-    top_level_command_heads()
-        .iter()
-        .any(|head| head.eq_ignore_ascii_case(text))
-}
-
 /// Returns the canonical text emitted for a token ID.
 pub fn canonical_text(token_id: TokenId) -> Option<&'static str> {
     token_specs()

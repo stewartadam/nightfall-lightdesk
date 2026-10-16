@@ -211,11 +211,6 @@ export function e2eAutoOpenStartupShowfileName(): string | null {
   return showfileName;
 }
 
-/** Returns whether the current document received an e2e auto-open request. */
-export function e2eAutoOpenStartupShowfileWasRequested(): boolean {
-  return localStorage.getItem(E2E_AUTO_OPEN_STARTUP_SHOWFILE_KEY) !== null;
-}
-
 /** Marks the e2e startup showfile request complete for the current document. */
 export function clearE2eAutoOpenStartupShowfileRequest(): void {
   localStorage.setItem(E2E_AUTO_OPEN_STARTUP_SHOWFILE_KEY, "0");

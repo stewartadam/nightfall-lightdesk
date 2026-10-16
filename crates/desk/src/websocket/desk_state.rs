@@ -305,27 +305,6 @@ pub fn send_available_usb_dmx_devices_on_change(
     send_available_usb_dmx_devices(&available_usb_dmx_devices.0, &broadcaster);
 }
 
-/// Broadcast available network interfaces (helper for callers)
-pub fn send_available_network_interfaces(
-    network_interface_state: &NetworkInterfaceState,
-    broadcaster: &ClientEventSink,
-) {
-    broadcast_available_network_interfaces(
-        &network_interface_state.available_interfaces,
-        broadcaster,
-    );
-}
-
-/// Broadcast current/default network interface status (helper for callers)
-pub fn send_network_interface_status(
-    settings: &IoRuntimeSettings,
-    network_interface_state: &NetworkInterfaceState,
-    broadcaster: &ClientEventSink,
-) {
-    let status = resolve_network_interface_status(settings, network_interface_state);
-    broadcast_network_interface_status(&status, broadcaster);
-}
-
 /// Broadcast network interface list and current/default status from a single snapshot.
 pub fn send_network_interface_state(
     settings: &IoRuntimeSettings,

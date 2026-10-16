@@ -16,9 +16,6 @@ pub trait AsAny: 'static {
     /// Borrows this value as `Any` for immutable downcasting.
     fn as_any(&self) -> &dyn Any;
 
-    /// Borrows this value as `Any` for mutable downcasting.
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
     /// Converts an owned trait object into `Any` for owned downcasting.
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
@@ -26,11 +23,6 @@ pub trait AsAny: 'static {
 impl<T: 'static + Any> AsAny for T {
     /// Borrows this concrete value through the object-safe downcasting surface.
     fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    /// Mutably borrows this concrete value through the object-safe downcasting surface.
-    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 

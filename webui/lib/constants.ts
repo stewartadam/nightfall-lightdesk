@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-export const ASSET_DIR = "/assets";
 export const TOAST_DURATION_MS = 4000;
 export const DATA_GRID_NOT_APPLICABLE_BG = "#222222";
 export const PROGRAMMER_SELECTION_ID_TEXT_COLOR = "#ff0000";

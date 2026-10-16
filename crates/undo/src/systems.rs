@@ -268,16 +268,6 @@ pub fn finalize_detached_undo_groups(mut undo_manager: ResMut<UndoManager>) {
     undo_manager.finalize_detached_groups();
 }
 
-/// System that broadcasts undo state to WebSocket clients when it changes.
-///
-/// NOTE: This system is currently disabled because it requires the websocket crate,
-/// which would create a circular dependency. The websocket crate should implement
-/// its own system to observe UndoManager changes.
-#[allow(dead_code)]
-pub fn broadcast_undo_state() {
-    // This functionality should be moved to the websocket crate to avoid circular dependencies
-}
-
 #[cfg(test)]
 mod tests {
     use nightfall_engine::prelude::EnginePayload;

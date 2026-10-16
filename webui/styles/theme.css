@@ -35,7 +35,6 @@
   --radius-3xl: var(--nf-corner-radius, 1.5rem);
   --radius-4xl: var(--nf-corner-radius, 2rem);
   --panel-padding: 18px;
-  --cell-padding: 10px;
   --nf-tile-width: 140px;
   --nf-tile-height: 60px;
   --nf-tile-padding: 4px 6px;
@@ -51,10 +50,6 @@
   --shadow-elevation-low:
     0.3px 0.4px 0.5px hsl(from var(--shadow-color) h s l / 0.77),
     1.3px 1.7px 2px -3.7px hsl(from var(--shadow-color) h s l / 0.52);
-  --shadow-elevation-medium:
-    0.3px 0.4px 0.5px hsl(from var(--shadow-color) h s l / 0.72),
-    1.4px 1.8px 2.1px -1.9px hsl(from var(--shadow-color) h s l / 0.56),
-    6.5px 8.6px 10.1px -3.7px hsl(from var(--shadow-color) h s l / 0.4);
   --shadow-elevation-high:
     0.3px 0.4px 0.5px hsl(from var(--shadow-color) h s l / 0.8),
     1.9px 2.6px 3px -0.9px hsl(from var(--shadow-color) h s l / 0.7),

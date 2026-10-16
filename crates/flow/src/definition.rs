@@ -14,7 +14,7 @@ use nightfall_selection::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{FlowDefinitionSnapshot, FlowDelta, FlowDeltaError, FlowDeltaOp};
+use crate::protocol::{FlowDelta, FlowDeltaError, FlowDeltaOp};
 use crate::types::{
     FlowEdgeDefinition, FlowId, FlowNodeDefinition, FlowNodeId, FlowPortDefinition, FlowPortId,
     FlowPortType, FlowValue, FlowVersion,
@@ -86,16 +86,6 @@ impl FlowDefinition {
     /// Return the FlowId for this definition.
     pub fn flow_id(&self) -> FlowId {
         self.identifiers.id
-    }
-
-    /// Build a protocol snapshot for UI sync.
-    pub fn to_snapshot(&self) -> FlowDefinitionSnapshot {
-        FlowDefinitionSnapshot {
-            flow_id: self.flow_id(),
-            flow_version: self.flow_version,
-            nodes: self.nodes.clone(),
-            edges: self.edges.clone(),
-        }
     }
 
     /// Apply a FlowDelta, returning the updated version and any errors.

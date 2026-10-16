@@ -49,7 +49,6 @@ nightfall-instances = { path = "../instances" }
 nightfall-fx-module = { path = "../fx-module" }
 nightfall-programmer = { path = "../programmer" }
 nightfall-scene-objects = { path = "../scene-objects" }
-nightfall-selection = { path = "../selection" }
 nightfall-showfile = { path = "../showfile" }
 nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
@@ -81,7 +80,6 @@ gdt-cpus = "0.2606.1"
 [features]
 default = ["full", "beat-detection", "telemetry"]
 full = ["audio", "midi", "osc", "artnet", "sacn", "usb", "fixture-library", "object-library"]
-minimal = []
 audio = ["dep:nightfall-audio", "dep:nightfall-desk-audio", "nightfall-timeline/audio"]
 beat-detection = ["dep:nightfall-beat-detection", "dep:reqwest"]
 midi = ["dep:nightfall-input-midi", "nightfall-showfile/midi"]

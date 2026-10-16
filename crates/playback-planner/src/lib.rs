@@ -122,14 +122,6 @@ pub enum PlaybackExtent {
 }
 
 impl PlaybackExtent {
-    /// Returns the finite duration when this extent is known and finite.
-    pub fn as_finite(self) -> Option<Duration> {
-        match self {
-            Self::Finite(duration) => Some(duration),
-            Self::Indefinite | Self::Unknown => None,
-        }
-    }
-
     /// Returns true when the extent is known to finish without an external stop.
     pub fn is_finite(self) -> bool {
         matches!(self, Self::Finite(_))

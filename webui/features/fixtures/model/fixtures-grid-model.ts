@@ -129,26 +129,6 @@ export function recordAttributeNames(
   }
 }
 
-/** Records every attribute key that can affect the fixture grid schema for a parent row. */
-export function recordParentAttributeNames(
-  param: FixtureParameterState | undefined,
-  allAttributes: Set<string>,
-): void {
-  recordAttributeNames(param?.raw, allAttributes);
-  recordAttributeNames(param?.absolute, allAttributes);
-  recordAttributeNames(param?.relative, allAttributes);
-}
-
-/** Records every attribute key that can affect the fixture grid schema for an element row. */
-export function recordElementAttributeNames(
-  element: FixtureElementParameterState | undefined,
-  allAttributes: Set<string>,
-): void {
-  recordAttributeNames(element?.raw, allAttributes);
-  recordAttributeNames(element?.absolute, allAttributes);
-  recordAttributeNames(element?.relative, allAttributes);
-}
-
 /** Returns normalized output values, optionally limited to asserted attributes. */
 export function outputValuesForRawValues(
   raw: Record<string, number> | undefined,

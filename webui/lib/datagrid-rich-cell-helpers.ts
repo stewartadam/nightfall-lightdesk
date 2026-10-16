@@ -18,19 +18,6 @@ export type RichCellTone =
   | "danger"
   | "accent";
 
-type RichDropdownOption = {
-  value: string | null | undefined;
-  label: string;
-};
-
-export type RichDropdownCellData = {
-  kind: "rich-dropdown-cell";
-  value: string | null | undefined;
-  allowedValues: readonly RichDropdownOption[];
-  placeholder?: string;
-  clearable?: boolean;
-};
-
 export type RichBadgeTag = {
   label: string;
   tone?: RichCellTone;
@@ -48,17 +35,6 @@ export type RichActionButton = {
 export type RichActionButtonCellData = {
   kind: "rich-action-button-cell";
   actions: readonly RichActionButton[];
-};
-
-export type RichRangeCellData = {
-  kind: "rich-range-cell";
-  value: number;
-  min: number;
-  max: number;
-  mode: "range" | "percentage";
-  precision?: number;
-  warningAt?: number;
-  criticalAt?: number;
 };
 
 export type RichColorSwatchCellData = {
@@ -102,71 +78,6 @@ type RelativeRect = {
 
 export const CELL_PADDING = 8;
 const BUTTON_GAP = 6;
-const BADGE_GAP = 4;
-
-function normalizeDropdownOption(
-  option: RichDropdownOption | string | null | undefined,
-): RichDropdownOption {
-  if (typeof option === "string" || option === null || option === undefined) {
-    return {
-      value: option,
-      label: option?.toString() ?? "",
-    };
-  }
-  return option;
-}
-
-function getDropdownOptions(cell: RichDropdownCellData): RichDropdownOption[] {
-  return cell.allowedValues.map(normalizeDropdownOption);
-}
-
-export function getDropdownLabel(data: RichDropdownCellData): string {
-  const selected = getDropdownOptions(data).find(
-    (option) => option.value === data.value,
-  );
-  return selected?.label ?? data.placeholder ?? "";
-}
-
-export function applyDropdownPaste(
-  data: RichDropdownCellData,
-  pasted: string,
-): RichDropdownCellData {
-  const normalized = pasted.trim();
-  const match = getDropdownOptions(data).find(
-    (option) => option.value === normalized || option.label === normalized,
-  );
-  return match ? { ...data, value: match.value } : data;
-}
-
-export function clearDropdownValue(
-  data: RichDropdownCellData,
-): RichDropdownCellData {
-  return data.clearable === true ? { ...data, value: undefined } : data;
-}
-
-export function getVisibleBadgeCount(
-  tags: readonly RichBadgeTag[],
-  availableWidth: number,
-  measure: TextMeasurer,
-  compact = false,
-): number {
-  const horizontalPadding = compact ? 10 : 14;
-  let used = 0;
-  for (let index = 0; index < tags.length; index += 1) {
-    const tagWidth = measure(tags[index].label) + horizontalPadding;
-    const nextUsed = used === 0 ? tagWidth : used + BADGE_GAP + tagWidth;
-    const remaining = tags.length - index - 1;
-    const overflowWidth =
-      remaining > 0 ? measure(`+${remaining}`) + horizontalPadding : 0;
-    const requiredWidth =
-      overflowWidth > 0 ? nextUsed + BADGE_GAP + overflowWidth : nextUsed;
-    if (requiredWidth > availableWidth) {
-      return index;
-    }
-    used = nextUsed;
-  }
-  return tags.length;
-}
 
 function getActionButtonRects(
   data: RichActionButtonCellData,
@@ -206,38 +117,6 @@ export function getActionAtPosition(
       posY >= rect.y &&
       posY <= rect.y + rect.height,
   )?.action;
-}
-
-export function clampRangeFill(data: RichRangeCellData): number {
-  if (data.max === data.min) return 0;
-  return Math.min(
-    Math.max((data.value - data.min) / (data.max - data.min), 0),
-    1,
-  );
-}
-
-export function formatRangeValue(data: RichRangeCellData): string {
-  const precision = data.precision ?? (data.mode === "percentage" ? 0 : 1);
-  if (data.mode === "percentage") {
-    return `${(data.value * 100).toFixed(precision)}%`;
-  }
-  return data.value.toFixed(precision);
-}
-
-export function getRangeTone(data: RichRangeCellData): RichCellTone {
-  if (data.criticalAt !== undefined && data.value >= data.criticalAt) {
-    return "danger";
-  }
-  if (data.warningAt !== undefined && data.value >= data.warningAt) {
-    return "warning";
-  }
-  return "accent";
-}
-
-export function isColorSwatchCellData(
-  data: Record<string, unknown>,
-): data is RichColorSwatchCellData {
-  return data.kind === "rich-color-swatch-cell" || data.kind === "color-cell";
 }
 
 export const durationToMilliseconds = durationToMs;

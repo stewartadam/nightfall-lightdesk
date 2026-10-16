@@ -7,7 +7,6 @@ edition.workspace = true
 [dependencies]
 bevy_app.workspace = true
 bevy_ecs.workspace = true
-nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-engine = { path = "../engine" }
 nightfall-service-host = { path = "../service_host" }

@@ -8,7 +8,6 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 midir = "0.11"
-nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-coremidi-hotplug = { path = "../coremidi_hotplug" }
 nightfall-engine = { path = "../engine" }

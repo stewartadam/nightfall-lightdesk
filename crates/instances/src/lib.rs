@@ -231,15 +231,6 @@ pub fn reconcile_instance_options(
     }
 }
 
-/// Read-only clip playback binding exported by the desk-owned resolver.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ClipInstanceBinding {
-    /// Numeric clip ID that owns the playback slot.
-    pub clip_id: u32,
-    /// Runtime playback attached to the clip.
-    pub instance_id: InstanceId,
-}
-
 /// Domain result emitted after an instance action creates or reuses playback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClipInstanceAttachment {

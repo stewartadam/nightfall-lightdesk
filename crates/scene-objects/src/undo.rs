@@ -12,8 +12,7 @@ use nightfall_undo::prelude::*;
 
 use crate::websocket::SceneObjectDataProvider;
 use crate::{
-    SceneObject, SceneObjectCommand, SceneObjectPlacementPositionUpdate,
-    SceneObjectPlacementRotationUpdate,
+    SceneObjectCommand, SceneObjectPlacementPositionUpdate, SceneObjectPlacementRotationUpdate,
 };
 
 impl Undoable for SceneObjectCommand {
@@ -86,19 +85,5 @@ impl Undoable for SceneObjectCommand {
                 format!("Update Scene Object {} Properties", id)
             }
         }
-    }
-}
-
-/// Restore a scene object snapshot (for undo)
-pub fn restore_scene_object(
-    scene_object_provider: &mut SceneObjectDataProvider,
-    scene_object: SceneObject,
-) {
-    if let Err(e) = scene_object_provider.add(scene_object.clone()) {
-        tracing::warn!(
-            "Failed to restore scene object {}: {}",
-            scene_object.identifiers.id,
-            e
-        );
     }
 }

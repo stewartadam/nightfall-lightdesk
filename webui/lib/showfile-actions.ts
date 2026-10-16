@@ -48,11 +48,6 @@ export function saveNamedShowfileCommand(name: string): types.DeskCommand {
   return { type: "SaveNamedShowfile", data: name };
 }
 
-/** Builds a draft save command for the current showfile. */
-export function saveDraftShowfileCommand(): types.DeskCommand {
-  return { type: "SaveDraftShowfile" };
-}
-
 /** Returns the command payload for starting a new showfile. */
 function newShowfileCommand(
   options?: types.NewShowfileOptions,

@@ -168,11 +168,6 @@ impl UndoRegistry {
         let factory = self.replay_factories.get(&operation.as_any().type_id())?;
         factory(operation, context)
     }
-
-    /// Check if a command type is registered as undoable.
-    pub fn is_undoable(&self, type_id: TypeId) -> bool {
-        self.generators.contains_key(&type_id)
-    }
 }
 
 /// Command-stage undo processing.

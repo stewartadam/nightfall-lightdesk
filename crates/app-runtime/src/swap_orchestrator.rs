@@ -190,18 +190,6 @@ impl SwapOrchestrator {
         std::mem::replace(&mut self.active_app, staged_app)
     }
 
-    /// Stage and atomically swap the active app.
-    ///
-    /// On failure, the current app remains active and runtime states are resumed.
-    pub fn stage_and_swap(
-        &mut self,
-        factory: &WorldFactory,
-        bootstrap: WorldBootstrap,
-        warm_up_ticks: usize,
-    ) -> Result<App, String> {
-        self.stage_and_swap_with_before_commit(factory, bootstrap, warm_up_ticks, |_| {})
-    }
-
     /// Stage a world, invoke a callback while the current app is still active, then swap.
     ///
     /// The callback runs only after staging succeeds and before the current app is

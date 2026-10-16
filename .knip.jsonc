@@ -4,6 +4,11 @@
   "entry": [
     "webui/main.tsx",
     "webui/worktree-dashboard.tsx",
+    "webui/design-lab/main.tsx",
+    "webui/e2e/harness/entry.ts",
+    "webui/lib/engine-runtime-{worker,demo-worker,embedded}.ts",
+    "webui/public/*.js",
+    "playwright/*.config.ts",
     "webui/**/*.node.test.ts",
     "webui/e2e/**/*.spec.ts",
     "playwright/tests/**/*.spec.ts",

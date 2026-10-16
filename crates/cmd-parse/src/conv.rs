@@ -393,24 +393,6 @@ pub fn validate_parameter_values_for_attribute(
     Ok(())
 }
 
-/// Convert ValueRangeAst -> ValueSource
-/// - Single value -> ValueSource::Inline
-/// - Multiple values -> ValueSource::Fanned
-pub fn value_source_from_range_ast(
-    range: &ast::ValueRangeAst,
-) -> Result<nightfall::prelude::ValueSource, AstConvError> {
-    if let Some(marker) = value_marker_source_from_range_ast(range)? {
-        return Ok(marker);
-    }
-
-    let values = parameter_values_from_range_ast(range)?;
-    Ok(if values.len() == 1 {
-        nightfall::prelude::ValueSource::Inline(values.into_iter().next().unwrap())
-    } else {
-        nightfall::prelude::ValueSource::Fanned { values }
-    })
-}
-
 /// Convert ValueRangeAst -> ValueSource and validate absolute signs for an attribute.
 pub fn value_source_from_range_ast_for_attribute(
     range: &ast::ValueRangeAst,

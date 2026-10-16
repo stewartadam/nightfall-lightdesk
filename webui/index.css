@@ -7,7 +7,6 @@
  */
 
 /* biome-ignore-all lint/correctness/noInvalidPositionAtImportRule: reason */
-/* biome-ignore-all lint/complexity/noImportantStyles: react-select generated classes need explicit overrides for the portaled dropdown. */
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -69,10 +68,6 @@
     0 24px 48px rgb(0 0 0 / 0.42),
     0 8px 18px rgb(0 0 0 / 0.34);
   filter: drop-shadow(0 18px 22px rgb(0 0 0 / 0.28));
-}
-
-@utility animation-delay-* {
-  animation-delay: --value(integer) ms;
 }
 
 @keyframes cmdline-shake {

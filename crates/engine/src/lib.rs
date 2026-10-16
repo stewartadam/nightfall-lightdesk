@@ -19,7 +19,6 @@ mod client;
 pub mod client_bridge;
 pub mod client_ingress;
 pub mod command_lifecycle;
-pub mod command_traits;
 pub mod data_provider;
 pub mod diagnostic_paths;
 pub mod eval_action;
@@ -87,7 +86,6 @@ pub mod prelude {
         ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
         CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
     };
-    pub use crate::command_traits::CliCommand;
     pub use crate::data_provider::{DataProvider, DataStoreError};
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
