@@ -29,11 +29,7 @@ import {
 import type { StepFxWaveformProps } from "../model/step-fx-waveform-types";
 import { StepFxWaveformCycle } from "./step-fx-waveform-cycle";
 
-export type {
-  StepFxWaveformDragTarget,
-  StepFxWaveformProps,
-  StepFxWaveformSelectionModifiers,
-} from "../model/step-fx-waveform-types";
+export type { StepFxWaveformProps } from "../model/step-fx-waveform-types";
 
 /** Coordinates waveform editing and preview within the responsive plot layout. */
 export function StepFxWaveform(props: StepFxWaveformProps) {

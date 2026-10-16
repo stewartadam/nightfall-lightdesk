@@ -10,6 +10,7 @@ import { durationToSeconds, secondsToDuration } from "../../../lib/duration";
 import { createShowObjectUid } from "../../../lib/sequence-factory";
 import type * as types from "../../../types";
 import { FxDirection } from "../../../types";
+import type { StepFxWaveformDragTarget } from "./step-fx-waveform-types";
 
 /** Operator-facing units accepted by the Step FX speed control. */
 export type StepFxSpeedUnit = "BPM" | "Hz" | "Seconds" | "Milliseconds";
@@ -667,6 +668,198 @@ export function canRestartStepFxPreview(options: {
   return (
     options.previewActive && !options.deletedExternally && options.hasValidDraft
   );
+}
+
+/** Canonicalizes backend and browser UUID spellings for row selection matching. */
+export function stepFxStepSelectionIdentity(uid: string): string {
+  return uid.replace(/-/g, "").toLowerCase();
+}
+
+/** Compares string sets without relying on insertion order. */
+export function stringSetsEqual(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  return (
+    left.size === right.size &&
+    Array.from(left).every((value) => right.has(value))
+  );
+}
+
+/** Common phase-waypoint layouts offered by the start-position editor. */
+export type StepFxStartPositionMode = "together" | "spread" | "custom";
+
+/** Classifies authored phase waypoints into the visual editor's common modes. */
+export function stepFxStartPositionMode(
+  phase: types.StepFxPhase,
+): StepFxStartPositionMode {
+  if (phase.waypoints.length <= 1) return "together";
+  if (phase.waypoints.length === 2) return "spread";
+  return "custom";
+}
+
+/** Formats the toolbar summary in the user's selected position unit. */
+export function stepFxStartPositionSummary(
+  phase: types.StepFxPhase,
+  unit: StepFxPositionUnit,
+): string {
+  const scale = stepFxPositionUnitScale(unit);
+  const suffix = stepFxPositionUnitSuffix(unit);
+  const values = phase.waypoints.map((waypoint) =>
+    Number((waypoint * scale).toFixed(1)),
+  );
+  if (values.length <= 1) return `Start ${values[0] ?? 0}${suffix}`;
+  if (values.length === 2) return `Spread ${values[0]}→${values[1]}${suffix}`;
+  return `Custom ${values.join("→")}${suffix}`;
+}
+
+/** Transition curve presets offered by the step sheet, in menu order. */
+export const STEP_FX_CURVE_NAMES = [
+  "Snap",
+  "Linear",
+  "Ease",
+  "Ease In",
+  "Ease Out",
+] as const;
+
+/** Operator-facing label of one supported transition curve preset. */
+export type StepFxCurveName = (typeof STEP_FX_CURVE_NAMES)[number];
+
+/** Returns the constrained editor label for a persisted transition curve. */
+export function stepFxCurveName(curve: types.CurveType): StepFxCurveName {
+  if (curve.type !== "Bezier") return curve.type;
+  const { cp1, cp2 } = curve.data;
+  if (cp1.x === 0.42 && cp2.x === 1) return "Ease In";
+  if (cp1.x === 0 && cp2.x === 0.58) return "Ease Out";
+  return "Ease";
+}
+
+/** Creates one supported backend transition curve from its sheet label. */
+export function stepFxCurveFromName(name: StepFxCurveName): types.CurveType {
+  if (name === "Snap") return { type: "Snap", data: {} };
+  if (name === "Linear") return { type: "Linear", data: {} };
+  if (name === "Ease In")
+    return {
+      type: "Bezier",
+      data: { cp1: { x: 0.42, y: 0 }, cp2: { x: 1, y: 1 } },
+    };
+  if (name === "Ease Out")
+    return {
+      type: "Bezier",
+      data: { cp1: { x: 0, y: 0 }, cp2: { x: 0.58, y: 1 } },
+    };
+  return {
+    type: "Bezier",
+    data: { cp1: { x: 0.42, y: 0 }, cp2: { x: 0.58, y: 1 } },
+  };
+}
+
+/** Returns compact SVG geometry that previews a supported interpolation curve. */
+export function stepFxCurveIconPath(name: StepFxCurveName): string {
+  if (name === "Snap") return "M2 14 H8 V2 H14";
+  if (name === "Linear") return "M2 14 L14 2";
+  if (name === "Ease In") return "M2 14 C10 14 13 10 14 2";
+  if (name === "Ease Out") return "M2 14 C3 6 6 2 14 2";
+  return "M2 14 C8 14 8 2 14 2";
+}
+
+/** Reports whether one value cell owns the active waveform drag. */
+export function isStepFxWaveformValueDrag(
+  target: StepFxWaveformDragTarget | undefined,
+  stepUid: string,
+): boolean {
+  return (
+    target?.kind === "control-point" &&
+    target.point === "ramp-end" &&
+    target.stepUid === stepUid
+  );
+}
+
+/** Reports whether one ramp range owns the active waveform drag. */
+export function isStepFxWaveformRampDrag(
+  target: StepFxWaveformDragTarget | undefined,
+  stepUid: string,
+): boolean {
+  return target?.kind === "control-point" && target.stepUid === stepUid;
+}
+
+/** Returns which endpoint of one ramp range owns the active waveform drag. */
+export function stepFxWaveformRampDragPoint(
+  target: StepFxWaveformDragTarget | undefined,
+  stepUid: string,
+): "ramp-start" | "ramp-end" | undefined {
+  return target?.kind === "control-point" && target.stepUid === stepUid
+    ? target.point
+    : undefined;
+}
+
+/** Reports whether one width cell participates in the active boundary drag. */
+export function isStepFxWaveformWidthDrag(
+  target: StepFxWaveformDragTarget | undefined,
+  stepUid: string,
+): boolean {
+  return target?.kind === "width" && target.stepUids.includes(stepUid);
+}
+
+/** One resolved selection index and the fixtures it represents in previews. */
+export interface StepFxPhaseMarker {
+  index: number;
+  memberCount: number;
+  members: string;
+}
+
+/** Formats normalized phase as compact wrapped degree readout. */
+export function formatStepFxDegrees(phase: number): string {
+  return `${Number((phase * 360).toFixed(1))}°`;
+}
+
+/** Describes the fixtures and phase offset represented by one preview index. */
+export function stepFxPreviewIndexTitle(
+  markers: StepFxPhaseMarker[],
+  index: number,
+  phase: types.StepFxPhase,
+): string {
+  const marker = markers[index];
+  const members = marker
+    ? marker.memberCount > 1
+      ? `${marker.members} (${marker.memberCount})`
+      : marker.members
+    : "unavailable";
+  const offset = stepFxPhaseOffset(phase, index, markers.length);
+  return `Preview index ${index + 1}: ${members}; phase offset ${formatStepFxDegrees(offset)}`;
+}
+
+/** Formats one resolved fixture reference for visible phase-order inspection. */
+export function stepFxFixtureRefLabel(
+  ref: types.FixtureRef,
+  fixtures: Record<string, types.Fixture>,
+): string {
+  const compactUid = ref.fixture_uid.replace(/-/g, "").toLowerCase();
+  const fixture = Object.values(fixtures).find(
+    (candidate) =>
+      candidate.identifiers.uid.replace(/-/g, "").toLowerCase() === compactUid,
+  );
+  const label = fixture
+    ? `Fixture ${fixture.identifiers.id}`
+    : "Missing fixture";
+  return ref.index === undefined ? label : `${label}.${ref.index}`;
+}
+
+/** Builds a stable token for inputs that affect spatial target resolution. */
+export function stepFxSelectionProjectionToken(
+  selection: types.SpatialSelection | undefined,
+  fixtures: Record<string, types.Fixture>,
+  groups: Record<string, types.Group>,
+): string {
+  return JSON.stringify([
+    selection,
+    Object.values(fixtures).map((fixture) => [
+      fixture.identifiers.id,
+      fixture.identifiers.uid,
+      fixture.elements.length,
+    ]),
+    Object.values(groups),
+  ]);
 }
 
 /** Formats editor numbers without unnecessary trailing precision. */
