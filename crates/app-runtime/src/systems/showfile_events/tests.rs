@@ -3138,7 +3138,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
@@ -3216,7 +3216,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
@@ -3282,7 +3282,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),
@@ -4064,7 +4064,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
     };
 
     let invalid_snapshot = ShowfileSnapshot {
-        control_assignments: Vec::new(),
+        control_slots: Vec::new(),
         metadata: ShowfileMetadata::default(),
         fixtures: vec![fixture_a, fixture_b],
         variables: HashMap::new(),
@@ -4143,7 +4143,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
     apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture],
             variables: HashMap::new(),
@@ -4238,7 +4238,7 @@ fn load_materializes_timecodes_and_timelines() {
     apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),

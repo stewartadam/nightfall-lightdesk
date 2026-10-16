@@ -111,9 +111,9 @@ pub(super) fn merge_showfile_snapshots(
             options.fixtures,
         )?,
         variables: merge_variables(current.variables, incoming.variables, options.variables),
-        control_assignments: merge_single(
-            current.control_assignments,
-            incoming.control_assignments,
+        control_slots: merge_single(
+            current.control_slots,
+            incoming.control_slots,
             options.settings,
         ),
         settings: merge_single(current.settings, incoming.settings, options.settings),

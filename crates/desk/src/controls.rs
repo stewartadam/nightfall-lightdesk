@@ -45,9 +45,71 @@ pub enum ControlCommand {
     Go {
         control_index: u32,
     },
+    /// Sets what pressing the control's button does.
+    ///
+    /// Fails when the mode does not apply to the control's current assignment.
+    SetButtonMode {
+        control_index: u32,
+        mode: ControlButtonMode,
+    },
+    /// Presses the control's button, running its button mode for the current assignment.
+    ///
+    /// Expanded into the concrete clip or master command before dispatch, like `Go`.
+    PressButton {
+        control_index: u32,
+    },
+    /// Releases the control's button.
+    ///
+    /// Every current button mode acts on the press only, so releases complete without effect.
+    ReleaseButton {
+        control_index: u32,
+    },
 }
 
 impl IngressCommand for ControlCommand {}
+
+/// What pressing a control slot's button does, saved with the slot.
+///
+/// The mode belongs to the slot rather than to each controller binding, so the on-screen
+/// button, a bound MIDI pad and a board showing the slot always behave the same.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum ControlButtonMode {
+    /// Starts or advances the clip, or toggles a toggle-mode master.
+    #[default]
+    Go,
+    /// Steps a running sequence clip back one cue.
+    GoBack,
+    /// Starts an idle clip and stops a running one, or toggles a toggle-mode master.
+    Toggle,
+    /// Stops a running clip.
+    Release,
+}
+
+impl ControlButtonMode {
+    /// Every mode, in the order the mode picker lists them.
+    pub const ALL: [Self; 4] = [Self::Go, Self::GoBack, Self::Toggle, Self::Release];
+
+    /// Returns whether this mode does something for a slot holding `assignment`.
+    ///
+    /// Clips support every mode. Masters have no cues to step back through and no playback
+    /// to release, so they only offer Go and Toggle. An empty slot accepts any mode, which
+    /// is kept until something is assigned.
+    pub fn supports(self, assignment: Option<&ControlAssignment>) -> bool {
+        match assignment {
+            None | Some(ControlAssignment::Clip(_)) => true,
+            Some(ControlAssignment::Master(_)) => matches!(self, Self::Go | Self::Toggle),
+        }
+    }
+
+    /// Lists the modes a slot holding `assignment` can use, in picker order.
+    pub fn available_for(assignment: Option<&ControlAssignment>) -> Vec<Self> {
+        Self::ALL
+            .into_iter()
+            .filter(|mode| mode.supports(assignment))
+            .collect()
+    }
+}
 
 /// High-frequency control changes that intentionally have no command lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize, Message)]
@@ -73,6 +135,10 @@ pub struct ControlSnapshot {
     pub is_grabbed: bool,
     pub is_clip_active: bool,
     pub attached_instance_id: Option<InstanceId>,
+    /// What pressing the slot's button does.
+    pub button_mode: ControlButtonMode,
+    /// Modes the slot's current assignment supports, in picker order.
+    pub available_button_modes: Vec<ControlButtonMode>,
 }
 
 /// Resource that stores control bank assignments and current levels.
@@ -96,6 +162,7 @@ struct Control {
     hardware_drove_console: bool,
     pending_console_sync: bool,
     attached_instance_id: Option<InstanceId>,
+    button_mode: ControlButtonMode,
 }
 
 impl Default for Control {
@@ -111,11 +178,26 @@ impl Default for Control {
             hardware_drove_console: false,
             pending_console_sync: false,
             attached_instance_id: None,
+            button_mode: ControlButtonMode::default(),
         }
     }
 }
 
 impl Control {
+    /// Returns the slot's persisted target, or `None` for an empty slot.
+    fn assignment(&self) -> Option<ControlAssignment> {
+        self.assigned_clip_id
+            .map(ControlAssignment::Clip)
+            .or_else(|| self.assigned_master_id.map(ControlAssignment::Master))
+    }
+
+    /// Falls back to Go when the button mode does not apply to the slot's new assignment.
+    fn fit_button_mode_to_assignment(&mut self) {
+        if !self.button_mode.supports(self.assignment().as_ref()) {
+            self.button_mode = ControlButtonMode::Go;
+        }
+    }
+
     fn reset_to(&mut self, console_value: f32) {
         let clamped_console_value = clamp_percent(console_value);
         self.hardware_value = clamped_console_value;
@@ -127,8 +209,12 @@ impl Control {
         self.pending_console_sync = false;
     }
 
+    /// Empties the slot and resets its levels, keeping the button mode for the next assignment.
     fn clear(&mut self) {
-        *self = Self::default();
+        *self = Self {
+            button_mode: self.button_mode,
+            ..Self::default()
+        };
     }
 
     fn display_value(&self, runtime: ControlRuntimeState) -> f32 {
@@ -376,6 +462,27 @@ pub enum ControlAssignment {
     Master(u32),
 }
 
+/// Persisted configuration of one control slot, independent of playback and hardware state.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlSlotConfig {
+    /// Target assigned to the slot's fader and button, if any.
+    pub assignment: Option<ControlAssignment>,
+    /// What pressing the slot's button does.
+    #[serde(default)]
+    pub button_mode: ControlButtonMode,
+}
+
+impl ControlSlotConfig {
+    /// Builds a slot configuration with the default Go button.
+    pub fn assigned(assignment: ControlAssignment) -> Self {
+        Self {
+            assignment: Some(assignment),
+            button_mode: ControlButtonMode::default(),
+        }
+    }
+}
+
 /// Resource storing control slots and action assignments.
 #[derive(Resource, Clone, Debug)]
 pub struct Controls {
@@ -391,31 +498,33 @@ impl Default for Controls {
 }
 
 impl Controls {
-    /// Copy each slot's assignment in fader order without transient playback or hardware state.
-    pub fn assignments(&self) -> Vec<Option<ControlAssignment>> {
+    /// Copy each slot's configuration in fader order without transient playback or hardware state.
+    pub fn slot_configs(&self) -> Vec<ControlSlotConfig> {
         self.slots
             .iter()
-            .map(|slot| {
-                slot.assigned_clip_id
-                    .map(ControlAssignment::Clip)
-                    .or_else(|| slot.assigned_master_id.map(ControlAssignment::Master))
+            .map(|slot| ControlSlotConfig {
+                assignment: slot.assignment(),
+                button_mode: slot.button_mode,
             })
             .collect()
     }
 
-    /// Restore ordered assignments into a fresh bank, leaving unused faders unassigned.
-    pub fn from_assignments(assignments: &[Option<ControlAssignment>]) -> Self {
+    /// Restore ordered slot configurations into a fresh bank, leaving unused faders unassigned.
+    ///
+    /// A button mode that does not fit its slot's assignment falls back to Go.
+    pub fn from_slot_configs(configs: &[ControlSlotConfig]) -> Self {
         let mut controls = Self::default();
-        controls.slots.resize(
-            assignments.len().max(DEFAULT_CONTROL_COUNT),
-            Control::default(),
-        );
-        for (slot, assignment) in controls.slots.iter_mut().zip(assignments) {
-            match assignment {
-                Some(ControlAssignment::Clip(id)) => slot.assigned_clip_id = Some(*id),
-                Some(ControlAssignment::Master(id)) => slot.assigned_master_id = Some(*id),
+        controls
+            .slots
+            .resize(configs.len().max(DEFAULT_CONTROL_COUNT), Control::default());
+        for (slot, config) in controls.slots.iter_mut().zip(configs) {
+            match config.assignment {
+                Some(ControlAssignment::Clip(id)) => slot.assigned_clip_id = Some(id),
+                Some(ControlAssignment::Master(id)) => slot.assigned_master_id = Some(id),
                 None => {}
             }
+            slot.button_mode = config.button_mode;
+            slot.fit_button_mode_to_assignment();
         }
         controls
     }
@@ -480,6 +589,10 @@ impl Controls {
                     is_grabbed: slot.is_grabbed,
                     is_clip_active: runtime.is_clip_active,
                     attached_instance_id: runtime.attached_instance_id,
+                    button_mode: slot.button_mode,
+                    available_button_modes: ControlButtonMode::available_for(
+                        slot.assignment().as_ref(),
+                    ),
                 }
             })
             .collect()
@@ -608,9 +721,17 @@ pub fn handle_control_commands(
             ControlCommand::ClearClip { control_index } => {
                 clear_control(&mut controls, *control_index)
             }
-            ControlCommand::Go { control_index } => Err(CommandError::new(
-                "control.go_not_expanded",
-                format!("Go for control {control_index} must be queued through command expansion"),
+            ControlCommand::SetButtonMode {
+                control_index,
+                mode,
+            } => set_control_button_mode(&mut controls, *control_index, *mode),
+            ControlCommand::Go { control_index }
+            | ControlCommand::PressButton { control_index }
+            | ControlCommand::ReleaseButton { control_index } => Err(CommandError::new(
+                "control.button_not_expanded",
+                format!(
+                    "Button input for control {control_index} must be queued through command expansion"
+                ),
             )),
         };
         finish_control_command(&mut responder, event.command_id, result);
@@ -651,6 +772,7 @@ fn assign_clip_to_control(
     slot.assigned_master_id = None;
     slot.reset_to(runtime.console_value);
     slot.attached_instance_id = runtime.attached_instance_id;
+    slot.fit_button_mode_to_assignment();
     Ok(())
 }
 
@@ -678,6 +800,29 @@ fn assign_master_to_control(
     slot.assigned_master_id = Some(master_id);
     slot.reset_to(runtime.console_value);
     slot.attached_instance_id = None;
+    slot.fit_button_mode_to_assignment();
+    Ok(())
+}
+
+/// Sets a control's button mode, rejecting modes its current assignment cannot use.
+fn set_control_button_mode(
+    controls: &mut Controls,
+    control_index: u32,
+    mode: ControlButtonMode,
+) -> Result<(), CommandError> {
+    let slot = controls.slot_mut(control_index).ok_or_else(|| {
+        CommandError::new(
+            "control.not_found",
+            format!("Control {control_index} does not exist"),
+        )
+    })?;
+    if !mode.supports(slot.assignment().as_ref()) {
+        return Err(CommandError::new(
+            "control.button_mode_unsupported",
+            format!("Control {control_index} cannot use the {mode:?} button mode"),
+        ));
+    }
+    slot.button_mode = mode;
     Ok(())
 }
 
@@ -693,12 +838,37 @@ fn clear_control(controls: &mut Controls, control_index: u32) -> Result<(), Comm
     Ok(())
 }
 
-/// Replaces queued control Go commands with the clip or master command their assignment needs.
+/// One edge of button input addressed to a control slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ControlButtonInput {
+    /// An explicit Go, regardless of the slot's button mode.
+    Go(u32),
+    /// A press, running the slot's button mode.
+    Press(u32),
+    /// A release of a previous press.
+    Release(u32),
+}
+
+impl ControlButtonInput {
+    /// Extracts button input from a control command, or `None` for other control commands.
+    fn from_command(command: &ControlCommand) -> Option<Self> {
+        match *command {
+            ControlCommand::Go { control_index } => Some(Self::Go(control_index)),
+            ControlCommand::PressButton { control_index } => Some(Self::Press(control_index)),
+            ControlCommand::ReleaseButton { control_index } => Some(Self::Release(control_index)),
+            _ => None,
+        }
+    }
+}
+
+/// Replaces queued control button commands with the clip or master command they resolve to.
 ///
-/// Runs in the pending command expansion stage so the concrete command inherits the Go
-/// command's identity and undo group and dispatches in the same frame. Go on an empty control,
-/// a non-toggle master, or an already running non-sequence clip completes without effect.
-pub fn expand_control_go_commands(
+/// Handles explicit Go and the press and release of the slot's button. Runs in the pending
+/// command expansion stage so the concrete command inherits the button command's identity and
+/// undo group and dispatches in the same frame. Input that has nothing to do for the slot's
+/// assignment and playback state, such as Go on an empty control or any release, completes
+/// without effect.
+pub fn expand_control_button_commands(
     mut pending: ResMut<PendingCommandBuffer>,
     controls: Res<Controls>,
     clips: Query<&Clip>,
@@ -707,19 +877,16 @@ pub fn expand_control_go_commands(
     mut responder: CommandResponder,
 ) {
     for envelope in pending.drain() {
-        let Some(&ControlCommand::Go { control_index }) =
-            envelope.payload.as_any().downcast_ref::<ControlCommand>()
+        let Some(input) = envelope
+            .payload
+            .as_any()
+            .downcast_ref::<ControlCommand>()
+            .and_then(ControlButtonInput::from_command)
         else {
             pending.push(envelope);
             continue;
         };
-        match resolve_control_go(
-            &controls,
-            control_index,
-            &clips,
-            &materialized_clips,
-            &masters,
-        ) {
+        match resolve_control_button(&controls, input, &clips, &materialized_clips, &masters) {
             Ok(Some(command)) => pending.push(PayloadEnvelope::with_context(
                 envelope.command_id,
                 envelope.undo_id,
@@ -733,20 +900,34 @@ pub fn expand_control_go_commands(
     }
 }
 
-/// Decides which command a control's Go runs for its current assignment and playback state.
-fn resolve_control_go(
+/// Decides which command a control's button input runs for its assignment and playback state.
+///
+/// Go and presses in Go mode start or advance the clip; Go back steps a running sequence
+/// back; Toggle starts an idle clip or stops a running one; Release stops a running clip.
+/// Toggle-mode masters toggle in Go and Toggle modes. Releases do nothing yet.
+fn resolve_control_button(
     controls: &Controls,
-    control_index: u32,
+    input: ControlButtonInput,
     clips: &Query<&Clip>,
     materialized_clips: &Query<&MaterializedClip>,
     masters: &DataProvider<Master>,
 ) -> Result<Option<DynEnginePayload>, CommandError> {
+    let control_index = match input {
+        ControlButtonInput::Go(index)
+        | ControlButtonInput::Press(index)
+        | ControlButtonInput::Release(index) => index,
+    };
     let slot = controls.slot(control_index).ok_or_else(|| {
         CommandError::new(
             "control.not_found",
             format!("Control {control_index} does not exist"),
         )
     })?;
+    let mode = match input {
+        ControlButtonInput::Go(_) => ControlButtonMode::Go,
+        ControlButtonInput::Press(_) => slot.button_mode,
+        ControlButtonInput::Release(_) => return Ok(None),
+    };
     if let Some(master_id) = slot.assigned_master_id {
         let master = masters.from_id(master_id).map_err(|_| {
             CommandError::new(
@@ -754,7 +935,9 @@ fn resolve_control_go(
                 format!("Assigned master {master_id} does not exist"),
             )
         })?;
-        return Ok(matches!(master.mode, MasterMode::Toggle { .. })
+        let toggles = matches!(mode, ControlButtonMode::Go | ControlButtonMode::Toggle)
+            && matches!(master.mode, MasterMode::Toggle { .. });
+        return Ok(toggles
             .then(|| Box::new(MasterCommand::ToggleMaster { id: master_id }) as DynEnginePayload));
     }
     let Some(clip_id) = slot.assigned_clip_id else {
@@ -776,10 +959,17 @@ fn resolve_control_go(
         .iter()
         .any(|materialized| materialized.clip_id == clip_id);
     let target = IdExpr::Single(clip_id);
-    let command = match (source, is_active) {
-        (Source::Sequence(_), true) => Some(ClipCommand::GoClip(target)),
-        (_, false) => Some(ClipCommand::StartClip(target)),
-        (_, true) => None,
+    let is_sequence = matches!(source, Source::Sequence(_));
+    let command = match (mode, is_active) {
+        (ControlButtonMode::Go, true) => is_sequence.then_some(ClipCommand::GoClip(target)),
+        (ControlButtonMode::Go | ControlButtonMode::Toggle, false) => {
+            Some(ClipCommand::StartClip(target))
+        }
+        (ControlButtonMode::GoBack, true) => is_sequence.then_some(ClipCommand::BackClip(target)),
+        (ControlButtonMode::Toggle | ControlButtonMode::Release, true) => {
+            Some(ClipCommand::StopClip(target))
+        }
+        (ControlButtonMode::GoBack | ControlButtonMode::Release, false) => None,
     };
     Ok(command.map(|command| Box::new(command) as DynEnginePayload))
 }
@@ -1119,11 +1309,11 @@ mod tests {
         app
     }
 
-    /// Builds an app running only Go expansion over a controlled pending buffer.
+    /// Builds an app running only button expansion over a controlled pending buffer.
     fn control_go_app() -> App {
         let mut app = control_command_app();
         app.init_resource::<PendingCommandBuffer>();
-        app.add_systems(Update, expand_control_go_commands);
+        app.add_systems(Update, expand_control_button_commands);
         app
     }
 
@@ -1149,20 +1339,30 @@ mod tests {
 
     /// Queues Go for control 1 after assigning it, and returns what expansion produced.
     fn expand_go(app: &mut App, assignment: ControlAssignment) -> Vec<PayloadEnvelope> {
-        let mut controls = Controls::from_assignments(&[Some(assignment)]);
+        expand_button(
+            app,
+            ControlSlotConfig::assigned(assignment),
+            ControlCommand::Go { control_index: 1 },
+        )
+    }
+
+    /// Configures control 1, queues one button command for it, and returns what expansion
+    /// produced.
+    fn expand_button(
+        app: &mut App,
+        config: ControlSlotConfig,
+        command: ControlCommand,
+    ) -> Vec<PayloadEnvelope> {
+        let mut controls = Controls::from_slot_configs(&[config]);
         std::mem::swap(
             &mut *app.world_mut().resource_mut::<Controls>(),
             &mut controls,
         );
-        let envelope = CommandEnvelope::new(
-            ControlCommand::Go { control_index: 1 },
-            CommandOrigin::WebUi,
-            ReplyTarget::Detached,
-        );
+        let envelope = CommandEnvelope::new(command, CommandOrigin::WebUi, ReplyTarget::Detached);
         app.world_mut()
             .resource_mut::<CommandTracker>()
             .register(&envelope)
-            .expect("go should register");
+            .expect("button command should register");
         app.world_mut()
             .resource_mut::<PendingCommandBuffer>()
             .push(PayloadEnvelope::with_context(
@@ -1225,27 +1425,8 @@ mod tests {
     #[test]
     fn go_toggles_only_toggle_mode_masters() {
         let mut app = control_go_app();
-        for (id, mode) in [
-            (1, MasterMode::Toggle { active: false }),
-            (2, MasterMode::AlwaysOn),
-        ] {
-            app.world_mut()
-                .resource_mut::<DataProvider<Master>>()
-                .add(Master {
-                    identifiers: Identifiers {
-                        id,
-                        uid: uuid::Uuid::from_u128(u128::from(id)),
-                        label: format!("Master {id}"),
-                    },
-                    kind: crate::masters::MasterKind::InhibitiveIntensity,
-                    target: crate::masters::MasterTarget::Instances(
-                        crate::masters::InstanceMasterTarget::All,
-                    ),
-                    mode,
-                    level_percent: 100.0,
-                })
-                .expect("master should store");
-        }
+        add_master(&mut app, 1, MasterMode::Toggle { active: false });
+        add_master(&mut app, 2, MasterMode::AlwaysOn);
 
         let toggle = expand_go(&mut app, ControlAssignment::Master(1));
         let always_on = expand_go(&mut app, ControlAssignment::Master(2));
@@ -1258,6 +1439,172 @@ mod tests {
             )
         ));
         assert!(always_on.is_empty());
+    }
+
+    /// Stores an intensity master with the given ID and activation mode.
+    fn add_master(app: &mut App, id: u32, mode: MasterMode) {
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(Master {
+                identifiers: Identifiers {
+                    id,
+                    uid: uuid::Uuid::from_u128(u128::from(id)),
+                    label: format!("Master {id}"),
+                },
+                kind: crate::masters::MasterKind::InhibitiveIntensity,
+                target: crate::masters::MasterTarget::Instances(
+                    crate::masters::InstanceMasterTarget::All,
+                ),
+                mode,
+                level_percent: 100.0,
+            })
+            .expect("master should store");
+    }
+
+    /// Presses the button of control 1 holding `clip_id` in `mode` and returns the clip
+    /// command expansion produced, if any.
+    fn press_clip_button(
+        app: &mut App,
+        clip_id: u32,
+        mode: ControlButtonMode,
+    ) -> Option<ClipCommand> {
+        let expanded = expand_button(
+            app,
+            ControlSlotConfig {
+                assignment: Some(ControlAssignment::Clip(clip_id)),
+                button_mode: mode,
+            },
+            ControlCommand::PressButton { control_index: 1 },
+        );
+        match expanded.as_slice() {
+            [] => None,
+            [envelope] => clip_command(envelope).cloned(),
+            _ => panic!("one press should expand to at most one command"),
+        }
+    }
+
+    /// Verifies each button mode's press on running and idle sequence and effect clips.
+    #[test]
+    fn button_press_runs_the_slot_mode_for_clips() {
+        let mut app = control_go_app();
+        let sequence = || Some(Source::Sequence(uuid::Uuid::nil()));
+        spawn_clip(&mut app, 1, sequence(), true);
+        spawn_clip(&mut app, 2, sequence(), false);
+        spawn_clip(&mut app, 3, Some(Source::Fx(uuid::Uuid::nil())), true);
+        let single = IdExpr::Single;
+
+        use ControlButtonMode::{Go, GoBack, Release, Toggle};
+        let cases = [
+            (Go, 1, Some(ClipCommand::GoClip(single(1)))),
+            (Go, 2, Some(ClipCommand::StartClip(single(2)))),
+            (GoBack, 1, Some(ClipCommand::BackClip(single(1)))),
+            (GoBack, 2, None),
+            (GoBack, 3, None),
+            (Toggle, 1, Some(ClipCommand::StopClip(single(1)))),
+            (Toggle, 2, Some(ClipCommand::StartClip(single(2)))),
+            (Release, 3, Some(ClipCommand::StopClip(single(3)))),
+            (Release, 2, None),
+        ];
+        for (mode, clip_id, expected) in cases {
+            let produced = press_clip_button(&mut app, clip_id, mode);
+            assert_eq!(
+                format!("{produced:?}"),
+                format!("{expected:?}"),
+                "{mode:?} press on clip {clip_id}"
+            );
+        }
+    }
+
+    /// Verifies a button release completes without queuing any playback command.
+    #[test]
+    fn button_release_completes_without_effect() {
+        let mut app = control_go_app();
+        spawn_clip(&mut app, 1, Some(Source::Fx(uuid::Uuid::nil())), true);
+
+        let expanded = expand_button(
+            &mut app,
+            ControlSlotConfig {
+                assignment: Some(ControlAssignment::Clip(1)),
+                button_mode: ControlButtonMode::Toggle,
+            },
+            ControlCommand::ReleaseButton { control_index: 1 },
+        );
+
+        assert!(expanded.is_empty());
+        assert_eq!(
+            take_control_result(&mut app).outcome,
+            CommandOutcome::succeeded()
+        );
+    }
+
+    /// Verifies a Toggle-mode press toggles a toggle-mode master.
+    #[test]
+    fn toggle_button_press_toggles_master() {
+        let mut app = control_go_app();
+        add_master(&mut app, 4, MasterMode::Toggle { active: true });
+
+        let expanded = expand_button(
+            &mut app,
+            ControlSlotConfig {
+                assignment: Some(ControlAssignment::Master(4)),
+                button_mode: ControlButtonMode::Toggle,
+            },
+            ControlCommand::PressButton { control_index: 1 },
+        );
+
+        assert!(matches!(
+            expanded.as_slice(),
+            [envelope] if matches!(
+                envelope.payload.as_any().downcast_ref::<MasterCommand>(),
+                Some(MasterCommand::ToggleMaster { id: 4 })
+            )
+        ));
+    }
+
+    /// Verifies setting a clip-only mode on a master slot fails and keeps the previous mode.
+    #[test]
+    fn set_button_mode_rejects_modes_the_assignment_cannot_use() {
+        let mut app = control_command_app();
+        *app.world_mut().resource_mut::<Controls>() =
+            Controls::from_slot_configs(&[ControlSlotConfig::assigned(ControlAssignment::Master(
+                1,
+            ))]);
+
+        submit_control_command(
+            &mut app,
+            ControlCommand::SetButtonMode {
+                control_index: 1,
+                mode: ControlButtonMode::Release,
+            },
+        );
+        app.update();
+
+        assert!(matches!(
+            take_control_result(&mut app).outcome,
+            CommandOutcome::Failed(error) if error.code == "control.button_mode_unsupported"
+        ));
+        assert_eq!(
+            app.world().resource::<Controls>().slots[0].button_mode,
+            ControlButtonMode::Go
+        );
+    }
+
+    /// Verifies a slot keeps its mode when cleared and drops a clip-only mode when a master
+    /// is assigned.
+    #[test]
+    fn button_mode_survives_clear_and_fits_new_master_assignment() {
+        let mut slot = Control {
+            assigned_clip_id: Some(1),
+            button_mode: ControlButtonMode::Release,
+            ..Control::default()
+        };
+
+        slot.clear();
+        assert_eq!(slot.button_mode, ControlButtonMode::Release);
+
+        slot.assigned_master_id = Some(2);
+        slot.fit_button_mode_to_assignment();
+        assert_eq!(slot.button_mode, ControlButtonMode::Go);
     }
 
     /// Registers and submits one control command to the focused app.
@@ -1312,24 +1659,39 @@ mod tests {
     /// Restoring assignments resets hardware pickup and pending playback changes without losing targets.
     #[test]
     fn persisted_assignments_exclude_runtime_state() {
-        let mut controls = Controls::from_assignments(&[
-            Some(ControlAssignment::Clip(1)),
-            None,
-            Some(ControlAssignment::Master(2)),
+        let mut controls = Controls::from_slot_configs(&[
+            ControlSlotConfig {
+                assignment: Some(ControlAssignment::Clip(1)),
+                button_mode: ControlButtonMode::Toggle,
+            },
+            ControlSlotConfig::default(),
+            ControlSlotConfig::assigned(ControlAssignment::Master(2)),
         ]);
         let slot = controls.slot_mut(1).unwrap();
         slot.reset_to(80.0);
         slot.pending_console_sync = true;
-        let restored = Controls::from_assignments(&controls.assignments());
-        assert_eq!(restored.assignments(), controls.assignments());
+        let restored = Controls::from_slot_configs(&controls.slot_configs());
+        assert_eq!(restored.slot_configs(), controls.slot_configs());
         assert_eq!(
             restored.slots[0],
             Control {
                 assigned_clip_id: Some(1),
+                button_mode: ControlButtonMode::Toggle,
                 ..Control::default()
             }
         );
         assert_eq!(restored.slots[1], Control::default());
+    }
+
+    /// Verifies a restored button mode that does not fit its master assignment falls back to Go.
+    #[test]
+    fn restored_master_slot_drops_clip_only_button_mode() {
+        let controls = Controls::from_slot_configs(&[ControlSlotConfig {
+            assignment: Some(ControlAssignment::Master(2)),
+            button_mode: ControlButtonMode::GoBack,
+        }]);
+
+        assert_eq!(controls.slots[0].button_mode, ControlButtonMode::Go);
     }
 
     #[test]

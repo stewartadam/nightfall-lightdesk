@@ -27,8 +27,9 @@ export function actionBehaviors(
  * Picks the binding a touched control most likely means, among those it can bind.
  *
  * Follows the operator's usual intent rather than asking: a fader follows an absolute
- * action ("use the slider"), and a button fires a trigger on press ("button on"). Release,
- * Hold, and Flash stay one click away for operators who want them.
+ * action ("use the slider"), and a button drives an action built for held buttons when the
+ * target offers one, such as a control slot's button, or else fires a trigger on press
+ * ("button on"). Release, Hold, and Flash stay one click away for operators who want them.
  */
 export function recommendedBinding<
   T extends {
@@ -36,6 +37,12 @@ export function recommendedBinding<
     inputKind: types.ActionInputKind | undefined;
   },
 >(options: readonly T[], continuous: boolean): T | undefined {
+  const momentary = continuous
+    ? undefined
+    : options.find(
+        (option) => option.inputKind === types.ActionInputKind.Momentary,
+      );
+  if (momentary) return momentary;
   const onPress = options.filter(
     (option) => option.behavior === types.ControlBehavior.Press,
   );

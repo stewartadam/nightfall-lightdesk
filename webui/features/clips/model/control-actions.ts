@@ -10,20 +10,33 @@ import type * as types from "../../../types";
 import { defineEngineControl, type EngineControl } from "../../actions";
 
 /**
- * Defines a control slot's Go button: clicking it and a controller bound to it both run the
- * slot's backend-owned Go, which follows whatever is assigned to the slot.
+ * Defines a control slot's button: pressing and releasing it on screen and on a controller
+ * bound to it both reach the slot's backend-owned button mode, so they always behave the same.
  */
-export function controlGoControl(
+export function controlButtonControl(
   controlIndex: number,
   send: (command: types.ControlCommand) => unknown,
-): EngineControl<{ go: () => void }> {
+): EngineControl<{ press: () => void; release: () => void }> {
+  return defineEngineControl({
+    id: "control.button",
+    label: `Button of control ${controlIndex}`,
+    args: { control_index: controlIndex },
+    handlers: (args) => ({
+      press: () => void send({ type: "PressButton", data: args }),
+      release: () => void send({ type: "ReleaseButton", data: args }),
+    }),
+  });
+}
+
+/**
+ * Defines a mapping-only choice that always runs the slot's Go, whatever its button mode,
+ * for controllers that want a dedicated Go next to the slot's button.
+ */
+export function controlGoControl(controlIndex: number): EngineControl {
   return defineEngineControl({
     id: "control.go",
     label: `Go control ${controlIndex}`,
     args: { control_index: controlIndex },
-    handlers: (args) => ({
-      go: () => void send({ type: "Go", data: args }),
-    }),
   });
 }
 

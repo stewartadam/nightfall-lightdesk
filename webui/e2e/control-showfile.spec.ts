@@ -13,17 +13,34 @@ import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-/** Read the backend-owned assignment bank after websocket synchronization. */
+/** Read the backend-owned assignment bank and button modes after websocket synchronization. */
 async function assignments(page: Page) {
   return page.evaluate(() =>
     (window as any).appStores.controls.get().map((control: any) => ({
       clip: control.assigned_clip_id,
       master: control.assigned_master_id,
+      buttonMode: control.button_mode,
     })),
   );
 }
 
-/** Save an edited bank, clear it, and verify loading restores both state and visible faders. */
+/** Sends one control command and returns its backend outcome type. */
+async function sendControlCommand(page: Page, command: object) {
+  const result = await page.evaluate(
+    (command) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command,
+      }),
+    command,
+  );
+  return result.outcome.type;
+}
+
+/**
+ * Save an edited bank, clear it, and verify loading restores assignments, button modes and
+ * visible faders.
+ */
 test("fader assignments survive saving and loading a showfile", async ({
   page,
   backendSlot,
@@ -82,7 +99,15 @@ test("fader assignments survive saving and loading a showfile", async ({
     });
   });
   expect(result.outcome.type).toBe("Succeeded");
-  await expect.poll(async () => (await assignments(page))[0]?.clip).toBe(2);
+  expect(
+    await sendControlCommand(page, {
+      type: "SetButtonMode",
+      data: { control_index: 1, mode: "Toggle" },
+    }),
+  ).toBe("Succeeded");
+  await expect
+    .poll(async () => (await assignments(page))[0])
+    .toEqual({ clip: 2, master: null, buttonMode: "Toggle" });
   const expected = await assignments(page);
   const saved = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
@@ -106,9 +131,7 @@ test("fader assignments survive saving and loading a showfile", async ({
     "/api/showfiles/current/showfile.json",
   );
   expect(response.ok()).toBe(true);
-  expect((await response.json()).controlAssignments).toEqual(
-    persisted.controlAssignments,
-  );
+  expect((await response.json()).controlSlots).toEqual(persisted.controlSlots);
   const cleared = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
       module: "ControlCommand",
@@ -116,7 +139,15 @@ test("fader assignments survive saving and loading a showfile", async ({
     }),
   );
   expect(cleared.outcome.type).toBe("Succeeded");
-  await expect.poll(async () => (await assignments(page))[0]?.clip).toBeNull();
+  expect(
+    await sendControlCommand(page, {
+      type: "SetButtonMode",
+      data: { control_index: 1, mode: "Go" },
+    }),
+  ).toBe("Succeeded");
+  await expect
+    .poll(async () => (await assignments(page))[0])
+    .toEqual({ clip: null, master: null, buttonMode: "Go" });
   await page.evaluate(() =>
     (window as any).appStores.send({
       module: "DeskCommand",
