@@ -22,8 +22,6 @@ use crate::{
 enum FxModuleWsMessage<'a> {
     FxModuleDefinitions(&'a [StoredFxModule]),
     ListAvailableFxModulesResponse(&'a ListAvailableFxModulesResponse),
-    #[allow(dead_code)]
-    FxModuleCommand(&'a FxModuleCommand),
 }
 
 /// Deserialize and queue fx module commands from JSON so undo is captured before dispatch.

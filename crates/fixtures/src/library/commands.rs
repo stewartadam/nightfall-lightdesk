@@ -181,9 +181,6 @@ enum FixtureLibraryWsMessage<'a> {
     ListAvailableFixturesResponse(&'a ListAvailableFixturesResponse),
     /// Fixture profile information.
     GetFixtureProfileResponse(&'a GetFixtureProfileResponse),
-    /// A fixture-library command retained while UI acknowledgements migrate.
-    #[allow(dead_code)]
-    FixtureLibraryCommand(&'a FixtureLibraryCommand),
 }
 
 /// Successful outcome of one applied fixture-library command.

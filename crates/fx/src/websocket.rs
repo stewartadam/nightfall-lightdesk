@@ -30,9 +30,6 @@ enum FxWsMessage<'a> {
     FxDefinitions(&'a [Fx]),
     /// List of all step-based fx
     StepFxDefinitions(&'a [StepFx]),
-    /// An fx command for reactive UI handling
-    #[allow(dead_code)]
-    FxCommand(&'a FxCommand),
 }
 
 /// Deserialize and dispatch FxCommand from JSON.

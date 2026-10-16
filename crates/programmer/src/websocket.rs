@@ -100,9 +100,6 @@ enum ProgrammerWsMessage {
     ProgrammerSelection(Vec<String>),
     /// Current programmer spatial selection and its resolved index view.
     ProgrammerSpatialSelection(OutboundProgrammerSpatialSelection),
-    /// Programmer commands for reactive UI handling.
-    #[allow(dead_code)]
-    ProgrammerCommand,
 }
 
 /// Deserialize and dispatch ProgrammerCommand from JSON.
@@ -275,14 +272,6 @@ pub fn forward_programmer_commands(
 
     // Send update notification once after processing all events
     if should_update {
-        // FIXME: This is what we should be doing:
-
-        // tracing::trace!("Forwarding programmer state change to UI");
-        // broadcaster.publish(
-        //     DISCRIMINATOR_NON_DROPPABLE,
-        //     &ProgrammerWsMessage::ProgrammerCommand,
-        // );
-
         tracing::debug!("Sending programmer state due to programmer command");
         send_programmer(
             &programmer,
