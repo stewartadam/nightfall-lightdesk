@@ -295,7 +295,9 @@ impl Control {
         self.hardware_drove_console = false;
         self.pending_console_value = None;
         self.is_grabbed = is_same_value(clamped_console_value, self.hardware_value);
-        self.external_grab_armed = !self.is_grabbed;
+        // An on-screen move never claims the console for this slot's hardware, so another
+        // slot or source moving the same target must still release it to follow the console.
+        self.external_grab_armed = true;
         self.attached_instance_id = runtime.attached_instance_id;
 
         if !runtime.is_clip_active {
@@ -2214,5 +2216,35 @@ mod tests {
         );
         assert_eq!(hardware_pickup.intensity_value, Some(0.39));
         assert!(slot.is_grabbed);
+    }
+
+    /// Verifies a slot pulled to zero on screen keeps following the clip when another slot
+    /// assigned to the same clip raises it again, instead of sticking at zero.
+    #[test]
+    fn on_screen_slot_at_zero_follows_another_slot_on_the_same_clip() {
+        let instance_id = InstanceId::new();
+        let mut follower = Control::default();
+        let stopped = ControlRuntimeState::default();
+
+        let stop = follower.handle_console_value(
+            0.0,
+            ControlRuntimeState {
+                console_value: 80.0,
+                is_clip_active: true,
+                attached_instance_id: Some(instance_id),
+            },
+        );
+        assert!(stop.should_stop_clip);
+        follower.sync_from_runtime(stopped);
+        assert_eq!(follower.display_value(stopped), 0.0);
+
+        let raised = ControlRuntimeState {
+            console_value: 60.0,
+            is_clip_active: true,
+            attached_instance_id: Some(instance_id),
+        };
+        assert_eq!(follower.sync_from_runtime(raised), None);
+        assert!(!follower.is_grabbed);
+        assert_eq!(follower.display_value(raised), 60.0);
     }
 }

@@ -573,3 +573,70 @@ test("a slot's button mode decides what its button does", async ({
     path: test.info().outputPath("control-button-modes.png"),
   });
 });
+
+/** Reads the level shown by a control slot's fader handle. */
+async function faderLevel(page: Page, controlIndex: number): Promise<number> {
+  const value = await page
+    .locator(`[data-control-index="${controlIndex}"]`)
+    .locator(".vertical-range-slider .noUi-handle")
+    .getAttribute("aria-valuenow");
+  return Number(value);
+}
+
+/**
+ * Verifies two slots assigned to the same idle clip keep showing the same level: raising one
+ * starts the clip and raises the other, pulling either to zero releases it for both, and
+ * raising one again brings the other back up with it.
+ */
+test("slots sharing a clip move together", async ({ backendSlot, page }) => {
+  await openOwnedClipControlApp(page, backendSlot.backendPort);
+  const scenario = await seedClipControlScenario(page);
+  const clipId = scenario.inactiveFxId;
+  await page.evaluate(
+    (clipId) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command: {
+          type: "AssignClip",
+          data: { control_index: 5, clip_id: clipId },
+        },
+      }),
+    clipId,
+  );
+  await openPanel(page, "Clips");
+
+  const handle = (controlIndex: number) =>
+    page
+      .locator(`[data-control-index="${controlIndex}"]`)
+      .locator(".vertical-range-slider .noUi-handle");
+  /** Raises a slot from zero so its clip starts at a level above one percent. */
+  const raise = async (controlIndex: number) => {
+    await handle(controlIndex).press("ArrowUp");
+    await expect.poll(() => isClipRunning(page, clipId)).toBe(true);
+    await handle(controlIndex).press("PageUp");
+    await expect.poll(() => faderLevel(page, controlIndex)).toBeGreaterThan(1);
+  };
+  /** Waits until both slots show the same level and returns it. */
+  const sharedLevel = async () => {
+    await expect
+      .poll(
+        async () => (await faderLevel(page, 3)) === (await faderLevel(page, 5)),
+      )
+      .toBe(true);
+    return faderLevel(page, 3);
+  };
+  await expect(handle(5)).toBeVisible();
+
+  await raise(3);
+  expect(await sharedLevel()).toBeGreaterThan(1);
+
+  await handle(5).press("Home");
+  await expect.poll(() => isClipRunning(page, clipId)).toBe(false);
+  expect(await sharedLevel()).toBe(0);
+
+  await raise(3);
+  expect(await sharedLevel()).toBeGreaterThan(1);
+  await page.locator(".controls").screenshot({
+    path: test.info().outputPath("control-shared-clip-sync.png"),
+  });
+});
