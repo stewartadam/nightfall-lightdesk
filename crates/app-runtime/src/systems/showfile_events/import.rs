@@ -126,6 +126,13 @@ pub(super) fn merge_showfile_snapshots(
             incoming.midi_mappings,
             options.midi_mappings,
         )?,
+        #[cfg(feature = "midi")]
+        midi_feedback_devices: merge_plain_vec(
+            "MIDI feedback devices",
+            current.midi_feedback_devices,
+            incoming.midi_feedback_devices,
+            options.midi_mappings,
+        )?,
         #[cfg(feature = "osc")]
         osc_mappings: merge_plain_vec(
             "OSC mappings",

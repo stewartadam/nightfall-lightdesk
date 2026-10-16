@@ -8,11 +8,13 @@
 
 //! Scriptable virtual MIDI controller for end-to-end tests.
 //!
-//! Opens a virtual MIDI output port under the given name, prints
-//! `READY <port-name>` to stdout once the port exists, then sends each line read from stdin
-//! as one raw MIDI message. Every line is a JSON array of bytes such as `[144, 60, 127]`,
-//! and every sent line is acknowledged with `SENT <line>` so a driver can sequence its
-//! messages. The port closes and the process exits when stdin reaches end of file.
+//! Opens a virtual MIDI output port under the given name, plus a virtual input port of the
+//! same name that stands in for the controller's LEDs, prints `READY <port-name>` to stdout
+//! once both exist, then sends each line read from stdin as one raw MIDI message. Every
+//! line is a JSON array of bytes such as `[144, 60, 127]`, and every sent line is
+//! acknowledged with `SENT <line>` so a driver can sequence its messages. Each message
+//! received on the input port is printed as `RECV <bytes>` in the same JSON form. The ports
+//! close and the process exits when stdin reaches end of file.
 //!
 //! ```text
 //! cargo run -p nightfall-input-midi --example virtual_controller -- "E2E Pad"
@@ -32,8 +34,8 @@ fn main() {
 fn main() {
     use std::io::{BufRead, Write};
 
-    use midir::MidiOutput;
-    use midir::os::unix::VirtualOutput;
+    use midir::os::unix::{VirtualInput, VirtualOutput};
+    use midir::{MidiInput, MidiOutput};
 
     let port_name = port_name_or_exit();
     let midi_out = MidiOutput::new("nightfall-virtual-controller").unwrap_or_else(|error| {
@@ -44,8 +46,25 @@ fn main() {
         eprintln!("Failed to create virtual MIDI output port '{port_name}': {error}");
         process::exit(1);
     });
+    let midi_in = MidiInput::new("nightfall-virtual-controller").unwrap_or_else(|error| {
+        eprintln!("Failed to create MIDI input: {error}");
+        process::exit(1);
+    });
+    let _feedback = midi_in
+        .create_virtual(
+            &port_name,
+            |_timestamp, message, _| {
+                let bytes = format!("{message:?}").replace(' ', "");
+                announce(&mut std::io::stdout(), &format!("RECV {bytes}"));
+            },
+            (),
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("Failed to create virtual MIDI input port '{port_name}': {error}");
+            process::exit(1);
+        });
 
-    let mut stdout = std::io::stdout().lock();
+    let mut stdout = std::io::stdout();
     announce(&mut stdout, &format!("READY {port_name}"));
 
     for line in std::io::stdin().lock().lines() {
