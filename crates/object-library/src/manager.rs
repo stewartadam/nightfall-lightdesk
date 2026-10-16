@@ -15,9 +15,9 @@ use std::path::{Path, PathBuf};
 use bevy_ecs::prelude::*;
 
 use crate::metadata::ObjectMetadata;
+use crate::showfile::SHOWFILE_OBJECT_SNAPSHOTS_DIR;
 use crate::{ObjectLibraryError, Result};
 
-const SHOWFILE_OBJECT_SNAPSHOTS_DIR: &str = "scene-objects";
 const OBJECT_PATH_SCOPE_LIBRARY: &str = "lib";
 const OBJECT_PATH_SCOPE_SHOWFILE: &str = "show";
 

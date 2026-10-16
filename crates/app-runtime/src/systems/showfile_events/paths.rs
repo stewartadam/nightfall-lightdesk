@@ -8,7 +8,6 @@
 
 use std::path::{Component, Path, PathBuf};
 
-pub(super) const SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR: &str = "scene-objects";
 pub(super) const SHOWFILE_TIMELINE_AUDIO_DIR: &str = "timeline-audio";
 pub(super) const SHOWFILE_BACKUPS_DIR: &str = "backups";
 pub(super) const SHOWFILE_DRAFTS_DIR: &str = "drafts";
