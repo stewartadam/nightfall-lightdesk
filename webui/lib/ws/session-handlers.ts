@@ -8,6 +8,7 @@
 
 import {
   dmxUniverseWatch,
+  referenceListWatch,
   runtimeCapabilities,
   serverVersion,
 } from "../../state/appStores";
@@ -37,6 +38,8 @@ export interface SessionHandlerContext {
   requestBackendSessionState(): void;
   /** Replaces the set of universes whose channel values this client watches. */
   sendDmxUniverseWatch(universes: readonly types.DmxUniverseKey[]): void;
+  /** Tells the backend whether this client receives the full reference list. */
+  sendReferenceListWatch(references: boolean): void;
 }
 
 /** Registers backend session lifecycle, version, and capability handlers. */
@@ -71,6 +74,7 @@ export function registerSessionHandlers(
     // Watches belong to one connection and one backend world, so a resync after a reconnect
     // or world swap starts without ours; re-sending also gets fresh values at once.
     context.sendDmxUniverseWatch(dmxUniverseWatch.get());
+    context.sendReferenceListWatch(referenceListWatch.get());
   });
 
   registry.register("WorldReplaced", () => {

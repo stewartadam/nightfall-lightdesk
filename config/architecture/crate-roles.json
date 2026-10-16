@@ -55,6 +55,7 @@
     "integration": [
       "nightfall-desk",
       "nightfall-desk-audio",
+      "nightfall-references",
       "nightfall-showfile",
       "nightfall-wasm-bridge"
     ],

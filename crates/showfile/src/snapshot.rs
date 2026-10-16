@@ -24,6 +24,7 @@ use nightfall_input_midi::prelude::*;
 use nightfall_input_osc::prelude::*;
 use nightfall_io::IoRuntimeSettings;
 use nightfall_scene_objects::prelude::*;
+use nightfall_selection::ReferenceSource;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -106,6 +107,27 @@ pub struct ShowfileSnapshot {
     pub timelines: Vec<Timeline>,
     /// Clip assignments referencing playable showfile objects.
     pub clips: Vec<Clip>,
+}
+
+impl ShowfileSnapshot {
+    /// Returns every object in the snapshot that stores selections, for edits applied to all of
+    /// them such as group-reference stabilizing.
+    pub fn reference_sources_mut(&mut self) -> impl Iterator<Item = &mut dyn ReferenceSource> {
+        /// Erases one object to the reference source trait.
+        fn erase<T: ReferenceSource>(object: &mut T) -> &mut dyn ReferenceSource {
+            object
+        }
+        self.cues
+            .iter_mut()
+            .map(erase)
+            .chain(self.sequences.iter_mut().map(erase))
+            .chain(self.groups.iter_mut().map(erase))
+            .chain(self.masters.iter_mut().map(erase))
+            .chain(self.fx.iter_mut().map(erase))
+            .chain(self.fx_module.iter_mut().map(erase))
+            .chain(self.step_fx.iter_mut().map(erase))
+            .chain(self.flows.iter_mut().map(erase))
+    }
 }
 
 /// Metadata written alongside show data for compatibility checks and audit context.

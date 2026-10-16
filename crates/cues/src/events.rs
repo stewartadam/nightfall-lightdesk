@@ -80,10 +80,6 @@ pub(crate) fn register_event_systems(app: &mut App) {
             sequence_crud_events,
             crate::materialized_sequence::rematerialize_sequences_after_sequence_definition_change
                 .after(sequence_crud_events),
-            crate::materialized_sequence::rebuild_blueprint_reference_index
-                .after(cue_crud_events)
-                .after(sequence_crud_events)
-                .before(DeskEventSet::BlueprintCrud),
             crate::materialized_sequence::rematerialize_after_blueprint_definition_change
                 .after(DeskEventSet::BlueprintCrud)
                 .after(DeskEventSet::BlueprintActions),

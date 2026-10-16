@@ -12,7 +12,8 @@ use nightfall::prelude::*;
 use nightfall_dmx::PercentageAsF64;
 use nightfall_dmx::prelude::*;
 use nightfall_selection::{
-    SelectionValidatedEntity, SpatialSelectionResolution, selection_validation_warnings,
+    HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
+    selection_validation_warnings,
 };
 use nightfall_waveform::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -46,6 +47,17 @@ impl SelectionValidatedEntity for Fx {
         resolver: &dyn SpatialSelectionResolution,
     ) -> Vec<String> {
         selection_validation_warnings(&self.selection, resolver)
+    }
+}
+
+/// Reports the FX selection.
+impl ReferenceSource for Fx {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        visit("selection", HeldReference::Selection(&self.selection));
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        visit(&mut self.selection);
     }
 }
 

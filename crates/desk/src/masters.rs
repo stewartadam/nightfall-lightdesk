@@ -17,6 +17,7 @@ use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{EditorPreviewInstance, InstanceControls, InstanceId};
+use nightfall_selection::{HeldReference, ReferenceSource};
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use uuid::Uuid;
@@ -116,6 +117,28 @@ pub struct Master {
 impl HasIdentifiers for Master {
     fn identifiers(&self) -> &Identifiers {
         &self.identifiers
+    }
+}
+
+/// Reports the group or selection an intensity master is scoped to.
+impl ReferenceSource for Master {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        match &self.target {
+            MasterTarget::Fixtures(FixtureMasterTarget::Group(uid)) => {
+                visit("target.group", HeldReference::Group(*uid));
+            }
+            MasterTarget::Fixtures(FixtureMasterTarget::Selection(selection)) => {
+                visit("target.selection", HeldReference::Selection(selection));
+            }
+            MasterTarget::Fixtures(FixtureMasterTarget::All) | MasterTarget::Instances(_) => {}
+        }
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        if let MasterTarget::Fixtures(FixtureMasterTarget::Selection(selection)) = &mut self.target
+        {
+            visit(selection);
+        }
     }
 }
 

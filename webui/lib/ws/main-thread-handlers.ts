@@ -20,6 +20,7 @@ import {
 } from "./message-registry";
 import { registerOutputHandlers } from "./output-handlers";
 import { registerProgrammerHandlers } from "./programmer-handlers";
+import { registerReferenceHandlers } from "./reference-handlers";
 import { registerRuntimeSnapshotHandlers } from "./runtime-snapshot-handlers";
 import { registerSceneObjectHandlers } from "./scene-object-handlers";
 import {
@@ -47,6 +48,7 @@ export function createMainThreadMessageHandlerRegistry(
   registerSceneObjectHandlers(registry);
   registerProgrammerHandlers(registry);
   registerOutputHandlers(registry);
+  registerReferenceHandlers(registry);
   registerCueHandlers(registry);
   registerFxHandlers(registry);
   registerFlowHandlers(registry);

@@ -10,6 +10,7 @@
 
 mod contracts;
 mod linear;
+mod references;
 mod spatial;
 mod structure;
 mod validation;
@@ -21,6 +22,12 @@ pub use contracts::{
     SelectionDataSource, SelectionFixture, SelectionGroup, SpatialSelectionResolution,
 };
 pub use linear::SelectionResolver;
+pub use references::{
+    HeldReference, LookupKey, OwnerKey, OwnerReferences, ReferenceBook, ReferenceDomain,
+    ReferenceEntry, ReferenceIssue, ReferenceIssueReason, ReferenceLookup, ReferenceOwner,
+    ReferenceSource, ReferenceStatus, ReferenceSummary, ReferenceTarget, audit_owner,
+    prune_missing_fixture_refs,
+};
 pub use spatial::SpatialSelectionResolver;
 pub use validation::{
     SelectionValidatedEntity, filter_existing_selection, selection_validation_warnings,

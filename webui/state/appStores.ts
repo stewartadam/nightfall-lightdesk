@@ -25,6 +25,7 @@ import type { BrowserDemoRuntimeInfo } from "../lib/engine-runtime-protocol";
 import { setStoreAction } from "../lib/nanostore-action";
 import { registerPanelTabStatus } from "../lib/panel-tab-status";
 import type { ParameterStreamStats } from "../lib/parameter-stream";
+import type { ReferenceListByOwner } from "../lib/reference-list";
 import type { SelectionTarget } from "../lib/selection-targets";
 import { testHooksEnabled } from "../lib/test-mode";
 import type { LayerState } from "../lib/ws/types";
@@ -487,6 +488,21 @@ export const dmxUniverseList = atom<types.DmxUniverseSummary[]>([]);
 export const dmxUniverseChannels = atom<types.DmxUniverseChannels[]>([]);
 // Universes whose channel values this client asks the backend for
 export const dmxUniverseWatch = atom<types.DmxUniverseKey[]>([]);
+// Reference counts and missing references across the show, broadcast by the backend
+export const referenceHealth = atom<types.ReferenceHealth>({
+  summary: {
+    object_count: 0,
+    reference_count: 0,
+    issue_count: 0,
+    prunable_issue_count: 0,
+    affected_object_count: 0,
+  },
+  issues: [],
+});
+// Every reference in the show by owning object, sent only while referenceListWatch is set
+export const referenceList = atom<ReferenceListByOwner>(new Map());
+// Whether this client asks the backend for referenceList (see features/references/services)
+export const referenceListWatch = atom(false);
 export const inputContributionTrace = atom<types.OutboundInputContribution[]>(
   [],
 );
@@ -1129,6 +1145,9 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     dmxUniverseList,
     dmxUniverseChannels,
     dmxUniverseWatch,
+    referenceHealth,
+    referenceList,
+    referenceListWatch,
     inputContributionTrace,
     activeInstances,
     controls,

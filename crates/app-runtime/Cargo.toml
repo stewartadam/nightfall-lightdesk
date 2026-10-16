@@ -48,6 +48,7 @@ nightfall-output-usb = { path = "../output_usb", optional = true }
 nightfall-instances = { path = "../instances" }
 nightfall-fx-module = { path = "../fx-module" }
 nightfall-programmer = { path = "../programmer" }
+nightfall-references = { path = "../references", features = ["fx-module-host"] }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-showfile = { path = "../showfile" }
 nightfall-tempo = { path = "../tempo" }

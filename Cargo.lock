@@ -274,6 +274,7 @@ dependencies = [
  "nightfall-output-sacn",
  "nightfall-output-usb",
  "nightfall-programmer",
+ "nightfall-references",
  "nightfall-scene-objects",
  "nightfall-showfile",
  "nightfall-tempo",
@@ -5231,6 +5232,7 @@ dependencies = [
  "nightfall-fx",
  "nightfall-instances",
  "nightfall-programmer",
+ "nightfall-references",
  "nightfall-scene-objects",
  "nightfall-showfile",
  "nightfall-tempo",
@@ -5408,6 +5410,7 @@ dependencies = [
  "nightfall-lookahead",
  "nightfall-playback-planner",
  "nightfall-programmer",
+ "nightfall-selection",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
@@ -5937,6 +5940,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightfall-references"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "async-channel",
+ "bevy_app",
+ "bevy_ecs",
+ "minicbor-serde",
+ "nightfall",
+ "nightfall-cues",
+ "nightfall-desk",
+ "nightfall-engine",
+ "nightfall-fixtures",
+ "nightfall-flow",
+ "nightfall-fx",
+ "nightfall-fx-module",
+ "nightfall-io",
+ "nightfall-selection",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "tracing",
+ "typeshare",
+ "uuid",
+]
+
+[[package]]
 name = "nightfall-scene-objects"
 version = "0.1.0-alpha.3"
 dependencies = [
@@ -5964,6 +5993,8 @@ dependencies = [
  "nightfall",
  "nightfall-dmx",
  "nightfall-workspace-hack",
+ "serde",
+ "typeshare",
  "uuid",
 ]
 

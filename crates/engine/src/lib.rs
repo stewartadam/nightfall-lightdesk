@@ -27,6 +27,7 @@ pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
 pub mod protocol;
+pub mod reference_index;
 pub mod render_pass;
 pub mod runtime_capabilities;
 pub mod variables;
@@ -71,9 +72,7 @@ pub mod prelude {
     pub use nightfall_engine_derive::EnginePayload;
 
     pub use crate::EnginePlugin;
-    pub use crate::blueprint::{
-        BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation, BlueprintReferenceIndex,
-    };
+    pub use crate::blueprint::{BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation};
     pub use crate::client_bridge::{
         Audience, ClientBridgeHost, ClientBridgePlugin, ClientDisconnectReport, ClientDisconnected,
         ClientEventSink, ClientPresenceSender, CommandDeserializerRegistry, CommandJsonEnvelope,
@@ -86,7 +85,7 @@ pub mod prelude {
         ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
         CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
     };
-    pub use crate::data_provider::{DataProvider, DataStoreError};
+    pub use crate::data_provider::{DataChanges, DataProvider, DataRevision, DataStoreError};
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
     pub use crate::parse_command_string;
@@ -112,6 +111,9 @@ pub mod prelude {
     };
     pub use crate::protocol::results::{
         CommandError, CommandNotice, CommandOutcome, CommandOutput, CommandResult, NoticeLevel,
+    };
+    pub use crate::reference_index::{
+        BlueprintReferenceIndex, GroupReferenceIndex, ReferenceIndex,
     };
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;

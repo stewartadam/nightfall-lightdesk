@@ -116,6 +116,7 @@ impl Plugin for DeskPlugin {
         app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
         app.add_message::<BlueprintDefinitionChange>();
         app.init_resource::<BlueprintReferenceIndex>();
+        app.init_resource::<GroupReferenceIndex>();
         app.init_resource::<websocket::LayerStackPublication>();
         app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<UiNotification>();
@@ -233,11 +234,6 @@ impl Plugin for DeskPlugin {
                     .after(nightfall_clips::remove_instances_from_index),
             ),
         );
-        app.add_systems(
-            Update,
-            blueprint_command::rebuild_step_fx_blueprint_reference_index,
-        );
-
         app.add_systems(
             Render,
             (

@@ -20,7 +20,8 @@ use nightfall_instances::{
     InstanceMetadata, Owner,
 };
 use nightfall_selection::{
-    SelectionValidatedEntity, SpatialSelectionResolution, selection_validation_warnings,
+    HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
+    selection_validation_warnings,
 };
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -289,6 +290,33 @@ impl SelectionValidatedEntity for StepFx {
         resolver: &dyn SpatialSelectionResolution,
     ) -> Vec<String> {
         selection_validation_warnings(&self.selection, resolver)
+    }
+}
+
+/// Reports the Step FX selection and every step's live Blueprint in both lane contributions.
+impl ReferenceSource for StepFx {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        visit("selection", HeldReference::Selection(&self.selection));
+        for (lane_index, lane) in self.lanes.iter().enumerate() {
+            for (track_name, track) in [("absolute", &lane.absolute), ("relative", &lane.relative)]
+            {
+                let Some(track) = track else { continue };
+                for (step_index, step) in track.steps.iter().enumerate() {
+                    if let Some(blueprint_uid) = step.blueprint_uid {
+                        visit(
+                            &format!(
+                                "lanes[{lane_index}].{track_name}.steps[{step_index}].blueprint_uid"
+                            ),
+                            HeldReference::Blueprint(blueprint_uid),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        visit(&mut self.selection);
     }
 }
 

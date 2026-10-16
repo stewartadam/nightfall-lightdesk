@@ -8,9 +8,10 @@
 
 //! Flow definition model and delta application helpers.
 
-use nightfall::prelude::{HasIdentifiers, Identifiers};
+use nightfall::prelude::{HasIdentifiers, Identifiers, SpatialSelection};
 use nightfall_selection::{
-    SelectionValidatedEntity, SpatialSelectionResolution, selection_validation_warnings,
+    HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
+    selection_validation_warnings,
 };
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +70,33 @@ impl SelectionValidatedEntity for FlowDefinition {
                 })
             })
             .collect()
+    }
+}
+
+/// Reports selections stored as node port default values.
+impl ReferenceSource for FlowDefinition {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        for node in &self.nodes {
+            for port in &node.ports {
+                if let Some(FlowValue::Selection(selection)) = &port.default_value {
+                    visit(
+                        &format!(
+                            "nodes[{}].ports[{}].default_value",
+                            node.node_id, port.port_id
+                        ),
+                        HeldReference::Selection(selection),
+                    );
+                }
+            }
+        }
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        for port in self.nodes.iter_mut().flat_map(|node| node.ports.iter_mut()) {
+            if let Some(FlowValue::Selection(selection)) = &mut port.default_value {
+                visit(selection);
+            }
+        }
     }
 }
 

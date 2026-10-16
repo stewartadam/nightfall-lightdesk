@@ -1,0 +1,39 @@
+[package]
+name = "nightfall-references"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+nightfall = { path = "../common" }
+nightfall-cues = { path = "../cues" }
+nightfall-desk = { path = "../desk", default-features = false }
+nightfall-engine = { path = "../engine" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-flow = { path = "../flow", default-features = false }
+nightfall-fx = { path = "../fx" }
+nightfall-fx-module = { path = "../fx-module", optional = true }
+nightfall-io = { path = "../io" }
+nightfall-selection = { path = "../selection" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true
+minicbor-serde.workspace = true
+
+[features]
+default = []
+# Prunes stored FX module selections through the FX module host's commands.
+fx-module-host = ["dep:nightfall-fx-module"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[lints]
+workspace = true

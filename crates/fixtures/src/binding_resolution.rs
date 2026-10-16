@@ -314,7 +314,9 @@ fn input_source_matches(source: &ResolvedInputSource, disabled: &InputSource) ->
     }
 }
 
-fn output_transport_from_target_id(
+/// Resolves an output binding's transport target identifier to the configured network or USB
+/// output it names, or `None` when no configured output matches.
+pub fn output_transport_from_target_id(
     target: &str,
     network_outputs: &NetworkDmxOutputTargets,
     usb_outputs: &UsbDmxOutputTargets,
