@@ -26,12 +26,14 @@ use nightfall_engine::prelude::*;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub mod command;
+mod feedback;
 pub mod mapping;
 mod service;
 mod undo;
 mod websocket;
 
 use command::{MidiCommand, MidiLastEvent, MidiMapping, MidiMappingUpserted, MidiSource};
+use feedback::{MidiFeedbackCache, MidiOutput, send_midi_feedback};
 use mapping::MidiMappings;
 use service::MidiInputEvent;
 
@@ -41,8 +43,9 @@ const MIDI_DEVICE_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::command::{
-        MidiCommand, MidiLastEvent, MidiMapping, MidiMappingUpserted, MidiSource,
+        MidiCommand, MidiLastEvent, MidiLedValues, MidiMapping, MidiMappingUpserted, MidiSource,
     };
+    pub use crate::feedback::MidiFeedbackDevices;
     pub use crate::mapping::MidiMappings;
     pub use crate::websocket::MidiDevice;
     pub use crate::{InputMidiPlugin, MidiMappingDiagnostics};
@@ -75,9 +78,14 @@ impl Plugin for InputMidiPlugin {
             rx
         });
 
-        app.insert_resource(MidiDevices::new(midi_client.device_names()));
+        app.insert_resource(MidiDevices::read(
+            &midi_client,
+            &midi_service.output_client(),
+        ));
         app.insert_resource(MidiEventReceiver(midi_rx));
+        app.insert_resource(MidiOutput(midi_service.output_client()));
         app.init_resource::<MidiMappings>();
+        app.init_resource::<MidiFeedbackCache>();
         app.init_resource::<LastMidiEvent>();
         app.init_resource::<MidiControlTouches>();
 
@@ -104,6 +112,7 @@ impl Plugin for InputMidiPlugin {
             (
                 refresh_midi_mapping_diagnostics.run_if(bindings_need_diagnosis::<MidiMappings>),
                 websocket::send_midi_state,
+                send_midi_feedback,
             )
                 .chain()
                 .in_set(ClientOutput),
@@ -116,18 +125,35 @@ impl Plugin for InputMidiPlugin {
     }
 }
 
-/// Resource holding connected MIDI device names.
-#[derive(Resource, Default)]
-pub struct MidiDevices(Vec<String>);
+/// Resource holding connected MIDI devices and whether each has an output for feedback.
+#[derive(Resource, Default, PartialEq)]
+pub struct MidiDevices(Vec<(String, bool)>);
 
 impl MidiDevices {
-    fn new(device_names: Vec<String>) -> Self {
-        Self(device_names)
+    /// Reads the connected devices and their paired outputs from the MIDI service clients.
+    fn read(input: &service::MidiInputClient, output: &service::MidiOutputClient) -> Self {
+        Self(
+            input
+                .device_names()
+                .into_iter()
+                .map(|name| {
+                    let has_output = output.has_output(&name);
+                    (name, has_output)
+                })
+                .collect(),
+        )
     }
 
     /// Get the list of connected device names.
     pub fn device_names(&self) -> Vec<String> {
-        self.0.clone()
+        self.0.iter().map(|(name, _)| name.clone()).collect()
+    }
+
+    /// Returns each connected device's name and whether an output is paired with it.
+    pub fn devices(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.0
+            .iter()
+            .map(|(name, has_output)| (name.as_str(), *has_output))
     }
 }
 
@@ -237,11 +263,11 @@ fn midi_event_system(
     }
 }
 
-/// Poll the process-wide MIDI service and push changed device names to websocket clients.
+/// Poll the process-wide MIDI service and record changed devices; the change publishes the
+/// device list to websocket clients.
 fn refresh_midi_devices(
     mut next_refresh_deadline: Local<Option<Instant>>,
     mut devices: ResMut<MidiDevices>,
-    broadcaster: Res<ClientEventSink>,
 ) {
     let now = Instant::now();
     if next_refresh_deadline.is_some_and(|deadline| now < deadline) {
@@ -251,11 +277,10 @@ fn refresh_midi_devices(
 
     let midi_service = service::process_midi_input_service();
     let _ = midi_service.refresh();
-    let device_names = midi_service.client().device_names();
-    if devices.0 != device_names {
-        devices.0 = device_names;
-        websocket::send_device_list(&devices, &broadcaster);
-    }
+    devices.set_if_neq(MidiDevices::read(
+        &midi_service.client(),
+        &midi_service.output_client(),
+    ));
 }
 
 /// System that invokes the action bound to each MIDI control that sends a message.
@@ -336,7 +361,8 @@ fn refresh_midi_mapping_diagnostics(world: &mut World) {
         .set_if_neq(MidiMappingDiagnostics(diagnostics));
 }
 
-/// System that applies MIDI mapping edits and reports their terminal outcomes.
+/// System that applies MIDI mapping and device feedback edits and reports their terminal
+/// outcomes.
 fn handle_midi_crud(
     mut events: MessageReader<CommandEnvelope<MidiCommand>>,
     mut mappings: ResMut<MidiMappings>,
@@ -382,6 +408,20 @@ fn handle_midi_crud(
                         ),
                     )
                 }
+            }
+            MidiCommand::SetDeviceFeedback { device, .. } if device.trim().is_empty() => responder
+                .fail(
+                    event.command_id,
+                    CommandError::new(
+                        "midi.device_name_empty",
+                        "MIDI LED feedback needs a device name",
+                    ),
+                ),
+            MidiCommand::SetDeviceFeedback { device, enabled } => {
+                if mappings.feedback_devices().contains(device) != *enabled {
+                    mappings.feedback_devices_mut().set(device, *enabled);
+                }
+                responder.succeed(event.command_id)
             }
         };
         if let Err(error) = result {
@@ -517,6 +557,7 @@ mod tests {
             device_name: "Pad".to_string(),
             source: MidiSource::Note { channel: 0, note },
             behavior: nightfall_actions::ControlBehavior::Press,
+            led: Default::default(),
             action: nightfall_actions::ActionReference::new("test.trigger", serde_json::json!({})),
         }
     }
@@ -713,6 +754,7 @@ mod tests {
         app.add_systems(Update, handle_midi_events);
         let release = MidiMapping {
             behavior: nightfall_actions::ControlBehavior::Release,
+            led: Default::default(),
             action: nightfall_actions::ActionReference::new("test.release", serde_json::json!({})),
             ..note_mapping(2, 60)
         };
@@ -759,6 +801,7 @@ mod tests {
         app.add_systems(Update, handle_midi_events);
         let mapping = MidiMapping {
             behavior: nightfall_actions::ControlBehavior::Hold,
+            led: Default::default(),
             action: nightfall_actions::ActionReference::new("test.start", serde_json::json!({})),
             ..note_mapping(1, 60)
         };
@@ -841,6 +884,7 @@ mod tests {
     fn release_mapping(id: u128) -> MidiMapping {
         MidiMapping {
             behavior: nightfall_actions::ControlBehavior::Release,
+            led: Default::default(),
             action: nightfall_actions::ActionReference::new("test.trigger", serde_json::json!({})),
             ..note_mapping(id, 60)
         }
@@ -881,6 +925,7 @@ mod tests {
     fn hold_pressed_before_mapping_mode_releases_during_it() {
         let mut app = midi_dispatch_app(vec![MidiMapping {
             behavior: nightfall_actions::ControlBehavior::Hold,
+            led: Default::default(),
             action: nightfall_actions::ActionReference::new("test.start", serde_json::json!({})),
             ..note_mapping(3, 60)
         }]);
@@ -971,6 +1016,7 @@ mod tests {
         let mut app = midi_command_app();
         let mapping = MidiMapping {
             behavior: nightfall_actions::ControlBehavior::Hold,
+            led: Default::default(),
             ..note_mapping(1, 60)
         };
 

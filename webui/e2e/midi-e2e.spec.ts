@@ -368,3 +368,78 @@ test("an unmappable MIDI message explains why nothing armed", async ({
   await expect(banner.locator("[data-mapping-unmappable]")).toHaveCount(0);
   await leaveMapping(page);
 });
+
+/** Returns whether the backend reports LED feedback on for the virtual controller. */
+async function feedbackEnabled(
+  page: Page,
+  midi: VirtualMidi,
+): Promise<boolean | undefined> {
+  return page.evaluate(
+    (name) =>
+      (
+        (window as any).appStores.midiDevices.get() as {
+          name: string;
+          feedback: boolean;
+        }[]
+      ).find((device) => device.name === name)?.feedback,
+    midi.name,
+  );
+}
+
+/**
+ * Verifies turning on LED feedback for a device lights a mapped pad while its toggle master
+ * is on, with the mapping's own LED values, and darkens it when feedback is turned off.
+ */
+test("LED feedback lights a mapped pad while its master is on", async ({
+  backendSlot,
+  page,
+  virtualMidi,
+}) => {
+  await openMidiApp(page, backendSlot.backendPort, virtualMidi);
+  await createToggleMaster(page);
+  await storeNoteToggleMapping(page, virtualMidi, 66);
+  await openPanel(page, "MIDI Input");
+  const device = page
+    .getByTestId("midi-device")
+    .filter({ hasText: virtualMidi.name });
+  const toggle = device.getByRole("switch", {
+    name: `LED feedback for ${virtualMidi.name}`,
+  });
+  await expect(toggle).not.toBeChecked();
+  expect(virtualMidi.received()).toEqual([]);
+
+  await toggle.check();
+  await expect.poll(() => feedbackEnabled(page, virtualMidi)).toBe(true);
+  await expect(toggle).toBeChecked();
+  await expect.poll(() => virtualMidi.received()).toEqual([[0x90, 66, 0]]);
+
+  await virtualMidi.note(66, true);
+  await expect.poll(() => masterActive(page)).toBe(true);
+  await virtualMidi.note(66, false);
+  await expect
+    .poll(() => virtualMidi.received().at(-1))
+    .toEqual([0x90, 66, 127]);
+  await page.screenshot({
+    path: test.info().outputPath("midi-led-feedback-on.png"),
+  });
+
+  const [mapping] = await midiMappings(page);
+  await page.evaluate(
+    (mapping) =>
+      (window as any).appStores.sendAndAwait({
+        module: "MidiCommand",
+        command: {
+          type: "UpsertMapping",
+          data: { ...mapping, led: { on: 21, off: 3 } },
+        },
+      }),
+    mapping,
+  );
+  await expect
+    .poll(() => virtualMidi.received().at(-1))
+    .toEqual([0x90, 66, 21]);
+
+  await toggle.uncheck();
+  await expect.poll(() => feedbackEnabled(page, virtualMidi)).toBe(false);
+  await expect.poll(() => virtualMidi.received().at(-1)).toEqual([0x90, 66, 0]);
+});

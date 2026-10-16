@@ -19,6 +19,7 @@ use crate::descriptor::{
     ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
     ActionParameterKind, ActionSurface,
 };
+use crate::feedback::{ActionFeedback, FeedbackState};
 use crate::flash::{FLASH_LEVEL, FlashStates};
 use crate::invocation::{
     ActionInput, ActionInvocation, ActionReference, ClientActionInvocation, InvocationDispatch,
@@ -43,6 +44,10 @@ type CapabilityResolver = Box<
 type FlashLevelReader =
     Box<dyn Fn(&World, &ActionReference) -> Result<Option<f32>, InvocationError> + Send + Sync>;
 
+/// Reads the live state of the target an action reference addresses.
+type FeedbackReader =
+    Box<dyn Fn(&World, &ActionReference) -> Result<ActionFeedback, InvocationError> + Send + Sync>;
+
 /// Checks that a reference's arguments decode into the owning domain's argument type.
 type ArgumentsCheck = Box<dyn Fn(&ActionReference) -> Result<(), InvocationError> + Send + Sync>;
 
@@ -63,6 +68,7 @@ struct RegisteredAction {
     check_arguments: ArgumentsCheck,
     capabilities: HashMap<TypeId, RegisteredCapability>,
     flash_level: Option<FlashLevelReader>,
+    feedback: Option<FeedbackReader>,
 }
 
 /// App-wide registry of action descriptors and domain-owned invokers.
@@ -274,6 +280,7 @@ impl ActionRegistry {
                 check_arguments: Box::new(|action| decode_arguments::<A>(action).map(drop)),
                 capabilities: HashMap::new(),
                 flash_level: None,
+                feedback: None,
             },
         );
     }
@@ -451,6 +458,46 @@ impl ActionRegistry {
         registered.flash_level = Some(Box::new(move |world, action| {
             reader(world, decode_arguments::<A>(action)?)
         }));
+    }
+
+    /// Registers how to read the live state of the target an action addresses, so bound
+    /// controls can show it.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the action ID is unknown.
+    pub fn register_feedback<A, F>(&mut self, action_id: &str, reader: F)
+    where
+        A: DeserializeOwned + 'static,
+        F: Fn(&World, A) -> Result<ActionFeedback, InvocationError> + Send + Sync + 'static,
+    {
+        let registered = self
+            .actions
+            .get_mut(&ActionId::new(action_id))
+            .unwrap_or_else(|| {
+                panic!("action '{action_id}' must be registered before its feedback")
+            });
+        registered.feedback = Some(Box::new(move |world, action| {
+            reader(world, decode_arguments::<A>(action)?)
+        }));
+    }
+
+    /// Returns what a control bound to `action` should show, or `None` when the action has
+    /// no feedback, so surfaces leave such controls alone.
+    ///
+    /// A target that cannot be resolved, such as a deleted clip, reads as idle so its control
+    /// goes dark instead of keeping a stale state. A target a Flash binding is holding reads
+    /// as held.
+    pub fn feedback(&self, world: &World, action: &ActionReference) -> Option<ActionFeedback> {
+        let reader = self.actions.get(&action.id)?.feedback.as_ref()?;
+        let mut feedback = reader(world, action).unwrap_or(ActionFeedback::IDLE);
+        if world
+            .get_resource::<FlashStates>()
+            .is_some_and(|flashes| flashes.is_held(action))
+        {
+            feedback.state = FeedbackState::Held;
+        }
+        Some(feedback)
     }
 
     /// Returns the controller binding behaviors an action supports.
