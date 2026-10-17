@@ -21,9 +21,7 @@
   min-width: 0;
   height: var(--nf-tile-height);
   padding: var(--nf-tile-padding);
-  border: 1px solid #373e40;
   border-radius: var(--nf-corner-radius);
-  background: #202325;
   overflow: hidden;
   overflow-wrap: normal;
 }
@@ -73,19 +71,6 @@
   line-height: 10px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
-}
-.nf-crud-card-unselected:hover {
-  background: #292e30;
-  border-color: #65716e;
-}
-.nf-crud-card-selected {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  box-shadow: inset 3px 0 var(--accent);
-}
-.nf-crud-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
 }
 [data-crud-drag-box] {
   border-color: var(--accent);

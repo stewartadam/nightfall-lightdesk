@@ -10,6 +10,7 @@ import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { For, type JSX, Show } from "solid-js";
 import { Button } from "../ui/visual-language/button";
+import "../ui/selectable-surface.css";
 import "./object-tile.css";
 
 export interface ObjectTileProps {
@@ -28,7 +29,8 @@ export function ObjectTile(props: ObjectTileProps) {
   return (
     <Button
       class="object-tile"
-      classList={{ selected: props.selected }}
+      data-selectable-surface
+      data-selected={props.selected}
       aria-pressed={props.selected}
       title={[
         props.identity,

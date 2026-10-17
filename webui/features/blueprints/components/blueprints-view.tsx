@@ -18,8 +18,6 @@ import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-gr
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudViewModeToggle, {
@@ -54,10 +52,8 @@ function BlueprintCard(props: BlueprintCardProps) {
       type="button"
       data-crud-select-id={uid}
       class={CRUD_CARD_CLASS}
-      classList={{
-        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-      }}
+      data-selectable-surface
+      data-selected={isSelected()}
       onClick={(event) => {
         if (controller.gridDragSelection.consumeSuppressedClick()) {
           event.preventDefault();
