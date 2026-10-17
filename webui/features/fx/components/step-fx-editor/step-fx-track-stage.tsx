@@ -8,9 +8,9 @@
 
 import { Show } from "solid-js";
 import VerticalLayoutSplitter from "../../../../components/ui/vertical-layout-splitter";
+import { Button } from "../../../../components/ui/visual-language/button";
 import type * as types from "../../../../types";
 import type { StepFxEditorViewController } from "../../controllers/step-fx-editor-view-controller";
-import { STEP_FX_BUTTON_CLASS } from "./step-fx-editor-styles";
 import { StepFxStepActionToolbar } from "./step-fx-step-action-toolbar";
 import { StepFxStepNavigationToolbar } from "./step-fx-step-navigation-toolbar";
 import { StepFxStepSheet } from "./step-fx-step-sheet";
@@ -75,13 +75,9 @@ export function StepFxTrackStage(props: {
                     <div class="relative min-h-0 flex-1">
                       <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-neutral-500">
                         <span>No {selection.trackKind()} steps.</span>
-                        <button
-                          type="button"
-                          class={STEP_FX_BUTTON_CLASS}
-                          onClick={edit.addTrack}
-                        >
+                        <Button size="compact" onClick={edit.addTrack}>
                           Add {selection.trackKind()} step
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>

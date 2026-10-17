@@ -9,6 +9,7 @@
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { For, Show } from "solid-js";
+import { Button } from "../../../components/ui/visual-language/button";
 import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid, {
   type CrudListDataGridEditRequest,
@@ -280,9 +281,9 @@ export function ClipListView(props: ClipListViewProps) {
                             />
                           </span>
                         </Show>
-                        <button
-                          type="button"
-                          class="rounded p-1 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-neutral-100"
+                        <Button
+                          variant="subtle"
+                          size="icon-compact"
                           aria-label={`Inspect clip ${clip()?.identifiers.id}`}
                           onClick={(event) => {
                             event.preventDefault();
@@ -291,7 +292,7 @@ export function ClipListView(props: ClipListViewProps) {
                           }}
                         >
                           <GearSixIcon class="size-4" aria-hidden />
-                        </button>
+                        </Button>
                       </div>
                     </div>
                     <div class="nf-tile-badges uppercase">

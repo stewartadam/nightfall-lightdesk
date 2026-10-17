@@ -29,6 +29,7 @@ import { appLifecycle } from "../../../state/app-lifecycle";
 import { DialogBackdrop, DialogSurface } from "../../ui/dialog";
 import Modal from "../../ui/modal";
 import Tooltip from "../../ui/tooltip";
+import { Button } from "../../ui/visual-language/button";
 import { shouldBlockDisconnectedOverlayKey } from "./key-filter";
 
 const log = getLogger(import.meta.url);
@@ -255,13 +256,13 @@ const ConnectionOverlay = () => {
               <div class="flex items-center gap-2 text-2xl font-semibold">
                 <span>Connection Lost</span>
                 <Tooltip content={expectedBackendTooltip} position="right">
-                  <button
-                    type="button"
-                    class="inline-flex items-center justify-center rounded-full text-gray-300 transition-colors hover:text-white focus:outline-hidden focus:ring-2 focus:ring-gray-400"
+                  <Button
+                    variant="subtle"
+                    size="icon-compact"
                     aria-label="Show connection address"
                   >
                     <InfoIcon class="size-5" aria-hidden />
-                  </button>
+                  </Button>
                 </Tooltip>
               </div>
               <div class="text-gray-300 text-center">

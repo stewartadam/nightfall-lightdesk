@@ -62,8 +62,9 @@ export function StepFxTimingControls(props: {
       triggerLabel="Speed and scaling"
       open={props.open}
       onOpenChange={props.onOpenChange}
+      triggerSize="compact"
       trigger={
-        <span class="inline-flex h-8 items-center gap-1.5 rounded border border-neutral-700 bg-neutral-800 px-2 text-xs tabular-nums text-neutral-200 hover:bg-neutral-700">
+        <span class="inline-flex items-center gap-1.5 tabular-nums">
           {stepFxSpeedValue(props.stepFx.timing, props.speedUnit)}{" "}
           {props.speedUnit}{" "}
           <span class="text-neutral-400">

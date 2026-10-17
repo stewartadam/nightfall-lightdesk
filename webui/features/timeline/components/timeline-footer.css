@@ -14,12 +14,6 @@
   width: 136px;
 }
 
-.timeline-zoom-controls > .nf-button {
-  width: 28px;
-  padding: 0;
-  flex-shrink: 0;
-}
-
 .timeline-position-display {
   display: flex;
   align-items: center;

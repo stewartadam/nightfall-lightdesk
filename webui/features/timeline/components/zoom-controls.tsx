@@ -115,7 +115,7 @@ export const ZoomControls = (props: ZoomControlsProps) => {
     <InputGroup class="timeline-zoom-controls shrink-0">
       <Button
         variant="subtle"
-        size="compact"
+        size="icon-compact"
         aria-label="Zoom out"
         onClick={handleZoomOut}
         disabled={context.zoom() <= mprops.minZoom}
@@ -134,7 +134,7 @@ export const ZoomControls = (props: ZoomControlsProps) => {
       <InputSuffix>%</InputSuffix>
       <Button
         variant="subtle"
-        size="compact"
+        size="icon-compact"
         aria-label="Zoom in"
         onClick={handleZoomIn}
         disabled={context.zoom() >= mprops.maxZoom}

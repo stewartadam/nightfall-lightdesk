@@ -52,14 +52,25 @@
   padding: 4px 10px;
   font-size: 12px;
 }
+/* Icon sizes are square for a lone icon and widen only for an icon with a menu caret. */
 .nf-button[data-size="icon"] {
-  width: 32px;
+  min-width: 32px;
   height: 32px;
-  padding: 0;
+  padding: 0 4px;
 }
+.nf-button[data-size="icon-compact"],
 :where(.nf-dialog-header) .nf-button[data-size="icon"] {
-  width: 28px;
+  min-width: 28px;
   height: 28px;
+  padding: 0 4px;
+}
+/* Sits within a line of text or a status strip without raising its height. */
+.nf-button[data-size="inline"] {
+  min-height: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: inherit;
+  line-height: 16px;
 }
 .nf-button:disabled {
   color: #767d80;

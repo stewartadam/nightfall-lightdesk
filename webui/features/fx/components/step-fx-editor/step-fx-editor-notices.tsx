@@ -7,8 +7,8 @@
  */
 
 import { Show } from "solid-js";
+import { Button } from "../../../../components/ui/visual-language/button";
 import type { StepFxEditorSession } from "../../controllers/step-fx-editor-view-controller";
-import { STEP_FX_BUTTON_CLASS } from "./step-fx-editor-styles";
 
 /** Warns when the stored definition was deleted or replaced while this draft was open. */
 export function StepFxEditorNotices(props: {
@@ -24,13 +24,9 @@ export function StepFxEditorNotices(props: {
         >
           This Step FX was deleted elsewhere. This local draft can no longer be
           saved.
-          <button
-            type="button"
-            class={STEP_FX_BUTTON_CLASS}
-            onClick={() => props.onCloseEditor()}
-          >
+          <Button size="compact" onClick={() => props.onCloseEditor()}>
             Close editor
-          </button>
+          </Button>
         </div>
       </Show>
       <Show
@@ -38,20 +34,15 @@ export function StepFxEditorNotices(props: {
       >
         <div class="flex shrink-0 items-center gap-2 border-b border-amber-600/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
           This Step FX changed elsewhere while this draft has unsaved edits.
-          <button
-            type="button"
-            class={STEP_FX_BUTTON_CLASS}
-            onClick={() => props.session.reloadStored()}
-          >
+          <Button size="compact" onClick={() => props.session.reloadStored()}>
             Reload stored
-          </button>
-          <button
-            type="button"
-            class={STEP_FX_BUTTON_CLASS}
+          </Button>
+          <Button
+            size="compact"
             onClick={() => props.session.overwriteConflict()}
           >
             Keep draft
-          </button>
+          </Button>
         </div>
       </Show>
     </>

@@ -97,16 +97,16 @@ function CompactHeaderBar() {
     <nav class="flex min-w-0 w-full items-center gap-1" aria-label="Global">
       <AppMenu
         triggerLabel="Main menu"
-        triggerClass="nf-compact-logo-menu"
+        triggerSize="icon"
         trigger={
-          <>
+          <span class="inline-flex items-center gap-0.5">
             <img
               src={`${import.meta.env.BASE_URL}logo.svg`}
               alt=""
-              class="size-7 rounded"
+              class="size-7 max-w-none shrink-0 rounded"
             />
-            <CaretDownIcon class="size-3 text-gray-400" aria-hidden />
-          </>
+            <CaretDownIcon class="size-3 shrink-0 text-gray-400" aria-hidden />
+          </span>
         }
         placement="below"
         align="start"

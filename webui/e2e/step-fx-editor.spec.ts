@@ -803,9 +803,10 @@ test("Step FX waveform geometry drag-edits authored fields", async ({
   await expect(
     startPositionTrigger.locator('[data-waveform-drag-active="true"]'),
   ).toBeVisible();
+  await expect(startPositionTrigger).toHaveClass(/ring-amber-300/);
   await expect(
     startPositionTrigger.locator('[data-waveform-drag-active="true"]'),
-  ).toHaveClass(/border-amber-300/);
+  ).toHaveClass(/text-amber-100/);
   await page.screenshot({
     path: testInfo.outputPath("step-fx-waveform-drag-highlight.png"),
     fullPage: true,

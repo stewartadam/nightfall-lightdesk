@@ -14,6 +14,7 @@ import {
 } from "../../../../components/ui/dropdown-menu";
 import { Input } from "../../../../components/ui/form-controls";
 import { RangeSlider } from "../../../../components/ui/range-slider";
+import { Button } from "../../../../components/ui/visual-language/button";
 import type * as types from "../../../../types";
 import {
   type StepFxPositionUnit,
@@ -120,13 +121,14 @@ export function StepFxStartPositionControls(props: {
       triggerLabel="Start position"
       open={props.open}
       onOpenChange={props.onOpenChange}
+      triggerSize="compact"
+      triggerClass={
+        props.highlighted ? "ring-1 ring-inset ring-amber-300/70" : undefined
+      }
       trigger={
         <span
-          class="inline-flex h-8 items-center gap-1.5 rounded border border-neutral-700 bg-neutral-800 px-2 text-xs tabular-nums text-neutral-200 hover:bg-neutral-700"
-          classList={{
-            "border-amber-300 bg-amber-400/15 text-amber-100 ring-1 ring-inset ring-amber-300/70":
-              props.highlighted,
-          }}
+          class="inline-flex items-center gap-1.5 tabular-nums"
+          classList={{ "text-amber-100": props.highlighted }}
           data-waveform-drag-active={props.highlighted ? "true" : undefined}
         >
           {stepFxStartPositionSummary(props.phase, props.positionUnit)}
@@ -237,14 +239,10 @@ export function StepFxStartPositionControls(props: {
                   }
                 >
                   {(value) => (
-                    <button
-                      type="button"
-                      class="rounded border border-neutral-700 bg-neutral-800 px-1 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
-                      onClick={() => setStartValue(value)}
-                    >
+                    <Button size="compact" onClick={() => setStartValue(value)}>
                       {value}
                       {stepFxPositionUnitSuffix(props.positionUnit)}
-                    </button>
+                    </Button>
                   )}
                 </For>
               </div>
@@ -290,23 +288,18 @@ export function StepFxStartPositionControls(props: {
                     }
                   >
                     {(value) => (
-                      <button
-                        type="button"
-                        class="rounded border border-neutral-700 bg-neutral-800 px-1 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+                      <Button
+                        size="compact"
                         onClick={() => setSpreadMagnitude(value)}
                       >
                         {spreadSign() * value}
                         {stepFxPositionUnitSuffix(props.positionUnit)}
-                      </button>
+                      </Button>
                     )}
                   </For>
-                  <button
-                    type="button"
-                    class="rounded border border-neutral-700 bg-neutral-800 px-1 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
-                    onClick={reverseSpread}
-                  >
+                  <Button size="compact" onClick={reverseSpread}>
                     Reverse
-                  </button>
+                  </Button>
                 </div>
               </Show>
             </div>

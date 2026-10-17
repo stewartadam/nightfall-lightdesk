@@ -20,6 +20,11 @@ import { Portal } from "solid-js/web";
 import type { AppIcon } from "../icon";
 import { MenuItem, MenuSeparator, MenuSurface } from "../menu";
 import { overlayHost } from "../modal/dialog-stack";
+import {
+  type ButtonSize,
+  type ButtonVariant,
+  buttonClass,
+} from "../visual-language/button";
 
 const FOCUSABLE_MENU_CONTROL_SELECTOR = [
   "button:not([disabled])",
@@ -43,6 +48,14 @@ interface DropdownMenuProps {
   placement?: "above" | "below";
   align?: "start" | "end";
   triggerClass?: string;
+  /**
+   * Renders the trigger with the shared `Button` look in this variant. When
+   * neither this nor `triggerSize` is set the trigger is unstyled and the
+   * `trigger` content supplies its own appearance.
+   */
+  triggerVariant?: ButtonVariant;
+  /** Renders the trigger with the shared `Button` look at this size. */
+  triggerSize?: ButtonSize;
   triggerDisabled?: boolean;
   open?: boolean;
   contentLabel?: string;
@@ -166,7 +179,12 @@ export function DropdownMenu(props: DropdownMenuProps) {
             event.stopPropagation();
             setOpen(!isOpen());
           }}
-          class={`appearance-none cursor-pointer border-none bg-transparent p-0 m-0 ${props.triggerClass ?? ""}`.trim()}
+          class={
+            props.triggerVariant || props.triggerSize
+              ? buttonClass(props.triggerVariant, props.triggerClass)
+              : `appearance-none cursor-pointer border-none bg-transparent p-0 m-0 ${props.triggerClass ?? ""}`.trim()
+          }
+          data-size={props.triggerSize}
           aria-label={props.triggerLabel}
           aria-expanded={isOpen()}
           aria-haspopup="menu"

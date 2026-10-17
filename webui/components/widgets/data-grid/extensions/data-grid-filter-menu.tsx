@@ -24,6 +24,7 @@ import {
 import { DropdownMenu, DropdownMenuSeparator } from "../../../ui/dropdown-menu";
 import { ScrollArea } from "../../../ui/scroll-area";
 import { TOOLBAR_BUTTON_CLASS } from "../../../ui/toolbar-button";
+import { Button } from "../../../ui/visual-language/button";
 
 interface DataGridFilterMenuProps {
   columns: readonly DataGridFilterColumnMeta[];
@@ -253,14 +254,15 @@ export default function DataGridFilterMenu(props: DataGridFilterMenuProps) {
               class="w-full rounded border border-neutral-700 bg-neutral-900 py-1.5 pl-8 pr-8 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:border-blue-500"
             />
             <Show when={props.filters.quickFilter.trim().length > 0}>
-              <button
-                type="button"
-                class="absolute right-1 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
+              <Button
+                variant="subtle"
+                size="icon-compact"
+                class="absolute right-1 top-1/2 -translate-y-1/2"
                 onClick={() => setQuickFilter("")}
                 aria-label="Clear quick row filter"
               >
                 <XIcon class="size-4" aria-hidden />
-              </button>
+              </Button>
             </Show>
           </div>
         </div>
@@ -361,14 +363,14 @@ export default function DataGridFilterMenu(props: DataGridFilterMenuProps) {
                         />
                       </Show>
                     </div>
-                    <button
-                      type="button"
-                      class="inline-flex size-8 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
+                    <Button
+                      variant="subtle"
+                      size="icon"
                       onClick={() => removeRule(index)}
                       aria-label="Remove column filter"
                     >
                       <XIcon class="size-4" aria-hidden />
-                    </button>
+                    </Button>
                   </div>
                 );
               }}
@@ -377,22 +379,20 @@ export default function DataGridFilterMenu(props: DataGridFilterMenuProps) {
         </ScrollArea>
         <DropdownMenuSeparator />
         <div class="flex items-center justify-between gap-2 px-3 py-2">
-          <button
-            type="button"
-            class="text-xs text-blue-300 hover:text-blue-200 disabled:text-neutral-600"
+          <Button
+            variant="subtle"
             disabled={props.columns.length === 0}
             onClick={addRule}
           >
             Add filter
-          </button>
-          <button
-            type="button"
-            class="text-xs text-blue-300 hover:text-blue-200 disabled:text-neutral-600"
+          </Button>
+          <Button
+            variant="subtle"
             disabled={!isActive()}
             onClick={clearFilters}
           >
             Clear all
-          </button>
+          </Button>
         </div>
       </div>
     </DropdownMenu>

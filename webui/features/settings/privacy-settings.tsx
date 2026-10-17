@@ -292,9 +292,8 @@ function TelemetrySettings() {
                 flashMs={COPY_CONFIRMATION_MS}
               >
                 <Button
-                  size="icon"
+                  size="icon-compact"
                   variant="subtle"
-                  class="size-6!"
                   aria-label="Reset ID"
                   onClick={resetInstallId}
                   disabled={!state().install_id || resettingId() !== undefined}

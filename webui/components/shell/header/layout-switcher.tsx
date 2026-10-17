@@ -34,8 +34,7 @@ import {
 import { useAppShell } from "../../providers/app-shell";
 import { DropdownMenu, DropdownMenuItem } from "../../ui/dropdown-menu";
 import { hasOpenDialog } from "../../ui/modal/dialog-stack";
-import { ToggleToolbarButton } from "../../ui/toolbar-button";
-import { Button } from "../../ui/visual-language/button";
+import { ToggleToolbarButton, ToolbarButton } from "../../ui/toolbar-button";
 import DeleteConfirmModal from "../../widgets/delete-confirm-dialog";
 import "./layout-switcher.css";
 
@@ -315,16 +314,9 @@ export default function LayoutSwitcher() {
             }}
           </For>
         </div>
-        <Button
-          size="icon"
-          variant="subtle"
-          class="nf-layout-slot-add shrink-0"
-          aria-label="Manage layouts"
-          tooltip="Manage layouts"
-          onClick={showLayoutManager}
-        >
+        <ToolbarButton label="Manage layouts" onClick={showLayoutManager}>
           <PlusIcon class="size-4" aria-hidden />
-        </Button>
+        </ToolbarButton>
       </div>
       <DeleteConfirmModal
         isOpen={deleting() !== null}
