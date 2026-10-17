@@ -215,9 +215,14 @@ impl Plugin for DeskPlugin {
                 .in_set(DeskEventSet::EvalExpansion)
                 .in_set(PendingCommandExpansion),
         );
+        app.add_message::<ClientDisconnected>();
         app.add_systems(
             Update,
-            controls::expand_control_button_commands
+            (
+                controls::expand_control_button_commands,
+                controls::end_released_flashes,
+            )
+                .chain()
                 .after(systems::event_handlers::desk_events::expand_pending_eval_commands)
                 .in_set(PendingCommandExpansion),
         );

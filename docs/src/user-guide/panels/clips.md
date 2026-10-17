@@ -18,8 +18,12 @@ Each control's button has a mode, chosen from the arrow next to it and saved wit
 |---|---|---|
 | **Go** (default) | Starts the clip, or advances a running sequence | Toggles a toggle-mode master |
 | **Back** | Steps a running sequence back one cue | Not available |
+| **Flash** | While held, plays the clip at full whatever its fader says, starting it if it was idle | While held, pushes the master to full |
+| **Swop** | Like Flash, and also takes every other playback's intensity to zero while held | Not available |
 | **Toggle** | Starts the clip, or stops it if it is running | Toggles a toggle-mode master |
 | **Release** | Stops the running clip | Not available |
+
+Letting go of Flash or Swop returns the clip to its fader level, and stops it again if the flash started it; a flashed master goes back to its earlier level unless it was moved meanwhile. The button lights up while held. When the button is held from several places, such as the screen and a MIDI pad, the flash lasts until the last one lets go, and a device that disconnects lets go of anything it held. Swop leaves the Programmer and effect editor previews alone, and only intensity is taken out: other playbacks keep their colour and movement.
 
 A MIDI or OSC button mapped to the control's button follows the same mode, so changing the mode changes what the controller does too. To keep a controller button on Go whatever the mode, map it to **Go control** instead.
 

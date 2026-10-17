@@ -18,7 +18,7 @@ import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
 import {
   type Clip,
-  type ControlButtonMode,
+  ControlButtonMode,
   type Master,
   MasterKind,
 } from "../../../types";
@@ -50,6 +50,8 @@ export interface ControlProps {
   buttonMode: ControlButtonMode;
   /** Backend-authored modes the slot's current assignment supports. */
   availableButtonModes: ControlButtonMode[];
+  /** Whether a Flash or Swop is held on the slot, from this or any other surface. */
+  isFlashing: boolean;
   /** Called when a different button mode is picked. */
   onButtonModeChange: (mode: ControlButtonMode) => void;
   /** The slot's fader: its on-screen drag and its controller binding. */
@@ -89,6 +91,7 @@ export function Control(props: ControlProps): JSX.Element {
   /** Returns whether the slot's button has something to act on. */
   const canPress = () =>
     !!props.assignedClip?.source ||
+    (!!props.assignedMaster && props.buttonMode === ControlButtonMode.Flash) ||
     props.assignedMaster?.mode?.type === "Toggle";
 
   /** Whether this button sent a press that still needs its release. */
@@ -148,6 +151,9 @@ export function Control(props: ControlProps): JSX.Element {
   /** Explains what the button does now, or what it needs before it can act. */
   const buttonTitle = () => {
     if (props.assignedMaster) {
+      if (props.buttonMode === ControlButtonMode.Flash) {
+        return modeText().description;
+      }
       return props.assignedMaster.mode?.type === "Toggle"
         ? "Toggle this master"
         : "Only toggle-mode masters respond to the button";
@@ -323,7 +329,9 @@ export function Control(props: ControlProps): JSX.Element {
           type="button"
           data-control-button-index={props.index}
           data-control-button-mode={props.buttonMode}
+          data-control-button-flashing={props.isFlashing}
           aria-label={`${modeText().label} control ${props.index}`}
+          variant={props.isFlashing ? "primary" : "secondary"}
           class="w-full px-1!"
           disabled={!canPress()}
           onPointerDown={handlePointerDown}
