@@ -5,6 +5,12 @@ name: Native validation
 # macros and dependencies.
 on:
   workflow_call:
+    inputs:
+      rust-tests:
+        description: Run Rust tests, doctests, desktop shell tests and Clippy; the backend
+          for the Chromium product flows is built either way.
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -50,9 +56,13 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev
+
+      # The headless backend needs only the packages above; the test and lint steps need these.
+      - name: Install desktop shell system dependencies
+        if: inputs.rust-tests
+        run: |
           sudo apt-get install -y \
-            pkg-config \
-            libasound2-dev \
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
             libxdo-dev
@@ -61,17 +71,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install cargo-nextest for Rust tests
+        if: inputs.rust-tests
         # Prebuilt and checksum-verified; building it from source costs minutes on a cache miss.
         uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: cargo-nextest@0.9.146
 
+      # Skipping this step also skips the doctest, desktop shell and Clippy steps below.
       - name: Run Rust tests
         id: native-hooks
+        if: inputs.rust-tests
         run: pnpm exec prek run cargo-nextest --all-files --verbose --show-diff-on-failure --color always --stage pre-push
 
       - name: Upload Rust test timings
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.rust-tests }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: rust-test-junit-${{ github.sha }}
@@ -79,9 +92,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Stage the tested native backend
+      # With tests, --tests matches nextest's targets and feature graph so the backend reuses its
+      # build; without them, building only the binary skips compiling every test target.
+      - name: Stage the native backend
+        env:
+          RUST_TESTS: ${{ inputs.rust-tests }}
         run: |
-          cargo build --tests --bin nightfall-headless
+          if [[ "$RUST_TESTS" == true ]]; then
+            cargo build --tests --bin nightfall-headless
+          else
+            cargo build --bin nightfall-headless
+          fi
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           mkdir -p ci-artifacts
           cp "$target_dir/debug/nightfall-headless" ci-artifacts/nightfall-headless

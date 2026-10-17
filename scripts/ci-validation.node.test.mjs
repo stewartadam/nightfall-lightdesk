@@ -19,7 +19,11 @@ const { jobs } = parse(
 /** Cheap validation and browser feedback must not acquire unrelated build barriers. */
 test("validation jobs wait only for their preparation prerequisites", () => {
   assert.equal(jobs["source-checks"].needs, "scope");
-  assert.equal(jobs.native.needs, "scope");
+  assert.deepEqual(jobs.native.needs, ["scope", "selection"]);
+  assert.equal(
+    jobs.native.with["rust-tests"],
+    `\${{ needs.selection.outputs.rust == 'true' }}`,
+  );
   assert.deepEqual(jobs.webui.needs, [
     "scope",
     "wasm-bridge",
