@@ -7,6 +7,7 @@
  */
 
 import { createEffect, onCleanup, onMount } from "solid-js";
+import { RangeSlider } from "../../../components/ui/range-slider";
 import { colorPathSamples } from "../../../lib/color-path-preview";
 import type * as types from "../../../types";
 import {
@@ -150,8 +151,8 @@ export function TimingComponentEditor(props: TimingComponentEditorProps) {
   };
 
   /** Updates the single semantic timing value for this component. */
-  const updateSlider = (value: string) => {
-    const fraction = Math.min(1, percentInputFraction(value));
+  const updateSlider = (value: number) => {
+    const fraction = Math.min(1, percentInputFraction(String(value)));
     const neutral = props.mode === "in" ? 0 : 1;
     props.onChange(
       Math.abs(fraction - neutral) <= Number.EPSILON
@@ -162,24 +163,21 @@ export function TimingComponentEditor(props: TimingComponentEditorProps) {
 
   return (
     <div
-      class="grid grid-cols-[130px_1fr_48px] items-center gap-3 text-sm"
+      class="grid grid-cols-[130px_minmax(0,1fr)] items-center gap-3 text-sm"
       data-testid="color-path-timing-row"
       data-timing={props.label}
     >
       <span class="text-neutral-300">{props.label}</span>
-      <input
-        data-testid="color-path-timing-slider"
-        class="accent-cyan-400 disabled:opacity-50"
+      <RangeSlider
+        value={Number(
+          percentInputValue(sliderValue(), props.mode === "in" ? 0 : 1),
+        )}
+        ariaLabel={`${props.label} timing`}
         disabled={props.disabled}
-        type="range"
-        min="0"
-        max="100"
-        value={percentInputValue(sliderValue(), props.mode === "in" ? 0 : 1)}
-        onInput={(event) => updateSlider(event.currentTarget.value)}
+        showPips={false}
+        containerClass="min-w-0"
+        onChange={updateSlider}
       />
-      <span class="text-right font-mono text-neutral-400 text-xs">
-        {percentInputValue(sliderValue(), props.mode === "in" ? 0 : 1)}%
-      </span>
     </div>
   );
 }

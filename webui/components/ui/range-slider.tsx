@@ -11,10 +11,12 @@ import {
   createEffect,
   For,
   type JSX,
+  on,
   onCleanup,
   onMount,
   Show,
 } from "solid-js";
+import "./range-slider.css";
 
 interface RangeSliderOptions {
   min?: number;
@@ -26,6 +28,8 @@ interface RangeSliderOptions {
   class?: string;
   disabled?: boolean;
   ariaLabel?: string;
+  /** Id of an element that describes the control, applied to handles and numeric inputs. */
+  describedBy?: string;
   /** Accessible names for scalar or ordered interval handles. */
   handleLabels?: string | readonly [string, string];
   /** Additional layout classes for embedding the control. */
@@ -40,11 +44,19 @@ interface RangeSliderOptions {
 
 export type RangeSliderProps = RangeSliderOptions &
   (
-    | { mode?: "single"; value: number; onChange: (value: number) => void }
+    | {
+        mode?: "single";
+        value: number;
+        /** Receives every edit, including each step of a drag. */
+        onChange: (value: number) => void;
+        /** Receives the settled value when a drag ends or a key, tap or numeric entry completes. */
+        onCommit?: (value: number) => void;
+      }
     | {
         mode: "range";
         value: readonly [number, number];
         onChange: (value: [number, number]) => void;
+        onCommit?: (value: [number, number]) => void;
       }
   );
 
@@ -53,6 +65,9 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
   let containerRef!: HTMLDivElement;
   let sliderApi: API | undefined;
   let syncing = false;
+  let dragging = false;
+  /** Handle values as of the last commit or external update, used to skip commits that change nothing. */
+  let committed: number[] = [];
   /** Returns the controlled handle values in noUiSlider order. */
   const values = () =>
     props.mode === "range" ? [...props.value] : [props.value];
@@ -73,10 +88,28 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
       ? props.handleLabels
       : props.handleLabels?.[index]) ??
     `${props.ariaLabel ?? "Value"}${props.mode === "range" ? (index === 0 ? " minimum" : " maximum") : ""}`;
+  /** Reads the slider's settled handle values, rounded like emitted changes. */
+  const settledValues = () => {
+    const raw = sliderApi?.get(true) ?? values();
+    return (Array.isArray(raw) ? raw : [raw]).map((value) =>
+      Number(Number(value).toFixed(10)),
+    );
+  };
+  /** Reports a completed interaction to the optional commit callback unless it left the values unchanged. */
+  const emitCommit = () => {
+    const next = settledValues();
+    if (next.every((value, index) => value === committed[index])) return;
+    committed = next;
+    if (props.mode === "range") props.onCommit?.([next[0], next[1]]);
+    else props.onCommit?.(next[0]);
+  };
   /** Commits numeric input through the slider's step, bounds, and handle-order constraints. */
   const commitInput = (index: number, input: HTMLInputElement) => {
     const value = input.valueAsNumber;
-    if (Number.isFinite(value)) sliderApi?.setHandle(index, value, true);
+    if (Number.isFinite(value)) {
+      sliderApi?.setHandle(index, value, true);
+      emitCommit();
+    }
     input.value = String(values()[index]);
   };
 
@@ -89,8 +122,10 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
       range: { min: min(), max: max() },
       step: step(),
       tooltips: props.tooltips === false ? false : { to: formatValue },
+      ariaFormat: { to: formatValue },
       handleAttributes: values().map((_, index) => ({
         "aria-label": label(index),
+        ...(props.describedBy ? { "aria-describedby": props.describedBy } : {}),
       })),
       pips:
         props.showPips === false
@@ -102,8 +137,14 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
               format: { to: formatValue },
             },
     });
-    sliderApi.on("start", () => containerRef.classList.add("is-dragging"));
-    sliderApi.on("end", () => containerRef.classList.remove("is-dragging"));
+    sliderApi.on("start", () => {
+      dragging = true;
+      containerRef.classList.add("is-dragging");
+    });
+    sliderApi.on("end", () => {
+      dragging = false;
+      containerRef.classList.remove("is-dragging");
+    });
     /** Emits user edits without treating mount-time normalization as an authored change. */
     const emitChange: Parameters<API["on"]>[1] = (_, __, unencoded) => {
       if (syncing) return;
@@ -115,26 +156,59 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     };
     sliderApi.on("slide", emitChange);
     sliderApi.on("set", emitChange);
-    /** Mirrors controlled values without emitting feedback changes during programmatic updates. */
+    sliderApi.on("change", () => {
+      if (!syncing) emitCommit();
+    });
+    committed = settledValues();
+    /** Mirrors controlled values, leaving an active drag in place so delayed echoes cannot pull the handle back. */
     createEffect(() => {
       const next = values();
+      if (dragging) return;
+      const current = settledValues();
       syncing = true;
       sliderApi?.set(next, false);
       syncing = false;
+      // An echo of the slider's own edit is not an external change to commit against.
+      if (next.some((value, index) => value !== current[index]))
+        committed = settledValues();
     });
+    /** Rebuilds the scale when bounds or step change, such as when a mode switch widens the range. */
+    createEffect(
+      on(
+        [min, max, step],
+        ([nextMin, nextMax, nextStep]) => {
+          syncing = true;
+          sliderApi?.updateOptions(
+            { range: { min: nextMin, max: nextMax }, step: nextStep },
+            false,
+          );
+          sliderApi?.set(values(), false);
+          syncing = false;
+        },
+        { defer: true },
+      ),
+    );
     /** Keeps handle names current when a mounted slider's labels change, such as after its row moves. */
     createEffect(() => {
       containerRef
         .querySelectorAll<HTMLElement>(".noUi-handle")
         .forEach((handle, index) => {
           handle.setAttribute("aria-label", label(index));
+          if (props.describedBy)
+            handle.setAttribute("aria-describedby", props.describedBy);
+          else handle.removeAttribute("aria-describedby");
         });
     });
-    /** Applies disabled state after the library instance exists. */
+    /** Applies disabled state after the library instance exists and exposes it on each handle. */
     createEffect(() => {
       if (props.disabled) sliderApi?.disable();
       else sliderApi?.enable();
       containerRef.classList.toggle("is-disabled", !!props.disabled);
+      containerRef
+        .querySelectorAll<HTMLElement>(".noUi-handle")
+        .forEach((handle) => {
+          handle.setAttribute("aria-disabled", String(!!props.disabled));
+        });
     });
   });
 
@@ -154,15 +228,14 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
         }}
       />
       <Show when={props.showInputs !== false}>
-        <div class="range-slider-inputs ml-4 shrink-0 flex gap-2">
+        <div class="range-slider-inputs shrink-0 flex gap-2">
           <For each={props.mode === "range" ? [0, 1] : [0]}>
             {(index) => (
-              <label
-                class={`nf-input-group range-slider-field flex items-stretch overflow-hidden rounded-md border ${props.disabled ? "border-neutral-800 bg-neutral-900" : "border-neutral-700 bg-neutral-800"}`}
-              >
+              <label class="nf-input-group range-slider-field flex items-stretch overflow-hidden rounded-md border">
                 <input
                   type="number"
                   aria-label={label(index)}
+                  aria-describedby={props.describedBy}
                   min={index === 1 ? values()[0] : min()}
                   max={
                     props.mode === "range" && index === 0 ? values()[1] : max()
@@ -174,13 +247,13 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
                     event.currentTarget.value = String(values()[index]);
                   }}
                   disabled={props.disabled}
-                  class={`w-12 border-0 bg-transparent px-2 py-1 text-right text-xs focus:outline-none ${props.disabled ? "text-neutral-500 cursor-not-allowed" : "text-neutral-200"}`}
+                  class="border-0 bg-transparent px-2 py-1 text-right text-xs focus:outline-none disabled:cursor-not-allowed"
                 />
-                <span
-                  class={`inline-flex items-center border-l px-2 text-xs ${props.disabled ? "border-neutral-800 text-neutral-600" : "border-neutral-700 text-neutral-500"}`}
-                >
-                  {suffix()}
-                </span>
+                <Show when={suffix()}>
+                  <span class="inline-flex items-center border-l px-2 text-xs">
+                    {suffix()}
+                  </span>
+                </Show>
               </label>
             )}
           </For>

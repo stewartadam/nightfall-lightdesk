@@ -19,6 +19,7 @@ import {
 import { useAppShell } from "../../components/providers/app-shell";
 import { Dialog, DialogBody } from "../../components/ui/dialog";
 import { Input, NativeSelect } from "../../components/ui/form-controls";
+import { RangeSlider } from "../../components/ui/range-slider";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
@@ -902,24 +903,22 @@ export function SettingsOverlay() {
               </SettingsRow>
               <SettingsRow
                 label={`Darkness (${darkness()}%)`}
+                labelControl={false}
                 description="Lower for a visible rig; higher for a dark stage. Fixture brightness is unchanged."
               >
                 {(field) => (
-                  <input
-                    id={field.id}
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
+                  <RangeSlider
                     value={darkness()}
-                    class="w-56"
-                    aria-label="Darkness"
-                    aria-describedby={field.describedBy}
-                    onInput={(e) =>
+                    ariaLabel="Darkness"
+                    describedBy={field.describedBy}
+                    showPips={false}
+                    showInputs={false}
+                    containerClass="w-56"
+                    onChange={(value) =>
                       setStoreAction(
                         visualizerDarkness,
                         "Set Visualizer Darkness",
-                        Number(e.currentTarget.value),
+                        value,
                       )
                     }
                   />

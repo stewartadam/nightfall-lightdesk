@@ -16,6 +16,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import "./range-slider.css";
 
 export interface VerticalRangeSliderProps {
   /** Current value (0-100 for percentage sliders) */
@@ -131,10 +132,13 @@ export function VerticalRangeSlider(
       sliderApi.set([currentValue], false);
     });
 
-    /** Applies disabled state after the slider exists, including on initial mount. */
+    /** Applies disabled state after the slider exists, including on initial mount, and exposes it on the handle. */
     createEffect(() => {
       if (props.disabled) sliderApi?.disable();
       else sliderApi?.enable();
+      sliderRef
+        ?.querySelector(".noUi-handle")
+        ?.setAttribute("aria-disabled", String(!!props.disabled));
     });
   });
 

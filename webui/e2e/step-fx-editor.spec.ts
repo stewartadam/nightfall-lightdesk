@@ -2165,8 +2165,8 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     startPositionMenu.getByLabel("Spread amount", { exact: true }),
   ).toHaveValue("100");
   await expect(
-    startPositionMenu.getByLabel("Spread amount slider"),
-  ).toHaveValue("100");
+    startPositionMenu.getByRole("slider", { name: "Spread amount slider" }),
+  ).toHaveAttribute("aria-valuenow", "100.0");
   await expect(percentPositionUnit).toHaveAttribute("aria-checked", "true");
   await expect(percentPositionUnit).toHaveClass(/bg-blue-600/);
   await expect(
@@ -2187,8 +2187,8 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     startPositionMenu.getByLabel("Spread amount", { exact: true }),
   ).toHaveValue("-50");
   await expect(
-    startPositionMenu.getByLabel("Spread amount slider"),
-  ).toHaveValue("50");
+    startPositionMenu.getByRole("slider", { name: "Spread amount slider" }),
+  ).toHaveAttribute("aria-valuenow", "50.0");
   await expect(
     startPositionMenu.getByRole("button", { name: "-25%" }),
   ).toBeVisible();

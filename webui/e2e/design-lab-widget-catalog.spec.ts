@@ -234,13 +234,13 @@ test("attribute sliders support relative adjustments and numeric commits", async
     "Attribute sliders",
     "Attribute slider examples",
   );
-  const value = panel.getByRole("spinbutton", { name: "Dimmer value" });
+  const value = panel.getByRole("spinbutton", { name: "Dimmer", exact: true });
   await panel.getByRole("button", { name: "Rel", exact: true }).click();
   await value.fill("-42");
   await value.press("Tab");
   await expect(
     panel.getByRole("slider", { name: "Dimmer", exact: true }),
-  ).toHaveValue("-42");
+  ).toHaveAttribute("aria-valuenow", "-42.0");
   await expect(panel.getByRole("status")).toContainText(
     "Last committed value: -42",
   );

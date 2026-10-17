@@ -7,6 +7,7 @@
  */
 
 import type { JSX } from "solid-js";
+import { RangeSlider } from "../ui/range-slider";
 
 export type AttributeMode = "absolute" | "relative";
 
@@ -21,14 +22,13 @@ export interface AttributeSliderProps {
   onValueChange: (value: number) => void;
   onCommit?: (value: number) => void;
   class?: string;
-  inputClass?: string;
 }
 
 /** Keeps committed attribute values inside the active mode's bounds. */
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
-/** Combines absolute/relative mode selection with synchronized range and numeric inputs. */
+/** Combines absolute/relative mode selection with the shared slider and its numeric entry, committing on release. */
 export default function AttributeSlider(
   props: AttributeSliderProps,
 ): JSX.Element {
@@ -78,32 +78,17 @@ export default function AttributeSlider(
         </div>
       </div>
 
-      <input
-        type="range"
-        aria-label={props.label}
+      <RangeSlider
+        value={props.value}
         min={props.min}
         max={props.max}
         step={step()}
-        value={props.value}
-        onInput={(e) => updateValue(Number.parseInt(e.currentTarget.value, 10))}
-        onChange={(e) =>
-          updateValue(Number.parseInt(e.currentTarget.value, 10), true)
-        }
-        class="flex-1 h-2 appearance-none rounded-full bg-neutral-700 accent-blue-600"
-      />
-
-      <input
-        type="number"
-        aria-label={`${props.label} value`}
-        min={props.min}
-        max={props.max}
-        step={step()}
-        value={props.value}
-        onInput={(e) => updateValue(Number.parseInt(e.currentTarget.value, 10))}
-        onChange={(e) =>
-          updateValue(Number.parseInt(e.currentTarget.value, 10), true)
-        }
-        class={`w-16 px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-right text-neutral-200 text-xs ${props.inputClass ?? ""}`.trim()}
+        ariaLabel={props.label}
+        suffix=""
+        showPips={false}
+        containerClass="min-w-0 flex-1"
+        onChange={(value) => updateValue(value)}
+        onCommit={(value) => updateValue(value, true)}
       />
     </div>
   );
