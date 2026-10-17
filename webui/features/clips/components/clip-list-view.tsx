@@ -16,8 +16,6 @@ import CrudListDataGrid, {
 } from "../../../components/widgets/crud/crud-list-data-grid";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
@@ -242,10 +240,8 @@ export function ClipListView(props: ClipListViewProps) {
                     role="button"
                     tabIndex={props.selectionMode ? -1 : 0}
                     class={CRUD_CARD_CLASS}
-                    classList={{
-                      [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-                      [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-                    }}
+                    data-selectable-surface
+                    data-selected={isSelected()}
                   >
                     <div class="flex items-start justify-between gap-2">
                       <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">

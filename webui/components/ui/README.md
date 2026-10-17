@@ -112,6 +112,14 @@ Import `DataGrid` and `createKeyedDataGridCellProvider` from `components/widgets
 - Column resize handles support dragging, Left/Right in 10px increments, Shift+Left/Right in 1px increments, and Home to restore the default size. Resizing does not activate sorting.
 - Register rich display cells through `richCellExtensions`; use `copyData` for their copyable/sortable text. Domain renderers own badges and formatting, while the shared grid owns table structure and interaction styling.
 
+## Selectable surfaces
+
+Import `selectable-surface.css` and mark a selectable card or tile with `data-selectable-surface` and `data-selected={selected}` to give it the shared rest, hover, selected, keyboard-focus and press states. Selected surfaces take the accent border, the soft accent background and a 3px accent bar on the start edge; hover lightens unselected surfaces only; focus-visible draws the accent outline; pressing nudges the surface down unless reduced motion is on. The rules outrank the shared `Button`'s own states, so a surface may render through `Button` to keep its press feedback.
+
+The surface only styles state. Size, padding, radius, typography and layout stay with the card (`nf-crud-card` in `widgets/crud/crud-cards.css`, `ObjectTile` in `widgets/object-tile.css`). Callers own selection, keyboard activation and semantics such as `aria-pressed` or `role="button"`. Override `--nf-selectable-surface-bg`, `--nf-selectable-surface-border`, `--nf-selectable-surface-hover-bg` or `--nf-selectable-surface-hover-border` on the element for a different resting tone.
+
+CRUD panel cards (groups, blueprints, cues, sequences, timelines, clips, FX and flows) and design lab object tiles use this surface.
+
 ## Switches and numeric steppers
 
 Use `ToggleSwitch` for boolean settings with a visible `label`, accessible `ariaLabel`, controlled `checked` value, and `onChange` callback. It owns the track, thumb, keyboard focus, disabled styling, and reduced-motion behavior. The I/O settings and design lab use the same component.

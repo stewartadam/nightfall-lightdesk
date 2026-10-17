@@ -119,7 +119,7 @@ for (const panel of panels) {
       .getByRole("button", { name: "Toggle selection mode" })
       .click();
     await card.click();
-    await expect(card).toHaveClass(/nf-crud-card-selected/);
+    await expect(card).toHaveAttribute("data-selected", "true");
     await panelRoot
       .getByRole("button", { name: "Switch to list view" })
       .click();

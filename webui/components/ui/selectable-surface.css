@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/*
+ * Selectable cards and tiles opt in with `data-selectable-surface` and report
+ * their state with `data-selected="true"`. The `.nf-button` branch of each
+ * `:is()` lifts every rule above the shared Button's own state rules, so a
+ * surface rendered through Button keeps this look regardless of stylesheet
+ * order.
+ */
+:is([data-selectable-surface], .nf-button[data-selectable-surface]) {
+  --nf-selectable-surface-bg: #202325;
+  --nf-selectable-surface-border: #373e40;
+  --nf-selectable-surface-hover-bg: #292e30;
+  --nf-selectable-surface-hover-border: #65716e;
+  border: 1px solid var(--nf-selectable-surface-border);
+  background: var(--nf-selectable-surface-bg);
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out,
+    box-shadow 120ms ease-out,
+    filter 120ms ease-out,
+    transform 120ms ease-out;
+}
+:is([data-selectable-surface], .nf-button[data-selectable-surface]):hover:not(
+  :disabled,
+  [data-selected="true"]
+) {
+  background: var(--nf-selectable-surface-hover-bg);
+  border-color: var(--nf-selectable-surface-hover-border);
+}
+:is(
+  [data-selectable-surface],
+  .nf-button[data-selectable-surface]
+)[data-selected="true"],
+:is(
+  [data-selectable-surface],
+  .nf-button[data-selectable-surface]
+)[data-selected="true"]:hover {
+  --button-selection-shadow: inset 3px 0 var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: var(--button-selection-shadow);
+}
+:is(
+  [data-selectable-surface],
+  .nf-button[data-selectable-surface]
+):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+/*
+ * Large surfaces press with a gentler scale than compact buttons. Pressing a
+ * nested control or field, such as an inline rename input, leaves the surface
+ * still.
+ */
+:is([data-selectable-surface], .nf-button[data-selectable-surface]):active:not(
+  :disabled,
+  :has(:is(button, input, select, textarea, [role="button"]):active)
+) {
+  transform: translateY(2px) scale(0.995);
+  transition-duration: 35ms;
+}
+:root[data-reduced-motion="true"] {
+  :is([data-selectable-surface], .nf-button[data-selectable-surface]) {
+    transition: none;
+  }
+  :is([data-selectable-surface], .nf-button[data-selectable-surface]):active {
+    transform: none;
+  }
+}

@@ -6,11 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-export const CRUD_CARD_CLASS = "nf-crud-card text-left transition-colors";
+import "../../ui/selectable-surface.css";
 
-export const CRUD_CARD_UNSELECTED_CLASS = "nf-crud-card-unselected";
-
-export const CRUD_CARD_SELECTED_CLASS = "nf-crud-card-selected";
+/** Card layout class; pair it with `data-selectable-surface` and `data-selected` for state styling. */
+export const CRUD_CARD_CLASS = "nf-crud-card text-left";
 
 export const CRUD_SECTION_CLASS = "rounded-md border border-neutral-700";
 
