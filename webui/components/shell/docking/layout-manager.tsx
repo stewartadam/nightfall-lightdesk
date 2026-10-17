@@ -16,6 +16,11 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { XIcon } from "@squidlab/phosphor-solid/x";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import {
+  boardDisplayName,
+  setBoardShownInSwitcher,
+  sortBoardsById,
+} from "../../../features/boards";
+import {
   createNamedLayout,
   deleteNamedLayout,
   duplicateNamedLayout,
@@ -28,8 +33,9 @@ import {
   layoutStorageStore,
   type StoredPanelLayout,
 } from "../../../lib/layoutStorage";
-import { pushToast } from "../../../state/appStores";
+import { boards as boardStore, pushToast } from "../../../state/appStores";
 import {
+  activeBoardWorkspace,
   activeLayoutId as activeLayoutStore,
   busyLayoutIds,
 } from "../../../state/layout-switcher";
@@ -89,6 +95,10 @@ export default function LayoutManager(props: LayoutManagerProps) {
   const activeLayoutId = useStore(activeLayoutStore);
   const busy = useStore(busyLayoutIds);
   const settings = useStore($settings);
+  const $boards = useStore(boardStore);
+  const shownBoard = useStore(activeBoardWorkspace);
+  /** Lists every board in ID order, matching their order in the switcher. */
+  const boardList = createMemo(() => sortBoardsById($boards()));
   const [creating, setCreating] = createSignal(false);
   const [newLayoutName, setNewLayoutName] = createSignal("");
   const [editingLayoutId, setEditingLayoutId] = createSignal<string | null>(
@@ -406,6 +416,60 @@ export default function LayoutManager(props: LayoutManagerProps) {
                           </Tooltip>
                         </div>
                       </div>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+            <Show when={boardList().length > 0}>
+              <h3 class="mt-4 mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Boards
+              </h3>
+              <div class="divide-y divide-neutral-800 overflow-hidden rounded-md border border-neutral-800">
+                <For each={boardList().map((board) => board.identifiers.uid)}>
+                  {(uid) => {
+                    /** Reads the current board without remounting the row or its focused checkbox. */
+                    const board = () => $boards()[uid];
+                    return (
+                      <Show when={board()}>
+                        {(current) => (
+                          <div
+                            data-board-id={current().identifiers.uid}
+                            class="flex flex-wrap items-center justify-between gap-3 bg-neutral-950 px-3 py-3"
+                          >
+                            <div class="flex min-w-0 items-center gap-2">
+                              <span class="truncate text-sm font-medium text-neutral-100">
+                                {boardDisplayName(current())}
+                              </span>
+                              <Show
+                                when={
+                                  shownBoard() === current().identifiers.uid
+                                }
+                              >
+                                <span class="rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-100">
+                                  Active
+                                </span>
+                              </Show>
+                            </div>
+                            <label class="mr-2 flex items-center gap-2 text-xs">
+                              <Checkbox
+                                aria-label={`Show ${boardDisplayName(current())} in switcher`}
+                                checked={current().shown_in_switcher}
+                                disabled={
+                                  shownBoard() === current().identifiers.uid
+                                }
+                                onChange={(event) =>
+                                  setBoardShownInSwitcher(
+                                    current().identifiers.id,
+                                    event.currentTarget.checked,
+                                  )
+                                }
+                              />
+                              Show in switcher
+                            </label>
+                          </div>
+                        )}
+                      </Show>
                     );
                   }}
                 </For>

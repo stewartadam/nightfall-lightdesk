@@ -7,7 +7,8 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createSignal, For, onCleanup } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { BoardWorkspace } from "../../../../features/boards";
 import {
   createSerializedLayout,
   type SerializedLayout,
@@ -27,6 +28,7 @@ import { WorkspaceActivityContext } from "../../../../lib/workspace-activity";
 import { appLifecycle } from "../../../../state/app-lifecycle";
 import { dockApi } from "../../../../state/appStores";
 import {
+  activeBoardWorkspace,
   activeLayoutId,
   getLayoutSession,
   layoutEditPending,
@@ -282,6 +284,10 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     }),
   );
 
+  const boardWorkspace = useStore(activeBoardWorkspace);
+  /** Board shown over the layouts, never in the compact view, which has no layout switcher. */
+  const shownBoard = () => (props.compact ? null : boardWorkspace());
+
   const editingLayouts = useStore(layoutEditPending);
   const lifecycle = useStore(appLifecycle);
   const restoredRevision = useStore(dockviewLayoutShowfileRevision);
@@ -337,12 +343,17 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
         {(entry) => {
           /** Supplies a stable identity as well as reactive activity to workspace-owned hooks. */
           const isActive = () => active() === entry;
+          /**
+           * Whether this workspace's panels are in front of the operator: false while a board
+           * from the layout switcher covers them, so their shortcuts and properties step aside.
+           */
+          const isShown = () => isActive() && !shownBoard();
           /** Keeps the inactive outgoing view painted until the incoming slide completes. */
           const isPresented = () => isActive() || presented() === entry;
           const [ready, setReady] = createSignal(false);
           return (
-            <WorkspaceActivityContext.Provider value={isActive}>
-              <ModalVisibilityContext.Provider value={isActive}>
+            <WorkspaceActivityContext.Provider value={isShown}>
+              <ModalVisibilityContext.Provider value={isShown}>
                 <div
                   ref={(element) => {
                     entry.element = element;
@@ -350,8 +361,8 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
                   class="nf-layout-workspace absolute inset-0"
                   data-layout-workspace
                   data-workspace-active={isActive()}
-                  aria-hidden={!isActive()}
-                  inert={!isActive() || switching()}
+                  aria-hidden={!isShown()}
+                  inert={!isShown() || switching()}
                   style={{
                     display: isPresented() || !ready() ? undefined : "none",
                     visibility: isPresented() ? "visible" : "hidden",
@@ -379,6 +390,16 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
           );
         }}
       </For>
+      <Show when={shownBoard()} keyed>
+        {(boardUid) => (
+          <div
+            class="absolute inset-0"
+            style={{ "z-index": 2, background: "#101112" }}
+          >
+            <BoardWorkspace boardUid={boardUid} />
+          </div>
+        )}
+      </Show>
       <DockviewEventListener
         isActivating={switching}
         persist={!props.compact}
