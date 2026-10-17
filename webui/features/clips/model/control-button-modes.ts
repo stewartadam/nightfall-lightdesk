@@ -36,7 +36,7 @@ export const CONTROL_BUTTON_MODE_TEXT: Record<
   [ControlButtonMode.Swop]: {
     label: "Swop",
     description:
-      "Play the clip at full and black out other playbacks while held",
+      "Play the clip at full and take out every other playback while held",
   },
   [ControlButtonMode.Toggle]: {
     label: "Toggle",
