@@ -365,9 +365,9 @@
   box-shadow: 0 0 0 1px rgb(127 29 29 / 0.85);
 }
 
-/* Playback controls styles */
-.controls {
-  overflow-x: auto;
+/* Scroll cues blend into the controls strip's background. */
+.controls .nf-scroll-indicators {
+  --nf-scroll-surface: var(--color-neutral-900);
 }
 
 /* FIXME use tailwind for this for scalable widths */

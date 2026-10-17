@@ -249,32 +249,13 @@ test("command palette restores the submitted command when reopened", async ({
     "data-selected",
     "true",
   );
-  await expect(page.locator('[data-scroll-overflow="top"]')).toBeVisible();
-  await expect(page.locator('[data-scroll-overflow="bottom"]')).toBeVisible();
-
-  const overflowStyles = await page.evaluate(() => {
-    return ["top", "bottom"].map((position) => {
-      const indicator = document.querySelector<HTMLElement>(
-        `[data-scroll-overflow="${position}"]`,
-      );
-      if (!indicator) {
-        throw new Error(`Expected ${position} scroll overflow indicator`);
-      }
-
-      const style = getComputedStyle(indicator);
-      const alpha = style.backgroundColor.startsWith("rgba(")
-        ? Number(style.backgroundColor.split(",").at(-1)?.replace(")", ""))
-        : 1;
-      return {
-        alpha,
-        backgroundImage: style.backgroundImage,
-      };
-    });
-  });
-  for (const style of overflowStyles) {
-    expect(style.backgroundImage).toBe("none");
-    expect(style.alpha).toBe(1);
-  }
+  const palette = page.locator('[data-dialog-kind="command-palette"]');
+  const topEdge = palette.locator('.nf-scroll-edge[data-edge="top"]');
+  await expect(topEdge).toHaveAttribute("data-visible", "true");
+  await expect(
+    palette.locator('.nf-scroll-edge[data-edge="bottom"]'),
+  ).toHaveAttribute("data-visible", "true");
+  const topEdgeHeight = (await topEdge.boundingBox())?.height ?? 0;
 
   const placement = await page.evaluate(() => {
     const scrollArea = document.querySelector<HTMLElement>(
@@ -304,7 +285,7 @@ test("command palette restores the submitted command when reopened", async ({
     };
   });
   expect(Math.abs(placement.previousTop)).toBeLessThan(3);
-  expect(placement.selectedTop).toBeGreaterThan(0);
+  expect(placement.selectedTop).toBeGreaterThanOrEqual(topEdgeHeight);
 });
 
 test("command palette scrolls category titles into view for first group items", async ({
@@ -362,9 +343,19 @@ test("command palette scrolls category titles into view for first group items", 
     return {
       selectedTop: selectedRect.top - scrollRect.top,
       titleTop: titleRect.top - scrollRect.top,
+      scrollTop: scrollArea.scrollTop,
+      edgeClearance: Number.parseFloat(
+        getComputedStyle(scrollArea).scrollPaddingTop,
+      ),
     };
   }, target.id);
 
-  expect(Math.abs(placement.titleTop)).toBeLessThan(3);
-  expect(placement.selectedTop).toBeGreaterThan(0);
+  expect(placement.titleTop).toBeGreaterThan(-3);
+  expect(placement.titleTop).toBeLessThan(placement.edgeClearance);
+  // The top scroll edge only appears once the list is scrolled.
+  if (placement.scrollTop > 1) {
+    expect(placement.selectedTop).toBeGreaterThanOrEqual(
+      placement.edgeClearance - 1,
+    );
+  }
 });

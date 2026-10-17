@@ -8,8 +8,6 @@
 
 /** biome-ignore-all lint/a11y/noSvgWithoutTitle: the actual command label is adjacent to the icon */
 
-import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
-import { CaretUpIcon } from "@squidlab/phosphor-solid/caret-up";
 import {
   type Component,
   createEffect,
@@ -36,6 +34,7 @@ import { MenuHeading } from "../../ui/menu";
 import {
   SearchPickerInput,
   SearchPickerOption,
+  SearchPickerResults,
   SearchPickerSurface,
 } from "../../ui/search-picker";
 import {
@@ -56,8 +55,6 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
   const [lastSelectionQuery, setLastSelectionQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [filteredCommands, setFilteredCommands] = createSignal<UiAction[]>([]);
-  const [canScrollDown, setCanScrollDown] = createSignal(false);
-  const [canScrollUp, setCanScrollUp] = createSignal(false);
   const [modifierState, setModifierState] =
     createSignal<PanelOpenModifierState>({});
   let inputRef: HTMLInputElement | undefined;
@@ -92,19 +89,6 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
     });
   };
 
-  /** Updates whether the command list has more hidden rows above or below. */
-  const updateScrollOverflow = () => {
-    const scrollContainer = scrollContainerRef;
-    if (!scrollContainer) return;
-
-    const maxScrollTop = Math.max(
-      0,
-      scrollContainer.scrollHeight - scrollContainer.clientHeight,
-    );
-    setCanScrollUp(scrollContainer.scrollTop > 1);
-    setCanScrollDown(scrollContainer.scrollTop < maxScrollTop - 1);
-  };
-
   /** Positions the selected command as the second visible command row when possible. */
   const positionSelectedCommand = (index: number) => {
     requestAnimationFrame(() => {
@@ -114,10 +98,7 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
       const selectedElement = scrollContainer.querySelector<HTMLElement>(
         `[data-command-index="${index}"]`,
       );
-      if (!selectedElement) {
-        updateScrollOverflow();
-        return;
-      }
+      if (!selectedElement) return;
 
       const parentList = selectedElement.parentElement;
       const categoryHeader =
@@ -133,13 +114,23 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
         0,
         scrollContainer.scrollHeight - scrollContainer.clientHeight,
       );
+      // A category title can be shorter than the top scroll edge, so keep the
+      // selected row itself below the edge's scroll padding.
+      const edgeClearance =
+        Number.parseFloat(getComputedStyle(scrollContainer).scrollPaddingTop) ||
+        0;
       const targetScrollTop = Math.min(
-        Math.max(anchorElement.offsetTop, 0),
+        Math.max(
+          Math.min(
+            anchorElement.offsetTop,
+            selectedElement.offsetTop - edgeClearance,
+          ),
+          0,
+        ),
         maxScrollTop,
       );
 
       scrollContainer.scrollTop = targetScrollTop;
-      updateScrollOverflow();
     });
   };
 
@@ -251,8 +242,6 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
     const query = search().trim();
     if (cmds.length === 0) {
       setLastSelectionQuery(query);
-      setCanScrollDown(false);
-      setCanScrollUp(false);
       return;
     }
 
@@ -392,138 +381,119 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
           }
         />
 
-        <div class="relative min-h-0 flex flex-col">
-          <Show when={canScrollUp()}>
-            <div
-              aria-hidden="true"
-              class="pointer-events-none absolute top-0 left-0 right-0 z-10 flex h-6 items-center justify-center bg-white text-gray-600 shadow-[0_10px_18px_rgba(15,23,42,0.34)] dark:bg-gray-800 dark:text-gray-300 dark:shadow-[0_10px_18px_rgba(0,0,0,0.7)]"
-              data-scroll-overflow="top"
-            >
-              <CaretUpIcon class="size-4" aria-hidden />
-            </div>
-          </Show>
-          <div
-            ref={scrollContainerRef}
-            class="min-h-0 max-h-[32rem] overflow-y-auto"
-            data-command-scroll-area="true"
-            onScroll={updateScrollOverflow}
+        <SearchPickerResults
+          class="min-h-0 max-h-[32rem]"
+          viewportProps={{
+            ref: (element) => {
+              scrollContainerRef = element;
+            },
+            "data-command-scroll-area": "true",
+          }}
+        >
+          <Show
+            when={filteredCommands().length > 0}
+            fallback={
+              <div class="px-6 py-12 text-center">
+                <svg
+                  class="mx-auto h-12 w-12 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1"
+                    d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                  No commands found
+                </h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Try a different search term, or press <code>Escape</code> to
+                  dismiss
+                </p>
+              </div>
+            }
           >
-            <Show
-              when={filteredCommands().length > 0}
-              fallback={
-                <div class="px-6 py-12 text-center">
-                  <svg
-                    class="mx-auto h-12 w-12 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1"
-                      d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-                    No commands found
-                  </h3>
-                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Try a different search term, or press <code>Escape</code> to
-                    dismiss
-                  </p>
-                </div>
-              }
-            >
-              <ul>
-                <For each={commandGroups()}>
-                  {(group) => (
-                    <li class="border-b border-gray-100 dark:border-gray-700">
-                      <MenuHeading data-command-category-title={group.category}>
-                        {group.category}
-                      </MenuHeading>
-                      <ul>
-                        <For each={group.commands}>
-                          {(cmd) => {
-                            const globalIndex = () =>
-                              commandToGlobalIndex().get(cmd) ?? -1;
-                            const selected = createMemo(() => isSelected(cmd));
-                            return (
-                              <li
-                                data-command-id={cmd.id}
-                                data-command-index={globalIndex()}
-                                data-selected={selected()}
-                                class="command-item"
+            <ul>
+              <For each={commandGroups()}>
+                {(group) => (
+                  <li class="border-b border-gray-100 dark:border-gray-700">
+                    <MenuHeading data-command-category-title={group.category}>
+                      {group.category}
+                    </MenuHeading>
+                    <ul>
+                      <For each={group.commands}>
+                        {(cmd) => {
+                          const globalIndex = () =>
+                            commandToGlobalIndex().get(cmd) ?? -1;
+                          const selected = createMemo(() => isSelected(cmd));
+                          return (
+                            <li
+                              data-command-id={cmd.id}
+                              data-command-index={globalIndex()}
+                              data-selected={selected()}
+                              class="command-item"
+                            >
+                              <SearchPickerOption
+                                selected={selected()}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={(event) => {
+                                  selectCommandAtIndex(
+                                    flattenedCommands(),
+                                    globalIndex(),
+                                  );
+                                  cmd.execute({ source: "palette", event });
+                                  props.onClose();
+                                }}
                               >
-                                <SearchPickerOption
-                                  selected={selected()}
-                                  onMouseDown={(event) =>
-                                    event.preventDefault()
-                                  }
-                                  onClick={(event) => {
-                                    selectCommandAtIndex(
-                                      flattenedCommands(),
-                                      globalIndex(),
-                                    );
-                                    cmd.execute({ source: "palette", event });
-                                    props.onClose();
-                                  }}
-                                >
-                                  <div class="flex items-center">
-                                    <div class="mr-3 text-gray-400 w-[24px] h-[24px]">
-                                      <Show when={cmd.icon}>
-                                        {(CommandIcon) => (
-                                          <Dynamic
-                                            component={CommandIcon()}
-                                            class="size-6"
-                                            aria-hidden
-                                          />
-                                        )}
-                                      </Show>
-                                    </div>
-                                    <div>
-                                      <div class="font-medium text-gray-900 dark:text-gray-100">
-                                        {cmd.name}
-                                      </div>
-                                      <Show when={cmd.description}>
-                                        <div class="text-sm text-gray-500 dark:text-gray-400">
-                                          {cmd.description}
-                                        </div>
-                                      </Show>
-                                    </div>
-                                  </div>
-                                  <div class="ml-3 flex shrink-0 items-center gap-2">
-                                    <Show when={cmd.shortcut}>
-                                      <kbd class="px-2 py-1 text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded">
-                                        {cmd.shortcut?.replace(
-                                          "mod",
-                                          isMac ? "⌘" : "Ctrl",
-                                        )}
-                                      </kbd>
+                                <div class="flex items-center">
+                                  <div class="mr-3 text-gray-400 w-[24px] h-[24px]">
+                                    <Show when={cmd.icon}>
+                                      {(CommandIcon) => (
+                                        <Dynamic
+                                          component={CommandIcon()}
+                                          class="size-6"
+                                          aria-hidden
+                                        />
+                                      )}
                                     </Show>
                                   </div>
-                                </SearchPickerOption>
-                              </li>
-                            );
-                          }}
-                        </For>
-                      </ul>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </div>
-          <Show when={canScrollDown()}>
-            <div
-              aria-hidden="true"
-              class="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex h-6 items-center justify-center bg-white text-gray-600 shadow-[0_-10px_18px_rgba(15,23,42,0.26)] dark:bg-gray-800 dark:text-gray-300 dark:shadow-[0_-10px_18px_rgba(0,0,0,0.6)]"
-              data-scroll-overflow="bottom"
-            >
-              <CaretDownIcon class="size-4" aria-hidden />
-            </div>
+                                  <div>
+                                    <div class="font-medium text-gray-900 dark:text-gray-100">
+                                      {cmd.name}
+                                    </div>
+                                    <Show when={cmd.description}>
+                                      <div class="text-sm text-gray-500 dark:text-gray-400">
+                                        {cmd.description}
+                                      </div>
+                                    </Show>
+                                  </div>
+                                </div>
+                                <div class="ml-3 flex shrink-0 items-center gap-2">
+                                  <Show when={cmd.shortcut}>
+                                    <kbd class="px-2 py-1 text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded">
+                                      {cmd.shortcut?.replace(
+                                        "mod",
+                                        isMac ? "⌘" : "Ctrl",
+                                      )}
+                                    </kbd>
+                                  </Show>
+                                </div>
+                              </SearchPickerOption>
+                            </li>
+                          );
+                        }}
+                      </For>
+                    </ul>
+                  </li>
+                )}
+              </For>
+            </ul>
           </Show>
-        </div>
+        </SearchPickerResults>
       </SearchPickerSurface>
     </DialogBackdrop>
   );

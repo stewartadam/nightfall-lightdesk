@@ -20,7 +20,10 @@ export interface PortalEntry {
   id: string;
   component: SolidComponentType;
   props: object;
+  /** The panel's scroll viewport, which the component renders into. */
   mount: HTMLElement;
+  /** Wraps `mount` so scroll edge indicators can overlay it without scrolling with it. */
+  scrollFrame: HTMLElement;
 }
 
 let nextPortalEntryId = 0;
@@ -49,10 +52,10 @@ export class SolidRenderer implements IContentRenderer {
     this.component = component;
 
     this._container = document.createElement("div");
-    this._container.className = "h-full";
+    this._container.className = "nf-scroll-area h-full grid-cols-1 grid-rows-1";
 
     this._renderRoot = document.createElement("div");
-    this._renderRoot.className = "h-full overflow-auto";
+    this._renderRoot.className = "nf-scroll-viewport h-full";
 
     this._container.appendChild(this._renderRoot);
   }
@@ -120,6 +123,7 @@ export class SolidRenderer implements IContentRenderer {
           ...parameters.params,
         },
         mount: this._renderRoot,
+        scrollFrame: this._container,
       },
     ]);
   }
