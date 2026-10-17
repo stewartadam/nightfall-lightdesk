@@ -6,15 +6,26 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, type JSX, Show } from "solid-js";
+import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
+import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+} from "../../../components/ui/dropdown-menu";
 import { VerticalRangeSlider } from "../../../components/ui/vertical-range-slider";
 import { Button } from "../../../components/ui/visual-language/button";
 import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
-import { type Clip, type Master, MasterKind } from "../../../types";
+import {
+  type Clip,
+  type ControlButtonMode,
+  type Master,
+  MasterKind,
+} from "../../../types";
 import type { EngineControl } from "../../actions";
 import { Mappable, type MappableChoice } from "../../io";
 import { masterLevelControl } from "../../masters";
+import { CONTROL_BUTTON_MODE_TEXT } from "../model/control-button-modes";
 
 export interface ControlProps {
   /** Control index (1-based for display) */
@@ -27,12 +38,20 @@ export interface ControlProps {
   isClipActive: boolean;
   /** Backend-authored display value */
   displayValue: number;
-  /** Backend-authored hardware value */
-  hardwareValue: number;
+  /** Position of the slot's physical fader, absent when no physical fader drives the slot */
+  hardwareValue: number | undefined;
   /** Backend-authored console value */
   consoleValue: number;
-  /** The slot's Go button: its click and its controller binding. */
-  go: EngineControl<{ go: () => void }>;
+  /** The slot's button: its press and release and its controller binding. */
+  button: EngineControl<{ press: () => void; release: () => void }>;
+  /** Mapping-only choice that always runs Go, whatever the button mode. */
+  goChoice: EngineControl;
+  /** Backend-authored mode deciding what the slot's button does. */
+  buttonMode: ControlButtonMode;
+  /** Backend-authored modes the slot's current assignment supports. */
+  availableButtonModes: ControlButtonMode[];
+  /** Called when a different button mode is picked. */
+  onButtonModeChange: (mode: ControlButtonMode) => void;
   /** The slot's fader: its on-screen drag and its controller binding. */
   fader: EngineControl<{ setConsoleValue: (value: number) => void }>;
   /** Called when a clip is dropped onto this control */
@@ -67,10 +86,77 @@ export function Control(props: ControlProps): JSX.Element {
       : [props.fader];
   };
 
-  /** Returns whether the Go button has an assigned action. */
-  const canGo = () =>
+  /** Returns whether the slot's button has something to act on. */
+  const canPress = () =>
     !!props.assignedClip?.source ||
     props.assignedMaster?.mode?.type === "Toggle";
+
+  /** Whether this button sent a press that still needs its release. */
+  let isHeld = false;
+
+  /** Sends the press edge once, ignoring repeats while the button is already held. */
+  const pressButton = () => {
+    if (isHeld || !canPress()) return;
+    isHeld = true;
+    props.button.handlers.press();
+  };
+
+  /** Sends the release edge for a press this button sent, if any. */
+  const releaseButton = () => {
+    if (!isHeld) return;
+    isHeld = false;
+    props.button.handlers.release();
+  };
+
+  /** Presses on the primary pointer button, capturing the pointer so the release is seen. */
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    pressButton();
+  };
+
+  /** Presses on Enter or Space, ignoring key repeat. */
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (!event.repeat) pressButton();
+  };
+
+  /** Releases on Enter or Space. */
+  const handleKeyUp = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    releaseButton();
+  };
+
+  /**
+   * Presses and releases for activations that arrive only as a click, such as a screen
+   * reader's activate action. Pointer clicks report a click count and keyboard clicks are
+   * suppressed by the key handlers, so both already sent their edges.
+   */
+  const handleClick = (event: MouseEvent) => {
+    if (event.detail !== 0) return;
+    pressButton();
+    releaseButton();
+  };
+
+  onCleanup(releaseButton);
+
+  /** Returns the text for the slot's current button mode. */
+  const modeText = () => CONTROL_BUTTON_MODE_TEXT[props.buttonMode];
+
+  /** Explains what the button does now, or what it needs before it can act. */
+  const buttonTitle = () => {
+    if (props.assignedMaster) {
+      return props.assignedMaster.mode?.type === "Toggle"
+        ? "Toggle this master"
+        : "Only toggle-mode masters respond to the button";
+    }
+    if (!props.assignedClip) return "Assign a clip to enable the button";
+    if (!props.assignedClip.source)
+      return "Assign a source to enable the button";
+    return modeText().description;
+  };
 
   /** Returns the value label for the assigned control target. */
   const valueLabel = () => {
@@ -229,36 +315,67 @@ export function Control(props: ControlProps): JSX.Element {
       </div>
       <Mappable
         class="w-full shrink-0"
-        label={`control ${props.index} Go`}
-        choices={() => [props.go]}
+        label={`control ${props.index} button`}
+        choices={() => [props.button, props.goChoice]}
       >
         <Button
           size="compact"
           type="button"
-          data-control-go-index={props.index}
-          aria-label={`Go control ${props.index}`}
-          class="w-full shrink-0"
-          disabled={!canGo()}
-          onClick={() => props.go.handlers.go()}
-          title={
-            !props.assignedClip
-              ? props.assignedMaster?.mode?.type === "Toggle"
-                ? "Toggle this master"
-                : "Assign a clip to enable Go"
-              : !props.assignedClip.source
-                ? "Assign a source to enable Go"
-                : props.assignedClip.source?.type === "Sequence" &&
-                    props.isClipActive
-                  ? "Advance this sequence clip"
-                  : "Start this clip"
-          }
+          data-control-button-index={props.index}
+          data-control-button-mode={props.buttonMode}
+          aria-label={`${modeText().label} control ${props.index}`}
+          class="w-full px-1!"
+          disabled={!canPress()}
+          onPointerDown={handlePointerDown}
+          onPointerUp={releaseButton}
+          onPointerCancel={releaseButton}
+          onLostPointerCapture={releaseButton}
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+          onClick={handleClick}
+          onBlur={releaseButton}
+          title={buttonTitle()}
         >
-          Go
+          {modeText().label}
         </Button>
       </Mappable>
-      {/* Control number */}
-      <div class="shrink-0 text-xs text-neutral-500 font-medium">
-        {props.index}
+      {/* Control number, with the button mode menu beside it */}
+      <div class="grid w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center text-xs font-medium text-neutral-500">
+        <span />
+        <span>{props.index}</span>
+        <DropdownMenu
+          align="end"
+          triggerLabel={`Button mode of control ${props.index}`}
+          triggerTitle="Choose what the button does"
+          triggerClass="ml-auto flex size-5 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+          contentLabel={`Button mode of control ${props.index}`}
+          trigger={<CaretDownIcon class="size-3" aria-hidden />}
+        >
+          <div class="py-0.5" data-menu-kind="control-button-mode">
+            <For each={props.availableButtonModes}>
+              {(mode) => (
+                <DropdownMenuItem
+                  checked={props.buttonMode === mode}
+                  onClick={() => {
+                    if (mode !== props.buttonMode) {
+                      props.onButtonModeChange(mode);
+                    }
+                  }}
+                >
+                  <span
+                    class="flex min-w-0 flex-col"
+                    data-control-button-mode-option={mode}
+                  >
+                    <span>{CONTROL_BUTTON_MODE_TEXT[mode].label}</span>
+                    <span class="text-[11px] text-neutral-400">
+                      {CONTROL_BUTTON_MODE_TEXT[mode].description}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              )}
+            </For>
+          </div>
+        </DropdownMenu>
       </div>
     </div>
   );

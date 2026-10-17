@@ -377,7 +377,7 @@ async function seedClipControlScenario(
   });
 }
 
-/** Verifies control Go buttons issue Start, Go, or no command from owned state. */
+/** Verifies control buttons in the default Go mode issue Start, Go, or no command from owned state. */
 test("each control has a go button with per-target start and go behavior", async ({
   backendSlot,
   page,
@@ -388,11 +388,11 @@ test("each control has a go button with per-target start and go behavior", async
   await openPanel(page, "Clips");
 
   const firstDropzone = page.locator('[data-clip-dropzone-index="1"]');
-  const firstGoButton = page.locator('[data-control-go-index="1"]');
-  const secondGoButton = page.locator('[data-control-go-index="2"]');
-  const thirdGoButton = page.locator('[data-control-go-index="3"]');
-  const fourthGoButton = page.locator('[data-control-go-index="4"]');
-  const fifthGoButton = page.locator('[data-control-go-index="5"]');
+  const firstGoButton = page.locator('[data-control-button-index="1"]');
+  const secondGoButton = page.locator('[data-control-button-index="2"]');
+  const thirdGoButton = page.locator('[data-control-button-index="3"]');
+  const fourthGoButton = page.locator('[data-control-button-index="4"]');
+  const fifthGoButton = page.locator('[data-control-button-index="5"]');
   const secondSliderHandle = page
     .locator('[data-control-index="2"]')
     .locator(".vertical-range-slider .noUi-handle");
@@ -449,7 +449,7 @@ test("each control has a go button with per-target start and go behavior", async
               } | null;
               if (
                 candidate?.data?.module !== "ControlCommand" ||
-                candidate.data.command?.type !== "Go"
+                candidate.data.command?.type !== "PressButton"
               ) {
                 return [];
               }
@@ -488,4 +488,163 @@ test("each control has a go button with per-target start and go behavior", async
       { timeout: 10_000 },
     )
     .toEqual([true, true, true, true]);
+});
+
+/** Returns whether the clip with `id` is running according to the clip store. */
+async function isClipRunning(page: Page, id: number): Promise<boolean> {
+  return page.evaluate((id) => {
+    const states = (window as any).appStores.clips.get() as Record<
+      string,
+      [{ identifiers: { id: number } }, boolean]
+    >;
+    return Object.values(states).some(
+      ([clip, isActive]) => clip.identifiers.id === id && isActive,
+    );
+  }, id);
+}
+
+/** Picks a button mode for a control slot from its mode menu. */
+async function pickButtonMode(
+  page: Page,
+  controlIndex: number,
+  mode: string,
+): Promise<void> {
+  await page
+    .getByRole("button", { name: `Button mode of control ${controlIndex}` })
+    .click();
+  await page.locator(`[data-control-button-mode-option="${mode}"]`).click();
+  await expect(
+    page.locator(`[data-control-button-index="${controlIndex}"]`),
+  ).toHaveAttribute("data-control-button-mode", mode);
+}
+
+/**
+ * Verifies the mode menu changes what the slot's button does: Toggle starts and then stops
+ * an effect clip, Release stops a running one, and the backend's control snapshot reports
+ * each slot's chosen mode.
+ */
+test("a slot's button mode decides what its button does", async ({
+  backendSlot,
+  page,
+}) => {
+  await openOwnedClipControlApp(page, backendSlot.backendPort);
+  const scenario = await seedClipControlScenario(page);
+  await openPanel(page, "Clips");
+
+  const thirdButton = page.locator('[data-control-button-index="3"]');
+  const fourthButton = page.locator('[data-control-button-index="4"]');
+  await expect(thirdButton).toHaveText("Go");
+
+  await page.getByRole("button", { name: "Button mode of control 3" }).click();
+  await expect(
+    page.locator('[data-menu-kind="control-button-mode"]'),
+  ).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("control-button-mode-menu.png"),
+  });
+  await page.locator('[data-control-button-mode-option="Toggle"]').click();
+  await expect(thirdButton).toHaveText("Toggle");
+
+  await thirdButton.click();
+  await expect
+    .poll(() => isClipRunning(page, scenario.inactiveFxId))
+    .toBe(true);
+  await thirdButton.click();
+  await expect
+    .poll(() => isClipRunning(page, scenario.inactiveFxId))
+    .toBe(false);
+
+  await pickButtonMode(page, 4, "Release");
+  await expect(fourthButton).toHaveText("Release");
+  await fourthButton.click();
+  await expect.poll(() => isClipRunning(page, scenario.activeFxId)).toBe(false);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.controls
+          .get()
+          .slice(0, 4)
+          .map((control: { button_mode: string }) => control.button_mode),
+      ),
+    )
+    .toEqual(["Go", "Go", "Toggle", "Release"]);
+  await page.locator(".controls").screenshot({
+    path: test.info().outputPath("control-button-modes.png"),
+  });
+});
+
+/** Reads the level shown by a control slot's fader handle. */
+async function faderLevel(page: Page, controlIndex: number): Promise<number> {
+  const value = await page
+    .locator(`[data-control-index="${controlIndex}"]`)
+    .locator(".vertical-range-slider .noUi-handle")
+    .getAttribute("aria-valuenow");
+  return Number(value);
+}
+
+/**
+ * Verifies two slots assigned to the same idle clip keep showing the same level: raising one
+ * starts the clip and raises the other, pulling either to zero releases it for both, and
+ * raising one again brings the other back up with it.
+ */
+test("slots sharing a clip move together", async ({ backendSlot, page }) => {
+  await openOwnedClipControlApp(page, backendSlot.backendPort);
+  const scenario = await seedClipControlScenario(page);
+  const clipId = scenario.inactiveFxId;
+  await page.evaluate(
+    (clipId) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command: {
+          type: "AssignClip",
+          data: { control_index: 5, clip_id: clipId },
+        },
+      }),
+    clipId,
+  );
+  await openPanel(page, "Clips");
+
+  const handle = (controlIndex: number) =>
+    page
+      .locator(`[data-control-index="${controlIndex}"]`)
+      .locator(".vertical-range-slider .noUi-handle");
+  /** Raises a slot from zero so its clip starts at a level above one percent. */
+  const raise = async (controlIndex: number) => {
+    await handle(controlIndex).press("ArrowUp");
+    await expect.poll(() => isClipRunning(page, clipId)).toBe(true);
+    await handle(controlIndex).press("PageUp");
+    await expect.poll(() => faderLevel(page, controlIndex)).toBeGreaterThan(1);
+  };
+  /** Waits until both slots show the same level and returns it. */
+  const sharedLevel = async () => {
+    await expect
+      .poll(
+        async () => (await faderLevel(page, 3)) === (await faderLevel(page, 5)),
+      )
+      .toBe(true);
+    return faderLevel(page, 3);
+  };
+  await expect(handle(5)).toBeVisible();
+
+  await raise(3);
+  expect(await sharedLevel()).toBeGreaterThan(1);
+
+  await handle(5).press("Home");
+  await expect.poll(() => isClipRunning(page, clipId)).toBe(false);
+  expect(await sharedLevel()).toBe(0);
+
+  await raise(3);
+  expect(await sharedLevel()).toBeGreaterThan(1);
+  // Neither slot has a physical fader, so neither shows a hardware position marker.
+  for (const controlIndex of [3, 5]) {
+    await expect(
+      page
+        .locator(`[data-control-index="${controlIndex}"]`)
+        .locator(".vertical-slider-value-marker"),
+    ).toHaveCount(0);
+  }
+  await page.locator(".controls").screenshot({
+    path: test.info().outputPath("control-shared-clip-sync.png"),
+  });
 });

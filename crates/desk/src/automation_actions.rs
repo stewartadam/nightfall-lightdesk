@@ -15,8 +15,9 @@ use bevy_ecs::prelude::{Changed, DetectChanges, Local, Query, RemovedComponents,
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionInputKind, ActionInvocation, ActionParameter,
-    ActionParameterKind, ActionReference, DESK_EVAL_ACTION_ID, DeskEvalActionArguments,
-    ExternalCommandInvocation, InvocationDispatch, InvocationError, submit_command,
+    ActionParameterKind, ActionReference, ActionSurface, DESK_EVAL_ACTION_ID,
+    DeskEvalActionArguments, ExternalCommandInvocation, InvocationDispatch, InvocationError,
+    submit_command,
 };
 use nightfall_clips::{
     CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_RATE_ACTION_ID,
@@ -41,6 +42,9 @@ pub const CONTROL_LEVEL_ACTION_ID: &str = "control.level";
 
 /// Stable action ID for running a control slot's Go behavior.
 pub const CONTROL_GO_ACTION_ID: &str = "control.go";
+
+/// Stable action ID for pressing and releasing a control slot's button in its button mode.
+pub const CONTROL_BUTTON_ACTION_ID: &str = "control.button";
 
 /// Stable action ID for driving a master's level.
 pub const MASTER_LEVEL_ACTION_ID: &str = "master.level";
@@ -79,6 +83,11 @@ pub fn control_level_action(control_index: u32) -> ActionReference {
 /// Creates a persisted control Go action reference.
 pub fn control_go_action(control_index: u32) -> ActionReference {
     control_action_reference(CONTROL_GO_ACTION_ID, control_index)
+}
+
+/// Creates a persisted control button action reference.
+pub fn control_button_action(control_index: u32) -> ActionReference {
+    control_action_reference(CONTROL_BUTTON_ACTION_ID, control_index)
 }
 
 /// Creates a persisted master level action reference.
@@ -193,6 +202,25 @@ pub fn register_desk_actions(app: &mut App) {
         |_world, arguments| {
             Ok(ControlCommand::Go {
                 control_index: arguments.control_index,
+            })
+        },
+    );
+    app.register_momentary_command_action::<ControlActionArguments, ControlCommand, _>(
+        ActionDescriptor::new(CONTROL_BUTTON_ACTION_ID, "Control button", "Controls")
+            .with_description("Presses and releases the control's button in its button mode")
+            .with_input(ActionInputKind::Momentary)
+            .with_surfaces([
+                ActionSurface::Midi,
+                ActionSurface::Osc,
+                ActionSurface::Websocket,
+            ])
+            .with_parameter(control_parameter()),
+        |_world, arguments, pressed| {
+            let control_index = arguments.control_index;
+            Ok(if pressed {
+                ControlCommand::PressButton { control_index }
+            } else {
+                ControlCommand::ReleaseButton { control_index }
             })
         },
     );
@@ -947,6 +975,39 @@ mod tests {
                 .first()
                 .and_then(|envelope| envelope.payload.as_any().downcast_ref::<ControlCommand>()),
             Some(ControlCommand::Go { control_index: 2 })
+        ));
+    }
+
+    /// Verifies the control button action lowers each press and release edge to its own
+    /// control command, so held MIDI pads reach the slot's button mode on both edges.
+    #[test]
+    fn control_button_action_submits_press_and_release_commands() {
+        let mut app = desk_action_app();
+        for input in [ActionInput::Press, ActionInput::Release] {
+            app.world_mut().write_message(ActionInvocation::new(
+                control_button_action(3),
+                ActionSurface::Midi,
+                input,
+            ));
+            app.update();
+        }
+
+        let commands = take_pending_commands(&mut app)
+            .iter()
+            .filter_map(|envelope| {
+                envelope
+                    .payload
+                    .as_any()
+                    .downcast_ref::<ControlCommand>()
+                    .cloned()
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            commands.as_slice(),
+            [
+                ControlCommand::PressButton { control_index: 3 },
+                ControlCommand::ReleaseButton { control_index: 3 }
+            ]
         ));
     }
 }

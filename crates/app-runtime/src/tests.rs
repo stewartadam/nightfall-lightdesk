@@ -687,24 +687,28 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
 /// Verify sample faders reference the intended clips and survive the portable snapshot path.
 #[test]
 fn world_factory_sample_data_seeds_fader_assignments() {
-    use nightfall_desk::prelude::{ControlAssignment, Controls};
+    use nightfall_desk::prelude::{ControlAssignment, ControlSlotConfig, Controls};
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
         .build(WorldBootstrap::SampleData {
             showfile_name: None,
         })
         .expect("sample world");
-    let assignments = app.world().resource::<Controls>().assignments();
+    let assignments = app.world().resource::<Controls>().slot_configs();
     assert_eq!(
         &assignments[..5],
-        &[1, 2, 100, 102, 30].map(|id| Some(ControlAssignment::Clip(id)))
+        &[1, 2, 100, 102, 30].map(|id| ControlSlotConfig::assigned(ControlAssignment::Clip(id)))
     );
-    assert!(assignments[5..].iter().all(Option::is_none));
+    assert!(
+        assignments[5..]
+            .iter()
+            .all(|config| config.assignment.is_none())
+    );
     let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
     for id in [1, 2, 100, 102, 30] {
         assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
     }
-    assert_eq!(snapshot.control_assignments, assignments);
+    assert_eq!(snapshot.control_slots, assignments);
 }
 
 /// Verifies every seeded cue stores resolved fixture refs, since the cue editor only

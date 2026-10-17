@@ -17,7 +17,7 @@ import {
 } from "./binding-behaviors";
 
 const { Press, Release, Hold, Flash } = types.ControlBehavior;
-const { Absolute, Trigger } = types.ActionInputKind;
+const { Absolute, Momentary, Trigger } = types.ActionInputKind;
 
 /** Options a master offers: its level, and a toggle bound on press, release, or hold. */
 const masterOptions = [
@@ -32,6 +32,21 @@ const masterOptions = [
 test("recommendedBinding follows faders and presses buttons", () => {
   assert.deepEqual(recommendedBinding(masterOptions, true), masterOptions[0]);
   assert.deepEqual(recommendedBinding(masterOptions, false), masterOptions[2]);
+});
+
+/**
+ * Verifies a button is suggested to hold a momentary action, such as a control slot's
+ * button, over a trigger listed before it, while a fader still follows the level.
+ */
+test("recommendedBinding prefers momentary actions for buttons", () => {
+  const slotOptions = [
+    { label: "Go", behavior: Press, inputKind: Trigger },
+    { label: "Button", behavior: Hold, inputKind: Momentary },
+    { label: "Level", behavior: Press, inputKind: Absolute },
+  ];
+
+  assert.deepEqual(recommendedBinding(slotOptions, false), slotOptions[1]);
+  assert.deepEqual(recommendedBinding(slotOptions, true), slotOptions[2]);
 });
 
 /** Verifies the suggestion falls back to any press, then to the first option. */

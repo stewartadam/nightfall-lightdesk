@@ -23,7 +23,7 @@ use nightfall_engine::prelude::{
 use serde::de::DeserializeOwned;
 
 use crate::descriptor::{ActionDescriptor, ActionInputKind, ActionParameterKind};
-use crate::invocation::{ActionInvocation, InvocationDispatch, InvocationError};
+use crate::invocation::{ActionInput, ActionInvocation, InvocationDispatch, InvocationError};
 use crate::registry::ActionRegistry;
 use crate::targets::{ActionTargetTracking, ActionTargets, mark_action_targets_changed};
 
@@ -112,6 +112,24 @@ pub trait ActionAppExt {
         A: DeserializeOwned + 'static,
         C: IngressCommand + Clone + 'static,
         F: Fn(&World, A) -> Result<C, InvocationError> + Send + Sync + 'static;
+
+    /// Registers a momentary action that lowers each press and release to one tracked command.
+    ///
+    /// `lower` receives `true` for the press edge and `false` for the release edge, so a
+    /// held control such as a slot button or MIDI pad drives one command per edge.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the descriptor does not declare momentary input.
+    fn register_momentary_command_action<A, C, F>(
+        &mut self,
+        descriptor: ActionDescriptor,
+        lower: F,
+    ) -> &mut Self
+    where
+        A: DeserializeOwned + 'static,
+        C: IngressCommand + Clone + 'static,
+        F: Fn(&World, A, bool) -> Result<C, InvocationError> + Send + Sync + 'static;
 
     /// Registers how to read an absolute action's current normalized level, enabling Flash.
     ///
@@ -240,6 +258,39 @@ impl ActionAppExt for App {
         );
         self.register_action::<A, _>(descriptor, move |world, arguments, invocation| {
             let command = lower(world, arguments)?;
+            let command_id = submit_command(world, invocation, command)?;
+            Ok(InvocationDispatch::Submitted { command_id })
+        })
+    }
+
+    fn register_momentary_command_action<A, C, F>(
+        &mut self,
+        descriptor: ActionDescriptor,
+        lower: F,
+    ) -> &mut Self
+    where
+        A: DeserializeOwned + 'static,
+        C: IngressCommand + Clone + 'static,
+        F: Fn(&World, A, bool) -> Result<C, InvocationError> + Send + Sync + 'static,
+    {
+        assert_eq!(
+            descriptor.input,
+            ActionInputKind::Momentary,
+            "momentary command action '{}' must declare momentary input",
+            descriptor.id.as_str()
+        );
+        self.register_action::<A, _>(descriptor, move |world, arguments, invocation| {
+            let pressed = match invocation.input {
+                ActionInput::Press => true,
+                ActionInput::Release => false,
+                input => {
+                    return Err(InvocationError::new(
+                        "action.input_mismatch",
+                        format!("Momentary actions cannot consume {input:?} input"),
+                    ));
+                }
+            };
+            let command = lower(world, arguments, pressed)?;
             let command_id = submit_command(world, invocation, command)?;
             Ok(InvocationDispatch::Submitted { command_id })
         })

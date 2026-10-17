@@ -12,4 +12,15 @@ Right-click a clip for **Start Clip**, **Stop Clip**, and **Show Properties**. T
 
 The controls area accepts drag-and-drop assignments so frequently used clips have dedicated controls. It can also host master controls. Check each control's label before operating it.
 
+Each control's button has a mode, chosen from the arrow next to it and saved with the show:
+
+| Mode | Clip | Master |
+|---|---|---|
+| **Go** (default) | Starts the clip, or advances a running sequence | Toggles a toggle-mode master |
+| **Back** | Steps a running sequence back one cue | Not available |
+| **Toggle** | Starts the clip, or stops it if it is running | Toggles a toggle-mode master |
+| **Release** | Stops the running clip | Not available |
+
+A MIDI or OSC button mapped to the control's button follows the same mode, so changing the mode changes what the controller does too. To keep a controller button on Go whatever the mode, map it to **Go control** instead.
+
 Use [Status Display](status-display.md) to inspect running instances and [Layers](layers.md) to see their contribution to fixtures. Clear Programmer before evaluating playback. After changing a clip's source, stop its existing playback and start again to verify the intended definition.

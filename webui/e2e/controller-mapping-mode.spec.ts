@@ -489,7 +489,7 @@ test("mapping an empty slot's Go follows what is assigned later", async ({
   await expect(
     page.getByRole("button", { name: "Go control 2" }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Map control 2 Go" }).click();
+  await page.getByRole("button", { name: "Map control 2 button" }).click();
   await expect
     .poll(() =>
       page.evaluate(() =>

@@ -15,13 +15,15 @@ import {
 } from "../../../lib/command-result";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { controls, masters, pushToast } from "../../../state/appStores";
-import type {
-  Clip,
-  ControlCommand,
-  ControlUpdate,
-  Master,
+import {
+  type Clip,
+  ControlButtonMode,
+  type ControlCommand,
+  type ControlUpdate,
+  type Master,
 } from "../../../types";
 import {
+  controlButtonControl,
   controlFaderControl,
   controlGoControl,
 } from "../model/control-actions";
@@ -106,9 +108,22 @@ export function Controls(props: ControlsProps): JSX.Element {
                 assignedMaster={getAssignedMaster()}
                 isClipActive={isClipActive()}
                 displayValue={getControlState()?.display_value ?? 0}
-                hardwareValue={getControlState()?.hardware_value ?? 0}
+                hardwareValue={getControlState()?.hardware_value ?? undefined}
                 consoleValue={getControlState()?.console_value ?? 0}
-                go={controlGoControl(controlIndex, sendCommand)}
+                button={controlButtonControl(controlIndex, sendCommand)}
+                goChoice={controlGoControl(controlIndex)}
+                buttonMode={
+                  getControlState()?.button_mode ?? ControlButtonMode.Go
+                }
+                availableButtonModes={
+                  getControlState()?.available_button_modes ?? []
+                }
+                onButtonModeChange={(mode) =>
+                  sendCommand({
+                    type: "SetButtonMode",
+                    data: { control_index: controlIndex, mode },
+                  })
+                }
                 fader={controlFaderControl(controlIndex, sendUpdate)}
                 onClipAssign={(clip) =>
                   sendCommand({

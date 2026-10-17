@@ -116,7 +116,7 @@ fn apply_save_contribution(
 ) {
     match contribution {
         ShowfileContribution::DeskState(contribution) => {
-            snapshot.control_assignments = contribution.control_assignments.into_owned();
+            snapshot.control_slots = contribution.control_slots.into_owned();
             snapshot.variables = contribution.variables.into_owned();
             snapshot.settings = contribution.settings.into_owned();
             snapshot.io_settings = contribution.io_settings.into_owned();
@@ -173,7 +173,7 @@ fn load_contribution_for_domain(
     match domain {
         ShowfileLoadDomain::DeskState => {
             ShowfileContribution::DeskState(Box::new(desk_state::DeskStateSnapshot {
-                control_assignments: Cow::Borrowed(&snapshot.control_assignments),
+                control_slots: Cow::Borrowed(&snapshot.control_slots),
                 variables: Cow::Borrowed(&snapshot.variables),
                 settings: Cow::Borrowed(&snapshot.settings),
                 io_settings: Cow::Borrowed(&snapshot.io_settings),

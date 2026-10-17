@@ -20,7 +20,7 @@ use crate::{ShowfileLoadDomain, ShowfileLoadPhase};
 /// Desk-level state used as owned save output or borrowed load input.
 pub(crate) struct DeskStateSnapshot<'a> {
     pub(super) variables: Cow<'a, HashMap<String, VariableValue>>,
-    pub(super) control_assignments: Cow<'a, [Option<ControlAssignment>]>,
+    pub(super) control_slots: Cow<'a, [ControlSlotConfig]>,
     pub(super) settings: Cow<'a, DeskSettings>,
     pub(super) io_settings: Cow<'a, IoRuntimeSettings>,
 }
@@ -54,7 +54,7 @@ impl ShowfileSaveContributor for DeskStateSaveContributor<'_> {
     /// Copy global variables and desk settings into their stable showfile fields.
     fn save_contribution(&self) -> ShowfileContribution<'static> {
         ShowfileContribution::DeskState(Box::new(DeskStateSnapshot {
-            control_assignments: Cow::Owned(self.controls.assignments()),
+            control_slots: Cow::Owned(self.controls.slot_configs()),
             variables: Cow::Owned(self.global_variables.get_all()),
             settings: Cow::Owned(self.desk_settings.clone()),
             io_settings: Cow::Owned(self.io_settings.clone()),
@@ -111,9 +111,7 @@ impl ShowfileLoadContributor for DeskStateLoadContributor<'_> {
             self.global_variables.set(key, value.clone());
         }
 
-        commands.insert_resource(Controls::from_assignments(
-            &contribution.control_assignments,
-        ));
+        commands.insert_resource(Controls::from_slot_configs(&contribution.control_slots));
         *self.desk_settings = contribution.settings.clone().into_owned();
         *self.io_settings = contribution.io_settings.clone().into_owned();
 

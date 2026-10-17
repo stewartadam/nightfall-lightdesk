@@ -8,9 +8,16 @@
 
 const CONTROL_DISPLAY_EPSILON = 0.5;
 
+/**
+ * Decides whether a fader shows a marker for its physical fader's position: only when a
+ * physical fader has reported a position and it sits visibly away from the console level.
+ */
 export function shouldShowDisparateControlValues(
-  hardwareValue: number,
+  hardwareValue: number | undefined,
   consoleValue: number,
-): boolean {
-  return Math.abs(hardwareValue - consoleValue) > CONTROL_DISPLAY_EPSILON;
+): hardwareValue is number {
+  return (
+    hardwareValue !== undefined &&
+    Math.abs(hardwareValue - consoleValue) > CONTROL_DISPLAY_EPSILON
+  );
 }

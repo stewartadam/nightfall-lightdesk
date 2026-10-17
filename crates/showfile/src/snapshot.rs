@@ -55,9 +55,9 @@ pub struct ShowfileSnapshot {
     /// Operator-facing desk settings.
     #[serde(default)]
     pub settings: DeskSettings,
-    /// Ordered fader assignments, excluding transient levels and pickup state.
-    #[serde(default, rename = "controlAssignments")]
-    pub control_assignments: Vec<Option<ControlAssignment>>,
+    /// Ordered control slot assignments and button modes, excluding levels and pickup state.
+    #[serde(default, rename = "controlSlots")]
+    pub control_slots: Vec<ControlSlotConfig>,
     /// Showfile-scoped input and output transport preferences.
     #[serde(default, rename = "ioSettings")]
     pub io_settings: IoRuntimeSettings,
