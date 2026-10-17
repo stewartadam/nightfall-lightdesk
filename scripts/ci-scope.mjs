@@ -46,6 +46,23 @@ const browserPackaging = [
   /^\.github\/workflows\/browser-demo\.yml$/,
   /^webui\/e2e\/(browser-demo|distribution-notices)\.spec\.ts$/,
 ];
+const rustTests = [
+  /^crates\//,
+  /^desktop\//,
+  /^Cargo\.(toml|lock)$/,
+  /^rust-toolchain\.toml$/,
+  /^\.cargo\//,
+  /^\.config\//,
+  /^\.(clippy|rustfmt)\.toml$/,
+  /^\.pre-commit-config\.yaml$/,
+  /^scripts\/ci-scope/,
+  /^\.github\/workflows\/(ci|native-validation)\.yml$/,
+  /^\.github\/actions\/rust-cache\//,
+  // Files outside crates/ that Rust code embeds with include_str! or include_bytes!.
+  /^webui\/public\/nightfall-demo\.nightfall-show\//,
+  /^webui\/assets\/models\/beat-this\/NOTICE\.md$/,
+  /^config\/(project-links|beat-this-model)\.json$/,
+];
 const documentation = [
   /^docs\//,
   /^scripts\/ci-scope/,
@@ -64,6 +81,11 @@ const documentation = [
  * re-runs selection and runs them then.
  *
  * Documentation builds only for PRs that touch the mdBook sources or the workflow that builds them.
+ *
+ * Rust tests, doctests and Clippy run for every push and manual run, but only for PRs that touch
+ * Rust sources, their build and lint configuration, or files the Rust code embeds. Native
+ * validation still builds the headless backend for every PR because the Chromium product flows
+ * run against it.
  */
 export function selectScope({
   event,
@@ -79,6 +101,7 @@ export function selectScope({
   let browserPreview = false;
   let desktopCheck = false;
   let docs = false;
+  let rust = event !== "pull_request";
   if (event === "workflow_dispatch") {
     if (!["all", "desktop", "browser"].includes(distribution)) {
       throw new Error(`Unknown distribution: ${distribution}`);
@@ -102,6 +125,7 @@ export function selectScope({
       if (desktopChecks.some((pattern) => pattern.test(path)))
         desktopCheck = true;
       if (documentation.some((pattern) => pattern.test(path))) docs = true;
+      if (rustTests.some((pattern) => pattern.test(path))) rust = true;
     }
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
@@ -113,6 +137,7 @@ export function selectScope({
     browser_preview: browserPreview,
     product_flows: !draft,
     docs,
+    rust,
   };
 }
 

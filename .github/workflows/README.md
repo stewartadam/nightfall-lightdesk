@@ -45,7 +45,14 @@ scripts never execute in the credentialed acquisition job.
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
-All non-tag events still run native and WebUI validation. The native test job runs
+All non-tag events still run native and WebUI validation. PRs run the native job's
+Rust tests, doctests, desktop shell tests and Clippy only when they touch Rust inputs:
+`crates/`, `desktop/`, Cargo manifests and configuration, the toolchain, lint and hook
+configuration, the native workflow, and the files outside `crates/` that Rust embeds
+with `include_str!` or `include_bytes!` (listed in `rustTests` in `scripts/ci-scope.mjs`;
+add new embeds there). Other PRs only build the headless backend the Chromium product
+flows run against. Pushes and manual dispatches always run every native step.
+The native test job runs
 `cargo test -p app-tauri --all-targets` on Linux after nextest, reusing most of the
 runtime units it just built. Desktop checks run the same command on macOS and
 Windows, without release optimization, frontend generation, or installer creation.

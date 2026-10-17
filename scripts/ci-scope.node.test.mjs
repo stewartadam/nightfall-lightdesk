@@ -8,7 +8,10 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readChangedPaths, selectScope } from "./ci-scope.mjs";
+import {
+  readChangedPaths,
+  selectScope as selectFullScope,
+} from "./ci-scope.mjs";
 
 const none = {
   desktop_check: false,
@@ -23,6 +26,15 @@ const browser = { ...none, browser_package: true };
 const both = { ...desktop, browser_package: true };
 const check = { ...none, desktop_check: true };
 const desktopWithCheck = { ...desktop, desktop_check: true };
+
+/**
+ * Select scope without the Rust test decision, which the dedicated Rust test covers, so the
+ * distribution tables stay focused on packaging and check ownership.
+ */
+function selectScope(options) {
+  const { rust: _rust, ...scope } = selectFullScope(options);
+  return scope;
+}
 
 /** Preserve the intended separation between runtime, shell, and distribution validation. */
 test("PR selection follows distribution ownership", () => {
@@ -223,6 +235,66 @@ test("documentation builds only for PRs that touch the manual", () => {
     ["workflow_dispatch", "refs/heads/develop"],
   ]) {
     assert.equal(selectScope({ event, ref }).docs, false, `${event} ${ref}`);
+  }
+});
+
+/**
+ * Rust tests follow Rust sources, build and lint configuration, and the non-crate files Rust
+ * embeds, and always run for pushes and manual runs.
+ */
+test("Rust tests run only for PRs that can change Rust behavior", () => {
+  for (const [path, expected] of [
+    ["crates/engine/src/lib.rs", true],
+    ["crates/app-runtime/tests/data/procedural-showfile-parse-data.json", true],
+    ["desktop/app-tauri/src/main.rs", true],
+    ["Cargo.lock", true],
+    ["Cargo.toml", true],
+    ["rust-toolchain.toml", true],
+    [".cargo/config.toml", true],
+    [".config/nextest.toml", true],
+    [".config/hakari.toml", true],
+    [".clippy.toml", true],
+    [".rustfmt.toml", true],
+    [".pre-commit-config.yaml", true],
+    [".github/workflows/native-validation.yml", true],
+    [".github/workflows/ci.yml", true],
+    [".github/actions/rust-cache/action.yml", true],
+    ["scripts/ci-scope.mjs", true],
+    ["webui/public/nightfall-demo.nightfall-show/showfile.json.gz", true],
+    ["webui/assets/models/beat-this/NOTICE.md", true],
+    ["config/project-links.json", true],
+    ["config/beat-this-model.json", true],
+    ["webui/index.html", false],
+    ["webui/components/example.tsx", false],
+    ["webui/public/logo.svg", false],
+    ["pnpm-lock.yaml", false],
+    ["docs/src/SUMMARY.md", false],
+    ["README.md", false],
+  ]) {
+    assert.equal(
+      selectFullScope({
+        event: "pull_request",
+        ref: "refs/pull/1/merge",
+        paths: [path],
+      }).rust,
+      expected,
+      path,
+    );
+  }
+  assert.equal(
+    selectFullScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: ["webui/index.html", "crates/engine/src/lib.rs"],
+    }).rust,
+    true,
+  );
+  for (const [event, ref] of [
+    ["push", "refs/heads/develop"],
+    ["push", "refs/heads/main"],
+    ["workflow_dispatch", "refs/heads/develop"],
+  ]) {
+    assert.equal(selectFullScope({ event, ref }).rust, true, `${event} ${ref}`);
   }
 });
 

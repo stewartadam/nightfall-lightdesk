@@ -88,6 +88,7 @@ jobs:
       browser_preview: ${{ steps.select.outputs.browser_preview }}
       product_flows: ${{ steps.select.outputs.product_flows }}
       docs: ${{ steps.select.outputs.docs }}
+      rust: ${{ steps.select.outputs.rust }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -346,9 +347,11 @@ jobs:
 
   native:
     name: Native
-    needs: scope
+    needs: [scope, selection]
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/native-validation.yml
+    with:
+      rust-tests: ${{ needs.selection.outputs.rust == 'true' }}
 
   webui:
     name: TypeScript and WebUI Node tests
