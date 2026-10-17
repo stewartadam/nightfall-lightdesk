@@ -138,7 +138,9 @@ test("patch wizard locks body scroll and keeps preview fixed while fixture list 
     .toBe("hidden");
 
   const documentPanel = dialog.getByRole("document");
-  const fixtureList = dialog.getByRole("region", { name: "Fixture library" });
+  const fixtureList = dialog
+    .getByRole("grid", { name: "Available fixtures" })
+    .locator('[data-grid-kind="tanstack"]');
   const preview = dialog.getByRole("region", { name: "Fixture preview" });
   const before = await preview.boundingBox();
   expect(before).toBeTruthy();

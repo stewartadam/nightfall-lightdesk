@@ -396,7 +396,7 @@ for (const refreshDuringPress of [false, true]) {
   });
 }
 
-/** Verifies native timecode tables preserve selection and react to live snapshots without offering cell editors. */
+/** Verifies the read-only Timecodes grid preserves selection and react to live snapshots without offering cell editors. */
 test("shared timecode tables preserve selection across snapshot updates", async ({
   backendSlot,
   page,
@@ -415,12 +415,15 @@ test("shared timecode tables preserve selection across snapshot updates", async 
     });
   });
   await openPanel(page, "Timecodes");
-  const table = page.getByRole("table", { name: "Timecodes", exact: true });
-  await expect(table).toHaveClass(/nf-table/);
-  const row = table.getByRole("row", { name: /81/ });
-  await row.click();
+  const table = page.getByRole("grid", { name: "Timecodes", exact: true });
+  await expect(table).toHaveAttribute("data-grid-appearance", "table");
+  const row = table.locator("[data-grid-row]").filter({ hasText: "81" });
+  await row.getByRole("gridcell").first().click();
   await expect(row).toHaveAttribute("data-selected", "true");
-  await expect(row).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(row.getByRole("gridcell").first()).not.toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
   await page.evaluate(() => {
     const store = (window as any).appStores.timecodes;
     const [timecode] = store.get()["table-timecode"];
@@ -449,9 +452,13 @@ test("shared timecode tables preserve selection across snapshot updates", async 
   await expect(
     controls.getByRole("row", { name: /Table clock/ }),
   ).toContainText("00:00:02:00");
-  await expect(
-    controls.getByRole("button", { name: "Pause timecode" }),
-  ).toBeVisible();
+  const pause = controls.getByRole("button", { name: "Pause timecode" });
+  await expect(pause).toBeVisible();
+  await pause.hover();
+  await expect(pause).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.screenshot({
+    path: test.info().outputPath("status-timecode-button-hover.png"),
+  });
 });
 
 /** Verifies explicitly seeded owners and cue-part counts render correctly. */

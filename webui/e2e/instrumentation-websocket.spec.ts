@@ -247,21 +247,15 @@ test("websocket delivery lag is exposed as Performance measures", async ({
     fullPage: true,
   });
   await panel.getByRole("button", { name: /Performance Metrics/ }).click();
-  const performanceRow = panel.getByRole("row").filter({
-    has: page.getByRole("cell", {
+  const measures = panel.getByRole("grid", { name: "Performance metrics" });
+  await expect(measures).toHaveAttribute("data-grid-appearance", "table");
+  const performanceRow = measures.locator("[data-grid-row]").filter({
+    has: page.getByRole("gridcell", {
       name: "websocket.worker-to-main",
       exact: true,
     }),
   });
   await expect(performanceRow).toContainText("99.00 ms");
-  const measures = panel.getByRole("table", { name: "Performance metrics" });
-  await expect(measures).toHaveClass(/nf-table/);
-  await expect(
-    measures.getByRole("cell", {
-      name: "websocket.worker-to-main",
-      exact: true,
-    }),
-  ).toBeVisible();
   await measures
     .getByRole("columnheader", { name: "Scope", exact: true })
     .scrollIntoViewIfNeeded();

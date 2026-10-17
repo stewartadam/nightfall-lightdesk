@@ -50,6 +50,7 @@ import DataGrid, {
 } from "../data-grid";
 import ColumnVisibilityMenu from "../data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../data-grid/extensions/data-grid-filter-menu";
+import { frozenLeadingColumnCount } from "./model/crud-frozen-columns";
 
 interface RowClickModifiers {
   altKey: boolean;
@@ -591,7 +592,7 @@ export default function CrudListDataGrid<T>(props: CrudListDataGridProps<T>) {
           }
           props.onSelectionChange(selectedRows);
         }}
-        freezeColumns={1}
+        freezeColumns={frozenLeadingColumnCount(displayColumnDefinitions())}
         customRenderers={props.customRenderers}
         onCellClicked={([col, row], event) => {
           const rowData = displayRows()[row];
