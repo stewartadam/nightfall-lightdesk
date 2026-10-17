@@ -118,6 +118,7 @@ export default function TimecodePanel(props: TimecodePanelProps) {
     timecodes,
     useWorkspaceActivity(),
   );
+  let panelRoot: HTMLDivElement | undefined;
   const [selectedUid, setSelectedUid] = createSignal<string | null>(null);
   const [reportedSelection, setReportedSelection] =
     createSignal<GridSelection>();
@@ -169,8 +170,8 @@ export default function TimecodePanel(props: TimecodePanelProps) {
         }));
       } else {
         setTimeout(() => {
-          document
-            .querySelector(`[data-timecode-uid="${uid}"]`)
+          panelRoot
+            ?.querySelector(`[data-timecode-uid="${uid}"]`)
             ?.scrollIntoView({ block: "nearest" });
         }, 0);
       }
@@ -204,7 +205,7 @@ export default function TimecodePanel(props: TimecodePanelProps) {
   };
 
   return (
-    <div class="flex h-full min-h-0 flex-col dark:text-white">
+    <div ref={panelRoot} class="flex h-full min-h-0 flex-col dark:text-white">
       <PanelToolbar
         left={
           <>

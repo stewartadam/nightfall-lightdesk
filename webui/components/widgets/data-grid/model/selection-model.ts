@@ -784,28 +784,81 @@ function clampSelectionIndex(value: number, maxExclusive: number): number {
   return Math.max(0, Math.min(value, maxExclusive - 1));
 }
 
-/** Widens a range to span every column, keeping only its rows. */
-function fullRowRange(range: SelectionRange, columnCount: number): Rectangle {
-  return {
-    x: 0,
-    y: range.y,
-    width: Math.max(columnCount, 1),
-    height: range.height,
-  };
+/** Lists every row a selection's ranges touch. */
+function currentSelectionRows(current: SelectionCurrent): Set<number> {
+  const rows = new Set<number>();
+  if (!current) return rows;
+  for (const range of [current.range, ...current.rangeStack]) {
+    for (let row = range.y; row < range.y + range.height; row += 1) {
+      rows.add(row);
+    }
+  }
+  return rows;
 }
 
-/** Widens a selection's current ranges to whole rows, with the active cell in the first column. */
+/** Counts the distinct columns a selection covers on each row it touches. */
+function coveredColumnsByRow(current: SelectionCurrent): Map<number, number> {
+  const columnsByRow = new Map<number, Set<number>>();
+  if (current) {
+    for (const range of [current.range, ...current.rangeStack]) {
+      for (let row = range.y; row < range.y + range.height; row += 1) {
+        const columns = columnsByRow.get(row) ?? new Set<number>();
+        for (let col = range.x; col < range.x + range.width; col += 1) {
+          columns.add(col);
+        }
+        columnsByRow.set(row, columns);
+      }
+    }
+  }
+  return new Map(
+    [...columnsByRow].map(([row, columns]) => [row, columns.size]),
+  );
+}
+
+/** Groups sorted row indexes into contiguous full-width bands. */
+function rowBands(rows: number[], columnCount: number): Rectangle[] {
+  const bands: Rectangle[] = [];
+  for (const row of rows) {
+    const last = bands[bands.length - 1];
+    if (last && last.y + last.height === row) {
+      last.height += 1;
+    } else {
+      bands.push({ x: 0, y: row, width: columnCount, height: 1 });
+    }
+  }
+  return bands;
+}
+
+/**
+ * Widens a selection to whole rows. A row the previous selection already held
+ * stays selected only while every column is still covered, so Ctrl+click and
+ * Ctrl+drag, which subtract cells, deselect the row; any other covered row is
+ * selected. The active cell moves to the first column and the band containing
+ * it becomes the current range.
+ */
 export function rowSelectionCurrent(
   current: SelectionCurrent,
   columnCount: number,
+  previous?: SelectionCurrent,
 ): SelectionCurrent {
   if (!current) return current;
+  const width = Math.max(columnCount, 1);
+  const previousRows = currentSelectionRows(previous);
+  const rows = [...coveredColumnsByRow(current)]
+    .filter(([row, covered]) => covered >= width || !previousRows.has(row))
+    .map(([row]) => row)
+    .sort((left, right) => left - right);
+  if (rows.length === 0) return undefined;
+  const bands = rowBands(rows, width);
+  const activeRow = current.cell[1];
+  const activeBand =
+    bands.find(
+      (band) => activeRow >= band.y && activeRow < band.y + band.height,
+    ) ?? bands[bands.length - 1]!;
   return {
-    cell: [0, current.cell[1]],
-    range: fullRowRange(current.range, columnCount),
-    rangeStack: current.rangeStack.map((range) =>
-      fullRowRange(range, columnCount),
-    ),
+    cell: [0, activeRow],
+    range: activeBand,
+    rangeStack: bands.filter((band) => band !== activeBand),
   };
 }
 
@@ -813,11 +866,13 @@ export function rowSelectionCurrent(
  * Projects selection state onto whole rows for grids in row selection mode:
  * every range spans all columns, the active cell and anchors sit in the first
  * column, and column selections are dropped. Clicks, drags and arrow keys
- * therefore select rows and never expose an individual cell.
+ * therefore select rows and never expose an individual cell. `subtractedFrom`
+ * is the selection a Ctrl+click or Ctrl+drag removed cells from, if any.
  */
 export function rowSelectionState(
   state: DataGridSelectionState,
   columnCount: number,
+  subtractedFrom?: SelectionCurrent,
 ): DataGridSelectionState {
   return {
     ...state,
@@ -826,7 +881,7 @@ export function rowSelectionState(
     selectedColumns: CompactSelection.empty(),
     columnSelectionAnchor: undefined,
     columnSelectionExtent: undefined,
-    current: rowSelectionCurrent(state.current, columnCount),
+    current: rowSelectionCurrent(state.current, columnCount, subtractedFrom),
     externalSelection: state.externalSelection && {
       ...state.externalSelection,
       columns: CompactSelection.empty(),
