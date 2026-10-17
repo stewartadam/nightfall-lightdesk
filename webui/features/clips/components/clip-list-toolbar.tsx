@@ -11,8 +11,13 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { Show } from "solid-js";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudPanelSearch, {
   type CrudPanelSearchController,
 } from "../../../components/widgets/crud/crud-panel-search";
@@ -74,16 +79,16 @@ export function ClipListToolbar(props: ClipListToolbarProps) {
           </ToolbarButton>
 
           <Show when={props.viewMode === "grid"}>
-            <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
-            <ToolbarButton
+            <ToolbarSeparator />
+            <ToggleToolbarButton
               tooltip={`${props.selectionMode ? "Exit" : "Enter"} selection mode (V)`}
               type="button"
               onClick={props.onToggleSelectionMode}
-              ariaPressed={props.selectionMode}
+              pressed={props.selectionMode}
               label="Toggle selection mode"
             >
               <SelectionIcon class="size-4" aria-hidden />
-            </ToolbarButton>
+            </ToggleToolbarButton>
           </Show>
         </>
       }

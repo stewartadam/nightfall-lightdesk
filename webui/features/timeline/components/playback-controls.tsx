@@ -11,7 +11,10 @@ import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { RecordIcon } from "@squidlab/phosphor-solid/record";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { Dynamic } from "solid-js/web";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import { browserDemoAudioHost } from "../../../lib/browser-demo-audio";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
@@ -78,8 +81,8 @@ export const InstanceControls = () => {
         label="timeline play/pause"
         choices={() => [playPause()]}
       >
-        <ToolbarButton
-          ariaPressed={!ctx.paused()}
+        <ToggleToolbarButton
+          pressed={!ctx.paused()}
           onClick={() => playPause().handlers.toggle()}
           disabled={connectionStatus() !== "connected"}
           label={ctx.paused() ? "Play timeline" : "Pause timeline"}
@@ -89,7 +92,7 @@ export const InstanceControls = () => {
             class="size-4"
             aria-hidden
           />
-        </ToolbarButton>
+        </ToggleToolbarButton>
       </Mappable>
       <ToolbarButton
         onClick={() => ctx.playback.stop()}
@@ -98,8 +101,8 @@ export const InstanceControls = () => {
       >
         <StopIcon class="size-4" aria-hidden />
       </ToolbarButton>
-      <ToolbarButton
-        ariaPressed={ctx.recordingEnabled()}
+      <ToggleToolbarButton
+        pressed={ctx.recordingEnabled()}
         variant="danger"
         onClick={toggleRecording}
         disabled={connectionStatus() !== "connected"}
@@ -110,7 +113,7 @@ export const InstanceControls = () => {
         }
       >
         <RecordIcon class="size-4" aria-hidden />
-      </ToolbarButton>
+      </ToggleToolbarButton>
     </div>
   );
 };

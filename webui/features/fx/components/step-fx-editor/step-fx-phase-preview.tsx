@@ -10,6 +10,7 @@ import { MouseScrollIcon } from "@squidlab/phosphor-solid/mouse-scroll";
 import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import { Checkbox, Input } from "../../../../components/ui/form-controls";
+import { ToolbarSeparator } from "../../../../components/ui/panel-toolbar";
 import Tooltip from "../../../../components/ui/tooltip";
 import type * as types from "../../../../types";
 import {
@@ -51,42 +52,49 @@ export function StepFxPhasePreview(props: {
         role="radiogroup"
         aria-label="Waveform scrolling"
       >
-        <span
-          class="inline-flex size-7 items-center justify-center rounded-l border border-r-0 border-neutral-700 bg-neutral-900 text-neutral-400"
-          role="img"
-          aria-label="Waveform scrolling mode"
-          title="Waveform scrolling mode"
+        <Tooltip content={() => "Waveform scrolling mode"}>
+          <span
+            class="inline-flex size-7 items-center justify-center rounded-l border border-r-0 border-neutral-700 bg-neutral-900 text-neutral-400"
+            role="img"
+            aria-label="Waveform scrolling mode"
+          >
+            <MouseScrollIcon class="size-4" aria-hidden />
+          </span>
+        </Tooltip>
+        <Tooltip
+          content={() =>
+            "Fixture: scroll fixture playheads across a fixed waveform"
+          }
         >
-          <MouseScrollIcon class="size-4" aria-hidden />
-        </span>
-        <button
-          type="button"
-          role="radio"
-          aria-label="Fixture"
-          aria-checked={!props.centerSelectedFixture}
-          title="Fixture: scroll fixture playheads across a fixed waveform"
-          class={`${viewButtonClass} border-r-0`}
-          onClick={() => props.onCenterSelectedFixtureChange(false)}
+          <button
+            type="button"
+            role="radio"
+            aria-label="Fixture"
+            aria-checked={!props.centerSelectedFixture}
+            class={`${viewButtonClass} border-r-0`}
+            onClick={() => props.onCenterSelectedFixtureChange(false)}
+          >
+            Fixture
+          </button>
+        </Tooltip>
+        <Tooltip
+          content={() =>
+            "Waveform: scroll the waveform beneath the selected fixture"
+          }
         >
-          Fixture
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-label="Waveform"
-          aria-checked={props.centerSelectedFixture}
-          title="Waveform: scroll the waveform beneath the selected fixture"
-          class={`${viewButtonClass} rounded-r`}
-          onClick={() => props.onCenterSelectedFixtureChange(true)}
-        >
-          Waveform
-        </button>
+          <button
+            type="button"
+            role="radio"
+            aria-label="Waveform"
+            aria-checked={props.centerSelectedFixture}
+            class={`${viewButtonClass} rounded-r`}
+            onClick={() => props.onCenterSelectedFixtureChange(true)}
+          >
+            Waveform
+          </button>
+        </Tooltip>
       </div>
-      <span
-        class="mx-1 h-6 w-px shrink-0 bg-neutral-700"
-        data-step-fx-waveform-scroll-separator
-        aria-hidden
-      />
+      <ToolbarSeparator data-step-fx-waveform-scroll-separator />
       <label class="flex shrink-0 items-center gap-1 text-[11px] text-neutral-400">
         <Checkbox
           aria-label="Show all waveform playheads"
@@ -128,76 +136,97 @@ export function StepFxPhasePreview(props: {
         <Show
           when={props.markers.length <= 8}
           fallback={
-            <label
-              class="flex h-6 items-center rounded border border-neutral-700 bg-neutral-900 px-1 text-[10px] text-neutral-300"
-              title={stepFxPreviewIndexTitle(
-                props.markers,
-                props.selectedIndex,
-                props.phase,
-              )}
+            <Tooltip
+              content={() =>
+                stepFxPreviewIndexTitle(
+                  props.markers,
+                  props.selectedIndex,
+                  props.phase,
+                )
+              }
             >
-              <Input
-                density="compact"
-                aria-label="Waveform preview index"
-                type="number"
-                min="1"
-                max={props.markers.length}
-                class="h-5 w-10 bg-transparent text-right text-amber-200 outline-none"
-                value={props.selectedIndex + 1}
-                onInput={(event) =>
-                  props.onSelectIndex(
-                    Math.max(
-                      0,
-                      Math.min(
-                        props.markers.length - 1,
-                        Math.floor(Number(event.currentTarget.value)) - 1,
+              <label class="flex h-6 items-center rounded border border-neutral-700 bg-neutral-900 px-1 text-[10px] text-neutral-300">
+                <Input
+                  density="compact"
+                  aria-label="Waveform preview index"
+                  aria-description={stepFxPreviewIndexTitle(
+                    props.markers,
+                    props.selectedIndex,
+                    props.phase,
+                  )}
+                  type="number"
+                  min="1"
+                  max={props.markers.length}
+                  class="h-5 w-10 bg-transparent text-right text-amber-200 outline-none"
+                  value={props.selectedIndex + 1}
+                  onInput={(event) =>
+                    props.onSelectIndex(
+                      Math.max(
+                        0,
+                        Math.min(
+                          props.markers.length - 1,
+                          Math.floor(Number(event.currentTarget.value)) - 1,
+                        ),
                       ),
-                    ),
-                  )
-                }
-              />
-              <span class="px-1">/ {props.markers.length}</span>
-            </label>
+                    )
+                  }
+                />
+                <span class="px-1">/ {props.markers.length}</span>
+              </label>
+            </Tooltip>
           }
         >
           <For each={indexes()}>
-            {(index) => (
-              <button
-                type="button"
-                class="flex h-6 min-w-10 shrink-0 items-center justify-center rounded border px-1 text-[10px]"
-                classList={{
-                  "border-amber-400/70 bg-amber-400/15 text-amber-100":
-                    props.selectedIndex === index,
-                  "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]":
-                    props.selectedIndex !== index,
-                }}
-                aria-pressed={props.selectedIndex === index}
-                title={stepFxPreviewIndexTitle(
-                  props.markers,
-                  index,
-                  props.phase,
-                )}
-                data-step-fx-preview-index={index}
-                onClick={() => props.onSelectIndex(index)}
-              >
-                <span>{index + 1}</span>
-                <span class="ml-1 opacity-80">
-                  {formatStepFxDegrees(
-                    stepFxPhaseOffset(props.phase, index, props.markers.length),
-                  )}
-                </span>
-              </button>
-            )}
+            {(index) => {
+              /** Describes the fixtures and phase offset this index previews. */
+              const description = () =>
+                stepFxPreviewIndexTitle(props.markers, index, props.phase);
+              return (
+                <Tooltip content={description}>
+                  <button
+                    type="button"
+                    class="flex h-6 min-w-10 shrink-0 items-center justify-center rounded border px-1 text-[10px]"
+                    classList={{
+                      "border-amber-400/70 bg-amber-400/15 text-amber-100":
+                        props.selectedIndex === index,
+                      "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]":
+                        props.selectedIndex !== index,
+                    }}
+                    aria-pressed={props.selectedIndex === index}
+                    aria-description={description()}
+                    data-step-fx-preview-index={index}
+                    onClick={() => props.onSelectIndex(index)}
+                  >
+                    <span>{index + 1}</span>
+                    <span class="ml-1 opacity-80">
+                      {formatStepFxDegrees(
+                        stepFxPhaseOffset(
+                          props.phase,
+                          index,
+                          props.markers.length,
+                        ),
+                      )}
+                    </span>
+                  </button>
+                </Tooltip>
+              );
+            }}
           </For>
         </Show>
       </Show>
       <Show when={props.issues.length > 0}>
-        <span
-          class="ml-auto shrink-0 text-[11px] text-amber-300"
-          title={props.issues.join("\n")}
-        >
-          Selection warning
-        </span>
+        <div class="ml-auto shrink-0">
+          <Tooltip content={() => props.issues.join("\n")} position="bottom">
+            <span
+              class="rounded text-[11px] text-amber-300 outline-none focus-visible:ring-1 focus-visible:ring-amber-300"
+              tabindex="0"
+              aria-description={props.issues.join("\n")}
+              data-step-fx-selection-warning
+            >
+              Selection warning
+            </span>
+          </Tooltip>
+        </div>
       </Show>
     </div>
   );

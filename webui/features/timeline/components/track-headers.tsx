@@ -282,11 +282,6 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                     e.stopPropagation();
                     props.onToggleExpand?.(track.id);
                   }}
-                  title={
-                    track.expanded
-                      ? "Collapse automation lanes"
-                      : "Expand automation lanes"
-                  }
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -354,7 +349,6 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                 <div class="flex gap-1 shrink-0">
                   <ToolbarButton
                     label="Add parameter lane"
-                    title="Add parameter lane"
                     style={{ width: "24px", height: "24px" }}
                     draggable={false}
                     onClick={(event) => {
@@ -369,7 +363,6 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                     label={track.muted ? "Unmute" : "Mute"}
                     style={{ width: "24px", height: "24px" }}
                     draggable={false}
-                    title={track.muted ? "Unmute" : "Mute"}
                     onClick={(e) => {
                       e.stopPropagation();
                       props.onToggleMuted?.(track.id);
@@ -382,7 +375,6 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                     label={track.solo ? "Unsolo" : "Solo"}
                     style={{ width: "24px", height: "24px" }}
                     draggable={false}
-                    title={track.solo ? "Unsolo" : "Solo"}
                     onClick={(e) => {
                       e.stopPropagation();
                       props.onToggleSolo?.(track.id);
@@ -408,7 +400,6 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                       </div>
                       <ToolbarButton
                         label={`Delete parameter lane ${param.name}`}
-                        title={`Delete parameter lane ${param.name}`}
                         class="shrink-0"
                         onClick={() => props.onRemoveLane(track.id, param.id)}
                       >

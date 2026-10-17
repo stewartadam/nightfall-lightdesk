@@ -15,7 +15,10 @@ import { NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -190,9 +193,9 @@ const TimelineOperatorControls = () => {
         <SkipForwardIcon class="size-4" aria-hidden />
       </ToolbarButton>
       <ToolbarSeparator />
-      <ToolbarButton
+      <ToggleToolbarButton
         type="button"
-        ariaPressed={ctx.loopRange()?.enabled ?? false}
+        pressed={ctx.loopRange()?.enabled ?? false}
         label="Toggle loop range"
         onClick={(event) => {
           if (event.shiftKey) {
@@ -204,7 +207,7 @@ const TimelineOperatorControls = () => {
         tooltip="Toggle loop range (Shift-click deletes loop)"
       >
         <RepeatIcon class="size-4" aria-hidden />
-      </ToolbarButton>
+      </ToggleToolbarButton>
     </div>
   );
 };

@@ -117,4 +117,5 @@
   height: 20px;
   background: var(--line, #34383b);
   margin: 0 6px;
+  flex-shrink: 0;
 }

@@ -44,6 +44,12 @@ export interface TooltipProps {
   flashMs?: number;
   /** Allow pointer selection and controls inside the tooltip surface. */
   interactive?: boolean;
+  /**
+   * Layout classes for the trigger wrapper, replacing the default
+   * `relative inline-block`. Use it when the wrapped control is positioned or
+   * sized by its parent, such as `absolute top-1 right-1` or `block w-full`.
+   */
+  class?: string;
 }
 
 /** Controls whose tap does something of its own, so a tap must not toggle their tooltip. */
@@ -428,7 +434,7 @@ export default function Tooltip(props: TooltipProps) {
   return (
     <span
       ref={triggerRef}
-      class="relative inline-block"
+      class={props.class ?? "relative inline-block"}
       data-component="Tooltip"
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}

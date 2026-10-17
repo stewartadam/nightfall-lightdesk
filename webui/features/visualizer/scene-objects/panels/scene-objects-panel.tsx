@@ -12,7 +12,9 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
-import PanelToolbar from "../../../../components/ui/panel-toolbar";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../../components/ui/panel-toolbar";
 import { ToolbarButton } from "../../../../components/ui/toolbar-button";
 import CrudPanelSearch, {
   createCrudPanelSearch,
@@ -631,7 +633,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
 
-            <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
+            <ToolbarSeparator />
 
             <ToolbarButton
               tooltip={

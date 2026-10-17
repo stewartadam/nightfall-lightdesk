@@ -13,6 +13,7 @@ import { DivideIcon } from "@squidlab/phosphor-solid/divide";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import { ToolbarSeparator } from "../../../../components/ui/panel-toolbar";
 import { Toolbar } from "../../../../components/ui/toolbar";
 import {
   ToggleToolbarButton,
@@ -97,11 +98,7 @@ export function StepFxStepActionToolbar(props: {
       >
         <TrashIcon class="size-4" aria-hidden />
       </ToolbarButton>
-      <span
-        class="mx-1 h-6 w-px shrink-0 bg-neutral-700"
-        data-step-fx-selection-mode-separator
-        aria-hidden
-      />
+      <ToolbarSeparator data-step-fx-selection-mode-separator />
       <ToggleToolbarButton
         label="Toggle selection mode"
         pressed={selection.selectionMode()}
@@ -117,11 +114,7 @@ export function StepFxStepActionToolbar(props: {
           onSelectTrack={slide.selectContributionTrack}
           onRemoveTrack={edit.removeTrack}
         />
-        <span
-          class="mx-1 h-6 w-px shrink-0 bg-neutral-700"
-          data-step-fx-overrides-separator
-          aria-hidden
-        />
+        <ToolbarSeparator data-step-fx-overrides-separator />
         <StepFxOverridesControl
           lane={props.lane}
           overall={props.stepFx}

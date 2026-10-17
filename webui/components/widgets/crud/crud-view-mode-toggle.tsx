@@ -10,7 +10,7 @@ import { ListIcon } from "@squidlab/phosphor-solid/list";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { type Accessor, createEffect, on, onCleanup } from "solid-js";
 import { playContentEntrance } from "../../ui/content-entrance";
-import { ToolbarButton } from "../../ui/toolbar-button";
+import { ToggleToolbarButton } from "../../ui/toolbar-button";
 
 export type CrudViewMode = "grid" | "list";
 
@@ -48,25 +48,25 @@ interface CrudViewModeToggleProps {
 export default function CrudViewModeToggle(props: CrudViewModeToggleProps) {
   return (
     <div class="flex items-center gap-0.5">
-      <ToolbarButton
+      <ToggleToolbarButton
         tooltip={"List view"}
         type="button"
-        ariaPressed={props.viewMode === "list"}
+        pressed={props.viewMode === "list"}
         label="Switch to list view"
         onClick={() => props.onViewModeChange("list")}
       >
         <ListIcon class="size-4" aria-hidden />
-      </ToolbarButton>
+      </ToggleToolbarButton>
 
-      <ToolbarButton
+      <ToggleToolbarButton
         tooltip={"Grid view"}
         type="button"
-        ariaPressed={props.viewMode === "grid"}
+        pressed={props.viewMode === "grid"}
         label="Switch to grid view"
         onClick={() => props.onViewModeChange("grid")}
       >
         <SquaresFourIcon class="size-4" aria-hidden />
-      </ToolbarButton>
+      </ToggleToolbarButton>
     </div>
   );
 }

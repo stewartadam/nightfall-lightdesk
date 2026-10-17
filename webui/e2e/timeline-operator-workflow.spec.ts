@@ -2294,7 +2294,7 @@ test("timeline operator marker region nudge and loop overlays are usable", async
     .locator('[data-timeline-track-header="true"]')
     .filter({
       has: page.locator(
-        'button[title="Expand automation lanes"], button[title="Collapse automation lanes"]',
+        'button[aria-label="Expand automation lanes"], button[aria-label="Collapse automation lanes"]',
       ),
     })
     .first();
@@ -2306,15 +2306,16 @@ test("timeline operator marker region nudge and loop overlays are usable", async
     throw new Error("Expected expandable track id");
   }
   const expandButton = expandableHeader.locator(
-    'button[title="Expand automation lanes"], button[title="Collapse automation lanes"]',
+    'button[aria-label="Expand automation lanes"], button[aria-label="Collapse automation lanes"]',
   );
   if (
-    (await expandButton.getAttribute("title")) === "Expand automation lanes"
+    (await expandButton.getAttribute("aria-label")) ===
+    "Expand automation lanes"
   ) {
     await expandButton.click();
   }
   await expect(expandButton).toHaveAttribute(
-    "title",
+    "aria-label",
     "Collapse automation lanes",
   );
   const expandedTrackRow = page.locator(
