@@ -15,6 +15,7 @@ import "./component-index.css";
 const coreDemoIds = new Set([
   "alerts",
   "animations",
+  "badges",
   "buttons",
   "command-palette",
   "dialogs",

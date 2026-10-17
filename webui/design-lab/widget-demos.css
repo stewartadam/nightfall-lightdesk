@@ -88,6 +88,20 @@
   gap: 10px;
   margin-block: 12px 20px;
 }
+.widget-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-block: 8px 16px;
+}
+.widget-badge-anchor {
+  position: relative;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
 .widget-alert-actions {
   display: flex;
   flex-wrap: wrap;

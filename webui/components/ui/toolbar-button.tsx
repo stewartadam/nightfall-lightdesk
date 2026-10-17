@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type JSX, Show, splitProps } from "solid-js";
+import { type JSX, splitProps } from "solid-js";
+import { CountBadge } from "./badge";
 import Tooltip from "./tooltip";
 import "./toolbar.css";
 import "./button-feedback.css";
@@ -79,11 +80,11 @@ function ToolbarButtonBase(props: ToolbarButtonProps & { pressed?: boolean }) {
         {...rest}
       >
         {local.children}
-        <Show when={(local.count ?? 0) > 0}>
-          <span class="nf-toolbar-badge" aria-hidden="true">
-            {local.count}
-          </span>
-        </Show>
+        <CountBadge
+          count={local.count}
+          tone={local.variant === "danger" ? "danger" : "info"}
+          aria-hidden="true"
+        />
       </button>
     </Tooltip>
   );

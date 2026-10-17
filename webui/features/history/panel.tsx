@@ -11,6 +11,7 @@ import { ArrowUUpLeftIcon } from "@squidlab/phosphor-solid/arrow-u-up-left";
 import { ArrowUUpRightIcon } from "@squidlab/phosphor-solid/arrow-u-up-right";
 import { createMemo, For, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { Badge } from "../../components/ui/badge";
 import type { AppIcon } from "../../components/ui/icon";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { undoState } from "../../state/appStores";
@@ -46,9 +47,9 @@ function stackEntryKey(entry: types.UndoStackEntryMessage): string {
 function CommandDescription(props: { description: string; index: number }) {
   return (
     <li class="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
-      <span class="mt-0.5 min-w-5 rounded border border-gray-200 bg-gray-50 px-1 text-center font-mono text-[10px] text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-400">
+      <Badge appearance="soft" mono class="mt-0.5 min-w-5 justify-center">
         {props.index + 1}
-      </span>
+      </Badge>
       <span class="min-w-0 break-words">{props.description}</span>
     </li>
   );
@@ -71,12 +72,14 @@ function StackEntry(props: StackEntryProps) {
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
             <Show when={isTop()}>
-              <span
-                class="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300"
+              <Badge
+                tone="info"
+                appearance="soft"
+                uppercase
                 data-stack-top-marker={props.kind}
               >
                 Top
-              </span>
+              </Badge>
             </Show>
             <span class="font-medium text-gray-950 dark:text-gray-100">
               {props.entry.description}
@@ -106,9 +109,9 @@ function StackEntry(props: StackEntryProps) {
         <div class="mt-3 flex flex-wrap gap-1.5">
           <For each={props.entry.correlation_ids}>
             {(correlationId) => (
-              <span class="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-400">
+              <Badge appearance="soft" mono>
                 {shortId(correlationId)}
-              </span>
+              </Badge>
             )}
           </For>
         </div>
@@ -126,12 +129,9 @@ function StackSection(props: StackSectionProps) {
           <Dynamic component={props.icon} class="size-4" aria-hidden />
           {props.title}
         </h2>
-        <span
-          class="rounded border border-gray-200 px-2 py-0.5 font-mono text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400"
-          data-stack-count={props.kind}
-        >
+        <Badge size="md" mono data-stack-count={props.kind}>
           {props.entries.length}
-        </span>
+        </Badge>
       </div>
       <Show
         when={props.entries.length > 0}

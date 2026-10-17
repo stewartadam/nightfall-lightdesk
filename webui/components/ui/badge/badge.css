@@ -1,0 +1,118 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+@layer components {
+  /* Tones share the Alert palette so a badge and a callout of the same kind match. */
+  .nf-badge,
+  .nf-count-badge {
+    --nf-badge-tone: var(--color-neutral-500);
+    --nf-badge-text: var(--color-neutral-300);
+  }
+  [data-tone="accent"]:is(.nf-badge, .nf-count-badge) {
+    --nf-badge-tone: var(--accent);
+    --nf-badge-text: color-mix(in srgb, var(--accent) 70%, white);
+  }
+  [data-tone="info"]:is(.nf-badge, .nf-count-badge) {
+    --nf-badge-tone: var(--color-accent-blue);
+    --nf-badge-text: color-mix(in srgb, var(--color-accent-blue) 55%, white);
+  }
+  [data-tone="success"]:is(.nf-badge, .nf-count-badge) {
+    --nf-badge-tone: var(--color-accent-green);
+    --nf-badge-text: color-mix(in srgb, var(--color-accent-green) 65%, white);
+  }
+  [data-tone="warning"]:is(.nf-badge, .nf-count-badge) {
+    --nf-badge-tone: var(--color-warning);
+    --nf-badge-text: color-mix(in srgb, var(--color-warning) 75%, white);
+  }
+  [data-tone="danger"]:is(.nf-badge, .nf-count-badge) {
+    --nf-badge-tone: var(--color-accent-red);
+    --nf-badge-text: color-mix(in srgb, var(--color-accent-red) 65%, white);
+  }
+
+  .nf-badge {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 3px;
+    min-width: 0;
+    max-width: 100%;
+    padding: 1px 5px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--nf-badge-text);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 12px;
+    white-space: nowrap;
+  }
+  .nf-badge-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nf-badge[data-appearance="outline"] {
+    border-color: color-mix(in srgb, var(--nf-badge-tone) 60%, transparent);
+  }
+  .nf-badge[data-appearance="soft"] {
+    border-color: color-mix(in srgb, var(--nf-badge-tone) 30%, transparent);
+    background: color-mix(in srgb, var(--nf-badge-tone) 20%, transparent);
+  }
+  .nf-badge[data-appearance="solid"] {
+    border-color: var(--nf-badge-tone);
+    color: var(--color-neutral-950);
+    background: var(--nf-badge-tone);
+    font-weight: 600;
+  }
+  /* Tile badges share a fixed-width row, so they shrink and truncate instead of overflowing. */
+  .nf-badge[data-size="xs"] {
+    flex-shrink: 1;
+    gap: 2px;
+    padding: 0 3px;
+    border-width: 0;
+    font-size: 8px;
+    font-weight: 400;
+    line-height: 9px;
+  }
+  .nf-badge[data-size="md"] {
+    gap: 4px;
+    padding: 1px 7px;
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .nf-badge[data-uppercase="true"] {
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+  .nf-badge[data-mono="true"] {
+    font-family: var(--font-mono, ui-monospace, monospace);
+  }
+  .nf-badge-icon {
+    flex-shrink: 0;
+    width: 1.1em;
+    height: 1.1em;
+  }
+
+  /* Overlays the decorated control's corner so a changing count never reflows its container. */
+  .nf-count-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    z-index: 1;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    color: var(--color-neutral-950);
+    background: var(--nf-badge-tone);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+  }
+}

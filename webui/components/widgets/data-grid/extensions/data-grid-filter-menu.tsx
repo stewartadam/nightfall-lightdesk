@@ -21,6 +21,7 @@ import {
   hasActiveTableFilters,
   type TableFilterSettings,
 } from "../../../../lib/datagrid-filtering";
+import { CountBadge } from "../../../ui/badge";
 import { DropdownMenu, DropdownMenuSeparator } from "../../../ui/dropdown-menu";
 import { ScrollArea } from "../../../ui/scroll-area";
 import { TOOLBAR_BUTTON_CLASS } from "../../../ui/toolbar-button";
@@ -222,11 +223,7 @@ export default function DataGridFilterMenu(props: DataGridFilterMenuProps) {
           }`.trim()}
         >
           <FunnelIcon class="size-5" aria-hidden />
-          <Show when={activeCount() > 0}>
-            <span class="-right-0.5 -top-0.5 absolute rounded bg-blue-600 px-1 text-[10px] leading-4 text-white">
-              {activeCount()}
-            </span>
-          </Show>
+          <CountBadge count={activeCount()} />
         </span>
       }
     >
