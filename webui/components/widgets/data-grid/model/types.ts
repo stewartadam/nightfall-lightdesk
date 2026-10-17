@@ -32,6 +32,9 @@ export interface DataGridScrollRequest {
 
 export type DataGridEditCommitMode = "default" | "alternate";
 
+/** Whether a grid selects individual cells or whole rows. */
+export type DataGridSelectionMode = "cell" | "row";
+
 /** Controls what an inline edit commit does besides writing the value. */
 export interface DataGridEditCommitOptions {
   /** Whether keyboard focus returns to the grid; false when focus is leaving it. */
@@ -104,6 +107,13 @@ interface DataGridBaseProps {
   cellDecorations?: DataGridCellDecorationCallback;
   gridSelection?: GridSelection;
   rowMarkers?: "none" | "checkbox";
+  /**
+   * Chooses what clicks, drags and arrow keys select. `"cell"` (the default)
+   * selects individual cells and rectangular ranges; `"row"` always selects
+   * whole rows, for lists where a row is the record and its cells are not
+   * individually meaningful.
+   */
+  selectionMode?: DataGridSelectionMode;
   freezeColumns?: number;
   width?: number | string;
   /**

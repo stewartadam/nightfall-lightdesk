@@ -16,6 +16,7 @@ import {
   effectiveSelectedRows,
   initialDataGridSelectionState,
   reduceDataGridSelection,
+  rowSelectionState,
   selectionFromState,
   selectionIncludesCell,
 } from "./selection-model";
@@ -316,4 +317,28 @@ test("extendColumnSelection expands header-selected columns from the active cell
 
   assert.deepEqual(state.activeCell, [2, 4]);
   assert.deepEqual(selectionFromState(state).columns.toArray(), [2]);
+});
+
+/** Verifies row selection mode widens cell ranges to whole rows and pins the active cell to the first column. */
+test("rowSelectionState widens cell selections to whole rows", () => {
+  let state = reduceDataGridSelection(freshState(), {
+    type: "selectCell",
+    target: [2, 1],
+    extend: false,
+  });
+  state = reduceDataGridSelection(state, {
+    type: "selectCell",
+    target: [3, 3],
+    extend: true,
+  });
+  state = rowSelectionState(state, 5);
+
+  assert.deepEqual(state.activeCell, [0, 3]);
+  assert.deepEqual(selectionFromState(state).current?.range, {
+    x: 0,
+    y: 1,
+    width: 5,
+    height: 3,
+  });
+  assert.deepEqual(selectionFromState(state).columns.toArray(), []);
 });

@@ -32,6 +32,7 @@ export type {
   DataGridRichCellMeasureContext,
   DataGridRichCellRenderContext,
   DataGridScrollRequest,
+  DataGridSelectionMode,
   HeaderCellView,
 } from "./model/types";
 

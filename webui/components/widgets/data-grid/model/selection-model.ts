@@ -783,3 +783,57 @@ function clampSelectionIndex(value: number, maxExclusive: number): number {
   if (maxExclusive <= 0) return 0;
   return Math.max(0, Math.min(value, maxExclusive - 1));
 }
+
+/** Widens a range to span every column, keeping only its rows. */
+function fullRowRange(range: SelectionRange, columnCount: number): Rectangle {
+  return {
+    x: 0,
+    y: range.y,
+    width: Math.max(columnCount, 1),
+    height: range.height,
+  };
+}
+
+/** Widens a selection's current ranges to whole rows, with the active cell in the first column. */
+export function rowSelectionCurrent(
+  current: SelectionCurrent,
+  columnCount: number,
+): SelectionCurrent {
+  if (!current) return current;
+  return {
+    cell: [0, current.cell[1]],
+    range: fullRowRange(current.range, columnCount),
+    rangeStack: current.rangeStack.map((range) =>
+      fullRowRange(range, columnCount),
+    ),
+  };
+}
+
+/**
+ * Projects selection state onto whole rows for grids in row selection mode:
+ * every range spans all columns, the active cell and anchors sit in the first
+ * column, and column selections are dropped. Clicks, drags and arrow keys
+ * therefore select rows and never expose an individual cell.
+ */
+export function rowSelectionState(
+  state: DataGridSelectionState,
+  columnCount: number,
+): DataGridSelectionState {
+  return {
+    ...state,
+    activeCell: state.activeCell && [0, state.activeCell[1]],
+    selectionAnchor: state.selectionAnchor && [0, state.selectionAnchor[1]],
+    selectedColumns: CompactSelection.empty(),
+    columnSelectionAnchor: undefined,
+    columnSelectionExtent: undefined,
+    current: rowSelectionCurrent(state.current, columnCount),
+    externalSelection: state.externalSelection && {
+      ...state.externalSelection,
+      columns: CompactSelection.empty(),
+      current: rowSelectionCurrent(
+        state.externalSelection.current,
+        columnCount,
+      ),
+    },
+  };
+}

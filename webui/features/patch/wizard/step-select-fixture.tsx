@@ -203,6 +203,7 @@ export function StepSelectFixture() {
             <DataGrid
               ariaLabel="Available fixtures"
               readOnly
+              selectionMode="row"
               columns={FIXTURE_COLUMNS}
               rows={filteredFixtures().length}
               cellProvider={fixtureProvider}
