@@ -67,10 +67,15 @@ function readGitValue(args: string[]): string | undefined {
 }
 
 /**
- * Returns the current Git commit hash as a build ID.
+ * Returns the abbreviated commit hash shown as the build ID. CI names the
+ * commit in `NIGHTFALL_BUILD_COMMIT` because pull request checkouts are
+ * GitHub's test merge commit, which matches no commit on the PR branch;
+ * local builds use the checked-out HEAD.
  */
 function readBuildId(): string {
-  return readGitValue(["rev-parse", "--short=12", "HEAD"]) ?? "unknown";
+  const commit =
+    process.env.NIGHTFALL_BUILD_COMMIT || readGitValue(["rev-parse", "HEAD"]);
+  return commit?.slice(0, 12) ?? "unknown";
 }
 
 /**

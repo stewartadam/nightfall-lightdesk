@@ -41,6 +41,16 @@ Use `Tooltip` for hover and focus help instead of a native `title`, which shows 
 - The trigger wrapper is `relative inline-block`. Pass `class` (or `tooltipClass` on `Button`) when the parent positions or sizes the control, such as `absolute top-1 right-1` or `block w-full`, and move those classes from the control to the wrapper.
 - Make a non-button trigger that hides essential information focusable (`tabindex="0"` with a focus ring) so keyboard users can open it.
 
+## Error fallbacks
+
+Use `ErrorFallback` from `error-fallback` as the `fallback` of a panel-level Solid `ErrorBoundary`. It fills the panel and centers a `caution` `Alert` with the `title`, an optional `description`, the error's `Name: message`, and its stack behind a collapsed **Technical details** disclosure (`hideDetails` omits it).
+
+- Pass the boundary's `reset` to show a primary **Retry** button; `actions` adds further buttons after it, such as the Dockview panel boundary's **Report Bug**.
+- The component imports only Solid, `Alert` and `Button`, so it still renders when stores, the bridge or other panels have failed. Keep it that way: callers log the error and build any bug report themselves.
+- The fatal error dialog (`shell/app/fatal-error-dialog.tsx`) stays separate, because it must work when the whole shell is broken.
+
+The Dockview panel boundary, the flow editor and the visualizer use it. The design lab's **Error fallback** panel throws on demand and recovers with Retry.
+
 ## Toolbars
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups, never a hand-drawn `w-px` divider; it passes `data-*` attributes through for test hooks.

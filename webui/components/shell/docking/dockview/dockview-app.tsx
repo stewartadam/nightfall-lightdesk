@@ -37,6 +37,7 @@ import {
 import { describeUncaughtError } from "../../../../lib/uncaught-error";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { appearanceSettings } from "../../../../state/appearance";
+import { ErrorFallback } from "../../../ui/error-fallback";
 import { Button } from "../../../ui/visual-language/button";
 import { bindCompactPresentation } from "./compact-presentation";
 import { createDeadPanelController } from "./dead-panel-controller";
@@ -343,58 +344,25 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
               }}
             >
               <ErrorBoundary
-                fallback={(err: Error, reset) => (
-                  <div class="p-2">
-                    <div
-                      class="p-4 mb-4 text-sm text-red-800 rounded-lg dark:text-red-400 w-200"
-                      role="alert"
-                    >
-                      <div class="pb-2">
-                        <span class="font-medium mr-2">
-                          Error rendering component: {err.message}
-                        </span>
-
-                        <Button
-                          size="compact"
-                          variant="primary"
-                          type="button"
-                          onClick={reset}
-                          class="text-center items-center"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke-width="1.5"
-                            stroke="currentColor"
-                            class="w-3 h-3 text-white me-2"
-                          >
-                            <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
-                            />
-                          </svg>
-                          Retry
-                        </Button>
-                        <Button
-                          size="compact"
-                          type="button"
-                          onClick={() =>
-                            openErrorBugReport({
-                              ...describeUncaughtError(err, "error"),
-                              source: `panel ${entry.id}`,
-                            })
-                          }
-                          class="ms-2"
-                        >
-                          Report Bug
-                        </Button>
-                      </div>
-
-                      <pre>{err.stack}</pre>
-                    </div>
-                  </div>
+                fallback={(err, reset) => (
+                  <ErrorFallback
+                    title="This panel failed to render"
+                    error={err}
+                    reset={reset}
+                    actions={
+                      <Button
+                        size="compact"
+                        onClick={() =>
+                          openErrorBugReport({
+                            ...describeUncaughtError(err, "error"),
+                            source: `panel ${entry.id}`,
+                          })
+                        }
+                      >
+                        Report Bug
+                      </Button>
+                    }
+                  />
                 )}
               >
                 <Component {...entry.props} />

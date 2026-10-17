@@ -226,3 +226,60 @@ test("uncaught page errors are forwarded to the engine", async ({ page }) => {
   });
   expect((await request.response())?.status()).toBe(204);
 });
+
+/**
+ * Verifies a reset whose prior ID cannot be copied keeps that ID on screen in a warning alert,
+ * and that a host-reported telemetry error shows as an error alert below the settings.
+ */
+test("privacy settings show clipboard and host errors as alerts", async ({
+  page,
+}, testInfo) => {
+  await openApp(page);
+  await sharingNotice(page)
+    .getByRole("button", { name: "OK", exact: true })
+    .click();
+  await page.keyboard.press("ControlOrMeta+,");
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await settings.getByRole("tab", { name: "Privacy", exact: true }).click();
+  const installId = settings.getByTestId("telemetry-install-id");
+  await expect(installId).toHaveText(/^[0-9a-f-]{36}$/);
+  const firstId = (await installId.textContent()) ?? "";
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () => Promise.reject(new Error("Clipboard denied")),
+      },
+    });
+  });
+  const resetId = settings.getByRole("button", { name: "Reset ID" });
+  await resetId.evaluate((button) =>
+    button.scrollIntoView({ block: "center" }),
+  );
+  await resetId.click();
+  await expect(installId).not.toHaveText(firstId);
+  const uncopied = settings
+    .getByRole("region", { name: "Install ID" })
+    .getByRole("alert");
+  await expect(uncopied).toContainText("Could not copy the prior ID");
+  await expect(uncopied).toContainText(firstId);
+  await expect(uncopied).toHaveAttribute("data-variant", "warning");
+  await settings.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("privacy-uncopied-id.png"),
+  });
+
+  await page.evaluate(() => {
+    const store = (window as any).appStores.telemetryState;
+    store.set({ ...store.get(), error: "Could not save telemetry settings" });
+  });
+  const hostError = settings
+    .locator(".nf-alert[data-variant='caution']")
+    .filter({ hasText: "Could not save telemetry settings" });
+  await hostError.scrollIntoViewIfNeeded();
+  await expect(hostError).toHaveAttribute("role", "alert");
+  await settings.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("privacy-telemetry-error.png"),
+  });
+});

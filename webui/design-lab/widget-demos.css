@@ -93,3 +93,17 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+.widget-fallback-frame {
+  display: flex;
+  min-height: 220px;
+  margin-block: 12px;
+  border: 1px dashed var(--line, #34383b);
+  border-radius: var(--nf-corner-radius, 6px);
+}
+.widget-fallback-sample {
+  color: var(--color-neutral-400);
+  font-size: 13px;
+}
+.widget-fallback-frame > .widget-fallback-sample {
+  margin: auto;
+}

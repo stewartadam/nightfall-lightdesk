@@ -167,6 +167,9 @@ test("settings supports download failure, cancellation, retry, and offline readi
   await expect(dialog.getByRole("alert")).toHaveText(
     "Download connection lost",
   );
+  await dialog.screenshot({
+    path: testInfo.outputPath("beat-model-download-error.png"),
+  });
   await dialog.getByRole("button", { name: "Retry download" }).click();
   await dialog.getByRole("button", { name: "Cancel download" }).click();
   await expect(

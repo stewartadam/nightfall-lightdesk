@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -333,7 +334,9 @@ const CreateObjectModal: Component<CreateObjectModalProps> = (props) => {
 
           {/* Error */}
           <Show when={error()}>
-            <div class="text-red-400 text-sm">{error()}</div>
+            <Alert variant="caution" density="compact" role="alert">
+              <p>{error()}</p>
+            </Alert>
           </Show>
         </DialogBody>
         <DialogFooter>

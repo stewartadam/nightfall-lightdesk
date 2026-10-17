@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo, For, Match, Show, Switch } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
 import { Input, Textarea } from "../../../components/ui/form-controls";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timelineLookaheadActionStatuses } from "../../../state/appStores";
@@ -380,9 +381,9 @@ export default function TimelineActionProperties(
             <Show
               when={selectedLookaheadStatus()}
               fallback={
-                <div class="rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-400">
+                <Alert variant="note" density="compact">
                   No active MIB status
-                </div>
+                </Alert>
               }
             >
               {(status) => (
@@ -406,9 +407,9 @@ export default function TimelineActionProperties(
                             .BlockedByInterveningFixtureAssertions
                         }
                       >
-                        <div class="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                        <Alert variant="warning" density="compact">
                           Blocked by intervening actions
-                        </div>
+                        </Alert>
                       </Show>
                     }
                   >
