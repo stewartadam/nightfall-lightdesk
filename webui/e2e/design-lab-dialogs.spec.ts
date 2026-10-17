@@ -78,3 +78,52 @@ test("design lab dialogs follow the task, info and required close pattern", asyn
   await expect(required).toBeHidden();
   await expect(status).toHaveText("Loaded draft");
 });
+
+/** Verifies a dropdown inside a modal dialog takes the first Escape and leaves the dialog open for the second. */
+test("escape closes a dropdown inside a dialog before the dialog", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto("/design-lab.html");
+  await page
+    .getByRole("navigation", { name: "Component index" })
+    .getByRole("button", { name: /Dialogs/ })
+    .click();
+  const panel = page.getByRole("region", { name: "Dialog examples" });
+  await panel.getByRole("button", { name: "Task dialog" }).click();
+  const task = page.getByRole("dialog", { name: "Rename sample group" });
+  await expect(task).toBeVisible();
+
+  const trigger = task.getByRole("button", { name: "Group color" });
+  await trigger.click();
+  const menu = page.getByRole("menu", { name: "Group colors" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("button")).toHaveCount(4);
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("dropdown-in-dialog-open.png"),
+  });
+
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(task).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("dropdown-in-dialog-after-first-escape.png"),
+  });
+
+  await trigger.click();
+  await menu.getByRole("button", { name: "Cyan" }).click();
+  await expect(menu).toBeHidden();
+  await expect(trigger).toHaveText("Cyan");
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  await task.getByLabel("Label").click();
+  await expect(menu).toBeHidden();
+  await expect(task).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(task).toBeHidden();
+  await expect(panel.getByRole("status")).toHaveText("Rename cancelled");
+});

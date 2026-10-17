@@ -15,6 +15,10 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import {
+  createDismissable,
+  type DismissReason,
+} from "../../../../components/ui/dismissable";
 import { MenuHeading } from "../../../../components/ui/menu";
 import { ScrollArea } from "../../../../components/ui/scroll-area";
 import {
@@ -407,34 +411,40 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     selectTarget(target);
   };
 
+  /**
+   * Steps back one picker stage on Escape (rate to target, any detail stage to
+   * the action list) and closes from the action list or on an outside press.
+   */
+  const dismiss = (reason: DismissReason) => {
+    if (reason === "escape" && step() === "rate") {
+      setStep("target");
+      setTargetQuery("");
+      setSelectedIndex(0);
+      return;
+    }
+    if (
+      reason === "escape" &&
+      (step() === "target" || step() === "command" || step() === "registered")
+    ) {
+      setStep("action");
+      setPendingTarget(undefined);
+      setSelectedIndex(0);
+      return;
+    }
+    props.onClose();
+  };
+
+  createDismissable({
+    active: workspaceActive,
+    refs: () => [containerRef],
+    onDismiss: dismiss,
+  });
+
   /** Captures picker input and restores focus only while its workspace is active. */
   createEffect(() => {
     if (!workspaceActive()) return;
     /** Handles picker navigation and submission before panel shortcuts. */
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (step() === "rate") {
-          setStep("target");
-          setTargetQuery("");
-          setSelectedIndex(0);
-          return;
-        }
-        if (
-          step() === "target" ||
-          step() === "command" ||
-          step() === "registered"
-        ) {
-          setStep("action");
-          setPendingTarget(undefined);
-          setSelectedIndex(0);
-          return;
-        }
-        props.onClose();
-        return;
-      }
-
       if (isPaletteNavigationKey(event.key)) {
         event.preventDefault();
         event.stopPropagation();
@@ -453,15 +463,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
       }
     };
 
-    /** Dismisses the active picker when a click lands outside its surface. */
-    const handleMouseDown = (event: MouseEvent) => {
-      if (containerRef && !containerRef.contains(event.target as Node)) {
-        props.onClose();
-      }
-    };
-
     window.addEventListener("keydown", handleKeyDown, { capture: true });
-    window.addEventListener("mousedown", handleMouseDown, { capture: true });
 
     const focusFrame = requestAnimationFrame(() => {
       inputRef?.focus();
@@ -471,9 +473,6 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
     onCleanup(() => {
       cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown, {
-        capture: true,
-      });
-      window.removeEventListener("mousedown", handleMouseDown, {
         capture: true,
       });
     });

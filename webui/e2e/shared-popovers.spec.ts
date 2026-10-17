@@ -139,6 +139,69 @@ test("timeline operator lane uses the shared context menu", async ({
   );
 });
 
+/** Verifies the timeline jump popout and insert action picker dismiss on Escape and on outside presses. */
+test("timeline popouts dismiss on Escape and outside presses", async ({
+  page,
+}, testInfo) => {
+  await openDemo(page);
+  const timelineUid = await page.evaluate(
+    () => Object.keys((window as any).appStores.timelines.get())[0],
+  );
+  await showOnlyPanel(page, {
+    id: "dismiss-timeline",
+    component: "Timeline",
+    title: "Timeline",
+    params: { initialTimelineUid: timelineUid },
+  });
+  const surface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  const lane = surface.locator('[data-timeline-track-lane="true"]').first();
+  await expect(lane).toBeVisible();
+  const jump = page.locator('[data-timeline-popout="goto"]');
+  const picker = page.locator('[data-component="InsertActionPicker"]');
+
+  await lane.click({ position: { x: 80, y: 18 } });
+  await page.keyboard.press("ControlOrMeta+G");
+  await expect(jump).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("goto-popout-open.png"),
+  });
+  await page.keyboard.press("Escape");
+  await expect(jump).toHaveCount(0);
+
+  await lane.click({ position: { x: 80, y: 18 } });
+  await page.keyboard.press("ControlOrMeta+G");
+  await expect(jump).toBeVisible();
+  await jump.getByLabel("Timeline jump target").fill("t 5");
+  await jump.getByLabel("Timeline jump target").click();
+  await expect(jump).toBeVisible();
+  await page.mouse.click(5, 450);
+  await expect(jump).toHaveCount(0);
+
+  await lane.click({ position: { x: 80, y: 18 } });
+  await page.keyboard.press("i");
+  await expect(picker).toBeVisible();
+  await page.getByPlaceholder("Insert action...").fill("Desk Eval");
+  await page.keyboard.press("Enter");
+  await expect(page.getByPlaceholder("Desk command...")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("insert-picker-command-step.png"),
+  });
+  await page.keyboard.press("Escape");
+  await expect(page.getByPlaceholder("Insert action...")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+
+  await lane.click({ position: { x: 80, y: 18 } });
+  await page.keyboard.press("i");
+  await expect(picker).toBeVisible();
+  await page.getByPlaceholder("Insert action...").click();
+  await expect(picker).toBeVisible();
+  await page.mouse.click(5, 450);
+  await expect(picker).toHaveCount(0);
+});
+
 /** Verifies the FX attribute picker escapes its panel, stays open while toggling, and closes on Escape. */
 test("fx attribute picker opens as a shared popover menu", async ({ page }) => {
   await openDemo(page);
