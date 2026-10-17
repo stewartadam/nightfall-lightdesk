@@ -11,7 +11,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
-import { Input } from "../../../components/ui/form-controls";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import {
   ToggleToolbarButton,
   ToolbarButton,
@@ -86,44 +86,11 @@ const TrackHeaders = (props: TrackHeadersProps) => {
   );
   const [draftTrackLabel, setDraftTrackLabel] = createSignal("");
   const [addingLaneTrackId, setAddingLaneTrackId] = createSignal<string>();
-  let suppressNextRenameBlur = false;
 
-  /** Focuses the inline rename input after Solid mounts it. */
-  const focusRenameInput = (element: HTMLInputElement) => {
-    window.queueMicrotask(() => {
-      element.focus();
-      element.select();
-    });
-  };
-
-  /** Starts inline rename editing for the given track. */
+  /** Starts inline rename editing, keeping the draft here so a refreshed track row keeps it. */
   const startRenamingTrack = (track: types.Track) => {
-    setEditingTrackId(track.id);
     setDraftTrackLabel(track.label);
-  };
-
-  /** Cancels inline track rename editing without persisting a change. */
-  const cancelRenamingTrack = () => {
-    setEditingTrackId(undefined);
-    setDraftTrackLabel("");
-  };
-
-  /** Submits the inline track rename if the draft label is non-empty. */
-  const commitTrackRename = (track: types.Track) => {
-    const nextLabel = draftTrackLabel().trim();
-    if (nextLabel.length > 0 && nextLabel !== track.label) {
-      props.onRenameTrack?.(track.id, nextLabel);
-    }
-    cancelRenamingTrack();
-  };
-
-  /** Handles blur by submitting unless Escape already cancelled the edit. */
-  const handleRenameBlur = (track: types.Track) => {
-    if (suppressNextRenameBlur) {
-      suppressNextRenameBlur = false;
-      return;
-    }
-    commitTrackRename(track);
+    setEditingTrackId(track.id);
   };
 
   const clearDragState = () => {
@@ -319,31 +286,13 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                     </Button>
                   }
                 >
-                  <Input
-                    density="compact"
-                    ref={focusRenameInput}
-                    type="text"
-                    aria-label={`Rename track ${track.label}`}
-                    class="min-w-0 flex-1 select-text"
-                    value={draftTrackLabel()}
-                    draggable={false}
-                    onInput={(event) =>
-                      setDraftTrackLabel(event.currentTarget.value)
-                    }
-                    onClick={(event) => event.stopPropagation()}
-                    onDblClick={(event) => event.stopPropagation()}
-                    onBlur={() => handleRenameBlur(track)}
-                    onKeyDown={(event) => {
-                      event.stopPropagation();
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        commitTrackRename(track);
-                      } else if (event.key === "Escape") {
-                        event.preventDefault();
-                        suppressNextRenameBlur = true;
-                        cancelRenamingTrack();
-                      }
-                    }}
+                  <InlineRenameField
+                    ariaLabel={`Rename track ${track.label}`}
+                    value={track.label}
+                    draft={draftTrackLabel()}
+                    onDraftChange={setDraftTrackLabel}
+                    onCommit={(label) => props.onRenameTrack?.(track.id, label)}
+                    onClose={() => setEditingTrackId(undefined)}
                   />
                 </Show>
                 <div class="flex gap-1 shrink-0">

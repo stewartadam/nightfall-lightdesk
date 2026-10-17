@@ -1483,10 +1483,13 @@ test("creates visible blank layouts through management without replacing the act
   await manager
     .getByRole("button", { name: "Rename Blank", exact: true })
     .click();
-  await manager.locator("form").last().getByRole("textbox").fill("Empty desk");
-  await manager
-    .getByRole("button", { name: "Save layout name", exact: true })
-    .click();
+  const nameField = manager.getByRole("textbox", {
+    name: "Layout name for Blank",
+    exact: true,
+  });
+  await nameField.fill("Empty desk");
+  await nameField.press("Enter");
+  await expect(manager.getByText("Empty desk", { exact: true })).toBeVisible();
   await manager.getByRole("button", { name: "Close layouts" }).click();
   const blank = page.getByRole("button", {
     name: "Layout 2: Empty desk",

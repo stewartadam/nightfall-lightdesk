@@ -284,35 +284,60 @@ test("object selectors filter and select local objects", async ({
   });
 });
 
-/** Verifies focus and selection on rename, committing by Enter or blur, and cancelling with Escape. */
+/** Verifies focus and selection on rename, committing by Enter or blur, cancelling with Escape, and a refused asynchronous save. */
 test("inline rename commits or cancels its draft", async ({
   page,
 }, testInfo) => {
   const panel = await openDemo(page, "Inline rename", "Inline rename examples");
-  const rename = panel.getByRole("button", { name: "Rename", exact: true });
+  const rename = panel
+    .getByRole("button", { name: "Rename", exact: true })
+    .first();
+  const savedName = panel.getByRole("status").first();
   await rename.click();
   const input = panel.getByRole("textbox", { name: "Group name" });
   await expect(input).toBeFocused();
   await input.fill("Evening wash");
   await input.press("Enter");
-  await expect(panel.getByRole("status")).toHaveText(
-    "Saved name: Evening wash",
-  );
+  await expect(savedName).toHaveText("Saved name: Evening wash");
+  await expect(rename).toBeFocused();
   await rename.click();
   await input.fill("Discard me");
   await input.press("Escape");
-  await expect(panel.getByRole("status")).toHaveText(
-    "Saved name: Evening wash",
-  );
+  await expect(savedName).toHaveText("Saved name: Evening wash");
   await rename.click();
   await input.fill("House wash");
   await panel.getByRole("heading").click();
-  await expect(panel.getByRole("status")).toHaveText("Saved name: House wash");
+  await expect(savedName).toHaveText("Saved name: House wash");
   await rename.click();
   await page.screenshot({
     path: testInfo.outputPath("inline-rename.png"),
     fullPage: true,
   });
+  await input.press("Escape");
+
+  const asyncRename = panel
+    .getByRole("button", { name: "Rename", exact: true })
+    .last();
+  await asyncRename.click();
+  const asyncInput = panel.getByRole("textbox", { name: "Backend group name" });
+  await asyncInput.fill("Side wash");
+  await asyncInput.press("Enter");
+  await expect(asyncInput).toHaveAttribute("aria-busy", "true");
+  await expect(asyncInput).toHaveAttribute("readonly", "");
+  await expect(panel.getByLabel("Backend save status")).toHaveText(
+    "“Side wash” is already used",
+  );
+  await expect(asyncInput).toHaveValue("Side wash");
+  await expect(asyncInput).toBeFocused();
+  await expect(asyncInput).not.toHaveAttribute("readonly", "");
+  await page.screenshot({
+    path: "/mnt/project-files/ui-controls-audit/screenshots/inline-rename-field/design-lab-async-refused.png",
+    fullPage: true,
+  });
+  await asyncInput.fill("Truss spots");
+  await asyncInput.press("Enter");
+  await expect(asyncInput).toHaveCount(0);
+  await expect(panel.getByText("Truss spots", { exact: true })).toBeVisible();
 });
 
 /** Checks every badge tone and appearance renders, and that count bubbles track, cap, and hide at zero. */

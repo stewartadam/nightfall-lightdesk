@@ -13,6 +13,7 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -20,7 +21,6 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
@@ -84,18 +84,22 @@ function BlueprintCard(props: BlueprintCardProps) {
       <div class="flex items-center justify-between gap-2">
         <span class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
           <span>{props.blueprint.identifiers.id}:</span>
-          <CrudInlineLabelEditor
-            ariaLabel="Blueprint card label"
-            class="truncate"
-            editing={controller.editingCardLabelUid() === uid}
-            label={props.blueprint.identifiers.label}
-            onCancel={() => controller.setEditingCardLabelUid(null)}
-            onCommit={(label) =>
-              controller.updateBlueprintLabel(props.blueprint, label)
+          <Show
+            when={controller.editingCardLabelUid() === uid}
+            fallback={
+              <span class="truncate">{props.blueprint.identifiers.label}</span>
             }
           >
-            {props.blueprint.identifiers.label}
-          </CrudInlineLabelEditor>
+            <InlineRenameField
+              ariaLabel="Blueprint card label"
+              allowEmpty
+              value={props.blueprint.identifiers.label}
+              onClose={() => controller.setEditingCardLabelUid(null)}
+              onCommit={(label) =>
+                controller.updateBlueprintLabel(props.blueprint, label)
+              }
+            />
+          </Show>
         </span>
         <Show when={dependents().length > 0}>
           <Badge tone="success" appearance="soft">

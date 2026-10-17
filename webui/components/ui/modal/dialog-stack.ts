@@ -19,10 +19,17 @@ export interface DialogStackEntry {
 }
 
 /**
+ * Fields that give Enter and Escape a meaning of their own while focused, such as an inline rename
+ * that saves on Enter and discards on Escape, so neither key reaches the dialog behind them.
+ */
+const KEY_OWNING_CONTROL_SELECTOR = "[data-owns-dialog-keys]";
+
+/**
  * Controls that already give Enter a meaning of their own (activation, newline,
  * selection), so the dialog default action must not run on top of them.
  */
 const ENTER_OWNING_CONTROL_SELECTOR = [
+  KEY_OWNING_CONTROL_SELECTOR,
   "button",
   "a[href]",
   "textarea",
@@ -222,6 +229,9 @@ function routeDialogKey(event: KeyboardEvent): void {
 
   if (event.key === "Escape") {
     const dismiss = dialog.escapeAction();
+    if (targetInside && target.closest(KEY_OWNING_CONTROL_SELECTOR)) {
+      return;
+    }
     if (dismiss) {
       claimKey(event);
       dismiss();
