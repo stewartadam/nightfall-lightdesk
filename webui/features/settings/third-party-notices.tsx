@@ -7,6 +7,7 @@
  */
 
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { Collapsible } from "../../components/ui/collapsible";
 import { Button } from "../../components/ui/visual-language/button";
 import { getLogger } from "../../lib/logger";
 
@@ -93,12 +94,18 @@ export default function ThirdPartyNotices(props: { active: boolean }) {
         </p>
         <For each={entries()}>
           {(entry) => (
-            <details class="rounded border border-gray-700 bg-black/20 p-3">
-              <summary class="cursor-pointer break-words text-sm text-gray-200">
-                <span class="font-semibold">{entry.name}</span> {entry.version}
-                <span class="ml-2 text-gray-400">{entry.license}</span>
-              </summary>
-              <p class="my-3 break-all text-xs text-gray-400">
+            <Collapsible
+              class="text-sm"
+              title={
+                <span class="min-w-0 break-words">
+                  <span class="font-semibold">{entry.name}</span>{" "}
+                  {entry.version}
+                  <span class="ml-2 text-gray-400">{entry.license}</span>
+                </span>
+              }
+              contentClass="p-3"
+            >
+              <p class="mb-3 break-all text-xs text-gray-400">
                 Source:{" "}
                 <a
                   class="text-blue-300 underline"
@@ -114,7 +121,7 @@ export default function ThirdPartyNotices(props: { active: boolean }) {
               <pre class="whitespace-pre-wrap break-words text-xs leading-5 text-gray-300">
                 {entry.text}
               </pre>
-            </details>
+            </Collapsible>
           )}
         </For>
       </Show>

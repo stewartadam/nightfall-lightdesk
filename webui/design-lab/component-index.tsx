@@ -16,6 +16,7 @@ const coreDemoIds = new Set([
   "alerts",
   "animations",
   "buttons",
+  "collapsibles",
   "command-palette",
   "dialogs",
   "error-fallback",

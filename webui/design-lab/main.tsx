@@ -61,6 +61,7 @@ import { getLogger } from "../lib/logger";
 import { initializePrelineRuntime } from "../lib/preline-runtime";
 import { pushToast } from "../state/appStores";
 import { AnimationsDemo } from "./animations-demo";
+import { CollapsibleDemo } from "./collapsible-demo";
 import { ColorPickerDemo } from "./color-picker-demo";
 import { ButtonDemo, DockingDemo, SliderDemo } from "./component-demos";
 import { ComponentIndex } from "./component-index";
@@ -114,6 +115,7 @@ const componentDemos = [
     title: "Error fallback",
     component: "errorFallback",
   },
+  { id: "collapsibles", title: "Collapsibles", component: "collapsibles" },
   { id: "sparklines", title: "Sparklines", component: "sparklines" },
   { id: "tooltips", title: "Tooltips", component: "tooltips" },
   { id: "color-picker", title: "Color picker", component: "colorPicker" },
@@ -800,6 +802,7 @@ function DesignLab() {
               inlineRename: InlineRenameDemo,
               alerts: AlertDemo,
               errorFallback: ErrorFallbackDemo,
+              collapsibles: CollapsibleDemo,
               sparklines: SparklineDemo,
               tooltips: TooltipDemo,
               colorPicker: ColorPickerDemo,

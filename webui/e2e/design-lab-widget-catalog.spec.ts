@@ -27,7 +27,7 @@ test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== "passed") return;
   await page.setViewportSize({ width: 900, height: 1200 });
   const panel = page.getByRole("region", {
-    name: /^(Alert|Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
+    name: /^(Alert|Collapsible|Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
   });
   await panel.scrollIntoViewIfNeeded();
   expect(
@@ -430,4 +430,78 @@ test("alerts render every kind with a distinct accent border", async ({
     animations: "disabled",
   });
   await expect(saved).toHaveCount(0, { timeout: 4000 });
+});
+
+/** Verifies disclosure toggling by pointer and keyboard, non-toggling header actions, lazy and controlled sections, and collapsed content leaving the accessibility tree. */
+test("collapsibles toggle from their header without header actions toggling", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Collapsibles", "Collapsible examples");
+  const sequence = panel.getByRole("button", { name: "Sequence 1: Opening" });
+  await expect(sequence).toHaveAttribute("aria-expanded", "true");
+  await expect(panel.getByText("Chase A")).toBeVisible();
+
+  await panel.getByRole("button", { name: "Refresh" }).click();
+  await expect(panel.getByRole("status")).toHaveText("Refreshed 1 time");
+  await expect(sequence).toHaveAttribute("aria-expanded", "true");
+
+  await panel.screenshot({
+    path: testInfo.outputPath("collapsibles-open.png"),
+    animations: "disabled",
+  });
+
+  await sequence.click();
+  await expect(sequence).toHaveAttribute("aria-expanded", "false");
+  await expect(panel.getByText("Chase A")).toBeHidden();
+  const content = page.locator(
+    `#${await sequence.getAttribute("aria-controls")}`,
+  );
+  await expect(content).toHaveAttribute("hidden", /.*/);
+  await sequence.focus();
+  await page.keyboard.press("Enter");
+  await expect(sequence).toHaveAttribute("aria-expanded", "true");
+  await expect(panel.getByText("Chase A")).toBeVisible();
+
+  const lazy = panel.getByRole("button", { name: "Ungrouped cues" });
+  const lazyText = panel.getByText("Lazy content mounts only");
+  await expect(lazyText).toHaveCount(0);
+  await lazy.press("Space");
+  await expect(lazyText).toBeVisible();
+  await lazy.click();
+  await expect(lazyText).toHaveCount(0);
+
+  const stage = panel.getByRole("button", { name: "Stage fixtures" });
+  const house = panel.getByRole("button", { name: "House fixtures" });
+  await panel.getByRole("button", { name: "Collapse all" }).click();
+  await expect(stage).toHaveAttribute("aria-expanded", "false");
+  await expect(house).toHaveAttribute("aria-expanded", "false");
+  const houseContent = page.locator(
+    `#${await house.getAttribute("aria-controls")}`,
+  );
+  expect(
+    await houseContent.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    ),
+  ).toBe(0);
+  await panel.screenshot({
+    path: testInfo.outputPath("collapsibles-closed.png"),
+    animations: "disabled",
+  });
+  await panel.getByRole("button", { name: "Expand all" }).click();
+  await expect(stage).toHaveAttribute("aria-expanded", "true");
+  await expect(house).toHaveAttribute("aria-expanded", "true");
+
+  const plain = panel.getByRole("button", { name: "Advanced expression" });
+  await plain.click();
+  await expect(
+    panel.getByText("Plain sections suit optional details"),
+  ).toBeVisible();
+  await expect(plain.locator(".nf-collapsible-chevron")).toHaveCSS(
+    "transform",
+    /^matrix\([^,]+, 1, -1,/,
+  );
+  await panel.screenshot({
+    path: testInfo.outputPath("collapsibles-expanded.png"),
+    animations: "disabled",
+  });
 });

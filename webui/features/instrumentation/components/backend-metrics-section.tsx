@@ -6,13 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Sparkline } from "../../../components/ui/sparkline";
 import type {
   MetricsHistory,
   SmoothedEngineMetrics,
 } from "../../../state/appStores";
 import { formatNumber, getFpsColor } from "../model/metrics";
-import { CollapsibleSection, MetricCard } from "./metric-sections";
+import { MetricCard } from "./metric-sections";
 
 interface BackendMetricsSectionProps {
   history: MetricsHistory;
@@ -22,10 +23,12 @@ interface BackendMetricsSectionProps {
 /** Presents backend frame pacing and state-build timings from projected metrics. */
 export function BackendMetricsSection(props: BackendMetricsSectionProps) {
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="Backend"
-      headerContent={
-        <span class="ml-auto flex items-center gap-2">
+      contentClass="p-3"
+      actions={
+        <span class="flex items-center gap-2">
           <Sparkline
             data={props.history.fps}
             width={80}
@@ -96,6 +99,6 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
           )}
         />
       </div>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

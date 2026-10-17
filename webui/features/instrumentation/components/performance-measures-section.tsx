@@ -7,12 +7,12 @@
  */
 
 import { For, Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { Button } from "../../../components/ui/visual-language/button";
 import type { PerformanceMeasureStats } from "../../../state/appStores";
 import { formatMeasureName } from "../model/message-table";
 import { formatMeasureValue } from "../model/metrics";
-import { CollapsibleSection } from "./metric-sections";
 
 interface PerformanceMeasuresSectionProps {
   measures: PerformanceMeasureStats[];
@@ -25,10 +25,12 @@ export function PerformanceMeasuresSection(
   props: PerformanceMeasuresSectionProps,
 ) {
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="Performance Metrics"
-      headerContent={
-        <span class="ml-auto font-mono text-xs">
+      contentClass="p-3"
+      actions={
+        <span class="font-mono text-xs">
           {props.measures.length} scopes / 60s
         </span>
       }
@@ -121,6 +123,6 @@ export function PerformanceMeasuresSection(
           </Table>
         </TableScroll>
       </Show>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

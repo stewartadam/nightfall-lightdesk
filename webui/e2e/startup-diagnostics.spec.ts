@@ -88,13 +88,13 @@ test("collects native diagnostics before the backend connects", async ({
   await expect
     .poll(() =>
       dialog.evaluate((element) => {
-        const body = element.querySelector("details")!.parentElement!;
+        const body = element.querySelector(".nf-collapsible")!.parentElement!;
         return body.scrollHeight - body.clientHeight;
       }),
     )
     .toBeLessThanOrEqual(1);
   const layout = await dialog.evaluate((element) => {
-    const body = element.querySelector("details")!.parentElement!;
+    const body = element.querySelector(".nf-collapsible")!.parentElement!;
     // The dialog role sits on the full-viewport backdrop; measure its surface.
     const surface = element.querySelector(".nf-dialog-surface")!;
     return {
