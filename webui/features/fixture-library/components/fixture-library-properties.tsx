@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { EmptyState } from "../../../components/ui/empty-state";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { Table, TableScroll } from "../../../components/ui/table";
 /**
@@ -244,9 +245,7 @@ export default function FixtureLibraryProperties(
     <div class="flex h-full flex-col space-y-4 overflow-auto p-4">
       <Show
         when={selectedFixture()}
-        fallback={
-          <div class="text-neutral-500 text-sm">No fixture selected</div>
-        }
+        fallback={<EmptyState variant="inline" title="No fixture selected" />}
       >
         {(fixture) => (
           <>

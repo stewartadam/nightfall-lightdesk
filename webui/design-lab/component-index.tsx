@@ -21,6 +21,7 @@ const coreDemoIds = new Set([
   "error-fallback",
   "menus",
   "docking",
+  "empty-states",
   "input-forms",
   "popups",
   "selects",

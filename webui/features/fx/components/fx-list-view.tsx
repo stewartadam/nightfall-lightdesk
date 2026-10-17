@@ -20,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuItem,
 } from "../../../components/ui/dropdown-menu";
+import { EmptyState } from "../../../components/ui/empty-state";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -320,22 +321,17 @@ export function FxListView(props: FxListViewProps) {
           <Show
             when={controller.visibleFxList().length > 0}
             fallback={
-              <div class="text-neutral-500 text-center py-8">
-                <Show
-                  when={controller.fxList().length > 0}
-                  fallback={
-                    <>
-                      <p>No FX defined</p>
-                      <p class="text-sm mt-2">
-                        Use the add button in the toolbar to create your first
-                        effect
-                      </p>
-                    </>
-                  }
-                >
-                  <p>No matching FX</p>
-                </Show>
-              </div>
+              <Show
+                when={controller.fxList().length > 0}
+                fallback={
+                  <EmptyState
+                    title="No FX defined"
+                    description="Use the add button in the toolbar to create your first effect"
+                  />
+                }
+              >
+                <EmptyState title="No matching FX" />
+              </Show>
             }
           >
             <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">

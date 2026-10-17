@@ -13,6 +13,7 @@ import {
   throttle,
 } from "@solid-primitives/scheduled";
 import { createMemo, createSignal } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridScrollRequest,
@@ -657,7 +658,7 @@ export default function FixturesPanel(props: FixturesPanelProps) {
         />
         <div class="min-h-0 flex-1">
           {Object.keys($fixtures()).length === 0 ? (
-            <div class="p-4 text-center text-gray-500">Loading fixtures...</div>
+            <EmptyState loading title="Loading fixtures..." />
           ) : (
             <DataGrid
               columns={columns()}

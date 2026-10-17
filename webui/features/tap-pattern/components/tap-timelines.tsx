@@ -7,6 +7,7 @@
  */
 
 import { For, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import {
   clusterColor,
   formatMs,
@@ -78,9 +79,11 @@ export function TapCaptureTimeline(props: TapCaptureTimelineProps) {
         <Show
           when={props.relativeTapsMs.length > 0}
           fallback={
-            <div class="flex h-full items-center justify-center text-sm text-neutral-500">
-              {props.isCaptureArmed ? "Capture armed" : "Capture disarmed"}
-            </div>
+            <EmptyState
+              title={
+                props.isCaptureArmed ? "Capture armed" : "Capture disarmed"
+              }
+            />
           }
         >
           <For each={props.relativeTapsMs}>
@@ -159,9 +162,11 @@ export function GroupedTapTimeline(props: GroupedTapTimelineProps) {
       <Show
         when={props.pattern}
         fallback={
-          <div class="flex h-24 items-center justify-center border border-dashed border-neutral-800 text-sm text-neutral-500">
-            No grouped taps yet
-          </div>
+          <EmptyState
+            variant="dashed"
+            class="h-24"
+            title="No grouped taps yet"
+          />
         }
       >
         {(pattern) => (

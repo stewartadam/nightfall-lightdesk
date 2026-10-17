@@ -12,6 +12,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -283,11 +284,12 @@ export function SequenceListView(props: SequenceListViewProps) {
           <Show
             when={controller.displayRows().length > 0}
             fallback={
-              <div class="text-neutral-500">
-                {controller.allDisplayRows().length > 0
-                  ? "No matching sequences"
-                  : "Loading sequences..."}
-              </div>
+              <Show
+                when={controller.allDisplayRows().length > 0}
+                fallback={<EmptyState loading title="Loading sequences..." />}
+              >
+                <EmptyState title="No matching sequences" />
+              </Show>
             }
           >
             <Show

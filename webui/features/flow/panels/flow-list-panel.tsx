@@ -14,6 +14,7 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
+import { EmptyState } from "../../../components/ui/empty-state";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -572,22 +573,17 @@ export default function FlowListPanel(props: FlowListPanelProps) {
           <Show
             when={flowList().length > 0}
             fallback={
-              <div class="text-neutral-500 text-center py-8">
-                <Show
-                  when={allFlowList().length > 0}
-                  fallback={
-                    <>
-                      <p>No flows defined</p>
-                      <p class="text-sm mt-2">
-                        Use the add button in the toolbar to create your first
-                        flow
-                      </p>
-                    </>
-                  }
-                >
-                  <p>No matching flows</p>
-                </Show>
-              </div>
+              <Show
+                when={allFlowList().length > 0}
+                fallback={
+                  <EmptyState
+                    title="No flows defined"
+                    description="Use the add button in the toolbar to create your first flow"
+                  />
+                }
+              >
+                <EmptyState title="No matching flows" />
+              </Show>
             }
           >
             <div class="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">

@@ -9,6 +9,7 @@
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { For, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Button } from "../../../components/ui/visual-language/button";
 import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid, {
@@ -171,21 +172,17 @@ export function ClipListView(props: ClipListViewProps) {
         <Show
           when={props.rows.length > 0}
           fallback={
-            <div class="py-8 text-center text-neutral-500">
-              <Show
-                when={props.allRowCount > 0}
-                fallback={
-                  <>
-                    <p>No clips defined</p>
-                    <p class="mt-2 text-sm">
-                      Use the add button in the toolbar to create a clip
-                    </p>
-                  </>
-                }
-              >
-                <p>No matching clips</p>
-              </Show>
-            </div>
+            <Show
+              when={props.allRowCount > 0}
+              fallback={
+                <EmptyState
+                  title="No clips defined"
+                  description="Use the add button in the toolbar to create a clip"
+                />
+              }
+            >
+              <EmptyState title="No matching clips" />
+            </Show>
           }
         >
           <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">

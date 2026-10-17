@@ -10,6 +10,7 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -333,11 +334,12 @@ export function CueListView(props: CueListViewProps) {
             controller.cueGroups().length > 0
           }
           fallback={
-            <div class="text-neutral-500">
-              {Object.keys(controller.cues()).length > 0
-                ? "No matching cues"
-                : "Loading cues..."}
-            </div>
+            <Show
+              when={Object.keys(controller.cues()).length > 0}
+              fallback={<EmptyState loading title="Loading cues..." />}
+            >
+              <EmptyState title="No matching cues" />
+            </Show>
           }
         >
           <Show
