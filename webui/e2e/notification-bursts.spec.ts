@@ -65,7 +65,7 @@ test("640 unique warnings render a summary and batch history", async ({
   await page
     .getByRole("button", { name: "Notification history", exact: true })
     .click();
-  const history = page.getByRole("region", { name: "Notification history" });
+  const history = page.getByRole("dialog", { name: "Notification history" });
   await expect(history.locator("tbody tr")).toHaveCount(100);
   await expect(history.locator("tbody tr").first()).toContainText(
     "Pixel warning 639",
@@ -149,7 +149,7 @@ test("overflow retains action buttons in notification history", async ({
   await page
     .getByRole("button", { name: "Notification history", exact: true })
     .click();
-  const history = page.getByRole("region", { name: "Notification history" });
+  const history = page.getByRole("dialog", { name: "Notification history" });
   await expect(
     history.getByRole("button", { name: "Retry 11", exact: true }),
   ).toBeVisible();

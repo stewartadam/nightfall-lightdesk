@@ -47,7 +47,13 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "../components/ui/dropdown-menu";
-import { MenuHeading } from "../components/ui/menu";
+import {
+  MenuHeading,
+  MenuItem,
+  MenuSeparator,
+  MenuSurface,
+} from "../components/ui/menu";
+import { Popover } from "../components/ui/popover";
 import { AccentPicker } from "../components/ui/visual-language/accent-picker";
 import {
   visualLanguageAccents as accents,
@@ -541,6 +547,74 @@ function DesignLab() {
     );
   }
 
+  /**
+   * Demonstrates a `Popover` menu that stays open while its checkable items
+   * toggle, with a described item below a literal heading.
+   */
+  function PopoverMenuDemo() {
+    const [open, setOpen] = createSignal(false);
+    const [layers, setLayers] = createSignal(new Set(["Beams"]));
+    let anchor: HTMLButtonElement | undefined;
+
+    /** Adds or removes one layer without closing the popover. */
+    const toggleLayer = (layer: string) => {
+      const next = new Set(layers());
+      if (next.has(layer)) next.delete(layer);
+      else next.add(layer);
+      setLayers(next);
+    };
+
+    return (
+      <div class="property-section">
+        <div class="section-label">Popover menu</div>
+        <Button
+          ref={anchor}
+          aria-expanded={open()}
+          aria-haspopup="menu"
+          onClick={() => setOpen((value) => !value)}
+        >
+          Visible layers ({layers().size})
+        </Button>
+        <Popover
+          anchor={() => anchor}
+          open={open()}
+          onClose={() => setOpen(false)}
+          surface={MenuSurface}
+          class="w-64"
+          role="menu"
+          aria-label="Visible layers"
+        >
+          <MenuHeading literal>Stage left · /stage/left</MenuHeading>
+          <For each={["Beams", "Fixtures", "Labels"]}>
+            {(layer) => (
+              <MenuItem
+                role="menuitemcheckbox"
+                aria-checked={layers().has(layer)}
+                checked={layers().has(layer)}
+                onClick={() => toggleLayer(layer)}
+              >
+                {layer}
+              </MenuItem>
+            )}
+          </For>
+          <MenuSeparator />
+          <MenuItem
+            description="Shows every layer and closes this menu."
+            onClick={() => {
+              setLayers(new Set(["Beams", "Fixtures", "Labels"]));
+              setOpen(false);
+            }}
+          >
+            Show all
+          </MenuItem>
+        </Popover>
+        <p class="field-help">
+          Items toggle without closing; Escape or an outside click dismisses.
+        </p>
+      </div>
+    );
+  }
+
   /** Demonstrates the same menu primitives through dropdown and context-menu interactions. */
   function Menus() {
     const [checked, setChecked] = createSignal(true);
@@ -607,6 +681,7 @@ function DesignLab() {
             {lastAction()}
           </p>
         </div>
+        <PopoverMenuDemo />
         <div
           class="menu-demo-target"
           onContextMenu={(event) => showTileMenu(selected(), event)}

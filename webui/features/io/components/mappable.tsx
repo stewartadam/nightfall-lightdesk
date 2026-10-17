@@ -7,17 +7,23 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
   createEffect,
   createMemo,
   createSignal,
   For,
   type JSX,
-  onCleanup,
   Show,
   splitProps,
 } from "solid-js";
-import { Portal } from "solid-js/web";
+import {
+  MenuHeading,
+  MenuItem,
+  MenuSeparator,
+  MenuSurface,
+} from "../../../components/ui/menu";
+import { Popover } from "../../../components/ui/popover";
 import {
   actionCatalog,
   midiMappings,
@@ -56,12 +62,6 @@ import {
   armedSourceIsContinuous,
   describeArmedSource,
 } from "../model/mapping-mode";
-
-/** Width of the binding popover, matching its `w-72` class. */
-const POPOVER_WIDTH_PX = 288;
-
-/** Space needed below a control to open the popover downward. */
-const POPOVER_ROOM_PX = 320;
 
 /** One action a mappable control can bind, with the label shown when choosing it. */
 export interface MappableChoice {
@@ -134,24 +134,9 @@ export function Mappable(props: MappableProps): JSX.Element {
   const $backendCatalog = useStore(actionCatalog);
   const $catalog = useBindableActionCatalog();
   const targetNames = useActionTargetNames();
-  const [open, setOpenState] = createSignal(false);
-  const [position, setPosition] = createSignal<JSX.CSSProperties>({});
+  const [open, setOpen] = createSignal(false);
   let overlay: HTMLButtonElement | undefined;
-  let popover: HTMLDivElement | undefined;
-
-  /** Opens or closes the popover, anchored below the overlay, or above it near the bottom. */
-  const setOpen = (next: boolean) => {
-    if (next && overlay) {
-      const bounds = overlay.getBoundingClientRect();
-      const left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - POPOVER_WIDTH_PX - 8))}px`;
-      setPosition(
-        bounds.bottom + POPOVER_ROOM_PX > window.innerHeight
-          ? { left, bottom: `${window.innerHeight - bounds.top + 4}px` }
-          : { left, top: `${bounds.bottom + 4}px` },
-      );
-    }
-    setOpenState(next);
-  };
+  let menu: HTMLDivElement | undefined;
 
   /** Formats an action reference with target names for display. */
   const actionText = (action: types.ActionReference) =>
@@ -290,23 +275,14 @@ export function Mappable(props: MappableProps): JSX.Element {
     }
   };
 
-  /** Closes the popover on outside clicks and when mapping mode ends. */
+  /**
+   * Closes the popover when mapping mode ends, and once it has nothing left to
+   * offer, such as after removing the last binding with no control armed.
+   */
   createEffect(() => {
     if (!open()) return;
-    if (!$mode().active) {
-      setOpen(false);
-      return;
-    }
-    const closeOutside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!overlay?.contains(target) && !popover?.contains(target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", closeOutside, true);
-    onCleanup(() =>
-      document.removeEventListener("pointerdown", closeOutside, true),
-    );
+    const empty = options().length === 0 && existingBindings().length === 0;
+    if (!$mode().active || empty) setOpen(false);
   });
 
   return (
@@ -345,82 +321,66 @@ export function Mappable(props: MappableProps): JSX.Element {
             </span>
           </Show>
         </button>
-        <Show when={open()}>
-          <Portal mount={document.body}>
-            <div
-              ref={popover}
-              class="nightfall-top-layer fixed flex w-72 flex-col gap-1 rounded border border-neutral-700 bg-neutral-900 p-1 text-xs shadow-lg"
-              style={position()}
-              role="menu"
-              aria-label={`Map ${local.label} to`}
-              data-mapping-popover
-            >
-              <Show when={$mode().armed}>
-                {(armed) => (
-                  <div class="px-2 pt-1 text-[11px] font-semibold text-neutral-400">
-                    {describeArmedSource(armed(), midiSourceLabel)} →{" "}
-                    {local.label}
-                  </div>
-                )}
-              </Show>
-              <For each={options()}>
-                {(option) => (
-                  <button
-                    ref={(element) => {
-                      if (option === recommended()) {
-                        queueMicrotask(() => element.focus());
-                      }
-                    }}
-                    type="button"
-                    role="menuitem"
-                    aria-label={option.label}
-                    class="rounded px-2 py-1 text-left outline-none hover:bg-neutral-800 focus-visible:bg-neutral-800 data-[recommended]:ring-1 data-[recommended]:ring-amber-400/70"
-                    data-binding-option={option.behavior}
-                    data-recommended={option === recommended() ? "" : undefined}
-                    onClick={() => void bind(option)}
-                  >
-                    <span class="flex items-center justify-between gap-2 text-neutral-100">
-                      {option.label}
-                      <Show when={option === recommended()}>
-                        <span class="text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-                          Suggested
-                        </span>
-                      </Show>
-                    </span>
-                    <span class="block text-[11px] text-neutral-400">
-                      {option.description}
-                    </span>
-                  </button>
-                )}
-              </For>
-              <Show when={existingBindings().length > 0}>
-                <div class="border-t border-neutral-800 px-2 pt-1 text-[11px] font-semibold text-neutral-400">
-                  Already bound here
-                </div>
-                <For each={existingBindings()}>
-                  {(binding) => (
-                    <div
-                      class="flex items-center justify-between gap-2 px-2 py-0.5"
-                      data-existing-binding
-                    >
-                      <span class="truncate text-neutral-300">
-                        {binding.label}
-                      </span>
-                      <button
-                        type="button"
-                        class="shrink-0 rounded px-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-                        aria-label={`Remove ${binding.label}`}
-                        onClick={() => remove(binding)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </Portal>
-        </Show>
+        <Popover
+          anchor={() => overlay}
+          open={open()}
+          onClose={() => setOpen(false)}
+          placement="auto"
+          ref={(element) => {
+            menu = element;
+          }}
+          initialFocus={() =>
+            menu?.querySelector<HTMLElement>("[data-recommended]") ?? undefined
+          }
+          surface={MenuSurface}
+          class="w-72"
+          role="menu"
+          aria-label={`Map ${local.label} to`}
+          data-mapping-popover
+        >
+          <Show when={$mode().armed}>
+            {(armed) => (
+              <MenuHeading literal>
+                {describeArmedSource(armed(), midiSourceLabel)} → {local.label}
+              </MenuHeading>
+            )}
+          </Show>
+          <For each={options()}>
+            {(option) => (
+              <MenuItem
+                role="menuitem"
+                aria-label={option.label}
+                data-binding-option={option.behavior}
+                data-recommended={option === recommended() ? "" : undefined}
+                description={option.description}
+                shortcut={option === recommended() ? "Suggested" : undefined}
+                onClick={() => void bind(option)}
+              >
+                {option.label}
+              </MenuItem>
+            )}
+          </For>
+          <Show when={existingBindings().length > 0}>
+            <Show when={options().length > 0}>
+              <MenuSeparator />
+            </Show>
+            <MenuHeading>Already bound here</MenuHeading>
+            <For each={existingBindings()}>
+              {(binding) => (
+                <MenuItem
+                  role="menuitem"
+                  icon={TrashIcon}
+                  danger
+                  aria-label={`Remove ${binding.label}`}
+                  data-existing-binding
+                  onClick={() => remove(binding)}
+                >
+                  {binding.label}
+                </MenuItem>
+              )}
+            </For>
+          </Show>
+        </Popover>
       </Show>
     </div>
   );
