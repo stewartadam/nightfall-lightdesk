@@ -132,14 +132,6 @@ export function keyFromEvent(event: KeyboardEvent): string | undefined {
   return [...modifiers, key].join("+");
 }
 
-/** Formats a stored key combination for display. */
-export function formatKey(key: string): string {
-  return key
-    .split("+")
-    .map((part) => part.replace(/^Key/, "").replace(/^Digit/, ""))
-    .join(" + ");
-}
-
 /**
  * Adds or replaces a keybinding; any other binding for the same key is removed.
  *

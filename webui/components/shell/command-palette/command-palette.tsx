@@ -32,6 +32,7 @@ import {
 } from "../../../lib/panel-open-command";
 import type { UiAction } from "../../providers/command-registry";
 import { DialogBackdrop } from "../../ui/dialog";
+import { KbdShortcut } from "../../ui/kbd";
 import { MenuHeading } from "../../ui/menu";
 import {
   SearchPickerInput,
@@ -42,6 +43,7 @@ import {
   groupCommandPaletteCommands,
   rankCommandPaletteCommands,
 } from "./command-search";
+import { OPEN_COMMAND_PALETTE_SHORTCUT } from "./commands/open-command-palette";
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -300,11 +302,6 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
     groupCommandPaletteCommands(filteredCommands(), search().trim().length > 0),
   );
 
-  const isMac =
-    typeof navigator !== "undefined"
-      ? navigator.platform.includes("Mac")
-      : false;
-
   /** Helper to check if a command is selected by stable id. */
   const isSelected = (command: UiAction) =>
     command.id === props.selectedCommandId;
@@ -371,9 +368,11 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
                     data-command-shortcut-hint
                     class="flex items-center gap-2"
                   >
-                    <kbd class="px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded">
-                      {isMac ? "⌘" : "Ctrl"}+K
-                    </kbd>
+                    <KbdShortcut
+                      shortcut={OPEN_COMMAND_PALETTE_SHORTCUT}
+                      size="compact"
+                      tone="muted"
+                    />
                     <span class="text-sm text-gray-400">to open</span>
                   </div>
                 }
@@ -494,12 +493,13 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
                                   </div>
                                   <div class="ml-3 flex shrink-0 items-center gap-2">
                                     <Show when={cmd.shortcut}>
-                                      <kbd class="px-2 py-1 text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded">
-                                        {cmd.shortcut?.replace(
-                                          "mod",
-                                          isMac ? "⌘" : "Ctrl",
-                                        )}
-                                      </kbd>
+                                      {(shortcut) => (
+                                        <KbdShortcut
+                                          shortcut={shortcut()}
+                                          size="compact"
+                                          tone="muted"
+                                        />
+                                      )}
                                     </Show>
                                   </div>
                                 </SearchPickerOption>
