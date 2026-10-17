@@ -19,6 +19,7 @@ import {
   Show,
 } from "solid-js";
 import { encode } from "uqr";
+import { Alert } from "../../../components/ui/alert";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getShareablePort } from "../../../lib/api";
@@ -216,9 +217,14 @@ export function RemoteAccess() {
             </Button>
             <Show when={error()}>
               {(message) => (
-                <span class="text-red-300" role="alert">
-                  {message()}
-                </span>
+                <Alert
+                  variant="caution"
+                  density="compact"
+                  role="alert"
+                  class="basis-full"
+                >
+                  <p>{message()}</p>
+                </Alert>
               )}
             </Show>
           </div>

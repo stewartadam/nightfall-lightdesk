@@ -17,6 +17,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { Alert } from "../../components/ui/alert";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import Tooltip from "../../components/ui/tooltip";
@@ -259,10 +260,13 @@ function TelemetrySettings() {
             <div class="space-y-1.5 text-xs text-gray-400">
               <Show when={uncopiedId()}>
                 {(id) => (
-                  <p class="text-amber-300" role="alert">
-                    Could not copy the prior ID to the clipboard. Keep a note of
-                    it: <code class="select-all text-gray-300">{id()}</code>
-                  </p>
+                  <Alert variant="warning" density="compact" role="alert">
+                    <p>
+                      Could not copy the prior ID to the clipboard. Keep a note
+                      of it:{" "}
+                      <code class="select-all text-gray-100">{id()}</code>
+                    </p>
+                  </Alert>
                 )}
               </Show>
               <p>
@@ -304,9 +308,14 @@ function TelemetrySettings() {
       </section>
       <Show when={state().error}>
         {(error) => (
-          <p class="py-2.5 text-xs text-red-300" role="alert">
-            {error()}
-          </p>
+          <Alert
+            variant="caution"
+            density="compact"
+            role="alert"
+            class="my-2.5"
+          >
+            <p>{error()}</p>
+          </Alert>
         )}
       </Show>
     </Show>
@@ -341,9 +350,9 @@ function UpdateSettings() {
             onChange={setChecks}
             details={
               actionError() ? (
-                <p class="text-xs text-amber-300" role="alert">
-                  {actionError()}
-                </p>
+                <Alert variant="caution" density="compact" role="alert">
+                  <p>{actionError()}</p>
+                </Alert>
               ) : undefined
             }
           />

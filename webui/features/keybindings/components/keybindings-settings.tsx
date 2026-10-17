@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
 import { Checkbox } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import {
@@ -232,16 +233,16 @@ export function KeybindingsSettings() {
           </Show>
         </div>
         <Show when={conflicts().length > 0}>
-          <div
+          <Alert
+            variant="warning"
             role={confirmingReplace() ? "alert" : "status"}
-            class="space-y-2 rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200"
             data-keybinding-conflicts
           >
             <p>
               {formatKey(pendingKey() ?? "")} is already used. Adding this
               keybinding replaces:
             </p>
-            <ul class="list-disc pl-5 text-amber-100">
+            <ul class="list-disc pl-5">
               <For each={conflicts()}>
                 {(conflict) => <li>{describeConflict(conflict)}</li>}
               </For>
@@ -266,7 +267,7 @@ export function KeybindingsSettings() {
                 </Button>
               </div>
             </Show>
-          </div>
+          </Alert>
         </Show>
       </section>
 
