@@ -33,9 +33,17 @@ Use `Alert` from `alert` for inline, blockquote-style callouts inside panels and
 
 Use toasts for transient feedback and `Alert` for messages that belong to the surrounding content. Full-width strip banners at the top of a panel are not alerts.
 
+## Tooltips
+
+Use `Tooltip` for hover and focus help instead of a native `title`, which shows late, cannot be styled, and never appears on keyboard focus. `ToolbarButton` and `Button` take a `tooltip` prop and wrap themselves; wrap other controls and status indicators in `Tooltip` directly. Multi-line content keeps its line breaks.
+
+- Keep the accessible name on the control (`aria-label` or visible text). When the tooltip adds information beyond that name, expose it with `aria-description` as well; `Button` does this for its `tooltip` automatically.
+- The trigger wrapper is `relative inline-block`. Pass `class` (or `tooltipClass` on `Button`) when the parent positions or sizes the control, such as `absolute top-1 right-1` or `block w-full`, and move those classes from the control to the wrapper.
+- Make a non-button trigger that hides essential information focusable (`tabindex="0"` with a focus ring) so keyboard users can open it.
+
 ## Toolbars
 
-Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups.
+Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups, never a hand-drawn `w-px` divider; it passes `data-*` attributes through for test hooks.
 
 Wrap a group of related controls in `Toolbar` (with a `label`) to make it one keyboard focus group, following the WAI-ARIA toolbar pattern. The group is a single Tab stop: Tab enters on the control used last, Left/Right (Up/Down with `orientation="vertical"`) move between controls and wrap at the ends, and Home/End jump to the first or last control. Disabled and inert controls are skipped. Text fields keep their arrow keys, and a child that handles an arrow key itself calls `preventDefault()` to keep it from the toolbar, as the step FX Step bar does to move its selection. Never set `tabIndex` on controls inside a `Toolbar`; it owns them.
 

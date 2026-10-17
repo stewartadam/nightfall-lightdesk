@@ -148,14 +148,16 @@ export function RemoteAccess() {
               <For each={links()}>
                 {(link) => (
                   <span class="inline-flex items-center gap-1">
-                    <button
-                      type="button"
-                      class="font-mono text-gray-100 underline decoration-gray-600 underline-offset-2 hover:decoration-gray-300"
-                      title="Copy link"
-                      onClick={() => void copy(link)}
-                    >
-                      {copied() === link ? "Copied" : link}
-                    </button>
+                    <Tooltip content={() => "Copy link"}>
+                      <button
+                        type="button"
+                        class="font-mono text-gray-100 underline decoration-gray-600 underline-offset-2 hover:decoration-gray-300"
+                        aria-description="Copy link"
+                        onClick={() => void copy(link)}
+                      >
+                        {copied() === link ? "Copied" : link}
+                      </button>
+                    </Tooltip>
                     <Tooltip
                       interactive
                       delay={150}
@@ -207,7 +209,7 @@ export function RemoteAccess() {
               size="compact"
               type="button"
               class="items-center gap-1.5"
-              title="Create a new PIN and sign out every paired device"
+              tooltip="Create a new PIN and sign out every paired device"
               disabled={busy()}
               onClick={() => void regenerate()}
             >

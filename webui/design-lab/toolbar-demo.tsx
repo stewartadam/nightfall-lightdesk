@@ -21,7 +21,7 @@ import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { VideoCameraIcon } from "@squidlab/phosphor-solid/video-camera";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import PanelToolbar from "../components/ui/panel-toolbar";
+import PanelToolbar, { ToolbarSeparator } from "../components/ui/panel-toolbar";
 import { SegmentedTabs } from "../components/ui/segmented-tabs";
 import {
   ToggleToolbarButton,
@@ -222,7 +222,7 @@ export function ToolbarDemo() {
               >
                 <StopIcon size={16} />
               </ToolbarButton>
-              <span class="nf-toolbar-separator" aria-hidden="true" />
+              <ToolbarSeparator />
               <ToggleToolbarButton
                 label="Loop preview"
                 pressed={loop()}

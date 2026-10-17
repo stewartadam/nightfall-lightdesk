@@ -6,7 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import PanelToolbar from "../../../components/ui/panel-toolbar";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -50,7 +52,7 @@ export function FixturesToolbar(props: FixturesToolbarProps) {
             checked={props.showReleasedOutput}
             onChange={props.setShowReleasedOutput}
           />
-          <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
+          <ToolbarSeparator />
           <DataGridFilterMenu
             columns={props.filterColumns}
             filters={props.filters}

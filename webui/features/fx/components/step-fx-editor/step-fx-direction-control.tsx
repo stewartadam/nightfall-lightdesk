@@ -9,6 +9,7 @@
 import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
 import { ArrowRightIcon } from "@squidlab/phosphor-solid/arrow-right";
 import { ArrowsLeftRightIcon } from "@squidlab/phosphor-solid/arrows-left-right";
+import Tooltip from "../../../../components/ui/tooltip";
 import { FxDirection } from "../../../../types";
 
 /** Renders icon radio buttons for the effect-wide traversal direction. */
@@ -25,39 +26,42 @@ export function StepFxDirectionControl(props: {
       role="radiogroup"
       aria-label="Step FX direction"
     >
-      <button
-        type="button"
-        role="radio"
-        aria-label="Reverse direction"
-        aria-checked={props.direction === FxDirection.Reverse}
-        title="Reverse"
-        class={`${directionButtonClass} rounded-l`}
-        onClick={() => props.onChange(FxDirection.Reverse)}
-      >
-        <ArrowLeftIcon class="size-4" aria-hidden />
-      </button>
-      <button
-        type="button"
-        role="radio"
-        aria-label="Bounce direction"
-        aria-checked={props.direction === FxDirection.Bounce}
-        title="Bounce"
-        class={`${directionButtonClass} border-x-0`}
-        onClick={() => props.onChange(FxDirection.Bounce)}
-      >
-        <ArrowsLeftRightIcon class="size-4" aria-hidden />
-      </button>
-      <button
-        type="button"
-        role="radio"
-        aria-label="Forward direction"
-        aria-checked={props.direction === FxDirection.Forward}
-        title="Forward"
-        class={`${directionButtonClass} rounded-r`}
-        onClick={() => props.onChange(FxDirection.Forward)}
-      >
-        <ArrowRightIcon class="size-4" aria-hidden />
-      </button>
+      <Tooltip content={() => "Reverse"}>
+        <button
+          type="button"
+          role="radio"
+          aria-label="Reverse direction"
+          aria-checked={props.direction === FxDirection.Reverse}
+          class={`${directionButtonClass} rounded-l`}
+          onClick={() => props.onChange(FxDirection.Reverse)}
+        >
+          <ArrowLeftIcon class="size-4" aria-hidden />
+        </button>
+      </Tooltip>
+      <Tooltip content={() => "Bounce"}>
+        <button
+          type="button"
+          role="radio"
+          aria-label="Bounce direction"
+          aria-checked={props.direction === FxDirection.Bounce}
+          class={`${directionButtonClass} border-x-0`}
+          onClick={() => props.onChange(FxDirection.Bounce)}
+        >
+          <ArrowsLeftRightIcon class="size-4" aria-hidden />
+        </button>
+      </Tooltip>
+      <Tooltip content={() => "Forward"}>
+        <button
+          type="button"
+          role="radio"
+          aria-label="Forward direction"
+          aria-checked={props.direction === FxDirection.Forward}
+          class={`${directionButtonClass} rounded-r`}
+          onClick={() => props.onChange(FxDirection.Forward)}
+        >
+          <ArrowRightIcon class="size-4" aria-hidden />
+        </button>
+      </Tooltip>
     </div>
   );
 }

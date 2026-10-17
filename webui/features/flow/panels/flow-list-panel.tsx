@@ -14,8 +14,13 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import CrudListDataGrid, {
@@ -455,17 +460,17 @@ export default function FlowListPanel(props: FlowListPanelProps) {
             </ToolbarButton>
 
             <Show when={viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
+              <ToolbarSeparator />
 
-              <ToolbarButton
+              <ToggleToolbarButton
                 tooltip={`${selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={handleToggleSelectionMode}
-                ariaPressed={selectionMode()}
+                pressed={selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }

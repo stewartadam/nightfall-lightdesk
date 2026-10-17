@@ -131,6 +131,7 @@ export function ButtonDemo() {
         <Button
           size="icon"
           aria-label="Add sample"
+          tooltip="Add a sample row"
           onClick={() => setNotice("Icon action activated.")}
         >
           <PlusIcon size={16} />

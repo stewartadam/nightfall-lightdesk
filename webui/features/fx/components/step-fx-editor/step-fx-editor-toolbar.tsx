@@ -9,7 +9,9 @@
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { Dynamic } from "solid-js/web";
-import PanelToolbar from "../../../../components/ui/panel-toolbar";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../../components/ui/panel-toolbar";
 import { ToggleToolbarButton } from "../../../../components/ui/toolbar-button";
 import type * as types from "../../../../types";
 import type { StepFxEditorViewController } from "../../controllers/step-fx-editor-view-controller";
@@ -57,11 +59,7 @@ export function StepFxEditorToolbar(props: {
             onTimingChange={edit.setTiming}
             onCycleScaleChange={edit.setCycleScale}
           />
-          <span
-            class="h-6 w-px shrink-0 bg-neutral-700"
-            data-step-fx-start-position-separator
-            aria-hidden
-          />
+          <ToolbarSeparator data-step-fx-start-position-separator />
           <StepFxStartPositionControls
             phase={props.stepFx.phase}
             open={popovers.openPopover() === "start-position"}

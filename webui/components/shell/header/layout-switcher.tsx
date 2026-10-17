@@ -320,7 +320,7 @@ export default function LayoutSwitcher() {
           variant="subtle"
           class="nf-layout-slot-add shrink-0"
           aria-label="Manage layouts"
-          title="Manage layouts"
+          tooltip="Manage layouts"
           onClick={showLayoutManager}
         >
           <PlusIcon class="size-4" aria-hidden />

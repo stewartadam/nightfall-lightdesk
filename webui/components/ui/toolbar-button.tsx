@@ -13,13 +13,20 @@ import "./button-feedback.css";
 
 export const TOOLBAR_BUTTON_CLASS = "nf-toolbar-button";
 
+/**
+ * Toggle state is reserved for `ToggleToolbarButton`, so a momentary action
+ * cannot announce itself as pressed, and help text goes through `tooltip`
+ * rather than a native `title` that would double up with the shared tooltip.
+ */
 interface ToolbarButtonProps
-  extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+  extends Omit<
+    JSX.ButtonHTMLAttributes<HTMLButtonElement>,
+    "aria-pressed" | "title"
+  > {
   label: string;
   tooltip?: string;
   variant?: "neutral" | "danger";
   size?: "icon" | "labeled";
-  ariaPressed?: boolean;
   /** Item count shown as a corner badge when positive, without resizing the button. */
   count?: number;
 }
@@ -34,12 +41,26 @@ interface ToggleToolbarButtonProps extends ToolbarButtonProps {
  * changes never reflow the toolbar.
  */
 export function ToolbarButton(props: ToolbarButtonProps) {
+  return <ToolbarButtonBase {...props} />;
+}
+
+/** Exposes persistent toggle state through the shared toolbar presentation and aria-pressed. */
+export function ToggleToolbarButton(props: ToggleToolbarButtonProps) {
+  return <ToolbarButtonBase {...props} />;
+}
+
+/**
+ * Renders the shared toolbar button for both public variants. `pressed` is
+ * only set by `ToggleToolbarButton`; when absent, no `aria-pressed` is
+ * emitted and the button behaves as a momentary action.
+ */
+function ToolbarButtonBase(props: ToolbarButtonProps & { pressed?: boolean }) {
   const [local, rest] = splitProps(props, [
     "label",
     "tooltip",
     "variant",
     "size",
-    "ariaPressed",
+    "pressed",
     "class",
     "type",
     "count",
@@ -54,7 +75,7 @@ export function ToolbarButton(props: ToolbarButtonProps) {
         data-variant={local.variant}
         data-size={local.size}
         aria-label={local.label}
-        aria-pressed={local.ariaPressed}
+        aria-pressed={local.pressed}
         {...rest}
       >
         {local.children}
@@ -66,10 +87,4 @@ export function ToolbarButton(props: ToolbarButtonProps) {
       </button>
     </Tooltip>
   );
-}
-
-/** Exposes persistent toggle state through the shared toolbar presentation and aria-pressed. */
-export function ToggleToolbarButton(props: ToggleToolbarButtonProps) {
-  const [local, rest] = splitProps(props, ["pressed"]);
-  return <ToolbarButton {...rest} ariaPressed={local.pressed} />;
 }

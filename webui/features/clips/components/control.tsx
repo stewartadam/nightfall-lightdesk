@@ -302,11 +302,11 @@ export function Control(props: ControlProps): JSX.Element {
               size="icon"
               variant="subtle"
               type="button"
-              class="absolute top-0.5 right-0.5"
+              tooltipClass="absolute top-0.5 right-0.5"
               style={{ width: "20px", height: "20px" }}
               aria-label="Clear assignment"
               onClick={handleClearClick}
-              title="Clear assignment"
+              tooltip="Clear assignment"
             >
               ×
             </Button>
@@ -334,7 +334,8 @@ export function Control(props: ControlProps): JSX.Element {
           onKeyUp={handleKeyUp}
           onClick={handleClick}
           onBlur={releaseButton}
-          title={buttonTitle()}
+          tooltip={buttonTitle()}
+          tooltipClass="block w-full"
         >
           {modeText().label}
         </Button>

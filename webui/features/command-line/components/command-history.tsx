@@ -55,7 +55,7 @@ export const CommandHistory = (props: CommandHistoryProps) => (
             type="button"
             class="items-center justify-center"
             aria-label="Search command history"
-            title="Search command history (Mod+F)"
+            tooltip="Search command history (Mod+F)"
             onClick={() => props.onOpenSearch()}
           >
             <MagnifyingGlassIcon class="size-4" aria-hidden />
@@ -91,7 +91,7 @@ export const CommandHistory = (props: CommandHistoryProps) => (
             type="button"
             class="items-center justify-center"
             aria-label="Close history search"
-            title="Close search"
+            tooltip="Close search"
             onClick={() => props.onCloseSearch()}
           >
             <XIcon class="size-4" aria-hidden />
