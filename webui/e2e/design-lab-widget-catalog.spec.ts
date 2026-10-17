@@ -27,7 +27,7 @@ test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== "passed") return;
   await page.setViewportSize({ width: 900, height: 1200 });
   const panel = page.getByRole("region", {
-    name: /^(Alert|Collapsible|Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
+    name: /^(Alert|Badge|Collapsible|Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
   });
   await panel.scrollIntoViewIfNeeded();
   expect(
@@ -313,6 +313,40 @@ test("inline rename commits or cancels its draft", async ({
     path: testInfo.outputPath("inline-rename.png"),
     fullPage: true,
   });
+});
+
+/** Checks every badge tone and appearance renders, and that count bubbles track, cap, and hide at zero. */
+test("badges show tones, appearances and corner counts", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Badges", "Badge examples");
+  for (const appearance of ["outline", "soft", "solid"]) {
+    await expect(
+      panel.locator(
+        `[data-component="Badge"][data-appearance="${appearance}"][data-uppercase="true"]`,
+      ),
+    ).toHaveCount(appearance === "soft" ? 7 : 6);
+  }
+  const counts = panel.locator('[data-component="CountBadge"]');
+  await expect(counts).toHaveText(["3", "3", "99+"]);
+  const button = panel.getByRole("button", { name: "Delete selected" });
+  const bubble = button.locator('[data-component="CountBadge"]');
+  const buttonBox = await button.boundingBox();
+  const bubbleBox = await bubble.boundingBox();
+  expect(bubbleBox!.x + bubbleBox!.width).toBeGreaterThan(
+    buttonBox!.x + buttonBox!.width,
+  );
+  expect(bubbleBox!.y).toBeLessThan(buttonBox!.y);
+  await panel.screenshot({
+    path: testInfo.outputPath("badges.png"),
+    animations: "disabled",
+  });
+  for (let index = 0; index < 3; index += 1) {
+    await panel.getByRole("button", { name: "Remove", exact: true }).click();
+  }
+  await expect(counts).toHaveCount(0);
+  await panel.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(counts).toHaveText(["1", "1", "40"]);
 });
 
 /** Confirms sparse metric histories remain blank and flat histories produce a valid visible line. */

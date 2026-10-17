@@ -7,6 +7,7 @@
  */
 
 import { createMemo } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
@@ -120,15 +121,13 @@ const referenceDetailExtension: DataGridRichCellExtension = {
       );
     if (column === "action")
       return (
-        <span
-          class={
-            cell.copyData === "Prune"
-              ? "rounded bg-amber-950 px-2 py-1 text-xs text-amber-200"
-              : "rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-400"
-          }
+        <Badge
+          size="md"
+          appearance="soft"
+          tone={cell.copyData === "Prune" ? "warning" : "neutral"}
         >
           {cell.copyData}
-        </span>
+        </Badge>
       );
     return <span class="truncate font-mono">{cell.copyData}</span>;
   },
@@ -205,19 +204,15 @@ export function ReferenceHealthTable(props: { issues: ReferenceIssue[] }) {
   );
 }
 
-/** Renders the status badge for a reverse-reference row. */
+/** Maps a reverse-reference row's status onto a success or danger badge labelled OK or Missing. */
 export function ReferenceStatusPill(props: {
   status: ReferenceEntry["status"];
 }) {
+  /** Whether the referenced target still resolves. */
+  const ok = () => props.status === ReferenceStatus.Ok;
   return (
-    <span
-      class={
-        props.status === ReferenceStatus.Ok
-          ? "rounded bg-emerald-950 px-2 py-1 text-xs text-emerald-200"
-          : "rounded bg-red-950 px-2 py-1 text-xs text-red-200"
-      }
-    >
-      {props.status === ReferenceStatus.Ok ? "OK" : "Missing"}
-    </span>
+    <Badge size="md" appearance="soft" tone={ok() ? "success" : "danger"}>
+      {ok() ? "OK" : "Missing"}
+    </Badge>
   );
 }

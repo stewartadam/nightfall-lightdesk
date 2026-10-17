@@ -16,6 +16,7 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
@@ -273,15 +274,13 @@ export default function ClipProperties(props: ClipPropertiesProps) {
                   {currentClip().identifiers.label || "Untitled"}
                 </p>
               </div>
-              <span
-                class="rounded-full px-2 py-1 text-[10px] font-medium uppercase tracking-wide"
-                classList={{
-                  "bg-emerald-500/20 text-emerald-200": isActive(),
-                  "bg-neutral-700 text-neutral-300": !isActive(),
-                }}
+              <Badge
+                tone={isActive() ? "success" : "neutral"}
+                appearance="soft"
+                uppercase
               >
                 {isActive() ? "Active" : "Idle"}
-              </span>
+              </Badge>
             </div>
             <label class="mt-3 block text-xs font-medium text-neutral-300">
               Label
