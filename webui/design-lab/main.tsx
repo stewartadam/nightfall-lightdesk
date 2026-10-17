@@ -65,7 +65,12 @@ import { CollapsibleDemo } from "./collapsible-demo";
 import { ColorPickerDemo } from "./color-picker-demo";
 import { ButtonDemo, DockingDemo, SliderDemo } from "./component-demos";
 import { ComponentIndex } from "./component-index";
-import { AttributeDemo, FaderDemo, SwitchDemo } from "./control-demos";
+import {
+  AttributeDemo,
+  FaderDemo,
+  SegmentedControlDemo,
+  SwitchDemo,
+} from "./control-demos";
 import { DataGridDemo } from "./data-grid-demo";
 import { DialogsDemo } from "./dialogs-demo";
 import {
@@ -103,6 +108,11 @@ const componentDemos = [
   { id: "menus", title: "Context menus", component: "menus" },
   { id: "sliders", title: "Sliders", component: "sliders" },
   { id: "switches", title: "Switches", component: "switches" },
+  {
+    id: "segmented-controls",
+    title: "Segmented controls",
+    component: "segmentedControls",
+  },
   { id: "faders", title: "Vertical faders", component: "faders" },
   { id: "attributes", title: "Attribute sliders", component: "attributes" },
   {
@@ -800,6 +810,7 @@ function DesignLab() {
               menus: Menus,
               sliders: SliderDemo,
               switches: SwitchDemo,
+              segmentedControls: SegmentedControlDemo,
               faders: FaderDemo,
               attributes: AttributeDemo,
               objectSelector: ObjectSelectorDemo,

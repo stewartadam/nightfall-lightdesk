@@ -12,18 +12,6 @@
 .attribute-slider {
   flex-wrap: wrap;
 }
-.attribute-slider [role="group"] {
-  border-color: var(--line);
-}
-.attribute-slider button {
-  background: var(--raised);
-  color: inherit;
-}
-.attribute-slider button[aria-pressed="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.attribute-slider button:focus-visible,
 .object-selector button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
