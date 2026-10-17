@@ -12,6 +12,7 @@ import type {
   Rectangle,
 } from "../../../../lib/data-grid-types";
 import { CompactSelection } from "../../../../lib/data-grid-types";
+import type { DataGridSelectionMode } from "./types";
 
 type SelectionRange = NonNullable<GridSelection["current"]>["range"];
 type SelectionCurrent = GridSelection["current"];
@@ -860,6 +861,17 @@ export function rowSelectionCurrent(
     range: activeBand,
     rangeStack: bands.filter((band) => band !== activeBand),
   };
+}
+
+/**
+ * Returns whether a selection mode uses the grid's own cell or row selection.
+ * `"text"` and `"none"` grids ignore selection gestures and keys so the browser
+ * (or nothing) handles them instead.
+ */
+export function selectionModeUsesGridSelection(
+  mode: DataGridSelectionMode | undefined,
+): boolean {
+  return mode === undefined || mode === "cell" || mode === "row";
 }
 
 /**

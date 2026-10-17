@@ -31,6 +31,7 @@ import {
   selectionActionPublishes,
   selectionFromState,
   selectionIncludesCell,
+  selectionModeUsesGridSelection,
 } from "./model/selection-model";
 import type { DataGridSelectionMode, EditingCell } from "./model/types";
 
@@ -40,7 +41,7 @@ interface DataGridSelectionControllerOptions {
   editingCell: () => EditingCell | undefined;
   getCellContent: () => (cell: Item) => GridCell;
   primaryColumnIndex: () => number;
-  /** Whether selection targets individual cells or whole rows. */
+  /** Whether selection targets cells, whole rows, native text, or nothing. */
   selectionMode: () => DataGridSelectionMode;
   /** Number of data columns a whole-row selection spans. */
   columnCount: () => number;
@@ -91,7 +92,9 @@ export function createDataGridSelectionController(
   /** Applies a reducer action and publishes actions that change public selection. */
   const dispatchSelection = (action: DataGridSelectionAction) => {
     const previousState = untrack(selectionState);
-    const rowMode = untrack(options.selectionMode) === "row";
+    const mode = untrack(options.selectionMode);
+    if (!selectionModeUsesGridSelection(mode)) return previousState;
+    const rowMode = mode === "row";
     // Row mode has no column selections; a header click leaves rows as they are.
     if (
       rowMode &&
@@ -266,6 +269,8 @@ export function createDataGridSelectionController(
   ) => {
     if (event.button !== 0 || options.editingCell()) return;
     if (isInteractivePointerTarget(event.target)) return;
+    // Text and none modes leave the pointer to the browser's own text selection.
+    if (!selectionModeUsesGridSelection(options.selectionMode())) return;
 
     const target: Item = [col, row];
     dragPointerStart = { x: event.clientX, y: event.clientY };
