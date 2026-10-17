@@ -122,7 +122,10 @@ impl Plugin for ProgrammerPlugin {
                     events::handle_cue_events,
                     events::resume_store_cue_workflows
                         .after(nightfall_cues::events::cue_store_operations),
-                    events::handle_blueprint_events,
+                    // Selection changes and releases land before blueprint applications, so a
+                    // command batch that releases one blueprint and applies another (a board
+                    // press in a solo region) keeps the new values.
+                    events::handle_blueprint_events.after(events::handle_programmer_events),
                     events::rebuild_programmer_blueprint_reference_index
                         .after(events::handle_blueprint_events)
                         .after(events::handle_programmer_events)

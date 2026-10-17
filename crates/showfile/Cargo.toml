@@ -8,6 +8,7 @@ edition.workspace = true
 bevy_ecs.workspace = true
 moonshine-kind.workspace = true
 nightfall = { path = "../common" }
+nightfall-boards = { path = "../boards" }
 nightfall-cues = { path = "../cues" }
 nightfall-desk = { path = "../desk", default-features = false }
 nightfall-engine = { path = "../engine" }

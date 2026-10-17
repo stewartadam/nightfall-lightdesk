@@ -12,6 +12,7 @@ use bevy_ecs::prelude::Commands;
 
 use super::{ShowfileLoadDomain, ShowfileLoadPhase, ShowfileSnapshot};
 
+mod boards;
 mod clips;
 mod color_paths;
 mod cue_structure;
@@ -23,6 +24,7 @@ mod scene_objects;
 mod snapshot_values;
 mod timecodes_timelines;
 
+pub(super) use boards::{BoardsLoadContributor, BoardsSaveContributor};
 pub(super) use clips::{ClipsLoadContributor, ClipsSaveContributor};
 pub(super) use color_paths::{ColorPathsLoadContributor, ColorPathsSaveContributor};
 pub(super) use cue_structure::{CueStructureLoadContributor, CueStructureSaveContributor};
@@ -46,6 +48,7 @@ pub(super) enum ShowfileContribution<'a> {
     Flows(flows::FlowsSnapshot<'a>),
     Clips(clips::ClipsSnapshot<'a>),
     TimecodesTimelines(timecodes_timelines::TimecodesTimelinesSnapshot<'a>),
+    Boards(boards::BoardsSnapshot<'a>),
 }
 
 /// Adds one domain-owned slice to a showfile save operation.
@@ -162,6 +165,9 @@ fn apply_save_contribution(
             snapshot.timecodes = contribution.timecodes.into_owned();
             snapshot.timelines = contribution.timelines.into_owned();
         }
+        ShowfileContribution::Boards(contribution) => {
+            snapshot.boards = contribution.boards.into_owned();
+        }
     }
 }
 
@@ -227,5 +233,8 @@ fn load_contribution_for_domain(
                 timelines: Cow::Borrowed(&snapshot.timelines),
             },
         ),
+        ShowfileLoadDomain::Boards => ShowfileContribution::Boards(boards::BoardsSnapshot {
+            boards: Cow::Borrowed(&snapshot.boards),
+        }),
     }
 }

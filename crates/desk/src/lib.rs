@@ -36,7 +36,7 @@ pub mod desk_command;
 pub mod group_command;
 pub mod instances;
 pub mod masters;
-mod object_crud;
+pub mod object_crud;
 mod panel_layouts;
 pub mod resources;
 pub mod settings;

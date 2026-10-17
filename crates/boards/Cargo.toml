@@ -1,0 +1,35 @@
+[package]
+name = "nightfall-boards"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-clips = { path = "../clips" }
+nightfall-desk = { path = "../desk", default-features = false }
+nightfall-engine = { path = "../engine" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-programmer = { path = "../programmer" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+serde_json.workspace = true
+smart-default.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+nightfall-cues = { path = "../cues" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-fixture-model = { path = "../fixture-model" }
+nightfall-instances = { path = "../instances" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[lints]
+workspace = true

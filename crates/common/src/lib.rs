@@ -18,6 +18,7 @@ pub mod constants;
 pub mod data;
 pub mod engine;
 pub mod macros;
+pub mod object_query;
 pub mod partial_result;
 pub mod spanned_selection;
 pub mod spatial_projection;
@@ -44,6 +45,7 @@ pub mod prelude {
     };
     pub use crate::data::{FixtureRef, Group, HasIdentifiers, Identifiers, Priority, References};
     pub use crate::macros::Macro;
+    pub use crate::object_query::{ObjectIdRange, ObjectQuery};
     pub use crate::partial_result::PartialResult;
     pub use crate::serde_instant;
     pub use crate::serde_uuid_simple;

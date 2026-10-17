@@ -15,6 +15,7 @@ use bevy_ecs::{
     system::{RunSystemOnce, SystemParam},
 };
 use nightfall::prelude::*;
+use nightfall_boards::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
@@ -75,10 +76,12 @@ pub enum ShowfileLoadDomain {
     Clips,
     /// Timecode generators and editable timelines.
     TimecodesTimelines,
+    /// Operator-arranged button boards.
+    Boards,
 }
 
 impl ShowfileLoadDomain {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::DeskState,
         Self::FixturesPatch,
         Self::SceneObjects,
@@ -88,6 +91,7 @@ impl ShowfileLoadDomain {
         Self::Flows,
         Self::Clips,
         Self::TimecodesTimelines,
+        Self::Boards,
     ];
 
     /// Returns the domains that must be applied before this domain.
@@ -108,6 +112,7 @@ impl ShowfileLoadDomain {
                 Self::Flows,
                 Self::Clips,
             ],
+            Self::Boards => &[],
         }
     }
 }
@@ -167,6 +172,7 @@ pub fn apply_showfile_snapshot(
     flow_data_provider: &mut DataProvider<FlowDefinition>,
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
+    board_data_provider: &mut DataProvider<Board>,
     input_bindings: &mut InputBindings,
     output_bindings: &mut OutputBindings,
     disabled_bindings: &mut DisabledBindings,
@@ -209,7 +215,8 @@ pub fn apply_showfile_snapshot(
     let mut clips_contributor = ClipsLoadContributor::new();
     let mut timecodes_timelines_contributor =
         TimecodesTimelinesLoadContributor::new(timecode_data_provider, timeline_data_provider);
-    let mut load_contributors: [&mut dyn ShowfileLoadContributor; 9] = [
+    let mut boards_contributor = BoardsLoadContributor::new(board_data_provider);
+    let mut load_contributors: [&mut dyn ShowfileLoadContributor; 10] = [
         &mut desk_state_contributor,
         &mut fixtures_patch_contributor,
         &mut scene_objects_contributor,
@@ -219,6 +226,7 @@ pub fn apply_showfile_snapshot(
         &mut flows_contributor,
         &mut clips_contributor,
         &mut timecodes_timelines_contributor,
+        &mut boards_contributor,
     ];
 
     // Deterministic phase barriers:
@@ -257,6 +265,7 @@ pub struct ShowfileApplyState<'w> {
     flow_data_provider: ResMut<'w, DataProvider<FlowDefinition>>,
     timecode_data_provider: ResMut<'w, DataProvider<Timecode>>,
     timeline_data_provider: ResMut<'w, DataProvider<Timeline>>,
+    board_data_provider: ResMut<'w, DataProvider<Board>>,
     input_bindings: ResMut<'w, InputBindings>,
     output_bindings: ResMut<'w, OutputBindings>,
     disabled_bindings: ResMut<'w, DisabledBindings>,
@@ -298,6 +307,7 @@ pub fn apply_showfile_snapshot_to_world(
                     &mut state.flow_data_provider,
                     &mut state.timecode_data_provider,
                     &mut state.timeline_data_provider,
+                    &mut state.board_data_provider,
                     &mut state.input_bindings,
                     &mut state.output_bindings,
                     &mut state.disabled_bindings,
@@ -330,6 +340,7 @@ pub fn initialize_showfile_resources(world: &mut World) {
     world.init_resource::<DataProvider<FlowDefinition>>();
     world.init_resource::<DataProvider<Timecode>>();
     world.init_resource::<DataProvider<Timeline>>();
+    world.init_resource::<DataProvider<Board>>();
     world.init_resource::<InputBindings>();
     world.init_resource::<OutputBindings>();
     world.init_resource::<DisabledBindings>();
