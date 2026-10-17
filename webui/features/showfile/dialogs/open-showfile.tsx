@@ -26,6 +26,7 @@ import {
 
 import { Dynamic } from "solid-js/web";
 import { Alert } from "../../../components/ui/alert";
+import { Badge } from "../../../components/ui/badge";
 import { Dialog, DialogBody } from "../../../components/ui/dialog";
 import { SearchPickerOption } from "../../../components/ui/search-picker";
 import Tooltip from "../../../components/ui/tooltip";
@@ -370,9 +371,9 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                           </span>
                         </span>
                         <Show when={mostRecentShowfiles().has(showfile.name)}>
-                          <span class="shrink-0 self-center rounded border border-sky-700/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-300">
+                          <Badge tone="info" uppercase class="self-center">
                             Most recent
-                          </span>
+                          </Badge>
                         </Show>
                       </SearchPickerOption>
                       <Show when={showfileLoadError(showfile)}>
@@ -444,9 +445,9 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                                           modifiedTimeMs(draft()),
                                         )}
                                       </span>
-                                      <span class="rounded border border-amber-700/70 px-1.5 py-0.5 text-[10px] uppercase text-amber-300">
+                                      <Badge tone="warning" uppercase>
                                         Draft
-                                      </span>
+                                      </Badge>
                                     </span>
                                     <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
                                       {showfileRevisionPathLabel(
@@ -494,9 +495,9 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                                         modifiedTimeMs(showfile),
                                       )}
                                     </span>
-                                    <span class="rounded border border-green-700/70 px-1.5 py-0.5 text-[10px] uppercase text-green-300">
+                                    <Badge tone="success" uppercase>
                                       Saved
-                                    </span>
+                                    </Badge>
                                   </span>
                                   <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
                                     {savedShowfileRevisionName(showfile)}

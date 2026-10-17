@@ -11,6 +11,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -96,9 +97,9 @@ function BlueprintCard(props: BlueprintCardProps) {
           </CrudInlineLabelEditor>
         </span>
         <Show when={dependents().length > 0}>
-          <span class="rounded border border-emerald-500/40 bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-100">
+          <Badge tone="success" appearance="soft">
             Referenced
-          </span>
+          </Badge>
         </Show>
       </div>
       <div class="mt-2 space-y-0.5 text-left text-[10px] text-neutral-400">

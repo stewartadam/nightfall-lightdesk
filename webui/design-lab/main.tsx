@@ -69,6 +69,7 @@ import { DataGridDemo } from "./data-grid-demo";
 import { DialogsDemo } from "./dialogs-demo";
 import {
   AlertDemo,
+  BadgeDemo,
   ErrorFallbackDemo,
   SparklineDemo,
   TooltipDemo,
@@ -114,6 +115,7 @@ const componentDemos = [
     title: "Error fallback",
     component: "errorFallback",
   },
+  { id: "badges", title: "Badges", component: "badges" },
   { id: "sparklines", title: "Sparklines", component: "sparklines" },
   { id: "tooltips", title: "Tooltips", component: "tooltips" },
   { id: "color-picker", title: "Color picker", component: "colorPicker" },
@@ -800,6 +802,7 @@ function DesignLab() {
               inlineRename: InlineRenameDemo,
               alerts: AlertDemo,
               errorFallback: ErrorFallbackDemo,
+              badges: BadgeDemo,
               sparklines: SparklineDemo,
               tooltips: TooltipDemo,
               colorPicker: ColorPickerDemo,

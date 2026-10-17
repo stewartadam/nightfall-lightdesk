@@ -63,6 +63,20 @@ Use `ErrorFallback` from `error-fallback` as the `fallback` of a panel-level Sol
 
 The Dockview panel boundary, the flow editor and the visualizer use it. The design lab's **Error fallback** panel throws on demand and recovers with Retry.
 
+## Badges
+
+Use `Badge` from `badge` for small, non-interactive status and metadata labels: states such as Draft or Listening, sources, identifiers and short counts in a row. It owns color, border, radius, padding and type size, so call sites only position it.
+
+- `tone` is one of `neutral` (the default), `accent`, `info`, `success`, `warning` or `danger`. Tones use the same palette tokens as `Alert`; map domain states onto a tone rather than picking colors.
+- `appearance` is `outline` (the default, tinted border), `soft` (tinted fill) or `solid` (full fill with dark text, for the strongest emphasis).
+- `size` is `sm` (the default, for dense rows), `md` (beside headings and in table cells) or `xs` (object tiles, where badges shrink and truncate to fit).
+- `uppercase` sets status words in capitals; `mono` uses the monospace font for identifiers and counts. `icon` adds a leading icon sized to the text.
+- Long labels truncate with an ellipsis. Pass test ids and `title` as usual; they reach the badge element.
+
+Use `CountBadge` for a count bubble on a control's top-right corner. It is absolutely positioned against the nearest positioned ancestor, ignores pointer events, renders nothing for zero, and never resizes the control. `tone` defaults to `info`; `max` collapses larger counts to `99+`-style labels. `ToolbarButton`'s `count`, the data grid filter trigger and the mapping overlay all use it. Add `aria-hidden` when the count repeats information the control's label already gives.
+
+The design lab's Badges panel shows every tone, appearance and size, plus count bubbles.
+
 ## Toolbars
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups, never a hand-drawn `w-px` divider; it passes `data-*` attributes through for test hooks.

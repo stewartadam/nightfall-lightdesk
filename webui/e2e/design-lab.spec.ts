@@ -23,8 +23,13 @@ test("object tiles reflow without resizing and display tags", async ({
   expect(original.height).toBe(60);
   const last = tiles.last();
   await expect.poll(async () => (await last.boundingBox())!.y).toBe(original.y);
-  await expect(first.locator(".tile-tag")).toHaveText(["Wash", "Stage left"]);
-  await expect(tiles.nth(2).locator(".tile-tag")).toHaveText(["Spots"]);
+  await expect(first.locator(`[data-component="Badge"]`)).toHaveText([
+    "Wash",
+    "Stage left",
+  ]);
+  await expect(tiles.nth(2).locator(`[data-component="Badge"]`)).toHaveText([
+    "Spots",
+  ]);
   await expect(tiles.nth(3).locator(".tile-tags")).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("tiles-wide.png"),
@@ -68,10 +73,9 @@ test("object tiles reflow without resizing and display tags", async ({
       await expect(visibleTiles.first()).toBeVisible();
       await expect(visibleTiles.first()).toHaveCSS("width", "140px");
       await expect(visibleTiles.first()).toHaveCSS("height", "60px");
-      await expect(visibleTiles.first().locator(".tile-tag").first()).toHaveCSS(
-        "font-size",
-        "8px",
-      );
+      await expect(
+        visibleTiles.first().locator(`[data-component="Badge"]`).first(),
+      ).toHaveCSS("font-size", "8px");
       const overflow = await visibleTiles.evaluateAll((elements) =>
         elements.some(
           (element) =>

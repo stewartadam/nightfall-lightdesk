@@ -77,13 +77,15 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
     await expect(card).toBeVisible();
     await expect(card).toHaveCSS("width", "140px");
     await expect(card).toHaveCSS("height", "60px");
-    const badges = card.locator(".nf-tile-badge");
+    const badges = card.locator(`[data-component="Badge"]`);
     await expect(badges).toHaveCount(
       1 + ((clip.id - 10) & 1) + (((clip.id - 10) >> 1) & 1),
     );
     const geometry = await card.evaluate((element) => {
       const bounds = element.getBoundingClientRect();
-      const badges = Array.from(element.querySelectorAll(".nf-tile-badge"));
+      const badges = Array.from(
+        element.querySelectorAll(`[data-component="Badge"]`),
+      );
       return {
         overflowing:
           element.scrollHeight > element.clientHeight ||
