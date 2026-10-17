@@ -6,9 +6,20 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, For } from "solid-js";
+import { createEffect, createMemo, createSignal } from "solid-js";
 import { useRevealObjectCapability } from "../../components/providers/panel-capabilities/context-core";
-import { Table, TableScroll } from "../../components/ui/table";
+import DataGrid, {
+  activeGridSelectionRow,
+  createKeyedDataGridCellProvider,
+  type DataGridScrollRequest,
+  singleRowGridSelection,
+} from "../../components/widgets/data-grid";
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+  type GridSelection,
+} from "../../lib/data-grid-types";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { durationToMs, formatSMPTETime } from "../../lib/time-format";
 import { useConditionalShallowStore } from "../../lib/use-shallow-store";
@@ -26,6 +37,37 @@ interface TimecodeRow {
   currentFrame: string;
 }
 
+const TIMECODE_COLUMNS: GridColumn[] = [
+  { id: "id", title: "ID", width: 80, sizing: "fixed" },
+  { id: "currentFrame", title: "Timecode", width: 140, sizing: "fixed" },
+  { id: "running", title: "Status", width: 120, sizing: "fixed" },
+];
+
+/** Projects one timecode into a sortable cell: numeric ID, monospaced frame and run state. */
+function timecodeCell(row: TimecodeRow, column: GridColumn): GridCell {
+  switch (column.id) {
+    case "id":
+      return {
+        kind: GridCellKind.Number,
+        data: row.id,
+        displayData: String(row.id),
+        contentAlign: "left",
+      };
+    case "currentFrame":
+      return {
+        kind: GridCellKind.Text,
+        data: row.currentFrame,
+        contentAlign: "left",
+      };
+    default:
+      return {
+        kind: GridCellKind.Text,
+        data: row.running ? "Running" : "Stopped",
+        contentAlign: "left",
+      };
+  }
+}
+
 /** Normalizes object UIDs for stable lookup and DOM keys. */
 function normalizeUid(uid: unknown): string {
   return String(uid).replace(/-/g, "").toLowerCase();
@@ -39,12 +81,11 @@ export default function TimecodePanel(props: TimecodePanelProps) {
   const [rows, setRows] = createSignal<TimecodeRow[]>([]);
   const [selectedUid, setSelectedUid] = createSignal<string | null>(null);
 
-  // Define columns
-  const columns = [
-    { key: "id", name: "ID" },
-    { key: "currentFrame", name: "Timecode" },
-    { key: "running", name: "Status" },
-  ];
+  const [reportedSelection, setReportedSelection] =
+    createSignal<GridSelection>();
+  const [scrollRequest, setScrollRequest] = createSignal<
+    DataGridScrollRequest | undefined
+  >();
 
   // Update rows when timecodes change
   createEffect(() => {
@@ -67,51 +108,57 @@ export default function TimecodePanel(props: TimecodePanelProps) {
     props.initialPanelId ?? props.id,
     (request) => {
       const uid = normalizeUid(request.uid);
-      if (!rows().some((row) => row.uid === uid)) return;
+      const row = rows().findIndex((candidate) => candidate.uid === uid);
+      if (row < 0) return;
       setSelectedUid(uid);
-      setTimeout(() => {
-        document
-          .querySelector(`[data-timecode-uid="${uid}"]`)
-          ?.scrollIntoView({ block: "nearest" });
-      }, 0);
+      setScrollRequest((previous) => ({
+        cell: [0, row],
+        requestId: (previous?.requestId ?? 0) + 1,
+      }));
     },
     { accepts: (payload) => payload.type === "timecode" },
   );
 
+  /** Highlights the selected timecode at its current source row as live updates arrive. */
+  const selection = createMemo(() =>
+    singleRowGridSelection(
+      rows().findIndex((row) => row.uid === selectedUid()),
+      reportedSelection(),
+    ),
+  );
+
+  /** Keys timecode rows by UID so selection and header sorts survive live frame updates. */
+  const provider = createMemo(() =>
+    createKeyedDataGridCellProvider({
+      rows: rows(),
+      columns: TIMECODE_COLUMNS,
+      rowKey: (row) => row.uid,
+      columnKey: (column) => column.id!,
+      getCellContent: ({ row, column }) => timecodeCell(row, column),
+    }),
+  );
+
   return (
-    <TableScroll
-      aria-label="Timecodes scroll area"
-      class="w-full h-full p-4 dark:text-white"
-    >
-      <Table aria-label="Timecodes" class="min-w-full">
-        <thead>
-          <tr>
-            <For each={columns}>
-              {(col) => (
-                <th scope="col" class="text-left">
-                  {col.name}
-                </th>
-              )}
-            </For>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={rows()}>
-            {(row) => (
-              <tr
-                data-id={row.id}
-                data-timecode-uid={row.uid}
-                data-selected={selectedUid() === row.uid ? "true" : "false"}
-                onClick={() => setSelectedUid(row.uid)}
-              >
-                <td>{row.id}</td>
-                <td>{row.currentFrame}</td>
-                <td>{row.running ? "Running" : "Stopped"}</td>
-              </tr>
-            )}
-          </For>
-        </tbody>
-      </Table>
-    </TableScroll>
+    <div class="h-full w-full p-4 dark:text-white">
+      <DataGrid
+        ariaLabel="Timecodes"
+        readOnly
+        columns={TIMECODE_COLUMNS}
+        rows={rows().length}
+        cellProvider={provider}
+        sortableColumns={TIMECODE_COLUMNS.map((column) => column.id!)}
+        freezeColumns={1}
+        height="content"
+        class="max-h-full"
+        emptyState="No timecodes"
+        gridSelection={selection()}
+        onGridSelectionChange={(next) => {
+          setReportedSelection(next);
+          const row = activeGridSelectionRow(next);
+          setSelectedUid(row === undefined ? null : (rows()[row]?.uid ?? null));
+        }}
+        scrollRequest={scrollRequest()}
+      />
+    </div>
   );
 }

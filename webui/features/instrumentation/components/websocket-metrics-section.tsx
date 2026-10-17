@@ -351,6 +351,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
               rows={props.rows.length}
               cellProvider={messageProvider}
               sortableColumns={MESSAGE_COLUMNS.map((column) => column.id!)}
+              freezeColumns={1}
               height="content"
               class="max-h-[420px]"
             />
