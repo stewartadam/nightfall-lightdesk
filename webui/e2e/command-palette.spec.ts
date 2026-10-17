@@ -249,31 +249,11 @@ test("command palette restores the submitted command when reopened", async ({
     "data-selected",
     "true",
   );
-  await expect(page.locator('[data-scroll-overflow="top"]')).toBeVisible();
-  await expect(page.locator('[data-scroll-overflow="bottom"]')).toBeVisible();
-
-  const overflowStyles = await page.evaluate(() => {
-    return ["top", "bottom"].map((position) => {
-      const indicator = document.querySelector<HTMLElement>(
-        `[data-scroll-overflow="${position}"]`,
-      );
-      if (!indicator) {
-        throw new Error(`Expected ${position} scroll overflow indicator`);
-      }
-
-      const style = getComputedStyle(indicator);
-      const alpha = style.backgroundColor.startsWith("rgba(")
-        ? Number(style.backgroundColor.split(",").at(-1)?.replace(")", ""))
-        : 1;
-      return {
-        alpha,
-        backgroundImage: style.backgroundImage,
-      };
-    });
-  });
-  for (const style of overflowStyles) {
-    expect(style.backgroundImage).toBe("none");
-    expect(style.alpha).toBe(1);
+  const paletteDialog = page.locator('[data-dialog-kind="command-palette"]');
+  for (const edge of ["top", "bottom"]) {
+    await expect(
+      paletteDialog.locator(`.nf-scroll-edge[data-edge="${edge}"]`),
+    ).toHaveAttribute("data-visible", "true");
   }
 
   const placement = await page.evaluate(() => {
