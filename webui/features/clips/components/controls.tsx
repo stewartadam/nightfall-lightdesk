@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { For, type JSX } from "solid-js";
+import { ScrollArea } from "../../../components/ui/scroll-area";
 import { CommandClient } from "../../../lib/command-client";
 import {
   commandFailureMessage,
@@ -68,92 +69,93 @@ export function Controls(props: ControlsProps): JSX.Element {
   };
 
   return (
-    <div class="controls h-full min-h-0">
-      <div class="flex h-full min-h-0 gap-1 overflow-x-auto pb-2">
-        <For each={Array.from({ length: controlCount() }, (_, i) => i + 1)}>
-          {(controlIndex) => {
-            /** Returns the backend snapshot for this control slot. */
-            const getControlState = () =>
-              $controls().find((control) => control.index === controlIndex);
+    <ScrollArea
+      class="controls h-full min-h-0"
+      viewportClass="flex h-full gap-1 pb-2"
+    >
+      <For each={Array.from({ length: controlCount() }, (_, i) => i + 1)}>
+        {(controlIndex) => {
+          /** Returns the backend snapshot for this control slot. */
+          const getControlState = () =>
+            $controls().find((control) => control.index === controlIndex);
 
-            /** Returns the assigned clip tuple and active state when present. */
-            const getAssignedClipEntry = () => {
-              const assignedClipId = getControlState()?.assigned_clip_id;
-              if (assignedClipId === undefined) return undefined;
-              const states = props.clipStates();
-              return Object.values(states).find(
-                ([clip]) => clip.identifiers.id === assignedClipId,
-              );
-            };
-
-            /** Returns the clip assigned to this control when present. */
-            const getAssignedClip = () => getAssignedClipEntry()?.[0];
-
-            /** Returns the master assigned to this control when present. */
-            const getAssignedMaster = (): Master | undefined => {
-              const assignedMasterId = getControlState()?.assigned_master_id;
-              if (assignedMasterId === undefined) return undefined;
-              return Object.values($masters()).find(
-                (master) => master.identifiers.id === assignedMasterId,
-              );
-            };
-
-            /** Returns whether the assigned clip is currently active. */
-            const isClipActive = () => getAssignedClipEntry()?.[1] ?? false;
-
-            return (
-              <Control
-                index={controlIndex}
-                assignedClip={getAssignedClip()}
-                assignedMaster={getAssignedMaster()}
-                isClipActive={isClipActive()}
-                displayValue={getControlState()?.display_value ?? 0}
-                hardwareValue={getControlState()?.hardware_value ?? undefined}
-                consoleValue={getControlState()?.console_value ?? 0}
-                button={controlButtonControl(controlIndex, sendCommand)}
-                goChoice={controlGoControl(controlIndex)}
-                buttonMode={
-                  getControlState()?.button_mode ?? ControlButtonMode.Go
-                }
-                availableButtonModes={
-                  getControlState()?.available_button_modes ?? []
-                }
-                onButtonModeChange={(mode) =>
-                  sendCommand({
-                    type: "SetButtonMode",
-                    data: { control_index: controlIndex, mode },
-                  })
-                }
-                fader={controlFaderControl(controlIndex, sendUpdate)}
-                onClipAssign={(clip) =>
-                  sendCommand({
-                    type: "AssignClip",
-                    data: {
-                      control_index: controlIndex,
-                      clip_id: clip.identifiers.id,
-                    },
-                  })
-                }
-                onMasterAssign={(master) =>
-                  sendCommand({
-                    type: "AssignMaster",
-                    data: {
-                      control_index: controlIndex,
-                      master_id: master.identifiers.id,
-                    },
-                  })
-                }
-                onClipClear={() =>
-                  sendCommand({
-                    type: "ClearClip",
-                    data: { control_index: controlIndex },
-                  })
-                }
-              />
+          /** Returns the assigned clip tuple and active state when present. */
+          const getAssignedClipEntry = () => {
+            const assignedClipId = getControlState()?.assigned_clip_id;
+            if (assignedClipId === undefined) return undefined;
+            const states = props.clipStates();
+            return Object.values(states).find(
+              ([clip]) => clip.identifiers.id === assignedClipId,
             );
-          }}
-        </For>
-      </div>
-    </div>
+          };
+
+          /** Returns the clip assigned to this control when present. */
+          const getAssignedClip = () => getAssignedClipEntry()?.[0];
+
+          /** Returns the master assigned to this control when present. */
+          const getAssignedMaster = (): Master | undefined => {
+            const assignedMasterId = getControlState()?.assigned_master_id;
+            if (assignedMasterId === undefined) return undefined;
+            return Object.values($masters()).find(
+              (master) => master.identifiers.id === assignedMasterId,
+            );
+          };
+
+          /** Returns whether the assigned clip is currently active. */
+          const isClipActive = () => getAssignedClipEntry()?.[1] ?? false;
+
+          return (
+            <Control
+              index={controlIndex}
+              assignedClip={getAssignedClip()}
+              assignedMaster={getAssignedMaster()}
+              isClipActive={isClipActive()}
+              displayValue={getControlState()?.display_value ?? 0}
+              hardwareValue={getControlState()?.hardware_value ?? undefined}
+              consoleValue={getControlState()?.console_value ?? 0}
+              button={controlButtonControl(controlIndex, sendCommand)}
+              goChoice={controlGoControl(controlIndex)}
+              buttonMode={
+                getControlState()?.button_mode ?? ControlButtonMode.Go
+              }
+              availableButtonModes={
+                getControlState()?.available_button_modes ?? []
+              }
+              onButtonModeChange={(mode) =>
+                sendCommand({
+                  type: "SetButtonMode",
+                  data: { control_index: controlIndex, mode },
+                })
+              }
+              fader={controlFaderControl(controlIndex, sendUpdate)}
+              onClipAssign={(clip) =>
+                sendCommand({
+                  type: "AssignClip",
+                  data: {
+                    control_index: controlIndex,
+                    clip_id: clip.identifiers.id,
+                  },
+                })
+              }
+              onMasterAssign={(master) =>
+                sendCommand({
+                  type: "AssignMaster",
+                  data: {
+                    control_index: controlIndex,
+                    master_id: master.identifiers.id,
+                  },
+                })
+              }
+              onClipClear={() =>
+                sendCommand({
+                  type: "ClearClip",
+                  data: { control_index: controlIndex },
+                })
+              }
+            />
+          );
+        }}
+      </For>
+    </ScrollArea>
   );
 }

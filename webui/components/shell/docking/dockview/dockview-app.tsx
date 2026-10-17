@@ -38,6 +38,7 @@ import { describeUncaughtError } from "../../../../lib/uncaught-error";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { appearanceSettings } from "../../../../state/appearance";
 import { ErrorFallback } from "../../../ui/error-fallback";
+import { ScrollIndicators } from "../../../ui/scroll-area";
 import { Button } from "../../../ui/visual-language/button";
 import { bindCompactPresentation } from "./compact-presentation";
 import { createDeadPanelController } from "./dead-panel-controller";
@@ -335,7 +336,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
         {(entry) => {
           const Component =
             entry.component as unknown as ParentComponent<object>;
-          return (
+          const content = (
             // Portals are wrapped a plain div, so tell CSS to ignore it - see https://github.com/solidjs/solid/issues/1873
             <Portal
               mount={entry.mount}
@@ -368,6 +369,19 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
                 <Component {...entry.props} />
               </ErrorBoundary>
             </Portal>
+          );
+          return (
+            <>
+              {content}
+              <Portal
+                mount={entry.scrollFrame}
+                ref={(x) => {
+                  x.className = "contents";
+                }}
+              >
+                <ScrollIndicators viewport={entry.mount} structureOnly />
+              </Portal>
+            </>
           );
         }}
       </For>

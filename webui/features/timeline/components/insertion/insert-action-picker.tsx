@@ -20,10 +20,10 @@ import {
   type DismissReason,
 } from "../../../../components/ui/dismissable";
 import { MenuHeading } from "../../../../components/ui/menu";
-import { ScrollArea } from "../../../../components/ui/scroll-area";
 import {
   SearchPickerInput,
   SearchPickerOption,
+  SearchPickerResults,
   SearchPickerSurface,
 } from "../../../../components/ui/search-picker";
 import { Button } from "../../../../components/ui/visual-language/button";
@@ -587,7 +587,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
         }
       />
 
-      <ScrollArea
+      <SearchPickerResults
         class="min-h-0 max-h-[340px]"
         viewportProps={{
           ref: (element) => {
@@ -798,7 +798,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
             </Show>
           </Show>
         </Show>
-      </ScrollArea>
+      </SearchPickerResults>
     </SearchPickerSurface>
   );
 };

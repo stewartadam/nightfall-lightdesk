@@ -9,6 +9,7 @@
 import { createUniqueId, For, Index, Show } from "solid-js";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
+import { ScrollArea } from "../../../components/ui/scroll-area";
 import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import Tooltip from "../../../components/ui/tooltip";
@@ -346,14 +347,20 @@ export function DmxUniverseView(props: DmxUniverseViewProps) {
             fallback={<div class="p-4 text-gray-500">No universe data</div>}
           >
             {(universe) => (
-              <div ref={props.onScrollRef} class="flex-1 overflow-auto p-2">
+              <ScrollArea
+                class="min-h-0 flex-1"
+                viewportClass="p-2"
+                viewportProps={{ ref: props.onScrollRef }}
+                // Channel values update every frame without changing the grid's size.
+                structureOnly
+              >
                 <Show when={props.ioMode === DmxIoMode.Input}>
                   <div class="mb-2 text-xs text-gray-400 flex items-center gap-2">
                     <InputUniverseFreshness universe={universe()} />
                   </div>
                 </Show>
                 <DmxChannelGrid {...props} universe={universe()} />
-              </div>
+              </ScrollArea>
             )}
           </Show>
         </div>

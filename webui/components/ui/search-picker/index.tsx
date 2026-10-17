@@ -10,6 +10,7 @@ import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { type JSX, splitProps } from "solid-js";
 import { DialogSurface } from "../dialog";
 import { Input, InputGroup } from "../form-controls";
+import { ScrollArea, type ScrollAreaProps } from "../scroll-area";
 import "./search-picker.css";
 
 /** Frames a searchable action list while its caller owns positioning, filtering, and dismissal. */
@@ -35,6 +36,21 @@ export function SearchPickerInput(
       <Input {...rest} />
       {local.trailing}
     </InputGroup>
+  );
+}
+
+/**
+ * Scrolls a picker's result list with the shared edge indicators. Keyboard navigation that
+ * reveals a row with `scrollIntoView` stops short of the edges, so the selected row never sits
+ * under a blurred edge that would intercept its clicks.
+ */
+export function SearchPickerResults(props: ScrollAreaProps) {
+  const [local, rest] = splitProps(props, ["class"]);
+  return (
+    <ScrollArea
+      class={`nf-search-picker-results ${local.class ?? ""}`}
+      {...rest}
+    />
   );
 }
 
