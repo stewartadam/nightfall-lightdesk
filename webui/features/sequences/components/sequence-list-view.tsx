@@ -12,6 +12,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -19,7 +20,6 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
@@ -81,18 +81,22 @@ function SequenceCard(props: SequenceCardProps) {
     >
       <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
         <span>{props.sequence.identifiers.id}:</span>
-        <CrudInlineLabelEditor
-          ariaLabel="Sequence card label"
-          class="truncate"
-          editing={controller.editingCardLabelUid() === sequenceUid}
-          label={props.sequence.identifiers.label}
-          onCancel={() => controller.setEditingCardLabelUid(null)}
-          onCommit={(label) =>
-            controller.updateSequenceLabel(props.sequence, label)
+        <Show
+          when={controller.editingCardLabelUid() === sequenceUid}
+          fallback={
+            <span class="truncate">{props.sequence.identifiers.label}</span>
           }
         >
-          {props.sequence.identifiers.label}
-        </CrudInlineLabelEditor>
+          <InlineRenameField
+            ariaLabel="Sequence card label"
+            allowEmpty
+            value={props.sequence.identifiers.label}
+            onClose={() => controller.setEditingCardLabelUid(null)}
+            onCommit={(label) =>
+              controller.updateSequenceLabel(props.sequence, label)
+            }
+          />
+        </Show>
         <Show when={props.sequence.wrap}>
           <SequenceWrapTag />
         </Show>

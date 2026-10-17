@@ -28,7 +28,7 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-:is(.object-selector input, .crud-inline-label-input) {
+.object-selector input {
   background: var(--raised);
   border-color: var(--line);
   color: inherit;

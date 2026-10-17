@@ -9,8 +9,8 @@
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { For, Show } from "solid-js";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import { Button } from "../../../components/ui/visual-language/button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid, {
   type CrudListDataGridEditRequest,
   type CrudListDataGridSelectionRequest,
@@ -251,21 +251,27 @@ export function ClipListView(props: ClipListViewProps) {
                         </span>
                         <Show when={clip()}>
                           {(currentClip) => (
-                            <CrudInlineLabelEditor
-                              ariaLabel="Clip card label"
-                              class="truncate"
-                              editing={props.editingCardLabelUid === uid}
-                              label={currentClip().identifiers.label}
-                              onCancel={props.onCancelCardLabelEdit}
-                              onCommit={(label) =>
-                                props.onUpdateLabel(
-                                  [currentClip(), isActive()],
-                                  label,
-                                )
+                            <Show
+                              when={props.editingCardLabelUid === uid}
+                              fallback={
+                                <span class="truncate">
+                                  {currentClip().identifiers.label}
+                                </span>
                               }
                             >
-                              {currentClip().identifiers.label}
-                            </CrudInlineLabelEditor>
+                              <InlineRenameField
+                                ariaLabel="Clip card label"
+                                allowEmpty
+                                value={currentClip().identifiers.label}
+                                onClose={props.onCancelCardLabelEdit}
+                                onCommit={(label) =>
+                                  props.onUpdateLabel(
+                                    [currentClip(), isActive()],
+                                    label,
+                                  )
+                                }
+                              />
+                            </Show>
                           )}
                         </Show>
                       </div>

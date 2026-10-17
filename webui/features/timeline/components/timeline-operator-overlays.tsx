@@ -7,16 +7,9 @@
  */
 
 import { createDraggable } from "@neodrag/solid";
-import {
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import { Input } from "../../../components/ui/form-controls";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import { MenuItem, MenuSurface } from "../../../components/ui/menu";
 import {
   durationToMs,
@@ -53,10 +46,12 @@ type MarkerLabelEditorProps = {
   marker: types.TimelineMarker;
 };
 
-/** Renders the inline marker label editor and selects the default label. */
+/**
+ * Renders the inline marker label editor. The draft lives in the timeline context so it survives
+ * the editor remounting when a server update replaces the marker.
+ */
 const MarkerLabelEditor = (props: MarkerLabelEditorProps) => {
   const ctx = useTimelineContext();
-  let inputRef: HTMLInputElement | undefined;
 
   /** Returns the current draft label for this marker. */
   const label = () =>
@@ -65,72 +60,26 @@ const MarkerLabelEditor = (props: MarkerLabelEditorProps) => {
   /** Returns a text-relative input width that grows with the edited label. */
   const inputWidth = () => `${Math.max(1, label().length)}ch`;
 
-  /** Commits the current marker label and closes the inline editor. */
-  const commit = () => {
-    const nextLabel = label().trim() || props.marker.label;
-    ctx.markersActions.storeMarker({ ...props.marker, label: nextLabel });
-    ctx.markerLabelEditing.clearDraftLabel(props.marker.uid);
-    ctx.markerLabelEditing.stopEditing();
-  };
-
-  /** Cancels marker label editing without changing the marker. */
-  const cancel = () => {
-    ctx.markerLabelEditing.clearDraftLabel(props.marker.uid);
-    ctx.markerLabelEditing.stopEditing();
-  };
-
-  /** Accepts focus-out edits without treating server remounts as blur commits. */
-  const handleBlur = (
-    event: FocusEvent & { currentTarget: HTMLInputElement },
-  ) => {
-    const input = event.currentTarget;
-    window.setTimeout(() => {
-      if (!input.isConnected) return;
-      if (ctx.markerLabelEditing.editingMarkerUid() !== props.marker.uid)
-        return;
-      commit();
-    });
-  };
-
-  /** Focuses the inline editor and selects the default marker name. */
-  onMount(() => {
-    inputRef?.focus();
-    inputRef?.select();
-  });
-
   return (
-    <Input
-      density="compact"
-      ref={inputRef}
-      aria-label="Marker label"
-      class="select-text"
+    <InlineRenameField
+      ariaLabel="Marker label"
+      class="flex-none"
       style={{
         width: `calc(${inputWidth()} + 16px)`,
         "max-width": "60ch",
         height: "20px",
       }}
-      value={label()}
-      onInput={(event) =>
-        ctx.markerLabelEditing.setDraftLabel(
-          props.marker.uid,
-          event.currentTarget.value,
-        )
+      value={props.marker.label}
+      draft={label()}
+      onDraftChange={(draft) =>
+        ctx.markerLabelEditing.setDraftLabel(props.marker.uid, draft)
       }
-      onBlur={handleBlur}
-      onClick={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Enter") {
-          event.preventDefault();
-          commit();
-          return;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          cancel();
-        }
+      onCommit={(nextLabel) =>
+        ctx.markersActions.storeMarker({ ...props.marker, label: nextLabel })
+      }
+      onClose={() => {
+        ctx.markerLabelEditing.clearDraftLabel(props.marker.uid);
+        ctx.markerLabelEditing.stopEditing();
       }}
     />
   );
