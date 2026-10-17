@@ -174,7 +174,13 @@ test("masters can be created and assigned to a control", async ({
   const masterRow = mastersPanel.locator(`[data-master-id="${master.id}"]`);
   await expect(masterRow).toBeVisible();
   await expect(masterRow.getByText("All fixtures")).toBeVisible();
-  await expect(masterRow.getByText("100%")).toBeVisible();
+  const level = masterRow.getByRole("slider", {
+    name: `${master.label} level`,
+  });
+  await expect(level).toHaveAttribute("aria-valuenow", "100.0");
+  await expect(
+    masterRow.getByRole("spinbutton", { name: `${master.label} level` }),
+  ).toHaveValue("100");
   await expect(mastersPanel.getByLabel("Group", { exact: true })).toHaveClass(
     /nf-form-control/,
   );
@@ -186,9 +192,10 @@ test("masters can be created and assigned to a control", async ({
     path: test.info().outputPath("shared-masters.png"),
     fullPage: true,
   });
-  const level = masterRow.getByRole("slider");
   expect(
-    await level.evaluate((input) => input.getBoundingClientRect().width),
+    await masterRow
+      .locator(".range-slider")
+      .evaluate((track) => track.getBoundingClientRect().width),
   ).toBeGreaterThanOrEqual(120);
   await level.scrollIntoViewIfNeeded();
   await page.screenshot({
@@ -259,7 +266,13 @@ test("playback rate masters use control midpoint as normal speed", async ({
   const masterRow = mastersPanel.locator(`[data-master-id="${master.id}"]`);
   await expect(masterRow).toBeVisible();
   await expect(masterRow.getByText("All instances")).toBeVisible();
-  await expect(masterRow.getByText("100%")).toBeVisible();
+  const level = masterRow.getByRole("slider", {
+    name: `${master.label} level`,
+  });
+  await expect(level).toHaveAttribute("aria-valuenow", "100.0");
+  await expect(
+    masterRow.getByRole("spinbutton", { name: `${master.label} level` }),
+  ).toHaveValue("100");
 
   await dragMasterToControl(page, master.id, 3);
 

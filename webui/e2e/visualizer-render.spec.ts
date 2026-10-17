@@ -19,7 +19,7 @@ import {
 } from "../types/index";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { ALWAYS_ATTACH_ARTIFACTS, collectPageErrors } from "./optics-harness";
-import { expect, type Page, test } from "./playwright-fixtures";
+import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { decodePng } from "./png-decode";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -450,6 +450,14 @@ async function openVisualizerSettings(page: Page) {
   return dialog;
 }
 
+/** Moves the Darkness slider to its minimum (0) or maximum (100) from the keyboard. */
+async function setDarkness(dialog: Locator, value: 0 | 100) {
+  const slider = dialog.getByRole("slider", { name: "Darkness", exact: true });
+  await slider.focus();
+  await slider.press(value === 0 ? "Home" : "End");
+  await expect(slider).toHaveAttribute("aria-valuenow", value.toFixed(1));
+}
+
 /** Reads the quality preset the live main-thread renderer's optical context was built with, or undefined mid-rebuild. */
 async function renderedQualityPreset(page: Page) {
   return page.evaluate(async () => {
@@ -599,15 +607,11 @@ for (const worker of [false, true]) {
     await expectVisualizerFpsLabel(page);
     let dialog = await openVisualizerSettings(page);
     await dialog.getByRole("slider", { name: "Quality preset" }).fill("1");
-    await dialog
-      .getByRole("slider", { name: "Darkness", exact: true })
-      .fill("0");
+    await setDarkness(dialog, 0);
     await page.keyboard.press("Escape");
     const bright = await settledCanvasLuma(page);
     dialog = await openVisualizerSettings(page);
-    await dialog
-      .getByRole("slider", { name: "Darkness", exact: true })
-      .fill("100");
+    await setDarkness(dialog, 100);
     await page.keyboard.press("Escape");
     // Worker frames arrive asynchronously, so poll until a re-rendered frame shows the change.
     let dark = bright;
@@ -635,7 +639,7 @@ for (const worker of [false, true]) {
     ).toHaveValue("1");
     await expect(
       dialog.getByRole("slider", { name: "Darkness", exact: true }),
-    ).toHaveValue("100");
+    ).toHaveAttribute("aria-valuenow", "100.0");
     expect(pageErrors).toEqual([]);
   });
 }

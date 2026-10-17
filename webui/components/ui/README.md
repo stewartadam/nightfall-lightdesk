@@ -90,6 +90,12 @@ Use `NumericStepper` for a numeric draft with decrement/increment buttons. Suppl
 
 Use `InputGroup` and `InputSuffix` from `form-controls` to attach units to fields under one border and focus ring. Keep units outside the editable value. The shared stepper and waveform rate editor compose this same field shell.
 
+## Sliders
+
+Use `RangeSlider` from `range-slider` for any horizontal numeric slider instead of a native `type="range"`; `mode="range"` gives two ordered handles. Always pass `ariaLabel` (or `handleLabels`) and, in a settings row, `describedBy`. `onChange` receives every edit, including each drag step; `onCommit` receives the settled value once a drag ends or a key press, track tap or numeric entry completes, so live previews and undoable commits stay separate. While a handle is dragged the slider ignores incoming `value` echoes, so a lagging backend cannot pull it back. `min`, `max` and `step` may change while mounted (for example an absolute/relative mode switch). The numeric field and its `suffix` (`""` hides the unit) appear unless `showInputs={false}`; hide `showPips` and `tooltips` in compact rows. `format` drives tooltips, pips and the handle's `aria-valuetext`.
+
+Use `VerticalRangeSlider` for faders. Both components import `range-slider.css`, which owns the noUiSlider base styles and the theme: a neutral track, an `--accent` fill and a round handle with an accent ring. Do not restyle `.noUi-*` classes elsewhere. Inside a flow node, wrap the slider in a `nodrag nokey` element that stops `pointerdown` propagation, so drags and arrow keys move the handle rather than the node. The masters table, attribute sliders, color path timing, tap pattern detection, visualizer darkness, Step FX start position, flow normalized ports, FX waveform editor and clip faders use these components.
+
 ## Settings rows
 
 Use `SettingsRow` from `settings-row` for one setting in a preferences surface: its `label` and optional `description` sit on the left and the control is aligned to the right edge, centered beside them. The row renders its control through a child function that receives `id` and `describedBy`; pass them to the control (`id`/`aria-describedby` on fields, `id`/`describedBy` on a `switch-only` `ToggleSwitch`) so the title labels it and the description describes it. Set `labelControl={false}` when the control is a button or read-only content whose own text names it. `details` runs full width beneath the row, for lists, notes and errors, and `heading` makes the title a section heading.

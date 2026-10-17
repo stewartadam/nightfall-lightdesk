@@ -547,6 +547,38 @@ test("component catalog preserves open demos and supports range sliders", async 
   await expect(
     sliders.getByRole("slider", { name: "Amplitude", exact: true }),
   ).toHaveAttribute("aria-valuenow", "75.0");
+  const amplitudeStatus = sliders.getByRole("status", {
+    name: "Amplitude commit",
+  });
+  await expect(amplitudeStatus).toHaveText("Live 75% · committed 75%");
+  const amplitudeHandle = sliders.getByRole("slider", {
+    name: "Amplitude",
+    exact: true,
+  });
+  const amplitudeBounds = (await amplitudeHandle.boundingBox())!;
+  await page.mouse.move(
+    amplitudeBounds.x + amplitudeBounds.width / 2,
+    amplitudeBounds.y + amplitudeBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    amplitudeBounds.x - 40,
+    amplitudeBounds.y + amplitudeBounds.height / 2,
+    { steps: 8 },
+  );
+  // Mid-drag edits stream live while the committed value waits for release.
+  await expect(amplitudeStatus).toContainText("committed 75%");
+  await expect(amplitudeStatus).not.toContainText("Live 75%");
+  await page.mouse.up();
+  const releasedAmplitude = await amplitudeHandle.getAttribute("aria-valuenow");
+  await expect(amplitudeStatus).toHaveText(
+    `Live ${Number(releasedAmplitude)}% · committed ${Number(releasedAmplitude)}%`,
+  );
+  await amplitudeHandle.focus();
+  await amplitudeHandle.press("ArrowRight");
+  await expect(amplitudeStatus).toHaveText(
+    `Live ${Number(releasedAmplitude) + 1}% · committed ${Number(releasedAmplitude) + 1}%`,
+  );
   const handle = sliders.getByRole("slider", {
     name: "Phase maximum",
     exact: true,

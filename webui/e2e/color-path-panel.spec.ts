@@ -531,12 +531,13 @@ test("color path editor renders preview swatches and route overlay", async ({
   await expect(panel.getByLabel("Hue Route")).toBeDisabled();
   await expect(panel.getByLabel("Curve")).toBeDisabled();
   await expect(
-    panel
-      .locator('[data-testid="color-path-timing-row"][data-timing="In Color"]')
-      .getByTestId("color-path-timing-slider"),
+    panel.getByRole("spinbutton", { name: "In Color timing" }),
   ).toBeDisabled();
   await expect(
-    panel.getByTestId("color-path-midpoint-brightness"),
+    panel.getByRole("slider", { name: "In Color timing" }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await expect(
+    panel.getByRole("spinbutton", { name: "Midpoint brightness" }),
   ).toBeDisabled();
   await expect(panel.getByText("Color Paths").first()).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Save" })).toHaveCount(0);
@@ -686,15 +687,16 @@ test("color path editor renders preview swatches and route overlay", async ({
     .toBe(await endInput.inputValue());
   const authoredStart = await startInput.inputValue();
   const authoredEnd = await endInput.inputValue();
-  const inColorTiming = panel.locator(
-    '[data-testid="color-path-timing-row"][data-timing="In Color"]',
-  );
-  const inColorTimingSlider = inColorTiming.getByTestId(
-    "color-path-timing-slider",
-  );
-  await expect(inColorTimingSlider).toHaveValue("0");
-  await inColorTimingSlider.fill("25");
-  await expect(inColorTimingSlider).toHaveValue("25");
+  const inColorTimingSlider = panel.getByRole("slider", {
+    name: "In Color timing",
+  });
+  const inColorTimingField = panel.getByRole("spinbutton", {
+    name: "In Color timing",
+  });
+  await expect(inColorTimingSlider).toHaveAttribute("aria-valuenow", "0.0");
+  await inColorTimingField.fill("25");
+  await inColorTimingField.press("Enter");
+  await expect(inColorTimingSlider).toHaveAttribute("aria-valuenow", "25.0");
   await expect
     .poll(() => gradientCanvasColorHex(gradientCanvas, 0))
     .toBe(authoredStart);
@@ -711,10 +713,16 @@ test("color path editor renders preview swatches and route overlay", async ({
     gradientCanvas,
     0.5,
   );
-  const brightnessSlider = panel.getByTestId("color-path-midpoint-brightness");
-  await expect(brightnessSlider).toHaveValue("100");
-  await brightnessSlider.fill("50");
-  await expect(brightnessSlider).toHaveValue("50");
+  const brightnessSlider = panel.getByRole("slider", {
+    name: "Midpoint brightness",
+  });
+  const brightnessField = panel.getByRole("spinbutton", {
+    name: "Midpoint brightness",
+  });
+  await expect(brightnessSlider).toHaveAttribute("aria-valuenow", "100.0");
+  await brightnessField.fill("50");
+  await brightnessField.press("Enter");
+  await expect(brightnessSlider).toHaveAttribute("aria-valuenow", "50.0");
   await expect
     .poll(() => gradientCanvasColorHex(gradientCanvas, 0))
     .toBe(authoredStart);

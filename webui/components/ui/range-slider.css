@@ -1,0 +1,207 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* noUiSlider structure first, so the theme below wins at equal specificity. */
+@import "nouislider/dist/nouislider.css";
+
+/*
+ * Shared skin for RangeSlider and VerticalRangeSlider: a neutral track, an
+ * accent fill and a round handle whose dark centre and accent ring echo the
+ * checked ToggleSwitch thumb.
+ */
+:root {
+  --nf-slider-track: var(--line, #34383b);
+  --nf-slider-fill: var(--accent);
+  --nf-slider-handle: var(--panel, #191b1d);
+  --nf-slider-disabled: color-mix(
+    in srgb,
+    var(--muted, #a0a7aa) 35%,
+    transparent
+  );
+  --nf-slider-tick: color-mix(in srgb, var(--muted, #a0a7aa) 55%, transparent);
+}
+
+:is(.range-slider, .vertical-range-slider).noUi-target {
+  border: none;
+  border-radius: 9999px;
+  background: var(--nf-slider-track);
+  box-shadow: none;
+}
+:is(.range-slider, .vertical-range-slider) .noUi-connect {
+  border-radius: 9999px;
+  background: var(--nf-slider-fill);
+}
+:is(.range-slider, .vertical-range-slider) .noUi-handle {
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--nf-slider-fill);
+  border-radius: 50%;
+  background: var(--nf-slider-handle);
+  box-shadow: none;
+  cursor: grab;
+}
+:is(.range-slider, .vertical-range-slider).is-dragging .noUi-handle {
+  cursor: grabbing;
+}
+:is(.range-slider, .vertical-range-slider) .noUi-handle::before,
+:is(.range-slider, .vertical-range-slider) .noUi-handle::after {
+  display: none;
+}
+:is(.range-slider, .vertical-range-slider) .noUi-handle:focus {
+  outline: none;
+}
+:is(.range-slider, .vertical-range-slider)[disabled] .noUi-connect {
+  background: var(--nf-slider-disabled);
+}
+:is(.range-slider, .vertical-range-slider)[disabled] .noUi-handle {
+  border-color: var(--nf-slider-disabled);
+  cursor: not-allowed;
+}
+
+/* Vertical fader values and ticks are rendered beside the track instead. */
+.vertical-range-slider .noUi-tooltip,
+.vertical-range-slider .noUi-pips {
+  display: none;
+}
+
+/* Horizontal slider with optional pips, tooltips and numeric fields. */
+.range-slider-container {
+  position: relative;
+}
+.range-slider {
+  width: 100%;
+}
+.range-slider.noUi-horizontal {
+  height: 6px;
+}
+.range-slider.noUi-horizontal .noUi-handle {
+  top: -5px;
+  right: -8px;
+}
+/* Leaves room for the outermost handles inside the control's own box. */
+.range-slider.noUi-horizontal {
+  margin-inline: 8px;
+}
+.range-slider-pair {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+  margin: 10px 0 0;
+}
+:where(.range-slider-pair) .range-slider {
+  flex: none;
+}
+.range-slider-pair .range-slider-inputs {
+  justify-content: space-between;
+}
+.range-slider .noUi-tooltip {
+  bottom: calc(100% + 8px);
+  padding: 4px 8px;
+  border: 1px solid var(--line, #34383b);
+  border-radius: var(--nf-corner-radius, 6px);
+  background: var(--raised, #222527);
+  color: #ebeeed;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.range-slider.is-dragging .noUi-tooltip {
+  opacity: 1;
+}
+.range-slider .noUi-pips {
+  height: 18px;
+  padding: 0;
+  top: 100%;
+  color: var(--muted, #a0a7aa);
+}
+.range-slider .noUi-pips-horizontal {
+  padding-top: 6px;
+}
+.range-slider .noUi-value {
+  display: none;
+}
+.range-slider .noUi-marker {
+  background: var(--nf-slider-tick);
+}
+.range-slider .noUi-marker-horizontal.noUi-marker {
+  width: 1px;
+  height: 8px;
+}
+.range-slider .noUi-marker-horizontal.noUi-marker-large {
+  height: 12px;
+}
+.range-slider-field {
+  border-color: var(--line, #34383b);
+  background: var(--raised, #222527);
+}
+.range-slider-field input {
+  width: 56px;
+  color: #ebeeed;
+  font-variant-numeric: tabular-nums;
+}
+.range-slider-field input:disabled {
+  color: var(--muted, #a0a7aa);
+}
+.range-slider-field span {
+  border-color: var(--line, #34383b);
+  color: var(--muted, #a0a7aa);
+}
+
+/* Vertical fader with a separate tick column. */
+.vertical-range-slider-container {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+}
+.vertical-range-slider.noUi-vertical {
+  width: 6px;
+  height: 100%;
+  flex-shrink: 0;
+}
+.vertical-range-slider .noUi-base,
+.vertical-range-slider .noUi-connects {
+  width: 100%;
+  height: 100%;
+}
+.vertical-range-slider.noUi-vertical .noUi-handle {
+  right: -5px;
+  bottom: -8px;
+}
+.vertical-range-slider.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.vertical-slider-ticks {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 0 0 4px;
+}
+.vertical-slider-tick {
+  display: flex;
+  align-items: center;
+  height: 0;
+}
+.vertical-slider-tick-mark {
+  width: 5px;
+  height: 1px;
+  background: var(--nf-slider-tick);
+}
+.vertical-slider-value-marker {
+  position: absolute;
+  right: 0;
+  width: 8px;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--color-invalid, rgb(239 68 68));
+  box-shadow: 0 0 0 1px rgb(127 29 29 / 0.85);
+}

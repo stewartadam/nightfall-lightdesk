@@ -11,6 +11,7 @@ import { DotsSixVerticalIcon } from "@squidlab/phosphor-solid/dots-six-vertical"
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { useRevealObjectCapability } from "../../components/providers/panel-capabilities/context-core";
 import { NativeSelect } from "../../components/ui/form-controls";
+import { RangeSlider } from "../../components/ui/range-slider";
 import { Table, TableEmptyRow, TableScroll } from "../../components/ui/table";
 import { Button } from "../../components/ui/visual-language/button";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
@@ -330,35 +331,26 @@ export default function MastersPanel(
                     </NativeSelect>
                   </td>
                   <td>
-                    <div class="flex items-center gap-2">
-                      <Mappable
-                        class="flex w-full"
-                        label={`${master.identifiers.label} level`}
-                        choices={() => [levelControl(master)]}
-                      >
-                        <input
-                          type="range"
-                          min="0"
-                          max={masterLevelMax(master)}
-                          step="1"
-                          value={master.level_percent}
-                          class="w-full"
-                          onInput={(event) =>
-                            levelControl(master).handlers.drag(
-                              Number(event.currentTarget.value),
-                            )
-                          }
-                          onChange={(event) =>
-                            levelControl(master).handlers.commit(
-                              Number(event.currentTarget.value),
-                            )
-                          }
-                        />
-                      </Mappable>
-                      <span class="w-11 text-right font-mono text-xs text-neutral-400">
-                        {Math.round(master.level_percent)}%
-                      </span>
-                    </div>
+                    <Mappable
+                      class="flex w-full"
+                      label={`${master.identifiers.label} level`}
+                      choices={() => [levelControl(master)]}
+                    >
+                      <RangeSlider
+                        value={master.level_percent}
+                        max={masterLevelMax(master)}
+                        ariaLabel={`${master.identifiers.label} level`}
+                        containerClass="w-full min-w-[260px]"
+                        showPips={false}
+                        tooltips={false}
+                        onChange={(value) =>
+                          levelControl(master).handlers.drag(value)
+                        }
+                        onCommit={(value) =>
+                          levelControl(master).handlers.commit(value)
+                        }
+                      />
+                    </Mappable>
                   </td>
                   <td class="text-right">
                     <Show when={master.mode?.type === "Toggle"}>

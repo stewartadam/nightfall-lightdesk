@@ -18,13 +18,14 @@ import {
 } from "../components/ui/visual-language/tab-alignment-select";
 import { ButtonPopoverDemo } from "./button-popover-demo";
 
-/** Demonstrates scalar and two-handle sliders with editable units, fractional steps, and disabled state. */
+/** Demonstrates scalar and two-handle sliders with editable units, fractional steps, live versus committed values, and disabled state. */
 export function SliderDemo() {
   const [intensity, setIntensity] = createSignal<readonly [number, number]>([
     20, 80,
   ]);
   const [phase, setPhase] = createSignal<readonly [number, number]>([-90, 90]);
   const [amplitude, setAmplitude] = createSignal(65);
+  const [committedAmplitude, setCommittedAmplitude] = createSignal(65);
   const [disabled, setDisabled] = createSignal(false);
   return (
     <section class="properties lab-panel" aria-label="Slider examples">
@@ -70,10 +71,14 @@ export function SliderDemo() {
           <RangeSlider
             value={amplitude()}
             onChange={setAmplitude}
+            onCommit={setCommittedAmplitude}
             ariaLabel="Amplitude"
             disabled={disabled()}
           />
           <p class="field-help">Single handle · the FX editor control</p>
+          <p class="field-help" role="status" aria-label="Amplitude commit">
+            Live {amplitude()}% · committed {committedAmplitude()}%
+          </p>
         </div>
       </div>
       <ToggleSwitch

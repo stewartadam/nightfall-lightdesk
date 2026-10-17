@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
 } from "../../../../components/ui/dropdown-menu";
 import { Input } from "../../../../components/ui/form-controls";
+import { RangeSlider } from "../../../../components/ui/range-slider";
 import type * as types from "../../../../types";
 import {
   type StepFxPositionUnit,
@@ -212,22 +213,20 @@ export function StepFxStartPositionControls(props: {
                   </span>
                 </div>
               </label>
-              <input
-                type="range"
-                min="0"
-                max={stepFxPositionUnitScale(props.positionUnit)}
-                step="1"
-                aria-label="Start position dial"
-                class="w-full accent-[var(--accent)]"
+              <RangeSlider
                 value={
                   ((startValue() %
                     stepFxPositionUnitScale(props.positionUnit)) +
                     stepFxPositionUnitScale(props.positionUnit)) %
                   stepFxPositionUnitScale(props.positionUnit)
                 }
-                onInput={(event) =>
-                  setStartValue(Number(event.currentTarget.value))
-                }
+                max={stepFxPositionUnitScale(props.positionUnit)}
+                suffix={stepFxPositionUnitSuffix(props.positionUnit)}
+                ariaLabel="Start position dial"
+                showPips={false}
+                showInputs={false}
+                containerClass="w-full"
+                onChange={setStartValue}
               />
               <div class="grid grid-cols-4 gap-1">
                 <For
@@ -269,20 +268,18 @@ export function StepFxStartPositionControls(props: {
                     </span>
                   </div>
                 </label>
-                <input
-                  type="range"
-                  min="0"
-                  max={stepFxPositionUnitScale(props.positionUnit)}
-                  step="1"
-                  aria-label="Spread amount slider"
-                  class="w-full accent-[var(--accent)]"
+                <RangeSlider
                   value={Math.min(
                     Math.abs(spreadValue()),
                     stepFxPositionUnitScale(props.positionUnit),
                   )}
-                  onInput={(event) =>
-                    setSpreadMagnitude(Number(event.currentTarget.value))
-                  }
+                  max={stepFxPositionUnitScale(props.positionUnit)}
+                  suffix={stepFxPositionUnitSuffix(props.positionUnit)}
+                  ariaLabel="Spread amount slider"
+                  showPips={false}
+                  showInputs={false}
+                  containerClass="w-full"
+                  onChange={setSpreadMagnitude}
                 />
                 <div class="grid grid-cols-4 gap-1">
                   <For

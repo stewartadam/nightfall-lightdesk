@@ -29,8 +29,12 @@ type TestFlowEdge = {
   toPortId: number;
 };
 
-/** Creates a minimal flow definition that the Flow Editor can render. */
-function buildFlow(nodes: TestFlowNode[], edges: TestFlowEdge[] = []) {
+/** Creates a minimal flow definition that the Flow Editor can render, optionally renaming each node's input port. */
+function buildFlow(
+  nodes: TestFlowNode[],
+  edges: TestFlowEdge[] = [],
+  inputPortName = "Input",
+) {
   return {
     identifiers: {
       id: 901,
@@ -45,7 +49,7 @@ function buildFlow(nodes: TestFlowNode[], edges: TestFlowEdge[] = []) {
       ports: [
         {
           port_id: 1,
-          name: "Input",
+          name: inputPortName,
           direction: "input",
           port_type: "number",
         },
@@ -77,8 +81,9 @@ async function seedFlow(
   page: Page,
   nodes: TestFlowNode[],
   edges: TestFlowEdge[] = [],
+  inputPortName?: string,
 ) {
-  const flow = buildFlow(nodes, edges);
+  const flow = buildFlow(nodes, edges, inputPortName);
   await page.evaluate((seededFlow) => {
     const stores = (window as any).appStores;
     stores.flows.set({ [seededFlow.identifiers.uid]: seededFlow });
@@ -264,5 +269,52 @@ test("flow inline number editor retains fractional edits and graph position", as
   await expect(node).toHaveAttribute("style", position!);
   await node.screenshot({
     path: testInfo.outputPath("shared-flow-number.png"),
+  });
+});
+
+/** Verifies a normalized port uses the shared slider, which drags and steps without moving its node. */
+test("flow normalized port slider edits without dragging the node", async ({
+  page,
+}, testInfo) => {
+  await openApp(page);
+  await seedFlow(
+    page,
+    [{ id: 1, kind: "Scale", label: "Normalized scale", x: 80, y: 60 }],
+    [],
+    "Amplitude",
+  );
+  await openSeededFlowEditor(page);
+  const node = page
+    .locator(".solid-flow__node")
+    .filter({ hasText: "Normalized scale" });
+  const slider = node.getByRole("slider", { name: "Amplitude" });
+  await expect(slider).toBeVisible();
+  /** Reads the node's canvas translation, ignoring selection stacking. */
+  const translation = () =>
+    node.evaluate((element) => (element as HTMLElement).style.transform);
+  const position = await translation();
+  const track = (await node.locator(".range-slider").boundingBox())!;
+  const handle = (await slider.boundingBox())!;
+  await page.mouse.move(
+    handle.x + handle.width / 2,
+    handle.y + handle.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(track.x + track.width * 0.75, handle.y + 8, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  await expect.poll(translation).toBe(position);
+  const dragged = Number(await slider.getAttribute("aria-valuetext"));
+  expect(dragged).toBeGreaterThan(0.5);
+  await slider.focus();
+  await slider.press("ArrowLeft");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    (dragged - 0.01).toFixed(2),
+  );
+  await expect.poll(translation).toBe(position);
+  await node.screenshot({
+    path: testInfo.outputPath("shared-flow-normalized-slider.png"),
   });
 });

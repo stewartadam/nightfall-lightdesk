@@ -98,12 +98,18 @@ test("dragging a master level streams updates and commits one undoable change", 
   await page.getByRole("button", { name: "New intensity global" }).click();
   await expect.poll(() => masterLevel(page)).toBe(100);
 
-  const slider = page.locator('[data-master-id] input[type="range"]').first();
-  await expect(slider).toBeVisible();
-  const box = await slider.boundingBox();
+  const row = page.locator("[data-master-id]").first();
+  const handle = row.getByRole("slider");
+  await expect(handle).toBeVisible();
+  const box = await row.locator(".range-slider").boundingBox();
+  const handleBox = await handle.boundingBox();
   expect(box).not.toBeNull();
+  expect(handleBox).not.toBeNull();
   const y = box!.y + box!.height / 2;
-  await page.mouse.move(box!.x + box!.width - 2, y);
+  await page.mouse.move(
+    handleBox!.x + handleBox!.width / 2,
+    handleBox!.y + handleBox!.height / 2,
+  );
   await page.mouse.down();
   for (const fraction of [0.8, 0.6, 0.4, 0.25]) {
     await page.mouse.move(box!.x + box!.width * fraction, y, { steps: 3 });

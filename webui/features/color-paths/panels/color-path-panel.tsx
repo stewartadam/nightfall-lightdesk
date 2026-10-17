@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
+import { RangeSlider } from "../../../components/ui/range-slider";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import {
   colorPathRoutePoints,
@@ -214,8 +215,8 @@ export default function ColorPathPanel(props: BasePanelComponentProps) {
   };
 
   /** Updates the midpoint brightness scale on the local draft. */
-  const updateMidpointBrightness = (value: string) => {
-    const brightness = percentInputFraction(value);
+  const updateMidpointBrightness = (value: number) => {
+    const brightness = percentInputFraction(String(value));
     updateDraft((path) => ({
       ...path,
       timing: {
@@ -414,36 +415,28 @@ export default function ColorPathPanel(props: BasePanelComponentProps) {
                         setTimingComponent("out_color", component)
                       }
                     />
-                    <label class="grid grid-cols-[130px_1fr_48px] items-center gap-3 text-sm">
+                    <div class="grid grid-cols-[130px_minmax(0,1fr)] items-center gap-3 text-sm">
                       <span class="text-neutral-300">
                         Brightness
                         <span class="block text-neutral-500 text-xs">
                           Midpoint
                         </span>
                       </span>
-                      <input
-                        data-testid="color-path-midpoint-brightness"
-                        class="accent-cyan-400 disabled:opacity-50"
+                      <RangeSlider
+                        value={Number(
+                          percentInputValue(
+                            currentDraft().timing.brightness_percent,
+                            1,
+                          ),
+                        )}
+                        max={200}
+                        ariaLabel="Midpoint brightness"
                         disabled={draftReadOnly()}
-                        type="range"
-                        min="0"
-                        max="200"
-                        value={percentInputValue(
-                          currentDraft().timing.brightness_percent,
-                          1,
-                        )}
-                        onInput={(event) =>
-                          updateMidpointBrightness(event.currentTarget.value)
-                        }
+                        showPips={false}
+                        containerClass="min-w-0"
+                        onChange={updateMidpointBrightness}
                       />
-                      <span class="text-right font-mono text-neutral-400 text-xs">
-                        {percentInputValue(
-                          currentDraft().timing.brightness_percent,
-                          1,
-                        )}
-                        %
-                      </span>
-                    </label>
+                    </div>
                   </section>
                 </section>
                 <aside class="min-w-0 space-y-4">
