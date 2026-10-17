@@ -81,8 +81,6 @@
   }
   .nf-table > tbody > tr[data-table-empty] > td {
     padding: 32px 10px;
-    color: var(--table-muted);
-    text-align: center;
   }
   .nf-table > tbody > tr[data-table-group] > td {
     background: var(

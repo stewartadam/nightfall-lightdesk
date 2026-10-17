@@ -12,6 +12,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -335,11 +336,13 @@ export function TimelineListView(props: TimelineListViewProps) {
           <Show
             when={controller.timelineList().length > 0}
             fallback={
-              <div class="p-4 text-neutral-500">
-                {controller.allTimelineList().length > 0
-                  ? "No matching timelines"
-                  : "No timelines available"}
-              </div>
+              <EmptyState
+                title={
+                  controller.allTimelineList().length > 0
+                    ? "No matching timelines"
+                    : "No timelines available"
+                }
+              />
             }
           >
             <Show

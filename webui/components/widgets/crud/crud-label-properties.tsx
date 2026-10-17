@@ -7,6 +7,7 @@
  */
 
 import { createEffect, createSignal, Show } from "solid-js";
+import { EmptyState } from "../../ui/empty-state";
 import { Input } from "../../ui/form-controls";
 
 export interface CrudLabelPropertiesProps<T> {
@@ -59,9 +60,11 @@ export default function CrudLabelProperties<T>(
     <Show
       when={props.entry}
       fallback={
-        <div class="p-4 text-sm text-neutral-500">
-          Select one {props.entityName.toLowerCase()} to edit its label.
-        </div>
+        <EmptyState
+          variant="inline"
+          class="p-4"
+          title={`Select one ${props.entityName.toLowerCase()} to edit its label.`}
+        />
       }
     >
       {(entry) => (

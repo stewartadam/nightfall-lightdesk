@@ -22,6 +22,7 @@ import {
   type TableFilterSettings,
 } from "../../../../lib/datagrid-filtering";
 import { DropdownMenu, DropdownMenuSeparator } from "../../../ui/dropdown-menu";
+import { EmptyState } from "../../../ui/empty-state";
 import { ScrollArea } from "../../../ui/scroll-area";
 import { TOOLBAR_BUTTON_CLASS } from "../../../ui/toolbar-button";
 import { Button } from "../../../ui/visual-language/button";
@@ -279,9 +280,11 @@ export default function DataGridFilterMenu(props: DataGridFilterMenuProps) {
           <Show
             when={props.filters.rules.length > 0}
             fallback={
-              <div class="rounded border border-dashed border-neutral-700 px-3 py-3 text-center text-xs text-neutral-500">
-                No column filters
-              </div>
+              <EmptyState
+                variant="dashed"
+                density="compact"
+                title="No column filters"
+              />
             }
           >
             <Index each={props.filters.rules}>

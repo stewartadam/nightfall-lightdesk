@@ -20,6 +20,7 @@ import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
+import { EmptyState } from "../../../components/ui/empty-state";
 import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
@@ -603,7 +604,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
     <div class="relative h-full w-full">
       <Show
         when={Object.keys($fixtures()).length > 0}
-        fallback={<div class="p-4 text-gray-500">Loading fixtures...</div>}
+        fallback={<EmptyState loading title="Loading fixtures..." />}
       >
         <DataGrid
           rows={displayRows().length}

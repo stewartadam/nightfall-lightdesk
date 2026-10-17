@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, For, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import {
   Checkbox,
   Input,
@@ -152,9 +153,11 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
     <Show
       when={timeline()}
       fallback={
-        <div class="p-4 text-sm text-neutral-500">
-          Select a timeline to edit its configuration.
-        </div>
+        <EmptyState
+          variant="inline"
+          class="p-4"
+          title="Select a timeline to edit its configuration."
+        />
       }
     >
       {(currentTimeline) => (
