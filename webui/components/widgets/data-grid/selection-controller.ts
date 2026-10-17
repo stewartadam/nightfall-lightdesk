@@ -21,6 +21,7 @@ import {
 import { cellDisplayValue } from "./model/cell-utils";
 import {
   type DataGridSelectionAction,
+  type DataGridSelectionState,
   effectiveCurrentSelection,
   effectiveSelectedColumns,
   effectiveSelectedRows,
@@ -49,6 +50,23 @@ interface DataGridSelectionControllerOptions {
   onGridSelectionChange?: (selection: GridSelection) => void;
 }
 
+/**
+ * Returns the selection an action subtracts from, if any: the selection a
+ * Ctrl+click toggles a cell in, or the base of a subtracting Ctrl+drag. Row
+ * mode uses it to deselect a row whose cells were removed instead of widening
+ * the remainder back to the whole row.
+ */
+function subtractedSelection(
+  action: DataGridSelectionAction,
+  state: DataGridSelectionState,
+): GridSelection["current"] {
+  if (action.type === "selectCell" && action.append)
+    return effectiveCurrentSelection(state);
+  if (action.type === "dragTo" && state.drag?.subtract)
+    return state.drag.baseSelection;
+  return undefined;
+}
+
 /** Owns DataGrid selection state, publication, and pointer-drag lifecycle. */
 export function createDataGridSelectionController(
   options: DataGridSelectionControllerOptions,
@@ -73,10 +91,23 @@ export function createDataGridSelectionController(
   /** Applies a reducer action and publishes actions that change public selection. */
   const dispatchSelection = (action: DataGridSelectionAction) => {
     const previousState = untrack(selectionState);
+    const rowMode = untrack(options.selectionMode) === "row";
+    // Row mode has no column selections; a header click leaves rows as they are.
+    if (
+      rowMode &&
+      (action.type === "selectColumnRange" ||
+        action.type === "extendColumnSelection")
+    ) {
+      return previousState;
+    }
     const reducedState = reduceDataGridSelection(previousState, action);
     const nextState =
-      reducedState !== previousState && options.selectionMode() === "row"
-        ? rowSelectionState(reducedState, options.columnCount())
+      reducedState !== previousState && rowMode
+        ? rowSelectionState(
+            reducedState,
+            untrack(options.columnCount),
+            subtractedSelection(action, previousState),
+          )
         : reducedState;
     if (nextState !== previousState) {
       setSelectionState(nextState);
