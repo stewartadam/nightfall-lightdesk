@@ -11,6 +11,7 @@ import { ArrowUUpLeftIcon } from "@squidlab/phosphor-solid/arrow-u-up-left";
 import { ArrowUUpRightIcon } from "@squidlab/phosphor-solid/arrow-u-up-right";
 import { createMemo, For, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { EmptyState } from "../../components/ui/empty-state";
 import type { AppIcon } from "../../components/ui/icon";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { undoState } from "../../state/appStores";
@@ -135,11 +136,7 @@ function StackSection(props: StackSectionProps) {
       </div>
       <Show
         when={props.entries.length > 0}
-        fallback={
-          <div class="rounded-md border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-            {props.emptyText}
-          </div>
-        }
+        fallback={<EmptyState variant="dashed" title={props.emptyText} />}
       >
         <ol class="space-y-2">
           <For each={props.entries} fallback={null}>

@@ -70,6 +70,7 @@ import { DataGridDemo } from "./data-grid-demo";
 import { DialogsDemo } from "./dialogs-demo";
 import {
   AlertDemo,
+  EmptyStateDemo,
   ErrorFallbackDemo,
   SparklineDemo,
   TooltipDemo,
@@ -116,6 +117,7 @@ const componentDemos = [
     component: "errorFallback",
   },
   { id: "collapsibles", title: "Collapsibles", component: "collapsibles" },
+  { id: "empty-states", title: "Empty states", component: "emptyStates" },
   { id: "sparklines", title: "Sparklines", component: "sparklines" },
   { id: "tooltips", title: "Tooltips", component: "tooltips" },
   { id: "color-picker", title: "Color picker", component: "colorPicker" },
@@ -803,6 +805,7 @@ function DesignLab() {
               alerts: AlertDemo,
               errorFallback: ErrorFallbackDemo,
               collapsibles: CollapsibleDemo,
+              emptyStates: EmptyStateDemo,
               sparklines: SparklineDemo,
               tooltips: TooltipDemo,
               colorPicker: ColorPickerDemo,

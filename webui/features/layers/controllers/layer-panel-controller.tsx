@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
@@ -403,14 +404,10 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     <Show
       when={layerCount() > 0 || $inputTrace().length > 0}
       fallback={
-        <div class="h-full w-full flex items-center justify-center text-gray-500">
-          <div>
-            <p class="text-center">Empty layer stack.</p>
-            <p class="text-center text-sm mt-2">
-              Start a clip/playback to continue.
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          title="Empty layer stack."
+          description="Start a clip/playback to continue."
+        />
       }
     >
       <div

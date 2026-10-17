@@ -112,3 +112,9 @@
   gap: 10px;
   margin-block: 12px 20px;
 }
+.widget-empty-state-frame {
+  height: 220px;
+  margin-block: 12px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}

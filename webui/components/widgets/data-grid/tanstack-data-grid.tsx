@@ -33,6 +33,7 @@ import type {
 import { GridCellKind } from "../../../lib/data-grid-types";
 import { getLogger } from "../../../lib/logger";
 import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
+import { EmptyState } from "../../ui/empty-state";
 import { BodyCell } from "./body-cell";
 import { createDataGridEditingController } from "./editing-controller";
 import { clampIndex, isSpaceKey } from "./event-adapter";
@@ -1237,12 +1238,12 @@ export default function TanStackDataGrid(props: DataGridProps) {
           </div>
 
           <Show when={tableRows().length === 0 && props.emptyState}>
-            <div
+            <EmptyState
+              variant="inline"
               role="status"
-              class="sticky left-0 w-fit max-w-full p-4 text-sm text-neutral-400"
-            >
-              {props.emptyState}
-            </div>
+              class="sticky left-0 w-fit max-w-full p-4"
+              title={props.emptyState}
+            />
           </Show>
           <div
             class="relative"

@@ -75,6 +75,19 @@ Use `Collapsible` from `collapsible` for any section the user can expand and col
 
 The design lab's Collapsibles panel shows both variants, header actions, lazy content and controlled sections.
 
+## Empty states
+
+Use `EmptyState` from `empty-state` whenever a panel, list, inspector or placeholder area has nothing to show, or is still loading. It owns the muted neutral text, title/description hierarchy, icon sizing and spacing, so call sites never hand-build "No … selected" messages.
+
+- `variant="panel"` (the default) fills the available panel space and centers its content. It works in block parents and as a `flex-1` child below a toolbar.
+- `variant="inline"` is a muted line for lists, menus and inspectors. It adds no outer padding; inspectors pass `class="p-4"` to match their content. `align="center"` centers it, as `TableEmptyRow` does.
+- `variant="dashed"` draws a dashed placeholder box, for drop targets and empty sections inside a larger layout.
+- `title` is the main message and `description` adds guidance beneath it. `icon` adds a decorative icon and `action` a call to action such as a `Button`.
+- `loading` swaps the icon for a spinner (stopped under reduced motion), defaults the title to "Loading…" and makes the element a polite `role="status"` region.
+- `density="compact"` uses smaller text and padding for menus, popovers and tables.
+
+`TableEmptyRow` and the read-only `DataGrid`'s `emptyState` render through `EmptyState`. The design lab's Empty states panel shows every variant.
+
 ## Toolbars
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups, never a hand-drawn `w-px` divider; it passes `data-*` attributes through for test hooks.
