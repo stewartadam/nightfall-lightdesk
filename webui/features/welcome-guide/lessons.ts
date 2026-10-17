@@ -787,7 +787,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "go",
         title: "Start First Lights",
         keepVisible: ["visualizer"],
-        target: '[data-control-go-index="6"]:not(:disabled)',
+        target: '[data-control-button-index="6"]:not(:disabled)',
         observe: {
           type: "clip-playing",
           clipId: 50,
@@ -811,7 +811,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "advance",
         title: "Advance to blue",
         keepVisible: ["visualizer"],
-        target: '[data-control-go-index="6"]:not(:disabled)',
+        target: '[data-control-button-index="6"]:not(:disabled)',
         observe: {
           type: "cue-playing",
           clipId: 50,
