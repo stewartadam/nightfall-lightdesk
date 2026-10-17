@@ -55,6 +55,7 @@ import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   blueprints,
+  boards,
   clips,
   colorPaths,
   cues,
@@ -76,6 +77,8 @@ import {
   visualizerEditSelection,
   visualizerSceneObjectSelection,
 } from "../../../state/appStores";
+import { activeBoardWorkspace } from "../../../state/layout-switcher";
+import { openBoardPanel } from "../../boards";
 import SequenceWrapTag from "../../sequences";
 
 interface ShowfileObjectPaletteProps {
@@ -130,6 +133,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   const $sceneObjects = useSharedStore(sceneObjects);
   const $timecodes = useStore(timecodes);
   const $timelines = useShallowStore(timelines);
+  const $boards = useShallowStore(boards);
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
 
@@ -173,6 +177,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
       sceneObjects: $sceneObjects(),
       timecodes: $timecodes(),
       timelines: $timelines(),
+      boards: $boards(),
     }),
   );
 
@@ -258,6 +263,12 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
 
   /** Opens the owning object panel and requests that the selected object is revealed. */
   const openObjectPanel = (entry: ShowfileObjectSearchEntry) => {
+    // Each board has its own panel, so boards open or focus that panel instead.
+    if (entry.type === "board") {
+      openBoardPanel(entry.uid);
+      props.onClose();
+      return;
+    }
     openOrFocusPanel(
       $dockApi(),
       entry.panelId,
@@ -399,6 +410,8 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
 
   /** Opens the editor for editable object types, or falls back to panel highlight. */
   const openObjectEditor = (entry: ShowfileObjectSearchEntry) => {
+    // Editors open beside the layout's panels, so a board filling the workspace makes way.
+    activeBoardWorkspace.set(null);
     switch (entry.type) {
       case "cue":
         openCueEditor(entry);

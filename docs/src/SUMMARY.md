@@ -21,6 +21,8 @@
   - [Sequences](user-guide/panels/sequences.md)
   - [Sequence Editor](user-guide/panels/sequence-editor.md)
   - [Clips](user-guide/panels/clips.md)
+  - [Boards](user-guide/panels/boards.md)
+  - [Board](user-guide/panels/board.md)
   - [FX List](user-guide/panels/fx-list.md)
   - [FX Editor](user-guide/panels/fx-editor.md)
   - [Color Paths](user-guide/panels/color-paths.md)

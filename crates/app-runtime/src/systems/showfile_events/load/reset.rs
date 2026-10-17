@@ -29,6 +29,7 @@ pub(super) fn reset_showfile_state(
     flow_data_provider: &mut DataProvider<FlowDefinition>,
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
+    board_data_provider: &mut DataProvider<Board>,
     active_fx_module_ids: Option<&mut ActiveFxModuleIds>,
     input_bindings: &mut InputBindings,
     output_bindings: &mut OutputBindings,
@@ -86,6 +87,7 @@ pub(super) fn reset_showfile_state(
     flow_data_provider.clear();
     timecode_data_provider.clear();
     timeline_data_provider.clear();
+    board_data_provider.clear();
     if let Some(active_fx_module_ids) = active_fx_module_ids {
         active_fx_module_ids.0.clear();
     }

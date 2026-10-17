@@ -52,6 +52,7 @@ function createSnapshot(
     sceneObjects: {},
     timecodes: {},
     timelines: {},
+    boards: {},
     ...overrides,
   };
 }

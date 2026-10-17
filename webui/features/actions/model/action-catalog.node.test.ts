@@ -27,6 +27,7 @@ const ALL_SURFACES = [
   "commandPalette",
   "keyboard",
   "websocket",
+  "board",
 ] as types.ActionSurface[];
 
 /** Builds a catalog entry with the given ID, input kind, parameters, and allowed surfaces. */

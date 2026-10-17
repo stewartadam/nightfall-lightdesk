@@ -13,7 +13,11 @@ import {
   type PanelCapabilityId,
 } from "./panel-capabilities";
 
-export type PanelSingletonPolicy = "singleton";
+/**
+ * How many copies of a panel a workspace may hold: `singleton` panels open once under their
+ * definition ID, `multi` panels may also open further instances under derived IDs.
+ */
+export type PanelSingletonPolicy = "singleton" | "multi";
 
 export type PanelComponentLoader = () => Promise<{
   readonly default: Component<any>;

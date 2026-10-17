@@ -26,7 +26,8 @@ import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
 import CrudViewModeToggle from "../../../components/widgets/crud/crud-view-mode-toggle";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import EntityEditorModal from "../../../components/widgets/entity-editor-dialog";
-import type * as types from "../../../types";
+import { setObjectDragData } from "../../../lib/object-drag";
+import * as types from "../../../types";
 import type { GroupsPanelController } from "../controllers/groups-panel-controller";
 
 interface GroupsPanelViewProps {
@@ -48,6 +49,13 @@ function GroupCard(props: GroupCardProps) {
     <button
       type="button"
       data-crud-select-id={uid}
+      draggable={!controller.selectionMode()}
+      onDragStart={(event) => {
+        if (!event.dataTransfer) return;
+        setObjectDragData(event.dataTransfer, types.ObjectType.Group, uid);
+        event.dataTransfer.setData("text/plain", props.group.identifiers.label);
+        event.dataTransfer.effectAllowed = "copy";
+      }}
       class={CRUD_CARD_CLASS}
       classList={{
         [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),

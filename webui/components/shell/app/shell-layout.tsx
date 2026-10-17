@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { Show } from "solid-js";
+import { BoardPaletteCommands } from "../../../features/boards";
 import { MappingModeBanner, MappingModeController } from "../../../features/io";
 import { KeybindingController } from "../../../features/keybindings";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
@@ -45,6 +46,7 @@ function ShellRuntime() {
       <ExportShowfileCommand />
       <FeedbackCommands />
       <LayoutCommands />
+      <BoardPaletteCommands />
       <MappingModeController />
       <KeybindingController />
       <TauriMenuBridge />

@@ -15,6 +15,8 @@ import {
   REVEAL_OBJECT_CAPABILITY,
 } from "./panel-capabilities";
 import {
+  findPanelDefinitionById,
+  newPanelInstanceId,
   PANEL_DEFINITIONS,
   panelDefinitionByName,
   panelDefinitionHasCapability,
@@ -84,6 +86,7 @@ test("panel definitions declare reveal-object capability targets", () => {
     "panel-Groups",
     "panel-Masters",
     "panel-BlueprintsPanel",
+    "panel-Boards",
     "panel-ColorPathPanel",
     "panel-SceneObjects",
     "panel-SequenceList",
@@ -122,4 +125,20 @@ test("showfile object panel routes target reveal-capable definitions", () => {
       `${route.type} route targets ${definition.componentName}`,
     );
   }
+});
+
+/** Verifies extra instances of multi-instance panels resolve to their definition. */
+test("panel instance IDs resolve only for multi-instance definitions", () => {
+  const multi = PANEL_DEFINITIONS.find(
+    (definition) => definition.singleton === "multi",
+  );
+  const single = PANEL_DEFINITIONS.find(
+    (definition) => definition.singleton === "singleton",
+  );
+  assert.ok(multi && single);
+  assert.equal(findPanelDefinitionById(newPanelInstanceId(multi)), multi);
+  assert.equal(
+    findPanelDefinitionById(`${single.panelId}:${crypto.randomUUID()}`),
+    undefined,
+  );
 });

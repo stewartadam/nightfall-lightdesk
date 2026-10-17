@@ -27,7 +27,8 @@ import CrudViewModeToggle, {
 } from "../../../components/widgets/crud/crud-view-mode-toggle";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import EntityEditorModal from "../../../components/widgets/entity-editor-dialog";
-import type { Blueprint } from "../../../types";
+import { setObjectDragData } from "../../../lib/object-drag";
+import { type Blueprint, ObjectType } from "../../../types";
 import type { BlueprintsController } from "../controllers/blueprints-controller";
 
 interface BlueprintsViewProps {
@@ -53,6 +54,16 @@ function BlueprintCard(props: BlueprintCardProps) {
     <button
       type="button"
       data-crud-select-id={uid}
+      draggable={!controller.selectionMode()}
+      onDragStart={(event) => {
+        if (!event.dataTransfer) return;
+        setObjectDragData(event.dataTransfer, ObjectType.Blueprint, uid);
+        event.dataTransfer.setData(
+          "text/plain",
+          props.blueprint.identifiers.label,
+        );
+        event.dataTransfer.effectAllowed = "copy";
+      }}
       class={CRUD_CARD_CLASS}
       classList={{
         [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),

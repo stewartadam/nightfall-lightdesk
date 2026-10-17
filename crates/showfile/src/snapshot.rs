@@ -12,6 +12,7 @@ use std::{
 };
 
 use nightfall::prelude::*;
+use nightfall_boards::prelude::*;
 use nightfall_clips::Clip;
 use nightfall_cues::prelude::*;
 use nightfall_desk::prelude::*;
@@ -107,6 +108,9 @@ pub struct ShowfileSnapshot {
     pub timelines: Vec<Timeline>,
     /// Clip assignments referencing playable showfile objects.
     pub clips: Vec<Clip>,
+    /// Operator-arranged button boards.
+    #[serde(default)]
+    pub boards: Vec<Board>,
 }
 
 impl ShowfileSnapshot {

@@ -56,16 +56,19 @@
   flex-shrink: 0;
   margin-top: auto;
 }
-.nf-crud-card > .nf-timeline-card-title {
+.nf-crud-card > .nf-timeline-card-title,
+.nf-crud-card > .nf-crud-card-title {
   color: var(--color-neutral-100);
   font-weight: 550;
 }
-.nf-crud-card > .nf-timeline-card-audio {
+.nf-crud-card > .nf-timeline-card-audio,
+.nf-crud-card > .nf-crud-card-detail {
   color: var(--muted);
   font-size: 10px;
   font-weight: 400;
 }
-.nf-crud-card > .nf-timeline-card-meta {
+.nf-crud-card > .nf-timeline-card-meta,
+.nf-crud-card > .nf-crud-card-meta {
   flex-shrink: 0;
   margin-top: auto;
   color: var(--muted);
