@@ -67,7 +67,12 @@ import { ComponentIndex } from "./component-index";
 import { AttributeDemo, FaderDemo, SwitchDemo } from "./control-demos";
 import { DataGridDemo } from "./data-grid-demo";
 import { DialogsDemo } from "./dialogs-demo";
-import { AlertDemo, SparklineDemo, TooltipDemo } from "./feedback-demos";
+import {
+  AlertDemo,
+  ErrorFallbackDemo,
+  SparklineDemo,
+  TooltipDemo,
+} from "./feedback-demos";
 import { InputFormsDemo } from "./input-forms-demo";
 import { CommandPaletteDemo, ShortcutsDemo } from "./keyboard-demos";
 import { InlineRenameDemo, ObjectSelectorDemo } from "./object-demos";
@@ -104,6 +109,11 @@ const componentDemos = [
   },
   { id: "inline-rename", title: "Inline rename", component: "inlineRename" },
   { id: "alerts", title: "Alerts", component: "alerts" },
+  {
+    id: "error-fallback",
+    title: "Error fallback",
+    component: "errorFallback",
+  },
   { id: "sparklines", title: "Sparklines", component: "sparklines" },
   { id: "tooltips", title: "Tooltips", component: "tooltips" },
   { id: "color-picker", title: "Color picker", component: "colorPicker" },
@@ -789,6 +799,7 @@ function DesignLab() {
               objectSelector: ObjectSelectorDemo,
               inlineRename: InlineRenameDemo,
               alerts: AlertDemo,
+              errorFallback: ErrorFallbackDemo,
               sparklines: SparklineDemo,
               tooltips: TooltipDemo,
               colorPicker: ColorPickerDemo,

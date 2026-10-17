@@ -6,74 +6,61 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Button } from "../../../components/ui/visual-language/button";
 /**
  * Error boundary for Visualizer.
  * Catches WebGPU/Three.js initialization failures and displays user-friendly error UI.
  */
 
 import { ErrorBoundary, type ParentComponent } from "solid-js";
+import { ErrorFallback } from "../../../components/ui/error-fallback";
 import { getLogger } from "../../../lib/logger";
 
 const log = getLogger(import.meta.url);
 
 /**
- * Error fallback UI displayed when visualizer initialization fails.
+ * Error fallback UI displayed when visualizer initialization fails. Errors
+ * that mention the GPU or its adapter add WebGPU support guidance with a link
+ * to the browser support table.
  */
-function ErrorFallback(props: { error: Error; reset: () => void }) {
-  // Log detailed error for debugging
+function VisualizerErrorFallback(props: { error: unknown; reset: () => void }) {
   log.errorWithCause(props.error, "Initialization error");
 
-  // Check for common WebGPU errors
+  const message =
+    props.error instanceof Error ? props.error.message : String(props.error);
   const isWebGPUError =
-    props.error.message.includes("WebGPU") ||
-    props.error.message.includes("GPU") ||
-    props.error.message.includes("adapter");
+    message.includes("WebGPU") ||
+    message.includes("GPU") ||
+    message.includes("adapter");
 
   return (
-    <div class="h-full w-full flex items-center justify-center bg-neutral-900">
-      <div class="max-w-md rounded-lg bg-neutral-800 p-6 shadow-lg border border-neutral-700">
-        <h2 class="mb-2 text-lg font-bold text-red-400">
-          Visualizer Failed to Load
-        </h2>
-
-        <p class="mb-4 text-neutral-300 text-sm">
-          {isWebGPUError
-            ? "Your browser may not support WebGPU, which is required for the 3D visualizer."
-            : "An error occurred while initializing the visualizer."}
-        </p>
-
-        {isWebGPUError && (
-          <p class="mb-4 text-neutral-400 text-xs">
-            WebGPU is supported in Chrome 113+, Edge 113+, and Firefox 115+
-            (with flags). Safari support is experimental.
-          </p>
-        )}
-
-        <div class="mb-4 p-3 bg-neutral-900 rounded text-xs text-neutral-400 font-mono overflow-auto max-h-24">
-          {props.error.message}
-        </div>
-
-        <div class="flex gap-2">
-          <Button
-            size="compact"
-            variant="primary"
-            type="button"
-            onClick={props.reset}
-          >
-            Retry
-          </Button>
-          <a
-            href="https://caniuse.com/webgpu"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="px-4 py-2 text-sm font-medium text-neutral-300 bg-neutral-700 rounded hover:bg-neutral-600"
-          >
-            Check Browser Support
-          </a>
-        </div>
-      </div>
-    </div>
+    <ErrorFallback
+      title="Visualizer failed to load"
+      error={props.error}
+      reset={props.reset}
+      description={
+        isWebGPUError ? (
+          <>
+            <p>
+              Your browser may not support WebGPU, which is required for the 3D
+              visualizer.
+            </p>
+            <p class="text-xs text-neutral-400">
+              WebGPU is supported in Chrome 113+, Edge 113+, and Firefox 115+
+              (with flags). Safari support is experimental.{" "}
+              <a
+                href="https://caniuse.com/webgpu"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Check browser support
+              </a>
+            </p>
+          </>
+        ) : (
+          "An error occurred while initializing the visualizer."
+        )
+      }
+    />
   );
 }
 
@@ -84,8 +71,8 @@ function ErrorFallback(props: { error: Error; reset: () => void }) {
 export const VisualizerErrorBoundary: ParentComponent = (props) => {
   return (
     <ErrorBoundary
-      fallback={(error: Error, reset) => (
-        <ErrorFallback error={error} reset={reset} />
+      fallback={(error, reset) => (
+        <VisualizerErrorFallback error={error} reset={reset} />
       )}
     >
       {props.children}

@@ -33,6 +33,16 @@ Use `Alert` from `alert` for inline, blockquote-style callouts inside panels and
 
 Use toasts for transient feedback and `Alert` for messages that belong to the surrounding content. Full-width strip banners at the top of a panel are not alerts.
 
+## Error fallbacks
+
+Use `ErrorFallback` from `error-fallback` as the `fallback` of a panel-level Solid `ErrorBoundary`. It fills the panel and centers a `caution` `Alert` with the `title`, an optional `description`, the error's `Name: message`, and its stack behind a collapsed **Technical details** disclosure (`hideDetails` omits it).
+
+- Pass the boundary's `reset` to show a primary **Retry** button; `actions` adds further buttons after it, such as the Dockview panel boundary's **Report Bug**.
+- The component imports only Solid, `Alert` and `Button`, so it still renders when stores, the bridge or other panels have failed. Keep it that way: callers log the error and build any bug report themselves.
+- The fatal error dialog (`shell/app/fatal-error-dialog.tsx`) stays separate, because it must work when the whole shell is broken.
+
+The Dockview panel boundary, the flow editor and the visualizer use it. The design lab's **Error fallback** panel throws on demand and recovers with Retry.
+
 ## Toolbars
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups.

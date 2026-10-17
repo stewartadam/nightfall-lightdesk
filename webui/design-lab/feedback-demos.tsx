@@ -6,8 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, For } from "solid-js";
+import { createSignal, ErrorBoundary, For, Show } from "solid-js";
 import { Alert } from "../components/ui/alert";
+import { ErrorFallback } from "../components/ui/error-fallback";
 import { Sparkline } from "../components/ui/sparkline";
 import Tooltip from "../components/ui/tooltip";
 import { Button } from "../components/ui/visual-language/button";
@@ -107,6 +108,64 @@ export function TooltipDemo() {
       <p class="field-help" role="status">
         Preview count: {count()}
       </p>
+    </section>
+  );
+}
+
+/** Sample panel content that throws while rendering whenever `failing` is set, to trip its boundary. */
+function FragileSample(props: { failing: boolean }) {
+  /** Reads the fault flag reactively so toggling it throws inside the boundary's render scope. */
+  const content = () => {
+    if (props.failing) {
+      throw new TypeError(
+        "Cannot read properties of undefined (reading 'cues')",
+      );
+    }
+    return "Sample panel content rendered normally.";
+  };
+  return <p class="widget-fallback-sample">{content()}</p>;
+}
+
+/** Wraps sample content in the production `ErrorFallback` boundary; Retry clears the simulated fault. */
+export function ErrorFallbackDemo() {
+  const [failing, setFailing] = createSignal(false);
+  const [reports, setReports] = createSignal(0);
+  return (
+    <section class="properties lab-panel" aria-label="Error fallback examples">
+      <div class="eyebrow">ERROR FALLBACK</div>
+      <h2>Contain a failure to its panel.</h2>
+      <div class="widget-alert-actions">
+        <Button variant="danger" onClick={() => setFailing(true)}>
+          Throw render error
+        </Button>
+      </div>
+      <div class="widget-fallback-frame">
+        <ErrorBoundary
+          fallback={(error, reset) => (
+            <ErrorFallback
+              title="Sample panel failed to render"
+              error={error}
+              reset={() => {
+                setFailing(false);
+                reset();
+              }}
+              actions={
+                <Button
+                  size="compact"
+                  onClick={() => setReports(reports() + 1)}
+                >
+                  Report Bug
+                </Button>
+              }
+            />
+          )}
+        >
+          <FragileSample failing={failing()} />
+        </ErrorBoundary>
+      </div>
+      <Show when={reports() > 0}>
+        <p class="widget-fallback-sample">Bug reports opened: {reports()}</p>
+      </Show>
     </section>
   );
 }

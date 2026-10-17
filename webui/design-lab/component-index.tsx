@@ -18,6 +18,7 @@ const coreDemoIds = new Set([
   "buttons",
   "command-palette",
   "dialogs",
+  "error-fallback",
   "menus",
   "docking",
   "input-forms",
