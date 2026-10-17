@@ -2169,7 +2169,6 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     startPositionMenu.getByRole("slider", { name: "Spread amount slider" }),
   ).toHaveAttribute("aria-valuenow", "100.0");
   await expect(percentPositionUnit).toHaveAttribute("aria-checked", "true");
-  await expect(percentPositionUnit).toHaveClass(/bg-blue-600/);
   await expect(
     startPositionMenu.locator("[data-step-fx-start-position-direction]"),
   ).toHaveAttribute("data-step-fx-start-position-direction", "clockwise");
@@ -2207,9 +2206,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await startPositionMenu.getByRole("button", { name: "100%" }).click();
   await degreePositionUnit.click();
   await expect(degreePositionUnit).toHaveAttribute("aria-checked", "true");
-  await expect(degreePositionUnit).toHaveClass(/bg-blue-600/);
   await expect(percentPositionUnit).toHaveAttribute("aria-checked", "false");
-  await expect(percentPositionUnit).not.toHaveClass(/bg-blue-600/);
   await expect(dividerLabels.nth(0)).toHaveText("0°");
   await expect(dividerLabels.nth(1)).toHaveText("180°");
   await expect(
@@ -2225,7 +2222,6 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   });
   await percentPositionUnit.click();
   await expect(percentPositionUnit).toHaveAttribute("aria-checked", "true");
-  await expect(percentPositionUnit).toHaveClass(/bg-blue-600/);
   await expect(dividerLabels.nth(0)).toHaveText("0%");
   await expect(dividerLabels.nth(1)).toHaveText("50%");
   await expect(
@@ -2237,8 +2233,6 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await expect(editor.locator("[data-step-fx-show-all-warning]")).toBeVisible();
   await expect(togetherMode).toHaveAttribute("aria-checked", "true");
   await expect(spreadMode).toHaveAttribute("aria-checked", "false");
-  await expect(togetherMode).toHaveClass(/bg-blue-600/);
-  await expect(spreadMode).not.toHaveClass(/bg-blue-600/);
   await startPositionMenu
     .getByLabel("Start position value", { exact: true })
     .fill("50");

@@ -1,0 +1,19 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Visual tokens shared by SegmentedTabs and SegmentedControl so both read as one family. */
+:root {
+  --nf-segmented-track-border: #2a2d2f;
+  --nf-segmented-track-surface: #0e0f10;
+  --nf-segmented-item-color: var(--muted, #9ca3af);
+  --nf-segmented-item-hover-surface: var(--raised, #222527);
+  --nf-segmented-selected-border: var(--accent);
+  --nf-segmented-selected-surface: var(--accent-soft);
+  --nf-segmented-selected-color: var(--accent);
+  --nf-segmented-font-size: 12px;
+}

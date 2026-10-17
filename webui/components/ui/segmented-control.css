@@ -1,0 +1,101 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.nf-segmented-control {
+  --nf-segmented-item-height: 24px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--nf-segmented-track-border);
+  border-radius: var(--nf-corner-radius, 7px);
+  background: var(--nf-segmented-track-surface);
+  vertical-align: middle;
+}
+.nf-segmented-control[data-density="compact"] {
+  --nf-segmented-item-height: 20px;
+  gap: 2px;
+  padding: 2px;
+}
+.nf-segmented-control[data-fill] {
+  display: flex;
+}
+/* Tooltip triggers wrap individual options; let them stretch like bare options. */
+.nf-segmented-control > [data-component="Tooltip"] {
+  display: flex;
+}
+.nf-segmented-control[data-fill] > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.nf-segmented-control-item {
+  flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: var(--nf-segmented-item-height);
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: max(0px, calc(var(--nf-corner-radius, 7px) - 2px));
+  background: transparent;
+  color: var(--nf-segmented-item-color);
+  font-size: var(--nf-segmented-font-size);
+  font-weight: 550;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+.nf-segmented-control[data-density="compact"] .nf-segmented-control-item {
+  padding: 0 7px;
+  font-size: 11px;
+}
+.nf-segmented-control-item[data-icon-only] {
+  min-width: calc(var(--nf-segmented-item-height) + 4px);
+  padding: 0;
+}
+.nf-segmented-control-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.nf-segmented-control[data-density="compact"] .nf-segmented-control-icon {
+  width: 14px;
+  height: 14px;
+}
+.nf-segmented-control-item:hover:enabled:not([aria-checked="true"]) {
+  background: var(--nf-segmented-item-hover-surface);
+  color: inherit;
+}
+.nf-segmented-control-item[aria-checked="true"] {
+  border-color: var(--nf-segmented-selected-border);
+  background: var(--nf-segmented-selected-surface);
+  color: var(--nf-segmented-selected-color);
+}
+.nf-segmented-control-item:disabled {
+  color: #767d80;
+  cursor: not-allowed;
+}
+.nf-segmented-control-item[aria-checked="true"]:disabled {
+  opacity: 0.6;
+}
+.nf-segmented-control-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+:root[data-reduced-motion="true"] .nf-segmented-control-item {
+  transition: none;
+}

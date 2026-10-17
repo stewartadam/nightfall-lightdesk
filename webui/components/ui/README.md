@@ -67,7 +67,7 @@ The Dockview panel boundary, the flow editor and the visualizer use it. The desi
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups, never a hand-drawn `w-px` divider; it passes `data-*` attributes through for test hooks.
 
-Wrap a group of related controls in `Toolbar` (with a `label`) to make it one keyboard focus group, following the WAI-ARIA toolbar pattern. The group is a single Tab stop: Tab enters on the control used last, Left/Right (Up/Down with `orientation="vertical"`) move between controls and wrap at the ends, and Home/End jump to the first or last control. Disabled and inert controls are skipped. Text fields keep their arrow keys, and a child that handles an arrow key itself calls `preventDefault()` to keep it from the toolbar, as the step FX Step bar does to move its selection. Never set `tabIndex` on controls inside a `Toolbar`; it owns them.
+Wrap a group of related controls in `Toolbar` (with a `label`) to make it one keyboard focus group, following the WAI-ARIA toolbar pattern. The group is a single Tab stop: Tab enters on the control used last, Left/Right (Up/Down with `orientation="vertical"`) move between controls and wrap at the ends, and Home/End jump to the first or last control. Disabled and inert controls are skipped. Text fields keep their arrow keys, and a child that handles an arrow key itself calls `preventDefault()` to keep it from the toolbar, as the step FX Step bar does to move its selection. A radio group, such as a `SegmentedControl`, counts as one control, reached on its checked radio. Never set `tabIndex` on controls inside a `Toolbar`; it owns them.
 
 Mark content that is present but not usable, such as closed submenus, collapsed sections and inactive workspaces, with `inert` rather than `aria-hidden` or per-control `tabIndex={-1}`, so it leaves the focus order, pointer interaction and the accessibility tree together.
 
@@ -78,6 +78,19 @@ Use `SegmentedTabs` for compact horizontal content selectors, including toolbar 
 Options may supply their own `contentId` when each view has a separate mounted panel.
 
 Give each instance a unique `id` and its content container's `contentId`. The caller owns the content and persistence: set `role="tabpanel"` on the container and `aria-labelledby` to `${id}-${selectedKey}`.
+
+## Segmented controls
+
+Use `SegmentedControl` from `segmented-control` to pick one value from two to five mutually exclusive options, such as a mode, unit or direction. It is the value-picking sibling of `SegmentedTabs`: use tabs when the choice switches which content panel is shown, and a segmented control when it sets a value. Both share the track and accent-selection tokens in `segmented.css`, so they look like one family; do not restyle the selected state at call sites.
+
+- Supply `label` (the group's accessible name), `options`, the selected `value` and `onChange`. `value` can be any type compared with `===`; `undefined` leaves every option unchecked.
+- Each option takes a visible `label`, an optional `icon`, or both. Icon-only options need `ariaLabel`, which also overrides the visible text as the accessible name. `tooltip` shows help on hover and focus and becomes the option's description. `disabled` disables one option; `disabled` on the group disables them all.
+- `density="compact"` (28px tall, matching a compact `Button`) suits property rows, popovers and dense toolbars; the default `comfortable` is 32px, matching icon buttons. `fill` stretches the options equally across the width the caller gives the group. Options wrap onto another line rather than overflow.
+- It follows the WAI-ARIA radio group pattern: the group is one Tab stop on the checked option, and arrow keys move focus and select the adjacent enabled option, wrapping at the ends; Home and End select the first and last options.
+- Inside a `Toolbar` the group is a single toolbar stop on its checked option. Arrow keys still select within the group, but at either end they are left to the toolbar to move on to the neighboring control, and Home/End jump to the toolbar's ends.
+- In a `SettingsRow`, set `labelControl={false}`, pass `field.id` as `id` and `field.describedBy` as `aria-describedby`, and give the group the row's title as its `label`.
+
+The step FX editor, color picker, attribute sliders, diagnostics dialog and the visualizer quality preset use it. The design lab's Segmented controls panel shows each variant.
 
 ## Tables
 

@@ -77,6 +77,25 @@ export function Toolbar(props: ToolbarProps) {
     return inertRoot !== null && inertRoot !== root && root.contains(inertRoot);
   };
 
+  /**
+   * Returns whether a control is a toolbar stop in its own right. A radio group
+   * counts as one stop, on its checked radio (or its first enabled radio when
+   * none is checked), so arrowing into the group lands on the selection and
+   * the group's own arrow handling moves between its radios.
+   */
+  const isGroupStop = (element: HTMLElement): boolean => {
+    if (element.getAttribute("role") !== "radio") return true;
+    const group = element.closest('[role="radiogroup"]');
+    if (!group || !root.contains(group)) return true;
+    const radios = Array.from(
+      group.querySelectorAll<HTMLElement>('[role="radio"]'),
+    ).filter((radio) => !radio.matches(":disabled"));
+    const checked = radios.find(
+      (radio) => radio.getAttribute("aria-checked") === "true",
+    );
+    return element === (checked ?? radios[0]);
+  };
+
   /** Lists the controls arrow keys can reach: enabled and currently rendered. */
   const reachableItems = (): HTMLElement[] =>
     items().filter(
@@ -99,6 +118,7 @@ export function Toolbar(props: ToolbarProps) {
         element.closest('[role="toolbar"]') === root &&
         !element.matches(":disabled") &&
         !inertWithinToolbar(element) &&
+        isGroupStop(element) &&
         (element.getAttribute("tabindex") !== "-1" ||
           element.hasAttribute(ROVING_ATTRIBUTE)),
     );
@@ -137,6 +157,15 @@ export function Toolbar(props: ToolbarProps) {
    */
   const sync = () => {
     const all = items();
+    const focusedItem = root.ownerDocument.activeElement;
+    if (
+      focusedItem instanceof HTMLElement &&
+      focusedItem !== active &&
+      all.includes(focusedItem)
+    ) {
+      setActive(focusedItem, all);
+      return;
+    }
     if (active && all.includes(active)) {
       setActive(active, all);
       return;
@@ -214,7 +243,7 @@ export function Toolbar(props: ToolbarProps) {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["disabled", "inert"],
+      attributeFilter: ["aria-checked", "disabled", "inert"],
     });
     onCleanup(() => observer.disconnect());
   });

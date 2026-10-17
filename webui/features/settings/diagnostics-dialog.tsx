@@ -22,6 +22,7 @@ import {
   DialogFooter,
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { SegmentedControl } from "../../components/ui/segmented-control";
 import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import { writeClipboardText } from "../../lib/clipboard";
@@ -209,10 +210,6 @@ export function DiagnosticsDialog() {
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
-  /** Styles the selected segment while keeping its radio input keyboard accessible. */
-  const segmentClass = (selected: boolean) =>
-    `relative cursor-pointer whitespace-nowrap rounded px-2.5 py-1 text-center text-sm has-focus-visible:ring-2 has-focus-visible:ring-blue-400 ${selected ? "bg-blue-600 text-white" : "text-neutral-300 hover:bg-neutral-800"}`;
-
   return (
     <Dialog
       kind="task"
@@ -277,23 +274,13 @@ export function DiagnosticsDialog() {
             <span aria-hidden="true" class="w-32 shrink-0 text-sm font-medium">
               Showfile to include
             </span>
-            <div class="inline-flex flex-wrap gap-0.5 rounded-md border border-neutral-600 bg-neutral-950 p-0.5">
-              <For each={showfileModes}>
-                {(mode) => (
-                  <label class={segmentClass(showfileMode() === mode.value)}>
-                    <input
-                      type="radio"
-                      name="diagnostic-showfile-mode"
-                      value={mode.value}
-                      checked={showfileMode() === mode.value}
-                      class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      onChange={() => setShowfileMode(mode.value)}
-                    />
-                    {mode.label}
-                  </label>
-                )}
-              </For>
-            </div>
+            <SegmentedControl
+              label="Showfile to include"
+              options={showfileModes}
+              value={showfileMode()}
+              disabled={saving()}
+              onChange={setShowfileMode}
+            />
           </div>
           <p
             id="diagnostic-showfile-description"
@@ -312,26 +299,16 @@ export function DiagnosticsDialog() {
             <span aria-hidden="true" class="w-32 shrink-0 text-sm font-medium">
               Logs to include
             </span>
-            <div class="inline-flex flex-wrap gap-0.5 rounded-md border border-neutral-600 bg-neutral-950 p-0.5">
-              <For each={logModes}>
-                {(mode) => (
-                  <label class={segmentClass(logMode() === mode.value)}>
-                    <input
-                      type="radio"
-                      name="diagnostic-log-mode"
-                      value={mode.value}
-                      checked={logMode() === mode.value}
-                      class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      onChange={() => {
-                        setLogMode(mode.value);
-                        void readLogs();
-                      }}
-                    />
-                    {mode.label}
-                  </label>
-                )}
-              </For>
-            </div>
+            <SegmentedControl
+              label="Logs to include"
+              options={logModes}
+              value={logMode()}
+              disabled={saving()}
+              onChange={(mode) => {
+                setLogMode(mode);
+                void readLogs();
+              }}
+            />
           </div>
           <p
             id="diagnostic-log-description"
