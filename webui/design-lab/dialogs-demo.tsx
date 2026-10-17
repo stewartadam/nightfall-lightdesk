@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, onCleanup } from "solid-js";
+import { createSignal, For, onCleanup } from "solid-js";
 import {
   Dialog,
   DialogBody,
@@ -14,9 +14,13 @@ import {
   DialogFooter,
   type DialogKind,
 } from "../components/ui/dialog";
+import { DropdownMenu, DropdownMenuItem } from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/form-controls";
 import { Button } from "../components/ui/visual-language/button";
 import "./widget-demos.css";
+
+/** Sample colors offered by the dropdown inside the task dialog. */
+const GROUP_COLORS = ["Amber", "Cyan", "Magenta", "White"] as const;
 
 /** Launches one shared `Dialog` of each kind so their inherited close affordances can be compared. */
 export function DialogsDemo() {
@@ -24,6 +28,7 @@ export function DialogsDemo() {
   const [busy, setBusy] = createSignal(false);
   const [name, setName] = createSignal("Front wash");
   const [draft, setDraft] = createSignal("");
+  const [color, setColor] = createSignal<string>(GROUP_COLORS[0]);
   const [notice, setNotice] = createSignal(
     "Sample dialogs only change this panel.",
   );
@@ -80,6 +85,10 @@ export function DialogsDemo() {
             While work cannot be cancelled, every way out is disabled together.
           </li>
           <li>
+            A menu or popover opened inside a dialog takes Escape first: the
+            first press closes the menu, the next one the dialog.
+          </li>
+          <li>
             Every kind is a native modal dialog: Tab only reaches its controls,
             the page behind is inert, and closing returns focus to the button
             that opened it.
@@ -106,6 +115,27 @@ export function DialogsDemo() {
               onInput={(event) => setDraft(event.currentTarget.value)}
             />
           </label>
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-neutral-300">Color</span>
+            <DropdownMenu
+              placement="below"
+              triggerClass="nf-button"
+              triggerLabel="Group color"
+              contentLabel="Group colors"
+              trigger={<span>{color()}</span>}
+            >
+              <For each={GROUP_COLORS}>
+                {(option) => (
+                  <DropdownMenuItem
+                    checked={color() === option}
+                    onClick={() => setColor(option)}
+                  >
+                    {option}
+                  </DropdownMenuItem>
+                )}
+              </For>
+            </DropdownMenu>
+          </div>
         </DialogBody>
         <DialogFooter>
           <DialogCancelButton />
