@@ -23,6 +23,7 @@ const coreDemoIds = new Set([
   "docking",
   "input-forms",
   "popups",
+  "segmented-controls",
   "selects",
   "shortcuts",
   "sliders",

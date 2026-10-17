@@ -27,7 +27,7 @@ test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== "passed") return;
   await page.setViewportSize({ width: 900, height: 1200 });
   const panel = page.getByRole("region", {
-    name: /^(Alert|Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
+    name: /^(Alert|Switch|Segmented control|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
   });
   await panel.scrollIntoViewIfNeeded();
   expect(
@@ -225,6 +225,81 @@ test("vertical faders synchronize keyboard pointer and reset values", async ({
   });
 });
 
+/**
+ * Walks the radio group keyboard pattern: one Tab stop on the checked option, arrows that
+ * move and select (wrapping and skipping disabled options), and toolbar hand-off at the
+ * group's ends.
+ */
+test("segmented controls select with the radio group keyboard pattern", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(
+    page,
+    "Segmented controls",
+    "Segmented control examples",
+  );
+  await panel.screenshot({
+    path: testInfo.outputPath("design-lab-segmented-controls.png"),
+    animations: "disabled",
+  });
+  const quality = panel.getByRole("radiogroup", { name: "Beam quality" });
+  const medium = quality.getByRole("radio", { name: "Medium" });
+  await expect(medium).toBeChecked();
+  await expect(medium).toHaveAttribute("tabindex", "0");
+  await expect(quality.getByRole("radio", { name: "Low" })).toHaveAttribute(
+    "tabindex",
+    "-1",
+  );
+  await medium.focus();
+  await page.keyboard.press("ArrowRight");
+  const high = quality.getByRole("radio", { name: "High" });
+  await expect(high).toBeChecked();
+  await expect(high).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(quality.getByRole("radio", { name: "Low" })).toBeChecked();
+  await page.keyboard.press("End");
+  await expect(high).toBeChecked();
+  await expect(panel.getByRole("status")).toContainText("Quality high");
+
+  const source = panel.getByRole("radiogroup", { name: "Timecode source" });
+  await expect(source.getByRole("radio", { name: "LTC" })).toBeDisabled();
+  await source.getByRole("radio", { name: "MIDI" }).click();
+  await page.keyboard.press("ArrowRight");
+  await expect(source.getByRole("radio", { name: "Internal" })).toBeChecked();
+
+  const toolbar = panel.getByRole("toolbar", { name: "Effect playback" });
+  const direction = toolbar.getByRole("radiogroup", {
+    name: "Effect direction",
+  });
+  const forward = direction.getByRole("radio", { name: "Forward" });
+  await expect(forward).toBeChecked();
+  await forward.focus();
+  await page.keyboard.press("ArrowLeft");
+  const bounce = direction.getByRole("radio", { name: "Bounce" });
+  await expect(bounce).toBeChecked();
+  await expect(bounce).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(forward).toBeChecked();
+  await page.keyboard.press("ArrowRight");
+  const preview = toolbar.getByRole("button", { name: "Preview" });
+  await expect(preview).toBeFocused();
+  await expect(forward).toBeChecked();
+  await page.keyboard.press("ArrowLeft");
+  await expect(forward).toBeFocused();
+  await expect(forward).toBeChecked();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(forward).toBeFocused();
+  await panel.screenshot({
+    path: testInfo.outputPath("design-lab-segmented-controls-keyboard.png"),
+    animations: "disabled",
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("segmented-controls.png"),
+    fullPage: true,
+  });
+});
+
 /** Exercises signed relative values, mode clamping, and the linked numeric and range controls. */
 test("attribute sliders support relative adjustments and numeric commits", async ({
   page,
@@ -235,7 +310,7 @@ test("attribute sliders support relative adjustments and numeric commits", async
     "Attribute slider examples",
   );
   const value = panel.getByRole("spinbutton", { name: "Dimmer", exact: true });
-  await panel.getByRole("button", { name: "Rel", exact: true }).click();
+  await panel.getByRole("radio", { name: "Rel", exact: true }).click();
   await value.fill("-42");
   await value.press("Tab");
   await expect(
@@ -248,11 +323,11 @@ test("attribute sliders support relative adjustments and numeric commits", async
     path: testInfo.outputPath("attribute-relative.png"),
     fullPage: true,
   });
-  await panel.getByRole("button", { name: "Abs", exact: true }).click();
+  await panel.getByRole("radio", { name: "Abs", exact: true }).click();
   await expect(value).toHaveValue("0");
   await expect(
-    panel.getByRole("button", { name: "Abs", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    panel.getByRole("radio", { name: "Abs", exact: true }),
+  ).toBeChecked();
 });
 
 /** Validates secondary-text search, keyboard selection, and empty-result feedback. */

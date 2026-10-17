@@ -14,6 +14,10 @@ import {
   onMount,
 } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../ui/segmented-control";
 import { SegmentedTabs } from "../../ui/segmented-tabs";
 import {
   type ColorPickerValue,
@@ -36,13 +40,17 @@ export interface ColorPickerProps {
 
 const log = getLogger(import.meta.url);
 
+const MODE_OPTIONS: readonly SegmentedControlOption<"square" | "circle">[] = [
+  { value: "square", label: "Square" },
+  { value: "circle", label: "Circle" },
+];
+
 /** Edits controlled HSV colors through a spectrum canvas, brightness slider, and preset swatches. */
 export default function ColorPicker(props: ColorPickerProps) {
   /* -------------------- state -------------------- */
   const [draft, setDraft] = createSignal<HsvColor>(props.value);
   const [mode, setMode] = createSignal<"square" | "circle">("square");
   const [readout, setReadout] = createSignal<"rgb" | "hsv">("rgb");
-  const modeOptions = ["square", "circle"] as const;
   const tabsId = createUniqueId();
   const rgbTabId = `${tabsId}-rgb`;
   const hsvTabId = `${tabsId}-hsv`;
@@ -209,28 +217,14 @@ export default function ColorPicker(props: ColorPickerProps) {
   return (
     <div class={`flex flex-col gap-4 nodrag nopan ${props.class ?? ""}`.trim()}>
       {/* Mode toggle */}
-      <div
-        class="mb-2 inline-flex rounded-md shadow-sm text-xs"
-        role="group"
-        aria-label="Picker shape"
-        data-hs-button-group
-      >
-        {modeOptions.map((m, index) => (
-          <button
-            type="button"
-            aria-pressed={mode() === m}
-            data-hs-button-group-item
-            class={`px-3 py-1 border focus:outline-none focus:outline-hidden focus:ring-blue-500 transition ${
-              mode() === m
-                ? "bg-blue-500 border-blue-500 text-white"
-                : "bg-gray-200 border-gray-500 text-gray-700"
-            } ${index === 0 ? "rounded-l-md" : index === modeOptions.length - 1 ? "rounded-r-md -ml-px" : "-ml-px"}`}
-            onClick={() => setMode(m)}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        class="mb-2 self-start"
+        label="Picker shape"
+        density="compact"
+        options={MODE_OPTIONS}
+        value={mode()}
+        onChange={setMode}
+      />
 
       <div class="flex flex-row gap-4">
         {/* Picker + controls */}

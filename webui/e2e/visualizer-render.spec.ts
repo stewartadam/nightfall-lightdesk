@@ -442,6 +442,13 @@ test("3D visualizer main-thread renderer paints the canvas", async ({
   );
 });
 
+/** Visible labels of the Settings quality preset options, keyed by preset. */
+const QUALITY_PRESET_LABELS = {
+  low: "Low (faster)",
+  medium: "Medium",
+  high: "High (slower)",
+} as const;
+
 /** Opens the Settings dialog on its Visualizer tab and returns the dialog locator. */
 async function openVisualizerSettings(page: Page) {
   await page.keyboard.press("ControlOrMeta+,");
@@ -471,7 +478,7 @@ async function renderedQualityPreset(page: Page) {
 }
 
 /** A diagnostic URL quality shows in Settings, and re-picking the already-saved preset drops the override and renders that preset. */
-test("settings quality slider reflects and clears the URL override", async ({
+test("settings quality preset reflects and clears the URL override", async ({
   page,
 }) => {
   const pageErrors = collectPageErrors(page, { consoleErrors: false });
@@ -482,11 +489,17 @@ test("settings quality slider reflects and clears the URL override", async ({
   await waitForMainThreadVisualizerApi(page);
   await expect.poll(() => renderedQualityPreset(page)).toBe("low");
   const dialog = await openVisualizerSettings(page);
-  const slider = dialog.getByRole("slider", { name: "Quality preset" });
-  // The saved preset is High (see beforeEach); the slider must show what renders.
-  await expect(slider).toHaveValue("0");
-  await slider.fill("2");
-  await expect(slider).toHaveValue("2");
+  const preset = dialog.getByRole("radiogroup", { name: "Quality preset" });
+  // The saved preset is High (see beforeEach); the control must show what renders.
+  await expect(
+    preset.getByRole("radio", { name: QUALITY_PRESET_LABELS.low }),
+  ).toBeChecked();
+  const high = preset.getByRole("radio", { name: QUALITY_PRESET_LABELS.high });
+  await high.click();
+  await expect(high).toBeChecked();
+  await dialog.screenshot({
+    path: test.info().outputPath("settings-quality-preset.png"),
+  });
   await page.keyboard.press("Escape");
   await expect.poll(() => renderedQualityPreset(page)).toBe("high");
   expect(pageErrors).toEqual([]);
@@ -541,8 +554,9 @@ for (const worker of [false, true]) {
       );
       const dialog = await openVisualizerSettings(page);
       await dialog
-        .getByRole("slider", { name: "Quality preset" })
-        .fill(String(["low", "medium", "high"].indexOf(preset)));
+        .getByRole("radiogroup", { name: "Quality preset" })
+        .getByRole("radio", { name: QUALITY_PRESET_LABELS[preset] })
+        .click();
       await expect
         .poll(() =>
           page.evaluate(
@@ -606,7 +620,10 @@ for (const worker of [false, true]) {
     else await waitForMainThreadVisualizerApi(page);
     await expectVisualizerFpsLabel(page);
     let dialog = await openVisualizerSettings(page);
-    await dialog.getByRole("slider", { name: "Quality preset" }).fill("1");
+    await dialog
+      .getByRole("radiogroup", { name: "Quality preset" })
+      .getByRole("radio", { name: QUALITY_PRESET_LABELS.medium })
+      .click();
     await setDarkness(dialog, 0);
     await page.keyboard.press("Escape");
     const bright = await settledCanvasLuma(page);
@@ -635,8 +652,10 @@ for (const worker of [false, true]) {
     await waitForVisualizerReady(page);
     dialog = await openVisualizerSettings(page);
     await expect(
-      dialog.getByRole("slider", { name: "Quality preset" }),
-    ).toHaveValue("1");
+      dialog
+        .getByRole("radiogroup", { name: "Quality preset" })
+        .getByRole("radio", { name: QUALITY_PRESET_LABELS.medium }),
+    ).toBeChecked();
     await expect(
       dialog.getByRole("slider", { name: "Darkness", exact: true }),
     ).toHaveAttribute("aria-valuenow", "100.0");

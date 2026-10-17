@@ -63,10 +63,15 @@ test("color picker catalog previews local colors in both shapes", async ({
   await expect(
     panel.getByRole("tab", { name: "HSV", exact: true }),
   ).toBeFocused();
-  await panel.getByRole("button", { name: "circle", exact: true }).click();
+  const shape = panel.getByRole("radiogroup", { name: "Picker shape" });
+  await shape.getByRole("radio", { name: "Square", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
   await expect(
-    panel.getByRole("button", { name: "circle", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    shape.getByRole("radio", { name: "Circle", exact: true }),
+  ).toBeChecked();
+  await expect(
+    shape.getByRole("radio", { name: "Circle", exact: true }),
+  ).toBeFocused();
   const bounds = (await canvas.boundingBox())!;
   await page.mouse.click(
     bounds.x + bounds.width / 2,

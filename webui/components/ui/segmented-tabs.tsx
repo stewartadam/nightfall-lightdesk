@@ -17,6 +17,7 @@ import {
 import { playContentEntrance } from "./content-entrance";
 import { ScrollArea } from "./scroll-area";
 import { Button } from "./visual-language/button";
+import "./segmented.css";
 import "./segmented-tabs.css";
 
 /**

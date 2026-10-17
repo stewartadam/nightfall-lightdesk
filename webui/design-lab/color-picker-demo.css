@@ -19,18 +19,6 @@
 .lab-color-picker > .flex-row {
   flex-wrap: wrap;
 }
-.lab-color-picker [aria-label="Picker shape"] button {
-  background: var(--raised);
-  border-color: var(--line);
-  color: var(--muted);
-  padding: 7px 12px;
-  text-transform: capitalize;
-}
-.lab-color-picker [aria-label="Picker shape"] button[aria-pressed="true"] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: #ebeeed;
-}
 .lab-color-picker :is(canvas, [aria-label="Color presets"] button) {
   border-color: var(--line);
   border-radius: var(--nf-corner-radius, 5px);

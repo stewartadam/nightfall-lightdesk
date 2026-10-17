@@ -11,6 +11,10 @@ import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import { Checkbox, Input } from "../../../../components/ui/form-controls";
 import { ToolbarSeparator } from "../../../../components/ui/panel-toolbar";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../../../components/ui/segmented-control";
 import Tooltip from "../../../../components/ui/tooltip";
 import type * as types from "../../../../types";
 import {
@@ -19,6 +23,20 @@ import {
   stepFxPhaseOffset,
   stepFxPreviewIndexTitle,
 } from "../../model/step-fx-editor-model";
+
+/** Waveform scrolling choices, keyed by whether the waveform centers the selected fixture. */
+const WAVEFORM_SCROLL_OPTIONS: readonly SegmentedControlOption<boolean>[] = [
+  {
+    value: false,
+    label: "Fixture",
+    tooltip: "Fixture: scroll fixture playheads across a fixed waveform",
+  },
+  {
+    value: true,
+    label: "Waveform",
+    tooltip: "Waveform: scroll the waveform beneath the selected fixture",
+  },
+];
 
 /** Selects one resolved phase index as the waveform's live reference. */
 export function StepFxPhasePreview(props: {
@@ -39,61 +57,29 @@ export function StepFxPhasePreview(props: {
   const indexes = createMemo(() =>
     Array.from({ length: props.markers.length }, (_, index) => index),
   );
-  const viewButtonClass =
-    "inline-flex h-7 items-center justify-center border border-neutral-700 px-2 text-[11px] font-medium text-neutral-300 transition-colors hover:bg-neutral-700 aria-checked:bg-blue-600 aria-checked:text-white";
   return (
     <div
       class="flex min-w-0 items-center justify-start gap-1"
       role="group"
       aria-label="Waveform preview"
     >
-      <div
-        class="mr-1 inline-flex shrink-0 items-center"
-        role="radiogroup"
-        aria-label="Waveform scrolling"
-      >
-        <Tooltip content={() => "Waveform scrolling mode"}>
-          <span
-            class="inline-flex size-7 items-center justify-center rounded-l border border-r-0 border-neutral-700 bg-neutral-900 text-neutral-400"
-            role="img"
-            aria-label="Waveform scrolling mode"
-          >
-            <MouseScrollIcon class="size-4" aria-hidden />
-          </span>
-        </Tooltip>
-        <Tooltip
-          content={() =>
-            "Fixture: scroll fixture playheads across a fixed waveform"
-          }
+      <Tooltip content={() => "Waveform scrolling mode"} class="shrink-0">
+        <span
+          class="inline-flex size-6 shrink-0 items-center justify-center text-neutral-400"
+          role="img"
+          aria-label="Waveform scrolling mode"
         >
-          <button
-            type="button"
-            role="radio"
-            aria-label="Fixture"
-            aria-checked={!props.centerSelectedFixture}
-            class={`${viewButtonClass} border-r-0`}
-            onClick={() => props.onCenterSelectedFixtureChange(false)}
-          >
-            Fixture
-          </button>
-        </Tooltip>
-        <Tooltip
-          content={() =>
-            "Waveform: scroll the waveform beneath the selected fixture"
-          }
-        >
-          <button
-            type="button"
-            role="radio"
-            aria-label="Waveform"
-            aria-checked={props.centerSelectedFixture}
-            class={`${viewButtonClass} rounded-r`}
-            onClick={() => props.onCenterSelectedFixtureChange(true)}
-          >
-            Waveform
-          </button>
-        </Tooltip>
-      </div>
+          <MouseScrollIcon class="size-4" aria-hidden />
+        </span>
+      </Tooltip>
+      <SegmentedControl
+        class="mr-1"
+        label="Waveform scrolling"
+        density="compact"
+        options={WAVEFORM_SCROLL_OPTIONS}
+        value={props.centerSelectedFixture}
+        onChange={props.onCenterSelectedFixtureChange}
+      />
       <ToolbarSeparator data-step-fx-waveform-scroll-separator />
       <label class="flex shrink-0 items-center gap-1 text-[11px] text-neutral-400">
         <Checkbox
