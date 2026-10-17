@@ -417,9 +417,18 @@ test("shared timecode tables preserve selection across snapshot updates", async 
   await openPanel(page, "Timecodes");
   const table = page.getByRole("grid", { name: "Timecodes", exact: true });
   await expect(table).toHaveAttribute("data-grid-appearance", "table");
+  await expect(table).toHaveAttribute("data-grid-selection-mode", "row");
+  const panel = page.locator('[data-component="TimecodesPanel"]');
+  const start = panel.getByRole("button", { name: "Start timecode" });
+  await expect(start).toBeDisabled();
   const row = table.locator("[data-grid-row]").filter({ hasText: "81" });
-  await row.getByRole("gridcell").first().click();
+  await row.getByRole("gridcell", { name: "Table clock" }).click();
   await expect(row).toHaveAttribute("data-selected", "true");
+  // Row selection covers every cell in the row rather than the clicked one.
+  await expect(
+    row.locator('[role="gridcell"][data-selected="false"]'),
+  ).toHaveCount(0);
+  await expect(start).toBeEnabled();
   await expect(row.getByRole("gridcell").first()).not.toHaveCSS(
     "background-color",
     "rgba(0, 0, 0, 0)",
@@ -444,14 +453,29 @@ test("shared timecode tables preserve selection across snapshot updates", async 
     path: test.info().outputPath("shared-timecodes.png"),
     fullPage: true,
   });
+  await panel.getByRole("button", { name: "Switch to grid view" }).click();
+  const card = panel.locator('[data-timecode-uid="tabletimecode"]');
+  await expect(card).toHaveAttribute("aria-pressed", "true");
+  await expect(card).toContainText("Table clock");
+  await expect(card).toContainText("00:00:02:00");
+  await page.screenshot({
+    path: test.info().outputPath("timecode-cards.png"),
+    fullPage: true,
+  });
+  await panel.getByRole("button", { name: "Switch to list view" }).click();
   await openPanel(page, "Status Display");
-  const controls = page.getByRole("table", {
+  const controls = page.getByRole("grid", {
     name: "Timecode controls",
     exact: true,
   });
   await expect(
-    controls.getByRole("row", { name: /Table clock/ }),
+    controls.locator("[data-grid-row]").filter({ hasText: "Table clock" }),
   ).toContainText("00:00:02:00");
+  // ID and Label stay pinned while the wider status columns scroll.
+  await expect(controls.getByRole("columnheader", { name: "Label" })).toHaveCSS(
+    "position",
+    "sticky",
+  );
   const pause = controls.getByRole("button", { name: "Pause timecode" });
   await expect(pause).toBeVisible();
   await pause.hover();

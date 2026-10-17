@@ -11,14 +11,9 @@ import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { QueueIcon } from "@squidlab/phosphor-solid/queue";
 import { SparkleIcon } from "@squidlab/phosphor-solid/sparkle";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AppIcon } from "../../../components/ui/icon";
-import {
-  Table,
-  TableEmptyRow,
-  TableScroll,
-} from "../../../components/ui/table";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
@@ -322,6 +317,7 @@ export function ActiveInstancesSection(props: ActiveInstancesSectionProps) {
           cellProvider={provider}
           richCellExtensions={extensions}
           sortableColumns={SORTABLE_INSTANCE_COLUMNS}
+          freezeColumns={2}
           rowHeight={INSTANCE_ROW_HEIGHT}
           height="content"
           class="max-h-[60vh]"
@@ -332,8 +328,130 @@ export function ActiveInstancesSection(props: ActiveInstancesSectionProps) {
   );
 }
 
+const TIMECODE_ROW_HEIGHT = 40;
+const TIMECODE_COLUMNS: GridColumn[] = [
+  { id: "id", title: "ID", width: 64, sizing: "fixed" },
+  { id: "label", title: "Label", width: 192, sizing: "fixed" },
+  { id: "position", title: "Position", width: 160, sizing: "fixed" },
+  { id: "rate", title: "Rate", width: 96, sizing: "fixed" },
+  { id: "source", title: "Source", width: 96, sizing: "fixed" },
+  { id: "state", title: "State", width: 96, sizing: "fixed" },
+  { id: "controls", title: "Controls", width: 120, sizing: "fixed" },
+];
+const SORTABLE_TIMECODE_COLUMNS = TIMECODE_COLUMNS.flatMap((column) =>
+  column.id === "controls" ? [] : [column.id!],
+);
+
+type TimecodeCellData =
+  | { kind: "timecode-state"; running: boolean }
+  | { kind: "timecode-controls"; id: number };
+
+/** Projects one timecode and its live state into the cell for a status column. */
+function timecodeStatusCell(row: TimecodeRow, column: GridColumn): GridCell {
+  const id = row.timecode.identifiers.id;
+  switch (column.id) {
+    case "id":
+      return {
+        kind: GridCellKind.Number,
+        data: id,
+        displayData: String(id),
+        contentAlign: "left",
+      };
+    case "label":
+      return instanceTextCell(row.timecode.identifiers.label);
+    case "position":
+      return instanceTextCell(
+        formatSMPTETime(
+          durationToMs(row.state.current_time),
+          row.timecode.rate ?? TimecodeRate.Fps30,
+        ),
+        true,
+      );
+    case "rate":
+      return instanceTextCell(String(row.timecode.rate));
+    case "source":
+      return instanceTextCell(String(row.timecode.source));
+    case "state":
+      return {
+        kind: GridCellKind.Custom,
+        data: { kind: "timecode-state", running: row.state.is_active },
+        copyData: row.state.is_active ? "Running" : "Idle",
+      };
+    default:
+      return {
+        kind: GridCellKind.Custom,
+        data: { kind: "timecode-controls", id },
+        copyData: "",
+      };
+  }
+}
+
+/** Renders the timecode table's run-state pill and per-row transport buttons. */
+function timecodeStatusExtension(
+  onCommand: TimecodeSectionProps["onCommand"],
+): DataGridRichCellExtension {
+  return {
+    id: "timecode-status",
+    matches: (cell) =>
+      cell.kind === GridCellKind.Custom &&
+      String((cell.data as { kind?: string }).kind).startsWith("timecode-"),
+    isEditable: () => false,
+    render: ({ cell }) => {
+      if (cell.kind !== GridCellKind.Custom) return null;
+      const data = cell.data as TimecodeCellData;
+      if (data.kind === "timecode-state")
+        return (
+          <span
+            class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${
+              data.running
+                ? "bg-emerald-500/20 text-emerald-200 ring-emerald-400/30"
+                : "bg-neutral-700/40 text-neutral-300 ring-neutral-600"
+            }`}
+          >
+            {cell.copyData}
+          </span>
+        );
+      return (
+        <div class="flex gap-1">
+          <StatusIconButton
+            label="Start timecode"
+            icon={PlayIcon}
+            onClick={() => onCommand("StartTimecode", data.id)}
+          />
+          <StatusIconButton
+            label="Pause timecode"
+            icon={PauseIcon}
+            onClick={() => onCommand("PauseTimecode", data.id)}
+          />
+          <StatusIconButton
+            label="Stop timecode"
+            icon={StopIcon}
+            onClick={() => onCommand("StopTimecode", data.id)}
+            variant="danger"
+          />
+        </div>
+      );
+    },
+    renderEditor: () => null,
+  };
+}
+
 /** Presents timecode status and transport controls without owning app state. */
 export function TimecodesSection(props: TimecodeSectionProps) {
+  /** Keys cells by timecode UID so sorting and selection follow each clock across snapshots. */
+  const provider = createMemo(() =>
+    createKeyedDataGridCellProvider({
+      rows: props.rows,
+      columns: TIMECODE_COLUMNS,
+      rowKey: (row) => String(row.timecode.identifiers.uid),
+      columnKey: (column) => column.id!,
+      getCellContent: ({ row, column }) => timecodeStatusCell(row, column),
+    }),
+  );
+  const extensions = [
+    timecodeStatusExtension((...args) => props.onCommand(...args)),
+  ];
+
   return (
     <section class="shrink-0">
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -350,110 +468,23 @@ export function TimecodesSection(props: TimecodeSectionProps) {
         </div>
       </div>
 
-      <TableScroll
-        aria-label="Timecode controls scroll area"
-        class="border border-neutral-800"
-      >
-        <Table
-          aria-label="Timecode controls"
-          class="min-w-[760px] table-fixed text-left"
-        >
-          <thead>
-            <tr>
-              <th scope="col" class="w-16">
-                ID
-              </th>
-              <th scope="col" class="w-48">
-                Label
-              </th>
-              <th scope="col" class="w-40">
-                Position
-              </th>
-              <th scope="col" class="w-24">
-                Rate
-              </th>
-              <th scope="col" class="w-24">
-                Source
-              </th>
-              <th scope="col" class="w-24">
-                State
-              </th>
-              <th scope="col" class="w-28">
-                Controls
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <Show
-              when={props.rows.length > 0}
-              fallback={<TableEmptyRow colSpan={7}>No timecodes</TableEmptyRow>}
-            >
-              <For each={props.rows}>
-                {(row) => (
-                  <tr>
-                    <td class="font-mono">{row.timecode.identifiers.id}</td>
-                    <td class="truncate">{row.timecode.identifiers.label}</td>
-                    <td class="font-mono">
-                      {formatSMPTETime(
-                        durationToMs(row.state.current_time),
-                        row.timecode.rate ?? TimecodeRate.Fps30,
-                      )}
-                    </td>
-                    <td>{row.timecode.rate}</td>
-                    <td>{row.timecode.source}</td>
-                    <td>
-                      <span
-                        class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${
-                          row.state.is_active
-                            ? "bg-emerald-500/20 text-emerald-200 ring-emerald-400/30"
-                            : "bg-neutral-700/40 text-neutral-300 ring-neutral-600"
-                        }`}
-                      >
-                        {row.state.is_active ? "Running" : "Idle"}
-                      </span>
-                    </td>
-                    <td>
-                      <div class="flex gap-1">
-                        <StatusIconButton
-                          label="Start timecode"
-                          icon={PlayIcon}
-                          onClick={() =>
-                            props.onCommand(
-                              "StartTimecode",
-                              row.timecode.identifiers.id,
-                            )
-                          }
-                        />
-                        <StatusIconButton
-                          label="Pause timecode"
-                          icon={PauseIcon}
-                          onClick={() =>
-                            props.onCommand(
-                              "PauseTimecode",
-                              row.timecode.identifiers.id,
-                            )
-                          }
-                        />
-                        <StatusIconButton
-                          label="Stop timecode"
-                          icon={StopIcon}
-                          onClick={() =>
-                            props.onCommand(
-                              "StopTimecode",
-                              row.timecode.identifiers.id,
-                            )
-                          }
-                          variant="danger"
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </For>
-            </Show>
-          </tbody>
-        </Table>
-      </TableScroll>
+      <div class="border border-neutral-800">
+        <DataGrid
+          ariaLabel="Timecode controls"
+          readOnly
+          selectionMode="row"
+          columns={TIMECODE_COLUMNS}
+          rows={props.rows.length}
+          cellProvider={provider}
+          richCellExtensions={extensions}
+          sortableColumns={SORTABLE_TIMECODE_COLUMNS}
+          freezeColumns={2}
+          rowHeight={TIMECODE_ROW_HEIGHT}
+          height="content"
+          class="max-h-[40vh]"
+          emptyState="No timecodes"
+        />
+      </div>
     </section>
   );
 }

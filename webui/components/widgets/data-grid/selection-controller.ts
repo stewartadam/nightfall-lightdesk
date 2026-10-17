@@ -26,11 +26,12 @@ import {
   effectiveSelectedRows,
   initialDataGridSelectionState,
   reduceDataGridSelection,
+  rowSelectionState,
   selectionActionPublishes,
   selectionFromState,
   selectionIncludesCell,
 } from "./model/selection-model";
-import type { EditingCell } from "./model/types";
+import type { DataGridSelectionMode, EditingCell } from "./model/types";
 
 const DRAG_SELECTION_START_THRESHOLD_PX = 5;
 
@@ -38,6 +39,10 @@ interface DataGridSelectionControllerOptions {
   editingCell: () => EditingCell | undefined;
   getCellContent: () => (cell: Item) => GridCell;
   primaryColumnIndex: () => number;
+  /** Whether selection targets individual cells or whole rows. */
+  selectionMode: () => DataGridSelectionMode;
+  /** Number of data columns a whole-row selection spans. */
+  columnCount: () => number;
   focusRoot: () => void;
   scrollCellIntoView: (cell: Item) => void;
   onCellClicked?: (cell: Item, event: CellClickedEventArgs) => void;
@@ -68,7 +73,11 @@ export function createDataGridSelectionController(
   /** Applies a reducer action and publishes actions that change public selection. */
   const dispatchSelection = (action: DataGridSelectionAction) => {
     const previousState = untrack(selectionState);
-    const nextState = reduceDataGridSelection(previousState, action);
+    const reducedState = reduceDataGridSelection(previousState, action);
+    const nextState =
+      reducedState !== previousState && options.selectionMode() === "row"
+        ? rowSelectionState(reducedState, options.columnCount())
+        : reducedState;
     if (nextState !== previousState) {
       setSelectionState(nextState);
     }

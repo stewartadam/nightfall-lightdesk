@@ -680,6 +680,8 @@ export default function TanStackDataGrid(props: DataGridProps) {
     editingCell,
     getCellContent,
     primaryColumnIndex,
+    selectionMode: () => props.selectionMode ?? "cell",
+    columnCount: () => leafColumns().length,
     focusRoot: () => focusRoot(),
     scrollCellIntoView: (cell) => scrollCellIntoView(cell),
     onCellClicked: viewProps.onCellClicked,
@@ -1145,6 +1147,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
       aria-readonly={props.readOnly === true}
       aria-label={props.ariaLabel}
       data-grid-appearance={appearance()}
+      data-grid-selection-mode={props.selectionMode ?? "cell"}
       data-column-guides={props.columnGuides}
       tabIndex={0}
       data-selection-range={currentRangeData()}

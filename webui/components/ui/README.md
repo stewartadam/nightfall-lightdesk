@@ -184,6 +184,7 @@ Import `DataGrid` and `createKeyedDataGridCellProvider` from `components/widgets
 - `height="content"` sizes the grid to its headers and rows so it flows in a page like `Table`; add a `max-h-*` class to scroll long lists inside the grid. Without it the grid fills its parent.
 - Set `align: "right"` on a `GridColumn` to right-align its header for numeric columns; set `contentAlign: "right"` on the cells.
 - Pin the columns that name a row (an ID, label or scope) with `freezeColumns` so they stay visible while wide tables scroll sideways. `CrudListDataGrid` pins its leading marker, ID and Label columns automatically.
+- `selectionMode="row"` makes clicks, drags and arrow keys select whole rows instead of cells, for lists where the row is the record (the fixture picker, Timecodes). The default `"cell"` keeps spreadsheet cell and range selection.
 - For a table that tracks one selected record, derive `gridSelection` with `singleRowGridSelection` from the record's current source row, and read the chosen row back with `activeGridSelectionRow`.
 - Set `ariaLabel` and optionally `emptyState`. Headers remain visible with an empty row projection.
 - `density="comfortable"` uses 42px rows and `density="compact"` uses 32px rows. An explicit `rowHeight` overrides either. Editable grids retain their 30px default. `columnGuides` overrides the inherited app setting when supplied.
