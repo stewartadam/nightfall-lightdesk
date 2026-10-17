@@ -17,6 +17,18 @@ Reusable components own their visual rules alongside their implementation. Dialo
 
 The accent picker and buttons in `visual-language` follow the same shared-component pattern. Extend these production components when introducing another application or lab use case.
 
+## Key caps
+
+Use `Kbd` and `KbdShortcut` from `kbd` wherever the UI shows a keyboard key or shortcut as a key cap: the keyboard shortcuts overlay, command palette hints and keybinding settings. They own the cap surface, border, typography and platform-specific modifier glyphs.
+
+- `KbdShortcut` takes shortcut syntax as the shortcut registry and stored keybindings write it: `$mod+Shift+P`, `Control+KeyM`, `Shift++` or the chord `$mod+k w`. Keys sit side by side and chord steps are spaced apart. Pass the raw shortcut; do not pre-format it.
+- `Kbd` renders one cap. With `keyName` it resolves the key like `KbdShortcut` does; without it, it shows its children verbatim.
+- `$mod` resolves to Command on Apple platforms and Ctrl elsewhere. Apple platforms draw Command, Option, Control and Shift as glyphs with the key name kept for screen readers. `Key`/`Digit` code prefixes are dropped, letters are capitalized and arrows, Escape and Page Up/Down are abbreviated.
+- `size="compact"` suits dense rows and inline hints; the default suits reference lists and dialogs. `tone="muted"` dims caps for disabled or secondary shortcuts.
+- `describeKey` and `parseShortcut` expose the same resolution for text such as accessible labels.
+
+Menu items keep their plain-text `shortcut` hint; key caps are for lists and hints outside menus. The design lab's Shortcuts panel shows the sizes, tones and a chord.
+
 ## Alerts
 
 Use `Alert` from `alert` for inline, blockquote-style callouts inside panels and dialogs, the equivalent of GitHub Markdown's `[!NOTE]` callouts. Tailwind and Preline ship no alert component, so this one owns the colored start border, tinted background, icon and title styling.

@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Checkbox } from "../../../components/ui/form-controls";
+import { formatShortcutLabel, KbdShortcut } from "../../../components/ui/kbd";
 import { Button } from "../../../components/ui/visual-language/button";
 import {
   addShortcutPreemptor,
@@ -28,7 +29,6 @@ import {
   $respondToControllerUiActions,
   disableBuiltInShortcut,
   enableBuiltInShortcut,
-  formatKey,
   keyFromEvent,
   removeKeybinding,
   saveKeybinding,
@@ -40,18 +40,6 @@ import {
   type KeybindingConflict,
   uniqueBuiltInShortcuts,
 } from "../model/shortcut-conflicts";
-
-/** Platform name for the `$mod` shortcut modifier. */
-const MOD_KEY_NAME =
-  typeof navigator !== "undefined" &&
-  /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-    ? "Meta"
-    : "Control";
-
-/** Formats a built-in shortcut key, resolving the platform `$mod` modifier. */
-function formatBuiltInKey(key: string): string {
-  return formatKey(key.split("$mod").join(MOD_KEY_NAME));
-}
 
 /** Returns where a built-in shortcut applies, for listing it beside its description. */
 function builtInScope(shortcut: BuiltInShortcutInfo): string {
@@ -168,9 +156,7 @@ export function KeybindingsSettings() {
                   class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
                   data-keybinding={binding.key}
                 >
-                  <kbd class="font-mono text-xs text-neutral-200">
-                    {formatKey(binding.key)}
-                  </kbd>
+                  <KbdShortcut shortcut={binding.key} size="compact" />
                   <span class="flex-1 truncate text-neutral-300">
                     {formatActionReference(
                       binding.action,
@@ -182,7 +168,7 @@ export function KeybindingsSettings() {
                     size="compact"
                     variant="subtle"
                     type="button"
-                    aria-label={`Remove keybinding ${formatKey(binding.key)}`}
+                    aria-label={`Remove keybinding ${formatShortcutLabel(binding.key)}`}
                     onClick={() => removeKeybinding(binding.id)}
                   >
                     Remove
@@ -203,13 +189,18 @@ export function KeybindingsSettings() {
             size="compact"
             type="button"
             aria-pressed={recording()}
+            aria-label={
+              !recording() && pendingKey()
+                ? `Record keys, recorded ${formatShortcutLabel(pendingKey()!)}`
+                : undefined
+            }
             onClick={() => setRecording(!recording())}
           >
-            {recording()
-              ? "Press a key combination..."
-              : pendingKey()
-                ? formatKey(pendingKey()!)
-                : "Record keys"}
+            <Show when={!recording()} fallback="Press a key combination...">
+              <Show when={pendingKey()} fallback="Record keys">
+                {(key) => <KbdShortcut shortcut={key()} size="compact" />}
+              </Show>
+            </Show>
           </Button>
           <ActionPicker
             label="Keybinding action"
@@ -237,9 +228,9 @@ export function KeybindingsSettings() {
             class="space-y-2 rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200"
             data-keybinding-conflicts
           >
-            <p>
-              {formatKey(pendingKey() ?? "")} is already used. Adding this
-              keybinding replaces:
+            <p class="flex flex-wrap items-center gap-1">
+              <KbdShortcut shortcut={pendingKey() ?? ""} size="compact" />
+              <span>is already used. Adding this keybinding replaces:</span>
             </p>
             <ul class="list-disc pl-5 text-amber-100">
               <For each={conflicts()}>
@@ -289,9 +280,11 @@ export function KeybindingsSettings() {
                   class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
                   data-disabled-shortcut={shortcut.key}
                 >
-                  <kbd class="font-mono text-xs text-neutral-400">
-                    {formatBuiltInKey(shortcut.key)}
-                  </kbd>
+                  <KbdShortcut
+                    shortcut={shortcut.key}
+                    size="compact"
+                    tone="muted"
+                  />
                   <span class="flex-1 truncate text-neutral-400">
                     {shortcut.description}
                   </span>
@@ -324,9 +317,11 @@ export function KeybindingsSettings() {
                   class="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"
                   data-builtin-shortcut={shortcut.key}
                 >
-                  <kbd class="w-28 shrink-0 font-mono text-xs text-neutral-200">
-                    {formatBuiltInKey(shortcut.key)}
-                  </kbd>
+                  <KbdShortcut
+                    shortcut={shortcut.key}
+                    size="compact"
+                    class="w-28"
+                  />
                   <span
                     class="flex-1 truncate text-neutral-300"
                     title={shortcut.description}
