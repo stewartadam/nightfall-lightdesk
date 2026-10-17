@@ -1042,7 +1042,7 @@ for (const platform of ["MacIntel", "Win32"]) {
     );
     expect(Math.hypot(horizontalGap, verticalGap)).toBeLessThanOrEqual(64);
     expect(horizontalGap > 0 || verticalGap > 0).toBe(true);
-    await paletteInput.fill("Programmer");
+    await paletteInput.fill("open programmer");
     await page.waitForTimeout(600);
     const stablePlacement = (await guide.boundingBox())!;
     expect(stablePlacement.x).toBeCloseTo(filteredPlacement.x, 0);
@@ -1670,12 +1670,14 @@ test("first lights builds its own Red and Blue sequence", async ({
     .locator(`[data-crud-select-id="${clipUid}"]`)
     .dragTo(activeLayout(page).locator('[data-clip-dropzone-index="6"]'));
   await expect(
-    activeLayout(page).locator('[data-control-go-index="6"]'),
+    activeLayout(page).locator('[data-control-button-index="6"]'),
   ).toBeEnabled();
   await expect(
     guide.getByRole("heading", { name: "Start First Lights" }),
   ).toBeVisible();
-  const goTarget = activeLayout(page).locator('[data-control-go-index="6"]');
+  const goTarget = activeLayout(page).locator(
+    '[data-control-button-index="6"]',
+  );
   const scrollChange = await goTarget.evaluate((element) => {
     let scroller = element.parentElement;
     while (
@@ -1719,7 +1721,7 @@ test("first lights builds its own Red and Blue sequence", async ({
   await page.screenshot({
     path: testInfo.outputPath("guide-scrolled-controls.png"),
   });
-  await activeLayout(page).locator('[data-control-go-index="6"]').click();
+  await activeLayout(page).locator('[data-control-button-index="6"]').click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -1731,7 +1733,7 @@ test("first lights builds its own Red and Blue sequence", async ({
   await expect(
     guide.getByRole("heading", { name: "Advance to blue" }),
   ).toBeVisible();
-  await activeLayout(page).locator('[data-control-go-index="6"]').click();
+  await activeLayout(page).locator('[data-control-button-index="6"]').click();
   await expect(
     guide.getByRole("heading", { name: "Control the level" }),
   ).toBeVisible();
