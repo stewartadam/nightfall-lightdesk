@@ -27,6 +27,7 @@ nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-flow = { path = "../flow", default-features = false }
+nightfall-framepace = { path = "../framepace" }
 nightfall-fx = { path = "../fx" }
 nightfall-instances = { path = "../instances" }
 nightfall-programmer = { path = "../programmer" }

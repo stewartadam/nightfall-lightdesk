@@ -31,6 +31,7 @@ use nightfall_engine::prelude::{
 };
 use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
+use nightfall_framepace::prelude::{FramepaceSettings, Limiter};
 use nightfall_fx::prelude::{FxPlugin, StoredFxModule};
 use nightfall_programmer::prelude::ProgrammerPlugin;
 use nightfall_references::ReferencesPlugin;
@@ -45,6 +46,12 @@ use wasm_bindgen::prelude::*;
 use crate::fixture_library::BuiltinFixtureLibraryPlugin;
 
 const MAX_TICK_DELTA_MS: f64 = 100.0;
+/// Worker tick rate until an `fps` command changes it.
+const DEFAULT_TICK_RATE_HZ: f64 = 60.0;
+/// Slowest worker tick rate, matching the frame delta clamp.
+const MIN_TICK_RATE_HZ: f64 = 1_000.0 / MAX_TICK_DELTA_MS;
+/// Fastest worker tick rate, also used when an `fps 0` command turns the limit off.
+const MAX_TICK_RATE_HZ: f64 = 120.0;
 #[cfg(test)]
 const TEST_SAMPLE_ID: &str = "nightfall-demo-v1";
 #[cfg(test)]
@@ -108,6 +115,11 @@ impl BrowserEngine {
     /// Advance the embedded engine by one frame with a clamped host delta.
     pub fn tick(&mut self, delta_ms: f64) -> f64 {
         self.tick_core(delta_ms)
+    }
+
+    /// Return the rate in hertz at which the worker should call [`Self::tick`].
+    pub fn tick_rate_hz(&self) -> f64 {
+        self.tick_rate_hz_core()
     }
 
     /// Drain all encoded CBOR publications currently waiting for the worker.
@@ -201,6 +213,16 @@ impl BrowserEngine {
         ));
         // Real time advances by the host tick delta, so these report the worker's engine rate.
         app.add_plugins((FrameCountPlugin, FrameTimeDiagnosticsPlugin::default()));
+        // The worker paces ticks itself, so only the `fps` command handling is shared with the
+        // native frame limiter, whose sleeping limiter cannot run in a browser.
+        app.insert_resource(
+            FramepaceSettings::default()
+                .with_limiter(Limiter::from_framerate(DEFAULT_TICK_RATE_HZ)),
+        );
+        app.add_systems(
+            bevy_app::Update,
+            nightfall_framepace::handle_events.in_set(nightfall_engine::prelude::EventHandling),
+        );
         set_construction_stage(1);
         app.add_plugins(EnginePlugin);
         set_construction_stage(2);
@@ -294,6 +316,19 @@ impl BrowserEngine {
             ));
         self.app.update();
         applied_delta_ms
+    }
+
+    /// Resolve the `fps` frame limit into the worker's tick rate.
+    ///
+    /// A disabled limit runs at the fastest supported rate, and requested rates are clamped to
+    /// what the worker timer and the frame delta clamp support.
+    fn tick_rate_hz_core(&self) -> f64 {
+        match self.app.world().resource::<FramepaceSettings>().limiter {
+            Limiter::Manual(interval) if !interval.is_zero() => {
+                (1.0 / interval.as_secs_f64()).clamp(MIN_TICK_RATE_HZ, MAX_TICK_RATE_HZ)
+            }
+            _ => MAX_TICK_RATE_HZ,
+        }
     }
 
     /// Copy all pending encoded messages into host-owned byte buffers.
@@ -523,6 +558,48 @@ mod tests {
             .and_then(|diagnostic| diagnostic.smoothed())
             .expect("ticking should record a frame rate");
         assert!((fps - 40.0).abs() < 0.5, "fps: {fps}");
+    }
+
+    /// Verify `fps` commands complete and retarget the worker tick rate within its bounds.
+    #[test]
+    fn fps_command_completes_and_sets_tick_rate() {
+        let mut engine = sample_engine();
+        assert!((engine.tick_rate_hz_core() - DEFAULT_TICK_RATE_HZ).abs() < 1e-3);
+
+        for (fps, expected_hz) in [(44, 44.0), (0, MAX_TICK_RATE_HZ), (2, MIN_TICK_RATE_HZ)] {
+            let command_id = Uuid::new_v4();
+            let envelope = serde_json::from_value(json!({
+                "command_id": command_id,
+                "module": "EngineCommand",
+                "command": { "type": "SetFps", "data": fps }
+            }))
+            .expect("fps command should deserialize");
+            engine
+                .enqueue_command_core(envelope)
+                .expect("fps command should enqueue");
+            engine.tick_core(16.0);
+
+            let command_id_text = command_id.simple().to_string();
+            let result = engine
+                .drain_output_core()
+                .iter()
+                .filter_map(|bytes| decode_publication(bytes))
+                .find(|message| {
+                    message["type"] == "CommandResult"
+                        && message.pointer("/data/command_id").and_then(Value::as_str)
+                            == Some(command_id_text.as_str())
+                })
+                .unwrap_or_else(|| panic!("fps {fps} should complete"));
+            assert_eq!(
+                result["data"]["outcome"]["type"], "Succeeded",
+                "{result:#?}"
+            );
+            assert!(
+                (engine.tick_rate_hz_core() - expected_hz).abs() < 1e-3,
+                "fps {fps} gave {} Hz",
+                engine.tick_rate_hz_core()
+            );
+        }
     }
 
     /// Reject malformed showfile bytes before the embedded runtime becomes ready.

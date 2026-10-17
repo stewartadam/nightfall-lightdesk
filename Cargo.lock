@@ -5230,6 +5230,7 @@ dependencies = [
  "nightfall-engine",
  "nightfall-fixtures",
  "nightfall-flow",
+ "nightfall-framepace",
  "nightfall-fx",
  "nightfall-instances",
  "nightfall-programmer",
