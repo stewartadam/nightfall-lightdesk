@@ -297,7 +297,10 @@ test("a Hold binding keeps a toggle master on only while the button is held", as
   await expect(menu.locator("[data-existing-binding]")).toContainText(
     "OSC /e2e/map/button 1 · Hold",
   );
-  await expect(menu.getByRole("menuitem")).toHaveCount(0);
+  await expect(menu.locator("[data-binding-option]")).toHaveCount(0);
+  await expect(
+    menu.getByRole("menuitem", { name: "Remove OSC /e2e/map/button 1 · Hold" }),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
   await leaveMapping(page);
 

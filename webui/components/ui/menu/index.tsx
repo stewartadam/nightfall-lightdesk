@@ -25,6 +25,8 @@ export interface MenuItemProps
   danger?: boolean;
   shortcut?: string;
   trailing?: JSX.Element;
+  /** Secondary line under the label that wraps instead of truncating. */
+  description?: JSX.Element;
 }
 
 /** Aligns command labels, checkmarks, icons and hints across every menu entry point. */
@@ -38,12 +40,14 @@ export function MenuItem(props: MenuItemProps) {
     "danger",
     "shortcut",
     "trailing",
+    "description",
   ]);
   return (
     <button
       type={local.type ?? "button"}
       class={`nf-menu-item ${local.class ?? ""}`}
       data-danger={local.danger || undefined}
+      data-described={local.description ? "" : undefined}
       {...rest}
     >
       <span class="nf-menu-icon" aria-hidden="true">
@@ -58,7 +62,12 @@ export function MenuItem(props: MenuItemProps) {
           <CheckIcon />
         </Show>
       </span>
-      <span class="nf-menu-label">{local.children}</span>
+      <span class="nf-menu-label">
+        {local.children}
+        <Show when={local.description}>
+          <span class="nf-menu-description">{local.description}</span>
+        </Show>
+      </span>
       <Show when={local.shortcut}>
         <span class="nf-menu-hint">{local.shortcut}</span>
       </Show>
@@ -77,8 +86,19 @@ export function MenuSeparator(props: JSX.HTMLAttributes<HTMLHRElement>) {
   return <hr class={`nf-menu-separator ${local.class ?? ""}`} {...rest} />;
 }
 
+export interface MenuHeadingProps extends JSX.HTMLAttributes<HTMLDivElement> {
+  /** Keeps the text's own case, for headings that quote names or addresses. */
+  literal?: boolean;
+}
+
 /** Labels a group of commands without behaving like an actionable row. */
-export function MenuHeading(props: JSX.HTMLAttributes<HTMLDivElement>) {
-  const [local, rest] = splitProps(props, ["class"]);
-  return <div class={`nf-menu-heading ${local.class ?? ""}`} {...rest} />;
+export function MenuHeading(props: MenuHeadingProps) {
+  const [local, rest] = splitProps(props, ["class", "literal"]);
+  return (
+    <div
+      class={`nf-menu-heading ${local.class ?? ""}`}
+      data-literal={local.literal || undefined}
+      {...rest}
+    />
+  );
 }

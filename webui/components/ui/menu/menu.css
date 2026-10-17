@@ -71,6 +71,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.nf-menu-item[data-described] {
+  align-items: flex-start;
+}
+.nf-menu-description {
+  display: block;
+  margin-top: 2px;
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .nf-menu-hint {
   flex-shrink: 0;
   color: #9ca3af;
@@ -89,4 +101,9 @@
   line-height: 14px;
   letter-spacing: 0.025em;
   text-transform: uppercase;
+}
+.nf-menu-heading[data-literal] {
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
 }

@@ -15,6 +15,7 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { overlayHost } from "../../../components/ui/modal/dialog-stack";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import {
   SearchPickerInput,
@@ -272,7 +273,7 @@ export const TimelineGotoPopout = () => {
 
   return (
     <Show when={workspaceActive() && isOpen()}>
-      <Portal>
+      <Portal mount={overlayHost()}>
         <div class="fixed inset-0 nightfall-top-layer pointer-events-none">
           <SearchPickerSurface
             ref={popoutRef}

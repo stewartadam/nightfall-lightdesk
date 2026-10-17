@@ -12,7 +12,20 @@ Reusable components own their visual rules alongside their implementation. Dialo
 
 - Use `dropdown-menu` for button-triggered menus. Its items close the dropdown after activation. Give a trigger the shared button look with `triggerVariant`/`triggerSize` (see `buttons.md`) rather than styling a `<span>` inside it.
 - Use the context-menu provider and widget for menus anchored to a pointer, including nested flyouts.
+- Use `Popover` from `popover` for other anchored floating content: menus whose trigger is not a plain button (a field, an overlay), menus that stay open while items are toggled, or non-menu content such as the notification history. `DropdownMenu` composes it.
 - Both wrappers compose the menu primitives and retain responsibility for interaction and positioning. Add visual states to the primitives instead of styling individual menu callers.
+- `MenuItem` takes a `description` for a wrapping second line, and `MenuHeading` takes `literal` to keep quoted names and addresses in their own case.
+
+## Popovers
+
+`Popover` renders floating content against an `anchor` element and mounts it through `overlayHost(anchor)`, so it stays visible and interactive inside open modal dialogs. Never portal floating UI to `document.body` or through a bare `<Portal>`; the `shared-overlays` node test enforces this, and keeps menu roles inside `components/ui` and the context-menu widget.
+
+- The caller owns `open` and closes the popover from `onClose`, which runs on a pointer press outside both the popover and its anchor, and on Escape. Its document listeners exist only while it is open.
+- `placement` is `below` (default), `above`, or `auto` (below unless the content fits better above). `align` lines up the `start` or `end` edge, and `matchAnchorWidth` sizes it to the anchor. It clamps to the viewport and scrolls when taller than the room available.
+- `initialFocus` moves focus to the first enabled control (default), nowhere (`none`, for a field that keeps typing focus), or the element a function returns. `returnFocus` picks where Escape sends focus; it defaults to the anchor.
+- `surface` renders the positioned element, such as `MenuSurface` for menus or `DialogSurface` for panel content; other attributes (`role`, `aria-label`, `class`, `style`, data attributes) pass through to it.
+
+The design lab's Menus panel shows a popover menu with described and checkable items.
 - The design lab's Menus panel demonstrates both wrappers, including checked, disabled, and destructive entries. Its button popover also exercises arbitrary interactive dropdown content.
 
 The accent picker and buttons in `visual-language` follow the same shared-component pattern. Extend these production components when introducing another application or lab use case.

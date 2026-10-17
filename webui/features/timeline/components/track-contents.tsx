@@ -12,6 +12,7 @@ import { createMemo, createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { useUiAction } from "../../../components/providers/command-registry";
 import { openContextMenu } from "../../../components/providers/context-menu";
+import { overlayHost } from "../../../components/ui/modal/dialog-stack";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { parseTimelineInsertDragPayload } from "../../../lib/timeline-insert-drag";
@@ -644,7 +645,7 @@ const TrackContents = (props: TrackListProps) => {
 
       <Show when={pickerIntent()}>
         {(intent) => (
-          <Portal>
+          <Portal mount={overlayHost()}>
             <InsertActionPicker
               x={intent().x}
               y={intent().y}
