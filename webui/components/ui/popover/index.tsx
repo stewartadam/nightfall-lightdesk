@@ -17,6 +17,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
+import { createDismissable, type DismissReason } from "../dismissable";
 import { overlayHost } from "../modal/dialog-stack";
 
 /** Space between the anchor and its popover. */
@@ -70,8 +71,9 @@ export interface PopoverProps
  * Renders floating content anchored to an element, mounted through
  * `overlayHost` so it stays visible and interactive above (or inside) open
  * modal dialogs. The popover owns positioning (flip, clamp to the viewport,
- * scroll when too tall), dismissal on outside pointer presses and Escape, and
- * initial focus. Its document listeners exist only while it is open.
+ * scroll when too tall), dismissal through `createDismissable` (outside
+ * pointer presses, and Escape ahead of any dialog it sits in), and initial
+ * focus. Its document listeners exist only while it is open.
  */
 export function Popover(props: PopoverProps): JSX.Element {
   const [local, rest] = splitProps(props, [
@@ -149,21 +151,13 @@ export function Popover(props: PopoverProps): JSX.Element {
     target?.focus();
   };
 
-  /** Closes on a pointer press outside both the popover and its anchor. */
-  const handlePointerDown = (event: PointerEvent): void => {
-    const target = event.target;
-    if (!(target instanceof Node)) return;
-    if (popoverRef?.contains(target) || local.anchor()?.contains(target)) {
-      return;
-    }
+  /**
+   * Closes the popover; after Escape, focus returns to the anchor or
+   * `returnFocus` so keyboard users land where they opened it.
+   */
+  const dismiss = (reason: DismissReason): void => {
     local.onClose();
-  };
-
-  /** Closes on Escape and returns focus to the anchor or `returnFocus`. */
-  const handleKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    local.onClose();
+    if (reason !== "escape") return;
     const anchor = local.anchor();
     const focusTarget =
       local.returnFocus?.() ??
@@ -171,9 +165,15 @@ export function Popover(props: PopoverProps): JSX.Element {
     focusTarget?.focus();
   };
 
+  createDismissable({
+    active: () => local.open,
+    refs: () => [popoverRef, local.anchor()],
+    onDismiss: dismiss,
+  });
+
   /**
-   * Installs dismissal and repositioning listeners for as long as the popover
-   * is open, then places and focuses it once it has laid out.
+   * Installs repositioning listeners for as long as the popover is open, then
+   * places and focuses it once it has laid out.
    */
   createEffect(() => {
     if (!local.open) return;
@@ -182,13 +182,9 @@ export function Popover(props: PopoverProps): JSX.Element {
       updatePosition();
       focusInitialControl();
     });
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     onCleanup(() => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     });
