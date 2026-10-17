@@ -57,14 +57,14 @@ fn scales_with_playback(metadata: &ParameterMetadata) -> bool {
         && !(metadata.dmx_slots == DmxSlots::Virtual && !metadata.use_grandmaster)
 }
 
-/// How a held slot Flash or Swop affects one playback's intensity.
+/// How a held slot Flash or Swop affects one playback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HeldButtonEffect {
     /// No held button concerns the playback.
     None,
     /// A held Flash or Swop plays the playback at full intensity.
     Flashed,
-    /// A Swop held on another playback mutes this one.
+    /// A Swop held on another playback silences every attribute of this one.
     Muted,
 }
 
@@ -88,7 +88,7 @@ impl HeldButtonEffect {
 }
 
 /// Returns the intensity factor a playback renders with: its fader scale, full while flashed,
-/// or zero while another playback is swopped.
+/// or zero while another playback is swopped (whose layer is silenced outright anyway).
 fn effective_intensity_scale(intensity_scale: f32, effect: HeldButtonEffect) -> f32 {
     match effect {
         HeldButtonEffect::None => intensity_scale.clamp(0.0, 1.0),
@@ -102,7 +102,7 @@ fn effective_intensity_scale(intensity_scale: f32, effect: HeldButtonEffect) -> 
 /// This runs after layer generation but before compositing, scaling Intensity and
 /// VirtualIntensity parameters by the playback's intensity_scale. Clips held by a slot Flash
 /// or Swop play at full instead, and while any Swop is held every other show playback except the
-/// Programmer is scaled to zero; editor previews keep their level.
+/// Programmer drops out entirely; editor previews keep playing.
 pub fn apply_playback_intensity(
     mut layer_query: Query<(
         &mut Layer,
@@ -136,6 +136,14 @@ pub fn apply_playback_intensity(
         let swop_exempt =
             is_preview || metadata.is_none_or(|metadata| metadata.kind == InstanceKind::Programmer);
         let effect = HeldButtonEffect::for_instance(instance_id, swop_exempt, &flashed, &swopped);
+        if effect == HeldButtonEffect::Muted {
+            // A swop silences every attribute, not only intensity, so colour or position looks
+            // on other playbacks cannot cover the swopped one.
+            layer.absolute = Default::default();
+            layer.relative = Default::default();
+            layer.transitioning = Default::default();
+            continue;
+        }
         let scale = effective_intensity_scale(instance_controls.intensity_scale, effect);
         // Skip if intensity is at full (1.0) - no scaling needed
         if (scale - 1.0).abs() < f32::EPSILON {

@@ -313,7 +313,9 @@ impl Control {
         if self.has_hardware && self.is_grabbed {
             self.hardware_value
         } else {
-            runtime.console_value
+            // A level queued for an instance that is still starting is what the fader will
+            // settle on, so show it rather than the new instance's default full level.
+            self.pending_console_value.unwrap_or(runtime.console_value)
         }
     }
 
@@ -2490,8 +2492,8 @@ mod tests {
     }
 
     /// Verifies a held Swop reaches the rendered layers: the swopped clip plays at full
-    /// although its fader sits at half, another clip's intensity drops to zero, and the
-    /// Programmer keeps its level; releasing restores every layer's fader scaling.
+    /// although its fader sits at half, another clip's layer drops out entirely, and the
+    /// Programmer keeps its level; releasing restores the swopped clip's fader scaling.
     #[test]
     fn held_swop_scales_rendered_layers() {
         use moonshine_kind::prelude::*;
@@ -2554,10 +2556,7 @@ mod tests {
         press_web(&mut app);
         let full = Some(ParameterValue::Absolute { value: 200.0 });
         assert_eq!(intensity(&app, swopped), full);
-        assert_eq!(
-            intensity(&app, other),
-            Some(ParameterValue::Absolute { value: 0.0 })
-        );
+        assert_eq!(intensity(&app, other), None);
         assert_eq!(intensity(&app, programmer), full);
 
         release_web(&mut app);
