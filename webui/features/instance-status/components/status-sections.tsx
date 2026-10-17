@@ -39,6 +39,7 @@ import {
   instanceKindLabel,
   instanceStateClass,
   instanceStateLabel,
+  instanceStateTitle,
   type StatusInstanceInfo,
 } from "../model/instance-status-model";
 
@@ -273,6 +274,12 @@ export function ActiveInstancesSection(props: ActiveInstancesSectionProps) {
                         <td class="truncate">
                           <span
                             class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${instanceStateClass(instance())}`}
+                            data-held-button={
+                              instanceStateTitle(instance())
+                                ? instance().held_button?.type
+                                : undefined
+                            }
+                            title={instanceStateTitle(instance())}
                           >
                             {instanceStateLabel(instance())}
                           </span>

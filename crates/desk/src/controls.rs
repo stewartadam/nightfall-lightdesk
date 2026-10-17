@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use bevy_ecs::prelude::*;
+use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::*;
 use nightfall_clips::{InstanceIndex, Source};
 use nightfall_engine::prelude::*;
@@ -17,6 +17,10 @@ use crate::{
     clips::{Clip, ClipCommand, ClipOperation, MaterializedClip},
     masters::{Master, MasterCommand, MasterMode, MasterUpdate},
 };
+
+mod held_buttons;
+
+pub use held_buttons::{HeldButtonEffect, HeldButtonEffects, resolve_held_button_effects};
 
 const CONTROL_EPSILON: f32 = 0.0001;
 pub const DEFAULT_CONTROL_COUNT: usize = 10;
@@ -60,10 +64,14 @@ pub enum ControlCommand {
     },
     /// Releases the control's button.
     ///
-    /// Every current button mode acts on the press only, so releases complete without effect.
+    /// Ends a Flash or Swop once every surface holding it has let go; other modes act on
+    /// the press only, so their releases complete without effect.
     ReleaseButton {
         control_index: u32,
     },
+    /// Lets go of every held Flash and Swop, whoever holds it, such as a press left on by a
+    /// controller that never sent its release.
+    ReleaseHeldButtons,
 }
 
 impl IngressCommand for ControlCommand {}
@@ -80,6 +88,12 @@ pub enum ControlButtonMode {
     Go,
     /// Steps a running sequence clip back one cue.
     GoBack,
+    /// While held, plays the clip at full intensity whatever its fader says, starting it if
+    /// idle, or pushes a master to full. Letting go restores the fader level and stops a clip
+    /// the flash started.
+    Flash,
+    /// Flash that also takes the intensity of every other playback to zero while held.
+    Swop,
     /// Starts an idle clip and stops a running one, or toggles a toggle-mode master.
     Toggle,
     /// Stops a running clip.
@@ -88,18 +102,32 @@ pub enum ControlButtonMode {
 
 impl ControlButtonMode {
     /// Every mode, in the order the mode picker lists them.
-    pub const ALL: [Self; 4] = [Self::Go, Self::GoBack, Self::Toggle, Self::Release];
+    pub const ALL: [Self; 6] = [
+        Self::Go,
+        Self::GoBack,
+        Self::Flash,
+        Self::Swop,
+        Self::Toggle,
+        Self::Release,
+    ];
 
     /// Returns whether this mode does something for a slot holding `assignment`.
     ///
-    /// Clips support every mode. Masters have no cues to step back through and no playback
-    /// to release, so they only offer Go and Toggle. An empty slot accepts any mode, which
-    /// is kept until something is assigned.
+    /// Clips support every mode. Masters have no cues to step back through, no playback to
+    /// release and no playback to solo, so they offer Go, Flash and Toggle. An empty slot
+    /// accepts any mode, which is kept until something is assigned.
     pub fn supports(self, assignment: Option<&ControlAssignment>) -> bool {
         match assignment {
             None | Some(ControlAssignment::Clip(_)) => true,
-            Some(ControlAssignment::Master(_)) => matches!(self, Self::Go | Self::Toggle),
+            Some(ControlAssignment::Master(_)) => {
+                matches!(self, Self::Go | Self::Flash | Self::Toggle)
+            }
         }
+    }
+
+    /// Returns whether the mode acts while the button is held and ends on release.
+    pub fn is_held(self) -> bool {
+        matches!(self, Self::Flash | Self::Swop)
     }
 
     /// Lists the modes a slot holding `assignment` can use, in picker order.
@@ -141,6 +169,10 @@ pub struct ControlSnapshot {
     pub button_mode: ControlButtonMode,
     /// Modes the slot's current assignment supports, in picker order.
     pub available_button_modes: Vec<ControlButtonMode>,
+    /// Whether the slot's Flash or Swop button is held down.
+    pub is_flashing: bool,
+    /// How a held Flash or Swop, on this slot or another, changes the slot's playback.
+    pub held_button: Option<HeldButtonEffect>,
 }
 
 /// Resource that stores control bank assignments and current levels.
@@ -167,6 +199,63 @@ struct Control {
     button_mode: ControlButtonMode,
     /// Whether a physical fader has reported a position for this slot since startup.
     has_hardware: bool,
+    /// Flash or Swop currently held on the slot's button.
+    flash: Option<SlotFlash>,
+}
+
+/// Who holds a slot's button down, so each release ends only its own press and a client
+/// that disconnects lets go of everything it held.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ButtonHolder {
+    /// A connected client session, such as a web UI tab.
+    Client(ClientId),
+    /// Any other surface, such as a MIDI pad, identified by its command origin.
+    Surface(CommandOrigin),
+}
+
+/// A Flash or Swop held on a slot's button, and what letting go must undo.
+#[derive(Clone, Debug, PartialEq)]
+struct SlotFlash {
+    /// The assignment the flash acts on; reassigning the slot ends the flash.
+    target: ControlAssignment,
+    /// Whether the press was a Swop, which also mutes every other playback.
+    swop: bool,
+    /// Every press still held, one entry per press.
+    holders: Vec<ButtonHolder>,
+    /// Whether the flash started an idle clip, which letting go stops again.
+    started_clip: bool,
+    /// Master control position captured at the press, restored when letting go.
+    restore_master_position: Option<f32>,
+}
+
+impl SlotFlash {
+    /// Builds a flash of `target` pressed by `holder` in `mode` that has not changed any
+    /// output yet.
+    fn new(target: ControlAssignment, mode: ControlButtonMode, holder: ButtonHolder) -> Self {
+        Self {
+            target,
+            swop: mode == ControlButtonMode::Swop,
+            holders: vec![holder],
+            started_clip: false,
+            restore_master_position: None,
+        }
+    }
+
+    /// Returns whether the slot still holds the flashed target in the pressed mode.
+    fn fits(&self, slot: &Control) -> bool {
+        let pressed_mode = if self.swop {
+            ControlButtonMode::Swop
+        } else {
+            ControlButtonMode::Flash
+        };
+        slot.button_mode == pressed_mode && slot.assignment().as_ref() == Some(&self.target)
+    }
+
+    /// Returns whether the flash should keep going: someone still holds a press and the slot
+    /// still [fits](Self::fits) it.
+    fn still_held_on(&self, slot: &Control) -> bool {
+        !self.holders.is_empty() && self.fits(slot)
+    }
 }
 
 impl Default for Control {
@@ -184,6 +273,7 @@ impl Default for Control {
             attached_instance_id: None,
             button_mode: ControlButtonMode::default(),
             has_hardware: false,
+            flash: None,
         }
     }
 }
@@ -215,11 +305,13 @@ impl Control {
     }
 
     /// Empties the slot and resets its levels, keeping the button mode and whether a physical
-    /// fader drives it, since both belong to the slot rather than to its assignment.
+    /// fader drives it, since both belong to the slot rather than to its assignment. A held
+    /// flash is kept too, so [`end_released_flashes`] can still undo what it did.
     fn clear(&mut self) {
         *self = Self {
             button_mode: self.button_mode,
             has_hardware: self.has_hardware,
+            flash: self.flash.take(),
             ..Self::default()
         };
     }
@@ -230,14 +322,19 @@ impl Control {
         if self.has_hardware && self.is_grabbed {
             self.hardware_value
         } else {
-            runtime.console_value
+            // A level queued for an instance that is still starting is what the fader will
+            // settle on, so show it rather than the new instance's default full level.
+            self.pending_console_value.unwrap_or(runtime.console_value)
         }
     }
 
     fn sync_from_runtime(&mut self, runtime: ControlRuntimeState) -> Option<f32> {
         let console_changed = !is_same_value(runtime.console_value, self.last_console_value);
         let pending_intensity = if let Some(pending_console_value) = self.pending_console_value {
-            if is_same_value(runtime.console_value, pending_console_value) {
+            // An idle clip reads zero, which must not settle a zero level queued for the
+            // instance a Flash is about to start.
+            if runtime.is_clip_active && is_same_value(runtime.console_value, pending_console_value)
+            {
                 self.pending_console_value = None;
                 None
             } else if runtime.attached_instance_id.is_some()
@@ -550,6 +647,59 @@ impl Controls {
         self.slot(control_index).is_some()
     }
 
+    /// Lists the clips a held Flash or Swop plays at full as `(control index, clip id, swop)`,
+    /// where a Swop also takes every other playback out.
+    ///
+    /// A flash nobody holds any more, or whose slot was reassigned or switched to another
+    /// mode, is left out at once, before [`end_released_flashes`] undoes it on the next frame.
+    pub(crate) fn flashed_clips(&self) -> impl Iterator<Item = (u32, u32, bool)> + '_ {
+        self.slots
+            .iter()
+            .zip(1..)
+            .filter_map(|(slot, control_index)| {
+                let flash = slot
+                    .flash
+                    .as_ref()
+                    .filter(|flash| flash.still_held_on(slot))?;
+                match flash.target {
+                    ControlAssignment::Clip(clip_id) => Some((control_index, clip_id, flash.swop)),
+                    ControlAssignment::Master(_) => None,
+                }
+            })
+    }
+
+    /// Holds slot `control_index`'s assignment as if a web client pressed its Flash or Swop
+    /// button, without starting or pushing anything.
+    #[cfg(test)]
+    pub(crate) fn hold_for_test(&mut self, control_index: u32) {
+        let slot = self.slot_mut(control_index).expect("control slot exists");
+        let target = slot.assignment().expect("control slot is assigned");
+        slot.flash = Some(SlotFlash::new(
+            target,
+            slot.button_mode,
+            ButtonHolder::Client(ClientId(1)),
+        ));
+    }
+
+    /// Returns a held flash of `target` on any slot other than `control_index`, which a new
+    /// flash of the same target joins instead of changing outputs again.
+    fn flash_on(&self, target: &ControlAssignment, control_index: u32) -> Option<&SlotFlash> {
+        let index = self.flash_index_on(target, control_index)?;
+        self.slots[index].flash.as_ref()
+    }
+
+    /// Returns the zero-based position of the slot other than `control_index` that holds a
+    /// flash of `target`.
+    fn flash_index_on(&self, target: &ControlAssignment, control_index: u32) -> Option<usize> {
+        self.slots.iter().enumerate().position(|(index, slot)| {
+            u32::try_from(index + 1).ok() != Some(control_index)
+                && slot
+                    .flash
+                    .as_ref()
+                    .is_some_and(|flash| &flash.target == target && flash.still_held_on(slot))
+        })
+    }
+
     fn slot(&self, control_index: u32) -> Option<&Control> {
         let zero_based = usize::try_from(control_index.checked_sub(1)?).ok()?;
         self.slots.get(zero_based)
@@ -568,6 +718,7 @@ impl Controls {
         materialized_clips: &Query<&MaterializedClip>,
         instance_index: &InstanceIndex,
         controls_query: &Query<&InstanceControls>,
+        held_buttons: &HeldButtonEffects,
     ) -> Vec<ControlSnapshot> {
         self.slots
             .iter()
@@ -604,6 +755,10 @@ impl Controls {
                     available_button_modes: ControlButtonMode::available_for(
                         slot.assignment().as_ref(),
                     ),
+                    is_flashing: slot.flash.is_some(),
+                    held_button: runtime
+                        .attached_instance_id
+                        .and_then(|instance_id| held_buttons.get(&instance_id)),
                 }
             })
             .collect()
@@ -736,6 +891,10 @@ pub fn handle_control_commands(
                 control_index,
                 mode,
             } => set_control_button_mode(&mut controls, *control_index, *mode),
+            ControlCommand::ReleaseHeldButtons => {
+                release_held_buttons(&mut controls);
+                Ok(())
+            }
             ControlCommand::Go { control_index }
             | ControlCommand::PressButton { control_index }
             | ControlCommand::ReleaseButton { control_index } => Err(CommandError::new(
@@ -881,10 +1040,11 @@ impl ControlButtonInput {
 /// without effect.
 pub fn expand_control_button_commands(
     mut pending: ResMut<PendingCommandBuffer>,
-    controls: Res<Controls>,
+    mut controls: ResMut<Controls>,
     clips: Query<&Clip>,
     materialized_clips: Query<&MaterializedClip>,
     masters: Res<DataProvider<Master>>,
+    mut flash_outputs: FlashOutputs,
     mut responder: CommandResponder,
 ) {
     for envelope in pending.drain() {
@@ -897,6 +1057,30 @@ pub fn expand_control_button_commands(
             pending.push(envelope);
             continue;
         };
+        let holder = button_holder(&responder, envelope.command_id);
+        let held_input = match input {
+            ControlButtonInput::Press(control_index) => controls
+                .slot(control_index)
+                .is_some_and(|slot| slot.button_mode.is_held())
+                .then(|| {
+                    press_flash(
+                        &mut controls,
+                        control_index,
+                        holder,
+                        &clips,
+                        &materialized_clips,
+                        &mut flash_outputs,
+                    )
+                }),
+            ControlButtonInput::Release(control_index) => {
+                Some(release_flash(&mut controls, control_index, &holder))
+            }
+            ControlButtonInput::Go(_) => None,
+        };
+        if let Some(result) = held_input {
+            finish_control_command(&mut responder, envelope.command_id, result);
+            continue;
+        }
         match resolve_control_button(&controls, input, &clips, &materialized_clips, &masters) {
             Ok(Some(command)) => pending.push(PayloadEnvelope::with_context(
                 envelope.command_id,
@@ -981,8 +1165,288 @@ fn resolve_control_button(
             Some(ClipCommand::StopClip(target))
         }
         (ControlButtonMode::GoBack | ControlButtonMode::Release, false) => None,
+        // Held modes are handled by `press_flash` before resolving.
+        (ControlButtonMode::Flash | ControlButtonMode::Swop, _) => None,
     };
     Ok(command.map(|command| Box::new(command) as DynEnginePayload))
+}
+
+/// Identifies who pressed or released a button: the client session that sent the command,
+/// or else the surface that accepted it.
+fn button_holder(responder: &CommandResponder, command_id: CommandId) -> ButtonHolder {
+    match responder.connection(command_id) {
+        Some(client) => ButtonHolder::Client(client),
+        None => ButtonHolder::Surface(
+            responder
+                .origin(command_id)
+                .cloned()
+                .unwrap_or(CommandOrigin::WebUi),
+        ),
+    }
+}
+
+/// Holds a Flash or Swop on a slot: the first press starts it, and later presses from other
+/// surfaces only add holders so the flash lasts until the last one lets go.
+///
+/// Pressing an empty slot does nothing. A clip that is not running is started with its
+/// fader level at zero, so it shows only while the button is held.
+fn press_flash(
+    controls: &mut Controls,
+    control_index: u32,
+    holder: ButtonHolder,
+    clips: &Query<&Clip>,
+    materialized_clips: &Query<&MaterializedClip>,
+    flash_outputs: &mut FlashOutputs,
+) -> Result<(), CommandError> {
+    let shared = {
+        let slot = controls
+            .slot(control_index)
+            .ok_or_else(|| control_not_found(control_index))?;
+        slot.assignment()
+            .and_then(|target| controls.flash_on(&target, control_index))
+            .map(|flash| flash.restore_master_position)
+    };
+    let slot = controls
+        .slot_mut(control_index)
+        .ok_or_else(|| control_not_found(control_index))?;
+    if slot.flash.as_ref().is_some_and(|flash| flash.fits(slot))
+        && let Some(flash) = slot.flash.as_mut()
+    {
+        if !flash.holders.contains(&holder) {
+            flash.holders.push(holder);
+        }
+        return Ok(());
+    }
+    let Some(target) = slot.assignment() else {
+        return Ok(());
+    };
+    if let ControlAssignment::Clip(clip_id) = target
+        && !clips.iter().any(|clip| clip.identifiers.id == clip_id)
+    {
+        return Err(CommandError::new(
+            "clip.not_found",
+            format!("Assigned clip {clip_id} does not exist"),
+        ));
+    }
+    let stale = slot.flash.take();
+    let result = match shared {
+        Some(restore_master_position) => {
+            slot.flash = Some(SlotFlash {
+                restore_master_position,
+                ..SlotFlash::new(target, slot.button_mode, holder)
+            });
+            Ok(())
+        }
+        None => flash_outputs.start(slot, target, holder, materialized_clips),
+    };
+    if let Some(stale) = stale {
+        end_flash(controls, control_index, stale, flash_outputs);
+    }
+    result
+}
+
+/// Lets go of one holder's press of a slot's button. The flash itself ends in
+/// [`end_released_flashes`] once nobody holds it.
+///
+/// Releases that let go of nothing, such as every release of a Go button, leave the bank
+/// untouched so they do not re-broadcast control snapshots.
+fn release_flash(
+    controls: &mut ResMut<Controls>,
+    control_index: u32,
+    holder: &ButtonHolder,
+) -> Result<(), CommandError> {
+    let slot = controls
+        .slot(control_index)
+        .ok_or_else(|| control_not_found(control_index))?;
+    let is_holding = slot
+        .flash
+        .as_ref()
+        .is_some_and(|flash| flash.holders.contains(holder));
+    if is_holding
+        && let Some(flash) = controls
+            .slot_mut(control_index)
+            .and_then(|slot| slot.flash.as_mut())
+    {
+        flash.holders.retain(|held| held != holder);
+    }
+    Ok(())
+}
+
+/// Drops every holder of every held flash, so [`end_released_flashes`] ends them all and
+/// undoes what they did. Leaves the bank untouched when nothing is held.
+fn release_held_buttons(controls: &mut ResMut<Controls>) {
+    if controls.slots.iter().all(|slot| slot.flash.is_none()) {
+        return;
+    }
+    for flash in controls
+        .slots
+        .iter_mut()
+        .filter_map(|slot| slot.flash.as_mut())
+    {
+        flash.holders.clear();
+    }
+}
+
+/// Builds the error for button input addressed to a slot the bank does not have.
+fn control_not_found(control_index: u32) -> CommandError {
+    CommandError::new(
+        "control.not_found",
+        format!("Control {control_index} does not exist"),
+    )
+}
+
+/// Playback and master changes a slot Flash or Swop makes when it starts and ends.
+///
+/// They are runtime effects rather than show edits, so they bypass the command and undo
+/// lifecycle like fader moves do.
+#[derive(SystemParam)]
+pub struct FlashOutputs<'w> {
+    clip_writer: MessageWriter<'w, EngineOperationEnvelope<ClipOperation>>,
+    master_writer: MessageWriter<'w, MasterUpdate>,
+    masters: Res<'w, DataProvider<Master>>,
+}
+
+impl FlashOutputs<'_> {
+    /// Starts a flash of `target` held by `holder` on `slot`.
+    ///
+    /// An idle clip starts with its fader level queued at zero, so the instance shows only
+    /// through the flash. A master records its position and goes to full.
+    fn start(
+        &mut self,
+        slot: &mut Control,
+        target: ControlAssignment,
+        holder: ButtonHolder,
+        materialized_clips: &Query<&MaterializedClip>,
+    ) -> Result<(), CommandError> {
+        let mut flash = SlotFlash::new(target.clone(), slot.button_mode, holder);
+        match target {
+            ControlAssignment::Clip(clip_id) => {
+                let running = materialized_clips
+                    .iter()
+                    .any(|materialized| materialized.clip_id == clip_id);
+                if !running {
+                    flash.started_clip = true;
+                    slot.pending_console_value = Some(0.0);
+                    self.clip_writer.write(EngineOperationEnvelope::detached(
+                        ClipOperation::Start(IdExpr::Single(clip_id)),
+                    ));
+                }
+            }
+            ControlAssignment::Master(master_id) => {
+                let master = self.masters.from_id(master_id).map_err(|_| {
+                    CommandError::new(
+                        "master.not_found",
+                        format!("Assigned master {master_id} does not exist"),
+                    )
+                })?;
+                flash.restore_master_position = Some(master.control_position_percent());
+                self.master_writer.write(MasterUpdate::SetLevel {
+                    id: master_id,
+                    level_percent: Master::level_percent_from_control(master.kind, 100.0),
+                });
+            }
+        }
+        slot.flash = Some(flash);
+        Ok(())
+    }
+
+    /// Undoes what a flash did: stops a clip it started unless its fader was raised while
+    /// held, and returns a master to its position from before the press unless something
+    /// else moved it meanwhile.
+    ///
+    /// The master still reads its pre-press position when press and release land in the
+    /// same frame, before the push to full applies, so that position is restored too.
+    fn end(&mut self, flash: SlotFlash, fader_raised: bool) {
+        match flash.target {
+            ControlAssignment::Clip(clip_id) if flash.started_clip && !fader_raised => {
+                self.clip_writer
+                    .write(EngineOperationEnvelope::detached(ClipOperation::Stop(
+                        IdExpr::Single(clip_id),
+                    )));
+            }
+            ControlAssignment::Clip(_) => {}
+            ControlAssignment::Master(master_id) => {
+                let (Some(restore), Ok(master)) = (
+                    flash.restore_master_position,
+                    self.masters.from_id(master_id),
+                ) else {
+                    return;
+                };
+                let position = master.control_position_percent();
+                if is_same_value(position, 100.0) || is_same_value(position, restore) {
+                    self.master_writer.write(MasterUpdate::SetLevel {
+                        id: master_id,
+                        level_percent: Master::level_percent_from_control(master.kind, restore),
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Ends slot flashes nobody holds any more: after the last release, when the client holding
+/// them disconnects, or when the slot is reassigned or switched to another mode.
+///
+/// A dropped phone or closed tab therefore never leaves a flash latched.
+pub fn end_released_flashes(
+    mut controls: ResMut<Controls>,
+    mut disconnects: MessageReader<ClientDisconnected>,
+    mut flash_outputs: FlashOutputs,
+) {
+    let disconnected: Vec<ClientId> = disconnects.read().map(|event| event.client).collect();
+    let disconnected_holder = |holder: &ButtonHolder| matches!(holder, ButtonHolder::Client(client) if disconnected.contains(client));
+    let needs_update = controls.slots.iter().any(|slot| {
+        slot.flash.as_ref().is_some_and(|flash| {
+            !flash.still_held_on(slot) || flash.holders.iter().any(disconnected_holder)
+        })
+    });
+    if !needs_update {
+        return;
+    }
+    let mut ended = Vec::new();
+    for (index, slot) in controls.slots.iter_mut().enumerate() {
+        let Some(mut flash) = slot.flash.take() else {
+            continue;
+        };
+        flash.holders.retain(|holder| !disconnected_holder(holder));
+        if flash.still_held_on(slot) {
+            slot.flash = Some(flash);
+        } else if let Ok(control_index) = u32::try_from(index + 1) {
+            ended.push((control_index, flash));
+        }
+    }
+    for (control_index, flash) in ended {
+        end_flash(&mut controls, control_index, flash, &mut flash_outputs);
+    }
+}
+
+/// Ends a flash taken off slot `control_index`.
+///
+/// When another slot still flashes the same target, that flash takes over stopping a clip
+/// this one started, so the target stays flashed until the last slot lets go. Otherwise the
+/// outputs are undone, keeping a started clip running if this slot's fader was raised while
+/// the button was held.
+fn end_flash(
+    controls: &mut Controls,
+    control_index: u32,
+    flash: SlotFlash,
+    flash_outputs: &mut FlashOutputs,
+) {
+    if let Some(index) = controls.flash_index_on(&flash.target, control_index) {
+        if let Some(other) = controls.slots[index].flash.as_mut() {
+            other.started_clip |= flash.started_clip;
+        }
+        return;
+    }
+    let fader_raised = controls.slot(control_index).is_some_and(|slot| {
+        slot.assignment().as_ref() == Some(&flash.target)
+            && !is_same_value(
+                slot.pending_console_value
+                    .unwrap_or(slot.last_console_value),
+                0.0,
+            )
+    });
+    flash_outputs.end(flash, fader_raised);
 }
 
 /// Publishes the terminal outcome for one control assignment command.
@@ -1326,7 +1790,13 @@ mod tests {
     fn control_go_app() -> App {
         let mut app = control_command_app();
         app.init_resource::<PendingCommandBuffer>();
-        app.add_systems(Update, expand_control_button_commands);
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
+        app.add_message::<MasterUpdate>();
+        app.add_message::<ClientDisconnected>();
+        app.add_systems(
+            Update,
+            (expand_control_button_commands, end_released_flashes).chain(),
+        );
         app
     }
 
@@ -1705,6 +2175,455 @@ mod tests {
         }]);
 
         assert_eq!(controls.slots[0].button_mode, ControlButtonMode::Go);
+    }
+
+    /// Web UI session used as the holder of flash presses in tests.
+    const WEB_CLIENT: ClientId = ClientId(7);
+
+    /// Origin of a press arriving from a MIDI pad rather than a client session.
+    fn midi_origin() -> CommandOrigin {
+        CommandOrigin::Automation {
+            surface: "MIDI".to_string(),
+            source: Some("pad".to_string()),
+        }
+    }
+
+    /// Builds a button app whose control 1 holds `assignment` in `mode`.
+    fn flash_app(assignment: ControlAssignment, mode: ControlButtonMode) -> App {
+        let mut app = control_go_app();
+        app.insert_resource(Controls::from_slot_configs(&[ControlSlotConfig {
+            assignment: Some(assignment),
+            button_mode: mode,
+        }]));
+        app
+    }
+
+    /// Sends one press or release of control 1 from `origin`, replying to `client` when set,
+    /// and runs a frame.
+    fn send_button(
+        app: &mut App,
+        command: ControlCommand,
+        origin: CommandOrigin,
+        client: Option<ClientId>,
+    ) {
+        queue_button(app, command, origin, client);
+        app.update();
+    }
+
+    /// Queues one button command like [`send_button`] without running a frame, so several
+    /// commands can land in the same frame.
+    fn queue_button(
+        app: &mut App,
+        command: ControlCommand,
+        origin: CommandOrigin,
+        client: Option<ClientId>,
+    ) {
+        let reply_target = client.map_or(ReplyTarget::Detached, ReplyTarget::Client);
+        let envelope = CommandEnvelope::new(command, origin, reply_target);
+        app.world_mut()
+            .resource_mut::<CommandTracker>()
+            .register(&envelope)
+            .expect("button command should register");
+        app.world_mut()
+            .resource_mut::<PendingCommandBuffer>()
+            .push(PayloadEnvelope::with_context(
+                envelope.command_id,
+                envelope.undo_id,
+                Box::new(envelope.command),
+            ));
+    }
+
+    /// Presses control 1 from the web client.
+    fn press_web(app: &mut App) {
+        send_button(
+            app,
+            ControlCommand::PressButton { control_index: 1 },
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+    }
+
+    /// Releases control 1 from the web client.
+    fn release_web(app: &mut App) {
+        send_button(
+            app,
+            ControlCommand::ReleaseButton { control_index: 1 },
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+    }
+
+    /// Drains the clip operations flashes wrote, as `(start, clip id)` pairs.
+    fn take_clip_operations(app: &mut App) -> Vec<(bool, u32)> {
+        app.world_mut()
+            .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
+            .drain()
+            .map(|envelope| match envelope.operation {
+                ClipOperation::Start(IdExpr::Single(id)) => (true, id),
+                ClipOperation::Stop(IdExpr::Single(id)) => (false, id),
+                other => panic!("unexpected clip operation {other:?}"),
+            })
+            .collect()
+    }
+
+    /// Drains the master levels flashes wrote, as `(master id, level)` pairs.
+    fn take_master_levels(app: &mut App) -> Vec<(u32, f32)> {
+        app.world_mut()
+            .resource_mut::<Messages<MasterUpdate>>()
+            .drain()
+            .map(|MasterUpdate::SetLevel { id, level_percent }| (id, level_percent))
+            .collect()
+    }
+
+    /// Returns whether control 1 has a flash held.
+    fn is_flashing(app: &App) -> bool {
+        app.world().resource::<Controls>().slots[0].flash.is_some()
+    }
+
+    /// Verifies a Flash on an idle clip starts it with its fader queued at zero, plays it at
+    /// full only while held, and stops it again on release.
+    #[test]
+    fn flash_on_idle_clip_starts_it_until_release() {
+        let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Flash);
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+
+        press_web(&mut app);
+        assert_eq!(take_clip_operations(&mut app), [(true, 5)]);
+        let controls = app.world().resource::<Controls>();
+        assert_eq!(
+            controls.flashed_clips().collect::<Vec<_>>(),
+            [(1, 5, false)]
+        );
+        assert_eq!(controls.slots[0].pending_console_value, Some(0.0));
+
+        release_web(&mut app);
+        assert_eq!(take_clip_operations(&mut app), [(false, 5)]);
+        assert!(!is_flashing(&app));
+    }
+
+    /// Verifies a Flash on a running clip leaves it running when let go, and that a Swop
+    /// reports its clip as soloed.
+    #[test]
+    fn swop_on_running_clip_leaves_it_running() {
+        let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Swop);
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), true);
+
+        press_web(&mut app);
+        assert!(take_clip_operations(&mut app).is_empty());
+        assert_eq!(
+            app.world()
+                .resource::<Controls>()
+                .flashed_clips()
+                .collect::<Vec<_>>(),
+            [(1, 5, true)]
+        );
+
+        release_web(&mut app);
+        assert!(take_clip_operations(&mut app).is_empty());
+        assert!(!is_flashing(&app));
+    }
+
+    /// Verifies a flash held from the screen and a MIDI pad lasts until both let go, and that
+    /// a release from a surface that never pressed changes nothing.
+    #[test]
+    fn flash_lasts_until_every_holder_lets_go() {
+        let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Flash);
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+
+        press_web(&mut app);
+        send_button(
+            &mut app,
+            ControlCommand::PressButton { control_index: 1 },
+            midi_origin(),
+            None,
+        );
+        assert_eq!(take_clip_operations(&mut app), [(true, 5)]);
+
+        send_button(
+            &mut app,
+            ControlCommand::ReleaseButton { control_index: 1 },
+            CommandOrigin::Cli,
+            None,
+        );
+        release_web(&mut app);
+        assert!(is_flashing(&app));
+        assert!(take_clip_operations(&mut app).is_empty());
+
+        send_button(
+            &mut app,
+            ControlCommand::ReleaseButton { control_index: 1 },
+            midi_origin(),
+            None,
+        );
+        assert!(!is_flashing(&app));
+        assert_eq!(take_clip_operations(&mut app), [(false, 5)]);
+    }
+
+    /// Verifies a client that disconnects while holding a flash lets go of it.
+    #[test]
+    fn disconnect_releases_a_held_flash() {
+        let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Flash);
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+        press_web(&mut app);
+        take_clip_operations(&mut app);
+
+        app.world_mut().write_message(ClientDisconnected {
+            client: ClientId(99),
+        });
+        app.update();
+        assert!(is_flashing(&app));
+
+        app.world_mut()
+            .write_message(ClientDisconnected { client: WEB_CLIENT });
+        app.update();
+        assert!(!is_flashing(&app));
+        assert_eq!(take_clip_operations(&mut app), [(false, 5)]);
+    }
+
+    /// Verifies switching a held slot to another mode ends the flash at once.
+    #[test]
+    fn changing_mode_ends_a_held_flash() {
+        let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Flash);
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+        press_web(&mut app);
+        take_clip_operations(&mut app);
+
+        app.world_mut().resource_mut::<Controls>().slots[0].button_mode = ControlButtonMode::Toggle;
+        app.update();
+        assert!(!is_flashing(&app));
+        assert_eq!(take_clip_operations(&mut app), [(false, 5)]);
+    }
+
+    /// Verifies a master Flash pushes the master to full and restores its earlier level on
+    /// release, unless the level was moved off full while held.
+    #[test]
+    fn master_flash_restores_the_level_it_found() {
+        let mut app = flash_app(ControlAssignment::Master(3), ControlButtonMode::Flash);
+        add_master(&mut app, 3, MasterMode::AlwaysOn);
+        let set_level = |app: &mut App, level: f32| {
+            let mut masters = app.world_mut().resource_mut::<DataProvider<Master>>();
+            let mut master = masters
+                .remove(&uuid::Uuid::from_u128(3))
+                .expect("master exists");
+            master.level_percent = level;
+            masters.add(master).expect("master should store");
+        };
+        set_level(&mut app, 40.0);
+
+        press_web(&mut app);
+        assert_eq!(take_master_levels(&mut app), [(3, 100.0)]);
+        set_level(&mut app, 100.0);
+        release_web(&mut app);
+        assert_eq!(take_master_levels(&mut app), [(3, 40.0)]);
+
+        press_web(&mut app);
+        take_master_levels(&mut app);
+        set_level(&mut app, 60.0);
+        release_web(&mut app);
+        assert!(take_master_levels(&mut app).is_empty());
+    }
+
+    /// Verifies a zero level queued for an idle clip survives until its instance attaches,
+    /// so a flashed clip starts with its fader at zero rather than at the default full level.
+    #[test]
+    fn queued_zero_level_waits_for_the_instance() {
+        let mut slot = Control {
+            pending_console_value: Some(0.0),
+            ..Default::default()
+        };
+        assert_eq!(slot.sync_from_runtime(ControlRuntimeState::default()), None);
+        assert_eq!(slot.pending_console_value, Some(0.0));
+
+        let attached = ControlRuntimeState {
+            console_value: 100.0,
+            is_clip_active: true,
+            attached_instance_id: Some(InstanceId::new()),
+        };
+        assert_eq!(slot.sync_from_runtime(attached), Some(0.0));
+    }
+
+    /// Verifies a master Flash tapped within one frame still restores the earlier level,
+    /// although the push to full has not applied when the release is handled.
+    #[test]
+    fn master_flash_tapped_in_one_frame_restores_its_level() {
+        let mut app = flash_app(ControlAssignment::Master(3), ControlButtonMode::Flash);
+        add_master(&mut app, 3, MasterMode::AlwaysOn);
+
+        for command in [
+            ControlCommand::PressButton { control_index: 1 },
+            ControlCommand::ReleaseButton { control_index: 1 },
+        ] {
+            queue_button(&mut app, command, CommandOrigin::WebUi, Some(WEB_CLIENT));
+        }
+        app.update();
+        let levels = take_master_levels(&mut app);
+        assert_eq!(levels.first(), Some(&(3, 100.0)));
+        assert_eq!(levels.len(), 2);
+        assert!(!is_flashing(&app));
+    }
+
+    /// Verifies repeated presses from one surface count as one holder, so a single release
+    /// ends the flash rather than leaving it latched by a press that was never let go.
+    #[test]
+    fn repeated_presses_from_one_surface_need_one_release() {
+        let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Flash);
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+        let press = ControlCommand::PressButton { control_index: 1 };
+
+        send_button(&mut app, press.clone(), midi_origin(), None);
+        send_button(&mut app, press, midi_origin(), None);
+        send_button(
+            &mut app,
+            ControlCommand::ReleaseButton { control_index: 1 },
+            midi_origin(),
+            None,
+        );
+        assert!(!is_flashing(&app));
+    }
+
+    /// Verifies two slots flashing one idle clip keep it running until both let go, whichever
+    /// started it, and that a clip whose fader was raised while held keeps running.
+    #[test]
+    fn shared_and_raised_flashes_keep_their_clip_running() {
+        let mut app = control_go_app();
+        let config = ControlSlotConfig {
+            assignment: Some(ControlAssignment::Clip(5)),
+            button_mode: ControlButtonMode::Flash,
+        };
+        app.insert_resource(Controls::from_slot_configs(&[config.clone(), config]));
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+        let button = |press: bool, control_index: u32| {
+            if press {
+                ControlCommand::PressButton { control_index }
+            } else {
+                ControlCommand::ReleaseButton { control_index }
+            }
+        };
+
+        send_button(
+            &mut app,
+            button(true, 1),
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+        send_button(
+            &mut app,
+            button(true, 2),
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+        assert_eq!(take_clip_operations(&mut app), [(true, 5)]);
+        send_button(
+            &mut app,
+            button(false, 1),
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+        assert!(take_clip_operations(&mut app).is_empty());
+        send_button(
+            &mut app,
+            button(false, 2),
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+        assert_eq!(take_clip_operations(&mut app), [(false, 5)]);
+
+        send_button(
+            &mut app,
+            button(true, 1),
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+        take_clip_operations(&mut app);
+        app.world_mut().resource_mut::<Controls>().slots[0].pending_console_value = Some(60.0);
+        send_button(
+            &mut app,
+            button(false, 1),
+            CommandOrigin::WebUi,
+            Some(WEB_CLIENT),
+        );
+        assert!(take_clip_operations(&mut app).is_empty());
+    }
+
+    /// Verifies a held Swop reaches the rendered layers: the swopped clip plays at full
+    /// although its fader sits at half, another clip's layer drops out entirely, and the
+    /// Programmer keeps its level; releasing restores the swopped clip's fader scaling.
+    #[test]
+    fn held_swop_scales_rendered_layers() {
+        use moonshine_kind::prelude::*;
+        use nightfall_compositor::prelude::*;
+        use nightfall_dmx::prelude::*;
+        use nightfall_fixture_model::prelude::*;
+        use nightfall_fixtures::prelude::*;
+        use nightfall_instances::{InstanceKind, InstanceMetadata};
+
+        let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Swop);
+        spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+        app.init_resource::<HeldButtonEffects>();
+        app.add_systems(
+            Update,
+            (
+                resolve_held_button_effects,
+                crate::systems::instance_controls::apply_playback_intensity,
+            )
+                .chain()
+                .after(end_released_flashes),
+        );
+        let parameter = app
+            .world_mut()
+            .spawn(Parameter {
+                metadata: ParameterMetadata::default(),
+                values: Default::default(),
+            })
+            .id();
+        // SAFETY: the entity was just spawned with a Parameter component.
+        let parameter = unsafe { Instance::<Parameter>::from_entity_unchecked(parameter) };
+        let mut spawn_playback = |kind: InstanceKind, scale: f32, clip_id: Option<u32>| {
+            let instance_id = InstanceId::new();
+            let mut layer = Layer::new(format!("{kind:?}"), Priority(0));
+            layer
+                .absolute
+                .insert(parameter, (ParameterValue::Absolute { value: 200.0 }, None));
+            let world = app.world_mut();
+            let layer = world
+                .spawn((
+                    layer,
+                    InstanceControls {
+                        intensity_scale: scale,
+                        ..Default::default()
+                    },
+                    instance_id,
+                    InstanceMetadata::new(kind),
+                ))
+                .id();
+            if let Some(clip_id) = clip_id {
+                world.spawn(MaterializedClip {
+                    clip_id,
+                    attached_instance: instance_id,
+                    auto_release_on_stop: false,
+                });
+            }
+            layer
+        };
+        let swopped = spawn_playback(InstanceKind::Sequence, 0.5, Some(5));
+        let other = spawn_playback(InstanceKind::Sequence, 1.0, Some(6));
+        let programmer = spawn_playback(InstanceKind::Programmer, 1.0, None);
+        let intensity = |app: &App, layer| match app.world().get::<Layer>(layer) {
+            Some(layer) => layer.absolute.get(parameter).map(|(value, _)| *value),
+            None => None,
+        };
+
+        press_web(&mut app);
+        let full = Some(ParameterValue::Absolute { value: 200.0 });
+        assert_eq!(intensity(&app, swopped), full);
+        assert_eq!(intensity(&app, other), None);
+        assert_eq!(intensity(&app, programmer), full);
+
+        release_web(&mut app);
+        assert_eq!(
+            intensity(&app, swopped),
+            Some(ParameterValue::Absolute { value: 100.0 })
+        );
     }
 
     #[test]

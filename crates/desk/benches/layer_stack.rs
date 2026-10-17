@@ -15,6 +15,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use nightfall::data::Priority;
 use nightfall::prelude::{FadeCurve, MaterializedTransition, ObjectRef, ObjectType};
 use nightfall_compositor::prelude::{Layer, ObjectRefMarker, OutputLayer};
+use nightfall_desk::controls::HeldButtonEffects;
 use nightfall_desk::websocket::{LayerSnapshotData, LayerStackPublication, send_layer_stack};
 use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::{ClientEventSink, OutboundFrame};
@@ -85,6 +86,7 @@ fn publish_layer_stack(
         parameters_query,
         layers,
         &mut LayerStackPublication::default(),
+        &HeldButtonEffects::default(),
         None,
         &broadcaster,
     );

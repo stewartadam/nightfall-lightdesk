@@ -9,6 +9,7 @@
 import { For, onCleanup, onMount, Show } from "solid-js";
 import type { LayerState } from "../../../lib/ws/types";
 import type { LayerNavigationRequest } from "../../../state/appStores";
+import { HeldButtonBadge } from "../../clips";
 import type { LayerPanelEntry } from "../controllers/layer-panel-entries";
 import LayerView from "./layer-view";
 
@@ -109,6 +110,7 @@ export function LayerEntryList(props: LayerEntryListProps) {
                 <span class="min-w-0 truncate">
                   {entry.summary().creator || "Unnamed"}
                 </span>
+                <HeldButtonBadge effect={entry.summary().heldButton} />
               </span>
               <span class="ml-3 shrink-0 text-xs text-gray-500">
                 Priority: {entry.summary().priority}
