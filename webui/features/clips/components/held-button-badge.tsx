@@ -7,8 +7,8 @@
  */
 
 import { type JSX, Show } from "solid-js";
+import { heldButtonTag } from "../../../lib/held-button";
 import type { HeldButtonEffect } from "../../../types";
-import { heldButtonTag } from "../model/held-button";
 
 /** Props for {@link HeldButtonBadge}. */
 export interface HeldButtonBadgeProps {
@@ -18,7 +18,7 @@ export interface HeldButtonBadgeProps {
 
 /**
  * Tags a playback a held Flash or Swop changes, naming the responsible slot in its tooltip.
- * Taken-out playbacks get an amber tag so they stand out; flashed ones a neutral one.
+ * The playback the held button plays gets an amber tag; ones a Swop takes out a grey one.
  */
 export function HeldButtonBadge(props: HeldButtonBadgeProps): JSX.Element {
   return (
@@ -30,8 +30,8 @@ export function HeldButtonBadge(props: HeldButtonBadgeProps): JSX.Element {
           title={tag().title}
           class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
           classList={{
-            "bg-amber-500/20 text-amber-300": tag().takenOut,
-            "bg-sky-500/20 text-sky-300": !tag().takenOut,
+            "bg-amber-500/20 text-amber-300": tag().active,
+            "bg-neutral-700 text-neutral-300": !tag().active,
           }}
         >
           {tag().label}

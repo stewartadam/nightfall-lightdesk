@@ -7,4 +7,4 @@
  */
 
 export { HeldButtonBadge } from "./components/held-button-badge";
-export { HeldButtonsIndicator } from "./components/held-buttons-indicator";
+export { ReleaseHeldButtonsCommand } from "./components/release-held-buttons-command";

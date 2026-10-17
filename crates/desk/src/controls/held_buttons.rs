@@ -25,8 +25,10 @@ use crate::clips::MaterializedClip;
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
 pub enum HeldButtonEffect {
-    /// A Flash or Swop held on the control slot plays the playback at full intensity.
+    /// A Flash held on the control slot plays the playback at full intensity.
     Flashed { control_index: u32 },
+    /// A Swop held on the control slot plays the playback at full intensity on its own.
+    Swopping { control_index: u32 },
     /// A Swop held on the control slot takes the playback out entirely.
     SwoppedOut { control_index: u32 },
 }
@@ -63,6 +65,11 @@ pub fn resolve_held_button_effects(
     let mut by_instance = HashMap::new();
     let mut swop_slot = None;
     for (control_index, clip_id, swop) in controls.flashed_clips() {
+        let effect = if swop {
+            HeldButtonEffect::Swopping { control_index }
+        } else {
+            HeldButtonEffect::Flashed { control_index }
+        };
         let mut running = false;
         for materialized in materialized_clips
             .iter()
@@ -71,7 +78,7 @@ pub fn resolve_held_button_effects(
             running = true;
             by_instance
                 .entry(materialized.attached_instance)
-                .or_insert(HeldButtonEffect::Flashed { control_index });
+                .or_insert(effect);
         }
         if swop && running {
             swop_slot.get_or_insert(control_index);
@@ -165,7 +172,7 @@ mod tests {
         let effects = app.world().resource::<HeldButtonEffects>();
         assert_eq!(
             effects.get(&swopped),
-            Some(HeldButtonEffect::Flashed { control_index: 1 })
+            Some(HeldButtonEffect::Swopping { control_index: 1 })
         );
         assert_eq!(
             effects.get(&flashed),

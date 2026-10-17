@@ -17,7 +17,6 @@ import { ListIcon } from "@squidlab/phosphor-solid/list";
 import { WifiHighIcon } from "@squidlab/phosphor-solid/wifi-high";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { HeldButtonsIndicator } from "../../../features/clips";
 import { TempoControls } from "../../../features/tempo";
 import { APP_BUILD_ID, APP_BUILD_NAME } from "../../../lib/app-metadata";
 import { connectionStatus } from "../../../lib/engine-runtime";
@@ -167,7 +166,6 @@ export default function StatusBar() {
       <div class="flex items-center gap-2">
         <Show when={connStatus() === "connected"}>
           <div class="contents">
-            <HeldButtonsIndicator />
             <TempoControls placement="above" />
             <div aria-hidden="true" class="h-4 w-px bg-gray-700" />
           </div>

@@ -7,7 +7,7 @@
  */
 
 import { Show } from "solid-js";
-import { HeldButtonBadge } from "../../clips/components/held-button-badge";
+import { HeldButtonBadge } from "../../clips";
 import type { LayerPanelEntrySummary } from "../controllers/layer-panel-entries";
 
 /**
