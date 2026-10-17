@@ -2609,7 +2609,7 @@ mod tests {
         let other = spawn_playback(InstanceKind::Sequence, 1.0, Some(6));
         let programmer = spawn_playback(InstanceKind::Programmer, 1.0, None);
         let intensity = |app: &App, layer| match app.world().get::<Layer>(layer) {
-            Some(layer) => layer.absolute.get(&parameter).map(|(value, _)| *value),
+            Some(layer) => layer.absolute.get(parameter).map(|(value, _)| *value),
             None => None,
         };
 
