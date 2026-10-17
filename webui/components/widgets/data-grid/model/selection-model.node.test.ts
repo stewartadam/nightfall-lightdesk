@@ -16,6 +16,7 @@ import {
   effectiveSelectedRows,
   initialDataGridSelectionState,
   reduceDataGridSelection,
+  rowSelectionState,
   selectionFromState,
   selectionIncludesCell,
 } from "./selection-model";
@@ -316,4 +317,66 @@ test("extendColumnSelection expands header-selected columns from the active cell
 
   assert.deepEqual(state.activeCell, [2, 4]);
   assert.deepEqual(selectionFromState(state).columns.toArray(), [2]);
+});
+
+/** Verifies row selection mode widens cell ranges to whole rows and pins the active cell to the first column. */
+test("rowSelectionState widens cell selections to whole rows", () => {
+  let state = reduceDataGridSelection(freshState(), {
+    type: "selectCell",
+    target: [2, 1],
+    extend: false,
+  });
+  state = reduceDataGridSelection(state, {
+    type: "selectCell",
+    target: [3, 3],
+    extend: true,
+  });
+  state = rowSelectionState(state, 5);
+
+  assert.deepEqual(state.activeCell, [0, 3]);
+  assert.deepEqual(selectionFromState(state).current?.range, {
+    x: 0,
+    y: 1,
+    width: 5,
+    height: 3,
+  });
+  assert.deepEqual(selectionFromState(state).columns.toArray(), []);
+});
+
+/** Verifies Ctrl+click in row mode adds an unselected row and removes a selected one instead of re-widening its remainder. */
+test("rowSelectionState toggles whole rows on additive clicks", () => {
+  /** Reduces a Ctrl+click and projects it onto rows, as the row-mode grid does. */
+  const ctrlClick = (
+    state: ReturnType<typeof freshState>,
+    target: [number, number],
+  ) =>
+    rowSelectionState(
+      reduceDataGridSelection(state, {
+        type: "selectCell",
+        target,
+        append: true,
+        extend: false,
+      }),
+      5,
+      state.current,
+    );
+  let state = rowSelectionState(
+    reduceDataGridSelection(freshState(), {
+      type: "selectCell",
+      target: [2, 1],
+      extend: false,
+    }),
+    5,
+  );
+  state = ctrlClick(state, [3, 4]);
+  assert.deepEqual(
+    [state.current?.range, ...(state.current?.rangeStack ?? [])]
+      .map((range) => range?.y)
+      .sort(),
+    [1, 4],
+  );
+
+  state = ctrlClick(state, [3, 1]);
+  assert.deepEqual(state.current?.range, { x: 0, y: 4, width: 5, height: 1 });
+  assert.deepEqual(state.current?.rangeStack, []);
 });

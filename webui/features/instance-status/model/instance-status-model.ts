@@ -12,22 +12,6 @@ import {
   type InstanceDisplayKind as InstanceDisplayKindType,
   type InstanceInfo,
 } from "../../../types";
-export type InstanceSortColumn =
-  | "kind"
-  | "instance"
-  | "state"
-  | "clip"
-  | "owners"
-  | "priority"
-  | "position"
-  | "intensity"
-  | "rate"
-  | "tags";
-export type SortDirection = "asc" | "desc";
-export type InstanceSortLabels = {
-  clipLabel: (clipId: number | null | undefined) => string;
-  ownerLabels: (instance: StatusInstanceInfo) => string;
-};
 export type StatusInstanceInfo = InstanceInfo & {
   is_paused?: boolean;
   owner_uids?: unknown[];
@@ -178,54 +162,22 @@ export function formatInstanceNext(instance: InstanceInfo): string {
   );
 }
 
-/** Compares instance rows using operator-facing projected values. */
+/**
+ * Orders instance rows before any column sort: highest priority first, then
+ * oldest activation, kind and name, so ties stay put across snapshots.
+ */
 export function compareStatusInstanceRows(
   left: StatusInstanceInfo,
   right: StatusInstanceInfo,
-  column: InstanceSortColumn,
-  direction: SortDirection,
-  labels: InstanceSortLabels,
 ): number {
-  const multiplier = direction === "asc" ? 1 : -1;
-  /** Compares two labels using the requested direction. */
-  const stringCompare = (leftValue: string, rightValue: string) =>
-    leftValue.localeCompare(rightValue) * multiplier;
-  /** Compares two numbers using the requested direction. */
-  const numberCompare = (leftValue: number, rightValue: number) =>
-    (leftValue - rightValue) * multiplier;
-
-  switch (column) {
-    case "kind":
-      return stringCompare(left.display_kind, right.display_kind);
-    case "instance":
-      return stringCompare(left.name ?? "", right.name ?? "");
-    case "state":
-      return stringCompare(instanceStateLabel(left), instanceStateLabel(right));
-    case "clip":
-      return stringCompare(
-        labels.clipLabel(left.bound_clip_id),
-        labels.clipLabel(right.bound_clip_id),
-      );
-    case "owners":
-      return stringCompare(labels.ownerLabels(left), labels.ownerLabels(right));
-    case "priority": {
-      const priorityResult = numberCompare(
-        left.priority ?? Number.NEGATIVE_INFINITY,
-        right.priority ?? Number.NEGATIVE_INFINITY,
-      );
-      if (priorityResult !== 0) return priorityResult;
-      return (left.activation_epoch_ms ?? 0) - (right.activation_epoch_ms ?? 0);
-    }
-    case "position":
-      return stringCompare(
-        formatInstancePosition(left),
-        formatInstancePosition(right),
-      );
-    case "intensity":
-      return numberCompare(left.intensity_scale, right.intensity_scale);
-    case "rate":
-      return numberCompare(left.effective_rate, right.effective_rate);
-    case "tags":
-      return stringCompare(left.tags.join(","), right.tags.join(","));
-  }
+  const priority =
+    (right.priority ?? Number.NEGATIVE_INFINITY) -
+    (left.priority ?? Number.NEGATIVE_INFINITY);
+  if (priority !== 0 && !Number.isNaN(priority)) return priority;
+  const activation =
+    (left.activation_epoch_ms ?? 0) - (right.activation_epoch_ms ?? 0);
+  if (activation !== 0) return activation;
+  const kind = left.display_kind.localeCompare(right.display_kind);
+  if (kind !== 0) return kind;
+  return (left.name ?? "").localeCompare(right.name ?? "");
 }

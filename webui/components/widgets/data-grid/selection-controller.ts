@@ -21,16 +21,19 @@ import {
 import { cellDisplayValue } from "./model/cell-utils";
 import {
   type DataGridSelectionAction,
+  type DataGridSelectionState,
   effectiveCurrentSelection,
   effectiveSelectedColumns,
   effectiveSelectedRows,
   initialDataGridSelectionState,
   reduceDataGridSelection,
+  rowSelectionState,
   selectionActionPublishes,
   selectionFromState,
   selectionIncludesCell,
+  selectionModeUsesGridSelection,
 } from "./model/selection-model";
-import type { EditingCell } from "./model/types";
+import type { DataGridSelectionMode, EditingCell } from "./model/types";
 
 const DRAG_SELECTION_START_THRESHOLD_PX = 5;
 
@@ -38,10 +41,31 @@ interface DataGridSelectionControllerOptions {
   editingCell: () => EditingCell | undefined;
   getCellContent: () => (cell: Item) => GridCell;
   primaryColumnIndex: () => number;
+  /** Whether selection targets cells, whole rows, native text, or nothing. */
+  selectionMode: () => DataGridSelectionMode;
+  /** Number of data columns a whole-row selection spans. */
+  columnCount: () => number;
   focusRoot: () => void;
   scrollCellIntoView: (cell: Item) => void;
   onCellClicked?: (cell: Item, event: CellClickedEventArgs) => void;
   onGridSelectionChange?: (selection: GridSelection) => void;
+}
+
+/**
+ * Returns the selection an action subtracts from, if any: the selection a
+ * Ctrl+click toggles a cell in, or the base of a subtracting Ctrl+drag. Row
+ * mode uses it to deselect a row whose cells were removed instead of widening
+ * the remainder back to the whole row.
+ */
+function subtractedSelection(
+  action: DataGridSelectionAction,
+  state: DataGridSelectionState,
+): GridSelection["current"] {
+  if (action.type === "selectCell" && action.append)
+    return effectiveCurrentSelection(state);
+  if (action.type === "dragTo" && state.drag?.subtract)
+    return state.drag.baseSelection;
+  return undefined;
 }
 
 /** Owns DataGrid selection state, publication, and pointer-drag lifecycle. */
@@ -68,7 +92,26 @@ export function createDataGridSelectionController(
   /** Applies a reducer action and publishes actions that change public selection. */
   const dispatchSelection = (action: DataGridSelectionAction) => {
     const previousState = untrack(selectionState);
-    const nextState = reduceDataGridSelection(previousState, action);
+    const mode = untrack(options.selectionMode);
+    if (!selectionModeUsesGridSelection(mode)) return previousState;
+    const rowMode = mode === "row";
+    // Row mode has no column selections; a header click leaves rows as they are.
+    if (
+      rowMode &&
+      (action.type === "selectColumnRange" ||
+        action.type === "extendColumnSelection")
+    ) {
+      return previousState;
+    }
+    const reducedState = reduceDataGridSelection(previousState, action);
+    const nextState =
+      reducedState !== previousState && rowMode
+        ? rowSelectionState(
+            reducedState,
+            untrack(options.columnCount),
+            subtractedSelection(action, previousState),
+          )
+        : reducedState;
     if (nextState !== previousState) {
       setSelectionState(nextState);
     }
@@ -226,6 +269,8 @@ export function createDataGridSelectionController(
   ) => {
     if (event.button !== 0 || options.editingCell()) return;
     if (isInteractivePointerTarget(event.target)) return;
+    // Text and none modes leave the pointer to the browser's own text selection.
+    if (!selectionModeUsesGridSelection(options.selectionMode())) return;
 
     const target: Item = [col, row];
     dragPointerStart = { x: event.clientX, y: event.clientY };
