@@ -20,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuItem,
 } from "../../../components/ui/dropdown-menu";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -28,7 +29,6 @@ import {
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
 import Tooltip from "../../../components/ui/tooltip";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
@@ -87,20 +87,24 @@ function FxCard(props: FxCardProps) {
       <div class="flex items-start justify-between gap-3">
         <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
           <span>{props.entry.identifiers.id}:</span>
-          <CrudInlineLabelEditor
-            ariaLabel="FX card label"
-            class="truncate"
-            editing={
+          <Show
+            when={
               controller.editingCardLabelUid() === props.entry.identifiers.uid
             }
-            label={props.entry.identifiers.label}
-            onCancel={() => controller.setEditingCardLabelUid(null)}
-            onCommit={(label) =>
-              controller.updateFxEntryLabel(props.entry, label)
+            fallback={
+              <span class="truncate">{props.entry.identifiers.label}</span>
             }
           >
-            {props.entry.identifiers.label}
-          </CrudInlineLabelEditor>
+            <InlineRenameField
+              ariaLabel="FX card label"
+              allowEmpty
+              value={props.entry.identifiers.label}
+              onClose={() => controller.setEditingCardLabelUid(null)}
+              onCommit={(label) =>
+                controller.updateFxEntryLabel(props.entry, label)
+              }
+            />
+          </Show>
         </div>
         <div
           class="rounded-md border border-neutral-700 bg-neutral-900/70 p-1 text-neutral-300"

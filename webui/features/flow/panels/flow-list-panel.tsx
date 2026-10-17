@@ -14,6 +14,7 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -21,7 +22,6 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import CrudListDataGrid, {
   type CrudListDataGridEditRequest,
@@ -630,20 +630,26 @@ export default function FlowListPanel(props: FlowListPanelProps) {
                     >
                       <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
                         <span>{flowEntry.identifiers.id}:</span>
-                        <CrudInlineLabelEditor
-                          ariaLabel="Flow card label"
-                          class="truncate"
-                          editing={
+                        <Show
+                          when={
                             editingCardLabelUid() === flowEntry.identifiers.uid
                           }
-                          label={flowEntry.identifiers.label}
-                          onCancel={() => setEditingCardLabelUid(null)}
-                          onCommit={(label) =>
-                            updateFlowLabel(flowEntry, label)
+                          fallback={
+                            <span class="truncate">
+                              {flowEntry.identifiers.label}
+                            </span>
                           }
                         >
-                          {flowEntry.identifiers.label}
-                        </CrudInlineLabelEditor>
+                          <InlineRenameField
+                            ariaLabel="Flow card label"
+                            allowEmpty
+                            value={flowEntry.identifiers.label}
+                            onClose={() => setEditingCardLabelUid(null)}
+                            onCommit={(label) =>
+                              updateFlowLabel(flowEntry, label)
+                            }
+                          />
+                        </Show>
                       </div>
                       <div class="text-xs text-neutral-400 mt-1">
                         {flowEntry.nodes.length} node
