@@ -570,16 +570,7 @@ a:focus-visible {
 }
 [data-dialog-kind="command-palette"] > div > div:last-child {
   min-height: 0;
-  display: flex;
-  flex-direction: column;
   border-color: var(--line);
-}
-[data-command-scroll-area] {
-  min-height: 0;
-}
-[data-dialog-kind="command-palette"] [data-scroll-overflow] {
-  background: var(--panel);
-  color: var(--muted);
 }
 [data-dialog-kind="command-palette"] :is(input, .font-medium) {
   color: inherit;

@@ -20,6 +20,7 @@ import { Portal } from "solid-js/web";
 import type { AppIcon } from "../icon";
 import { MenuItem, MenuSeparator, MenuSurface } from "../menu";
 import { overlayHost } from "../modal/dialog-stack";
+import { ScrollIndicators } from "../scroll-area";
 
 const FOCUSABLE_MENU_CONTROL_SELECTOR = [
   "button:not([disabled])",
@@ -56,6 +57,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
   const [menuPosition, setMenuPosition] = createSignal<JSX.CSSProperties>({});
   let triggerRef: HTMLButtonElement | undefined;
   let menuRef: HTMLDivElement | undefined;
+  let menuLayerRef: HTMLDivElement | undefined;
   let wasOpen = false;
 
   /** Resolves controlled and self-owned menu visibility through one accessor. */
@@ -101,11 +103,14 @@ export function DropdownMenu(props: DropdownMenuProps) {
   /** Closes the menu. */
   const close = () => setOpen(false);
 
-  /** Closes the menu when a pointer press occurs outside its trigger and content. */
+  /**
+   * Closes the menu when a pointer press occurs outside its trigger and content. The menu's
+   * scroll edges sit in the same layer as the menu, so pressing one scrolls instead of closing.
+   */
   const handleClickOutside = (e: MouseEvent) => {
     if (
-      menuRef &&
-      !menuRef.contains(e.target as Node) &&
+      menuLayerRef &&
+      !menuLayerRef.contains(e.target as Node) &&
       triggerRef &&
       !triggerRef.contains(e.target as Node)
     ) {
@@ -177,17 +182,24 @@ export function DropdownMenu(props: DropdownMenuProps) {
         </button>
         <Show when={isOpen()}>
           <Portal mount={overlayHost(triggerRef)}>
-            <MenuSurface
-              ref={menuRef}
-              data-component="DropdownMenuContent"
-              data-menu-kind="dropdown"
-              class={`fixed nightfall-top-layer min-w-[220px] ${props.contentClass ?? ""}`}
-              role="menu"
-              aria-label={props.contentLabel}
-              style={menuPosition()}
-            >
-              {props.children}
-            </MenuSurface>
+            <div ref={menuLayerRef} class="contents">
+              <MenuSurface
+                ref={menuRef}
+                data-component="DropdownMenuContent"
+                data-menu-kind="dropdown"
+                class={`fixed nightfall-top-layer min-w-[220px] ${props.contentClass ?? ""}`}
+                role="menu"
+                aria-label={props.contentLabel}
+                style={menuPosition()}
+              >
+                {props.children}
+              </MenuSurface>
+              <ScrollIndicators
+                viewport={menuRef as HTMLDivElement}
+                fixed
+                class="nf-menu-scroll"
+              />
+            </div>
           </Portal>
         </Show>
       </div>

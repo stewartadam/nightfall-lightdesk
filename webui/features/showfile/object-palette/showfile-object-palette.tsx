@@ -24,10 +24,10 @@ import { Dynamic } from "solid-js/web";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { DialogBackdrop } from "../../../components/ui/dialog";
 import { registerDialog } from "../../../components/ui/modal/dialog-stack";
-import { ScrollArea } from "../../../components/ui/scroll-area";
 import {
   SearchPickerInput,
   SearchPickerOption,
+  SearchPickerResults,
   SearchPickerSurface,
 } from "../../../components/ui/search-picker";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -535,7 +535,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
           }
         />
 
-        <ScrollArea
+        <SearchPickerResults
           class="min-h-0 max-h-[32rem]"
           viewportProps={{
             ref: (element) => {
@@ -602,7 +602,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
               </For>
             </ul>
           </Show>
-        </ScrollArea>
+        </SearchPickerResults>
       </SearchPickerSurface>
     </DialogBackdrop>
   );
