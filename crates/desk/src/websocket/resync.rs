@@ -29,6 +29,7 @@ pub(crate) struct ResyncControlParams<'w, 's> {
     controls: Res<'w, Controls>,
     instance_index: Res<'w, InstanceIndex>,
     controls_query: Query<'w, 's, &'static InstanceControls>,
+    held_buttons: Res<'w, HeldButtonEffects>,
 }
 
 /// Handle ResyncState by sending desk-owned lists immediately
@@ -56,7 +57,13 @@ pub(crate) fn handle_resync_state(
     send_groups(group_data_provider, &broadcaster);
     send_masters(&control_params.masters, &broadcaster);
     send_clips(exec_query, materialized_clips, &broadcaster);
-    send_instances(instance_query, materialized_clips, exec_query, &broadcaster);
+    send_instances(
+        instance_query,
+        materialized_clips,
+        exec_query,
+        &control_params.held_buttons,
+        &broadcaster,
+    );
     send_controls(
         &control_params.controls,
         &exec_query,
@@ -64,6 +71,7 @@ pub(crate) fn handle_resync_state(
         &materialized_clips,
         &control_params.instance_index,
         &control_params.controls_query,
+        &control_params.held_buttons,
         &broadcaster,
     );
     send_blueprints(blueprint_data_provider, &broadcaster);
@@ -95,6 +103,7 @@ pub(crate) struct LayerStackParams<'w, 's> {
     parameters: Query<'w, 's, &'static Parameter>,
     layers: Query<'w, 's, super::layers::LayerSnapshotData>,
     publication: ResMut<'w, LayerStackPublication>,
+    held_buttons: Res<'w, HeldButtonEffects>,
 }
 
 /// Emits rate-limited droppable metrics, layer, and playback snapshots.
@@ -142,10 +151,17 @@ pub(crate) fn handle_low_freq_updates(
         layer_stack.parameters,
         layer_stack.layers,
         &mut layer_stack.publication,
+        &layer_stack.held_buttons,
         Some(&mut performance_diagnostics),
         &broadcaster,
     );
-    send_instances(instance_query, materialized_clips, clips, &broadcaster);
+    send_instances(
+        instance_query,
+        materialized_clips,
+        clips,
+        &layer_stack.held_buttons,
+        &broadcaster,
+    );
 }
 
 /// Returns wall-clock milliseconds for the low-frequency snapshot rate limiter.

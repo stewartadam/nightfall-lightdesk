@@ -147,3 +147,95 @@ test("Swop shows the swopped clip on its own", async ({ page }) => {
   expect(Number(level)).toBe(0);
   expect(cycleLookSamples).toBe(0);
 });
+
+/** Sends one control slot command straight to the engine, as a controller would. */
+async function sendControlCommand(
+  page: Page,
+  command: Record<string, unknown>,
+): Promise<void> {
+  await page.evaluate(
+    (command) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ControlCommand",
+        command,
+      }),
+    command,
+  );
+}
+
+/**
+ * Verifies a Swop left held, as by a controller that never sent its release, is never silent:
+ * the status bar names the held slot, the slots, Status Display and Layers tag every playback
+ * it takes out, and clicking the status bar indicator lets go of it.
+ */
+test("a stuck Swop is shown and can be released", async ({ page }) => {
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.waitForFunction(
+    () => ((window as any).appStores?.parameters?.get?.()?.size ?? 0) > 0,
+  );
+  await setClipRunning(page, RGB_FULL, true);
+  await setClipRunning(page, RGB_HALF, true);
+
+  await openPanel(page, "Clips");
+  await page.getByRole("button", { name: "Button mode of control 3" }).click();
+  await page.locator('[data-control-button-mode-option="Swop"]').click();
+  await expect(page.locator('[data-control-button-index="3"]')).toHaveText(
+    "Swop",
+  );
+
+  await sendControlCommand(page, {
+    type: "PressButton",
+    data: { control_index: 3 },
+  });
+  const indicator = page.getByTestId("held-buttons-indicator");
+  await expect(indicator).toHaveText("Swop held: 3");
+  for (const index of [1, 2]) {
+    const slot = page.locator(`[data-control-index="${index}"]`);
+    await expect(slot).toHaveAttribute(
+      "data-control-held-button",
+      "SwoppedOut",
+    );
+    await expect(slot.getByTestId("held-button-badge")).toHaveText("Swopped");
+  }
+  await expect(page.locator('[data-control-index="3"]')).toHaveAttribute(
+    "data-control-held-button",
+    "Flashed",
+  );
+  await page.screenshot({
+    path: test.info().outputPath("swop-stuck-slots.png"),
+  });
+
+  await openPanel(page, "Status Display");
+  const statusBadges = page
+    .getByRole("table", { name: "Active instances" })
+    .locator('[data-held-button="SwoppedOut"]');
+  await expect(statusBadges).toHaveCount(2);
+  await expect(statusBadges.first()).toHaveAttribute(
+    "title",
+    "Taken out by the Swop held on slot 3",
+  );
+  await page.screenshot({
+    path: test.info().outputPath("swop-stuck-status.png"),
+  });
+
+  await openPanel(page, "Layers");
+  const layerBadge = page
+    .locator('summary [data-held-button="SwoppedOut"]')
+    .first();
+  await expect(layerBadge).toBeVisible();
+  await layerBadge.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: test.info().outputPath("swop-stuck-layers.png"),
+  });
+
+  await indicator.click();
+  await expect(indicator).toBeHidden();
+  await expect(page.locator("[data-held-button]")).toHaveCount(0);
+  await page.screenshot({
+    path: test.info().outputPath("swop-released.png"),
+  });
+
+  await setClipRunning(page, RGB_FULL, false);
+  await setClipRunning(page, RGB_HALF, false);
+});

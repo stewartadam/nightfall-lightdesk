@@ -122,6 +122,7 @@ export function Controls(props: ControlsProps): JSX.Element {
                 getControlState()?.available_button_modes ?? []
               }
               isFlashing={getControlState()?.is_flashing ?? false}
+              heldButton={getControlState()?.held_button ?? undefined}
               onButtonModeChange={(mode) =>
                 sendCommand({
                   type: "SetButtonMode",

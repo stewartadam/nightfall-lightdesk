@@ -63,6 +63,8 @@ pub struct InstanceInfo {
     pub effective_rate: f64,
     /// Backend-authored clock and phase state for an editor-owned Step FX preview.
     pub step_fx_preview: Option<StepFxPreviewPlaybackStatus>,
+    /// How a held control slot Flash or Swop changes this playback, if one does.
+    pub held_button: Option<HeldButtonEffect>,
     /// Source-specific runtime status.
     pub status: InstanceStatus,
 }
@@ -263,6 +265,9 @@ pub(super) struct OutboundLayerState {
     pub is_releasing: bool,
     /// Current source-specific playback position for playback-backed layers.
     pub runtime_position: Option<InstancePosition>,
+    /// How a held control slot Flash or Swop changes this layer's playback; a playback a Swop
+    /// takes out asserts nothing while the Swop is held.
+    pub held_button: Option<HeldButtonEffect>,
     /// Asserted absolute parameter values for this layer.
     pub asserted_absolute: PackedLayerAssertions,
     /// Asserted relative parameter values for this layer.

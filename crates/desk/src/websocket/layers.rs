@@ -24,6 +24,7 @@ pub type LayerSnapshotData = (
     Option<&'static LayerCompositingContext>,
     Option<&'static LookaheadAssertions>,
     Option<&'static InstanceStatus>,
+    Option<&'static InstanceId>,
 );
 
 /// Encoded payload of the last layer stack snapshot sent to clients.
@@ -197,6 +198,7 @@ pub fn send_layer_stack(
     parameters_query: Query<&Parameter>,
     layers: Query<LayerSnapshotData>,
     publication: &mut LayerStackPublication,
+    held_buttons: &HeldButtonEffects,
     mut diagnostics: Option<&mut Diagnostics>,
     broadcaster: &ClientEventSink,
 ) {
@@ -217,6 +219,7 @@ pub fn send_layer_stack(
                 compositing_context,
                 lookahead_assertions,
                 runtime_status,
+                instance_id,
             )| {
                 let transition_start = Instant::now();
                 let is_releasing = release_marker.is_some();
@@ -240,6 +243,8 @@ pub fn send_layer_stack(
                         priority: layer.priority,
                         is_releasing,
                         runtime_position: runtime_status.map(|status| status.position.clone()),
+                        held_button: instance_id
+                            .and_then(|instance_id| held_buttons.get(instance_id)),
                         asserted_absolute: packed_assertions(
                             layer
                                 .absolute

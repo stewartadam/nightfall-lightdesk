@@ -7,9 +7,13 @@
  */
 
 import { Show } from "solid-js";
+import { HeldButtonBadge } from "../../clips/components/held-button-badge";
 import type { LayerPanelEntrySummary } from "../controllers/layer-panel-entries";
 
-/** Labels a collapsible layer section with its stack index, object type badge and creator. */
+/**
+ * Labels a collapsible layer section with its stack index, object type badge and creator, and
+ * tags it when a held Flash or Swop changes its playback.
+ */
 export function LayerSectionTitle(props: {
   index: number;
   summary: LayerPanelEntrySummary;
@@ -25,6 +29,7 @@ export function LayerSectionTitle(props: {
         )}
       </Show>
       <span class="min-w-0 truncate">{props.summary.creator || "Unnamed"}</span>
+      <HeldButtonBadge effect={props.summary.heldButton} />
     </span>
   );
 }
