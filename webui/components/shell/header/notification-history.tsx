@@ -10,15 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { BellIcon } from "@squidlab/phosphor-solid/bell";
 import { BellRingingIcon } from "@squidlab/phosphor-solid/bell-ringing";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import {
-  createMemo,
-  createSignal,
-  For,
-  type JSX,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import {
   clearNotificationHistory,
   type NotificationHistoryEntry,
@@ -32,6 +24,7 @@ import {
   DialogSurface,
   DialogTitle,
 } from "../../ui/dialog";
+import { Popover } from "../../ui/popover";
 import { Table, TableEmptyRow, TableScroll } from "../../ui/table";
 import Tooltip from "../../ui/tooltip";
 import { Button } from "../../ui/visual-language/button";
@@ -90,11 +83,7 @@ function NotificationHistoryContent(props: {
   rows: NotificationHistoryEntry[];
 }): JSX.Element {
   return (
-    <DialogSurface
-      aria-label="Notification history"
-      style={{ width: "min(38rem, calc(100vw - 0.75rem))" }}
-      role="region"
-    >
+    <>
       <DialogHeader>
         <DialogTitle>
           <BellRingingIcon class="size-5 text-amber-300" aria-hidden />
@@ -196,7 +185,7 @@ function NotificationHistoryContent(props: {
           </Table>
         </TableScroll>
       </DialogBody>
-    </DialogSurface>
+    </>
   );
 }
 
@@ -204,42 +193,19 @@ function NotificationHistoryContent(props: {
 export default function HeaderNotificationHistory(): JSX.Element {
   const $notificationHistory = useStore(notificationHistory);
   const [isOpen, setIsOpen] = createSignal(false);
-  let rootRef: HTMLDivElement | undefined;
+  let anchorRef: HTMLDivElement | undefined;
+  let bellRef: HTMLButtonElement | undefined;
 
   /** Keeps pop-out rows in reverse chronological order. */
   const rows = createMemo<NotificationHistoryEntry[]>(() =>
     [...$notificationHistory()].sort((a, b) => b.createdAt - a.createdAt),
   );
 
-  /** Closes the pop-out when pointer interaction moves outside the header control. */
-  const handleDocumentPointerDown = (event: PointerEvent) => {
-    if (!rootRef?.contains(event.target as Node)) {
-      setIsOpen(false);
-    }
-  };
-
-  /** Closes the pop-out with Escape while preserving normal header focus behavior. */
-  const handleDocumentKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      setIsOpen(false);
-    }
-  };
-
-  /** Installs outside-click and Escape dismissal while the header is mounted. */
-  onMount(() => {
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-    document.addEventListener("keydown", handleDocumentKeyDown);
-  });
-
-  onCleanup(() => {
-    document.removeEventListener("pointerdown", handleDocumentPointerDown);
-    document.removeEventListener("keydown", handleDocumentKeyDown);
-  });
-
   return (
-    <div ref={rootRef} class="relative">
+    <div ref={anchorRef} class="relative">
       <Tooltip content={() => "Notification history"} position="bottom">
         <Button
+          ref={bellRef}
           size="icon"
           type="button"
           aria-label="Notification history"
@@ -251,15 +217,21 @@ export default function HeaderNotificationHistory(): JSX.Element {
         </Button>
       </Tooltip>
 
-      <Show when={isOpen()}>
-        <div
-          class="absolute right-0 top-full z-[60] mt-2"
-          role="dialog"
-          aria-label="Notification history"
-        >
-          <NotificationHistoryContent rows={rows()} />
-        </div>
-      </Show>
+      <Popover
+        anchor={() => anchorRef}
+        open={isOpen()}
+        onClose={() => setIsOpen(false)}
+        placement="below"
+        align="end"
+        initialFocus="none"
+        returnFocus={() => bellRef}
+        surface={DialogSurface}
+        style={{ width: "min(38rem, calc(100vw - 0.75rem))" }}
+        role="dialog"
+        aria-label="Notification history"
+      >
+        <NotificationHistoryContent rows={rows()} />
+      </Popover>
     </div>
   );
 }
