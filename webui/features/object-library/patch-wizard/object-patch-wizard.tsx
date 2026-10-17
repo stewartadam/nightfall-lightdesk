@@ -15,6 +15,7 @@ import {
   For,
   Show,
 } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -326,9 +327,9 @@ const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
             </div>
 
             <Show when={error()}>
-              <div class="text-red-400 text-sm whitespace-pre-line">
-                {error()}
-              </div>
+              <Alert variant="caution" density="compact" role="alert">
+                <p class="whitespace-pre-line">{error()}</p>
+              </Alert>
             </Show>
           </div>
 

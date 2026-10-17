@@ -101,6 +101,9 @@ async function openDesktopApp(
           if (command === "plugin:event|unlisten") return;
           if (command === "update_state") return desktop.updateState;
           if (command === "set_update_checks") {
+            if (desktop.failUpdateChecks) {
+              throw new Error("Could not save the update setting");
+            }
             desktop.updateCalls.push(`set_update_checks:${args.enabled}`);
             desktop.updateState = {
               ...desktop.updateState,
@@ -509,8 +512,31 @@ test("privacy settings turn update checks off", async ({
     path: testInfo.outputPath("privacy-updates.png"),
   });
 
+  await page.evaluate(() => {
+    (window as any).failUpdateChecks = true;
+  });
+  await checks.click();
+  const checksError = updates.getByRole("alert");
+  await expect(checksError).toContainText("Could not save the update setting");
+  await expect(checksError).toHaveAttribute("data-variant", "caution");
+  await settings.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("privacy-updates-error.png"),
+  });
+  await page.evaluate(() => {
+    (window as any).failUpdateChecks = false;
+  });
+  // Reopen Settings so the switch shows the saved choice again after the failed save.
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  await page.keyboard.press("ControlOrMeta+,");
+  await settings.getByRole("tab", { name: "Privacy" }).click();
+  await updates.scrollIntoViewIfNeeded();
+  await expect(checks).toBeChecked();
+
   await checks.setChecked(false);
   await expect(checks).not.toBeChecked();
+  await expect(checksError).toHaveCount(0);
   await expect
     .poll(() => updateCalls(page))
     .toEqual(["set_update_checks:false"]);

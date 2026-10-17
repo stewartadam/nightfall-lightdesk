@@ -88,6 +88,27 @@ test("external control binds All and a selected interface, then returns to local
     await expect(pin).not.toHaveText(firstPin ?? "");
     await expect(pin).toHaveText(/^\d{3} \d{3}$/);
 
+    // A failed replacement keeps the current PIN and explains why below it.
+    const currentPin = await pin.textContent();
+    await page.route("**/api/pairing/pin", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 500, body: "unavailable" })
+        : route.fallback(),
+    );
+    await section.getByRole("button", { name: "New PIN" }).click();
+    const pinError = section.getByRole("alert");
+    await expect(pinError).toHaveText("Could not create a new PIN.");
+    await expect(pinError).toHaveAttribute("data-variant", "caution");
+    await expect(pin).toHaveText(currentPin ?? "");
+    await section.screenshot({
+      animations: "disabled",
+      path: testInfo.outputPath("remote-access-pin-error.png"),
+    });
+    await page.unroute("**/api/pairing/pin");
+    await section.getByRole("button", { name: "New PIN" }).click();
+    await expect(pinError).toHaveCount(0);
+    await expect(pin).not.toHaveText(currentPin ?? "");
+
     // Each LAN address gets a link whose QR code carries the PIN.
     const qrButtons = section.getByRole("button", { name: /^Show QR code/ });
     const lanAddresses = await page.evaluate(

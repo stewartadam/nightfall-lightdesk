@@ -9,6 +9,7 @@
 import { CheckCircleIcon } from "@squidlab/phosphor-solid/check-circle";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import notice from "../../assets/models/beat-this/NOTICE.md?raw";
+import { Alert } from "../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -217,9 +218,9 @@ export function createBeatModelDownload() {
           </p>
         </Show>
         <Show when={error()}>
-          <p role="alert" class="text-red-400">
-            {error()}
-          </p>
+          <Alert variant="caution" density="compact" role="alert">
+            <p>{error()}</p>
+          </Alert>
         </Show>
         <details>
           <summary class="cursor-pointer">

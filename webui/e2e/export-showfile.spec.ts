@@ -154,7 +154,11 @@ test("keeps export state clear during cancellation and failures", async ({
   expect(
     await page.evaluate(() => (window as any).showfileExports.length),
   ).toBe(2);
+  await expect(
+    dialog.locator(".nf-alert[data-variant='warning']"),
+  ).toContainText("The export completed with warnings:");
   await page.screenshot({
+    animations: "disabled",
     path: testInfo.outputPath("export-showfile-warnings.png"),
   });
   await page.evaluate(() => {
