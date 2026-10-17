@@ -7,13 +7,10 @@
  */
 
 import { Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import type { VisualizerStats } from "../../../state/appStores";
 import { formatNumber, getFpsColor, UI_TARGET_FPS } from "../model/metrics";
-import {
-  CollapsibleSection,
-  MetricCard,
-  PipelineStep,
-} from "./metric-sections";
+import { MetricCard, PipelineStep } from "./metric-sections";
 
 interface VisualizerMetricsSectionProps {
   stats: VisualizerStats | null;
@@ -23,10 +20,12 @@ interface VisualizerMetricsSectionProps {
 export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
   return (
     <Show when={props.stats}>
-      <CollapsibleSection
+      <Collapsible
+        lazy
         title="Visualizer"
-        headerContent={
-          <span class="ml-auto flex items-center gap-2">
+        contentClass="p-3"
+        actions={
+          <span class="flex items-center gap-2">
             <span
               class={`rounded px-1.5 py-0.5 text-xs ${
                 props.stats?.renderMode === "worker"
@@ -114,7 +113,7 @@ export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
             <PipelineStep label="Bloom" value={props.stats?.bloomMs} />
           </div>
         </div>
-      </CollapsibleSection>
+      </Collapsible>
     </Show>
   );
 }

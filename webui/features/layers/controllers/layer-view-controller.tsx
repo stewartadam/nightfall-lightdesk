@@ -20,6 +20,7 @@ import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { createKeyedDataGridCellProvider } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -56,6 +57,7 @@ import type { LayerNavigationRequest } from "../../../state/appStores";
 import { attributeMetadata, fixtures } from "../../../state/appStores";
 import * as types from "../../../types";
 import { LayerGrid } from "../components/layer-grid";
+import { LayerSectionTitle } from "../components/layer-section-title";
 import {
   createLayerCellProjection,
   createLayerValueMaps,
@@ -531,33 +533,20 @@ export function LayerViewController(props: LayerViewProps) {
   }
 
   return (
-    <details
+    <Collapsible
       open={isOpen()}
-      onToggle={(event) => {
-        const nextOpen = (event.currentTarget as HTMLDetailsElement).open;
+      onOpenChange={(nextOpen) => {
         if (props.onOpenChange) {
           props.onOpenChange(nextOpen);
         } else {
           setLocalIsOpen(nextOpen);
         }
       }}
-      class="rounded-md border border-gray-700"
-    >
-      <summary class="flex cursor-pointer select-none items-center justify-between bg-neutral-800 px-4 py-2">
-        <span class="flex min-w-0 items-center gap-2 text-white">
-          <span class="shrink-0">Layer {layerIndex()}:</span>
-          <Show when={layerSummary().objectType}>
-            {(objectType) => (
-              <span class="shrink-0 rounded border border-gray-600 px-1.5 py-0.5 text-xs font-medium text-gray-300">
-                {objectType()}
-              </span>
-            )}
-          </Show>
-          <span class="min-w-0 truncate">
-            {layerSummary().creator ? layerSummary().creator : "Unnamed"}
-          </span>
-        </span>
-        <span class="ml-3 flex shrink-0 items-center gap-2">
+      title={
+        <LayerSectionTitle index={layerIndex()} summary={layerSummary()} />
+      }
+      actions={
+        <>
           <span class="text-xs text-gray-500">
             Priority: {layerSummary().priority}
           </span>
@@ -575,9 +564,10 @@ export function LayerViewController(props: LayerViewProps) {
               columns={displayColumns().columns}
             />
           </Show>
-        </span>
-      </summary>
+        </>
+      }
+    >
       {gridContent}
-    </details>
+    </Collapsible>
   );
 }

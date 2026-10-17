@@ -7,6 +7,7 @@
  */
 
 import { For, Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { Button } from "../../../components/ui/visual-language/button";
 import type {
@@ -15,7 +16,7 @@ import type {
 } from "../../../state/appStores";
 import type { MessageSortColumn, MessageTypeRow } from "../model/message-table";
 import { formatNumber, getDeliveryLagColor } from "../model/metrics";
-import { CollapsibleSection, MetricCard } from "./metric-sections";
+import { MetricCard } from "./metric-sections";
 
 interface WebSocketMetricsSectionProps {
   measures: Record<string, PerformanceMeasureStats>;
@@ -41,11 +42,13 @@ const MESSAGE_COLUMNS: {
 /** Presents websocket delivery health, pull cadence, and sortable type totals. */
 export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="WebSocket Messages"
-      headerContent={
+      contentClass="p-3"
+      actions={
         <Show when={props.stats}>
-          <span class="ml-auto flex items-center gap-2">
+          <span class="flex items-center gap-2">
             <span
               class={`rounded px-1.5 py-0.5 text-xs ${
                 props.stats?.main.backlogLagging
@@ -347,6 +350,6 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
           </TableScroll>
         </div>
       </Show>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

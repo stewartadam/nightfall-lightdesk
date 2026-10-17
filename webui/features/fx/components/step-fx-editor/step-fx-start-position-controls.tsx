@@ -8,6 +8,7 @@
 
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { Collapsible } from "../../../../components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuSeparator,
@@ -312,29 +313,27 @@ export function StepFxStartPositionControls(props: {
             </div>
           </Show>
 
-          <details
+          <Collapsible
+            variant="plain"
+            triggerClass="text-xs"
+            title="Advanced expression"
             open={
               advancedOpen() ||
               stepFxStartPositionMode(props.phase) === "custom"
             }
-            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            onOpenChange={setAdvancedOpen}
           >
-            <summary class="cursor-pointer text-xs text-neutral-400 hover:text-neutral-200">
-              Advanced expression
-            </summary>
-            <div class="mt-2">
-              <StepFxPhaseField
-                ariaLabel="Advanced start position expression"
-                phase={props.phase}
-                focusRequest={props.advancedFocusRequest}
-                onChange={props.onChange}
-              />
-              <div class="mt-1 text-[11px] text-neutral-500">
-                Advanced expressions use degrees. Enter positions such as 180,
-                0&gt;360, or 0&gt;360&gt;0.
-              </div>
+            <StepFxPhaseField
+              ariaLabel="Advanced start position expression"
+              phase={props.phase}
+              focusRequest={props.advancedFocusRequest}
+              onChange={props.onChange}
+            />
+            <div class="mt-1 text-[11px] text-neutral-500">
+              Advanced expressions use degrees. Enter positions such as 180,
+              0&gt;360, or 0&gt;360&gt;0.
             </div>
-          </details>
+          </Collapsible>
         </div>
       </div>
     </DropdownMenu>

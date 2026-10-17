@@ -10,6 +10,7 @@ import { CheckCircleIcon } from "@squidlab/phosphor-solid/check-circle";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import notice from "../../assets/models/beat-this/NOTICE.md?raw";
 import { Alert } from "../../components/ui/alert";
+import { Collapsible } from "../../components/ui/collapsible";
 import {
   Dialog,
   DialogBody,
@@ -222,35 +223,34 @@ export function createBeatModelDownload() {
             <p>{error()}</p>
           </Alert>
         </Show>
-        <details>
-          <summary class="cursor-pointer">
-            Beat This license and attribution (MIT)
-          </summary>
-          <div class="ml-4">
-            <p class="my-2 text-sm">
-              <a
-                href="https://github.com/CPJKU/beat_this"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="underline"
-              >
-                Beat This project
-              </a>{" "}
-              ·{" "}
-              <a
-                href="https://github.com/mosynthkey/beat_this_cpp"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="underline"
-              >
-                ONNX conversion
-              </a>
-            </p>
-            <pre class="max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-neutral-700 p-3 text-xs">
-              {notice}
-            </pre>
-          </div>
-        </details>
+        <Collapsible
+          variant="plain"
+          title="Beat This license and attribution (MIT)"
+          contentClass="ml-4"
+        >
+          <p class="mb-2 text-sm">
+            <a
+              href="https://github.com/CPJKU/beat_this"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="underline"
+            >
+              Beat This project
+            </a>{" "}
+            ·{" "}
+            <a
+              href="https://github.com/mosynthkey/beat_this_cpp"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="underline"
+            >
+              ONNX conversion
+            </a>
+          </p>
+          <pre class="max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-neutral-700 p-3 text-xs">
+            {notice}
+          </pre>
+        </Collapsible>
       </DialogBody>
       <DialogFooter>
         <DialogCancelButton>Close</DialogCancelButton>

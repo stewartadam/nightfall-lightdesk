@@ -6,42 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, type JSX, Show } from "solid-js";
-import { Button } from "../../../components/ui/visual-language/button";
+import type { JSX } from "solid-js";
 import { formatNumber } from "../model/metrics";
-
-interface CollapsibleSectionProps {
-  children: JSX.Element;
-  defaultOpen?: boolean;
-  headerContent?: JSX.Element;
-  title: string;
-}
-
-/** Renders a locally collapsible instrumentation section. */
-export function CollapsibleSection(props: CollapsibleSectionProps) {
-  const [isOpen, setIsOpen] = createSignal(props.defaultOpen ?? false);
-
-  return (
-    <section>
-      <Button
-        size="compact"
-        variant="subtle"
-        type="button"
-        class="mb-2 w-full"
-        style={{ "justify-content": "flex-start" }}
-        aria-expanded={isOpen()}
-        onClick={() => setIsOpen(!isOpen())}
-      >
-        <span class={`transition-transform ${isOpen() ? "rotate-90" : ""}`}>
-          ▶
-        </span>
-        {props.title}
-        {props.headerContent}
-      </Button>
-      <Show when={isOpen()}>{props.children}</Show>
-    </section>
-  );
-}
 
 interface PipelineStepProps {
   label: string;

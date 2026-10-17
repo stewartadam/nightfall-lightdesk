@@ -10,6 +10,7 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -23,8 +24,6 @@ import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search"
 import {
   CRUD_CARD_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
-  CRUD_SECTION_CLASS,
-  CRUD_SECTION_SUMMARY_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
 import CrudViewModeToggle from "../../../components/widgets/crud/crud-view-mode-toggle";
@@ -95,21 +94,22 @@ function CueCardSection(
   props: CueListViewProps & { title: string; cues: Cue[] },
 ) {
   return (
-    <details open class={CRUD_SECTION_CLASS}>
-      <summary class={CRUD_SECTION_SUMMARY_CLASS}>
-        <span class="font-medium text-neutral-200">{props.title}</span>
-        <span class="text-xs text-neutral-400">
+    <Collapsible
+      defaultOpen
+      title={<span class="font-medium text-neutral-200">{props.title}</span>}
+      actions={
+        <span>
           {props.cues.length} cue{props.cues.length !== 1 ? "s" : ""}
         </span>
-      </summary>
-      <div class="p-3">
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
-          <For each={props.cues}>
-            {(cue) => <CueCard controller={props.controller} cue={cue} />}
-          </For>
-        </div>
+      }
+      contentClass="p-3"
+    >
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
+        <For each={props.cues}>
+          {(cue) => <CueCard controller={props.controller} cue={cue} />}
+        </For>
       </div>
-    </details>
+    </Collapsible>
   );
 }
 

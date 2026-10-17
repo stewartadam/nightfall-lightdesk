@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Checkbox } from "../../../components/ui/form-controls";
 import { formatShortcutLabel, KbdShortcut } from "../../../components/ui/kbd";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -303,11 +304,8 @@ export function KeybindingsSettings() {
             </For>
           </ul>
         </Show>
-        <details class="rounded border border-neutral-800">
-          <summary class="cursor-pointer px-3 py-2 text-sm text-neutral-300">
-            Disable a built-in shortcut
-          </summary>
-          <ul class="max-h-72 divide-y divide-neutral-800 overflow-y-auto border-t border-neutral-800">
+        <Collapsible class="text-sm" title="Disable a built-in shortcut">
+          <ul class="max-h-72 divide-y divide-neutral-800 overflow-y-auto">
             <For
               each={builtIns().filter(
                 (shortcut) => !isBuiltInShortcutDisabled(shortcut, $disabled()),
@@ -345,7 +343,7 @@ export function KeybindingsSettings() {
               )}
             </For>
           </ul>
-        </details>
+        </Collapsible>
       </section>
     </div>
   );

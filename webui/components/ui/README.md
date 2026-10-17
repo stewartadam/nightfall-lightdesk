@@ -63,6 +63,18 @@ Use `ErrorFallback` from `error-fallback` as the `fallback` of a panel-level Sol
 
 The Dockview panel boundary, the flow editor and the visualizer use it. The design lab's **Error fallback** panel throws on demand and recovers with Retry.
 
+## Collapsible sections
+
+Use `Collapsible` from `collapsible` for any section the user can expand and collapse. It follows the WAI-ARIA disclosure pattern rather than `<details>`, so its header can carry actions beside the toggle. The header is one button holding a chevron and the `title`; the chevron points right when closed and rotates down when open (no animation under reduced motion).
+
+- Pass `defaultOpen` for an uncontrolled section, or `open` with `onOpenChange` when the caller stores or persists the state. `onOpenChange` reports every user toggle in either mode.
+- `actions` sits at the trailing edge of the header, outside the toggle: counts, badges, menus and buttons there never toggle the section.
+- `variant="bordered"` (the default) frames the section with a border and a shaded header row, for stacked groups such as cue sequences, layers and metric sections. `variant="plain"` is a borderless text toggle for optional details inside forms and dialogs.
+- Closed content is hidden, so it leaves the focus order and accessibility tree. It stays mounted and searchable with find-in-page, which opens the section on a match. Set `lazy` to mount content only while open, for expensive or live-updating content. Set `forceMount` to keep closed content visible but `inert` while a container animates its own collapse.
+- Text size set through `class` sizes the header too. Use `contentClass` for content padding, and `headerClass`/`triggerClass` to fit the header into a fixed-height bar.
+
+The design lab's Collapsibles panel shows both variants, header actions, lazy content and controlled sections.
+
 ## Toolbars
 
 Use `PanelToolbar` for panel action rows. It owns spacing, wrapping, background, and a bottom divider, with no top or side borders or rounded outer corners. Supply controls through its `left` and `right` slots; keep container borders and padding out of the slot classes. Use `ToolbarSeparator` between related action groups, never a hand-drawn `w-px` divider; it passes `data-*` attributes through for test hooks.
