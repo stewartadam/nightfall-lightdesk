@@ -16,6 +16,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { Collapsible } from "../../components/ui/collapsible";
 import {
   Dialog,
   DialogCancelButton,
@@ -254,18 +255,20 @@ export function DiagnosticsDialog() {
 
         <div class="my-1 border-t border-slate-200 dark:border-slate-600" />
 
-        <details class="shrink-0 text-sm text-neutral-300">
-          <summary class="cursor-pointer text-sm font-medium">
-            System information included
-          </summary>
+        <Collapsible
+          variant="plain"
+          class="shrink-0 text-sm"
+          triggerClass="font-medium"
+          title="System information included"
+        >
           <textarea
             aria-label="System information included"
-            class="mt-2 h-24 resize-none w-full rounded border border-neutral-600 bg-neutral-950 p-3 font-mono text-xs leading-5"
+            class="h-24 resize-none w-full rounded border border-neutral-600 bg-neutral-950 p-3 font-mono text-xs leading-5"
             value={systemInfo()}
             readOnly
             spellcheck={false}
           />
-        </details>
+        </Collapsible>
 
         <fieldset
           class="shrink-0 space-y-1"

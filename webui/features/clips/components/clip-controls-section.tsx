@@ -6,11 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { CaretDoubleUpIcon } from "@squidlab/phosphor-solid/caret-double-up";
-import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
-import { Show } from "solid-js";
-import { Dynamic } from "solid-js/web";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { MIN_CONTROLS_HEIGHT } from "../state/controls-layout";
 import { Controls, type ControlsProps } from "./controls";
 
@@ -55,30 +51,20 @@ export function ClipControlsSection(props: ClipControlsSectionProps) {
       >
         <div class="mx-auto mt-[3px] h-px w-14 rounded bg-neutral-500 group-hover:bg-blue-200" />
       </div>
-      <div class="flex h-9 shrink-0 items-center justify-between border-b border-neutral-800 px-3">
-        <span class="text-xs font-medium uppercase tracking-wide text-neutral-400">
-          Controls
-        </span>
-        <ToolbarButton
-          tooltip={props.collapsed ? "Expand controls" : "Collapse controls"}
-          type="button"
-          data-clip-controls-toggle=""
-          label={props.collapsed ? "Expand controls" : "Collapse controls"}
-          aria-expanded={!props.collapsed}
-          onClick={props.onToggleCollapsed}
-        >
-          <Dynamic
-            component={props.collapsed ? CaretDoubleUpIcon : CaretDownIcon}
-            class="size-4"
-            aria-hidden
-          />
-        </ToolbarButton>
-      </div>
-      <Show when={!props.collapsed || props.transitioning}>
-        <div class="min-h-0 flex-1 overflow-hidden p-3" inert={props.collapsed}>
-          <Controls controlCount={10} clipStates={props.clipStates} />
-        </div>
-      </Show>
+      <Collapsible
+        variant="plain"
+        lazy
+        forceMount={props.transitioning}
+        open={!props.collapsed}
+        onOpenChange={props.onToggleCollapsed}
+        title="Controls"
+        class="flex min-h-0 flex-1 flex-col"
+        headerClass="h-9 shrink-0 border-b border-neutral-800 px-3"
+        triggerClass="flex-1 self-stretch text-xs font-medium uppercase tracking-wide"
+        contentClass="mt-0 min-h-0 flex-1 overflow-hidden p-3"
+      >
+        <Controls controlCount={10} clipStates={props.clipStates} />
+      </Collapsible>
     </div>
   );
 }

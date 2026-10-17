@@ -30,6 +30,13 @@ async function openClipPanel(page: Page) {
   await page.keyboard.press("Enter");
 }
 
+/** Returns the disclosure toggle in the controls section header. */
+function controlsToggle(page: Page) {
+  return page
+    .locator("[data-clip-controls-section]")
+    .getByRole("button", { name: "Controls", exact: true });
+}
+
 /** Seeds control 3 with a known clip assignment for deterministic control UI checks. */
 async function seedAssignedControl(page: Page, value = 0) {
   await page.evaluate((value) => {
@@ -113,7 +120,7 @@ test("clip controls section resizes and collapses", async ({ page }) => {
 
   const controlsSection = page.locator("[data-clip-controls-section]");
   const resizeHandle = page.locator("[data-clip-controls-resize-handle]");
-  const toggleButton = page.locator("[data-clip-controls-toggle]");
+  const toggleButton = controlsToggle(page);
   const assignedControl = page.locator('[data-control-index="3"]');
 
   await expect(controlsSection).toBeVisible();
@@ -181,7 +188,7 @@ test("fractional control values remain passive until the operator edits", async 
   page,
 }, testInfo) => {
   await openClipPanel(page);
-  const toggle = page.locator("[data-clip-controls-toggle]");
+  const toggle = controlsToggle(page);
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.evaluate(async () => {
@@ -239,7 +246,7 @@ test("clip controls fill bounded heights and animate only toggles", async ({
   await seedAssignedControl(page);
   const section = page.locator("[data-clip-controls-section]");
   const resize = page.locator("[data-clip-controls-resize-handle]");
-  const toggle = page.locator("[data-clip-controls-toggle]");
+  const toggle = controlsToggle(page);
   const control = page.locator('[data-control-index="3"]');
   const track = control.locator(".vertical-range-slider");
   await resize.focus();

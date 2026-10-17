@@ -7,6 +7,7 @@
  */
 
 import { Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Sparkline } from "../../../components/ui/sparkline";
 import type {
   FrameStats,
@@ -14,7 +15,7 @@ import type {
   MetricsHistory,
 } from "../../../state/appStores";
 import { formatNumber, getFpsColor, UI_TARGET_FPS } from "../model/metrics";
-import { CollapsibleSection, MetricCard } from "./metric-sections";
+import { MetricCard } from "./metric-sections";
 
 interface BrowserRenderingSectionProps {
   frameStats: FrameStats | null;
@@ -25,10 +26,12 @@ interface BrowserRenderingSectionProps {
 /** Presents browser frame-rate, frame-time, and dropped-frame metrics. */
 export function BrowserRenderingSection(props: BrowserRenderingSectionProps) {
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="Browser Rendering"
-      headerContent={
-        <span class="ml-auto flex items-center gap-2">
+      contentClass="p-3"
+      actions={
+        <span class="flex items-center gap-2">
           <Sparkline
             data={props.history.uiFps}
             width={80}
@@ -74,6 +77,6 @@ export function BrowserRenderingSection(props: BrowserRenderingSectionProps) {
           />
         </div>
       </Show>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

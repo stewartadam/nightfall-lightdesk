@@ -44,7 +44,9 @@ test("new showfiles use the performance workspace", async ({
     page.getByRole("button", { name: "Add group", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Collapse controls", exact: true }),
+    page
+      .locator("[data-clip-controls-section]")
+      .getByRole("button", { name: "Controls", exact: true }),
   ).toBeVisible();
 
   await expect
