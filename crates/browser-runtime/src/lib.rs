@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_channel::{Receiver, Sender};
 use bevy_app::App;
+use bevy_diagnostic::{FrameCountPlugin, FrameTimeDiagnosticsPlugin};
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::NextState;
 use bevy_time::{TimePlugin, TimeUpdateStrategy};
@@ -198,6 +199,8 @@ impl BrowserEngine {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(
             std::time::Duration::ZERO,
         ));
+        // Real time advances by the host tick delta, so these report the worker's engine rate.
+        app.add_plugins((FrameCountPlugin, FrameTimeDiagnosticsPlugin::default()));
         set_construction_stage(1);
         app.add_plugins(EnginePlugin);
         set_construction_stage(2);
@@ -502,6 +505,24 @@ mod tests {
         assert_eq!(engine.tick_core(5_000.0), MAX_TICK_DELTA_MS);
         assert_eq!(engine.runtime_info.requested_delta_ms, 5_000.0);
         assert_eq!(engine.runtime_info.applied_delta_ms, MAX_TICK_DELTA_MS);
+    }
+
+    /// Verify host tick deltas feed the frame-rate diagnostics published as engine metrics.
+    #[test]
+    fn tick_delta_drives_frame_rate_diagnostics() {
+        let mut engine = sample_engine();
+        for _ in 0..10 {
+            engine.tick_core(25.0);
+        }
+        let diagnostics = engine
+            .app
+            .world()
+            .resource::<bevy_diagnostic::DiagnosticsStore>();
+        let fps = diagnostics
+            .get(&FrameTimeDiagnosticsPlugin::FPS)
+            .and_then(|diagnostic| diagnostic.smoothed())
+            .expect("ticking should record a frame rate");
+        assert!((fps - 40.0).abs() < 0.5, "fps: {fps}");
     }
 
     /// Reject malformed showfile bytes before the embedded runtime becomes ready.

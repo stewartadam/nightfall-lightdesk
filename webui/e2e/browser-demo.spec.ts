@@ -831,6 +831,59 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
   });
 });
 
+/**
+ * Verify the embedded engine publishes its tick rate as engine metrics, so the status bar
+ * and the Instrumentation panel report a live engine rate instead of 0 Hz.
+ */
+test("demo engine reports its frame rate", async ({ page }, testInfo) => {
+  const path =
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+      ? "/demo/app/?e2e=1"
+      : "/?engine=embedded-demo&e2e=1";
+  await page.goto(path);
+  await waitForDemoShow(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.engineMetrics.get()?.fps ?? 0,
+      ),
+    )
+    .toBeGreaterThan(5);
+
+  const bar = page.getByRole("region", { name: "Application status bar" });
+  await bar.getByRole("button", { name: "Show metrics" }).click();
+  await expect(bar.locator("#status-metrics")).toContainText(/[1-9]\d* Hz/);
+
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const referencePanel = api.panels.find(
+      (candidate: any) => candidate.api.location.type === "grid",
+    );
+    const panel = api.addPanel({
+      id: "panel-Instrumentation-demo-fps",
+      component: "Instrumentation",
+      title: "Instrumentation",
+      params: {},
+      ...(referencePanel
+        ? {
+            position: {
+              referencePanel: referencePanel.id,
+              direction: "within",
+            },
+          }
+        : {}),
+    });
+    panel.api.setActive();
+  });
+  const backendSection = page.getByRole("button", { name: /^▶\s*Backend/ });
+  await expect(backendSection).toContainText(/[1-9]\d*\.\d fps/);
+  await backendSection.click();
+  await page.screenshot({
+    path: testInfo.outputPath("demo-engine-fps.png"),
+    fullPage: true,
+  });
+});
+
 /** Lists the distinct timeline audio paths a showfile references, in timeline order. */
 function referencedAudioPaths(showfile: {
   timelines?: { audio_path?: unknown }[];

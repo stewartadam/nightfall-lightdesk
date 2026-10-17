@@ -5211,6 +5211,7 @@ version = "0.1.0-alpha.3"
 dependencies = [
  "async-channel",
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "bevy_platform",
  "bevy_state",
