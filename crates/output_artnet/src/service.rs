@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::net::{SocketAddrV4, UdpSocket};
 use std::ops::ControlFlow;
@@ -21,6 +21,8 @@ use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportR
 use nightfall_service_host::prelude::{
     FixedRatePeriod, FixedRateWorker, ModeWorkerSlot, process_singleton,
 };
+
+use crate::discovery::{ArtNetDiscoveryBinding, ArtNetDiscoveryWorker};
 
 const ARTNET_PORT: u16 = 6454;
 
@@ -96,6 +98,15 @@ impl ArtNetOutputClient {
             .report
             .lock()
             .map(|mut report| std::mem::take(&mut *report))
+            .unwrap_or_default()
+    }
+
+    /// Returns the distinct unicast destinations among the frames the worker transmits.
+    pub(crate) fn unicast_targets(&self) -> BTreeSet<Ipv4Addr> {
+        self.shared
+            .frames
+            .lock()
+            .map(|frames| frames.iter().filter_map(|frame| frame.unicast_ip).collect())
             .unwrap_or_default()
     }
 
@@ -401,6 +412,7 @@ fn init_socket(binding: ArtNetOutputBinding) -> Option<ArtNetSocket> {
 /// Process-lifetime Art-Net output service host.
 pub struct ArtNetOutputService {
     slot: ModeWorkerSlot<ArtNetOutputBinding, ArtNetWorker>,
+    discovery: ModeWorkerSlot<ArtNetDiscoveryBinding, ArtNetDiscoveryWorker>,
     client: ArtNetOutputClient,
     recent_frames: ArtNetRecentFramesByUniverse,
     period: FixedRatePeriod,
@@ -410,6 +422,7 @@ impl ArtNetOutputService {
     fn new() -> Self {
         Self {
             slot: ModeWorkerSlot::new(),
+            discovery: ModeWorkerSlot::new(),
             client: ArtNetOutputClient::default(),
             recent_frames: ArtNetRecentFramesByUniverse::new(),
             period: FixedRatePeriod::new(IoRuntimeSettings::default().dmx_output_interval()),
@@ -417,12 +430,16 @@ impl ArtNetOutputService {
     }
 
     /// Configure whether Art-Net output is enabled and ensure the process-lifetime worker is bound.
+    ///
+    /// Node discovery starts on an ephemeral port, leaving the Art-Net port to the input
+    /// listener until settings say whether input is enabled.
     pub fn configure_network_output_enabled(&self, enabled: bool) -> bool {
-        self.configure_binding(ArtNetOutputBinding::from_enabled(enabled))
+        self.configure_binding(ArtNetOutputBinding::from_enabled(enabled), true)
     }
 
     /// Configures Art-Net output binding and rate from IO settings and the current interface
-    /// snapshot; a rate change retimes the running worker without rebinding it.
+    /// snapshot; a rate change retimes the running worker without rebinding it. Node discovery
+    /// follows the output interface and listens on the Art-Net port only while input does not.
     pub fn sync_with_settings(
         &self,
         settings: &IoRuntimeSettings,
@@ -430,14 +447,27 @@ impl ArtNetOutputService {
         transport_policy: &TransportRuntimePolicy,
     ) -> bool {
         self.period.set(settings.dmx_output_interval());
-        self.configure_binding(ArtNetOutputBinding::from_settings(
-            settings,
-            interface_state,
-            transport_policy,
-        ))
+        self.configure_binding(
+            ArtNetOutputBinding::from_settings(settings, interface_state, transport_policy),
+            transport_policy.network_input_enabled(settings),
+        )
     }
 
-    fn configure_binding(&self, binding: ArtNetOutputBinding) -> bool {
+    /// Rebinds the output worker to `binding` and the discovery worker to the same interface,
+    /// returning whether output is running.
+    fn configure_binding(&self, binding: ArtNetOutputBinding, input_listening: bool) -> bool {
+        let discovery_binding = ArtNetDiscoveryBinding::new(
+            binding.bind_ip.filter(|_| binding.enabled),
+            input_listening,
+            SocketAddrV4::new(Ipv4Addr::BROADCAST, ARTNET_PORT),
+        );
+        self.discovery.rebind(
+            discovery_binding,
+            |binding| ArtNetDiscoveryWorker::spawn(binding, self.client.clone()),
+            |worker| worker.shutdown(),
+            |worker| worker.is_alive(),
+        );
+
         let has_worker = self.slot.rebind(
             binding,
             |binding| {
@@ -470,6 +500,7 @@ impl ArtNetOutputService {
     /// Shutdown process-lifetime worker.
     pub fn shutdown(&self) {
         self.slot.shutdown(|worker| worker.shutdown());
+        self.discovery.shutdown(|worker| worker.shutdown());
         self.client.set_running(false);
     }
 }

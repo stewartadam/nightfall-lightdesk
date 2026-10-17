@@ -14,6 +14,7 @@
 
 #![warn(missing_docs)]
 
+mod artnet_nodes;
 /// Shared IO-domain constants.
 pub mod constants;
 mod input;
@@ -21,6 +22,7 @@ mod settings;
 
 use std::{collections::HashSet, net::Ipv4Addr};
 
+pub use artnet_nodes::{ArtNetNode, ArtNetNodeDirectory, ArtNetNodeModel};
 pub use input::{
     AcceptedDmxFrame, ArtNetRecentFramesByUniverse, BindingTransport, DmxInputSet,
     IoRuntimeNotification, SacnOutputIdentity,
@@ -35,8 +37,9 @@ pub use crate::constants::{
 /// Prelude for ergonomic IO transport imports.
 pub mod prelude {
     pub use crate::{
-        AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse, AvailableUsbDmxDevices,
-        BindingTransport, CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
+        AcceptedDmxFrame, ArtNetDelivery, ArtNetNode, ArtNetNodeDirectory, ArtNetNodeModel,
+        ArtNetRecentFramesByUniverse, AvailableUsbDmxDevices, BindingTransport,
+        CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
         DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
         ExternalControlSettings, ExternalControlState, InputSignalLossPolicy,
         InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings,
