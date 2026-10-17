@@ -96,9 +96,13 @@ jobs:
       # build; without them, building only the binary skips compiling every test target.
       - name: Stage the native backend
         env:
-          TEST_TARGETS: ${{ inputs.rust-tests && '--tests' || '' }}
+          RUST_TESTS: ${{ inputs.rust-tests }}
         run: |
-          cargo build $TEST_TARGETS --bin nightfall-headless
+          if [[ "$RUST_TESTS" == true ]]; then
+            cargo build --tests --bin nightfall-headless
+          else
+            cargo build --bin nightfall-headless
+          fi
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           mkdir -p ci-artifacts
           cp "$target_dir/debug/nightfall-headless" ci-artifacts/nightfall-headless
