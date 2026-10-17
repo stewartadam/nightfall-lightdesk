@@ -23,6 +23,8 @@ interface EmbeddedBrowserEngine {
   runtime_info(): unknown;
   /** Advance the engine by one frame. */
   tick(deltaMs: number): number;
+  /** Return the tick rate requested by the engine's `fps` frame limit. */
+  tick_rate_hz(): number;
 }
 
 const MAX_EMBEDDED_SHOWFILE_BYTES = 16 * 1024 * 1024;
@@ -106,9 +108,21 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
           postError("Embedded engine returned an invalid publication buffer");
         }
       }
+      scheduleEmbeddedTicks(embeddedEngine.tick_rate_hz());
     } catch (error) {
       postError(`Embedded engine tick failed: ${error}`);
     }
+  }
+
+  /**
+   * Run engine ticks at the rate the engine requests, restarting the timer only when that
+   * rate changes so an `fps` command takes effect on the next tick.
+   */
+  function scheduleEmbeddedTicks(tickRateHz: number): void {
+    if (embeddedTickTimer && tickRateHz === embeddedTickRateHz) return;
+    if (embeddedTickTimer) clearInterval(embeddedTickTimer);
+    embeddedTickRateHz = tickRateHz;
+    embeddedTickTimer = setInterval(tickEmbeddedRuntime, 1000 / tickRateHz);
   }
 
   /**
@@ -177,12 +191,9 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
       ) as unknown as EmbeddedBrowserEngine;
 
       embeddedInitMs = performance.now() - initStartMs;
-      const tickRateHz = Math.min(120, Math.max(1, config.tickRateHz ?? 60));
-      embeddedTickRateHz = tickRateHz;
       embeddedWasmMemory = initialized.memory;
       embeddedLastTickMs = performance.now();
       tickEmbeddedRuntime();
-      embeddedTickTimer = setInterval(tickEmbeddedRuntime, 1000 / tickRateHz);
       postStatus(Status.Connected);
       postEmbeddedRuntimeInfo();
       self.postMessage({ type: "connected" });

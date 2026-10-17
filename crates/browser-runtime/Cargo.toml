@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 async-channel.workspace = true
 bevy_app.workspace = true
+bevy_diagnostic.workspace = true
 bevy_ecs = { workspace = true, features = ["debug"] }
 bevy_state.workspace = true
 bevy_time.workspace = true
@@ -26,6 +27,7 @@ nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-flow = { path = "../flow", default-features = false }
+nightfall-framepace = { path = "../framepace" }
 nightfall-fx = { path = "../fx" }
 nightfall-instances = { path = "../instances" }
 nightfall-programmer = { path = "../programmer" }
