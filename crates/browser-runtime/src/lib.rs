@@ -22,6 +22,7 @@ use bevy_ecs::prelude::*;
 use bevy_state::prelude::NextState;
 use bevy_time::{TimePlugin, TimeUpdateStrategy};
 use nightfall_actions::ActionsPlugin;
+use nightfall_boards::prelude::BoardsPlugin;
 use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::EnginePlugin;
@@ -242,6 +243,7 @@ impl BrowserEngine {
         });
         app.add_plugins(ProgrammerPlugin);
         app.add_plugins(CuePlugin);
+        app.add_plugins(BoardsPlugin);
         app.add_plugins(TempoPlugin);
         app.add_plugins(FxPlugin);
         app.init_resource::<DataProvider<StoredFxModule>>();

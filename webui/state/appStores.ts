@@ -201,6 +201,11 @@ export type FixtureMap = { [uid: string]: types.Fixture };
 export type SceneObjectMap = { [uid: string]: types.SceneObject };
 export type GroupMap = { [uid: string]: types.Group };
 export type MasterMap = { [uid: string]: types.Master };
+export type BoardMap = { [uid: string]: types.Board };
+/** Resolved buttons per board, keyed by board UID and then element UID. */
+export type BoardStatusMap = {
+  [boardUid: string]: { [elementUid: string]: types.BoardItem[] };
+};
 export type FxMap = { [uid: string]: types.Fx };
 export type StepFxMap = { [uid: string]: types.StepFx };
 export type FxModuleMap = { [uid: string]: types.StoredFxModule };
@@ -313,6 +318,8 @@ export const objectLibrary = atom<types.AvailableObjectInfo[]>([]);
 export const objectProfile = atom<types.GetObjectProfileResponse | null>(null);
 export const groups = deepMap<GroupMap>({});
 export const masters = deepMap<MasterMap>({});
+export const boards = atom<BoardMap>({});
+export const boardStates = atom<BoardStatusMap>({});
 export const fx = deepMap<FxMap>({});
 export const stepFx = deepMap<StepFxMap>({});
 export const fxModules = deepMap<FxModuleMap>({});
@@ -1102,6 +1109,8 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     objectProfile,
     groups,
     masters,
+    boards,
+    boardStates,
     fx,
     stepFx,
     fxModules,

@@ -53,6 +53,7 @@
       "nightfall-timeline"
     ],
     "integration": [
+      "nightfall-boards",
       "nightfall-desk",
       "nightfall-desk-audio",
       "nightfall-references",

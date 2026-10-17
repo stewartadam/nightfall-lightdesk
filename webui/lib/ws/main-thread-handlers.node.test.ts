@@ -27,6 +27,8 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "Bindings",
   "BlueprintDefinitions",
   "BlueprintDependencies",
+  "BoardDefinitions",
+  "BoardStates",
   "ClientActionInvocation",
   "ClipCommand",
   "ClipDefinitions",

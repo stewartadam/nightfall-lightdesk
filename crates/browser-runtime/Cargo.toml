@@ -19,6 +19,7 @@ js-sys = "0.3"
 moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
+nightfall-boards = { path = "../boards" }
 nightfall-cues = { path = "../cues" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-desk = { path = "../desk", default-features = false }

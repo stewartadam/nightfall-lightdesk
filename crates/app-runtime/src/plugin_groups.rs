@@ -11,6 +11,7 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use nightfall_actions::ActionsPlugin;
+use nightfall_boards::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_desk::{prelude::*, resources::log_config::LogConfig};
 use nightfall_engine::{EnginePlugin, prelude::ClientBridgePlugin};
@@ -64,6 +65,7 @@ impl PluginGroup for DeskPlugins {
             .maybe_desk_audio()
             .add(ProgrammerPlugin)
             .add(CuePlugin)
+            .add(BoardsPlugin)
             .maybe_fixture_library()
             .maybe_object_library()
     }

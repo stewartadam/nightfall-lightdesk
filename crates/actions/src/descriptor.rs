@@ -46,17 +46,20 @@ pub enum ActionSurface {
     Keyboard,
     /// A websocket client invoked the action directly.
     Websocket,
+    /// A board button invoked the action.
+    Board,
 }
 
 impl ActionSurface {
     /// Every surface, in declaration order; the default set an action may be invoked from.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Timeline,
         Self::Midi,
         Self::Osc,
         Self::CommandPalette,
         Self::Keyboard,
         Self::Websocket,
+        Self::Board,
     ];
 
     /// Returns the user-facing name of the surface.
@@ -68,6 +71,7 @@ impl ActionSurface {
             Self::CommandPalette => "Command palette",
             Self::Keyboard => "Keyboard",
             Self::Websocket => "Websocket",
+            Self::Board => "Board",
         }
     }
 }

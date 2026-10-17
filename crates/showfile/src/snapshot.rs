@@ -107,6 +107,9 @@ pub struct ShowfileSnapshot {
     pub timelines: Vec<Timeline>,
     /// Clip assignments referencing playable showfile objects.
     pub clips: Vec<Clip>,
+    /// Operator-arranged button boards.
+    #[serde(default)]
+    pub boards: Vec<Board>,
 }
 
 impl ShowfileSnapshot {

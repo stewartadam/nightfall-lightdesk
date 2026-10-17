@@ -100,6 +100,7 @@ export type LayerStackWsMessage = {
 /** Commands that can share the websocket message queue type at call sites. */
 export type AnyCommand =
   | types.BlueprintCommand
+  | types.BoardCommand
   | types.CueCommand
   | types.DeskCommand
   | types.EngineCommand
@@ -121,6 +122,7 @@ export type AnyCommand =
 
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
+  | types.BoardWsMessage
   | types.CueWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage

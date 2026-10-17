@@ -67,7 +67,10 @@ impl ObjectDefinitionSources<'_, '_> {
             ObjectType::Group => self.groups.get(uid).is_ok(),
             ObjectType::Fixture => self.fixtures.inner.get(uid).is_ok(),
             ObjectType::Timecode => self.timecodes.get(uid).is_ok(),
-            ObjectType::Master | ObjectType::Parameter | ObjectType::Blueprint => true,
+            ObjectType::Master
+            | ObjectType::Parameter
+            | ObjectType::Blueprint
+            | ObjectType::Board => true,
         }
     }
 
@@ -85,7 +88,10 @@ impl ObjectDefinitionSources<'_, '_> {
             ObjectType::Group => self.groups.from_id(id).is_ok(),
             ObjectType::Fixture => self.fixtures.inner.from_id(id).is_ok(),
             ObjectType::Timecode => self.timecodes.from_id(id).is_ok(),
-            ObjectType::Master | ObjectType::Parameter | ObjectType::Blueprint => true,
+            ObjectType::Master
+            | ObjectType::Parameter
+            | ObjectType::Blueprint
+            | ObjectType::Board => true,
         }
     }
 

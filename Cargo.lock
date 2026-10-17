@@ -247,6 +247,7 @@ dependencies = [
  "nightfall-actions",
  "nightfall-audio",
  "nightfall-beat-detection",
+ "nightfall-boards",
  "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
@@ -5206,6 +5207,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightfall-boards"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "nightfall",
+ "nightfall-actions",
+ "nightfall-clips",
+ "nightfall-cues",
+ "nightfall-desk",
+ "nightfall-dmx",
+ "nightfall-engine",
+ "nightfall-fixture-model",
+ "nightfall-fixtures",
+ "nightfall-instances",
+ "nightfall-programmer",
+ "nightfall-undo",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "smart-default",
+ "tracing",
+ "typeshare",
+ "uuid",
+]
+
+[[package]]
 name = "nightfall-browser-runtime"
 version = "0.1.0-alpha.3"
 dependencies = [
@@ -5222,6 +5250,7 @@ dependencies = [
  "moonshine-kind",
  "nightfall",
  "nightfall-actions",
+ "nightfall-boards",
  "nightfall-clips",
  "nightfall-compositor",
  "nightfall-cues",
