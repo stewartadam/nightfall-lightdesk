@@ -109,6 +109,11 @@ export class FilteredEmitterRow {
       transparent: true,
       depthWrite: false,
       blending: AdditiveBlending,
+      // The surface shares its faces with the opaque physical cells it covers; biasing it toward
+      // the camera keeps those coplanar faces from depth fighting into a stippled row.
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
     });
     const centerView = modelViewMatrix.mul(vec4(positionGeometry.x, 0, 0, 1));
     const worldDiameter = modelViewMatrix
