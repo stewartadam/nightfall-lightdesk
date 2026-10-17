@@ -100,3 +100,8 @@
 .nf-layout-slot[data-drop-side="after"]::after {
   right: -3px;
 }
+
+.nf-toolbar-button.nf-board-slot {
+  flex-shrink: 0;
+  max-width: 190px;
+}

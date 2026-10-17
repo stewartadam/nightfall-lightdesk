@@ -7,8 +7,10 @@
  */
 
 import type { DockviewGroupLocation, EdgeGroupPosition } from "dockview";
+import { activeBoardWorkspace } from "../state/layout-switcher";
 import {
   findPanelDefinitionByName,
+  newPanelInstanceId,
   type PanelDefinition,
 } from "./panel-definitions";
 
@@ -64,7 +66,7 @@ interface AddPanelParams {
   id: string;
   component: string;
   title: string;
-  params: Record<string, never>;
+  params: Record<string, unknown>;
   initialHeight?: number;
   initialWidth?: number;
   position?: PanelPosition;
@@ -346,7 +348,10 @@ function expandPanelEdgeGroup(
   api.getEdgeGroup?.(location.position)?.expand();
 }
 
-/** Opens a panel, focuses an existing singleton, or skips when Dockview is unavailable. */
+/**
+ * Opens a panel, focuses an existing singleton, or skips when Dockview is unavailable. A board
+ * filling the workspace is put away first so the panel is never hidden behind it.
+ */
 export function openOrFocusPanel(
   api: PanelOpenDockApi | undefined,
   panelId: string,
@@ -357,6 +362,7 @@ export function openOrFocusPanel(
   if (!api) {
     return "skipped";
   }
+  activeBoardWorkspace.set(null);
 
   const existingPanel = api.getPanel(panelId);
   if (existingPanel) {
@@ -393,4 +399,35 @@ export function openOrFocusPanelDefinition(
     definition.title,
     placement,
   );
+}
+
+/**
+ * Opens another instance of a multi-instance panel in a new group to the right of the active
+ * one, passing `params` to the new panel, and puts away a board filling the workspace. Returns
+ * the new panel's ID, or `undefined` when Dockview is unavailable or the panel is a singleton.
+ */
+export function openPanelInstance(
+  api: PanelOpenDockApi | undefined,
+  definition: PanelDefinition,
+  params: Record<string, unknown>,
+  placement: PanelOpenPlacement = "group-left",
+): string | undefined {
+  if (!api || definition.singleton !== "multi") {
+    return undefined;
+  }
+  activeBoardWorkspace.set(null);
+
+  const id = newPanelInstanceId(definition);
+  const activeGroup = activeGroupForApi(api);
+  const size = panelSizeForPlacement(api, placement, activeGroup);
+  const openedPanel = api.addPanel({
+    id,
+    component: definition.componentName,
+    title: definition.title,
+    params,
+    position: panelPositionForPlacement(api, placement, activeGroup),
+    ...size,
+  }) as FocusablePanel | undefined;
+  resizeCurrentGroupSplit(activeGroup, openedPanel?.group, placement, size);
+  return id;
 }

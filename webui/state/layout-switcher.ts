@@ -16,6 +16,12 @@ import { layoutStorageStore } from "../lib/layoutStorage";
 
 /** The named layout owning the mounted workspace. */
 export const activeLayoutId = atom<string | null>(null);
+/**
+ * Board picked from the layout switcher, shown filling the workspace in place of the active
+ * layout. It is per device and session, like the working panel arrangement, so it is never
+ * saved; picking a layout or opening a panel returns to the layout underneath.
+ */
+export const activeBoardWorkspace = atom<string | null>(null);
 /** Reports queued management edits so initial workspace adoption can wait for persistence. */
 export const layoutEditPending = atom(false);
 /** Layouts with pending edits, preventing conflicting actions on just those entries. */
