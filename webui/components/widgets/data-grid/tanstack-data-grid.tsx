@@ -58,7 +58,11 @@ import {
   sizeColumnsToContent,
 } from "./model/column-sizing";
 import { createDataGridRowMapping } from "./model/row-order";
-import { selectionFromState } from "./model/selection-model";
+import {
+  initialDataGridSelectionState,
+  selectionFromState,
+  selectionModeUsesGridSelection,
+} from "./model/selection-model";
 import { dataGridTableFeatures } from "./model/table-features";
 import type { DataGridProps, HeaderCellView, TableRow } from "./model/types";
 import { createDataGridPointerEventController } from "./pointer-event-controller";
@@ -268,9 +272,14 @@ export default function TanStackDataGrid(props: DataGridProps) {
     recordDataGridCount(metric, 1);
   };
 
-  /** Returns whether the leading row marker column should be visible. */
+  /**
+   * Returns whether the leading row marker column should be visible. Text and
+   * none selection modes hide it, since their checkboxes could select nothing.
+   */
   const markerEnabled = () =>
-    props.rowMarkers !== undefined && props.rowMarkers !== "none";
+    props.rowMarkers !== undefined &&
+    props.rowMarkers !== "none" &&
+    selectionModeUsesGridSelection(props.selectionMode);
 
   /** Supplies the latest provider while visible and the last visible provider while hidden. */
   const effectiveCellProvider = createMemo(() => {
@@ -1014,6 +1023,20 @@ export default function TanStackDataGrid(props: DataGridProps) {
     });
   });
 
+  /**
+   * Drops any held cell or row selection when the grid switches to text or no
+   * selection, and reports the empty selection so owners stop showing it.
+   */
+  createEffect(() => {
+    if (selectionModeUsesGridSelection(props.selectionMode)) return;
+    untrack(() => {
+      selectionController.dispose();
+      if (selectionState() === initialDataGridSelectionState) return;
+      selectionController.setSelectionState(initialDataGridSelectionState);
+      publishSelection(selectionFromState(initialDataGridSelectionState));
+    });
+  });
+
   /** Starts inline editing when an owner component requests a specific cell. */
   createEffect(() => {
     const request = props.editRequest;
@@ -1153,7 +1176,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
       data-selection-range={currentRangeData()}
       data-grid-model-column-count={leafColumns().length}
       data-grid-model-row-count={tableRows().length}
-      class={`h-full w-full select-none overflow-hidden bg-[#16161b] text-[13px] text-white outline-none ${props.class ?? ""}`}
+      class={`h-full w-full ${props.selectionMode === "text" ? "select-text" : "select-none"} overflow-hidden bg-[#16161b] text-[13px] text-white outline-none ${props.class ?? ""}`}
       onCopy={handleCopy}
       onPaste={handlePaste}
       style={{
@@ -1219,7 +1242,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
           </Show>
           <div
             data-grid-header-rows
-            class="sticky top-0 z-30"
+            class="sticky top-0 z-30 select-none"
             style={{ background: "var(--data-grid-header-bg, #212121)" }}
           >
             <For each={headerRows()}>

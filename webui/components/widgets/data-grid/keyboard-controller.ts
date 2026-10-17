@@ -43,6 +43,7 @@ import {
   deleteSelectionFromState,
   effectiveSelectedColumns,
   selectionFromState,
+  selectionModeUsesGridSelection,
 } from "./model/selection-model";
 import type { DataGridProps } from "./model/types";
 import type { createDataGridSelectionController } from "./selection-controller";
@@ -706,6 +707,8 @@ export function createDataGridKeyboardController(
   const handleDocumentGridKeyDown = (event: KeyboardEvent) => {
     const rootElement = options.rootElement();
     if (editingCell() || !rootElement) return;
+    // Text and none modes keep the browser's own keys, such as Ctrl+A and Ctrl+C.
+    if (!selectionModeUsesGridSelection(options.props.selectionMode)) return;
     const activeElement = document.activeElement;
     const eventTarget = event.target;
     if (

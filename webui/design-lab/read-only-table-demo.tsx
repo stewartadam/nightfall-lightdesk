@@ -13,11 +13,13 @@ import {
   For,
   onCleanup,
 } from "solid-js";
+import { NativeSelect } from "../components/ui/form-controls";
 import { Table, TableScroll } from "../components/ui/table";
 import { ToggleSwitch } from "../components/ui/toggle-switch";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
+  type DataGridSelectionMode,
 } from "../components/widgets/data-grid";
 import {
   CompactSelection,
@@ -175,6 +177,8 @@ export function ReadOnlyTableDemo(props: {
 }) {
   const [sources, setSources] = createSignal(sampleSources());
   const [live, setLive] = createSignal(true);
+  const [selectionMode, setSelectionMode] =
+    createSignal<DataGridSelectionMode>("cell");
   const [selection, setSelection] = createSignal<GridSelection>({
     rows: CompactSelection.empty(),
     columns: CompactSelection.empty(),
@@ -222,11 +226,26 @@ export function ReadOnlyTableDemo(props: {
           checked={live()}
           onChange={setLive}
         />
+        <NativeSelect
+          aria-label="Selection mode"
+          density="compact"
+          class="w-auto"
+          value={selectionMode()}
+          onChange={(event) =>
+            setSelectionMode(event.currentTarget.value as DataGridSelectionMode)
+          }
+        >
+          <option value="cell">Cell selection</option>
+          <option value="row">Row selection</option>
+          <option value="text">Text selection</option>
+          <option value="none">No selection</option>
+        </NativeSelect>
       </div>
       <div class="lab-data-grid">
         <DataGrid
           ariaLabel="Timecode source status"
           readOnly
+          selectionMode={selectionMode()}
           columns={columns}
           rows={sources().length}
           cellProvider={provider}

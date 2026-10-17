@@ -91,6 +91,72 @@ test("read-only grid sorts numeric values and preserves selected source identity
   });
 });
 
+/**
+ * Switches the read-only grid between selection modes: text mode drops the held
+ * cell selection and lets the browser select cell text with a drag, and none
+ * mode ignores clicks and drags entirely.
+ */
+test("read-only grid offers text and no selection modes", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.goto("/design-lab.html");
+  await page
+    .getByRole("navigation", { name: "Component index" })
+    .getByRole("button", { name: /Data grid/ })
+    .click();
+  const panel = page.getByRole("region", { name: "Data grid example" });
+  await panel.getByRole("tab", { name: "Read-only status" }).click();
+  await panel.getByRole("switch", { name: "Live updates" }).uncheck();
+  const grid = panel.getByRole("grid", { name: "Timecode source status" });
+  const mode = panel.getByRole("combobox", { name: "Selection mode" });
+  const mainShow = grid.getByRole("gridcell", {
+    name: "Main show",
+    exact: true,
+  });
+  const backupClock = grid.getByRole("gridcell", {
+    name: "Backup clock",
+    exact: true,
+  });
+  await mainShow.click();
+  await expect(grid).toHaveAttribute("data-selection-range", "1,0,1,1");
+
+  await mode.selectOption("text");
+  await expect(grid).toHaveAttribute("data-grid-selection-mode", "text");
+  await expect(grid).toHaveAttribute("data-selection-range", "");
+  const from = (await mainShow.boundingBox())!;
+  const to = (await backupClock.boundingBox())!;
+  await page.mouse.move(from.x + 14, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 60, to.y + to.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(grid).toHaveAttribute("data-selection-range", "");
+  const selectedText = await page.evaluate(
+    () => window.getSelection()?.toString() ?? "",
+  );
+  expect(selectedText).toContain("Backup");
+  await page.screenshot({
+    path: testInfo.outputPath("selection-mode-text.png"),
+    fullPage: true,
+  });
+
+  await mode.selectOption("none");
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await mainShow.click();
+  await page.mouse.move(from.x + 14, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 60, to.y + to.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(grid).toHaveAttribute("data-selection-range", "");
+  expect(
+    await page.evaluate(() => window.getSelection()?.toString() ?? ""),
+  ).toBe("");
+  await page.screenshot({
+    path: testInfo.outputPath("selection-mode-none.png"),
+    fullPage: true,
+  });
+});
+
 /** Verifies content tabs preserve cue edits while the monitoring variant uses the production read-only grid. */
 test("data table variants preserve edits and expose read-only status", async ({
   page,

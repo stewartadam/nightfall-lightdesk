@@ -32,8 +32,11 @@ export interface DataGridScrollRequest {
 
 export type DataGridEditCommitMode = "default" | "alternate";
 
-/** Whether a grid selects individual cells or whole rows. */
-export type DataGridSelectionMode = "cell" | "row";
+/**
+ * What a grid lets the user select: individual cells, whole rows, the browser's
+ * native text selection, or nothing.
+ */
+export type DataGridSelectionMode = "cell" | "row" | "text" | "none";
 
 /** Controls what an inline edit commit does besides writing the value. */
 export interface DataGridEditCommitOptions {
@@ -111,7 +114,10 @@ interface DataGridBaseProps {
    * Chooses what clicks, drags and arrow keys select. `"cell"` (the default)
    * selects individual cells and rectangular ranges; `"row"` always selects
    * whole rows, for lists where a row is the record and its cells are not
-   * individually meaningful.
+   * individually meaningful. `"text"` turns grid selection off and lets the
+   * browser select and copy cell text like a document table; `"none"` turns
+   * all selection off for purely presentational tables. Both hide row markers
+   * and are meant for read-only grids.
    */
   selectionMode?: DataGridSelectionMode;
   freezeColumns?: number;
