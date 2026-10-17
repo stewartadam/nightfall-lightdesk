@@ -16,6 +16,7 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ObjectSelector from "../../../components/widgets/object-selector";
@@ -253,9 +254,11 @@ export default function ClipProperties(props: ClipPropertiesProps) {
     <Show
       when={clip()}
       fallback={
-        <div class="p-4 text-sm text-neutral-500">
-          Select one clip to edit its source assignment and options.
-        </div>
+        <EmptyState
+          variant="inline"
+          class="p-4"
+          title="Select one clip to edit its source assignment and options."
+        />
       }
     >
       {(currentClip) => (

@@ -19,6 +19,7 @@ import {
   Switch,
 } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
+import { EmptyState } from "../../../components/ui/empty-state";
 import type {
   GridColumn,
   GridSelection,
@@ -513,23 +514,15 @@ export function SequenceEditorController(props: {
   return (
     <Switch>
       <Match when={ctx.loadingState().status === "loading"}>
-        <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-          Loading sequence...
-        </div>
+        <EmptyState loading title="Loading sequence..." />
       </Match>
       <Match when={ctx.loadingState().status === "not_found"}>
-        <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-          Sequence not found
-        </div>
+        <EmptyState title="Sequence not found" />
       </Match>
       <Match when={ctx.loadingState().status === "loaded"}>
         <Show
           when={rows().length > 0}
-          fallback={
-            <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-              No cues in sequence
-            </div>
-          }
+          fallback={<EmptyState title="No cues in sequence" />}
         >
           <div ref={rootRef} class="flex h-full min-h-0 flex-col">
             <SequenceEditorToolbar

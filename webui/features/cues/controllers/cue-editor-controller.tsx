@@ -17,6 +17,7 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import type {
   CellClickedEventArgs,
   GridSelection,
@@ -533,22 +534,16 @@ export function CueEditorController(props: {
     >
       <Switch>
         <Match when={ctx.loadingState().status === "loading"}>
-          <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-            Loading cue data...
-          </div>
+          <EmptyState loading title="Loading cue data..." />
         </Match>
         <Match when={ctx.loadingState().status === "not_found"}>
-          <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-            Cue {ctx.cueUid} not found
-          </div>
+          <EmptyState title={`Cue ${ctx.cueUid} not found`} />
         </Match>
         <Match when={ctx.loadingState().status === "loaded"}>
           <Show
             when={flatRows().length > 0 || canShowEmptyCueToolbar()}
             fallback={
-              <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-                No fixture values in cue p{ctx.partId}
-              </div>
+              <EmptyState title={`No fixture values in cue p${ctx.partId}`} />
             }
           >
             <div class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -579,9 +574,9 @@ export function CueEditorController(props: {
               <Show
                 when={flatRows().length > 0}
                 fallback={
-                  <div class="flex min-h-0 flex-1 items-center justify-center text-gray-500 dark:text-gray-400">
-                    No fixture values in cue p{ctx.partId}
-                  </div>
+                  <EmptyState
+                    title={`No fixture values in cue p${ctx.partId}`}
+                  />
                 }
               >
                 <CueEditorGrid

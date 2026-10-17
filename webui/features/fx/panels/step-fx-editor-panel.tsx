@@ -16,6 +16,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { registerComponentFocus } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
@@ -148,14 +149,7 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
       data-step-fx-editor
       onKeyDown={editor.edit.handleEditorClipboardKeyDown}
     >
-      <Show
-        when={draft()}
-        fallback={
-          <div class="flex h-full items-center justify-center text-neutral-500">
-            Step FX not found
-          </div>
-        }
-      >
+      <Show when={draft()} fallback={<EmptyState title="Step FX not found" />}>
         {(current) => (
           <>
             <StepFxEditorToolbar editor={editor} stepFx={current()} />

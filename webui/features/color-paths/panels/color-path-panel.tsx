@@ -13,6 +13,7 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { RangeSlider } from "../../../components/ui/range-slider";
@@ -298,14 +299,7 @@ export default function ColorPathPanel(props: BasePanelComponentProps) {
             }}
           </For>
         </div>
-        <Show
-          when={draft()}
-          fallback={
-            <div class="flex min-h-0 items-center justify-center text-neutral-500 text-sm">
-              No color paths
-            </div>
-          }
-        >
+        <Show when={draft()} fallback={<EmptyState title="No color paths" />}>
           {(currentDraft) => (
             <div class="@container min-h-0 overflow-auto">
               <div class="grid grid-cols-1 gap-5 p-4 @xl:grid-cols-2">

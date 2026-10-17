@@ -7,6 +7,7 @@
  */
 
 import { type JSX, splitProps } from "solid-js";
+import { EmptyState } from "../empty-state";
 import { ScrollArea } from "../scroll-area";
 import "./table.css";
 
@@ -61,7 +62,14 @@ export function TableEmptyRow(props: {
 }) {
   return (
     <tr data-table-empty="true">
-      <td colSpan={props.colSpan}>{props.children}</td>
+      <td colSpan={props.colSpan}>
+        <EmptyState
+          variant="inline"
+          density="compact"
+          align="center"
+          title={props.children}
+        />
+      </td>
     </tr>
   );
 }

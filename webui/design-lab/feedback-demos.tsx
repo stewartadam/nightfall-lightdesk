@@ -6,8 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
+import { SparkleIcon } from "@squidlab/phosphor-solid/sparkle";
 import { createSignal, ErrorBoundary, For, Show } from "solid-js";
 import { Alert } from "../components/ui/alert";
+import { EmptyState } from "../components/ui/empty-state";
 import { ErrorFallback } from "../components/ui/error-fallback";
 import { Sparkline } from "../components/ui/sparkline";
 import Tooltip from "../components/ui/tooltip";
@@ -236,6 +239,74 @@ export function AlertDemo() {
         <Alert variant="tip" role="alert" flash={saves} flashMs={1500}>
           Saved. This confirmation shows for 1.5 s after each save.
         </Alert>
+      </div>
+    </section>
+  );
+}
+
+/** Shows each empty-state variant with titles, guidance, icons, an action, and the loading state. */
+export function EmptyStateDemo() {
+  const [loading, setLoading] = createSignal(true);
+  return (
+    <section class="properties lab-panel" aria-label="Empty state examples">
+      <div class="eyebrow">EMPTY STATES</div>
+      <h2>Nothing here, yet.</h2>
+      <p class="field-help">
+        Panel empty states fill and center in their panel. Inline ones sit in
+        lists and inspectors; dashed ones mark placeholder areas.
+      </p>
+      <div class="eyebrow">PANEL</div>
+      <div class="widget-empty-state-frame">
+        <EmptyState
+          icon={SparkleIcon}
+          title="No FX defined"
+          description="Use the add button in the toolbar to create your first effect"
+          action={
+            <Button size="compact" variant="primary">
+              Create FX
+            </Button>
+          }
+        />
+      </div>
+      <div class="eyebrow">INLINE</div>
+      <div class="widget-alert-stack">
+        <EmptyState
+          variant="inline"
+          title="Select one clip to edit its source assignment and options."
+        />
+        <EmptyState
+          variant="inline"
+          icon={MagnifyingGlassIcon}
+          title="No matching fixtures"
+        />
+      </div>
+      <div class="eyebrow">DASHED</div>
+      <div class="widget-alert-stack">
+        <EmptyState
+          variant="dashed"
+          title="No active spatial selection."
+          description="Select fixtures in the programmer to inspect their resolved grid positions."
+        />
+        <EmptyState
+          variant="dashed"
+          density="compact"
+          title="No column filters"
+        />
+      </div>
+      <div class="eyebrow">LOADING</div>
+      <div class="widget-alert-actions">
+        <Button onClick={() => setLoading(!loading())}>
+          {loading() ? "Finish loading" : "Reload"}
+        </Button>
+      </div>
+      <div class="widget-alert-stack">
+        <Show
+          when={loading()}
+          fallback={<EmptyState variant="dashed" title="No showfiles found." />}
+        >
+          <EmptyState variant="dashed" loading title="Loading showfiles..." />
+        </Show>
+        <EmptyState variant="inline" loading />
       </div>
     </section>
   );

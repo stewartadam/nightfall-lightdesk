@@ -19,6 +19,7 @@ import {
   Show,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { EmptyState } from "../../../components/ui/empty-state";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -126,14 +127,7 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
 
   return (
     <div class="flex h-full min-h-0 flex-col">
-      <Show
-        when={uid()}
-        fallback={
-          <div class="flex h-full items-center justify-center text-neutral-500">
-            No FX selected
-          </div>
-        }
-      >
+      <Show when={uid()} fallback={<EmptyState title="No FX selected" />}>
         <div class="flex h-full min-h-0 flex-col">
           <PanelToolbar
             left={

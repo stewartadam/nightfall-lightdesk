@@ -11,6 +11,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -358,21 +359,17 @@ export function BlueprintsView(props: BlueprintsViewProps) {
           <Show
             when={controller.displayRows().length > 0}
             fallback={
-              <div class="py-8 text-center text-neutral-500">
-                <Show
-                  when={controller.allDisplayRows().length > 0}
-                  fallback={
-                    <>
-                      <p>No blueprints defined</p>
-                      <p class="mt-2 text-sm">
-                        Use the add button in the toolbar to create a blueprint
-                      </p>
-                    </>
-                  }
-                >
-                  <p>No matching blueprints</p>
-                </Show>
-              </div>
+              <Show
+                when={controller.allDisplayRows().length > 0}
+                fallback={
+                  <EmptyState
+                    title="No blueprints defined"
+                    description="Use the add button in the toolbar to create a blueprint"
+                  />
+                }
+              >
+                <EmptyState title="No matching blueprints" />
+              </Show>
             }
           >
             <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">

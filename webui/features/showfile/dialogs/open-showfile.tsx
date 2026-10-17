@@ -23,10 +23,10 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-
 import { Dynamic } from "solid-js/web";
 import { Alert } from "../../../components/ui/alert";
 import { Dialog, DialogBody } from "../../../components/ui/dialog";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { SearchPickerOption } from "../../../components/ui/search-picker";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -300,9 +300,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
       >
         <DialogBody class="max-h-[60vh] overflow-y-auto">
           <Show when={isLoading()}>
-            <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
-              Loading showfiles...
-            </div>
+            <EmptyState variant="dashed" loading title="Loading showfiles..." />
           </Show>
 
           <Show when={!isLoading() && error()}>
@@ -321,9 +319,7 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
           </Show>
 
           <Show when={!isLoading() && !error() && showfiles().length === 0}>
-            <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
-              No showfiles found.
-            </div>
+            <EmptyState variant="dashed" title="No showfiles found." />
           </Show>
 
           <Show when={!isLoading() && !error() && showfiles().length > 0}>

@@ -20,6 +20,7 @@ import {
   untrack,
 } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { calculateCueTransitionDurations } from "../../../lib/cue-timing-values";
@@ -569,10 +570,15 @@ export default function CueProperties() {
   return (
     <Switch>
       <Match when={ctx.loadingState().status === "loading"}>
-        <div class="p-4 text-neutral-400">Loading cue properties...</div>
+        <EmptyState
+          variant="inline"
+          class="p-4"
+          loading
+          title="Loading cue properties..."
+        />
       </Match>
       <Match when={ctx.loadingState().status === "not_found"}>
-        <div class="p-4 text-neutral-400">Cue not found</div>
+        <EmptyState variant="inline" class="p-4" title="Cue not found" />
       </Match>
       <Match when={ctx.loadingState().status === "loaded"}>
         {(() => {

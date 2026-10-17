@@ -107,3 +107,9 @@
 .widget-fallback-frame > .widget-fallback-sample {
   margin: auto;
 }
+.widget-empty-state-frame {
+  height: 220px;
+  margin-block: 12px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
