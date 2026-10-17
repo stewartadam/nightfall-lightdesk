@@ -82,6 +82,9 @@ jobs:
         run: pnpm test
 
       - name: Build and package the release artifact
+        env:
+          # Stamp PR builds with the PR head, not GitHub's test merge commit.
+          NIGHTFALL_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: pnpm run demo:bundle
 
       - name: Run the Chromium product flow

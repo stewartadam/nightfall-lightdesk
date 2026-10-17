@@ -74,6 +74,9 @@ jobs:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
       - name: Build shared desktop frontend
+        env:
+          # Stamp PR builds with the PR head, not GitHub's test merge commit.
+          NIGHTFALL_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           pnpm run build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
