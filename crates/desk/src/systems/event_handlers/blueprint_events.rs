@@ -113,7 +113,7 @@ pub fn crud_events(
         {
             Err(error)
         } else {
-            apply_object_crud_command::<Blueprint>(&event.command, &mut blueprint_data_provider)
+            apply_object_crud_command::<Blueprint, _>(&event.command, &mut blueprint_data_provider)
                 .expect("every BlueprintCommand variant is a CRUD command")
         };
         let response = match result {

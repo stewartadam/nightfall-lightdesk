@@ -134,7 +134,7 @@ pub fn crud_events(
             validate_group_delete(&command, &group_storage.p1(), &reference_index)
         };
         let result = guard.and_then(|()| {
-            apply_object_crud_command::<Group>(&command, &mut group_storage.p1())
+            apply_object_crud_command::<Group, _>(&command, &mut group_storage.p1())
                 .expect("every GroupCommand variant is a CRUD command")
         });
         let response = match result {
