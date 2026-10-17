@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { HeldButtonEffect } from "../../../types";
+import type { HeldButtonEffect } from "../types";
 
 /** Short tag and explanation shown wherever a held slot button changes a playback. */
 export interface HeldButtonTag {
@@ -14,8 +14,8 @@ export interface HeldButtonTag {
   label: string;
   /** Sentence naming the slot whose held button causes the change. */
   title: string;
-  /** Whether the playback is taken out of the output entirely. */
-  takenOut: boolean;
+  /** Whether the held button plays this playback, rather than taking it out. */
+  active: boolean;
 }
 
 /**
@@ -28,15 +28,21 @@ export function heldButtonTag(
   switch (effect?.type) {
     case "Flashed":
       return {
-        label: "Flashed",
-        title: `Played at full by the button held on slot ${effect.data.control_index}`,
-        takenOut: false,
+        label: "Flash",
+        title: `Played at full by the Flash held on slot ${effect.data.control_index}`,
+        active: true,
+      };
+    case "Swopping":
+      return {
+        label: "Swop",
+        title: `Played on its own by the Swop held on slot ${effect.data.control_index}`,
+        active: true,
       };
     case "SwoppedOut":
       return {
         label: "Swopped",
         title: `Taken out by the Swop held on slot ${effect.data.control_index}`,
-        takenOut: true,
+        active: false,
       };
     default:
       return undefined;

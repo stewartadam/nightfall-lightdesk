@@ -74,9 +74,6 @@ const log = getLogger(import.meta.url);
 export function Control(props: ControlProps): JSX.Element {
   const [isDragOver, setIsDragOver] = createSignal(false);
 
-  /** Whether a Swop held on another slot is taking this slot's playback out of the output. */
-  const isSwoppedOut = () => props.heldButton?.type === "SwoppedOut";
-
   /** Returns whether the backend and control positions differ visibly. */
   const showDisparateValues = () =>
     shouldShowDisparateControlValues(props.hardwareValue, props.consoleValue);
@@ -236,11 +233,7 @@ export function Control(props: ControlProps): JSX.Element {
       data-control-index={props.index}
       data-control-held-button={props.heldButton?.type}
       class={`control h-full min-h-0 flex flex-col items-center gap-2 p-2 rounded-lg transition-colors ${
-        isDragOver()
-          ? "bg-blue-900/50 ring-2 ring-blue-500"
-          : isSwoppedOut()
-            ? "bg-neutral-800 ring-1 ring-amber-500/60"
-            : "bg-neutral-800"
+        isDragOver() ? "bg-blue-900/50 ring-2 ring-blue-500" : "bg-neutral-800"
       }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -292,7 +285,7 @@ export function Control(props: ControlProps): JSX.Element {
         class="w-full shrink-0 text-center"
       >
         <Show
-          when={!isSwoppedOut()}
+          when={!props.heldButton}
           fallback={<HeldButtonBadge effect={props.heldButton} />}
         >
           <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>

@@ -25,7 +25,7 @@ Each control's button has a mode, chosen from the arrow next to it and saved wit
 
 Letting go of Flash or Swop returns the clip to its fader level, and stops it again if the flash started it; a flashed master goes back to its earlier level unless it was moved meanwhile. The button lights up while held. When the button is held from several places, such as the screen and a MIDI pad, the flash lasts until the last one lets go, and a device that disconnects lets go of anything it held. Swop takes out everything other playbacks contribute, colour and movement included, so the swopped clip shows on its own; the Programmer and effect editor previews stay live.
 
-While any Flash or Swop is held, the status bar shows which slots hold it, such as **Swop held: 3**. Every playback a Swop takes out is tagged **Swopped** on its slot, in the Status Display and in the Layers panel, so a button stuck down by a controller that never let go cannot silently blank the stage. Click the status bar indicator, or run **Release held buttons** from the command palette, to let go of every held Flash and Swop at once.
+While a Flash or Swop is held, the clip it plays is tagged **Flash** or **Swop** in yellow, and every playback a Swop takes out is tagged **Swopped** in grey. The tags show on the slots, as the state in the Status Display and in the Layers panel, so a button stuck down by a controller that never let go cannot silently blank the stage. Run **Release held buttons** from the command palette to let go of every held Flash and Swop at once.
 
 A MIDI or OSC button mapped to the control's button follows the same mode, so changing the mode changes what the controller does too. To keep a controller button on Go whatever the mode, map it to **Go control** instead.
 

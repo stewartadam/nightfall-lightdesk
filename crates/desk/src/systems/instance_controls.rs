@@ -57,7 +57,7 @@ fn scales_with_playback(metadata: &ParameterMetadata) -> bool {
 /// while a held Flash or Swop plays it.
 fn effective_intensity_scale(intensity_scale: f32, effect: Option<HeldButtonEffect>) -> f32 {
     match effect {
-        Some(HeldButtonEffect::Flashed { .. }) => 1.0,
+        Some(HeldButtonEffect::Flashed { .. } | HeldButtonEffect::Swopping { .. }) => 1.0,
         Some(HeldButtonEffect::SwoppedOut { .. }) => 0.0,
         None => intensity_scale.clamp(0.0, 1.0),
     }
@@ -136,7 +136,7 @@ mod tests {
         }));
     }
 
-    /// Verifies a flashed playback renders at full whatever its fader, a playback a Swop takes
+    /// Verifies a flashed or swopping playback renders at full whatever its fader, a playback a Swop takes
     /// out renders at zero, and others keep their clamped fader scale.
     #[test]
     fn held_buttons_override_the_fader_scale() {
@@ -145,6 +145,10 @@ mod tests {
         assert_eq!(effective_intensity_scale(0.3, None), 0.3);
         assert_eq!(effective_intensity_scale(1.4, None), 1.0);
         assert_eq!(effective_intensity_scale(0.0, flashed), 1.0);
+        assert_eq!(
+            effective_intensity_scale(0.0, Some(HeldButtonEffect::Swopping { control_index: 1 })),
+            1.0
+        );
         assert_eq!(effective_intensity_scale(0.8, swopped_out), 0.0);
     }
 

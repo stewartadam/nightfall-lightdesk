@@ -29,7 +29,6 @@ import {
   TimecodeRate,
   type TimecodeState,
 } from "../../../types";
-import { HeldButtonBadge } from "../../clips";
 import {
   compactId,
   formatInstanceNext,
@@ -40,6 +39,7 @@ import {
   instanceKindLabel,
   instanceStateClass,
   instanceStateLabel,
+  instanceStateTitle,
   type StatusInstanceInfo,
 } from "../model/instance-status-model";
 
@@ -272,13 +272,16 @@ export function ActiveInstancesSection(props: ActiveInstancesSectionProps) {
                           </div>
                         </td>
                         <td class="truncate">
-                          <span class="inline-flex items-center gap-1">
-                            <span
-                              class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${instanceStateClass(instance())}`}
-                            >
-                              {instanceStateLabel(instance())}
-                            </span>
-                            <HeldButtonBadge effect={instance().held_button} />
+                          <span
+                            class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${instanceStateClass(instance())}`}
+                            data-held-button={
+                              instanceStateTitle(instance())
+                                ? instance().held_button?.type
+                                : undefined
+                            }
+                            title={instanceStateTitle(instance())}
+                          >
+                            {instanceStateLabel(instance())}
                           </span>
                         </td>
                         <td class="truncate">
