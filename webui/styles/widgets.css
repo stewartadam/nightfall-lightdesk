@@ -476,56 +476,6 @@ a:focus-visible {
   background: var(--panel);
   border-color: #ffffff0c;
 }
-.nf-select-toggle {
-  border: 1px solid var(--line);
-  background: var(--raised);
-  color: #ebeeed;
-  border-radius: var(--nf-corner-radius, 5px);
-  font-size: 12px;
-  min-height: 32px;
-}
-.nf-select-toggle:hover {
-  border-color: #697773;
-  background: #2b3232;
-}
-.nf-select-toggle[aria-expanded="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.nf-select-menu {
-  background: #202526;
-  border: 1px solid #52615c;
-  border-radius: var(--nf-corner-radius, 7px);
-  padding: 5px;
-  box-shadow: 0 12px 32px #0008;
-}
-.nf-select-option {
-  padding: 8px 10px;
-  font-size: 12px;
-  border-radius: var(--nf-corner-radius, 4px);
-  color: #ebeeed;
-}
-.nf-select-option:is(:hover, :focus, .selected) {
-  background: var(--accent-soft);
-}
-.nf-select-option.selected {
-  box-shadow: inset 2px 0 var(--accent);
-}
-.nf-select-option svg {
-  color: var(--accent);
-}
-.nf-select-search {
-  background: #141818;
-  color: #ebeeed;
-  border: 1px solid #52615c;
-  border-radius: var(--nf-corner-radius, 4px);
-  padding: 7px;
-  width: 100%;
-  font-size: 12px;
-}
-.nf-select-search-wrapper {
-  background: #202526;
-}
 /* Momentary press feedback is independent of persistent toggle/selection state. */
 :is(.toast-action, .nightfall-modal-surface button:not(.nf-button)) {
   transition:
@@ -555,62 +505,4 @@ a:focus-visible {
     ):enabled:active {
     transform: none;
   }
-}
-
-[data-dialog-kind="command-palette"] {
-  padding: min(80px, 8vh) 12px 12px;
-}
-[data-dialog-kind="command-palette"] > div {
-  background: var(--panel);
-  border-color: var(--line);
-  color: inherit;
-  max-height: 84vh;
-  display: flex;
-  flex-direction: column;
-}
-[data-dialog-kind="command-palette"] > div > div:last-child {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-color: var(--line);
-}
-[data-command-scroll-area] {
-  min-height: 0;
-}
-[data-dialog-kind="command-palette"] [data-scroll-overflow] {
-  background: var(--panel);
-  color: var(--muted);
-}
-[data-dialog-kind="command-palette"] :is(input, .font-medium) {
-  color: inherit;
-}
-[data-dialog-kind="command-palette"] input {
-  padding-right: 12px;
-  font-size: 15px;
-}
-[data-command-shortcut-hint] {
-  display: none;
-}
-[data-dialog-kind="command-palette"] .text-sm {
-  color: var(--muted);
-}
-[data-command-category-title] {
-  background: var(--raised);
-  color: var(--muted);
-}
-[data-command-id] {
-  gap: 8px;
-  flex-wrap: wrap;
-}
-[data-command-id]:hover,
-[data-command-id][data-selected="true"] {
-  background: var(--accent-soft);
-}
-[data-command-id][data-selected="true"] {
-  border-left-color: var(--accent);
-}
-[data-dialog-kind="command-palette"] kbd {
-  background: var(--raised);
-  color: var(--muted);
-  border-color: var(--line);
 }

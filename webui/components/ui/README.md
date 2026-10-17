@@ -14,6 +14,7 @@ Reusable components own their visual rules alongside their implementation. Dialo
 - Use the context-menu provider and widget for menus anchored to a pointer, including nested flyouts.
 - Both wrappers compose the menu primitives and retain responsibility for interaction and positioning. Add visual states to the primitives instead of styling individual menu callers.
 - The design lab's Menus panel demonstrates both wrappers, including checked, disabled, and destructive entries. Its button popover also exercises arbitrary interactive dropdown content.
+- `PrelineAdvancedSelect` renders its list through Preline, so its config applies the `nf-menu` and `nf-menu-item` classes (with the checkmark in the icon slot) instead of JSX. Its toggle takes the native select look from `styles/forms.css`.
 
 The accent picker and buttons in `visual-language` follow the same shared-component pattern. Extend these production components when introducing another application or lab use case.
 
@@ -100,7 +101,7 @@ Settings, the About dialog's update choice and the design lab's switch examples 
 
 ## Search pickers
 
-Use `SearchPickerSurface`, `SearchPickerInput`, and `SearchPickerOption` from `search-picker` for command and destination lists. The surface composes the shared dialog frame, the search field composes `InputGroup` and `Input`, and rich option rows share accent, hover, focus, and disabled states. Supply `selected` on the active option and native `disabled` for unavailable actions. Callers own filtering, keyboard navigation, result semantics, positioning, and dismissal. Put removable filter tokens in the input's `leading` slot and optional back actions or hints in its `trailing` slot. Keep result viewports shrinkable (`min-height: 0`) and constrain the surface to available viewport space.
+Use `SearchPickerSurface`, `SearchPickerInput`, and `SearchPickerOption` from `search-picker` for command and destination lists. The surface composes the shared dialog frame, the search field composes `InputGroup` and `Input`, and rich option rows share accent, hover, focus, and disabled states. Supply `selected` on the active option and native `disabled` for unavailable actions. Callers own filtering, keyboard navigation, result semantics, positioning, and dismissal. Put removable filter tokens in the input's `leading` slot and optional back actions or hints in its `trailing` slot. Keep result viewports shrinkable (`min-height: 0`) and constrain the surface to available viewport space. Put results in a `ScrollArea` for the shared overflow hints, and label groups or breadcrumbs with `MenuHeading`.
 
 The command palette in the app and design lab, showfile object search, timeline action insertion, and timeline jump picker use these components.
 

@@ -34,6 +34,10 @@
   text-align: left;
   cursor: pointer;
 }
+/* Script-rendered lists such as Preline's select filter entries with the `hidden` utility. */
+.nf-menu-item:is([hidden], .hidden) {
+  display: none;
+}
 .nf-menu-item:is(:hover, :focus-visible) {
   background: var(--accent-soft);
   outline: none;
