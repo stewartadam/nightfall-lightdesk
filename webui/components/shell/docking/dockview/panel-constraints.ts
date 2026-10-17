@@ -8,7 +8,7 @@
 
 import type { DockviewApi, DockviewGroupPanel } from "dockview";
 import { findPanelDefinitionByName } from "../../../../lib/panel-definitions";
-import { setEdgeGroupMinimum } from "./edge-group-constraints";
+import { bindGridMinimum, setEdgeGroupMinimum } from "./edge-group-constraints";
 
 /** Enforces descriptor-owned minimums across group membership and layout restoration. */
 export function bindPanelConstraints(api: DockviewApi, gap: number) {
@@ -23,6 +23,7 @@ export function bindPanelConstraints(api: DockviewApi, gap: number) {
   >();
   let frame: number | undefined;
   let disposed = false;
+  const gridMinimum = bindGridMinimum(api);
 
   /** Defers sizing until Dockview finishes its current layout or membership mutation. */
   function schedule() {
@@ -30,7 +31,7 @@ export function bindPanelConstraints(api: DockviewApi, gap: number) {
     frame = requestAnimationFrame(reconcile);
   }
 
-  /** Applies the largest member minimum to grid groups and edge splitviews. */
+  /** Applies the largest member minimum to grid groups and edge splitviews, then re-clamps the shell around the grid's new combined minimum. */
   function reconcile() {
     frame = undefined;
     const groups = new Set(api.groups);
@@ -96,6 +97,7 @@ export function bindPanelConstraints(api: DockviewApi, gap: number) {
           group.api.setSize({ width, height });
       }
     }
+    gridMinimum.reclamp();
   }
 
   const subscriptions = [
@@ -111,6 +113,7 @@ export function bindPanelConstraints(api: DockviewApi, gap: number) {
     /** Releases group listeners and pending work before Dockview is disposed. */
     dispose() {
       disposed = true;
+      gridMinimum.dispose();
       if (frame !== undefined) cancelAnimationFrame(frame);
       for (const subscription of subscriptions) subscription.dispose();
       for (const state of tracked.values()) {
