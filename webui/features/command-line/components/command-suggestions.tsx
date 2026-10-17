@@ -8,6 +8,8 @@
 
 import { type Accessor, For, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
+import { MenuHeading } from "../../../components/ui/menu";
+import { ScrollArea } from "../../../components/ui/scroll-area";
 import {
   SearchPickerOption,
   SearchPickerSurface,
@@ -48,112 +50,104 @@ export const CommandSuggestions = (props: CommandSuggestionsProps) => {
         data-command-autocomplete="suggestions"
         role="listbox"
         class="absolute z-20 left-0 right-0 mt-1"
-        style={{ "max-height": "192px", "overflow-y": "auto" }}
+        style={{ "max-height": "192px" }}
       >
         <Show when={!props.breadcrumbLabel() && props.intentSublistLabel()}>
-          <div
-            data-command-autocomplete="intent-sublist-label"
-            class={
-              props.variant === "panel"
-                ? "border-b border-neutral-700/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400"
-                : "border-b border-gray-200 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:border-slate-700 dark:text-slate-400"
-            }
-          >
+          <MenuHeading data-command-autocomplete="intent-sublist-label">
             {props.intentSublistLabel()}
-          </div>
+          </MenuHeading>
         </Show>
         <Show when={props.breadcrumbLabel()}>
-          <div
-            data-command-autocomplete="breadcrumb"
-            class={
-              props.variant === "panel"
-                ? "border-b border-neutral-700/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400"
-                : "border-b border-gray-200 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:border-slate-700 dark:text-slate-400"
-            }
-          >
+          <MenuHeading data-command-autocomplete="breadcrumb">
             {props.breadcrumbLabel()}
-          </div>
+          </MenuHeading>
         </Show>
-        <For each={props.suggestions()}>
-          {(suggestion, index) => (
-            <SearchPickerOption
-              type="button"
-              tabIndex={-1}
-              data-command-autocomplete="suggestion-row"
-              role="option"
-              aria-selected={
-                props.selectedIndex() === index() ? "true" : "false"
-              }
-              data-suggestion-kind={suggestion.kind}
-              data-intent-id={
-                isIntentSuggestion(suggestion) ? suggestion.intentId : undefined
-              }
-              data-insert-text={
-                isTokenSuggestion(suggestion)
-                  ? suggestion.insertText
-                  : undefined
-              }
-              density="compact"
-              selected={props.selectedIndex() === index()}
-              style={{ "font-family": "var(--font-mono)" }}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                if (isIntentSuggestion(suggestion)) {
-                  props.onOpenIntent(suggestion, index());
-                  return;
+        <ScrollArea class="min-h-0">
+          <For each={props.suggestions()}>
+            {(suggestion, index) => (
+              <SearchPickerOption
+                type="button"
+                tabIndex={-1}
+                data-command-autocomplete="suggestion-row"
+                role="option"
+                aria-selected={
+                  props.selectedIndex() === index() ? "true" : "false"
                 }
-                if (suggestion.completable) props.onApplyToken(suggestion);
-              }}
-              onMouseEnter={() => props.onHover(index())}
-            >
-              <span class="flex w-full items-center justify-between gap-2">
-                <span class="flex min-w-0 items-center gap-2">
-                  <span class="truncate">{suggestion.label}</span>
+                data-suggestion-kind={suggestion.kind}
+                data-intent-id={
+                  isIntentSuggestion(suggestion)
+                    ? suggestion.intentId
+                    : undefined
+                }
+                data-insert-text={
+                  isTokenSuggestion(suggestion)
+                    ? suggestion.insertText
+                    : undefined
+                }
+                density="compact"
+                selected={props.selectedIndex() === index()}
+                style={{ "font-family": "var(--font-mono)" }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  if (isIntentSuggestion(suggestion)) {
+                    props.onOpenIntent(suggestion, index());
+                    return;
+                  }
+                  if (suggestion.completable) props.onApplyToken(suggestion);
+                }}
+                onMouseEnter={() => props.onHover(index())}
+              >
+                <span class="flex w-full items-center justify-between gap-2">
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span class="truncate">{suggestion.label}</span>
+                    <Show
+                      when={
+                        isTokenSuggestion(suggestion) &&
+                        suggestion.label.toLowerCase() !==
+                          suggestion.insertText.toLowerCase()
+                      }
+                    >
+                      <Badge>
+                        {isTokenSuggestion(suggestion)
+                          ? suggestion.insertText
+                          : ""}
+                      </Badge>
+                    </Show>
+                    <Show when={isIntentSuggestion(suggestion)}>
+                      <span class="inline-flex items-center gap-1 text-[10px] text-neutral-400 dark:text-slate-400">
+                        <For
+                          each={
+                            isIntentSuggestion(suggestion)
+                              ? suggestion.hints
+                              : []
+                          }
+                        >
+                          {(hint) => <Badge>{hint}</Badge>}
+                        </For>
+                        <Show
+                          when={
+                            isIntentSuggestion(suggestion) &&
+                            suggestion.hintOverflow
+                          }
+                        >
+                          <span>…</span>
+                        </Show>
+                      </span>
+                    </Show>
+                  </span>
                   <Show
                     when={
-                      isTokenSuggestion(suggestion) &&
-                      suggestion.label.toLowerCase() !==
-                        suggestion.insertText.toLowerCase()
+                      props.selectedIndex() === index() &&
+                      isTabActionable(suggestion)
                     }
                   >
-                    <Badge>
-                      {isTokenSuggestion(suggestion)
-                        ? suggestion.insertText
-                        : ""}
-                    </Badge>
-                  </Show>
-                  <Show when={isIntentSuggestion(suggestion)}>
-                    <span class="inline-flex items-center gap-1 text-[10px] text-neutral-400 dark:text-slate-400">
-                      <For
-                        each={
-                          isIntentSuggestion(suggestion) ? suggestion.hints : []
-                        }
-                      >
-                        {(hint) => <Badge>{hint}</Badge>}
-                      </For>
-                      <Show
-                        when={
-                          isIntentSuggestion(suggestion) &&
-                          suggestion.hintOverflow
-                        }
-                      >
-                        <span>…</span>
-                      </Show>
-                    </span>
+                    <Badge uppercase>Tab</Badge>
                   </Show>
                 </span>
-                <Show
-                  when={
-                    props.selectedIndex() === index() &&
-                    isTabActionable(suggestion)
-                  }
-                >
-                  <Badge uppercase>Tab</Badge>
-                </Show>
-              </span>
-            </SearchPickerOption>
-          )}
-        </For>
+              </SearchPickerOption>
+            )}
+          </For>
+        </ScrollArea>
       </SearchPickerSurface>
     </Show>
   );
