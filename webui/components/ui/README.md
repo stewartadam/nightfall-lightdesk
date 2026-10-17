@@ -10,7 +10,7 @@ Reusable components own their visual rules alongside their implementation. Dialo
 
 `menu` exports `MenuSurface`, `MenuItem`, `MenuHeading`, and `MenuSeparator`. These primitives own surface treatment, typography, spacing, icon/checkmark alignment, keyboard focus, disabled states, destructive actions, and shortcut hints.
 
-- Use `dropdown-menu` for button-triggered menus. Its items close the dropdown after activation.
+- Use `dropdown-menu` for button-triggered menus. Its items close the dropdown after activation. Give a trigger the shared button look with `triggerVariant`/`triggerSize` (see `buttons.md`) rather than styling a `<span>` inside it.
 - Use the context-menu provider and widget for menus anchored to a pointer, including nested flyouts.
 - Both wrappers compose the menu primitives and retain responsibility for interaction and positioning. Add visual states to the primitives instead of styling individual menu callers.
 - The design lab's Menus panel demonstrates both wrappers, including checked, disabled, and destructive entries. Its button popover also exercises arbitrary interactive dropdown content.

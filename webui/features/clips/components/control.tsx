@@ -348,7 +348,9 @@ export function Control(props: ControlProps): JSX.Element {
           align="end"
           triggerLabel={`Button mode of control ${props.index}`}
           triggerTitle="Choose what the button does"
-          triggerClass="ml-auto flex size-5 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"
+          triggerVariant="subtle"
+          triggerSize="inline"
+          triggerClass="ml-auto"
           contentLabel={`Button mode of control ${props.index}`}
           trigger={<CaretDownIcon class="size-3" aria-hidden />}
         >

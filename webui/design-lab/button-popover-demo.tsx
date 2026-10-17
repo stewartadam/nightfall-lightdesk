@@ -28,7 +28,7 @@ export function ButtonPopoverDemo() {
       </p>
       <DropdownMenu
         placement="below"
-        triggerClass={`nf-button ${isOpen() ? "primary" : ""}`}
+        triggerVariant={isOpen() ? "primary" : "secondary"}
         triggerLabel="Tempo controls"
         onOpenChange={setIsOpen}
         trigger={

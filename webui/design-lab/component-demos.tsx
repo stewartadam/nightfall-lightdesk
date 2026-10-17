@@ -8,6 +8,7 @@
 
 import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
+import { XIcon } from "@squidlab/phosphor-solid/x";
 import { createSignal } from "solid-js";
 import { RangeSlider } from "../components/ui/range-slider";
 import { ToggleSwitch } from "../components/ui/toggle-switch";
@@ -141,6 +142,39 @@ export function ButtonDemo() {
         >
           <PlusIcon size={16} />
         </Button>
+      </div>
+      <div class="property-section">
+        <div class="section-label">Sizes</div>
+        <div class="button-samples">
+          <Button onClick={() => setNotice("Standard action activated.")}>
+            Standard
+          </Button>
+          <Button
+            size="compact"
+            onClick={() => setNotice("Compact action activated.")}
+          >
+            Compact
+          </Button>
+          <Button
+            size="icon-compact"
+            variant="subtle"
+            aria-label="Remove sample"
+            onClick={() => setNotice("Compact icon action activated.")}
+          >
+            <XIcon size={16} />
+          </Button>
+          <span class="field-help">
+            Inline{" "}
+            <Button
+              size="inline"
+              variant="primary"
+              onClick={() => setNotice("Inline action activated.")}
+            >
+              Reset
+            </Button>{" "}
+            sits in a line of text.
+          </span>
+        </div>
       </div>
       <p class="field-help" role="status">
         {notice()}

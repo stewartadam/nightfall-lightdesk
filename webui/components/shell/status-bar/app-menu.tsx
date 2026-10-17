@@ -31,6 +31,7 @@ import {
   DropdownMenuSubmenu,
 } from "../../ui/dropdown-menu";
 import { TOOLBAR_BUTTON_CLASS } from "../../ui/toolbar-button";
+import type { ButtonSize } from "../../ui/visual-language/button";
 
 const log = getLogger(import.meta.url);
 
@@ -43,6 +44,8 @@ export default function AppMenu(props: {
   trigger: JSX.Element;
   triggerLabel: string;
   triggerClass?: string;
+  /** Gives the trigger the shared `Button` look at this size instead of the toolbar look. */
+  triggerSize?: ButtonSize;
   placement?: "above" | "below";
   align?: "start" | "end";
   /**
@@ -74,7 +77,11 @@ export default function AppMenu(props: {
     <DropdownMenu
       triggerLabel={props.triggerLabel}
       triggerTitle={props.triggerLabel}
-      triggerClass={props.triggerClass ?? TOOLBAR_BUTTON_CLASS}
+      triggerClass={
+        props.triggerClass ??
+        (props.triggerSize ? undefined : TOOLBAR_BUTTON_CLASS)
+      }
+      triggerSize={props.triggerSize}
       placement={props.placement}
       align={props.align}
       trigger={props.trigger}

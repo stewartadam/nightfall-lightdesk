@@ -7,6 +7,7 @@
  */
 
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { Button } from "../../components/ui/visual-language/button";
 import { getLogger } from "../../lib/logger";
 
 interface Notice {
@@ -70,9 +71,9 @@ export default function ThirdPartyNotices(props: { active: boolean }) {
       </Show>
       <Show when={document.error}>
         <p role="alert">Third-party notices could not be loaded.</p>
-        <button type="button" class="text-blue-300 underline" onClick={retry}>
+        <Button size="compact" onClick={retry}>
           Retry
-        </button>
+        </Button>
       </Show>
       <Show when={loaded()}>
         <p class="text-sm text-gray-400">{loaded()?.distribution}</p>
