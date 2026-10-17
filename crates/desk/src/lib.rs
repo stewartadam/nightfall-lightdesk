@@ -55,7 +55,7 @@ pub mod prelude {
     };
     pub use crate::controls::{
         ControlAssignment, ControlButtonMode, ControlCommand, ControlSlotConfig, ControlSnapshot,
-        ControlUpdate, Controls,
+        ControlUpdate, Controls, HeldButtonEffect, HeldButtonEffects,
     };
     pub use crate::desk_command::{
         DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
@@ -181,6 +181,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<AvailableAudioDevices>();
         app.init_resource::<AvailableUsbDmxDevices>();
         app.init_resource::<Controls>();
+        app.init_resource::<HeldButtonEffects>();
         app.init_resource::<NetworkInterfaceState>();
         app.init_resource::<UiNotificationState>();
         app.init_resource::<FramePaceStats>();
@@ -342,7 +343,11 @@ impl Plugin for DeskPlugin {
         // Apply per-playback intensity scaling to the generated layers before compositing.
         app.add_systems(
             Render,
-            systems::instance_controls::apply_playback_intensity
+            (
+                controls::resolve_held_button_effects,
+                systems::instance_controls::apply_playback_intensity,
+            )
+                .chain()
                 .after(LayerGeneration)
                 .before(Compositing),
         );

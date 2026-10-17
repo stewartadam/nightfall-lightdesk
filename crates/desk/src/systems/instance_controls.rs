@@ -12,19 +12,15 @@
 //! parameters in each playback's layer BEFORE compositing. This allows individual instances
 //! to have their own control/intensity control.
 
-use std::collections::HashSet;
-
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_instances::{
-    EditorPreviewInstance, InstanceControls, InstanceId, InstanceKind, InstanceMetadata,
-};
+use nightfall_instances::{InstanceControls, InstanceId};
 
-use crate::{clips::MaterializedClip, controls::Controls};
+use crate::controls::{HeldButtonEffect, HeldButtonEffects};
 
 /// Attributes affected by playback intensity scaling.
 const INTENSITY_ATTRIBUTES: &[Attribute] = &[Attribute::Intensity, Attribute::VirtualIntensity];
@@ -57,86 +53,30 @@ fn scales_with_playback(metadata: &ParameterMetadata) -> bool {
         && !(metadata.dmx_slots == DmxSlots::Virtual && !metadata.use_grandmaster)
 }
 
-/// How a held slot Flash or Swop affects one playback.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum HeldButtonEffect {
-    /// No held button concerns the playback.
-    None,
-    /// A held Flash or Swop plays the playback at full intensity.
-    Flashed,
-    /// A Swop held on another playback silences every attribute of this one.
-    Muted,
-}
-
-impl HeldButtonEffect {
-    /// Decides how held buttons affect one playback: flashed playbacks play at full, and
-    /// while any Swop is held every other playback is muted unless it is `swop_exempt`.
-    fn for_instance(
-        instance_id: Option<&InstanceId>,
-        swop_exempt: bool,
-        flashed: &HashSet<InstanceId>,
-        swopped: &HashSet<InstanceId>,
-    ) -> Self {
-        if instance_id.is_some_and(|instance_id| flashed.contains(instance_id)) {
-            Self::Flashed
-        } else if !swopped.is_empty() && !swop_exempt {
-            Self::Muted
-        } else {
-            Self::None
-        }
-    }
-}
-
-/// Returns the intensity factor a playback renders with: its fader scale, full while flashed,
-/// or zero while another playback is swopped (whose layer is silenced outright anyway).
-fn effective_intensity_scale(intensity_scale: f32, effect: HeldButtonEffect) -> f32 {
+/// Returns the intensity factor a playback renders with: its clamped fader scale, or full
+/// while a held Flash or Swop plays it.
+fn effective_intensity_scale(intensity_scale: f32, effect: Option<HeldButtonEffect>) -> f32 {
     match effect {
-        HeldButtonEffect::None => intensity_scale.clamp(0.0, 1.0),
-        HeldButtonEffect::Flashed => 1.0,
-        HeldButtonEffect::Muted => 0.0,
+        Some(HeldButtonEffect::Flashed { .. }) => 1.0,
+        Some(HeldButtonEffect::SwoppedOut { .. }) => 0.0,
+        None => intensity_scale.clamp(0.0, 1.0),
     }
 }
 
 /// System that applies per-playback intensity scaling to layers.
 ///
 /// This runs after layer generation but before compositing, scaling Intensity and
-/// VirtualIntensity parameters by the playback's intensity_scale. Clips held by a slot Flash
-/// or Swop play at full instead, and while any Swop is held every other show playback except the
-/// Programmer drops out entirely; editor previews keep playing.
+/// VirtualIntensity parameters by the playback's intensity_scale. Playbacks a held slot Flash
+/// or Swop plays render at full instead, and those a Swop takes out (see
+/// [`HeldButtonEffects`]) drop out entirely.
 pub fn apply_playback_intensity(
-    mut layer_query: Query<(
-        &mut Layer,
-        &InstanceControls,
-        Option<&InstanceId>,
-        Option<&InstanceMetadata>,
-        Has<EditorPreviewInstance>,
-    )>,
+    mut layer_query: Query<(&mut Layer, &InstanceControls, Option<&InstanceId>)>,
     param_query: Query<InstanceRef<Parameter>>,
-    controls: Res<Controls>,
-    materialized_clips: Query<&MaterializedClip>,
+    held_buttons: Res<HeldButtonEffects>,
 ) {
-    let mut flashed = HashSet::new();
-    let mut swopped = HashSet::new();
-    for (clip_id, swop) in controls.flashed_clips() {
-        for materialized in materialized_clips
-            .iter()
-            .filter(|materialized| materialized.clip_id == clip_id)
-        {
-            flashed.insert(materialized.attached_instance);
-            if swop {
-                swopped.insert(materialized.attached_instance);
-            }
-        }
-    }
-
-    for (mut layer, instance_controls, instance_id, metadata, is_preview) in layer_query.iter_mut()
-    {
-        // The Programmer stays live so the operator can keep working during a swop, and
-        // editor previews and layers that are not show playbacks are not the swop's to mute.
-        let swop_exempt =
-            is_preview || metadata.is_none_or(|metadata| metadata.kind == InstanceKind::Programmer);
-        let effect = HeldButtonEffect::for_instance(instance_id, swop_exempt, &flashed, &swopped);
-        if effect == HeldButtonEffect::Muted {
+    for (mut layer, instance_controls, instance_id) in layer_query.iter_mut() {
+        let effect = instance_id.and_then(|instance_id| held_buttons.get(instance_id));
+        if matches!(effect, Some(HeldButtonEffect::SwoppedOut { .. })) {
             // A swop silences every attribute, not only intensity, so colour or position looks
             // on other playbacks cannot cover the swopped one.
             layer.absolute = Default::default();
@@ -196,52 +136,16 @@ mod tests {
         }));
     }
 
-    /// Verifies a Swop mutes every playback that is neither flashed nor the Programmer, and
-    /// that a plain Flash mutes nothing.
-    #[test]
-    fn swop_mutes_other_playbacks_but_not_the_programmer() {
-        let swopped_id = InstanceId::new();
-        let flashed_id = InstanceId::new();
-        let other_id = InstanceId::new();
-        let flashed = HashSet::from([swopped_id, flashed_id]);
-        let swopped = HashSet::from([swopped_id]);
-        let effect = |id, swop_exempt, swopped: &HashSet<InstanceId>| {
-            HeldButtonEffect::for_instance(id, swop_exempt, &flashed, swopped)
-        };
-
-        assert_eq!(
-            effect(Some(&swopped_id), false, &swopped),
-            HeldButtonEffect::Flashed
-        );
-        assert_eq!(
-            effect(Some(&flashed_id), false, &swopped),
-            HeldButtonEffect::Flashed
-        );
-        assert_eq!(
-            effect(Some(&other_id), false, &swopped),
-            HeldButtonEffect::Muted
-        );
-        assert_eq!(
-            effect(Some(&other_id), true, &swopped),
-            HeldButtonEffect::None
-        );
-        assert_eq!(
-            effect(Some(&other_id), false, &HashSet::new()),
-            HeldButtonEffect::None
-        );
-    }
-
-    /// Verifies a flashed playback renders at full whatever its fader, a playback muted by
-    /// another's Swop renders at zero, and others keep their clamped fader scale.
+    /// Verifies a flashed playback renders at full whatever its fader, a playback a Swop takes
+    /// out renders at zero, and others keep their clamped fader scale.
     #[test]
     fn held_buttons_override_the_fader_scale() {
-        assert_eq!(effective_intensity_scale(0.3, HeldButtonEffect::None), 0.3);
-        assert_eq!(effective_intensity_scale(1.4, HeldButtonEffect::None), 1.0);
-        assert_eq!(
-            effective_intensity_scale(0.0, HeldButtonEffect::Flashed),
-            1.0
-        );
-        assert_eq!(effective_intensity_scale(0.8, HeldButtonEffect::Muted), 0.0);
+        let flashed = Some(HeldButtonEffect::Flashed { control_index: 1 });
+        let swopped_out = Some(HeldButtonEffect::SwoppedOut { control_index: 1 });
+        assert_eq!(effective_intensity_scale(0.3, None), 0.3);
+        assert_eq!(effective_intensity_scale(1.4, None), 1.0);
+        assert_eq!(effective_intensity_scale(0.0, flashed), 1.0);
+        assert_eq!(effective_intensity_scale(0.8, swopped_out), 0.0);
     }
 
     #[test]

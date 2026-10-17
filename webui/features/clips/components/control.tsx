@@ -19,6 +19,7 @@ import { getLogger } from "../../../lib/logger";
 import {
   type Clip,
   ControlButtonMode,
+  type HeldButtonEffect,
   type Master,
   MasterKind,
 } from "../../../types";
@@ -26,6 +27,7 @@ import type { EngineControl } from "../../actions";
 import { Mappable, type MappableChoice } from "../../io";
 import { masterLevelControl } from "../../masters";
 import { CONTROL_BUTTON_MODE_TEXT } from "../model/control-button-modes";
+import { HeldButtonBadge } from "./held-button-badge";
 
 export interface ControlProps {
   /** Control index (1-based for display) */
@@ -52,6 +54,8 @@ export interface ControlProps {
   availableButtonModes: ControlButtonMode[];
   /** Whether a Flash or Swop is held on the slot, from this or any other surface. */
   isFlashing: boolean;
+  /** How a held Flash or Swop changes the slot's playback, if any does. */
+  heldButton: HeldButtonEffect | undefined;
   /** Called when a different button mode is picked. */
   onButtonModeChange: (mode: ControlButtonMode) => void;
   /** The slot's fader: its on-screen drag and its controller binding. */
@@ -69,6 +73,9 @@ const log = getLogger(import.meta.url);
 /** Renders a full-height fader strip with fixed-size assignment and playback actions. */
 export function Control(props: ControlProps): JSX.Element {
   const [isDragOver, setIsDragOver] = createSignal(false);
+
+  /** Whether a Swop held on another slot is taking this slot's playback out of the output. */
+  const isSwoppedOut = () => props.heldButton?.type === "SwoppedOut";
 
   /** Returns whether the backend and control positions differ visibly. */
   const showDisparateValues = () =>
@@ -227,8 +234,13 @@ export function Control(props: ControlProps): JSX.Element {
   return (
     <div
       data-control-index={props.index}
+      data-control-held-button={props.heldButton?.type}
       class={`control h-full min-h-0 flex flex-col items-center gap-2 p-2 rounded-lg transition-colors ${
-        isDragOver() ? "bg-blue-900/50 ring-2 ring-blue-500" : "bg-neutral-800"
+        isDragOver()
+          ? "bg-blue-900/50 ring-2 ring-blue-500"
+          : isSwoppedOut()
+            ? "bg-neutral-800 ring-1 ring-amber-500/60"
+            : "bg-neutral-800"
       }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -279,7 +291,12 @@ export function Control(props: ControlProps): JSX.Element {
         data-control-value-index={props.index}
         class="w-full shrink-0 text-center"
       >
-        <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>
+        <Show
+          when={!isSwoppedOut()}
+          fallback={<HeldButtonBadge effect={props.heldButton} />}
+        >
+          <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>
+        </Show>
       </div>
 
       {/* Clip label / drop zone */}

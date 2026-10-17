@@ -32,6 +32,7 @@ pub fn send_instances(
     instance_query: Query<InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
     clips: Query<&Clip>,
+    held_buttons: &HeldButtonEffects,
     broadcaster: &ClientEventSink,
 ) {
     let sampled_at_epoch_ms = current_epoch_ms();
@@ -97,6 +98,7 @@ pub fn send_instances(
                     rate: controls.rate,
                     rate_master_scale: controls.rate_master_scale,
                     effective_rate: controls.effective_rate(),
+                    held_button: held_buttons.get(instance_id),
                     step_fx_preview: step_fx_preview_status(
                         preview,
                         active_step_fx,
@@ -129,6 +131,7 @@ pub fn send_controls(
     materialized_clips: &Query<&MaterializedClip>,
     instance_index: &InstanceIndex,
     controls_query: &Query<&InstanceControls>,
+    held_buttons: &HeldButtonEffects,
     broadcaster: &ClientEventSink,
 ) {
     let snapshots = controls.snapshots(
@@ -137,6 +140,7 @@ pub fn send_controls(
         materialized_clips,
         instance_index,
         controls_query,
+        held_buttons,
     );
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
@@ -156,6 +160,7 @@ pub fn send_instances_on_change(
     changed_controls: Query<&InstanceControls, Changed<InstanceControls>>,
     changed_metadata: Query<&InstanceMetadata, Changed<InstanceMetadata>>,
     changed_step_fx_previews: Query<(), Changed<PreviewStepFxDefinition>>,
+    held_buttons: Res<HeldButtonEffects>,
     broadcaster: Res<ClientEventSink>,
 ) {
     // Consume every removal, so one removal does not trigger a send in the next update too.
@@ -168,11 +173,18 @@ pub fn send_instances_on_change(
         && changed_controls.is_empty()
         && changed_metadata.is_empty()
         && changed_step_fx_previews.is_empty()
+        && !held_buttons.is_changed()
     {
         return;
     }
     tracing::trace!("Sending instances due to spawn/despawn/release/control/metadata change");
-    send_instances(instance_query, materialized_clips, clips, &broadcaster);
+    send_instances(
+        instance_query,
+        materialized_clips,
+        clips,
+        &held_buttons,
+        &broadcaster,
+    );
 }
 
 /// Send controls when backend-owned state or linked playback state changes.
@@ -186,6 +198,7 @@ pub fn send_controls_on_change(
     instance_index: Res<InstanceIndex>,
     changed_instance_controls: Query<(), Changed<InstanceControls>>,
     controls_query: Query<&InstanceControls>,
+    held_buttons: Res<HeldButtonEffects>,
     broadcaster: Res<ClientEventSink>,
 ) {
     let materialized_removed = !removed_materialized_clips.is_empty();
@@ -196,6 +209,7 @@ pub fn send_controls_on_change(
         && !masters.is_changed()
         && changed_instance_controls.is_empty()
         && !materialized_changed
+        && !held_buttons.is_changed()
     {
         return;
     }
@@ -207,6 +221,7 @@ pub fn send_controls_on_change(
         &materialized_clips,
         &instance_index,
         &controls_query,
+        &held_buttons,
         &broadcaster,
     );
 }

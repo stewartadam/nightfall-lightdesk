@@ -14,6 +14,7 @@ export type LayerPanelEntrySummary = {
   creator: string;
   objectType?: types.ObjectType;
   priority: types.Priority;
+  heldButton?: types.HeldButtonEffect;
 };
 
 export type LayerPanelEntry = {
@@ -56,6 +57,7 @@ export function summarizeLayer(layer: LayerState): LayerPanelEntrySummary {
     creator: layer.creator,
     objectType: layerObjectType(layer),
     priority: layer.priority,
+    heldButton: layer.held_button ?? undefined,
   };
 }
 
@@ -67,7 +69,9 @@ export function layerSummariesEqual(
   return (
     left.creator === right.creator &&
     left.objectType === right.objectType &&
-    left.priority === right.priority
+    left.priority === right.priority &&
+    left.heldButton?.type === right.heldButton?.type &&
+    left.heldButton?.data.control_index === right.heldButton?.data.control_index
   );
 }
 

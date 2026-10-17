@@ -559,6 +559,7 @@ fn publish_layer_stack_each_update(
         parameters,
         layers,
         &mut publication,
+        &HeldButtonEffects::default(),
         None,
         &broadcaster,
     );
@@ -620,6 +621,7 @@ fn layer_stack_is_packed_by_layout_slot_and_sent_only_when_changed() {
             priority: Priority::default(),
             is_releasing: false,
             runtime_position: None,
+            held_button: None,
             asserted_absolute,
             asserted_relative: PackedLayerAssertions::default(),
             lookahead_asserted: PackedLayerAssertions::default(),

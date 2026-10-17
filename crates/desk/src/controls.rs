@@ -18,6 +18,10 @@ use crate::{
     masters::{Master, MasterCommand, MasterMode, MasterUpdate},
 };
 
+mod held_buttons;
+
+pub use held_buttons::{HeldButtonEffect, HeldButtonEffects, resolve_held_button_effects};
+
 const CONTROL_EPSILON: f32 = 0.0001;
 pub const DEFAULT_CONTROL_COUNT: usize = 10;
 
@@ -65,6 +69,9 @@ pub enum ControlCommand {
     ReleaseButton {
         control_index: u32,
     },
+    /// Lets go of every held Flash and Swop, whoever holds it, such as a press left on by a
+    /// controller that never sent its release.
+    ReleaseHeldButtons,
 }
 
 impl IngressCommand for ControlCommand {}
@@ -164,6 +171,8 @@ pub struct ControlSnapshot {
     pub available_button_modes: Vec<ControlButtonMode>,
     /// Whether the slot's Flash or Swop button is held down.
     pub is_flashing: bool,
+    /// How a held Flash or Swop, on this slot or another, changes the slot's playback.
+    pub held_button: Option<HeldButtonEffect>,
 }
 
 /// Resource that stores control bank assignments and current levels.
@@ -638,19 +647,38 @@ impl Controls {
         self.slot(control_index).is_some()
     }
 
-    /// Lists the clips a held Flash or Swop plays at full, each with whether it was a Swop,
-    /// which mutes every playback that is not swopped.
+    /// Lists the clips a held Flash or Swop plays at full as `(control index, clip id, swop)`,
+    /// where a Swop also takes every other playback out.
     ///
-    /// A flash whose slot was reassigned or switched to another mode is left out at once,
-    /// before [`end_released_flashes`] undoes it on the next frame.
-    pub(crate) fn flashed_clips(&self) -> impl Iterator<Item = (u32, bool)> + '_ {
+    /// A flash nobody holds any more, or whose slot was reassigned or switched to another
+    /// mode, is left out at once, before [`end_released_flashes`] undoes it on the next frame.
+    pub(crate) fn flashed_clips(&self) -> impl Iterator<Item = (u32, u32, bool)> + '_ {
         self.slots
             .iter()
-            .filter_map(|slot| slot.flash.as_ref().filter(|flash| flash.fits(slot)))
-            .filter_map(|flash| match flash.target {
-                ControlAssignment::Clip(clip_id) => Some((clip_id, flash.swop)),
-                ControlAssignment::Master(_) => None,
+            .zip(1..)
+            .filter_map(|(slot, control_index)| {
+                let flash = slot
+                    .flash
+                    .as_ref()
+                    .filter(|flash| flash.still_held_on(slot))?;
+                match flash.target {
+                    ControlAssignment::Clip(clip_id) => Some((control_index, clip_id, flash.swop)),
+                    ControlAssignment::Master(_) => None,
+                }
             })
+    }
+
+    /// Holds slot `control_index`'s assignment as if a web client pressed its Flash or Swop
+    /// button, without starting or pushing anything.
+    #[cfg(test)]
+    pub(crate) fn hold_for_test(&mut self, control_index: u32) {
+        let slot = self.slot_mut(control_index).expect("control slot exists");
+        let target = slot.assignment().expect("control slot is assigned");
+        slot.flash = Some(SlotFlash::new(
+            target,
+            slot.button_mode,
+            ButtonHolder::Client(ClientId(1)),
+        ));
     }
 
     /// Returns a held flash of `target` on any slot other than `control_index`, which a new
@@ -690,6 +718,7 @@ impl Controls {
         materialized_clips: &Query<&MaterializedClip>,
         instance_index: &InstanceIndex,
         controls_query: &Query<&InstanceControls>,
+        held_buttons: &HeldButtonEffects,
     ) -> Vec<ControlSnapshot> {
         self.slots
             .iter()
@@ -727,6 +756,9 @@ impl Controls {
                         slot.assignment().as_ref(),
                     ),
                     is_flashing: slot.flash.is_some(),
+                    held_button: runtime
+                        .attached_instance_id
+                        .and_then(|instance_id| held_buttons.get(&instance_id)),
                 }
             })
             .collect()
@@ -859,6 +891,10 @@ pub fn handle_control_commands(
                 control_index,
                 mode,
             } => set_control_button_mode(&mut controls, *control_index, *mode),
+            ControlCommand::ReleaseHeldButtons => {
+                release_held_buttons(&mut controls);
+                Ok(())
+            }
             ControlCommand::Go { control_index }
             | ControlCommand::PressButton { control_index }
             | ControlCommand::ReleaseButton { control_index } => Err(CommandError::new(
@@ -1234,6 +1270,21 @@ fn release_flash(
         flash.holders.retain(|held| held != holder);
     }
     Ok(())
+}
+
+/// Drops every holder of every held flash, so [`end_released_flashes`] ends them all and
+/// undoes what they did. Leaves the bank untouched when nothing is held.
+fn release_held_buttons(controls: &mut ResMut<Controls>) {
+    if controls.slots.iter().all(|slot| slot.flash.is_none()) {
+        return;
+    }
+    for flash in controls
+        .slots
+        .iter_mut()
+        .filter_map(|slot| slot.flash.as_mut())
+    {
+        flash.holders.clear();
+    }
 }
 
 /// Builds the error for button input addressed to a slot the bank does not have.
@@ -2239,7 +2290,10 @@ mod tests {
         press_web(&mut app);
         assert_eq!(take_clip_operations(&mut app), [(true, 5)]);
         let controls = app.world().resource::<Controls>();
-        assert_eq!(controls.flashed_clips().collect::<Vec<_>>(), [(5, false)]);
+        assert_eq!(
+            controls.flashed_clips().collect::<Vec<_>>(),
+            [(1, 5, false)]
+        );
         assert_eq!(controls.slots[0].pending_console_value, Some(0.0));
 
         release_web(&mut app);
@@ -2261,7 +2315,7 @@ mod tests {
                 .resource::<Controls>()
                 .flashed_clips()
                 .collect::<Vec<_>>(),
-            [(5, true)]
+            [(1, 5, true)]
         );
 
         release_web(&mut app);
@@ -2505,9 +2559,15 @@ mod tests {
 
         let mut app = flash_app(ControlAssignment::Clip(5), ControlButtonMode::Swop);
         spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
+        app.init_resource::<HeldButtonEffects>();
         app.add_systems(
             Update,
-            crate::systems::instance_controls::apply_playback_intensity.after(end_released_flashes),
+            (
+                resolve_held_button_effects,
+                crate::systems::instance_controls::apply_playback_intensity,
+            )
+                .chain()
+                .after(end_released_flashes),
         );
         let parameter = app
             .world_mut()
