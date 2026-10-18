@@ -247,7 +247,7 @@ fn handle_osc_events(
             };
             invocations.write(
                 ActionInvocation::new(action, ActionSurface::Osc, input)
-                    .with_source(format!("OSC {}", osc_event.source))
+                    .with_source(format!("OSC {}", sender_host(&osc_event.source)))
                     .with_received_at(event.received_at),
             );
         }

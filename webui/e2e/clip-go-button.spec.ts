@@ -648,3 +648,42 @@ test("slots sharing a clip move together", async ({ backendSlot, page }) => {
     path: test.info().outputPath("control-shared-clip-sync.png"),
   });
 });
+
+/**
+ * Verifies a Flash button runs an idle clip only while held: pressing starts the clip and
+ * lights the button, and letting go stops the clip it started and unlights the button.
+ */
+test("a Flash button plays its clip only while held", async ({
+  backendSlot,
+  page,
+}) => {
+  await openOwnedClipControlApp(page, backendSlot.backendPort);
+  const scenario = await seedClipControlScenario(page);
+  await openPanel(page, "Clips");
+
+  const button = page.locator('[data-control-button-index="3"]');
+  await pickButtonMode(page, 3, "Flash");
+  await expect(button).toHaveText("Flash");
+  await expect(button).toHaveAttribute("data-control-button-flashing", "false");
+  await page.locator(".controls").screenshot({
+    path: test.info().outputPath("control-flash-idle.png"),
+  });
+
+  const box = await button.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await expect(button).toHaveAttribute("data-control-button-flashing", "true");
+  await expect
+    .poll(() => isClipRunning(page, scenario.inactiveFxId))
+    .toBe(true);
+  await page.locator(".controls").screenshot({
+    path: test.info().outputPath("control-flash-held.png"),
+  });
+
+  await page.mouse.up();
+  await expect(button).toHaveAttribute("data-control-button-flashing", "false");
+  await expect
+    .poll(() => isClipRunning(page, scenario.inactiveFxId))
+    .toBe(false);
+});

@@ -29,6 +29,15 @@ export const CONTROL_BUTTON_MODE_TEXT: Record<
     label: "Back",
     description: "Step the running sequence back one cue",
   },
+  [ControlButtonMode.Flash]: {
+    label: "Flash",
+    description: "Play the clip at full while held, or push the master to full",
+  },
+  [ControlButtonMode.Swop]: {
+    label: "Swop",
+    description:
+      "Play the clip at full and take out every other playback while held",
+  },
   [ControlButtonMode.Toggle]: {
     label: "Toggle",
     description: "Start the clip, or stop it if it is running",

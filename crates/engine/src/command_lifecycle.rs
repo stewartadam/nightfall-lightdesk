@@ -450,6 +450,14 @@ impl CommandResponder<'_> {
         self.tracker.connection(command_id)
     }
 
+    /// Returns the surface that accepted an active command, such as the web UI or a MIDI
+    /// device, so handlers can tell apart inputs that did not come from a client session.
+    pub fn origin(&self, command_id: CommandId) -> Option<&CommandOrigin> {
+        self.tracker
+            .active_command(command_id)
+            .map(|command| &command.origin)
+    }
+
     /// Returns whether an active command is an undo or redo replaying captured inverses.
     pub fn is_undo_replay(&self, command_id: CommandId) -> bool {
         self.tracker.is_undo_replay(command_id)

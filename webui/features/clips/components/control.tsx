@@ -18,7 +18,8 @@ import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
 import {
   type Clip,
-  type ControlButtonMode,
+  ControlButtonMode,
+  type HeldButtonEffect,
   type Master,
   MasterKind,
 } from "../../../types";
@@ -26,6 +27,7 @@ import type { EngineControl } from "../../actions";
 import { Mappable, type MappableChoice } from "../../io";
 import { masterLevelControl } from "../../masters";
 import { CONTROL_BUTTON_MODE_TEXT } from "../model/control-button-modes";
+import { HeldButtonBadge } from "./held-button-badge";
 
 export interface ControlProps {
   /** Control index (1-based for display) */
@@ -50,6 +52,10 @@ export interface ControlProps {
   buttonMode: ControlButtonMode;
   /** Backend-authored modes the slot's current assignment supports. */
   availableButtonModes: ControlButtonMode[];
+  /** Whether a Flash or Swop is held on the slot, from this or any other surface. */
+  isFlashing: boolean;
+  /** How a held Flash or Swop changes the slot's playback, if any does. */
+  heldButton: HeldButtonEffect | undefined;
   /** Called when a different button mode is picked. */
   onButtonModeChange: (mode: ControlButtonMode) => void;
   /** The slot's fader: its on-screen drag and its controller binding. */
@@ -89,6 +95,7 @@ export function Control(props: ControlProps): JSX.Element {
   /** Returns whether the slot's button has something to act on. */
   const canPress = () =>
     !!props.assignedClip?.source ||
+    (!!props.assignedMaster && props.buttonMode === ControlButtonMode.Flash) ||
     props.assignedMaster?.mode?.type === "Toggle";
 
   /** Whether this button sent a press that still needs its release. */
@@ -148,6 +155,9 @@ export function Control(props: ControlProps): JSX.Element {
   /** Explains what the button does now, or what it needs before it can act. */
   const buttonTitle = () => {
     if (props.assignedMaster) {
+      if (props.buttonMode === ControlButtonMode.Flash) {
+        return modeText().description;
+      }
       return props.assignedMaster.mode?.type === "Toggle"
         ? "Toggle this master"
         : "Only toggle-mode masters respond to the button";
@@ -221,6 +231,7 @@ export function Control(props: ControlProps): JSX.Element {
   return (
     <div
       data-control-index={props.index}
+      data-control-held-button={props.heldButton?.type}
       class={`control h-full min-h-0 flex flex-col items-center gap-2 p-2 rounded-lg transition-colors ${
         isDragOver() ? "bg-blue-900/50 ring-2 ring-blue-500" : "bg-neutral-800"
       }`}
@@ -273,7 +284,12 @@ export function Control(props: ControlProps): JSX.Element {
         data-control-value-index={props.index}
         class="w-full shrink-0 text-center"
       >
-        <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>
+        <Show
+          when={!props.heldButton}
+          fallback={<HeldButtonBadge effect={props.heldButton} />}
+        >
+          <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>
+        </Show>
       </div>
 
       {/* Clip label / drop zone */}
@@ -323,7 +339,9 @@ export function Control(props: ControlProps): JSX.Element {
           type="button"
           data-control-button-index={props.index}
           data-control-button-mode={props.buttonMode}
+          data-control-button-flashing={props.isFlashing}
           aria-label={`${modeText().label} control ${props.index}`}
+          variant={props.isFlashing ? "primary" : "secondary"}
           class="w-full px-1!"
           disabled={!canPress()}
           onPointerDown={handlePointerDown}

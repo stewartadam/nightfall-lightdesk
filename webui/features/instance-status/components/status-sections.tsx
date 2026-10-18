@@ -41,6 +41,7 @@ import {
   instanceKindLabel,
   instanceStateClass,
   instanceStateLabel,
+  instanceStateTitle,
   type StatusInstanceInfo,
 } from "../model/instance-status-model";
 
@@ -108,7 +109,14 @@ const SORTABLE_INSTANCE_COLUMNS = INSTANCE_COLUMNS.flatMap((column) =>
 );
 
 type InstanceCellData =
-  | { kind: "instance-pill"; className: string }
+  | {
+      kind: "instance-pill";
+      className: string;
+      /** Tooltip explaining the pill, such as the slot holding a Swop. */
+      title?: string;
+      /** Held-button effect the pill reports, exposed for tests. */
+      heldButton?: string;
+    }
   | { kind: "instance-lines"; secondary: string; mono: boolean }
   | { kind: "instance-stop"; instanceId: StatusInstanceInfo["instance_id"] };
 
@@ -165,7 +173,14 @@ function activeInstanceCell(
       );
     case "state":
       return instanceCell(
-        { kind: "instance-pill", className: instanceStateClass(instance) },
+        {
+          kind: "instance-pill",
+          className: instanceStateClass(instance),
+          title: instanceStateTitle(instance),
+          heldButton: instanceStateTitle(instance)
+            ? instance.held_button?.type
+            : undefined,
+        },
         instanceStateLabel(instance),
       );
     case "clip":
@@ -225,6 +240,8 @@ function activeInstanceExtension(
         return (
           <span
             class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${data.className}`}
+            data-held-button={data.heldButton}
+            title={data.title}
           >
             {cell.copyData}
           </span>

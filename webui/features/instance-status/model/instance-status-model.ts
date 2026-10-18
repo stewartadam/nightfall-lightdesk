@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { heldButtonTag } from "../../../lib/held-button";
 import { durationToMs, formatElapsedTime } from "../../../lib/time-format";
 import {
   InstanceDisplayKind,
@@ -89,11 +90,20 @@ export function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-/** Returns a dense status label for a instance row. */
+/** Returns a dense status label for a instance row; a held Flash or Swop names itself. */
 export function instanceStateLabel(instance: StatusInstanceInfo): string {
   if (instance.is_releasing)
     return instance.is_paused ? "Paused release" : "Releasing";
-  return instance.is_paused ? "Paused" : "Running";
+  if (instance.is_paused) return "Paused";
+  return heldButtonTag(instance.held_button)?.label ?? "Running";
+}
+
+/** Explains a held Flash or Swop state by naming the slot holding it, if one does. */
+export function instanceStateTitle(
+  instance: StatusInstanceInfo,
+): string | undefined {
+  if (instance.is_releasing || instance.is_paused) return undefined;
+  return heldButtonTag(instance.held_button)?.title;
 }
 
 /** Returns visual classes for a instance state badge. */
@@ -105,6 +115,12 @@ export function instanceStateClass(instance: StatusInstanceInfo): string {
   }
   if (instance.is_paused) {
     return "bg-yellow-500/20 text-yellow-100 ring-yellow-400/30";
+  }
+  const held = heldButtonTag(instance.held_button);
+  if (held) {
+    return held.active
+      ? "bg-amber-500/20 text-amber-300 ring-amber-400/30"
+      : "bg-neutral-700 text-neutral-300 ring-neutral-500/30";
   }
   return "bg-emerald-500/20 text-emerald-100 ring-emerald-400/30";
 }
