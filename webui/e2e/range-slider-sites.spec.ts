@@ -169,9 +169,9 @@ test("settings darkness slider", async ({ page }) => {
   await expect(darkness).toHaveAccessibleDescription(/visible rig/);
   await darkness.focus();
   await darkness.press("ArrowRight");
-  await expect(darkness).toHaveAttribute("aria-valuenow", "51.0");
-  await expect(dialog.getByText("Darkness (51%)")).toBeVisible();
-  await capture(dialog, "settings-visualizer-darkness-51");
+  await expect(darkness).toHaveAttribute("aria-valuenow", "11.0");
+  await expect(dialog.getByText("Darkness (11%)")).toBeVisible();
+  await capture(dialog, "settings-visualizer-darkness-11");
 });
 
 /** Shows the Step FX start position and spread sliders. */
