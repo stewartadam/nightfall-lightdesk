@@ -48,7 +48,7 @@ pub use invocation::{
     ClientActionInvocation, ExternalCommandInvocation, InvocationDispatch, InvocationError,
     InvocationId, InvocationOutcome, InvocationResult,
 };
-pub use lowering::{ActionAppExt, submit_command};
+pub use lowering::{ActionAppExt, submit_command, submit_command_in_undo_step};
 pub use mapping_mode::{
     ControllerMappingMode, ControllerMappingModeState, MAPPING_MODE_LEASE, MappingLeaseExpired,
 };
@@ -462,6 +462,35 @@ mod tests {
                 source: Some("OSC 127.0.0.1:9000".to_string()),
             }
         );
+    }
+
+    /// Verifies commands submitted into one undo step get distinct command IDs but share the
+    /// caller's undo ID, both in the tracker and on the queued envelopes.
+    #[test]
+    fn commands_submitted_in_one_undo_step_share_its_undo_id() {
+        let mut app = action_app();
+        let invocation = ActionInvocation::trigger(
+            ActionReference::new("test.command", json!({ "value": 1 })),
+            ActionSurface::Board,
+        );
+        let undo_id = UndoId::new();
+        let world = app.world_mut();
+        let first = submit_command_in_undo_step(world, &invocation, undo_id, TestCommand(1))
+            .expect("first command should submit");
+        let second = submit_command_in_undo_step(world, &invocation, undo_id, TestCommand(2))
+            .expect("second command should submit");
+
+        assert_ne!(first, second);
+        let tracker = world.resource::<CommandTracker>();
+        for command_id in [first, second] {
+            let active = tracker
+                .active_command(command_id)
+                .expect("submitted command should be tracked");
+            assert_eq!(active.undo_id, undo_id);
+        }
+        let pending = world.resource_mut::<PendingCommandBuffer>().drain();
+        assert_eq!(pending.len(), 2);
+        assert!(pending.iter().all(|envelope| envelope.undo_id == undo_id));
     }
 
     /// Level read back by the test flash registration.
