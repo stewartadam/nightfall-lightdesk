@@ -9,6 +9,7 @@
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { For, Show } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Button } from "../../../components/ui/visual-language/button";
 import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
@@ -292,19 +293,29 @@ export function ClipListView(props: ClipListViewProps) {
                         </Button>
                       </div>
                     </div>
-                    <div class="nf-tile-badges uppercase">
-                      <span class="nf-tile-badge rounded bg-neutral-800 text-neutral-300">
+                    <div class="nf-tile-badges">
+                      <Badge size="xs" appearance="soft" uppercase>
                         {clip()?.source?.type ?? "None"}
-                      </span>
+                      </Badge>
                       <Show when={clip()?.options?.auto_release}>
-                        <span class="nf-tile-badge rounded bg-blue-500/20 text-blue-100">
+                        <Badge
+                          size="xs"
+                          tone="info"
+                          appearance="soft"
+                          uppercase
+                        >
                           AR
-                        </span>
+                        </Badge>
                       </Show>
                       <Show when={clip()?.options?.deactivate_on_sequence_end}>
-                        <span class="nf-tile-badge rounded bg-amber-500/20 text-amber-100">
+                        <Badge
+                          size="xs"
+                          tone="warning"
+                          appearance="soft"
+                          uppercase
+                        >
                           END
-                        </span>
+                        </Badge>
                       </Show>
                     </div>
                   </div>

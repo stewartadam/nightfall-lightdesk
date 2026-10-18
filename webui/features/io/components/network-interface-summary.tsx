@@ -7,6 +7,7 @@
  */
 
 import { For, type JSX, Show } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import { Table, TableScroll } from "../../../components/ui/table";
 import type { NetworkInterfaceInfo } from "../../../types";
 import {
@@ -95,12 +96,13 @@ export function NetworkInterfaceSummary(props: NetworkInterfaceSummaryProps) {
                               props.listeningAddresses,
                             )}
                           >
-                            <span
-                              class="rounded border border-blue-500/50 px-1.5 py-0.5 text-[10px] uppercase text-blue-300"
+                            <Badge
+                              tone="info"
+                              uppercase
                               title="External control is listening on this interface"
                             >
                               Listening
-                            </span>
+                            </Badge>
                           </Show>
                           <Show
                             when={
@@ -108,9 +110,9 @@ export function NetworkInterfaceSummary(props: NetworkInterfaceSummaryProps) {
                               props.currentInterfaceName
                             }
                           >
-                            <span class="rounded border border-emerald-500/50 px-1.5 py-0.5 text-[10px] uppercase text-emerald-300">
+                            <Badge tone="success" uppercase>
                               Current
-                            </span>
+                            </Badge>
                           </Show>
                           <Show
                             when={
@@ -118,9 +120,7 @@ export function NetworkInterfaceSummary(props: NetworkInterfaceSummaryProps) {
                               props.defaultInterfaceName
                             }
                           >
-                            <span class="rounded border border-gray-600 px-1.5 py-0.5 text-[10px] uppercase text-gray-400">
-                              Default
-                            </span>
+                            <Badge uppercase>Default</Badge>
                           </Show>
                           <Show
                             when={

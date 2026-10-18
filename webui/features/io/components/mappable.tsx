@@ -18,6 +18,7 @@ import {
   splitProps,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { CountBadge } from "../../../components/ui/badge";
 import {
   actionCatalog,
   midiMappings,
@@ -336,14 +337,11 @@ export function Mappable(props: MappableProps): JSX.Element {
           onPointerDown={(event) => event.stopPropagation()}
           onClick={handleClick}
         >
-          <Show when={existingBindings().length > 0}>
-            <span
-              class="absolute -right-1 -top-1 rounded-full bg-amber-400 px-1.5 text-[10px] font-semibold leading-4 text-neutral-950"
-              data-mapping-count
-            >
-              {existingBindings().length}
-            </span>
-          </Show>
+          <CountBadge
+            count={existingBindings().length}
+            tone="warning"
+            data-mapping-count
+          />
         </button>
         <Show when={open()}>
           <Portal mount={document.body}>

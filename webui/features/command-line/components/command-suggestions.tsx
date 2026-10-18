@@ -7,6 +7,7 @@
  */
 
 import { type Accessor, For, Show } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import {
   SearchPickerOption,
   SearchPickerSurface,
@@ -115,17 +116,11 @@ export const CommandSuggestions = (props: CommandSuggestionsProps) => {
                         suggestion.insertText.toLowerCase()
                     }
                   >
-                    <span
-                      class={
-                        props.variant === "panel"
-                          ? "rounded border border-neutral-600 px-1 text-[10px] text-neutral-300"
-                          : "rounded border border-gray-300 px-1 text-[10px] text-gray-600 dark:border-slate-600 dark:text-slate-300"
-                      }
-                    >
+                    <Badge>
                       {isTokenSuggestion(suggestion)
                         ? suggestion.insertText
                         : ""}
-                    </span>
+                    </Badge>
                   </Show>
                   <Show when={isIntentSuggestion(suggestion)}>
                     <span class="inline-flex items-center gap-1 text-[10px] text-neutral-400 dark:text-slate-400">
@@ -134,17 +129,7 @@ export const CommandSuggestions = (props: CommandSuggestionsProps) => {
                           isIntentSuggestion(suggestion) ? suggestion.hints : []
                         }
                       >
-                        {(hint) => (
-                          <span
-                            class={
-                              props.variant === "panel"
-                                ? "rounded border border-neutral-600 px-1 text-[10px] text-neutral-300"
-                                : "rounded border border-gray-300 px-1 text-[10px] text-gray-600 dark:border-slate-600 dark:text-slate-300"
-                            }
-                          >
-                            {hint}
-                          </span>
-                        )}
+                        {(hint) => <Badge>{hint}</Badge>}
                       </For>
                       <Show
                         when={
@@ -163,15 +148,7 @@ export const CommandSuggestions = (props: CommandSuggestionsProps) => {
                     isTabActionable(suggestion)
                   }
                 >
-                  <span
-                    class={
-                      props.variant === "panel"
-                        ? "rounded border border-neutral-500 px-1 text-[10px] uppercase tracking-wide text-neutral-300"
-                        : "rounded border border-gray-300 px-1 text-[10px] uppercase tracking-wide text-gray-600 dark:border-slate-600 dark:text-gray-300"
-                    }
-                  >
-                    Tab
-                  </span>
+                  <Badge uppercase>Tab</Badge>
                 </Show>
               </span>
             </SearchPickerOption>

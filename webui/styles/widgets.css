@@ -287,17 +287,6 @@ a:focus-visible {
   margin-top: auto;
   padding-top: var(--nf-tile-gap);
 }
-.tile-tag,
-.nf-tile-badge {
-  min-width: 0;
-  padding: 0 3px;
-  font-size: 8px;
-  font-weight: 400;
-  line-height: 9px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .nf-dialog-surface {
   box-shadow: var(--shadow-elevation-high);
 }

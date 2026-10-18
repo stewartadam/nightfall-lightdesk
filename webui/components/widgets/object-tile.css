@@ -29,11 +29,6 @@
 .object-tile > * {
   flex-shrink: 0;
 }
-.tile-tag {
-  border: 1px solid var(--line);
-  border-radius: var(--nf-corner-radius, 4px);
-  background: var(--accent-soft);
-}
 .tile-top {
   display: flex;
   align-items: center;

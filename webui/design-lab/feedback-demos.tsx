@@ -6,13 +6,23 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { SparkleIcon } from "@squidlab/phosphor-solid/sparkle";
+import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import { createSignal, ErrorBoundary, For, Show } from "solid-js";
 import { Alert } from "../components/ui/alert";
+import {
+  Badge,
+  type BadgeAppearance,
+  type BadgeTone,
+  CountBadge,
+} from "../components/ui/badge";
 import { EmptyState } from "../components/ui/empty-state";
 import { ErrorFallback } from "../components/ui/error-fallback";
 import { Sparkline } from "../components/ui/sparkline";
+import { ToolbarButton } from "../components/ui/toolbar-button";
 import Tooltip from "../components/ui/tooltip";
 import { Button } from "../components/ui/visual-language/button";
 import "./widget-demos.css";
@@ -169,6 +179,81 @@ export function ErrorFallbackDemo() {
       <Show when={reports() > 0}>
         <p class="widget-fallback-sample">Bug reports opened: {reports()}</p>
       </Show>
+    </section>
+  );
+}
+
+const badgeTones: BadgeTone[] = [
+  "neutral",
+  "accent",
+  "info",
+  "success",
+  "warning",
+  "danger",
+];
+const badgeAppearances: BadgeAppearance[] = ["outline", "soft", "solid"];
+
+/** Shows every badge tone in each appearance and size, with icons, plus corner count bubbles on a toolbar button and a plain anchor. */
+export function BadgeDemo() {
+  const [count, setCount] = createSignal(3);
+  return (
+    <section class="properties lab-panel" aria-label="Badge examples">
+      <div class="eyebrow">BADGES</div>
+      <h2>Small labels, consistent states.</h2>
+      <For each={badgeAppearances}>
+        {(appearance) => (
+          <>
+            <div class="eyebrow">{appearance.toUpperCase()}</div>
+            <div class="widget-badge-row">
+              <For each={badgeTones}>
+                {(tone) => (
+                  <Badge tone={tone} appearance={appearance} uppercase>
+                    {tone}
+                  </Badge>
+                )}
+              </For>
+            </div>
+          </>
+        )}
+      </For>
+      <div class="eyebrow">SIZES, ICONS AND IDENTIFIERS</div>
+      <div class="widget-badge-row">
+        <Badge size="xs" tone="info" appearance="soft" uppercase>
+          Tile
+        </Badge>
+        <Badge tone="success" icon={CheckIcon}>
+          Saved
+        </Badge>
+        <Badge size="md" tone="warning" appearance="soft" icon={WarningIcon}>
+          Prune
+        </Badge>
+        <Badge appearance="soft" mono>
+          3f9c2a1b
+        </Badge>
+      </div>
+      <div class="eyebrow">COUNT BUBBLES</div>
+      <div class="widget-badge-row">
+        <ToolbarButton label="Delete selected" variant="danger" count={count()}>
+          <TrashIcon class="size-4" aria-hidden />
+        </ToolbarButton>
+        <span class="widget-badge-anchor">
+          Mapped
+          <CountBadge count={count()} tone="warning" />
+        </span>
+        <span class="widget-badge-anchor">
+          Overflow
+          <CountBadge count={count() * 40} max={99} />
+        </span>
+        <Button size="compact" onClick={() => setCount(count() + 1)}>
+          Add
+        </Button>
+        <Button
+          size="compact"
+          onClick={() => setCount(Math.max(0, count() - 1))}
+        >
+          Remove
+        </Button>
+      </div>
     </section>
   );
 }
