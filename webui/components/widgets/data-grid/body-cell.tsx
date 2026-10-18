@@ -435,7 +435,11 @@ export function BodyCell(props: BodyCellProps) {
         props.handleCellClick(props.col, props.rowIndex, event)
       }
       onKeyDown={(event) => {
-        if (event.key === "Enter") {
+        // Buttons rendered inside a cell keep their own Enter activation.
+        if (
+          event.key === "Enter" &&
+          !(event.target instanceof Element && event.target.closest("button"))
+        ) {
           event.preventDefault();
           props.handleCellEnterKey(props.col, props.rowIndex, event);
         }

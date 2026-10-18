@@ -12,6 +12,7 @@ import type {
   Rectangle,
 } from "../../../../lib/data-grid-types";
 import { CompactSelection } from "../../../../lib/data-grid-types";
+import type { DataGridSelectionMode } from "./types";
 
 type SelectionRange = NonNullable<GridSelection["current"]>["range"];
 type SelectionCurrent = GridSelection["current"];
@@ -782,4 +783,124 @@ function dragSelectionToState(
 function clampSelectionIndex(value: number, maxExclusive: number): number {
   if (maxExclusive <= 0) return 0;
   return Math.max(0, Math.min(value, maxExclusive - 1));
+}
+
+/** Lists every row a selection's ranges touch. */
+function currentSelectionRows(current: SelectionCurrent): Set<number> {
+  const rows = new Set<number>();
+  if (!current) return rows;
+  for (const range of [current.range, ...current.rangeStack]) {
+    for (let row = range.y; row < range.y + range.height; row += 1) {
+      rows.add(row);
+    }
+  }
+  return rows;
+}
+
+/** Counts the distinct columns a selection covers on each row it touches. */
+function coveredColumnsByRow(current: SelectionCurrent): Map<number, number> {
+  const columnsByRow = new Map<number, Set<number>>();
+  if (current) {
+    for (const range of [current.range, ...current.rangeStack]) {
+      for (let row = range.y; row < range.y + range.height; row += 1) {
+        const columns = columnsByRow.get(row) ?? new Set<number>();
+        for (let col = range.x; col < range.x + range.width; col += 1) {
+          columns.add(col);
+        }
+        columnsByRow.set(row, columns);
+      }
+    }
+  }
+  return new Map(
+    [...columnsByRow].map(([row, columns]) => [row, columns.size]),
+  );
+}
+
+/** Groups sorted row indexes into contiguous full-width bands. */
+function rowBands(rows: number[], columnCount: number): Rectangle[] {
+  const bands: Rectangle[] = [];
+  for (const row of rows) {
+    const last = bands[bands.length - 1];
+    if (last && last.y + last.height === row) {
+      last.height += 1;
+    } else {
+      bands.push({ x: 0, y: row, width: columnCount, height: 1 });
+    }
+  }
+  return bands;
+}
+
+/**
+ * Widens a selection to whole rows. A row the previous selection already held
+ * stays selected only while every column is still covered, so Ctrl+click and
+ * Ctrl+drag, which subtract cells, deselect the row; any other covered row is
+ * selected. The active cell moves to the first column and the band containing
+ * it becomes the current range.
+ */
+export function rowSelectionCurrent(
+  current: SelectionCurrent,
+  columnCount: number,
+  previous?: SelectionCurrent,
+): SelectionCurrent {
+  if (!current) return current;
+  const width = Math.max(columnCount, 1);
+  const previousRows = currentSelectionRows(previous);
+  const rows = [...coveredColumnsByRow(current)]
+    .filter(([row, covered]) => covered >= width || !previousRows.has(row))
+    .map(([row]) => row)
+    .sort((left, right) => left - right);
+  if (rows.length === 0) return undefined;
+  const bands = rowBands(rows, width);
+  const activeRow = current.cell[1];
+  const activeBand =
+    bands.find(
+      (band) => activeRow >= band.y && activeRow < band.y + band.height,
+    ) ?? bands[bands.length - 1]!;
+  return {
+    cell: [0, activeRow],
+    range: activeBand,
+    rangeStack: bands.filter((band) => band !== activeBand),
+  };
+}
+
+/**
+ * Returns whether a selection mode uses the grid's own cell or row selection.
+ * `"text"` and `"none"` grids ignore selection gestures and keys so the browser
+ * (or nothing) handles them instead.
+ */
+export function selectionModeUsesGridSelection(
+  mode: DataGridSelectionMode | undefined,
+): boolean {
+  return mode === undefined || mode === "cell" || mode === "row";
+}
+
+/**
+ * Projects selection state onto whole rows for grids in row selection mode:
+ * every range spans all columns, the active cell and anchors sit in the first
+ * column, and column selections are dropped. Clicks, drags and arrow keys
+ * therefore select rows and never expose an individual cell. `subtractedFrom`
+ * is the selection a Ctrl+click or Ctrl+drag removed cells from, if any.
+ */
+export function rowSelectionState(
+  state: DataGridSelectionState,
+  columnCount: number,
+  subtractedFrom?: SelectionCurrent,
+): DataGridSelectionState {
+  return {
+    ...state,
+    activeCell: state.activeCell && [0, state.activeCell[1]],
+    selectionAnchor: state.selectionAnchor && [0, state.selectionAnchor[1]],
+    selectedColumns: CompactSelection.empty(),
+    columnSelectionAnchor: undefined,
+    columnSelectionExtent: undefined,
+    current: rowSelectionCurrent(state.current, columnCount, subtractedFrom),
+    externalSelection: state.externalSelection && {
+      ...state.externalSelection,
+      columns: CompactSelection.empty(),
+      current: rowSelectionCurrent(
+        state.externalSelection.current,
+        columnCount,
+      ),
+    },
+  };
 }
