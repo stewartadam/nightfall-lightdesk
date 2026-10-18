@@ -54,7 +54,7 @@ test("notification history opens from the header bell and lists recent toasts", 
   await expect(bellButton).toBeVisible();
   await bellButton.click();
 
-  const popout = page.getByRole("region", { name: "Notification history" });
+  const popout = page.getByRole("dialog", { name: "Notification history" });
   await expect(popout).toBeVisible();
   await expect(
     popout.getByText("Notification History", { exact: true }),

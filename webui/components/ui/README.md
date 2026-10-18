@@ -12,7 +12,30 @@ Reusable components own their visual rules alongside their implementation. Dialo
 
 - Use `dropdown-menu` for button-triggered menus. Its items close the dropdown after activation. Give a trigger the shared button look with `triggerVariant`/`triggerSize` (see `buttons.md`) rather than styling a `<span>` inside it.
 - Use the context-menu provider and widget for menus anchored to a pointer, including nested flyouts.
+- Use `Popover` from `popover` for other anchored floating content: menus whose trigger is not a plain button (a field, an overlay), menus that stay open while items are toggled, or non-menu content such as the notification history. `DropdownMenu` composes it.
 - Both wrappers compose the menu primitives and retain responsibility for interaction and positioning. Add visual states to the primitives instead of styling individual menu callers.
+- `MenuItem` takes a `description` for a wrapping second line, and `MenuHeading` takes `literal` to keep quoted names and addresses in their own case.
+
+## Popovers
+
+`Popover` renders floating content against an `anchor` element and mounts it through `overlayHost(anchor)`, so it stays visible and interactive inside open modal dialogs. Never portal floating UI to `document.body` or through a bare `<Portal>`; the `shared-overlays` node test enforces this, and keeps menu roles inside `components/ui` and the context-menu widget.
+
+- The caller owns `open` and closes the popover from `onClose`, which runs on a pointer press outside both the popover and its anchor, and on Escape (see Dismissal below). Its document listeners exist only while it is open.
+- `placement` is `below` (default), `above`, or `auto` (below unless the content fits better above). `align` lines up the `start` or `end` edge, and `matchAnchorWidth` sizes it to the anchor. It clamps to the viewport and scrolls when taller than the room available.
+- `initialFocus` moves focus to the first enabled control (default), nowhere (`none`, for a field that keeps typing focus), or the element a function returns. `returnFocus` picks where Escape sends focus; it defaults to the anchor.
+- `surface` renders the positioned element, such as `MenuSurface` for menus or `DialogSurface` for panel content; other attributes (`role`, `aria-label`, `class`, `style`, data attributes) pass through to it.
+
+### Dismissal
+
+Every transient floating layer (popover, menu, picker, palette) dismisses through `createDismissable({ active, refs, onDismiss, escape, outsidePress })` from `dismissable`. `Popover` already uses it; call it directly only for floating UI that cannot be a `Popover`. Do not add your own document `pointerdown`/`mousedown` or Escape `keydown` listeners for dismissal.
+
+- While `active()`, the layer sits on the dialog stack above everything opened before it. Escape goes to the topmost layer first, so a dropdown inside a modal dialog closes before the dialog does. Layers never count as open dialogs, so `hasOpenDialog()` and background-key blocking are unaffected.
+- `onDismiss(reason)` receives `"outside"` or `"escape"`; a multi-step picker can step back on Escape instead of closing. `escape: () => false` passes Escape to whatever lies beneath.
+- Outside presses use one capture-phase `pointerdown` listener. Presses inside `refs()` (the surface and its anchor) or inside a layer or dialog opened on top (a nested popover) are not outside presses. Set `outsidePress: false` when a backdrop or third-party widget already catches them.
+
+The design lab's Dialogs panel puts a dropdown inside the task dialog to show the Escape order.
+
+The design lab's Menus panel shows a popover menu with described and checkable items.
 - The design lab's Menus panel demonstrates both wrappers, including checked, disabled, and destructive entries. Its button popover also exercises arbitrary interactive dropdown content.
 - `PrelineAdvancedSelect` renders its list through Preline, so its config applies the `nf-menu` and `nf-menu-item` classes (with the checkmark in the icon slot) instead of JSX. Its toggle takes the native select look from `styles/forms.css`.
 

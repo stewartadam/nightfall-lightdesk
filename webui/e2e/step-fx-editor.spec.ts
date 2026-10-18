@@ -480,7 +480,7 @@ test("Step FX attribute search is limited to target fixtures", async ({
   const attributeSearch = editor.getByRole("searchbox", {
     name: "Search attributes",
   });
-  const attributeMenu = editor.getByRole("menu", { name: "Attributes" });
+  const attributeMenu = page.getByRole("menu", { name: "Attributes" });
   await attributeSearch.focus();
   await expect(attributeMenu).toBeVisible();
   await expect(
@@ -1501,7 +1501,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     laneListBox.y,
   );
   await attributeSearch.focus();
-  const attributeMenu = editor.getByRole("menu", { name: "Attributes" });
+  const attributeMenu = page.getByRole("menu", { name: "Attributes" });
   await expect(attributeMenu).toBeVisible();
   const expandedLaneListBox = await laneList.boundingBox();
   if (!expandedLaneListBox)
@@ -2973,9 +2973,9 @@ test("Step FX editor hotkeys accelerate popover editing", async ({
     name: "Search attributes",
   });
   await expect(attributeSearch).toBeFocused();
-  await expect(editor.getByRole("menu", { name: "Attributes" })).toBeVisible();
+  await expect(page.getByRole("menu", { name: "Attributes" })).toBeVisible();
   await attributeSearch.press("Escape");
-  await expect(editor.getByRole("menu", { name: "Attributes" })).toBeHidden();
+  await expect(page.getByRole("menu", { name: "Attributes" })).toBeHidden();
 
   await shortcutAnchor.focus();
   await page.keyboard.press("s");
@@ -3633,7 +3633,7 @@ test("Step FX restores its viewport state after page reload", async ({
     name: "Search attributes",
   });
   await attributeSearch.focus();
-  await editor
+  await page
     .getByRole("menu", { name: "Attributes" })
     .getByRole("menuitemcheckbox", { name: "Blue" })
     .click();

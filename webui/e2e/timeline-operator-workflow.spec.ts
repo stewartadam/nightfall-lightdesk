@@ -2564,7 +2564,7 @@ test("timeline operator marker region nudge and loop overlays are usable", async
     .locator('[data-timeline-region="true"]')
     .count();
   await lane.click({ button: "right", position: { x: 280, y: 34 } });
-  const addRegion = page.getByRole("button", {
+  const addRegion = page.getByRole("menuitem", {
     name: "Add region",
     exact: true,
   });

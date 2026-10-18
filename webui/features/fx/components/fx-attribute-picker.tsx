@@ -6,17 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { CheckIcon } from "@squidlab/phosphor-solid/check";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
+import {
+  MenuItem,
+  MenuSeparator,
+  MenuSurface,
+} from "../../../components/ui/menu";
+import { Popover } from "../../../components/ui/popover";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Button } from "../../../components/ui/visual-language/button";
 
@@ -55,18 +52,38 @@ export interface FxAttributePickerProps {
 /**
  * Attribute picker component for selecting which fixture attributes
  * an FX should animate. Displays optional removable tags and a searchable,
- * checkable menu for changing the active attributes.
+ * checkable menu for changing the active attributes. The menu is a shared
+ * `Popover` anchored to the picker, so scrolling panels never clip it and
+ * toggling an attribute keeps it open for further choices.
  */
 export function FxAttributePicker(props: FxAttributePickerProps) {
   const [isDropdownOpen, setIsDropdownOpen] = createSignal(false);
   const [searchTerm, setSearchTerm] = createSignal("");
   let rootRef: HTMLDivElement | undefined;
   let searchInputRef: HTMLInputElement | undefined;
+  let addButtonRef: HTMLButtonElement | undefined;
+  let suppressFocusOpen = false;
+
+  /** Reports whether the search field sits inline in place of tags and an add button. */
+  const inlineSearch = () => props.showSelectedAttributes === false;
 
   /** Dismisses the attribute menu and clears its transient search query. */
   const dismiss = (): void => {
     setIsDropdownOpen(false);
     setSearchTerm("");
+  };
+
+  /**
+   * Picks where focus returns after Escape: the add button, or the inline
+   * search field without letting that focus reopen the menu.
+   */
+  const returnFocus = (): HTMLElement | undefined => {
+    if (!inlineSearch()) return addButtonRef;
+    suppressFocusOpen = true;
+    queueMicrotask(() => {
+      suppressFocusOpen = false;
+    });
+    return searchInputRef;
   };
 
   /** Indexes the selected names for menu state and toggle operations. */
@@ -108,21 +125,6 @@ export function FxAttributePicker(props: FxAttributePickerProps) {
     props.onChange([...props.selectedAttributes, attr]);
   };
 
-  /** Closes and clears the menu when focus moves through a pointer outside it. */
-  onMount(() => {
-    /** Handles pointer dismissal while retaining clicks inside the picker. */
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (!rootRef?.contains(target)) dismiss();
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    onCleanup(() => {
-      document.removeEventListener("mousedown", handlePointerDown);
-    });
-  });
-
   /** Moves focus into the active search field whenever the menu opens. */
   createEffect(() => {
     if (isDropdownOpen()) {
@@ -155,15 +157,15 @@ export function FxAttributePicker(props: FxAttributePickerProps) {
       <Show when={props.showLabel !== false}>
         <label class="text-xs text-neutral-400">Attributes</label>
       </Show>
-      <div ref={rootRef} class="relative">
+      <div ref={rootRef}>
         <div
           class="flex flex-wrap items-center gap-1"
           classList={{
             "min-h-10 rounded-md border border-neutral-700 bg-neutral-900/40 p-1.5":
-              props.showSelectedAttributes !== false,
+              !inlineSearch(),
           }}
         >
-          <Show when={props.showSelectedAttributes !== false}>
+          <Show when={!inlineSearch()}>
             <For each={props.selectedAttributes}>
               {(attr) => (
                 <Button
@@ -190,25 +192,23 @@ export function FxAttributePicker(props: FxAttributePickerProps) {
           </Show>
 
           <Show
-            when={props.showSelectedAttributes !== false}
+            when={!inlineSearch()}
             fallback={
               <Input
                 density="compact"
                 ref={searchInputRef}
                 type="search"
                 aria-label="Search attributes"
+                aria-expanded={isDropdownOpen()}
+                aria-haspopup="menu"
                 value={searchTerm()}
-                onFocus={() => setIsDropdownOpen(true)}
+                onFocus={() => {
+                  if (!suppressFocusOpen) setIsDropdownOpen(true);
+                }}
                 onClick={() => setIsDropdownOpen(true)}
                 onInput={(event) => {
                   setSearchTerm(event.currentTarget.value);
                   setIsDropdownOpen(true);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    dismiss();
-                  }
                 }}
                 placeholder="Search attributes..."
                 class="w-full"
@@ -216,76 +216,74 @@ export function FxAttributePicker(props: FxAttributePickerProps) {
             }
           >
             <Button
+              ref={addButtonRef}
               size="compact"
               type="button"
-              onClick={() => setIsDropdownOpen((open) => !open)}
+              onClick={() =>
+                isDropdownOpen() ? dismiss() : setIsDropdownOpen(true)
+              }
               class="ml-auto items-center gap-1"
               aria-expanded={isDropdownOpen()}
+              aria-haspopup="menu"
             >
               Add attribute
             </Button>
           </Show>
         </div>
 
-        <Show when={isDropdownOpen()}>
-          <div class="absolute z-20 mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 shadow-lg">
-            <Show when={props.showSelectedAttributes !== false}>
-              <div class="border-b border-neutral-700 p-2">
-                <Input
-                  density="compact"
-                  ref={searchInputRef}
-                  type="search"
-                  aria-label="Search attributes"
-                  value={searchTerm()}
-                  onInput={(event) => setSearchTerm(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      dismiss();
-                    }
-                  }}
-                  placeholder="Search attributes..."
-                  class="w-full"
-                />
-              </div>
-            </Show>
+        <Popover
+          anchor={() => rootRef}
+          open={isDropdownOpen()}
+          onClose={dismiss}
+          placement="auto"
+          matchAnchorWidth
+          initialFocus="none"
+          returnFocus={returnFocus}
+          surface={MenuSurface}
+          class="flex flex-col"
+          data-fx-attribute-picker-menu
+        >
+          <Show when={!inlineSearch()}>
+            <Input
+              density="compact"
+              ref={searchInputRef}
+              type="search"
+              aria-label="Search attributes"
+              value={searchTerm()}
+              onInput={(event) => setSearchTerm(event.currentTarget.value)}
+              placeholder="Search attributes..."
+              class="w-full"
+            />
+            <MenuSeparator />
+          </Show>
 
-            <ScrollArea
-              class="max-h-52"
-              viewportClass="p-1"
-              viewportProps={{ role: "menu", "aria-label": "Attributes" }}
+          <ScrollArea
+            class="min-h-0 max-h-52"
+            viewportProps={{ role: "menu", "aria-label": "Attributes" }}
+          >
+            <Show
+              when={filteredAttributes().length > 0}
+              fallback={
+                <div class="px-2 py-2 text-xs text-neutral-500">
+                  No matching attributes
+                </div>
+              }
             >
-              <Show
-                when={filteredAttributes().length > 0}
-                fallback={
-                  <div class="px-2 py-2 text-xs text-neutral-500">
-                    No matching attributes
-                  </div>
-                }
-              >
-                <For each={filteredAttributes()}>
-                  {(attr) => (
-                    <Button
-                      size="compact"
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={selectedSet().has(attr)}
-                      class="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs text-neutral-200 transition-colors hover:bg-neutral-700"
-                      onClick={() => toggleAttribute(attr)}
-                    >
-                      <span class="flex size-3.5 shrink-0 items-center justify-center">
-                        <Show when={selectedSet().has(attr)}>
-                          <CheckIcon class="size-3.5" aria-hidden />
-                        </Show>
-                      </span>
-                      <span class="min-w-0 flex-1 truncate">{attr}</span>
-                    </Button>
-                  )}
-                </For>
-              </Show>
-            </ScrollArea>
-          </div>
-        </Show>
+              <For each={filteredAttributes()}>
+                {(attr) => (
+                  <MenuItem
+                    role="menuitemcheckbox"
+                    aria-checked={selectedSet().has(attr)}
+                    checked={selectedSet().has(attr)}
+                    onClick={() => toggleAttribute(attr)}
+                  >
+                    {attr}
+                  </MenuItem>
+                )}
+              </For>
+            </Show>
+          </ScrollArea>
+        </Popover>
       </div>
     </div>
   );

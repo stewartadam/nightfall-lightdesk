@@ -16,6 +16,7 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createDismissable } from "../../ui/dismissable";
 import { overlayHost } from "../../ui/modal/dialog-stack";
 import { ScrollIndicators } from "../../ui/scroll-area";
 import "../../ui/menu/menu.css";
@@ -135,7 +136,8 @@ export function PrelineAdvancedSelect(props: {
   let pendingSelectedValues: readonly string[] | undefined;
   let committedSelectedValues: readonly string[] = props.selectedValues;
   let outsidePointerStartedWithOpen = false;
-  let restorePrelineClose: (() => void) | undefined;
+  let restorePrelineHooks: (() => void) | undefined;
+  const [menuOpen, setMenuOpen] = createSignal(false);
   const [dropdownViewport, setDropdownViewport] = createSignal<HTMLElement>();
   const selectId = `${props.selectIdPrefix ?? "preline-advanced-select"}-${nextSelectId++}`;
 
@@ -236,25 +238,52 @@ export function PrelineAdvancedSelect(props: {
     requestAnimationFrame(() => syncToggleSummaryText(selectedValues));
   };
 
-  /** Installs a close hook so app state changes do not re-render open menus. */
-  const installCloseFlush = () => {
+  /**
+   * Hooks Preline's open and close so the menu's open state is reactive (for
+   * Escape dismissal through the dialog stack), and so app state changes do
+   * not re-render open menus: buffered selections commit only on close.
+   */
+  const installOpenStateHooks = () => {
     const instance = prelineSelectInstance(selectElement)?.element;
-    if (!instance?.close || restorePrelineClose) return;
+    if (!instance?.close || !instance.open || restorePrelineHooks) return;
+
+    const originalOpen = instance.open.bind(instance);
+    instance.open = () => {
+      const result = originalOpen();
+      setMenuOpen(instance.isOpened?.() ?? false);
+      return result;
+    };
 
     const originalClose = instance.close.bind(instance);
     instance.close = (forceFocus?: boolean) => {
       const wasOpened = instance.isOpened?.() ?? false;
       const result = originalClose(forceFocus);
+      setMenuOpen(instance.isOpened?.() ?? false);
       if (result !== false && wasOpened && !instance.isOpened?.()) {
         flushPendingSelectedValues(true);
       }
       return result;
     };
 
-    restorePrelineClose = () => {
+    restorePrelineHooks = () => {
+      instance.open = originalOpen;
       instance.close = originalClose;
+      setMenuOpen(false);
     };
   };
+
+  // Preline closes itself on outside presses; Escape goes through the shared stack so a select in a dialog or popover closes first,
+  // and presses in its relocated list do not dismiss a popover beneath it.
+  createDismissable({
+    active: menuOpen,
+    refs: () => [
+      selectElement?.closest(".hs-select"),
+      prelineSelectInstance(selectElement)?.element?.dropdown,
+    ],
+    onDismiss: () =>
+      prelineSelectInstance(selectElement)?.element?.close?.(true),
+    outsidePress: false,
+  });
 
   /** Records whether an outside pointer action started while the menu was open. */
   const handleDocumentPointerDown = (event: PointerEvent) => {
@@ -284,14 +313,6 @@ export function PrelineAdvancedSelect(props: {
     if (target.closest(".hs-select, [data-hs-select-dropdown]")) return;
     flushPendingSelectedValues(outsidePointerStartedWithOpen);
     outsidePointerStartedWithOpen = false;
-  };
-
-  /** Closes a portaled menu on Escape even when clicking an option moved focus outside its wrapper. */
-  const handleDocumentKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || !isAdvancedSelectOpen()) return;
-    event.preventDefault();
-    event.stopPropagation();
-    prelineSelectInstance(selectElement)?.element?.close?.(true);
   };
 
   /** Stores open-menu changes locally and commits closed-menu changes directly. */
@@ -356,11 +377,10 @@ export function PrelineAdvancedSelect(props: {
     const host = overlayHost(selectElement);
     if (dropdown && host !== document.body) host.append(dropdown);
     setDropdownViewport(dropdown);
-    installCloseFlush();
+    installOpenStateHooks();
     selectElement.addEventListener("change", handleSelectChange);
     window.addEventListener("pointerdown", handleDocumentPointerDown, true);
     window.addEventListener("click", handleDocumentClick);
-    document.addEventListener("keydown", handleDocumentKeyDown, true);
     syncAdvancedSelectValue();
     requestAnimationFrame(openInitializedSelect);
   };
@@ -397,8 +417,7 @@ export function PrelineAdvancedSelect(props: {
     selectElement?.removeEventListener("change", handleSelectChange);
     window.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     window.removeEventListener("click", handleDocumentClick);
-    document.removeEventListener("keydown", handleDocumentKeyDown, true);
-    restorePrelineClose?.();
+    restorePrelineHooks?.();
     prelineSelectInstance(selectElement)?.element?.destroy?.();
   });
 

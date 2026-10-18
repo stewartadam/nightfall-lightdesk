@@ -15,9 +15,8 @@ import {
   onMount,
   Show,
 } from "solid-js";
-import { Portal } from "solid-js/web";
+import { openContextMenu } from "../../../components/providers/context-menu";
 import { Input } from "../../../components/ui/form-controls";
-import { MenuItem, MenuSurface } from "../../../components/ui/menu";
 import {
   durationToMs,
   msToDuration,
@@ -388,9 +387,6 @@ export const LoopRangeBackdrop = () => {
 export const TimelineOperatorLane = () => {
   const ctx = useTimelineContext();
   let laneRef: HTMLDivElement | undefined;
-  const [menuPosition, setMenuPosition] = createSignal<
-    { x: number; y: number; positionMs: number } | undefined
-  >(undefined);
   const [regionDrag, setRegionDrag] = createSignal<RegionDragState | undefined>(
     undefined,
   );
@@ -510,13 +506,34 @@ export const TimelineOperatorLane = () => {
     const currentTarget = event.currentTarget as HTMLElement | null;
     if (!currentTarget) return;
     const rect = currentTarget.getBoundingClientRect();
-    const positionPx = event.clientX - rect.left;
-    setMenuPosition({
+    const positionMs = quantizePosition(
+      ctx.start() + pixelsToMs(event.clientX - rect.left, ctx.zoom()),
+    );
+    openContextMenu({
       x: event.clientX,
       y: event.clientY,
-      positionMs: quantizePosition(
-        ctx.start() + pixelsToMs(positionPx, ctx.zoom()),
-      ),
+      items: [
+        {
+          id: "timeline-add-marker",
+          label: "Add marker",
+          onSelect: () => createMarker(positionMs),
+        },
+        {
+          id: "timeline-add-region",
+          label: "Add region",
+          onSelect: () => createRegion(positionMs),
+        },
+        {
+          id: "timeline-set-loop-range",
+          label: "Set loop range",
+          onSelect: () =>
+            ctx.loopActions.setLoopRange({
+              start: msToDuration(positionMs),
+              end: msToDuration(positionMs + DEFAULT_REGION_MS),
+              enabled: true,
+            }),
+        },
+      ],
     });
   };
 
@@ -551,7 +568,6 @@ export const TimelineOperatorLane = () => {
       data: { marker_uid: marker.uid },
     });
     ctx.markerLabelEditing.startEditing(marker.uid, marker.label);
-    setMenuPosition(undefined);
   };
 
   const createRegion = (positionMs: number) => {
@@ -561,7 +577,6 @@ export const TimelineOperatorLane = () => {
       type: "RegionBody",
       data: { region_uid: region.uid },
     });
-    setMenuPosition(undefined);
   };
 
   const setLoopFromRegion = (region: types.TimelineRegion) => {
@@ -831,45 +846,6 @@ export const TimelineOperatorLane = () => {
           );
         }}
       </For>
-
-      <Show when={menuPosition()}>
-        {(menu) => (
-          <Portal>
-            <div
-              class="fixed inset-0 nightfall-top-layer"
-              onPointerDown={() => setMenuPosition(undefined)}
-            >
-              <MenuSurface
-                class="fixed min-w-[180px]"
-                style={{
-                  left: `${Math.max(12, Math.min(menu().x, window.innerWidth - 220))}px`,
-                  top: `${Math.max(12, Math.min(menu().y, window.innerHeight - 140))}px`,
-                }}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <MenuItem onClick={() => createMarker(menu().positionMs)}>
-                  Add marker
-                </MenuItem>
-                <MenuItem onClick={() => createRegion(menu().positionMs)}>
-                  Add region
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    ctx.loopActions.setLoopRange({
-                      start: msToDuration(menu().positionMs),
-                      end: msToDuration(menu().positionMs + DEFAULT_REGION_MS),
-                      enabled: true,
-                    });
-                    setMenuPosition(undefined);
-                  }}
-                >
-                  Set loop range
-                </MenuItem>
-              </MenuSurface>
-            </div>
-          </Portal>
-        )}
-      </Show>
     </div>
   );
 };
