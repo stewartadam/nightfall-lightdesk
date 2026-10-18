@@ -12,8 +12,8 @@ import type {
   MetricsHistory,
   SmoothedEngineMetrics,
 } from "../../../state/appStores";
-import { formatNumber, getFpsColor } from "../model/metrics";
-import { MetricCard } from "./metric-sections";
+import { formatNumber, getFpsTone } from "../model/metrics";
+import { MetricCard, MetricValue } from "./metric-sections";
 
 interface BackendMetricsSectionProps {
   history: MetricsHistory;
@@ -35,9 +35,9 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
             height={20}
             color="#4ade80"
           />
-          <span class={`font-mono text-xs ${getFpsColor(props.metrics.fps)}`}>
+          <MetricValue tone={getFpsTone(props.metrics.fps)} class="text-xs">
             {formatNumber(props.metrics.fps, 1)} fps
-          </span>
+          </MetricValue>
         </span>
       }
     >
@@ -45,7 +45,8 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
         <MetricCard
           label="FPS"
           value={formatNumber(props.metrics.fps, 1)}
-          valueClass={`text-2xl font-bold ${getFpsColor(props.metrics.fps)}`}
+          size="xl"
+          tone={getFpsTone(props.metrics.fps)}
         />
         <MetricCard
           label={
@@ -60,7 +61,7 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
             </span>
           }
           value={formatNumber(props.metrics.frameTimeMs, 2, " ms")}
-          valueClass="text-2xl font-bold"
+          size="xl"
         />
         <MetricCard
           label="Frame generation"

@@ -14,8 +14,8 @@ import type {
   LongAnimationFrameStats,
   MetricsHistory,
 } from "../../../state/appStores";
-import { formatNumber, getFpsColor, UI_TARGET_FPS } from "../model/metrics";
-import { MetricCard } from "./metric-sections";
+import { formatNumber, getFpsTone, UI_TARGET_FPS } from "../model/metrics";
+import { MetricCard, MetricValue } from "./metric-sections";
 
 interface BrowserRenderingSectionProps {
   frameStats: FrameStats | null;
@@ -38,11 +38,12 @@ export function BrowserRenderingSection(props: BrowserRenderingSectionProps) {
             height={20}
             color="#22d3ee"
           />
-          <span
-            class={`font-mono text-xs ${getFpsColor(props.frameStats?.fps, UI_TARGET_FPS)}`}
+          <MetricValue
+            tone={getFpsTone(props.frameStats?.fps, UI_TARGET_FPS)}
+            class="text-xs"
           >
             {formatNumber(props.frameStats?.fps, 0)} fps
-          </span>
+          </MetricValue>
         </span>
       }
     >
@@ -58,22 +59,26 @@ export function BrowserRenderingSection(props: BrowserRenderingSectionProps) {
           <MetricCard
             label="FPS"
             value={formatNumber(props.frameStats?.fps, 0)}
-            valueClass={`text-xl font-bold ${getFpsColor(props.frameStats?.fps, UI_TARGET_FPS)}`}
+            size="lg"
+            tone={getFpsTone(props.frameStats?.fps, UI_TARGET_FPS)}
           />
           <MetricCard
             label="Frame Time"
             value={formatNumber(props.frameStats?.avgFrameTimeMs, 1, " ms")}
-            valueClass="text-xl font-bold"
+            size="lg"
           />
           <MetricCard
             label="Dropped"
             value={props.frameStats?.droppedFrames ?? 0}
-            valueClass={`text-xl font-bold ${(props.frameStats?.droppedFrames ?? 0) > 0 ? "text-yellow-500" : ""}`}
+            size="lg"
+            tone={
+              (props.frameStats?.droppedFrames ?? 0) > 0 ? "warning" : "default"
+            }
           />
           <MetricCard
             label="Long frames"
             value={formatNumber(props.longFrameStats?.totalFrames, 0)}
-            valueClass="text-xl font-bold"
+            size="lg"
           />
         </div>
       </Show>
