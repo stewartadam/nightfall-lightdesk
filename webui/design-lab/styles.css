@@ -341,14 +341,6 @@ main {
   font-weight: 550;
   margin-bottom: 20px;
 }
-input[type="range"] {
-  width: 100%;
-  accent-color: var(--accent);
-  margin: 0;
-  height: 4px;
-  display: block;
-  cursor: pointer;
-}
 .button-samples {
   display: flex;
   gap: 8px;

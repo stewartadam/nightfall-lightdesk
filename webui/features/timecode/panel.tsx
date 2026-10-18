@@ -205,7 +205,7 @@ export default function TimecodePanel(props: TimecodePanelProps) {
   };
 
   return (
-    <div ref={panelRoot} class="flex h-full min-h-0 flex-col dark:text-white">
+    <div ref={panelRoot} class="flex h-full min-h-0 flex-col text-white">
       <PanelToolbar
         left={
           <>

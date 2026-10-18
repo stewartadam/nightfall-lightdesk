@@ -72,22 +72,22 @@ const toastStyles: Record<
   { iconBg: string; iconColor: string; icon: string }
 > = {
   info: {
-    iconBg: "bg-blue-100 dark:bg-blue-800/30",
+    iconBg: "bg-blue-800/30",
     iconColor: "text-blue-500",
     icon: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   },
   success: {
-    iconBg: "bg-teal-100 dark:bg-teal-800/30",
+    iconBg: "bg-teal-800/30",
     iconColor: "text-teal-500",
     icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
   },
   warning: {
-    iconBg: "bg-yellow-100 dark:bg-yellow-800/30",
+    iconBg: "bg-yellow-800/30",
     iconColor: "text-yellow-500",
     icon: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z",
   },
   error: {
-    iconBg: "bg-red-100 dark:bg-red-800/30",
+    iconBg: "bg-red-800/30",
     iconColor: "text-red-500",
     icon: "M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z",
   },
@@ -104,7 +104,7 @@ function createToastNode(
   container.dataset.component = "Toast";
   container.dataset.level = level;
   container.className =
-    "max-w-xs bg-white border border-gray-200 rounded-xl shadow-lg dark:bg-neutral-800 dark:border-neutral-700";
+    "max-w-xs bg-neutral-800 border border-neutral-700 rounded-xl shadow-lg";
   container.setAttribute("role", "alert");
 
   container.innerHTML = `
@@ -117,10 +117,10 @@ function createToastNode(
         </span>
       </div>
       <div class="toast-content ms-3 me-2 grow min-w-0">
-        ${presentation.title ? `<div class="toast-title mb-1 text-sm font-semibold text-gray-900 dark:text-neutral-100">${escapeHtml(presentation.title)}</div>` : ""}
-        <p class="text-sm text-gray-700 dark:text-neutral-400">${escapeHtml(message)}</p>
+        ${presentation.title ? `<div class="toast-title mb-1 text-sm font-semibold text-neutral-100">${escapeHtml(presentation.title)}</div>` : ""}
+        <p class="text-sm text-neutral-400">${escapeHtml(message)}</p>
       </div>
-      <button type="button" class="toast-close inline-flex shrink-0 justify-center items-center size-5 rounded-lg text-gray-800 opacity-50 hover:opacity-100 focus:outline-hidden focus:opacity-100 dark:text-white" aria-label="Close">
+      <button type="button" class="toast-close inline-flex shrink-0 justify-center items-center size-5 rounded-lg text-white opacity-50 hover:opacity-100 focus:outline-hidden focus:opacity-100" aria-label="Close">
         <span class="sr-only">Close</span>
         <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 6 6 18" />
@@ -207,7 +207,7 @@ function renderToast(
       const button = document.createElement("button");
       button.type = "button";
       button.className =
-        "toast-action rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100 dark:border-neutral-600 dark:text-neutral-100 dark:hover:bg-neutral-700";
+        "toast-action rounded-md border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-700";
       button.textContent = action.label;
       button.addEventListener("click", () =>
         runNotificationAction(entry.id, index),

@@ -33,6 +33,8 @@ test("color picker catalog previews local colors in both shapes", async ({
   await blue.press("Enter");
   await expect(hex).toHaveText("#0000FF");
   const brightness = panel.getByRole("slider", { name: "Color brightness" });
+  // The catalog renders the application's own slider skin.
+  await expect(brightness).toHaveCSS("height", "8px");
   await brightness.focus();
   await brightness.press("Home");
   await expect(hex).toHaveText("#000000");

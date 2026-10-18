@@ -93,7 +93,7 @@ const ShowfileObjectResultTagBadge: Component<{
   <Show
     fallback={
       <span
-        class="inline-flex h-6 max-w-32 shrink-0 items-center justify-center rounded border border-gray-300 bg-gray-50 px-2 text-xs font-medium text-gray-600 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+        class="inline-flex h-6 max-w-32 shrink-0 items-center justify-center rounded border border-neutral-600 bg-neutral-700 px-2 text-xs font-medium text-neutral-300"
         data-showfile-object-tag={props.tag.id}
         title={props.tag.label}
       >
@@ -567,7 +567,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
                   class="mx-auto size-12 text-gray-400"
                   aria-hidden
                 />
-                <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                <h3 class="mt-2 text-sm font-medium text-neutral-100">
                   No objects found
                 </h3>
               </div>
@@ -593,10 +593,10 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
                       >
                         <div class="flex min-w-0 w-full items-center justify-between gap-4">
                           <div class="min-w-0">
-                            <div class="min-h-6 truncate font-medium text-gray-900 dark:text-gray-100">
+                            <div class="min-h-6 truncate font-medium text-neutral-100">
                               {showfileObjectResultLabel(entry)}
                             </div>
-                            <div class="truncate text-sm text-gray-500 dark:text-gray-400">
+                            <div class="truncate text-sm text-neutral-400">
                               {showfileObjectResultDescription(entry)}
                             </div>
                           </div>

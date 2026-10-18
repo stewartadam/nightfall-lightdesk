@@ -250,7 +250,7 @@ export function DiagnosticsDialog() {
           reported and are deleted within 30 days after use.
         </p>
 
-        <div class="my-1 border-t border-slate-200 dark:border-slate-600" />
+        <div class="my-1 border-t border-neutral-600" />
 
         <Collapsible
           variant="plain"

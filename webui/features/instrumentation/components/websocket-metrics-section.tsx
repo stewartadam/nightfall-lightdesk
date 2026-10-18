@@ -135,7 +135,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
       <Show
         when={props.rows.length > 0}
         fallback={
-          <div class="rounded-lg bg-gray-100 p-3 text-sm text-gray-500 dark:bg-gray-800">
+          <div class="rounded-lg bg-neutral-800 p-3 text-sm text-neutral-500">
             Waiting for messages...
           </div>
         }
@@ -143,7 +143,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
         <div class="space-y-3">
           <TableScroll
             aria-label="WebSocket timing stages scroll area"
-            class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800"
+            class="rounded-lg bg-neutral-800 p-3"
           >
             <Table aria-label="WebSocket timing stages">
               <thead>
@@ -217,7 +217,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
               </tbody>
             </Table>
           </TableScroll>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-neutral-400">
             Timings use the newest 6,000 samples per stage from the last 60
             seconds. Transport RTT measures a worker–server–worker heartbeat
             round trip, not one-way delivery. Worker processing covers decode
@@ -327,7 +327,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
               }`}
             />
           </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-neutral-400">
             The worker applies every numbered ParameterState frame as it
             arrives. A gap means a frame was missed, so the worker stops
             delivering parameter state and asks the backend for a keyframe.
@@ -335,7 +335,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             without a gap, and should always be zero.
           </p>
           <h3 class="text-sm font-medium">Worker message totals</h3>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-neutral-400">
             Decode and processing are worker-side exponential moving averages
             (EMA). Snapshot messages are coalesced: newer snapshots replace
             older ones before delivery, increasing Drop (cum.). This is expected
@@ -346,7 +346,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             resynchronization. Delivery IDs show main-thread received / worker
             staged.
           </p>
-          <div class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+          <div class="rounded-lg bg-neutral-800 p-3">
             <DataGrid
               ariaLabel="Worker message totals"
               readOnly

@@ -85,6 +85,9 @@
     height: 16px;
     accent-color: var(--accent);
   }
+  :where(input[type="range"]) {
+    accent-color: var(--accent);
+  }
   :where(input, textarea, select):disabled {
     opacity: 0.6;
     cursor: not-allowed;

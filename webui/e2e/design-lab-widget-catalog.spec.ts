@@ -330,7 +330,7 @@ test("attribute sliders support relative adjustments and numeric commits", async
   ).toBeChecked();
 });
 
-/** Validates secondary-text search, keyboard selection, and empty-result feedback. */
+/** Validates secondary-text search, keyboard selection, empty-result feedback, and the accent selected and focus states. */
 test("object selectors filter and select local objects", async ({
   page,
 }, testInfo) => {
@@ -350,9 +350,25 @@ test("object selectors filter and select local objects", async ({
   await search.fill("unmatched");
   await expect(panel.getByText("No matching objects.")).toBeVisible();
   await search.fill("");
-  await expect(
-    panel.getByRole("button", { name: /House lights/ }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const selected = panel.getByRole("button", { name: /House lights/ });
+  await expect(selected).toHaveAttribute("aria-pressed", "true");
+  const accent = await selected.evaluate((element) => {
+    const probe = document.createElement("div");
+    probe.style.background = "var(--accent-soft)";
+    probe.style.outlineColor = "var(--accent)";
+    element.append(probe);
+    const style = getComputedStyle(probe);
+    const colors = { soft: style.backgroundColor, accent: style.outlineColor };
+    probe.remove();
+    return colors;
+  });
+  await expect(selected).toHaveCSS("background-color", accent.soft);
+  await selected.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(selected).toBeFocused();
+  await expect(selected).toHaveCSS("outline-color", accent.accent);
+  await expect(selected).toHaveCSS("outline-style", "solid");
   await page.screenshot({
     path: testInfo.outputPath("object-selector.png"),
     fullPage: true,

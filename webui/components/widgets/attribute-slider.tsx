@@ -59,7 +59,7 @@ export default function AttributeSlider(
 
   return (
     <div
-      class={`attribute-slider flex items-center gap-3 ${props.class ?? ""}`.trim()}
+      class={`flex flex-wrap items-center gap-3 ${props.class ?? ""}`.trim()}
     >
       <div class="w-28">
         <div class="text-xs font-medium text-neutral-300">{props.label}</div>

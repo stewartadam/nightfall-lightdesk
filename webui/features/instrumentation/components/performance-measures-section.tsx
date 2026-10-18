@@ -118,13 +118,13 @@ export function PerformanceMeasuresSection(
       <Show
         when={props.measures.length > 0}
         fallback={
-          <div class="rounded-lg bg-gray-100 p-3 text-sm text-gray-500 dark:bg-gray-800">
+          <div class="rounded-lg bg-neutral-800 p-3 text-sm text-neutral-500">
             Waiting for frontend measures...
           </div>
         }
       >
-        <div class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
-          <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
+        <div class="rounded-lg bg-neutral-800 p-3">
+          <p class="mb-2 text-xs text-neutral-400">
             Newest 6,000 samples per scope within 60 seconds.
           </p>
           <div class="mb-2 flex justify-end gap-2">

@@ -114,7 +114,7 @@ export const CommandSuggestions = (props: CommandSuggestionsProps) => {
                       </Badge>
                     </Show>
                     <Show when={isIntentSuggestion(suggestion)}>
-                      <span class="inline-flex items-center gap-1 text-[10px] text-neutral-400 dark:text-slate-400">
+                      <span class="inline-flex items-center gap-1 text-[10px] text-neutral-400">
                         <For
                           each={
                             isIntentSuggestion(suggestion)
