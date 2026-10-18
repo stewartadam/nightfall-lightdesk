@@ -19,7 +19,7 @@ use bevy_ecs::{prelude::*, system::SystemState};
 use nightfall::prelude::*;
 use nightfall_actions::{
     ActionAppExt, ActionDescriptor, ActionInvocation, ActionSurface, InvocationDispatch,
-    InvocationError,
+    InvocationError, submit_command_in_undo_step,
 };
 use nightfall_clips::ClipCommand;
 use nightfall_desk::prelude::{MasterCommand, MasterMode};
@@ -99,13 +99,13 @@ fn invoke_board_press(
     for command in commands {
         match command {
             PressCommand::Clip(command) => {
-                submit_in_undo_step(world, invocation, undo_id, command)?
+                submit_command_in_undo_step(world, invocation, undo_id, command)?;
             }
             PressCommand::Programmer(command) => {
-                submit_in_undo_step(world, invocation, undo_id, command)?
+                submit_command_in_undo_step(world, invocation, undo_id, command)?;
             }
             PressCommand::Master(command) => {
-                submit_in_undo_step(world, invocation, undo_id, command)?
+                submit_command_in_undo_step(world, invocation, undo_id, command)?;
             }
         }
     }
@@ -287,47 +287,6 @@ fn release_blueprint(
             selection_flatten_approval: None,
         },
     ))
-}
-
-/// Submits one command for an action invocation inside a shared undo step.
-///
-/// Mirrors [`nightfall_actions::submit_command`] but reuses `undo_id`, so every command a press produces undoes
-/// together.
-fn submit_in_undo_step<C>(
-    world: &mut World,
-    invocation: &ActionInvocation,
-    undo_id: UndoId,
-    command: C,
-) -> Result<(), InvocationError>
-where
-    C: IngressCommand + Clone + 'static,
-{
-    let command_id = CommandId::new();
-    world
-        .resource_mut::<CommandTracker>()
-        .register_context(
-            command_id,
-            undo_id,
-            CommandOrigin::Automation {
-                surface: invocation.surface.label().to_string(),
-                source: invocation.source.clone(),
-            },
-            ReplyTarget::ClientBroadcast,
-        )
-        .map_err(|error| {
-            InvocationError::new(
-                "action.command_registration_failed",
-                format!("Unable to register command: {error}"),
-            )
-        })?;
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-    Ok(())
 }
 
 #[cfg(test)]

@@ -41,7 +41,42 @@ where
     C: IngressCommand + Clone + 'static,
 {
     let command_id = CommandId::new();
-    let undo_id = UndoId::from(command_id);
+    submit_tracked(
+        world,
+        invocation,
+        command_id,
+        UndoId::from(command_id),
+        command,
+    )
+}
+
+/// Submits one ingress command on behalf of an action invocation inside an existing undo step.
+///
+/// Behaves like [`submit_command`], but records the command under `undo_id`, so an action that
+/// lowers to several commands can pass the same ID to each and have them undo together.
+pub fn submit_command_in_undo_step<C>(
+    world: &mut World,
+    invocation: &ActionInvocation,
+    undo_id: UndoId,
+    command: C,
+) -> Result<CommandId, InvocationError>
+where
+    C: IngressCommand + Clone + 'static,
+{
+    submit_tracked(world, invocation, CommandId::new(), undo_id, command)
+}
+
+/// Registers `command` with the command tracker under an automation origin and queues it.
+fn submit_tracked<C>(
+    world: &mut World,
+    invocation: &ActionInvocation,
+    command_id: CommandId,
+    undo_id: UndoId,
+    command: C,
+) -> Result<CommandId, InvocationError>
+where
+    C: IngressCommand + Clone + 'static,
+{
     world
         .get_resource_mut::<CommandTracker>()
         .ok_or_else(|| {
