@@ -2,7 +2,7 @@
 
 {{#include ../../includes/human-review-disclaimer.md}}
 
-Open panels from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P). Cue Editor, Sequence Editor, FX Editor, and Timeline open from their object lists. This guide covers every first-release panel; experimental Flows is excluded.
+Open panels from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P). Cue Editor, Sequence Editor, FX Editor, Timeline, and Board open from their object lists. This guide covers every first-release panel; experimental Flows is excluded.
 
 - [Patch](patch.md)
 - [Fixture Library](fixture-library.md)
@@ -16,6 +16,8 @@ Open panels from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P). Cue Editor, S
 - [Sequences](sequences.md)
 - [Sequence Editor](sequence-editor.md)
 - [Clips](clips.md)
+- [Boards](boards.md)
+- [Board](board.md)
 - [FX List](fx-list.md)
 - [FX Editor](fx-editor.md)
 - [Color Paths](color-paths.md)

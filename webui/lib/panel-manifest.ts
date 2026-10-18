@@ -7,6 +7,8 @@
  */
 
 import blueprintsPanel from "../features/blueprints/panels/blueprints.definition";
+import boardPanel from "../features/boards/panels/board.definition";
+import boardsPanel from "../features/boards/panels/board-list.definition";
 import clipListPanel from "../features/clips/panels/clip-list.definition";
 import colorPathPanel from "../features/color-paths/panels/color-path-panel.definition";
 import commandLinePanel from "../features/command-line/panels/command-line.definition";
@@ -59,6 +61,8 @@ export const PANEL_MODULES = [
   groupsPanel,
   mastersPanel,
   blueprintsPanel,
+  boardPanel,
+  boardsPanel,
   colorPathPanel,
   programmerGridPanel,
   selectionVisualizerPanel,

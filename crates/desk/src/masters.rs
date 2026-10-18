@@ -254,14 +254,12 @@ pub enum MasterUpdate {
     },
 }
 
-impl crate::object_crud::ObjectCrud for Master {
-    type Command = MasterCommand;
-
+impl crate::object_crud::ObjectCrud<MasterCommand> for Master {
     fn type_name() -> &'static str {
         "master"
     }
 
-    fn extract_store(command: &Self::Command) -> Option<Self> {
+    fn extract_store(command: &MasterCommand) -> Option<Self> {
         match command {
             MasterCommand::StoreMaster(master) => {
                 let mut master = master.clone();
@@ -272,14 +270,14 @@ impl crate::object_crud::ObjectCrud for Master {
         }
     }
 
-    fn extract_rename(command: &Self::Command) -> Option<(u32, u32)> {
+    fn extract_rename(command: &MasterCommand) -> Option<(u32, u32)> {
         match command {
             MasterCommand::RenameMaster { id, new_id } => Some((*id, *new_id)),
             _ => None,
         }
     }
 
-    fn extract_delete(command: &Self::Command) -> Option<u32> {
+    fn extract_delete(command: &MasterCommand) -> Option<u32> {
         match command {
             MasterCommand::DeleteMaster(id) => Some(*id),
             _ => None,
@@ -302,7 +300,7 @@ pub fn handle_master_commands(
         let mut command = event.command.clone();
         stabilize_master_group_refs(&mut command, &selection_resolver);
 
-        if let Some(result) = crate::object_crud::apply_object_crud_command::<Master>(
+        if let Some(result) = crate::object_crud::apply_object_crud_command::<Master, _>(
             &command,
             &mut master_data_provider,
         ) {

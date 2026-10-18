@@ -30,10 +30,10 @@ use nightfall_timeline::prelude::*;
 use crate::{
     ShowfileSnapshot,
     contributors::{
-        ClipsSaveContributor, ColorPathsSaveContributor, CueStructureSaveContributor,
-        DeskStateSaveContributor, FixturesPatchSaveContributor, FlowsSaveContributor,
-        FxSaveContributor, SceneObjectsSaveContributor, ShowfileSaveContributor,
-        TimecodesTimelinesSaveContributor, collect_save_contributions,
+        BoardsSaveContributor, ClipsSaveContributor, ColorPathsSaveContributor,
+        CueStructureSaveContributor, DeskStateSaveContributor, FixturesPatchSaveContributor,
+        FlowsSaveContributor, FxSaveContributor, SceneObjectsSaveContributor,
+        ShowfileSaveContributor, TimecodesTimelinesSaveContributor, collect_save_contributions,
     },
 };
 
@@ -54,6 +54,7 @@ pub struct ShowfileSaveState<'w, 's> {
     flow_data_provider: Res<'w, DataProvider<FlowDefinition>>,
     timecode_data_provider: Res<'w, DataProvider<Timecode>>,
     timeline_data_provider: Res<'w, DataProvider<Timeline>>,
+    board_data_provider: Res<'w, DataProvider<Board>>,
     input_bindings: Res<'w, InputBindings>,
     output_bindings: Res<'w, OutputBindings>,
     disabled_bindings: Res<'w, DisabledBindings>,
@@ -113,6 +114,7 @@ pub fn snapshot_from_save_state(
         &showfile_save_state.timecode_data_provider,
         &showfile_save_state.timeline_data_provider,
     );
+    let boards_contributor = BoardsSaveContributor::new(&showfile_save_state.board_data_provider);
 
     collect_save_contributions(&[
         &desk_state_contributor as &dyn ShowfileSaveContributor,
@@ -124,6 +126,7 @@ pub fn snapshot_from_save_state(
         &flows_contributor,
         &clips_contributor,
         &timecodes_timelines_contributor,
+        &boards_contributor,
     ])
 }
 

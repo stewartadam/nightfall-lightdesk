@@ -21,6 +21,7 @@ moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-config = { path = "../config" }
 nightfall-actions = { path = "../actions" }
+nightfall-boards = { path = "../boards" }
 nightfall-audio = { path = "../audio", optional = true }
 nightfall-beat-detection = { path = "../beat-detection", optional = true }
 nightfall-compositor = { path = "../compositor" }

@@ -14,6 +14,7 @@ import { NativeSelect } from "../../components/ui/form-controls";
 import { RangeSlider } from "../../components/ui/range-slider";
 import { Table, TableEmptyRow, TableScroll } from "../../components/ui/table";
 import { Button } from "../../components/ui/visual-language/button";
+import { setObjectDragData } from "../../lib/object-drag";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { useSharedStore } from "../../lib/use-shared-store";
 import { clips, groups, masters } from "../../state/appStores";
@@ -182,6 +183,11 @@ export default function MastersPanel(
     event.dataTransfer?.setData(MASTER_DRAG_TYPE, JSON.stringify(master));
     event.dataTransfer?.setData("text/plain", master.identifiers.label);
     if (event.dataTransfer) {
+      setObjectDragData(
+        event.dataTransfer,
+        types.ObjectType.Master,
+        master.identifiers.uid,
+      );
       event.dataTransfer.effectAllowed = "copy";
     }
   };

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { registerBoardHandlers } from "./board-handlers";
 import { registerClipHandlers } from "./clip-handlers";
 import { registerCommandResultHandlers } from "./command-result-handlers";
 import { registerCueHandlers } from "./cue-handlers";
@@ -50,6 +51,7 @@ export function createMainThreadMessageHandlerRegistry(
   registerOutputHandlers(registry);
   registerReferenceHandlers(registry);
   registerCueHandlers(registry);
+  registerBoardHandlers(registry);
   registerFxHandlers(registry);
   registerFlowHandlers(registry);
   registerClipHandlers(registry);

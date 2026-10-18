@@ -52,6 +52,7 @@ fn setup_world() -> World {
     world.insert_resource(DataProvider::<FlowDefinition>::default());
     world.insert_resource(DataProvider::<Timecode>::default());
     world.insert_resource(DataProvider::<Timeline>::default());
+    world.insert_resource(DataProvider::<Board>::default());
     world.insert_resource(InputBindings::default());
     world.insert_resource(OutputBindings::default());
     world.insert_resource(DisabledBindings::default());
@@ -2453,6 +2454,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     flow_data_provider,
                     timecode_data_provider,
                     timeline_data_provider,
+                    board_data_provider,
                     active_fx_module_ids: _,
                     input_bindings,
                     output_bindings,
@@ -2481,6 +2483,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     flow_data_provider.as_mut(),
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
+                    board_data_provider.as_mut(),
                     input_bindings.as_mut(),
                     output_bindings.as_mut(),
                     disabled_bindings.as_mut(),
@@ -2519,6 +2522,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     flow_data_provider,
                     timecode_data_provider,
                     timeline_data_provider,
+                    board_data_provider,
                     active_fx_module_ids: _,
                     input_bindings,
                     output_bindings,
@@ -2547,6 +2551,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     flow_data_provider.as_mut(),
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
+                    board_data_provider.as_mut(),
                     input_bindings.as_mut(),
                     output_bindings.as_mut(),
                     disabled_bindings.as_mut(),
@@ -2651,6 +2656,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     flow_data_provider,
                     timecode_data_provider,
                     timeline_data_provider,
+                    board_data_provider,
                     active_fx_module_ids,
                     input_bindings,
                     output_bindings,
@@ -2692,6 +2698,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     flow_data_provider.as_mut(),
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
+                    board_data_provider.as_mut(),
                     active_fx_module_ids.as_deref_mut(),
                     input_bindings.as_mut(),
                     output_bindings.as_mut(),
@@ -2941,6 +2948,55 @@ fn roundtrip_preserves_desk_settings() {
     );
 }
 
+/// Verifies boards, including their elements and collection queries, survive save and load.
+#[test]
+fn roundtrip_preserves_boards() {
+    let mut source_world = setup_world();
+    let board = Board {
+        identifiers: Identifiers {
+            id: 4,
+            uid: Uuid::from_u128(4),
+            label: "Colors".to_string(),
+        },
+        elements: vec![BoardElement {
+            uid: Uuid::from_u128(40),
+            cell: BoardCell {
+                x: 1,
+                y: 0,
+                width: 3,
+                height: 2,
+            },
+            label: Some("Washes".to_string()),
+            color: Some("#ff8800".to_string()),
+            show_title: false,
+            kind: BoardElementKind::Collection {
+                query: ObjectQuery {
+                    object_type: ObjectType::Blueprint,
+                    id_range: Some(ObjectIdRange { first: 1, last: 20 }),
+                    label_contains: Some("wash".to_string()),
+                },
+                exclusive: true,
+            },
+        }],
+        ..Default::default()
+    };
+    source_world
+        .resource_mut::<DataProvider<Board>>()
+        .add(board.clone())
+        .expect("board should insert");
+    let source_snapshot = collect_snapshot(&mut source_world);
+    assert_eq!(source_snapshot.boards, vec![board.clone()]);
+
+    let mut restored_world = setup_world();
+    apply_snapshot(&mut restored_world, source_snapshot);
+    let restored = restored_world
+        .resource::<DataProvider<Board>>()
+        .get(board.identifiers.uid)
+        .expect("board should be restored")
+        .clone();
+    assert_eq!(restored, board);
+}
+
 /// Verifies the desk-state contributor preserves variables and settings through snapshot load.
 #[test]
 fn roundtrip_preserves_desk_state_contributor_slice() {
@@ -3166,6 +3222,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -3244,6 +3301,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -3310,6 +3368,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -4092,6 +4151,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         timecodes: vec![],
         timelines: vec![],
         clips: vec![],
+        boards: vec![],
         settings: DeskSettings::default(),
         io_settings: IoRuntimeSettings::default(),
     };
@@ -4173,6 +4233,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
         },
     );
 
@@ -4268,6 +4329,7 @@ fn load_materializes_timecodes_and_timelines() {
             timecodes: vec![timecode],
             timelines: vec![timeline],
             clips: vec![],
+            boards: vec![],
         },
     );
 

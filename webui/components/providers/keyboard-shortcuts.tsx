@@ -14,6 +14,7 @@ import {
 } from "../../lib/keyboardShortcuts";
 import { getLogger } from "../../lib/logger";
 import { dockApi } from "../../state/appStores";
+import { activeBoardWorkspace } from "../../state/layout-switcher";
 
 const log = getLogger(import.meta.url);
 
@@ -28,8 +29,11 @@ export default function KeyboardShortcutsProvider(props: {
 
   onMount(() => {
     log.trace("mounting");
-    // Set up DockView API getter for focus fallback detection
-    setDockApiGetter(() => $dockApi() ?? null);
+    // Set up DockView API getter for focus fallback detection; a board filling the workspace
+    // hides every Dockview panel, so none of them may claim keyboard focus meanwhile.
+    setDockApiGetter(() =>
+      activeBoardWorkspace.get() ? null : ($dockApi() ?? null),
+    );
 
     // Initialize keyboard shortcuts system
     const unregister = initKeyboardShortcuts();
