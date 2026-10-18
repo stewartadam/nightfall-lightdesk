@@ -12,6 +12,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -19,7 +20,6 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
@@ -81,16 +81,24 @@ function BoardCard(props: BoardListViewProps & { board: Board }) {
         class="nf-crud-card-title flex min-w-0 items-center"
         title={props.board.identifiers.label}
       >
-        <CrudInlineLabelEditor
-          ariaLabel="Board card label"
-          class="min-w-0 truncate"
-          editing={controller.editingCardLabelUid() === uid()}
-          label={props.board.identifiers.label}
-          onCancel={() => controller.setEditingCardLabelUid(null)}
-          onCommit={(label) => controller.updateBoardLabel(props.board, label)}
+        <Show
+          when={controller.editingCardLabelUid() === uid()}
+          fallback={
+            <span class="min-w-0 truncate">
+              {boardDisplayName(props.board)}
+            </span>
+          }
         >
-          {boardDisplayName(props.board)}
-        </CrudInlineLabelEditor>
+          <InlineRenameField
+            ariaLabel="Board card label"
+            allowEmpty
+            value={props.board.identifiers.label}
+            onClose={() => controller.setEditingCardLabelUid(null)}
+            onCommit={(label) =>
+              controller.updateBoardLabel(props.board, label)
+            }
+          />
+        </Show>
       </div>
       <div class="nf-crud-card-detail truncate">
         {switcherLabel(props.board)}
