@@ -8,16 +8,15 @@
 
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { createEffect, createSignal } from "solid-js";
-import { v4 as uuidv4 } from "uuid";
 import {
   DropdownMenu,
   DropdownMenuSeparator,
 } from "../../../../components/ui/dropdown-menu";
+import { Input, NativeSelect } from "../../../../components/ui/form-controls";
 import {
-  Input,
-  NativeSelect,
-  Radio,
-} from "../../../../components/ui/form-controls";
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../../../components/ui/segmented-control";
 import type * as types from "../../../../types";
 import {
   type StepFxSpeedUnit,
@@ -26,6 +25,13 @@ import {
   stepFxTimingFromSpeed,
 } from "../../model/step-fx-editor-model";
 import { STEP_FX_FIELD_CLASS } from "./step-fx-editor-styles";
+
+const CYCLE_SCALE_OPTIONS: readonly SegmentedControlOption<
+  types.StepFxCycleScale["type"]
+>[] = [
+  { value: "Auto", label: "Auto", ariaLabel: "Automatic cycle scaling" },
+  { value: "Fixed", label: "Fixed", ariaLabel: "Fixed cycle scaling" },
+];
 
 /** Renders compact effect-wide speed and cycle scaling in a toolbar menu. */
 export function StepFxTimingControls(props: {
@@ -42,7 +48,6 @@ export function StepFxTimingControls(props: {
   onTimingChange: (timing: types.StepFxTiming) => void;
   onCycleScaleChange: (scale: types.StepFxCycleScale) => void;
 }) {
-  const cycleScaleName = uuidv4();
   const [fixedScaleValue, setFixedScaleValue] = createSignal(
     props.stepFx.cycle_scale.type === "Fixed"
       ? props.stepFx.cycle_scale.data
@@ -127,52 +132,22 @@ export function StepFxTimingControls(props: {
             <span class="pt-2 text-xs text-neutral-300">Scale cycle</span>
             <div class="min-w-0 space-y-1">
               <div
-                class="flex min-w-0 rounded"
-                role="radiogroup"
-                aria-label="Step FX cycle scaling"
+                class="flex min-w-0 items-center gap-1.5"
                 data-input-group="cycle-scale"
               >
-                <label
-                  class="inline-flex shrink-0 items-center gap-1 rounded-l border border-r-0 border-neutral-700 px-1.5 text-[11px]"
-                  classList={{
-                    "bg-[var(--accent-soft)] text-[var(--accent)]":
-                      props.stepFx.cycle_scale.type === "Auto",
-                    "bg-neutral-800 text-neutral-300":
-                      props.stepFx.cycle_scale.type !== "Auto",
-                  }}
-                >
-                  <Radio
-                    aria-label="Automatic cycle scaling"
-                    name={cycleScaleName}
-                    class="size-3 shrink-0"
-                    checked={props.stepFx.cycle_scale.type === "Auto"}
-                    onChange={() => props.onCycleScaleChange({ type: "Auto" })}
-                  />
-                  <span>Auto</span>
-                </label>
-                <label
-                  class="inline-flex shrink-0 items-center gap-1 border border-r-0 border-neutral-700 px-1.5 text-[11px]"
-                  classList={{
-                    "bg-[var(--accent-soft)] text-[var(--accent)]":
-                      props.stepFx.cycle_scale.type === "Fixed",
-                    "bg-neutral-800 text-neutral-300":
-                      props.stepFx.cycle_scale.type !== "Fixed",
-                  }}
-                >
-                  <Radio
-                    aria-label="Fixed cycle scaling"
-                    name={cycleScaleName}
-                    class="size-3 shrink-0"
-                    checked={props.stepFx.cycle_scale.type === "Fixed"}
-                    onChange={() =>
-                      props.onCycleScaleChange({
-                        type: "Fixed",
-                        data: fixedScaleValue(),
-                      })
-                    }
-                  />
-                  <span>Fixed</span>
-                </label>
+                <SegmentedControl
+                  label="Step FX cycle scaling"
+                  density="compact"
+                  options={CYCLE_SCALE_OPTIONS}
+                  value={props.stepFx.cycle_scale.type}
+                  onChange={(type) =>
+                    props.onCycleScaleChange(
+                      type === "Auto"
+                        ? { type: "Auto" }
+                        : { type: "Fixed", data: fixedScaleValue() },
+                    )
+                  }
+                />
                 <div class="relative min-w-0 flex-1">
                   <Input
                     density="compact"
@@ -182,7 +157,7 @@ export function StepFxTimingControls(props: {
                     min="0.001"
                     step="any"
                     disabled={props.stepFx.cycle_scale.type !== "Fixed"}
-                    class={`${STEP_FX_FIELD_CLASS} w-full min-w-0 rounded-l-none pe-10 text-right disabled:text-neutral-600 ${props.scaleError ? "border-red-500" : ""}`}
+                    class={`${STEP_FX_FIELD_CLASS} w-full min-w-0 pe-10 text-right disabled:text-neutral-600 ${props.scaleError ? "border-red-500" : ""}`}
                     value={
                       props.stepFx.cycle_scale.type === "Fixed"
                         ? props.stepFx.cycle_scale.data

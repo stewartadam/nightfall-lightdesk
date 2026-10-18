@@ -8,8 +8,17 @@
 
 import type { JSX } from "solid-js";
 import { RangeSlider } from "../ui/range-slider";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../ui/segmented-control";
 
 export type AttributeMode = "absolute" | "relative";
+
+const MODE_OPTIONS: readonly SegmentedControlOption<AttributeMode>[] = [
+  { value: "absolute", label: "Abs", tooltip: "Absolute value" },
+  { value: "relative", label: "Rel", tooltip: "Relative adjustment" },
+];
 
 export interface AttributeSliderProps {
   label: string;
@@ -54,28 +63,14 @@ export default function AttributeSlider(
     >
       <div class="w-28">
         <div class="text-xs font-medium text-neutral-300">{props.label}</div>
-        <div
-          class="mt-1 inline-flex rounded-md text-[10px] border border-neutral-600 overflow-hidden"
-          role="group"
-          aria-label={`${props.label} mode`}
-        >
-          <button
-            type="button"
-            aria-pressed={props.mode === "absolute"}
-            class={`px-2 py-0.5 ${props.mode === "absolute" ? "bg-blue-600 text-white" : "bg-neutral-800 text-neutral-300"}`}
-            onClick={() => updateMode("absolute")}
-          >
-            Abs
-          </button>
-          <button
-            type="button"
-            aria-pressed={props.mode === "relative"}
-            class={`px-2 py-0.5 ${props.mode === "relative" ? "bg-blue-600 text-white" : "bg-neutral-800 text-neutral-300"}`}
-            onClick={() => updateMode("relative")}
-          >
-            Rel
-          </button>
-        </div>
+        <SegmentedControl
+          class="mt-1"
+          label={`${props.label} mode`}
+          density="compact"
+          options={MODE_OPTIONS}
+          value={props.mode}
+          onChange={updateMode}
+        />
       </div>
 
       <RangeSlider

@@ -57,12 +57,12 @@ test("collects native diagnostics before the backend connects", async ({
   await expect(preview).toContainText("WARN engine: stored backend warning");
   const logs = dialog.getByRole("group", { name: "Logs to include" });
   const showfile = dialog.getByRole("group", { name: "Showfile to include" });
-  expect(await logs.locator("label").allTextContents()).toEqual([
+  expect(await logs.getByRole("radio").allTextContents()).toEqual([
     "None",
     "Recent warnings/errors",
     "All logs",
   ]);
-  expect(await showfile.locator("label").allTextContents()).toEqual([
+  expect(await showfile.getByRole("radio").allTextContents()).toEqual([
     "None",
     "Without references",
     "Local references",

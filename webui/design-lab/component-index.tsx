@@ -26,6 +26,7 @@ const coreDemoIds = new Set([
   "empty-states",
   "input-forms",
   "popups",
+  "segmented-controls",
   "selects",
   "shortcuts",
   "sliders",

@@ -15,6 +15,10 @@ import {
 } from "../../../../components/ui/dropdown-menu";
 import { Input } from "../../../../components/ui/form-controls";
 import { RangeSlider } from "../../../../components/ui/range-slider";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../../../components/ui/segmented-control";
 import { Button } from "../../../../components/ui/visual-language/button";
 import type * as types from "../../../../types";
 import {
@@ -28,6 +32,19 @@ import {
 import { StepFxPhaseField } from "../step-fx-phase-field";
 import { STEP_FX_FIELD_CLASS } from "./step-fx-editor-styles";
 import { StepFxPhaseDial } from "./step-fx-phase-dial";
+
+const POSITION_UNIT_OPTIONS: readonly SegmentedControlOption<StepFxPositionUnit>[] =
+  (["percent", "degrees"] as const).map((unit) => ({
+    value: unit,
+    label: stepFxPositionUnitSuffix(unit),
+    ariaLabel: unit === "percent" ? "Percent" : "Degrees",
+  }));
+
+const START_POSITION_MODE_OPTIONS: readonly SegmentedControlOption<StepFxStartPositionMode>[] =
+  (["together", "spread", "custom"] as const).map((mode) => {
+    const label = `${mode[0]?.toUpperCase()}${mode.slice(1)}`;
+    return { value: mode, label, ariaLabel: `${label} start position` };
+  });
 
 /** Renders common phase patterns visually while preserving advanced waypoint syntax. */
 export function StepFxStartPositionControls(props: {
@@ -147,49 +164,23 @@ export function StepFxStartPositionControls(props: {
               Place the selection together or distribute it around the cycle.
             </div>
           </div>
-          <div
-            class="inline-flex shrink-0 rounded border border-neutral-700 bg-neutral-900 p-0.5"
-            role="radiogroup"
-            aria-label="Start position units"
-          >
-            <For each={["percent", "degrees"] as const}>
-              {(unit) => (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-label={unit === "percent" ? "Percent" : "Degrees"}
-                  aria-checked={props.positionUnit === unit}
-                  class={`rounded px-2 py-1 text-xs transition-colors hover:bg-neutral-700 ${props.positionUnit === unit ? "bg-blue-600 text-white" : "text-neutral-300"}`}
-                  onClick={() => props.onPositionUnitChange(unit)}
-                >
-                  {stepFxPositionUnitSuffix(unit)}
-                </button>
-              )}
-            </For>
-          </div>
+          <SegmentedControl
+            label="Start position units"
+            density="compact"
+            options={POSITION_UNIT_OPTIONS}
+            value={props.positionUnit}
+            onChange={props.onPositionUnitChange}
+          />
         </div>
         <DropdownMenuSeparator />
         <div class="space-y-3 px-3 py-2">
-          <div
-            class="grid grid-cols-3 rounded border border-neutral-700 bg-neutral-900 p-0.5"
-            role="radiogroup"
-            aria-label="Start position mode"
-          >
-            <For each={["together", "spread", "custom"] as const}>
-              {(mode) => (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-label={`${mode[0]?.toUpperCase()}${mode.slice(1)} start position`}
-                  aria-checked={stepFxStartPositionMode(props.phase) === mode}
-                  class={`rounded px-2 py-1.5 text-xs capitalize transition-colors hover:bg-neutral-700 ${stepFxStartPositionMode(props.phase) === mode ? "bg-blue-600 text-white" : "text-neutral-300"}`}
-                  onClick={() => setMode(mode)}
-                >
-                  {mode}
-                </button>
-              )}
-            </For>
-          </div>
+          <SegmentedControl
+            label="Start position mode"
+            fill
+            options={START_POSITION_MODE_OPTIONS}
+            value={stepFxStartPositionMode(props.phase)}
+            onChange={setMode}
+          />
 
           <div class="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-3">
             <StepFxPhaseDial

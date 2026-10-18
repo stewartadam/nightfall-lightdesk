@@ -9,59 +9,44 @@
 import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
 import { ArrowRightIcon } from "@squidlab/phosphor-solid/arrow-right";
 import { ArrowsLeftRightIcon } from "@squidlab/phosphor-solid/arrows-left-right";
-import Tooltip from "../../../../components/ui/tooltip";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../../../components/ui/segmented-control";
 import { FxDirection } from "../../../../types";
+
+const DIRECTION_OPTIONS: readonly SegmentedControlOption<FxDirection>[] = [
+  {
+    value: FxDirection.Reverse,
+    icon: ArrowLeftIcon,
+    ariaLabel: "Reverse direction",
+    tooltip: "Reverse",
+  },
+  {
+    value: FxDirection.Bounce,
+    icon: ArrowsLeftRightIcon,
+    ariaLabel: "Bounce direction",
+    tooltip: "Bounce",
+  },
+  {
+    value: FxDirection.Forward,
+    icon: ArrowRightIcon,
+    ariaLabel: "Forward direction",
+    tooltip: "Forward",
+  },
+];
 
 /** Renders icon radio buttons for the effect-wide traversal direction. */
 export function StepFxDirectionControl(props: {
   direction: FxDirection;
   onChange: (direction: FxDirection) => void;
 }) {
-  const directionButtonClass =
-    "inline-flex size-8 items-center justify-center border border-neutral-700 text-neutral-300 transition-colors hover:bg-neutral-700 aria-checked:bg-blue-600 aria-checked:text-white";
-
   return (
-    <div
-      class="inline-flex shrink-0 items-center"
-      role="radiogroup"
-      aria-label="Step FX direction"
-    >
-      <Tooltip content={() => "Reverse"}>
-        <button
-          type="button"
-          role="radio"
-          aria-label="Reverse direction"
-          aria-checked={props.direction === FxDirection.Reverse}
-          class={`${directionButtonClass} rounded-l`}
-          onClick={() => props.onChange(FxDirection.Reverse)}
-        >
-          <ArrowLeftIcon class="size-4" aria-hidden />
-        </button>
-      </Tooltip>
-      <Tooltip content={() => "Bounce"}>
-        <button
-          type="button"
-          role="radio"
-          aria-label="Bounce direction"
-          aria-checked={props.direction === FxDirection.Bounce}
-          class={`${directionButtonClass} border-x-0`}
-          onClick={() => props.onChange(FxDirection.Bounce)}
-        >
-          <ArrowsLeftRightIcon class="size-4" aria-hidden />
-        </button>
-      </Tooltip>
-      <Tooltip content={() => "Forward"}>
-        <button
-          type="button"
-          role="radio"
-          aria-label="Forward direction"
-          aria-checked={props.direction === FxDirection.Forward}
-          class={`${directionButtonClass} rounded-r`}
-          onClick={() => props.onChange(FxDirection.Forward)}
-        >
-          <ArrowRightIcon class="size-4" aria-hidden />
-        </button>
-      </Tooltip>
-    </div>
+    <SegmentedControl
+      label="Step FX direction"
+      options={DIRECTION_OPTIONS}
+      value={props.direction}
+      onChange={props.onChange}
+    />
   );
 }

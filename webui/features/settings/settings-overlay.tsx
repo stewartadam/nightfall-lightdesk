@@ -20,6 +20,7 @@ import { useAppShell } from "../../components/providers/app-shell";
 import { Dialog, DialogBody } from "../../components/ui/dialog";
 import { Input, NativeSelect } from "../../components/ui/form-controls";
 import { RangeSlider } from "../../components/ui/range-slider";
+import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
@@ -845,6 +846,7 @@ export function SettingsOverlay() {
               </SettingsRow>
               <SettingsRow
                 label="Quality preset"
+                labelControl={false}
                 description={
                   <span aria-live="polite">
                     {quality() === "low"
@@ -856,49 +858,14 @@ export function SettingsOverlay() {
                 }
               >
                 {(field) => (
-                  <div class="flex w-56 flex-col gap-1">
-                    <input
-                      id={field.id}
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="1"
-                      aria-label="Quality preset"
-                      aria-describedby={field.describedBy}
-                      aria-valuetext={
-                        QUALITY_OPTIONS.find(
-                          (option) => option.value === quality(),
-                        )?.label
-                      }
-                      value={QUALITY_OPTIONS.findIndex(
-                        (option) => option.value === quality(),
-                      )}
-                      onInput={(e) =>
-                        setVisualizerQuality(
-                          QUALITY_OPTIONS[e.currentTarget.valueAsNumber].value,
-                        )
-                      }
-                      class="w-full"
-                    />
-                    <span
-                      class="flex justify-between text-xs text-gray-400"
-                      aria-hidden="true"
-                    >
-                      <For each={QUALITY_OPTIONS}>
-                        {(option) => (
-                          <span
-                            class={
-                              quality() === option.value
-                                ? "text-gray-100 font-medium"
-                                : ""
-                            }
-                          >
-                            {option.label}
-                          </span>
-                        )}
-                      </For>
-                    </span>
-                  </div>
+                  <SegmentedControl
+                    id={field.id}
+                    label="Quality preset"
+                    aria-describedby={field.describedBy}
+                    options={QUALITY_OPTIONS}
+                    value={quality()}
+                    onChange={setVisualizerQuality}
+                  />
                 )}
               </SettingsRow>
               <SettingsRow
