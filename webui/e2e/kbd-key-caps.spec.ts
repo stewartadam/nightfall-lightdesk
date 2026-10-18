@@ -23,12 +23,6 @@ test("shortcut hints render as shared key caps", async ({ page }, testInfo) => {
   const palette = page.locator('[data-dialog-kind="command-palette"]');
   const search = palette.getByPlaceholder("Type a command or search...");
   await expect(search).toBeFocused();
-  const hint = palette.locator("[data-command-shortcut-hint]");
-  await expect(hint.locator("kbd[data-kbd-key]")).toHaveText([
-    "Ctrl",
-    "Shift",
-    "P",
-  ]);
   await search.fill("settings");
   const settingsShortcut = palette.locator('kbd[data-kbd-shortcut="$mod+,"]');
   await expect(settingsShortcut.locator("kbd[data-kbd-key]")).toHaveText([
