@@ -33,7 +33,7 @@ export const CommandQueueStatus = (props: CommandQueueStatusProps) => {
   const chipClasses = () =>
     props.variant === "panel"
       ? "border-sky-500/70 text-sky-300 hover:bg-sky-500/15"
-      : "border-sky-500/70 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300";
+      : "border-sky-500/70 text-sky-300 hover:bg-sky-500/10";
 
   /** Counts statements still running or waiting, which the chip displays. */
   const remaining = () => remainingStatementCount(props.pending());

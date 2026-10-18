@@ -25,7 +25,7 @@ interface EngineStatsSectionProps {
 export function EngineStatsSection(props: EngineStatsSectionProps) {
   return (
     <Collapsible lazy title="Engine Stats" contentClass="p-3">
-      <div class="space-y-2 rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+      <div class="space-y-2 rounded-lg bg-neutral-800 p-3">
         <MetricRow
           label="Active Layers"
           value={props.metrics?.active_layers ?? "—"}
@@ -75,7 +75,7 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
         </span>
       }
     >
-      <div class="space-y-2 rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+      <div class="space-y-2 rounded-lg bg-neutral-800 p-3">
         <MetricRow
           label="Transport RTT (last heartbeat)"
           value={formatNumber(props.latencyMs, 2, " ms")}
@@ -86,7 +86,7 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
             <>
               {formatNumber(props.smoothedMetrics.artnetSendTimeMs, 2, " ms")}
               <Show when={(props.metrics?.artnet_universe_count ?? 0) > 0}>
-                <span class="ml-1 text-gray-500 dark:text-gray-400">
+                <span class="ml-1 text-neutral-400">
                   ({props.metrics?.artnet_universe_count} univ)
                 </span>
               </Show>
@@ -99,7 +99,7 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
             <>
               {formatNumber(props.smoothedMetrics.sacnSendTimeMs, 2, " ms")}
               <Show when={(props.metrics?.sacn_universe_count ?? 0) > 0}>
-                <span class="ml-1 text-gray-500 dark:text-gray-400">
+                <span class="ml-1 text-neutral-400">
                   ({props.metrics?.sacn_universe_count} univ)
                 </span>
               </Show>

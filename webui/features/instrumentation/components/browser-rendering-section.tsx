@@ -49,7 +49,7 @@ export function BrowserRenderingSection(props: BrowserRenderingSectionProps) {
       <Show
         when={props.frameStats}
         fallback={
-          <div class="rounded-lg bg-gray-100 p-3 text-sm text-gray-500 dark:bg-gray-800">
+          <div class="rounded-lg bg-neutral-800 p-3 text-sm text-neutral-500">
             Starting...
           </div>
         }

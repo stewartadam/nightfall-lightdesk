@@ -228,20 +228,20 @@ export default function ColorPicker(props: ColorPickerProps) {
 
       <div class="flex flex-row gap-4">
         {/* Picker + controls */}
-        <div class="flex flex-col items-start text-gray-500">
+        <div class="flex flex-col items-start text-neutral-500">
           <div class="relative">
             <canvas
               ref={canvas}
               width={256}
               height={192}
-              class="cursor-crosshair border border-gray-500 touch-none nodrag nopan"
+              class="cursor-crosshair border border-neutral-500 touch-none nodrag nopan"
               on:pointerdown={pointerDown}
             />
           </div>
           {/* Slider */}
           <div class="mt-2 w-[256px] flex items-center gap-2">
             <div
-              class="w-4 h-4 border border-gray-500"
+              class="w-4 h-4 border border-neutral-500"
               style={{ background: colorPickerValue(draft()).hex }}
             />
             <input
@@ -326,7 +326,7 @@ export default function ColorPicker(props: ColorPickerProps) {
             <button
               type="button"
               aria-label={`Choose ${hex.toUpperCase()}`}
-              class="w-8 h-8 border border-gray-600 nodrag nopan"
+              class="w-8 h-8 border border-neutral-600 nodrag nopan"
               style={{ background: hex }}
               onPointerDown={(event) => {
                 event.preventDefault();

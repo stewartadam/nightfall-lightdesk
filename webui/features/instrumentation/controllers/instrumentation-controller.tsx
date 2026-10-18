@@ -106,7 +106,7 @@ export function InstrumentationController() {
   };
 
   return (
-    <div class="h-full w-full overflow-auto p-4 dark:text-white">
+    <div class="h-full w-full overflow-auto p-4 text-white">
       <div class="space-y-4">
         <BackendMetricsSection
           history={$metricsHistory()}

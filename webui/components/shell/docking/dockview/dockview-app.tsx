@@ -70,10 +70,7 @@ const DOCKVIEW_ROOT_EDGE_OVERLAY_SIZE = 20;
 function ComponentMissing(props: { message: string }) {
   return (
     <div class="p-2">
-      <div
-        class="p-4 mb-4 text-sm text-red-800 rounded-lg dark:text-red-400 w-200"
-        role="alert"
-      >
+      <div class="p-4 mb-4 text-sm text-red-400 rounded-lg w-200" role="alert">
         <div class="pb-2">
           <span class="font-medium mr-2">{props.message}</span>
         </div>

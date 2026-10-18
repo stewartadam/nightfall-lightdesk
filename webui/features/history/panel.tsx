@@ -47,7 +47,7 @@ function stackEntryKey(entry: types.UndoStackEntryMessage): string {
 /** Renders one command description inside a grouped undo operation. */
 function CommandDescription(props: { description: string; index: number }) {
   return (
-    <li class="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+    <li class="flex items-start gap-2 text-xs text-neutral-300">
       <Badge appearance="soft" mono class="mt-0.5 min-w-5 justify-center">
         {props.index + 1}
       </Badge>
@@ -63,7 +63,7 @@ function StackEntry(props: StackEntryProps) {
 
   return (
     <li
-      class="rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900"
+      class="rounded-md border border-neutral-700 bg-neutral-900 p-3 shadow-sm"
       data-stack-kind={props.kind}
       data-stack-key={stackEntryKey(props.entry)}
       data-stack-order={props.entry.order}
@@ -82,11 +82,11 @@ function StackEntry(props: StackEntryProps) {
                 Top
               </Badge>
             </Show>
-            <span class="font-medium text-gray-950 dark:text-gray-100">
+            <span class="font-medium text-neutral-100">
               {props.entry.description}
             </span>
           </div>
-          <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-400">
             <span>
               {actionLabel()} order {props.entry.order + 1}
             </span>
@@ -126,7 +126,7 @@ function StackSection(props: StackSectionProps) {
   return (
     <section class="min-h-0" aria-label={props.title}>
       <div class="mb-2 flex items-center justify-between gap-3">
-        <h2 class="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+        <h2 class="flex items-center gap-2 text-sm font-semibold text-neutral-100">
           <Dynamic component={props.icon} class="size-4" aria-hidden />
           {props.title}
         </h2>
@@ -159,23 +159,23 @@ export default function UndoStackPanel(_props: BasePanelComponentProps) {
   const redoEntries = createMemo(() => undo().redo_stack);
 
   return (
-    <div class="h-full w-full overflow-auto bg-gray-50 p-4 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div class="h-full w-full overflow-auto bg-neutral-950 p-4 text-neutral-100">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 class="text-base font-semibold">Undo Stack</h1>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <p class="mt-1 text-xs text-neutral-400">
             {undo().undo_depth} undo / {undo().redo_depth} redo
           </p>
         </div>
         <div class="flex items-center gap-2 text-xs">
           <span
-            class="rounded border border-gray-200 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
+            class="rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
             data-stack-next="undo"
           >
             Undo: {undo().undo_description ?? "empty"}
           </span>
           <span
-            class="rounded border border-gray-200 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
+            class="rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
             data-stack-next="redo"
           >
             Redo: {undo().redo_description ?? "empty"}

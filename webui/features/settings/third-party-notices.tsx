@@ -77,8 +77,8 @@ export default function ThirdPartyNotices(props: { active: boolean }) {
         </Button>
       </Show>
       <Show when={loaded()}>
-        <p class="text-sm text-gray-400">{loaded()?.distribution}</p>
-        <label class="block text-sm text-gray-300">
+        <p class="text-sm text-neutral-400">{loaded()?.distribution}</p>
+        <label class="block text-sm text-neutral-300">
           Search licenses and attributions
           <input
             type="search"
@@ -88,7 +88,7 @@ export default function ThirdPartyNotices(props: { active: boolean }) {
             placeholder="Package, license, or copyright holder"
           />
         </label>
-        <p class="text-xs text-gray-400" role="status">
+        <p class="text-xs text-neutral-400" role="status">
           {entries().length}{" "}
           {entries().length === 1 ? "component" : "components"}
         </p>
@@ -100,12 +100,12 @@ export default function ThirdPartyNotices(props: { active: boolean }) {
                 <span class="min-w-0 break-words">
                   <span class="font-semibold">{entry.name}</span>{" "}
                   {entry.version}
-                  <span class="ml-2 text-gray-400">{entry.license}</span>
+                  <span class="ml-2 text-neutral-400">{entry.license}</span>
                 </span>
               }
               contentClass="p-3"
             >
-              <p class="mb-3 break-all text-xs text-gray-400">
+              <p class="mb-3 break-all text-xs text-neutral-400">
                 Source:{" "}
                 <a
                   class="text-blue-300 underline"
@@ -118,7 +118,7 @@ export default function ThirdPartyNotices(props: { active: boolean }) {
                   {entry.source}
                 </a>
               </p>
-              <pre class="whitespace-pre-wrap break-words text-xs leading-5 text-gray-300">
+              <pre class="whitespace-pre-wrap break-words text-xs leading-5 text-neutral-300">
                 {entry.text}
               </pre>
             </Collapsible>
