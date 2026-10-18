@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+@layer components {
+  /* Status tones use the same palette tokens as Badge and Alert. */
+  .nf-metric-value {
+    color: var(--color-neutral-100);
+  }
+  .nf-metric-value[data-tone="muted"] {
+    color: var(--color-neutral-400);
+  }
+  .nf-metric-value[data-tone="success"] {
+    color: var(--color-accent-green);
+  }
+  .nf-metric-value[data-tone="warning"] {
+    color: var(--color-warning);
+  }
+  .nf-metric-value[data-tone="danger"] {
+    color: var(--color-accent-red);
+  }
+}

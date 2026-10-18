@@ -9,8 +9,8 @@
 import { Show } from "solid-js";
 import { Collapsible } from "../../../components/ui/collapsible";
 import type { VisualizerStats } from "../../../state/appStores";
-import { formatNumber, getFpsColor, UI_TARGET_FPS } from "../model/metrics";
-import { MetricCard, PipelineStep } from "./metric-sections";
+import { formatNumber, getFpsTone, UI_TARGET_FPS } from "../model/metrics";
+import { MetricCard, MetricValue, PipelineStep } from "./metric-sections";
 
 interface VisualizerMetricsSectionProps {
   stats: VisualizerStats | null;
@@ -40,11 +40,12 @@ export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
             >
               {props.stats?.renderMode === "worker" ? "Worker" : "Main"}
             </span>
-            <span
-              class={`font-mono text-xs ${getFpsColor(props.stats?.fps, UI_TARGET_FPS)}`}
+            <MetricValue
+              tone={getFpsTone(props.stats?.fps, UI_TARGET_FPS)}
+              class="text-xs"
             >
               {formatNumber(props.stats?.fps, 0)} fps
-            </span>
+            </MetricValue>
           </span>
         }
       >
@@ -71,12 +72,13 @@ export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
             <MetricCard
               label="FPS"
               value={formatNumber(props.stats?.fps, 0)}
-              valueClass={`text-xl font-bold ${getFpsColor(props.stats?.fps, UI_TARGET_FPS)}`}
+              size="lg"
+              tone={getFpsTone(props.stats?.fps, UI_TARGET_FPS)}
             />
             <MetricCard
               label="Total"
               value={formatNumber(props.stats?.totalRenderMs, 2, " ms")}
-              valueClass="text-xl font-bold"
+              size="lg"
             />
             <MetricCard
               label="Update"

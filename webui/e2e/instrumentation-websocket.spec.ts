@@ -127,7 +127,10 @@ test("instrumentation panel surfaces websocket backlog lag", async ({
 
   await expect(panel.getByText("Lagging")).toBeVisible();
   await expect(panel.getByText("Main delivery EMA")).toBeVisible();
-  await expect(panel.getByText("275.0 ms").last()).toHaveClass(/text-red-500/);
+  await expect(panel.getByText("275.0 ms").last()).toHaveAttribute(
+    "data-tone",
+    "danger",
+  );
   await expect(panel.getByText("Main delivery max (session)")).toBeVisible();
   await expect(panel.getByText("480.0 ms")).toBeVisible();
   await expect(panel.getByText("Pulls/s")).toBeVisible();

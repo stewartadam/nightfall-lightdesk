@@ -22,8 +22,8 @@ import type {
   WsStats,
 } from "../../../state/appStores";
 import type { MessageTypeRow, MessageTypeStats } from "../model/message-table";
-import { formatNumber, getDeliveryLagColor } from "../model/metrics";
-import { MetricCard } from "./metric-sections";
+import { formatNumber, getDeliveryLagTone } from "../model/metrics";
+import { MetricCard, MetricValue } from "./metric-sections";
 
 interface WebSocketMetricsSectionProps {
   measures: Record<string, PerformanceMeasureStats>;
@@ -121,13 +121,12 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             >
               {props.stats?.main.backlogLagging ? "Lagging" : "Current"}
             </span>
-            <span
-              class={`font-mono text-xs ${getDeliveryLagColor(
-                props.stats?.main.avgDeliveryLagMs,
-              )}`}
+            <MetricValue
+              tone={getDeliveryLagTone(props.stats?.main.avgDeliveryLagMs)}
+              class="text-xs"
             >
               {formatNumber(props.stats?.main.avgDeliveryLagMs, 1, " ms")}
-            </span>
+            </MetricValue>
           </span>
         </Show>
       }
@@ -231,7 +230,8 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             <MetricCard
               label="Main delivery EMA"
               value={formatNumber(props.stats?.main.avgDeliveryLagMs, 1, " ms")}
-              valueClass={`text-xl font-bold ${getDeliveryLagColor(props.stats?.main.avgDeliveryLagMs)}`}
+              size="lg"
+              tone={getDeliveryLagTone(props.stats?.main.avgDeliveryLagMs)}
             />
             <MetricCard
               label="Main delivery max (session)"
@@ -240,11 +240,12 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             <MetricCard
               label="Worker queue depth"
               value={props.stats?.worker.queueDepth ?? 0}
-              valueClass={`text-xl font-bold ${
+              size="lg"
+              tone={
                 (props.stats?.worker.queueDepth ?? 0) > 0
-                  ? "text-yellow-500"
-                  : ""
-              }`}
+                  ? "warning"
+                  : "default"
+              }
             />
           </div>
           <div class="grid grid-cols-4 gap-3">
@@ -289,7 +290,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
               value={`${props.stats?.main.lastSeenDeliveryMessageId ?? "—"} / ${
                 props.stats?.worker.lastStagedDeliveryMessageId ?? "—"
               }`}
-              valueClass="text-sm"
+              size="sm"
             />
             <MetricCard
               label="Pull state"
@@ -309,22 +310,24 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             <MetricCard
               label="Gaps"
               value={props.stats?.worker.parameterStream?.gaps ?? "—"}
-              valueClass={`text-xl font-bold ${
+              size="lg"
+              tone={
                 (props.stats?.worker.parameterStream?.gaps ?? 0) > 0
-                  ? "text-yellow-500"
-                  : ""
-              }`}
+                  ? "warning"
+                  : "default"
+              }
             />
             <MetricCard
               label="Drifted keyframes"
               value={
                 props.stats?.worker.parameterStream?.driftedKeyframes ?? "—"
               }
-              valueClass={`text-xl font-bold ${
+              size="lg"
+              tone={
                 (props.stats?.worker.parameterStream?.driftedKeyframes ?? 0) > 0
-                  ? "text-red-500"
-                  : ""
-              }`}
+                  ? "danger"
+                  : "default"
+              }
             />
           </div>
           <p class="text-xs text-neutral-400">
