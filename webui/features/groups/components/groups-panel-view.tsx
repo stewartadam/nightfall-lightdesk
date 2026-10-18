@@ -12,6 +12,7 @@ import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -19,7 +20,6 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
@@ -87,20 +87,24 @@ function GroupCard(props: GroupCardProps) {
         }
       >
         <div class="flex min-w-0 text-sm text-neutral-400">
-          <CrudInlineLabelEditor
-            ariaLabel="Group card label"
-            class="truncate"
-            editing={
+          <Show
+            when={
               controller.editingCardLabelUid() === props.group.identifiers.uid
             }
-            label={props.group.identifiers.label}
-            onCancel={() => controller.setEditingCardLabelUid(null)}
-            onCommit={(label) =>
-              controller.updateGroupLabel(props.group, label)
+            fallback={
+              <span class="truncate">{props.group.identifiers.label}</span>
             }
           >
-            {props.group.identifiers.label}
-          </CrudInlineLabelEditor>
+            <InlineRenameField
+              ariaLabel="Group card label"
+              allowEmpty
+              value={props.group.identifiers.label}
+              onClose={() => controller.setEditingCardLabelUid(null)}
+              onCommit={(label) =>
+                controller.updateGroupLabel(props.group, label)
+              }
+            />
+          </Show>
         </div>
       </Show>
     </button>

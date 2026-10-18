@@ -21,7 +21,7 @@ The lab renders application widgets:
 - **Color picker** uses `components/widgets/color-picker` with square and circular HSV views, brightness, presets, RGB/HSV readouts, a live color swatch, and local reset.
 - **Switches** uses the shared `ToggleSwitch` used by transport I/O with independent input/output controls, on/off and disabled states, and keyboard focus.
 - **Vertical faders** uses `VerticalRangeSlider` with intensity and speed ranges, reference markers, keyboard input, external reset, and disabled controls. **Attribute sliders** uses the programmer's `AttributeSlider` with absolute/relative modes and synchronized numeric entry.
-- **Object selector** uses the production searchable list with secondary text, keyboard selection, and empty results. **Inline rename** uses `CrudInlineLabelEditor` with Enter/blur to commit and Escape to cancel.
+- **Object selector** uses the production searchable list with secondary text, keyboard selection, and empty results. **Inline rename** uses `InlineRenameField` with Enter/blur to commit and Escape to cancel, plus an asynchronous save that refuses taken names and keeps the draft.
 - **Error fallback** wraps sample content in a production `ErrorBoundary` with the shared `ErrorFallback`. **Throw render error** trips the boundary; Retry clears the simulated fault and re-renders the content.
 - **Collapsibles** uses the shared `Collapsible` with bordered and plain sections, header counts and a Refresh button that never toggle, lazy content, and Expand all/Collapse all driving controlled sections.
 - **Badges** shows the shared `Badge` in every tone, appearance and size, with icons and monospace identifiers, and `CountBadge` corner counts on a toolbar button and plain anchors, including a capped `99+` count.

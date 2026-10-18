@@ -7,13 +7,11 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { StarIcon } from "@squidlab/phosphor-solid/star";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import {
   boardDisplayName,
@@ -43,6 +41,7 @@ import { $settings } from "../../../state/settings";
 import { useAppShell } from "../../providers/app-shell";
 import { Dialog, DialogBody } from "../../ui/dialog";
 import { Checkbox, Input } from "../../ui/form-controls";
+import { InlineRenameField } from "../../ui/inline-rename-field";
 import { ScrollArea } from "../../ui/scroll-area";
 import Tooltip from "../../ui/tooltip";
 import { Button } from "../../ui/visual-language/button";
@@ -104,7 +103,6 @@ export default function LayoutManager(props: LayoutManagerProps) {
   const [editingLayoutId, setEditingLayoutId] = createSignal<string | null>(
     null,
   );
-  const [editingLayoutName, setEditingLayoutName] = createSignal("");
   const [confirmAction, setConfirmAction] = createSignal<ConfirmAction | null>(
     null,
   );
@@ -133,19 +131,6 @@ export default function LayoutManager(props: LayoutManagerProps) {
   /** Begins inline editing of a layout name. */
   const startRenameLayout = (layout: StoredPanelLayout) => {
     setEditingLayoutId(layout.id);
-    setEditingLayoutName(layout.name);
-  };
-
-  /** Discards the pending name edit. */
-  const cancelRenameLayout = () => {
-    setEditingLayoutId(null);
-    setEditingLayoutName("");
-  };
-
-  /** Persists the edited name before closing its editor. */
-  const commitRenameLayout = async (layout: StoredPanelLayout) => {
-    if (await renameNamedLayout(layout.id, editingLayoutName()))
-      cancelRenameLayout();
   };
 
   /** Applies a confirmed deletion without allowing the active layout to be removed. */
@@ -283,45 +268,15 @@ export default function LayoutManager(props: LayoutManagerProps) {
                               </>
                             }
                           >
-                            <form
-                              class="flex gap-2"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                commitRenameLayout(layout());
-                              }}
-                            >
-                              <Input
-                                density="compact"
-                                class="min-w-0 flex-1"
-                                value={editingLayoutName()}
-                                onInput={(event) =>
-                                  setEditingLayoutName(
-                                    event.currentTarget.value,
-                                  )
-                                }
-                              />
-                              <Tooltip content={() => "Save layout name"}>
-                                <Button
-                                  size="icon"
-                                  type="submit"
-                                  class="items-center justify-center"
-                                  aria-label="Save layout name"
-                                >
-                                  <CheckIcon class="size-4" aria-hidden />
-                                </Button>
-                              </Tooltip>
-                              <Tooltip content={() => "Cancel rename"}>
-                                <Button
-                                  size="icon"
-                                  type="button"
-                                  class="items-center justify-center"
-                                  aria-label="Cancel rename"
-                                  onClick={cancelRenameLayout}
-                                >
-                                  <XIcon class="size-4" aria-hidden />
-                                </Button>
-                              </Tooltip>
-                            </form>
+                            <InlineRenameField
+                              ariaLabel={`Layout name for ${layout().name}`}
+                              class="text-sm font-medium"
+                              value={layout().name}
+                              onCommit={(name) =>
+                                renameNamedLayout(layout().id, name)
+                              }
+                              onClose={() => setEditingLayoutId(null)}
+                            />
                           </Show>
                         </div>
 

@@ -12,6 +12,7 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
 import { Collapsible } from "../../../components/ui/collapsible";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -19,7 +20,6 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
@@ -75,16 +75,18 @@ function CueCard(props: CueCardProps) {
     >
       <span class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
         <span>{props.cue.identifiers.id}:</span>
-        <CrudInlineLabelEditor
-          ariaLabel="Cue card label"
-          class="truncate"
-          editing={controller.editingCardLabelUid() === cueUid}
-          label={props.cue.identifiers.label}
-          onCancel={() => controller.setEditingCardLabelUid(null)}
-          onCommit={(label) => controller.updateCueLabel(props.cue, label)}
+        <Show
+          when={controller.editingCardLabelUid() === cueUid}
+          fallback={<span class="truncate">{props.cue.identifiers.label}</span>}
         >
-          {props.cue.identifiers.label}
-        </CrudInlineLabelEditor>
+          <InlineRenameField
+            ariaLabel="Cue card label"
+            allowEmpty
+            value={props.cue.identifiers.label}
+            onClose={() => controller.setEditingCardLabelUid(null)}
+            onCommit={(label) => controller.updateCueLabel(props.cue, label)}
+          />
+        </Show>
       </span>
     </button>
   );

@@ -212,3 +212,16 @@ Use `SearchPickerSurface`, `SearchPickerInput`, and `SearchPickerOption` from `s
 The command palette in the app and design lab, showfile object search, timeline action insertion, and timeline jump picker use these components.
 
 Search picker options accept `density="compact"` for anchored command suggestions. Command inputs and history search use shared fields and buttons; DMX direction and universe selection use shared toggle toolbar buttons.
+
+## Inline rename
+
+Use `InlineRenameField` from `inline-rename-field` to rename an object in place, such as a CRUD card, a timeline track header, a marker or a saved layout. Mount it while editing (usually as the `Show` branch whose fallback is the plain name) and unmount it from `onClose`. It composes the compact `Input`, sized to sit on a line of text and to inherit its type.
+
+- Enter saves and leaving the field saves; Escape restores the saved name, and the blur that follows unmounting never saves. Switching windows does not count as leaving.
+- `onCommit` runs only when the trimmed draft differs from `value`; an unchanged draft closes without a call. An empty draft restores the saved name unless `allowEmpty` is set. `preserveWhitespace` keeps surrounding spaces.
+- `onCommit` may return a promise: the field turns read-only (`aria-busy`) until it settles. Returning `false` or rejecting keeps the field open with the draft (and focused when Enter started the save), so the caller reports the reason; the field does not log rejections.
+- The field focuses itself and selects the name on mount, and while editing it keeps every key from panel shortcuts and Enter and Escape from the dialog stack (`data-owns-dialog-keys`), so Escape inside a dialog discards the draft without closing the dialog. Clicks, double-clicks and drags stay inside it.
+- After Enter or Escape it returns focus to the element focused before editing, or else the first focusable element beside it (such as the name's button) or the nearest focusable ancestor (such as the card). `returnFocus` overrides the target.
+- Pass `draft` and `onDraftChange` when the field can remount while editing continues, such as a row replaced by a server update, so the draft survives.
+
+CRUD cards, timeline track headers and markers, the layout manager and the design lab's Inline rename panel use this field.

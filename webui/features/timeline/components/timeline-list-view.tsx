@@ -13,6 +13,7 @@ import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
@@ -20,7 +21,6 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
@@ -79,18 +79,24 @@ function TimelineCard(props: TimelineCardProps) {
         class="nf-timeline-card-title flex min-w-0 items-center"
         title={props.timeline.identifiers.label}
       >
-        <CrudInlineLabelEditor
-          ariaLabel="Timeline card label"
-          class="min-w-0 truncate"
-          editing={controller.editingCardLabelUid() === timelineUid}
-          label={props.timeline.identifiers.label}
-          onCancel={() => controller.setEditingCardLabelUid(null)}
-          onCommit={(label) =>
-            controller.updateTimelineLabel(props.timeline, label)
+        <Show
+          when={controller.editingCardLabelUid() === timelineUid}
+          fallback={
+            <span class="min-w-0 truncate">
+              {props.timeline.identifiers.label}
+            </span>
           }
         >
-          {props.timeline.identifiers.label}
-        </CrudInlineLabelEditor>
+          <InlineRenameField
+            ariaLabel="Timeline card label"
+            allowEmpty
+            value={props.timeline.identifiers.label}
+            onClose={() => controller.setEditingCardLabelUid(null)}
+            onCommit={(label) =>
+              controller.updateTimelineLabel(props.timeline, label)
+            }
+          />
+        </Show>
       </div>
       <div
         class="nf-timeline-card-audio truncate"
