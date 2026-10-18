@@ -284,7 +284,13 @@ test("command palette restores the submitted command when reopened", async ({
     };
   });
   expect(Math.abs(placement.previousTop)).toBeLessThan(3);
-  expect(placement.selectedTop).toBeGreaterThan(0);
+  const topEdgeHeight =
+    (
+      await paletteDialog
+        .locator('.nf-scroll-edge[data-edge="top"]')
+        .boundingBox()
+    )?.height ?? 0;
+  expect(placement.selectedTop).toBeGreaterThanOrEqual(topEdgeHeight);
 });
 
 test("command palette scrolls category titles into view for first group items", async ({
@@ -342,9 +348,19 @@ test("command palette scrolls category titles into view for first group items", 
     return {
       selectedTop: selectedRect.top - scrollRect.top,
       titleTop: titleRect.top - scrollRect.top,
+      scrollTop: scrollArea.scrollTop,
+      edgeClearance: Number.parseFloat(
+        getComputedStyle(scrollArea).scrollPaddingTop,
+      ),
     };
   }, target.id);
 
-  expect(Math.abs(placement.titleTop)).toBeLessThan(3);
-  expect(placement.selectedTop).toBeGreaterThan(0);
+  expect(placement.titleTop).toBeGreaterThan(-3);
+  expect(placement.titleTop).toBeLessThan(placement.edgeClearance);
+  // The top scroll edge only appears once the list is scrolled.
+  if (placement.scrollTop > 1) {
+    expect(placement.selectedTop).toBeGreaterThanOrEqual(
+      placement.edgeClearance - 1,
+    );
+  }
 });

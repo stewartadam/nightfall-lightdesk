@@ -10,7 +10,7 @@ import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
 import { createSignal, For, type JSX, onCleanup, onMount } from "solid-js";
 import "./scroll-area.css";
 
-interface ScrollAreaProps {
+export interface ScrollAreaProps {
   children: JSX.Element;
   class?: string;
   style?: JSX.CSSProperties | string;
@@ -18,6 +18,8 @@ interface ScrollAreaProps {
   viewportProps?: JSX.HTMLAttributes<HTMLDivElement> & {
     [attribute: `data-${string}`]: string | boolean | undefined;
   };
+  /** Skips re-measuring on deep attribute and text changes; see `ScrollIndicators`. */
+  structureOnly?: boolean;
 }
 
 const edges = ["top", "bottom", "left", "right"] as const;
@@ -30,6 +32,13 @@ interface ScrollIndicatorsProps {
   fixed?: boolean;
   /** Extra class for the overlay, such as one that matches the viewport's background. */
   class?: string;
+  /**
+   * Re-measures when content elements are added or removed or the top-level content boxes
+   * resize, but not on attribute or text changes deep in the content. For large, busy hosts such
+   * as a whole panel, where live values and animated styles would otherwise trigger a measurement
+   * every frame.
+   */
+  structureOnly?: boolean;
 }
 
 /**
@@ -113,9 +122,27 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
     const resize = new ResizeObserver(schedule);
     resize.observe(viewport);
 
+    /**
+     * Lists the elements whose size decides the content extent. Structure-only tracking looks
+     * through `display: contents` wrappers, such as portal hosts, which have no box to resize.
+     */
+    function contentBoxes(parent: Element, boxes: Set<Element>) {
+      for (const child of parent.children) {
+        if (
+          props.structureOnly &&
+          getComputedStyle(child).display === "contents"
+        ) {
+          contentBoxes(child, boxes);
+        } else {
+          boxes.add(child);
+        }
+      }
+      return boxes;
+    }
+
     /** Tracks intrinsic content size without retaining children removed by reactive rendering. */
     function observeContent() {
-      const children = new Set(viewport.children);
+      const children = contentBoxes(viewport, new Set());
       for (const child of observed) {
         if (!children.has(child)) {
           resize.unobserve(child);
@@ -132,12 +159,17 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
     }
 
     const mutation = new MutationObserver(observeContent);
-    mutation.observe(viewport, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-    });
+    mutation.observe(
+      viewport,
+      props.structureOnly
+        ? { childList: true, subtree: true }
+        : {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+          },
+    );
     observeContent();
     viewport.addEventListener("scroll", schedule, { passive: true });
     viewport.addEventListener("load", schedule, true);
@@ -264,7 +296,10 @@ export function ScrollArea(props: ScrollAreaProps) {
       >
         {props.children}
       </div>
-      <ScrollIndicators viewport={viewport} />
+      <ScrollIndicators
+        viewport={viewport}
+        structureOnly={props.structureOnly}
+      />
     </div>
   );
 }

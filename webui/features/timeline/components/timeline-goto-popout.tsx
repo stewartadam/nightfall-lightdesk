@@ -17,10 +17,10 @@ import {
 import { Portal } from "solid-js/web";
 import { createDismissable } from "../../../components/ui/dismissable";
 import { overlayHost } from "../../../components/ui/modal/dialog-stack";
-import { ScrollArea } from "../../../components/ui/scroll-area";
 import {
   SearchPickerInput,
   SearchPickerOption,
+  SearchPickerResults,
   SearchPickerSurface,
 } from "../../../components/ui/search-picker";
 import { getFocusedComponentId } from "../../../lib/keyboardShortcuts";
@@ -286,7 +286,7 @@ export const TimelineGotoPopout = () => {
                 setSelectedIndex(0);
               }}
             />
-            <ScrollArea
+            <SearchPickerResults
               class="min-h-0 max-h-[340px]"
               viewportProps={{
                 ref: (element) => {
@@ -347,7 +347,7 @@ export const TimelineGotoPopout = () => {
                   </For>
                 </ul>
               </Show>
-            </ScrollArea>
+            </SearchPickerResults>
           </SearchPickerSurface>
         </div>
       </Portal>

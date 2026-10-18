@@ -19,6 +19,7 @@ import {
 import { Dynamic, Portal } from "solid-js/web";
 import { createDismissable, type DismissReason } from "../dismissable";
 import { overlayHost } from "../modal/dialog-stack";
+import { ScrollIndicators } from "../scroll-area";
 
 /** Space between the anchor and its popover. */
 const POPOVER_GAP_PX = 4;
@@ -62,6 +63,8 @@ export interface PopoverProps
   surface?: Component<JSX.HTMLAttributes<HTMLDivElement>>;
   /** Receives the positioned element. */
   ref?: (element: HTMLDivElement) => void;
+  /** Class for the scroll edge overlay, such as one that matches the surface's background. */
+  scrollIndicatorClass?: string;
   /** Extra inline style merged after the computed position. */
   style?: JSX.CSSProperties;
   children?: JSX.Element;
@@ -87,12 +90,14 @@ export function Popover(props: PopoverProps): JSX.Element {
     "returnFocus",
     "surface",
     "ref",
+    "scrollIndicatorClass",
     "style",
     "class",
     "children",
   ]);
   const [position, setPosition] = createSignal<JSX.CSSProperties>({});
   let popoverRef: HTMLDivElement | undefined;
+  let layerRef: HTMLDivElement | undefined;
 
   /**
    * Places the popover against the anchor's current viewport bounds. It
@@ -167,7 +172,8 @@ export function Popover(props: PopoverProps): JSX.Element {
 
   createDismissable({
     active: () => local.open,
-    refs: () => [popoverRef, local.anchor()],
+    // The layer holds the scroll edges too, so pressing an edge scrolls instead of dismissing.
+    refs: () => [layerRef, local.anchor()],
     onDismiss: dismiss,
   });
 
@@ -193,19 +199,26 @@ export function Popover(props: PopoverProps): JSX.Element {
   return (
     <Show when={local.open}>
       <Portal mount={overlayHost(local.anchor())}>
-        <Dynamic
-          component={local.surface ?? "div"}
-          ref={(element: HTMLDivElement) => {
-            popoverRef = element;
-            local.ref?.(element);
-          }}
-          data-component="Popover"
-          class={`fixed nightfall-top-layer ${local.class ?? ""}`}
-          style={{ ...position(), ...local.style }}
-          {...rest}
-        >
-          {local.children}
-        </Dynamic>
+        <div ref={layerRef} class="contents">
+          <Dynamic
+            component={local.surface ?? "div"}
+            ref={(element: HTMLDivElement) => {
+              popoverRef = element;
+              local.ref?.(element);
+            }}
+            data-component="Popover"
+            class={`fixed nightfall-top-layer ${local.class ?? ""}`}
+            style={{ ...position(), ...local.style }}
+            {...rest}
+          >
+            {local.children}
+          </Dynamic>
+          <ScrollIndicators
+            viewport={popoverRef as HTMLDivElement}
+            fixed
+            class={local.scrollIndicatorClass}
+          />
+        </div>
       </Portal>
     </Show>
   );

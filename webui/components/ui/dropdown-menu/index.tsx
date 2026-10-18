@@ -92,6 +92,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
           placement={props.placement ?? "above"}
           align={props.align}
           surface={MenuSurface}
+          scrollIndicatorClass="nf-menu-scroll"
           data-component="DropdownMenuContent"
           data-menu-kind="dropdown"
           class={`min-w-[220px] ${props.contentClass ?? ""}`}

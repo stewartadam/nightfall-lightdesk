@@ -32,10 +32,10 @@ import type { UiAction } from "../../providers/command-registry";
 import { DialogBackdrop } from "../../ui/dialog";
 import { KbdShortcut } from "../../ui/kbd";
 import { MenuHeading } from "../../ui/menu";
-import { ScrollArea } from "../../ui/scroll-area";
 import {
   SearchPickerInput,
   SearchPickerOption,
+  SearchPickerResults,
   SearchPickerSurface,
 } from "../../ui/search-picker";
 import {
@@ -115,8 +115,19 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
         0,
         scrollContainer.scrollHeight - scrollContainer.clientHeight,
       );
+      // A category title can be shorter than the top scroll edge, so keep the
+      // selected row itself below the edge's scroll padding.
+      const edgeClearance =
+        Number.parseFloat(getComputedStyle(scrollContainer).scrollPaddingTop) ||
+        0;
       const targetScrollTop = Math.min(
-        Math.max(anchorElement.offsetTop, 0),
+        Math.max(
+          Math.min(
+            anchorElement.offsetTop,
+            selectedElement.offsetTop - edgeClearance,
+          ),
+          0,
+        ),
         maxScrollTop,
       );
 
@@ -351,7 +362,7 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
           }
         />
 
-        <ScrollArea
+        <SearchPickerResults
           class="min-h-0 max-h-[32rem]"
           viewportProps={{
             ref: (element) => {
@@ -465,7 +476,7 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
               </For>
             </ul>
           </Show>
-        </ScrollArea>
+        </SearchPickerResults>
       </SearchPickerSurface>
     </DialogBackdrop>
   );
