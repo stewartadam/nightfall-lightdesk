@@ -12,6 +12,7 @@ import {
   IS_APPLE_PLATFORM,
   parseShortcut,
 } from "../../ui/kbd-keys";
+import { matchesSearchTerms } from "../../ui/search-match";
 
 /** Shorthand people commonly type for modifier keys whose caps spell the full name. */
 const KEY_ALIASES: Record<string, string> = {
@@ -25,11 +26,6 @@ export interface SearchableShortcut {
   description: string;
   key: string;
   groupLabel: string;
-}
-
-/** Splits a typed query into lower-case words; an empty result matches every shortcut. */
-export function shortcutSearchTerms(query: string): string[] {
-  return query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
 }
 
 /**
@@ -100,6 +96,7 @@ export function matchesShortcutSearch(
   applePlatform: boolean = IS_APPLE_PLATFORM,
 ): boolean {
   if (terms.length === 0) return true;
-  const text = shortcutSearchText(shortcut, applePlatform);
-  return terms.every((term) => text.includes(term));
+  return matchesSearchTerms(terms, [
+    shortcutSearchText(shortcut, applePlatform),
+  ]);
 }

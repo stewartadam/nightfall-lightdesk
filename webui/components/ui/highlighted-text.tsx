@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, Index, Show } from "solid-js";
 import { highlightSegments } from "./highlighted-text-segments";
 
 interface HighlightedTextProps {
@@ -24,14 +24,14 @@ export function HighlightedText(props: HighlightedTextProps) {
   /** Plain and matched runs of the text for the current search words. */
   const segments = createMemo(() => highlightSegments(props.text, props.terms));
   return (
-    <For each={segments()}>
+    <Index each={segments()}>
       {(segment) => (
-        <Show when={segment.match} fallback={segment.text}>
+        <Show when={segment().match} fallback={segment().text}>
           <mark class="rounded-sm bg-[var(--accent-soft)] text-[var(--accent)]">
-            {segment.text}
+            {segment().text}
           </mark>
         </Show>
       )}
-    </For>
+    </Index>
   );
 }
