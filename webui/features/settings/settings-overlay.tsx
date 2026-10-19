@@ -13,6 +13,7 @@ import {
   createSignal,
   createUniqueId,
   For,
+  type JSX,
   onCleanup,
   Show,
 } from "solid-js";
@@ -20,9 +21,15 @@ import { useAppShell } from "../../components/providers/app-shell";
 import { Dialog, DialogBody } from "../../components/ui/dialog";
 import { Input, NativeSelect } from "../../components/ui/form-controls";
 import { RangeSlider } from "../../components/ui/range-slider";
+import { SearchField } from "../../components/ui/search-field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
+import {
+  SettingsSearchGroup,
+  SettingsSearchItem,
+  SettingsSearchRoot,
+} from "../../components/ui/settings-search";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
@@ -39,6 +46,7 @@ import {
   $networkInterfaceStatus,
   $settings,
 } from "../../state/settings";
+import { compactViewport } from "../../state/viewport";
 import type {
   BindingValidationMode,
   InputSignalLossPolicy,
@@ -162,15 +170,44 @@ export function SettingsOverlay() {
   const quality = useStore(visualizerQuality);
   const darkness = useStore(visualizerDarkness);
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
+  const [query, setQuery] = createSignal("");
+  const [hasResults, setHasResults] = createSignal(true);
+  /** Whether a search is running, which lists matches from every tab instead of one tab. */
+  const searching = () => query().trim().length > 0;
   const requestedTab = useStore($requestedSettingsTab);
   const tabId = createUniqueId();
-  /** Switches to a tab another surface asked for, then forgets the request. */
+  /** Switches to a tab another surface asked for, ending any search, then forgets the request. */
   createEffect(() => {
     const tab = requestedTab();
     if (!tab || !isSettingsOpen()) return;
+    setQuery("");
     setActiveTab(tab);
     $requestedSettingsTab.set(null);
   });
+  /** Starts each visit to settings without the previous visit's search. */
+  createEffect(() => {
+    if (!isSettingsOpen()) setQuery("");
+  });
+
+  /**
+   * Renders one tab's settings: alone while its tab is selected, or, during a search, under its
+   * tab name alongside the other tabs' matches, in tab order.
+   */
+  const TabPane = (props: { tab: SettingsTab; children: JSX.Element }) => {
+    const index = SETTINGS_TABS.findIndex((tab) => tab.key === props.tab);
+    return (
+      <Show when={searching() || activeTab() === props.tab}>
+        <SettingsSearchGroup
+          title={SETTINGS_TABS[index].label}
+          showTitle={searching()}
+          class="space-y-4"
+          style={{ order: index }}
+        >
+          {props.children}
+        </SettingsSearchGroup>
+      </Show>
+    );
+  };
   /** Refreshes backend-provided device choices whenever settings becomes visible. */
   createEffect(() => {
     if (!isSettingsOpen()) return;
@@ -369,7 +406,7 @@ export function SettingsOverlay() {
   };
 
   return (
-    <>
+    <SettingsSearchRoot query={query()} onResults={setHasResults}>
       <Dialog
         kind="info"
         isOpen={isSettingsOpen()}
@@ -380,33 +417,51 @@ export function SettingsOverlay() {
         class="max-w-[560px]"
         style={{ "max-height": "80vh" }}
       >
-        <div class="px-4 pt-3">
-          <SegmentedTabs
-            id={tabId}
-            label="Settings categories"
-            contentId={`${tabId}-content`}
-            options={SETTINGS_TABS}
-            value={activeTab()}
-            onChange={setActiveTab}
+        <div class="space-y-3 px-4 pt-3">
+          <SearchField
+            label="Search settings"
+            // Ready for typing on open, except on phones, where focus would raise the keyboard.
+            autofocus={!compactViewport.get()}
+            value={query()}
+            onInput={setQuery}
+            data-testid="settings-search"
           />
+          <Show when={!searching()}>
+            <SegmentedTabs
+              id={tabId}
+              label="Settings categories"
+              contentId={`${tabId}-content`}
+              options={SETTINGS_TABS}
+              value={activeTab()}
+              onChange={setActiveTab}
+            />
+          </Show>
         </div>
 
         <DialogBody
-          class="space-y-4"
+          class="flex flex-col gap-4"
           id={`${tabId}-content`}
-          role="tabpanel"
-          aria-labelledby={`${tabId}-${activeTab()}`}
+          role={searching() ? "region" : "tabpanel"}
+          aria-label={searching() ? "Search results" : undefined}
+          aria-labelledby={searching() ? undefined : `${tabId}-${activeTab()}`}
         >
-          <Show when={activeTab() === "appearance"}>
+          <Show when={searching() && !hasResults()}>
+            <p class="py-6 text-center text-sm text-gray-400" role="status">
+              No settings match “{query().trim()}”.
+            </p>
+          </Show>
+          <TabPane tab="appearance">
             <AppearanceSettings />
-          </Show>
-          <Show when={activeTab() === "privacy"}>
+          </TabPane>
+          <TabPane tab="privacy">
             <PrivacySettings />
-          </Show>
-          <Show when={activeTab() === "keyboard"}>
-            <KeybindingsSettings />
-          </Show>
-          <Show when={activeTab() === "general"}>
+          </TabPane>
+          <TabPane tab="keyboard">
+            <SettingsSearchItem keywords="Keybindings keyboard shortcuts keys hotkeys MIDI OSC">
+              <KeybindingsSettings />
+            </SettingsSearchItem>
+          </TabPane>
+          <TabPane tab="general">
             <SettingsSection title="Programmer">
               <SettingsRow
                 label="Auto-select on attribute set"
@@ -508,9 +563,9 @@ export function SettingsOverlay() {
                 )}
               </SettingsRow>
             </SettingsSection>
-          </Show>
+          </TabPane>
 
-          <Show when={activeTab() === "editors"}>
+          <TabPane tab="editors">
             <SettingsSection title="Cue / Sequence Authoring">
               <SettingsRow
                 label="Reorder cue renumber behavior"
@@ -648,9 +703,9 @@ export function SettingsOverlay() {
                 )}
               </SettingsRow>
             </SettingsSection>
-          </Show>
+          </TabPane>
 
-          <Show when={activeTab() === "network"}>
+          <TabPane tab="network">
             <SettingsSection title="Network">
               <SettingsRow
                 label="Interface"
@@ -795,9 +850,9 @@ export function SettingsOverlay() {
                 )}
               </SettingsRow>
             </SettingsSection>
-          </Show>
+          </TabPane>
 
-          <Show when={activeTab() === "visualizer"}>
+          <TabPane tab="visualizer">
             <SettingsSection
               title="Visualizer"
               footer="Tool mode, grid, emitter debug, and snap-point toggles are available in the visualizer toolbar."
@@ -917,10 +972,10 @@ export function SettingsOverlay() {
                 )}
               </SettingsRow>
             </SettingsSection>
-          </Show>
+          </TabPane>
         </DialogBody>
       </Dialog>
       {modelDownload.dialog()}
-    </>
+    </SettingsSearchRoot>
   );
 }

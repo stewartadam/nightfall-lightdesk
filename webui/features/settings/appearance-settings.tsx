@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { NativeSelect } from "../../components/ui/form-controls";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
+import { SettingsSearchItem } from "../../components/ui/settings-search";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { AccentPicker } from "../../components/ui/visual-language/accent-picker";
 import { TabAlignmentSelect } from "../../components/ui/visual-language/tab-alignment-select";
@@ -23,12 +24,12 @@ export function AppearanceSettings() {
   const appearance = useStore(appearanceSettings);
   return (
     <SettingsSection footer="Appearance changes apply immediately and are saved on this device.">
-      <div class="pb-3">
+      <SettingsSearchItem keywords="Accent color colour theme" class="pb-3">
         <AccentPicker
           value={appearance().accent}
           onChange={(accent) => setAppearanceSetting("accent", accent.value)}
         />
-      </div>
+      </SettingsSearchItem>
       <SettingsRow
         label="Table gridlines"
         description="Draws lines between the rows and columns of tables."

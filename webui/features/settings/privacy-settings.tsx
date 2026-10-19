@@ -19,6 +19,7 @@ import {
 } from "solid-js";
 import { Alert } from "../../components/ui/alert";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
+import { SettingsSearchItem } from "../../components/ui/settings-search";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
@@ -116,7 +117,10 @@ function ReportContents(props: { items: string[] }) {
 export function PrivacySettings() {
   return (
     <>
-      <div class="space-y-2 text-xs text-gray-400">
+      <SettingsSearchItem
+        keywords="Privacy policy sharing data telemetry"
+        class="space-y-2 text-xs text-gray-400"
+      >
         <p>
           The Nightfall app can share data to help fix errors and prioritize
           feature development. Sharing data is optional and can be disabled at
@@ -139,7 +143,7 @@ export function PrivacySettings() {
           for what data is captured, where it is stored, and how long it is
           kept.
         </p>
-      </div>
+      </SettingsSearchItem>
       <SettingsSection>
         <UpdateSettings />
         <TelemetrySettings />
