@@ -91,7 +91,7 @@ test("appearance settings update panels and portals and survive reload", async (
   // Timelines also has a view toggle, so stay inside Groups.
   await page
     .locator('[data-panel-id="panel-Groups"]')
-    .getByRole("button", { name: "Switch to list view", exact: true })
+    .getByRole("radio", { name: "List view", exact: true })
     .click();
   const cell = page.locator('[role="gridcell"]:visible').first();
   await expect(cell).toHaveCSS(

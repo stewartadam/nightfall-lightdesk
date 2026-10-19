@@ -48,7 +48,7 @@ test("app mutes only unfocused panel accents when enabled", async ({
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await resetToDefaultLayout(page);
-  const camera = page.getByRole("button", { name: "Camera (C)", exact: true });
+  const camera = page.getByRole("radio", { name: "Camera (C)", exact: true });
   await expect(camera).toBeVisible();
   let dialog = await openAppearance(page);
   const setting = dialog.getByLabel("Mute accents in unfocused panels");

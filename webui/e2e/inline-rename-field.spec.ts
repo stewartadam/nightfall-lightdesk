@@ -157,7 +157,7 @@ test("CRUD card rename commits on Enter and blur and cancels on Escape", async (
 
   await startRename();
   await editor.fill("Renamed by blur");
-  await panel.getByRole("button", { name: "Switch to list view" }).focus();
+  await panel.getByRole("radio", { name: "List view" }).focus();
   await expect(editor).toHaveCount(0);
   await expect.poll(() => sequenceLabel(page, uid)).toBe("Renamed by blur");
   await capture(panel, testInfo, "crud-card-after-blur");

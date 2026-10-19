@@ -74,19 +74,19 @@ test("CRUD and visualizer toolbars share a bottom-only divider", async ({
       (element) => getComputedStyle(element).borderBottomColor,
     ),
   );
-  const move = visualizer.getByRole("button", {
+  const move = visualizer.getByRole("radio", {
     name: "Move (M)",
     exact: true,
   });
   await move.click();
-  await expect(move).toHaveAttribute("aria-pressed", "true");
-  const camera = visualizer.getByRole("button", {
+  await expect(move).toHaveAttribute("aria-checked", "true");
+  const camera = visualizer.getByRole("radio", {
     name: "Camera (C)",
     exact: true,
   });
   await camera.click();
-  await expect(camera).toHaveAttribute("aria-pressed", "true");
-  await expect(move).toHaveAttribute("aria-pressed", "false");
+  await expect(camera).toHaveAttribute("aria-checked", "true");
+  await expect(move).toHaveAttribute("aria-checked", "false");
   await visualizer
     .getByRole("button", { name: "Add fixture or object" })
     .click();

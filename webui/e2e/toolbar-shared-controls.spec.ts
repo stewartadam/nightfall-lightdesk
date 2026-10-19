@@ -67,12 +67,13 @@ test("list toolbars use shared separators and toggle buttons", async ({
     '[data-panel-id="panel-CueList-toolbar-check"]:visible',
   );
   await expect(panel).toBeVisible();
-  const gridView = panel.getByRole("button", { name: "Switch to grid view" });
+  const gridView = panel.getByRole("radio", { name: "Grid view" });
   await gridView.click();
-  await expect(gridView).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    panel.getByRole("button", { name: "Switch to list view" }),
-  ).toHaveAttribute("aria-pressed", "false");
+  await expect(gridView).toHaveAttribute("aria-checked", "true");
+  await expect(panel.getByRole("radio", { name: "List view" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
   await expect(panel.locator(".nf-toolbar-separator").first()).toBeVisible();
   await expect(panel.locator(".w-px")).toHaveCount(0);
 

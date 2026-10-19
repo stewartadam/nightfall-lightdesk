@@ -10,9 +10,27 @@ import { ListIcon } from "@squidlab/phosphor-solid/list";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { type Accessor, createEffect, on, onCleanup } from "solid-js";
 import { playContentEntrance } from "../../ui/content-entrance";
-import { ToggleToolbarButton } from "../../ui/toolbar-button";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../ui/segmented-control";
 
 export type CrudViewMode = "grid" | "list";
+
+const VIEW_MODE_OPTIONS: readonly SegmentedControlOption<CrudViewMode>[] = [
+  {
+    value: "list",
+    icon: ListIcon,
+    ariaLabel: "List view",
+    tooltip: "List view",
+  },
+  {
+    value: "grid",
+    icon: SquaresFourIcon,
+    ariaLabel: "Grid view",
+    tooltip: "Grid view",
+  },
+];
 
 /** Slides layout content after a view change while leaving initial render and repeated selections still. */
 export function createCrudViewEntrance(
@@ -44,29 +62,15 @@ interface CrudViewModeToggleProps {
   onViewModeChange: (mode: CrudViewMode) => void;
 }
 
-/** Switches between list and card layouts using shared toolbar toggle states. */
+/** Switches between list and card layouts with a compact segmented control. */
 export default function CrudViewModeToggle(props: CrudViewModeToggleProps) {
   return (
-    <div class="flex items-center gap-0.5">
-      <ToggleToolbarButton
-        tooltip={"List view"}
-        type="button"
-        pressed={props.viewMode === "list"}
-        label="Switch to list view"
-        onClick={() => props.onViewModeChange("list")}
-      >
-        <ListIcon class="size-4" aria-hidden />
-      </ToggleToolbarButton>
-
-      <ToggleToolbarButton
-        tooltip={"Grid view"}
-        type="button"
-        pressed={props.viewMode === "grid"}
-        label="Switch to grid view"
-        onClick={() => props.onViewModeChange("grid")}
-      >
-        <SquaresFourIcon class="size-4" aria-hidden />
-      </ToggleToolbarButton>
-    </div>
+    <SegmentedControl
+      label="View"
+      density="compact"
+      options={VIEW_MODE_OPTIONS}
+      value={props.viewMode}
+      onChange={props.onViewModeChange}
+    />
   );
 }
