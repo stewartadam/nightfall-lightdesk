@@ -129,19 +129,18 @@
   animation: cmdline-shake 0.28s ease-in-out;
 }
 
-@supports (font: -apple-system-body) {
-  select:not([multiple]):not([size]) {
-    appearance: none;
-    -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
-    background-position: calc(100% - 0.75rem) center;
-    background-repeat: no-repeat;
-    background-size: 0.875rem 0.875rem;
-    padding-right: 2.5rem;
-    text-align: left;
-    text-align-last: left;
-    line-height: normal;
-  }
+/* Every engine draws the same chevron, inset to match the advanced select, instead of its own arrow. */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: calc(100% - 0.75rem) center;
+  background-repeat: no-repeat;
+  background-size: 0.875rem 0.875rem;
+  padding-right: 2.25rem;
+  text-align: left;
+  text-align-last: left;
+  line-height: normal;
 }
 
 /* Hide number input spinners in waveform editor */
