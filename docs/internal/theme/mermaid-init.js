@@ -12,7 +12,8 @@
  * mdBook emits these blocks as `code.language-mermaid`. This script loads a pinned Mermaid build
  * only on pages that contain one, replaces each block with a diagram container, and renders it
  * with a theme that matches the active mdBook theme. When the book theme changes, the diagrams
- * render again from their saved source. Without network access the blocks stay readable as text.
+ * render again from their saved source, and each container's `data-rendered` attribute names the
+ * Mermaid theme of its finished diagram. Without network access the blocks stay readable as text.
  */
 (() => {
   const MERMAID_URL =
@@ -61,6 +62,7 @@
         });
         for (const container of containers) {
           container.removeAttribute("data-processed");
+          delete container.dataset.rendered;
           container.textContent = container.dataset.source ?? "";
         }
         try {
@@ -68,6 +70,7 @@
           for (const container of containers) {
             container.style.whiteSpace = "";
             container.style.fontFamily = "";
+            container.dataset.rendered = theme;
           }
         } catch {
           renderedTheme = "";
