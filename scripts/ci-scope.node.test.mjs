@@ -196,6 +196,38 @@ test("browser previews require a configured target and a same-repository PR", ()
   }
 });
 
+/** An opening draft PR builds only its preview, under the same conditions as ready PRs. */
+test("draft PRs select only their preview", () => {
+  /** Select a draft PR touching every kind of input with the given preview conditions. */
+  const select = (options) =>
+    selectFullScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: [
+        "Cargo.lock",
+        "desktop/app-tauri/src/main.rs",
+        "docs/src/SUMMARY.md",
+      ],
+      pullRequest: "1",
+      draft: true,
+      ...options,
+    });
+  assert.deepEqual(select({ previewTarget: true, sameRepository: true }), {
+    ...none,
+    browser_preview: true,
+    preview_pr: "1",
+    rust: false,
+  });
+  assert.deepEqual(select({ previewTarget: true, sameRepository: false }), {
+    ...none,
+    rust: false,
+  });
+  assert.deepEqual(select({ previewTarget: false, sameRepository: true }), {
+    ...none,
+    rust: false,
+  });
+});
+
 /** A manual run naming a PR builds only that PR's preview, so `/republish` can serve drafts. */
 test("manual preview runs select only the preview", () => {
   /** Select a manual preview run, which ignores the packaging choice it is dispatched with. */

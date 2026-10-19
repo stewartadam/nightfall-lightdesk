@@ -45,7 +45,8 @@ scripts never execute in the credentialed acquisition job.
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
-Draft PRs run nothing: the source-acquisition job skips them, so every other job
+Draft PRs validate nothing. Opening one builds only its browser preview (see
+below); after that the source-acquisition job skips the draft, so every other job
 and the CI gate skip too, like PRs higher in a stack. Pushing to a draft costs no
 runner time, and marking it ready for review runs CI in full. All other non-tag
 events run native and WebUI validation. Ready PRs run the native job's
@@ -88,13 +89,14 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 
 Once a preview Worker is configured, every ready same-repository PR also builds the
 browser demo and deploys it as a Cloudflare Workers Preview named `pr-<number>`,
-independent of the table above. Draft PRs build a preview only when a maintainer
-comments `/republish`, which dispatches `ci.yml` on the PR branch with the
-`preview` input set to the PR number. That manual run builds the two WASM packages
-and the demo, deploys the preview, and runs nothing else. It still reports `CI gate`
-on the PR head, so its gate passes only while the PR is a draft. If the PR was
-marked ready before that gate ran, it fails instead, so it can never stand in for
-the full run's result. A preview-only build skips the browser product
+independent of the table above. A draft PR builds its preview once, when it is
+opened, in a run that builds the two WASM packages and the demo, deploys the
+preview, and runs nothing else. Later draft pushes refresh the preview only when a
+maintainer comments `/republish`, which dispatches `ci.yml` on the PR branch with
+the `preview` input set to the PR number for another such preview-only run. These
+runs still report `CI gate` on the PR head, so their gate passes only while the PR
+is a draft. If the PR was marked ready before that gate ran, it fails instead, so
+it can never stand in for the full run's result. A preview-only build skips the browser product
 flows, which still run whenever the browser distribution is selected. The
 `Browser preview` job starts as soon as that build finishes, publishes it at
 `https://pr-<number>-<worker>.<subdomain>.workers.dev/demo/app/`, and keeps one
@@ -129,7 +131,7 @@ or 👎 when it finishes.
 | Comment | Effect |
 | --- | --- |
 | `/recheck-cla` | Asks cla-assistant.io to revalidate the PR, then waits up to two minutes for the `license/cla` status. Use it when the check is stuck on "Waiting for status to be reported". Works on fork PRs. |
-| `/republish` | On a draft PR, starts a manual CI run that builds and deploys only the preview from the PR branch, or reruns the preview job of an earlier such run for the same commit. On a ready PR, reruns the **Browser preview** job of the PR's latest CI run. If that run's demo artifact expired, it reruns the whole run; if a failed job skipped the preview, it reruns the failed jobs. When CI is still running or never selected a preview, it explains why in a comment instead. |
+| `/republish` | On a draft PR, reruns the preview job of an earlier preview-only run for the same commit (from opening the draft or an earlier `/republish`), or else starts a manual CI run that builds and deploys only the preview from the PR branch. On a ready PR, reruns the **Browser preview** job of the PR's latest CI run. If that run's demo artifact expired, it reruns the whole run; if a failed job skipped the preview, it reruns the failed jobs. When CI is still running or never selected a preview, it explains why in a comment instead. |
 
 Both run from the default branch's copy of the workflow, never the PR's, and
 neither checks out PR code. The steps are gated by

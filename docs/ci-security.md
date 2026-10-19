@@ -80,7 +80,7 @@ Publication (fresh runner; contents: write; no Apple credentials)
   release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. In the tag workflow, only this
   job uses a write-capable GitHub token; the reusable-workflow caller supplies
   that permission ceiling, while the signer retains `permissions: {}`.
-- **Preview:** for ready same-repository PRs, and for drafts through `/republish`, a fresh runner downloads this run's
+- **Preview:** for same-repository PRs (drafts when opened and through `/republish`), a fresh runner downloads this run's
   browser-demo artifact as data and uploads it as a private Cloudflare Workers
   Preview, then comments the link on the PR. It is the one credentialed job that
   runs installed tooling: the pinned `cloudflare/wrangler-action` installs an exact

@@ -139,13 +139,15 @@ jobs:
 
           if [[ "$draft" == true ]]; then
             [[ -n "$PREVIEW_WORKER" ]] || refuse "previews need CLOUDFLARE_PREVIEW_WORKER."
-            run="$(latest_run workflow_dispatch)" || refuse "could not list CI runs for ${HEAD_SHA}."
-            read -r run_id run_status <<< "$run"
-            if [[ -n "$run_id" ]]; then
+            # Reuse the preview that opening the draft or an earlier /republish built for this commit.
+            for event in pull_request workflow_dispatch; do
+              run="$(latest_run "$event")" || refuse "could not list CI runs for ${HEAD_SHA}."
+              read -r run_id run_status <<< "$run"
+              [[ -n "$run_id" ]] || continue
               [[ "$run_status" == completed ]] \
-                || refuse "a manual CI run is still running for ${HEAD_SHA}; try again when it finishes."
+                || refuse "CI is still running for ${HEAD_SHA}; try again when it finishes."
               rerun_preview "$run_id" && exit 0
-            fi
+            done
             gh api --method POST "repos/$GH_REPO/actions/workflows/ci.yml/dispatches" \
               -f ref="$head_ref" -f "inputs[preview]=$PR_NUMBER" > /dev/null \
               || refuse "could not start a preview build on ${head_ref}. If the branch predates draft previews, bring in develop first."

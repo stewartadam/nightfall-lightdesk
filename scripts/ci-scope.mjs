@@ -77,9 +77,10 @@ const documentation = [
  * Browser previews build the demo for every same-repository PR once a preview target is
  * configured. Fork PRs never receive the deployment credential, so they never select one.
  *
- * Draft PRs never reach selection: the workflow skips source acquisition for them, so CI runs
- * nothing until the PR is marked ready for review. The `/republish` PR command builds a draft's
- * preview through a manual run whose preview PR number selects only that PR's preview.
+ * Draft PRs select only their preview, and reach selection only when opened: the workflow skips
+ * source acquisition for later draft pushes, so CI validates nothing until the PR is marked
+ * ready for review. The `/republish` PR command refreshes a draft's preview through a manual run
+ * whose preview PR number likewise selects only that PR's preview.
  *
  * Documentation builds only for PRs that touch the mdBook sources or the workflow that builds them.
  *
@@ -95,22 +96,28 @@ export function selectScope({
   distribution = "all",
   previewTarget = false,
   sameRepository = false,
+  draft = false,
   pullRequest = "",
   previewPr = "",
 }) {
+  /** Select nothing but the given PR's preview, when a preview target can receive it. */
+  const previewOnly = (enabled, pr) => ({
+    desktop_check: false,
+    desktop_package: false,
+    browser_package: false,
+    browser_preview: enabled,
+    preview_pr: enabled ? pr : "",
+    docs: false,
+    rust: false,
+  });
   if (event === "workflow_dispatch" && previewPr) {
     if (!/^[1-9][0-9]*$/.test(previewPr)) {
       throw new Error(`Invalid preview PR number: ${previewPr}`);
     }
-    return {
-      desktop_check: false,
-      desktop_package: false,
-      browser_package: false,
-      browser_preview: previewTarget,
-      preview_pr: previewTarget ? previewPr : "",
-      docs: false,
-      rust: false,
-    };
+    return previewOnly(previewTarget, previewPr);
+  }
+  if (event === "pull_request" && draft) {
+    return previewOnly(previewTarget && sameRepository, pullRequest);
   }
   let desktopPackage = false;
   let browserPackage = false;
@@ -175,6 +182,7 @@ if (
     sameRepository:
       Boolean(process.env.HEAD_REPOSITORY) &&
       process.env.HEAD_REPOSITORY === process.env.GITHUB_REPOSITORY,
+    draft: process.env.PR_DRAFT === "true",
     pullRequest: process.env.PR_NUMBER || "",
     previewPr: process.env.PREVIEW_PR || "",
   });

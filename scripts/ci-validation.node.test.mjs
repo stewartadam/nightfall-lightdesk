@@ -40,7 +40,7 @@ test("validation jobs wait only for their preparation prerequisites", () => {
   for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
     assert.equal(
       jobs[id].if,
-      `\${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}`,
+      `\${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}`,
     );
   }
   assert.deepEqual(jobs.docs.needs, ["scope", "selection"]);
@@ -64,8 +64,14 @@ test("the required check accepts only successful prerequisite results", () => {
   assert.match(jobs.gate.if, /!cancelled\(\)/);
   assert.match(jobs.gate.if, /needs.scope.result != 'skipped'/);
   const [draftGuard, guard] = jobs.gate.steps;
-  assert.equal(draftGuard.if, "inputs.preview");
-  assert.equal(guard.if, `\${{ !inputs.preview }}`);
+  assert.equal(
+    draftGuard.if,
+    "inputs.preview || github.event.pull_request.draft",
+  );
+  assert.equal(
+    guard.if,
+    `\${{ !inputs.preview && !github.event.pull_request.draft }}`,
+  );
   assert.equal(guard.env.JOB_RESULTS, `\${{ toJSON(needs) }}`);
   const results = Object.fromEntries(
     jobs.gate.needs.map((id) => [id, { result: "success" }]),
@@ -112,11 +118,11 @@ test("the required check accepts only successful prerequisite results", () => {
   );
 });
 
-/** Drafts acquire no source, so every job and the gate skip until the PR is ready for review. */
-test("draft PRs skip the whole workflow", () => {
+/** Drafts acquire source only when opened, so later draft pushes skip every job and the gate. */
+test("draft PRs skip the workflow after opening", () => {
   assert.match(
     jobs.scope.if,
-    /^github\.event\.pull_request\.draft != true && \(/,
+    /^\(github\.event\.pull_request\.draft != true \|\| github\.event\.action == 'opened'\) && \(/,
   );
   for (const [id, job] of Object.entries(jobs)) {
     if (id !== "scope") {
@@ -139,7 +145,7 @@ test("preview runs pass the gate only for draft PRs", (t) => {
     mode: 0o755,
   });
   const draftGuard = jobs.gate.steps.find(
-    (step) => step.if === "inputs.preview",
+    (step) => step.if === "inputs.preview || github.event.pull_request.draft",
   );
   /** Run the draft guard against a stubbed GitHub CLI reporting the given draft state. */
   const run = (draft) =>

@@ -2,7 +2,8 @@ name: CI
 
 on:
   pull_request:
-    # Draft PRs run nothing (see the scope job); ready_for_review runs CI in full.
+    # Draft PRs only build their preview when opened (see the scope job); ready_for_review runs
+    # CI in full.
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
@@ -30,10 +31,11 @@ concurrency:
 jobs:
   scope:
     name: Acquire source and select validation
-    # Run standalone ready PRs and the lowest unmerged/top ready PRs of a stack. Draft PRs skip
-    # every job, including the gate; `/republish` builds their preview through a manual run.
+    # Run standalone PRs and the lowest unmerged/top PRs of a stack. A draft runs only when it is
+    # opened, to build its preview; later draft pushes skip every job, including the gate, and
+    # `/republish` refreshes the preview through a manual run.
     if: >-
-      github.event.pull_request.draft != true && (
+      (github.event.pull_request.draft != true || github.event.action == 'opened') && (
       github.event.pull_request.stack == null ||
       github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref ||
       github.event.pull_request.stack.position == github.event.pull_request.stack.size)
@@ -112,6 +114,7 @@ jobs:
           DISTRIBUTION: ${{ inputs.distribution }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
           PREVIEW_PR: ${{ inputs.preview }}
           # Dependabot PRs cannot read Actions secrets, so they never deploy a preview.
           PREVIEW_WORKER: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PREVIEW_WORKER || '' }}
@@ -279,7 +282,7 @@ jobs:
   source-checks:
     name: Prek hooks and script tests
     needs: scope
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -355,7 +358,7 @@ jobs:
   native:
     name: Native
     needs: [scope, selection]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     uses: ./.github/workflows/native-validation.yml
     with:
       rust-tests: ${{ needs.selection.outputs.rust == 'true' }}
@@ -363,7 +366,7 @@ jobs:
   webui:
     name: TypeScript and WebUI Node tests
     needs: [scope, wasm-bridge, browser-runtime]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -407,7 +410,7 @@ jobs:
   browser-smoke:
     name: Chromium product flows
     needs: [scope, selection, native, wasm-bridge]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -458,16 +461,16 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      # A manual preview run validates nothing but still reports this check on the PR head, and
-      # a skipped check counts as passing. It passes only while the PR is a draft: a draft cannot
+      # A preview-only run (a draft opening, or a manual preview run) validates nothing but still
+      # reports this check on the PR head. It passes only while the PR is a draft: a draft cannot
       # merge, and marking it ready starts a full run whose gate lands later. If the PR became
       # ready first, failing keeps this run from standing in for that full run's result.
       - name: Require the previewed PR to still be a draft
-        if: inputs.preview
+        if: inputs.preview || github.event.pull_request.draft
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ inputs.preview }}
+          PR_NUMBER: ${{ inputs.preview || github.event.pull_request.number }}
         run: |
           draft="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq .draft)"
           if [[ "$draft" != true ]]; then
@@ -476,7 +479,7 @@ jobs:
           fi
           echo "Preview-only run for draft PR #$PR_NUMBER; CI runs when it is marked ready." >> "$GITHUB_STEP_SUMMARY"
       - name: Require all validation jobs to succeed
-        if: ${{ !inputs.preview }}
+        if: ${{ !inputs.preview && !github.event.pull_request.draft }}
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
           DOCS: ${{ needs.selection.outputs.docs }}
