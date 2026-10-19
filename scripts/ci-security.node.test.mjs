@@ -110,7 +110,7 @@ function validateApp(directory, environment = {}) {
 /** Restricts repository authority to source acquisition and the isolated release boundary. */
 test("builds and tests have no GitHub permissions or release secrets", () => {
   const exceptions = {
-    "ci.yml/scope": { contents: "read" },
+    "ci.yml/scope": { contents: "read", "pull-requests": "read" },
     "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
     "ci.yml/release": { contents: "write" },
     "ci.yml/preview": { "pull-requests": "write" },
@@ -237,14 +237,18 @@ test("update signing holds only the updater key and verifies its tool", () => {
   assert.match(download.run, /sha256sum --check --strict/);
 });
 
-/** The preview deployer holds only the Workers preview token and treats the demo artifact as data. */
+/** The preview deployer holds only the Workers preview token and treats the demo and book artifacts as data. */
 test("browser previews deploy same-run artifacts without source or build tools", () => {
   const preview = workflows["ci.yml"].jobs.preview;
-  assert.deepEqual(preview.needs, ["selection", "browser-demo"]);
-  assert.equal(preview.if, "needs.selection.outputs.browser_preview == 'true'");
+  assert.deepEqual(preview.needs, ["selection", "browser-demo", "docs"]);
+  assert.equal(
+    preview.if,
+    "!cancelled() && needs.selection.outputs.browser_preview == 'true' && needs.browser-demo.result == 'success' && (needs.docs.result == 'success' || needs.docs.result == 'skipped')",
+  );
   assert.deepEqual(
     preview.steps.filter((step) => step.uses).map((step) => step.uses),
     [
+      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0",
     ],
