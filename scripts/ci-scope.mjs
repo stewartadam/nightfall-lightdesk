@@ -83,6 +83,8 @@ const documentation = [
  * whose preview PR number likewise selects only that PR's preview.
  *
  * Documentation builds only for PRs that touch the mdBook sources or the workflow that builds them.
+ * A preview whose PR touches them also publishes the built books beside the demo, including on
+ * draft and manual preview runs, which otherwise build nothing but the demo.
  *
  * Rust tests, doctests and Clippy run for every push and manual run, but only for PRs that touch
  * Rust sources, their build and lint configuration, or files the Rust code embeds. Native
@@ -100,14 +102,20 @@ export function selectScope({
   pullRequest = "",
   previewPr = "",
 }) {
-  /** Select nothing but the given PR's preview, when a preview target can receive it. */
+  /** Whether any changed path is an mdBook input. */
+  const touchesDocumentation = () =>
+    paths.some((path) => documentation.some((pattern) => pattern.test(path)));
+  /**
+   * Select nothing but the given PR's preview, when a preview target can receive it, plus the
+   * documentation build that preview publishes when the PR changes the books.
+   */
   const previewOnly = (enabled, pr) => ({
     desktop_check: false,
     desktop_package: false,
     browser_package: false,
     browser_preview: enabled,
     preview_pr: enabled ? pr : "",
-    docs: false,
+    docs: enabled && touchesDocumentation(),
     rust: false,
   });
   if (event === "workflow_dispatch" && previewPr) {
@@ -147,9 +155,9 @@ export function selectScope({
         browserPackage = true;
       if (desktopChecks.some((pattern) => pattern.test(path)))
         desktopCheck = true;
-      if (documentation.some((pattern) => pattern.test(path))) docs = true;
       if (rustTests.some((pattern) => pattern.test(path))) rust = true;
     }
+    docs = touchesDocumentation();
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
   }

@@ -34,6 +34,8 @@ Publication (fresh runner; contents: write; no Apple credentials)
   LFS media. It excludes Git hooks and redundant LFS object storage. This runner
   refuses to archive persisted Git credential or HTTP authorization settings.
   It never installs project dependencies, runs project scripts, or restores caches.
+  For a manual preview run it also lists the previewed PR's changed files as plain
+  data with a `pull-requests: read` token.
   On release tags it also snapshots the published-release API as plain data.
 - **Execute:** native checks, WASM, UI tests, browser-demo packaging, and desktop
   packaging download that source artifact. All workflows default to
@@ -81,7 +83,8 @@ Publication (fresh runner; contents: write; no Apple credentials)
   job uses a write-capable GitHub token; the reusable-workflow caller supplies
   that permission ceiling, while the signer retains `permissions: {}`.
 - **Preview:** for same-repository PRs (drafts when opened and through `/republish`), a fresh runner downloads this run's
-  browser-demo artifact as data and uploads it as a private Cloudflare Workers
+  browser-demo artifact (and, when the PR changes them, its built mdBooks) as data
+  and uploads them as a private Cloudflare Workers
   Preview, then comments the link on the PR. It is the one credentialed job that
   runs installed tooling: the pinned `cloudflare/wrangler-action` installs an exact
   Wrangler version from npm. That is acceptable because the job holds no release

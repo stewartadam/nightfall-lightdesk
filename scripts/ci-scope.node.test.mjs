@@ -196,7 +196,7 @@ test("browser previews require a configured target and a same-repository PR", ()
   }
 });
 
-/** An opening draft PR builds only its preview, under the same conditions as ready PRs. */
+/** An opening draft PR builds only its preview, plus the books it publishes when it changes them. */
 test("draft PRs select only their preview", () => {
   /** Select a draft PR touching every kind of input with the given preview conditions. */
   const select = (options) =>
@@ -216,8 +216,17 @@ test("draft PRs select only their preview", () => {
     ...none,
     browser_preview: true,
     preview_pr: "1",
+    docs: true,
     rust: false,
   });
+  assert.deepEqual(
+    select({
+      previewTarget: true,
+      sameRepository: true,
+      paths: ["Cargo.lock", "desktop/app-tauri/src/main.rs"],
+    }),
+    { ...none, browser_preview: true, preview_pr: "1", rust: false },
+  );
   assert.deepEqual(select({ previewTarget: true, sameRepository: false }), {
     ...none,
     rust: false,
@@ -228,7 +237,7 @@ test("draft PRs select only their preview", () => {
   });
 });
 
-/** A manual run naming a PR builds only that PR's preview, so `/republish` can serve drafts. */
+/** A manual run naming a PR builds only that PR's preview and its changed books, so `/republish` can serve drafts. */
 test("manual preview runs select only the preview", () => {
   /** Select a manual preview run, which ignores the packaging choice it is dispatched with. */
   const select = (options) =>
@@ -246,6 +255,20 @@ test("manual preview runs select only the preview", () => {
     rust: false,
   });
   assert.deepEqual(select({ previewTarget: false }), { ...none, rust: false });
+  assert.deepEqual(
+    select({ previewTarget: true, paths: ["docs/src/SUMMARY.md"] }),
+    {
+      ...none,
+      browser_preview: true,
+      preview_pr: "42",
+      docs: true,
+      rust: false,
+    },
+  );
+  assert.deepEqual(
+    select({ previewTarget: false, paths: ["docs/src/SUMMARY.md"] }),
+    { ...none, rust: false },
+  );
   for (const previewPr of ["0", "4a", "-1", "1 2"]) {
     assert.throws(() => select({ previewTarget: true, previewPr }), previewPr);
   }

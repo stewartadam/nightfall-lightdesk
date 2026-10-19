@@ -78,7 +78,8 @@ PRs that touch `docs/` (or the CI scope policy and workflow) also run the
 **Documentation** job, which builds every mdBook under `docs/` with the mdBook
 version pinned in `CONTRIBUTING.md`. It fails on missing chapter files and on any
 error or warning mdBook logs, such as a broken `{{#include}}`, because mdBook still
-exits successfully for those. Drafts, branch pushes and manual dispatches do not run it.
+exits successfully for those. Branch pushes and manual dispatches do not run it,
+and drafts run it only to publish the books in their preview (see below).
 
 Keep policy tests in sync with added packaging inputs. Validate them with
 `node --test scripts/ci-scope.node.test.mjs`, and validate workflow syntax with
@@ -101,6 +102,13 @@ flows, which still run whenever the browser distribution is selected. The
 `Browser preview` job starts as soon as that build finishes, publishes it at
 `https://pr-<number>-<worker>.<subdomain>.workers.dev/demo/app/`, and keeps one
 comment on the PR pointing at the latest preview. It is not part of the CI gate.
+When the PR touches the mdBook inputs, the preview also waits for the
+**Documentation** job, including on drafts and `/republish` runs, and publishes the
+books beside the demo: the manual from `docs/` at the preview's root (for example
+`/user-guide/`), and any other book at its path under `docs/`. A book that fails
+to build holds back the whole preview. A `/republish` run reads the PR's file list
+from the GitHub API to decide whether to include the books, since its checkout has
+no base to diff against.
 Fork and Dependabot PRs never build or deploy a preview, since they cannot read
 the deployment secret. The job writes a static-assets-only Wrangler config at
 deploy time, so the repository carries no Wrangler project.
