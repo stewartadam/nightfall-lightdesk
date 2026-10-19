@@ -7,13 +7,11 @@
  */
 
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
-import { Input, InputGroup } from "../../ui/form-controls";
+import { SearchField } from "../../ui/search-field";
 import { ToolbarButton } from "../../ui/toolbar-button";
-import { Button } from "../../ui/visual-language/button";
 
 type SearchableValue = string | number | boolean | null | undefined;
 
@@ -156,14 +154,6 @@ export function createCrudPanelSearchQueryChangeEffect(
 
 /** Renders the expandable toolbar search control shared by CRUD panels. */
 export default function CrudPanelSearch(props: CrudPanelSearchProps) {
-  /** Clears and collapses search when Escape is pressed from the focused input. */
-  const handleSearchKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return;
-    if (!props.search.clear()) return;
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
   return (
     <Show
       when={props.search.isOpen() || props.search.isFiltering()}
@@ -178,33 +168,15 @@ export default function CrudPanelSearch(props: CrudPanelSearchProps) {
         </ToolbarButton>
       }
     >
-      <InputGroup class="h-8 w-48 sm:w-56 items-center" role="search">
-        <MagnifyingGlassIcon
-          class="mx-2 size-4 shrink-0 self-center text-neutral-400"
-          aria-hidden
-        />
-        <Input
-          class="[&::-webkit-search-cancel-button]:hidden"
-          density="compact"
-          ref={props.search.registerInput}
-          type="search"
-          aria-label={props.placeholder}
-          placeholder={props.placeholder}
-          value={props.search.query()}
-          onInput={(event) => props.search.setQuery(event.currentTarget.value)}
-          onKeyDown={handleSearchKeyDown}
-        />
-        <Button
-          variant="subtle"
-          size="icon"
-          style={{ height: "auto" }}
-          type="button"
-          aria-label="Clear search"
-          onClick={props.search.clear}
-        >
-          <XIcon class="size-4" aria-hidden />
-        </Button>
-      </InputGroup>
+      <SearchField
+        class="h-8 w-48 sm:w-56"
+        density="compact"
+        ref={props.search.registerInput}
+        label={props.placeholder}
+        value={props.search.query()}
+        onInput={props.search.setQuery}
+        onDismiss={props.search.clear}
+      />
     </Show>
   );
 }

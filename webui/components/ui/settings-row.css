@@ -14,8 +14,15 @@
   gap: 6px 16px;
   padding-block: 10px;
 }
-/* Divides a section's entries, whether rows or wrappers such as a labelled region around one. */
-.nf-settings-rows > * + * {
+/* A wrapper such as a labelled region hides with the one entry it holds when a settings search hides it. */
+.nf-settings-rows > :has(> [hidden]:only-child) {
+  display: none;
+}
+/* Divides a section's entries, whether rows or wrappers such as a labelled region around one,
+   skipping entries a settings search hides. */
+.nf-settings-rows
+  > :not([hidden], :has(> [hidden]:only-child))
+  ~ :not([hidden], :has(> [hidden]:only-child)) {
   border-top: 1px solid var(--line, #34383b);
 }
 .nf-settings-row-text {

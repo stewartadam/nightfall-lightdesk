@@ -8,6 +8,12 @@
 
 import { children, createUniqueId, type JSX, Show } from "solid-js";
 import "./settings-row.css";
+import { renderedText } from "./search-match";
+import {
+  SettingsSearchProvider,
+  useSettingsSearchEntry,
+  useSettingsSearchHeading,
+} from "./settings-search";
 
 /** Typography of a row title, one step quieter than a section heading. */
 const LABEL_CLASS = "text-sm font-medium text-gray-300";
@@ -37,6 +43,8 @@ interface SettingsRowProps {
   labelControl?: boolean;
   /** Content running full width beneath the title and control, such as a list or an error. */
   details?: JSX.Element;
+  /** Extra words a settings search finds this row by, beyond its title and description. */
+  keywords?: string;
   class?: string;
   "data-testid"?: string;
   /** Renders the control, given the ids that tie it to the row's title and description. */
@@ -53,6 +61,11 @@ export function SettingsRow(props: SettingsRowProps) {
   const descriptionId = `${id}-description`;
   /** The description resolved once, so reading it for both rendering and `describedBy` does not rebuild it. */
   const description = children(() => props.description);
+  const visible = useSettingsSearchEntry(() => [
+    props.label,
+    renderedText(description()),
+    props.keywords,
+  ]);
   /** Title element: a label for the control unless the row opts out. */
   const title = () =>
     props.labelControl === false ? (
@@ -66,6 +79,7 @@ export function SettingsRow(props: SettingsRowProps) {
     <div
       class={`nf-settings-row ${props.class ?? ""}`}
       data-testid={props["data-testid"]}
+      hidden={!visible()}
     >
       <div class="nf-settings-row-text">
         <Show when={props.heading} fallback={title()}>
@@ -95,7 +109,8 @@ export function SettingsRow(props: SettingsRowProps) {
 /**
  * Groups related settings rows under an optional heading, which also names the section. Each
  * direct child is divided from the next by a thin line, so a row wrapped in a labelled region
- * divides like a bare row; `footer` adds a note beneath the last one.
+ * divides like a bare row; `footer` adds a note beneath the last one. In a settings search, the
+ * section hides when none of its rows match, and shows them all when its title matches.
  */
 export function SettingsSection(props: {
   title?: string;
@@ -104,10 +119,12 @@ export function SettingsSection(props: {
   children: JSX.Element;
 }) {
   const titleId = createUniqueId();
+  const { visible, scope } = useSettingsSearchHeading(() => [props.title]);
   return (
     <section
       class={`nf-settings-section ${props.class ?? ""}`}
       aria-labelledby={props.title ? titleId : undefined}
+      hidden={!visible()}
     >
       <Show when={props.title}>
         {(title) => (
@@ -116,7 +133,11 @@ export function SettingsSection(props: {
           </h3>
         )}
       </Show>
-      <div class="nf-settings-rows">{props.children}</div>
+      <div class="nf-settings-rows">
+        <SettingsSearchProvider scope={scope}>
+          {props.children}
+        </SettingsSearchProvider>
+      </div>
       <Show when={props.footer}>
         {(footer) => (
           <div class="pt-2 text-xs leading-[1.45] text-gray-400">
