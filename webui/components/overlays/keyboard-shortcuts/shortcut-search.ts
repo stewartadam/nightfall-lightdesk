@@ -64,6 +64,35 @@ export function shortcutSearchText(
     .toLocaleLowerCase();
 }
 
+/** One row of the shortcuts list: an action and every key that triggers it. */
+export interface ShortcutRow {
+  description: string;
+  keys: string[];
+}
+
+/**
+ * Collapses shortcuts that share a description into one row listing each of their keys, such as
+ * Backspace and Delete both deleting the selection. Rows keep the order in which each
+ * description first appears, and keys keep their input order.
+ */
+export function mergeShortcutRows(
+  shortcuts: readonly { description: string; key: string }[],
+): ShortcutRow[] {
+  const rows = new Map<string, ShortcutRow>();
+  for (const shortcut of shortcuts) {
+    const row = rows.get(shortcut.description);
+    if (row) {
+      row.keys.push(shortcut.key);
+    } else {
+      rows.set(shortcut.description, {
+        description: shortcut.description,
+        keys: [shortcut.key],
+      });
+    }
+  }
+  return [...rows.values()];
+}
+
 /** Returns whether every search term appears somewhere in the shortcut's searchable text. */
 export function matchesShortcutSearch(
   terms: readonly string[],

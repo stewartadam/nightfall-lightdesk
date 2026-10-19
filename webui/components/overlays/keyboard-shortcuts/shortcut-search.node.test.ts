@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   matchesShortcutSearch,
+  mergeShortcutRows,
   type SearchableShortcut,
   shortcutSearchTerms,
 } from "./shortcut-search";
@@ -61,4 +62,19 @@ test("matches keys as the key caps name them", () => {
   assert.equal(matches("ctrl+z", undo, true), false);
   assert.equal(matches("esc", stopPlayback), true);
   assert.equal(matches("escape", stopPlayback), true);
+});
+
+/** Verifies shortcuts sharing an action become one row with every key, in first-seen order. */
+test("merges shortcuts with the same description into one row", () => {
+  assert.deepEqual(
+    mergeShortcutRows([
+      { description: "Delete selected clips", key: "Backspace" },
+      { description: "Create clip", key: "n" },
+      { description: "Delete selected clips", key: "Delete" },
+    ]),
+    [
+      { description: "Delete selected clips", keys: ["Backspace", "Delete"] },
+      { description: "Create clip", keys: ["n"] },
+    ],
+  );
 });

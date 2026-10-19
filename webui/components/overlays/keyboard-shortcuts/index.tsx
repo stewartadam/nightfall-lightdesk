@@ -24,9 +24,14 @@ import { useAppShell } from "../../providers/app-shell";
 import { Dialog, DialogBody } from "../../ui/dialog";
 import { EmptyState } from "../../ui/empty-state";
 import { Input, InputGroup } from "../../ui/form-controls";
+import { HighlightedText } from "../../ui/highlighted-text";
 import { Kbd, KbdShortcut } from "../../ui/kbd";
 import { Button } from "../../ui/visual-language/button";
-import { matchesShortcutSearch, shortcutSearchTerms } from "./shortcut-search";
+import {
+  matchesShortcutSearch,
+  mergeShortcutRows,
+  shortcutSearchTerms,
+} from "./shortcut-search";
 
 /**
  * Component that displays all registered keyboard shortcuts in a popup
@@ -66,13 +71,17 @@ export default function ShortcutsPopup() {
     return groupKey;
   };
 
+  /** Lower-cased words of the search query, shared by filtering and highlighting. */
+  const terms = createMemo(() => shortcutSearchTerms(query()));
+
   /**
-   * Groups the shortcuts that match the search query by panel, sorted by key within each group,
-   * with Global first and the remaining groups alphabetical. Groups without matches are omitted.
+   * Groups the shortcuts that match the search query by panel, sorted by key within each group
+   * and merged into one row per action, with Global first and the remaining groups alphabetical.
+   * Groups without matches are omitted.
    */
   const organizedShortcuts = createMemo(() => {
     const currentShortcuts = allShortcuts();
-    const terms = shortcutSearchTerms(query());
+    const searchTerms = terms();
     const groups: Record<string, KeyboardShortcut[]> = {};
 
     for (const shortcut of currentShortcuts) {
@@ -82,7 +91,7 @@ export default function ShortcutsPopup() {
         key: shortcut.key,
         groupLabel: getDisplayName(groupKey),
       };
-      if (!matchesShortcutSearch(terms, searchable)) continue;
+      if (!matchesShortcutSearch(searchTerms, searchable)) continue;
       if (!groups[groupKey]) {
         groups[groupKey] = [];
       }
@@ -110,7 +119,10 @@ export default function ShortcutsPopup() {
       orderedGroups.push(entry);
     }
 
-    return orderedGroups;
+    return orderedGroups.map(
+      ([groupKey, shortcuts]) =>
+        [groupKey, mergeShortcutRows(shortcuts)] as const,
+    );
   });
 
   return (
@@ -172,15 +184,34 @@ export default function ShortcutsPopup() {
             {([panelName, panelShortcuts]) => (
               <div class="mb-8 break-inside-avoid">
                 <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
-                  {getDisplayName(panelName)}
+                  <HighlightedText
+                    text={getDisplayName(panelName)}
+                    terms={terms()}
+                  />
                 </h3>
                 <div class="space-y-2">
                   <For each={panelShortcuts}>
-                    {(shortcut) => (
+                    {(row) => (
                       <div class="flex items-center text-sm gap-2">
-                        <KbdShortcut shortcut={shortcut.key} />
-                        <span class="text-gray-300">
-                          {shortcut.description}
+                        <span class="flex shrink-0 flex-col items-start gap-1">
+                          <For each={row.keys}>
+                            {(key, index) => (
+                              <span class="flex items-center gap-1">
+                                <Show when={index() > 0}>
+                                  <span class="text-xs text-neutral-500">
+                                    or
+                                  </span>
+                                </Show>
+                                <KbdShortcut shortcut={key} />
+                              </span>
+                            )}
+                          </For>
+                        </span>
+                        <span class="min-w-0 flex-1 text-gray-300">
+                          <HighlightedText
+                            text={row.description}
+                            terms={terms()}
+                          />
                         </span>
                       </div>
                     )}

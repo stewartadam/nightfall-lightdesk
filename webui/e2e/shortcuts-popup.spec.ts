@@ -100,7 +100,17 @@ test("filters shortcuts from the search field", async ({ page }, testInfo) => {
     "Switch to layout 1",
     "Switch to layout 10",
   ]);
+  // Both rows and the "Layouts" heading mark the matched word.
+  await expect(dialog.locator("mark", { hasText: /^layout$/i })).toHaveCount(3);
   await page.screenshot({ path: testInfo.outputPath("search-layout.png") });
+
+  await search.fill("delete clips");
+  const deleteClipsRow = dialog
+    .getByText("Delete selected clips", { exact: true })
+    .locator("xpath=..");
+  await expect(deleteClipsRow).toHaveCount(1);
+  await expect(deleteClipsRow).toContainText("or");
+  await page.screenshot({ path: testInfo.outputPath("search-merged.png") });
 
   const modLabel = process.platform === "darwin" ? "cmd" : "ctrl";
   await search.fill(`${modLabel}+shift+p`);
