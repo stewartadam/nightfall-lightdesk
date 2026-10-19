@@ -188,6 +188,19 @@ a:focus-visible {
   background-position: left;
   background-size: 1px 100%;
 }
+/* Tab strips still scroll by wheel and trackpad; the overflow menu shows hidden tabs. */
+.dockview-theme-nightfall-graphite
+  .dv-tabs-and-actions-container
+  .dv-scrollbar {
+  display: none;
+}
+/* A single-digit hidden-tab count keeps the overflow button's width steady. */
+.dockview-theme-nightfall-graphite .dv-tabs-overflow-dropdown-default > span {
+  display: inline-block;
+  min-width: 1ch;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 .dockview-theme-nightfall-graphite .dv-default-tab .dv-default-tab-action {
   opacity: 0.5;
 }
