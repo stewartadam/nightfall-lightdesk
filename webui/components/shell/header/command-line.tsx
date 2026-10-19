@@ -8,6 +8,15 @@
 
 import CommandLine from "../../../features/command-line";
 
-export default function HeaderCommandLine() {
-  return <CommandLine id="header-command-line" variant="nav" />;
+/** Renders the header command input, or a Console button beside Clear when `collapsed`. */
+export default function HeaderCommandLine(props: {
+  collapsed?: () => boolean;
+}) {
+  return (
+    <CommandLine
+      id="header-command-line"
+      variant="nav"
+      collapsed={props.collapsed}
+    />
+  );
 }

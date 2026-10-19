@@ -431,9 +431,11 @@ test("embedded demo edits and plays the sample without backend traffic", async (
       .getByRole("region", { name: "Application status bar" })
       .getByTestId("browser-demo-banner"),
   ).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Global" })).toContainText(
-    "nightfall demo",
-  );
+  await expect(
+    page
+      .getByRole("navigation", { name: "Global" })
+      .getByRole("img", { name: "nightfall demo" }),
+  ).toBeVisible();
   await expect(page.getByTestId("browser-demo-audio-status")).toHaveCount(0);
   await expect(page.getByTestId("status-build-name")).toHaveCount(0);
   await expect(page.getByTestId("status-showfile-name")).toHaveText(
@@ -777,7 +779,9 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
   const banner = bar.getByTestId("browser-demo-banner");
   const header = page.getByRole("navigation", { name: "Global" });
   await expect(banner).toHaveText("Reset demo");
-  await expect(header).toContainText("nightfall demo");
+  await expect(
+    header.getByRole("img", { name: "nightfall demo" }),
+  ).toBeVisible();
   await expect(page.getByTestId("browser-demo-audio-status")).toHaveCount(0);
   await expect(page.getByTestId("status-build-name")).toHaveCount(0);
   await expect(bar.getByTestId("status-showfile-name")).toHaveText(

@@ -6,4 +6,5 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+export { NAV_COMMAND_LINE_WIDTH } from "./components/command-line-view";
 export { default } from "./panels/command-line-panel";

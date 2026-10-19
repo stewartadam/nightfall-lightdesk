@@ -12,6 +12,8 @@ import { createCommandLineController } from "../controllers/command-line-control
 
 interface CommandLineProps extends BasePanelComponentProps {
   variant?: "panel" | "nav";
+  /** Collapses the navigation variant to a Console button beside Clear. */
+  collapsed?: () => boolean;
 }
 
 /** Connects the command-line feature controller to its registered panel view. */
@@ -23,7 +25,9 @@ function CommandLine(props: CommandLineProps) {
     props.id ??
     "command-line";
   const controller = createCommandLineController({ variant, componentId });
-  return <CommandLineView controller={controller} />;
+  return (
+    <CommandLineView controller={controller} collapsed={props.collapsed} />
+  );
 }
 
 export default CommandLine;
