@@ -41,7 +41,7 @@ async function firstNodeFill(page: Page): Promise<string> {
 
 /**
  * Checks that the built Developer Guide renders every Mermaid block as an SVG diagram in the
- * light and navy themes, and captures each page for visual review. Requires
+ * light and navy themes, and captures each page and each diagram for visual review. Requires
  * `mdbook build docs/internal` and network access to the Mermaid CDN.
  */
 test("developer guide renders Mermaid diagrams in light and dark themes", async ({

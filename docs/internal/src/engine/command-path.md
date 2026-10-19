@@ -108,7 +108,7 @@ Undo capture is an exclusive system in the `PendingCommandProcessing` set. An ex
 
 Capture drains the pending command buffer. For each command whose type is registered with the undo registry, it asks the command for its inverse while the world still holds the state before the change. For `AddProgrammerInstruction`, the inverse is a snapshot of the whole programmer state, because the handler may merge the new instruction into existing ones. The inverse joins the pending undo group for the command's undo ID.
 
-Capture then queues every command for dispatch, whether or not it produced an inverse. Commands without an inverse, such as starting a clip, run normally and leave no undo history.
+Capture then queues every command for dispatch, whether or not it produced an inverse. Commands without an inverse, such as Go on a clip, run normally and leave no undo history.
 
 ### The router turns payloads into typed messages
 
@@ -141,7 +141,7 @@ Results travel as non-droppable messages, so a busy connection never loses them.
 
 The handler changed the programmer resource, not the output. The `Render` schedule turns state into light, and it only runs in updates that the frame limiter marks as render passes. In its layer generation stage, the programmer paints its layer from its current instructions. `Practice light` then gets red at 100% from the programmer layer at priority 127. For what happens after that, see [how a show becomes light](../concepts/show-to-light.md).
 
-Render systems read world state and never input messages. This is why handlers apply commands to resources and components in `Update`, where any number of input-only updates can run between two render passes.
+Render systems read world state and never input messages. This is why handlers apply commands to resources and components in `Update`: any number of input-only updates can run between two render passes.
 
 ## How undo works
 
@@ -170,8 +170,8 @@ A bindable action enters the same pipeline after the parsing stages. Suppose a M
 The differences from a typed command are small:
 
 - No parsing. The action already carries typed arguments.
-- No client waits for the result, so it goes to every client. A failed invocation also broadcasts an `ActionInvocationFailed` message, so a broken binding is never silent.
-- `GoClip` has no inverse, so pressing Go leaves no undo step. Live playback control isn't undoable, while edits made through actions are.
+- No client waits for the result, so it goes to every client. A failed invocation also broadcasts an `ActionInvocationFailed` message, throttled when the same input fails repeatedly.
+- `GoClip` has no inverse, so pressing Go leaves no undo step. Cue navigation, such as Go, Back, and Goto, isn't undoable. Starting and stopping a clip is.
 
 Timeline actions that hold command text go through `Eval` too, but as a detached engine operation. That path schedules the parsed commands for the next update instead of expanding them in the current one.
 
@@ -182,15 +182,16 @@ For the full distinction between actions, commands, updates, and engine operatio
 To add a new top-level command to the command language, follow the path of an existing one. The `tempo` command in the `tempo` crate is a small, complete example.
 
 1. Add the grammar in `cmd-parse`. Add any new keywords as tokens in the lexicon. Declare the root clause with its slots, rules, and head tokens in the clause schema list, and add a command family entry that names the clause, its completion groups, and its structural AST dispatch kind.
+1. Define the clause's slots in the slot catalog and its completion group in the completion group catalog, and map the clause to a grammar rule in `parser/structural/grammar_mapping.rs`.
 1. Add an AST node to `CommandAst`, and materialize it from the parse branch in the strict parser, matched on the new dispatch kind.
 1. Define the domain command type in the domain crate. Derive `Serialize`, `Deserialize`, and `EnginePayload`, add the `typeshare` attribute, and implement `IngressCommand`.
 1. In the domain plugin, register the command with `register_ingress_command`. Register a deserializer for the web UI with `register_command_deserializer`. Push undoable commands into the pending command buffer from the deserializer. Writing the typed message directly skips undo capture.
 1. Implement `AstConvert` for a converter type in the domain's `ast_conv.rs`. Return `NotApplicable` for every AST the domain doesn't own, and register the converter with `register_converter` in the plugin.
 1. Add a handler system in the `EventHandling` set that reads `CommandEnvelope<YourCommand>` and finishes every command exactly once through the command responder.
 1. When the command edits show data, implement `Undoable` and register the type with the undo registry. Compute the inverse from the state before the change. Add `UndoPlugin` before your plugin, because it creates the undo registry and the pending command buffer.
-1. Run `pnpm run typeshare` and `pnpm run wasm:bridge --dev`, so the web UI gets the new types and its autocomplete uses the new grammar.
+1. Run `pnpm run typeshare` and `pnpm run wasm --dev`, so the web UI gets the new types, its autocomplete uses the new grammar, and the browser demo engine understands the command.
 
-To add a clause to an existing command, such as a new programmer option, skip steps 3 and 4 and extend the existing clause, AST node, and converter instead.
+To add a clause to an existing command, such as a new programmer option, skip steps 4 and 5 and extend the existing clause, AST node, and converter instead.
 
 **Warning:** Plugins check their dependencies by resource, not by plugin. The client bridge requires a pending command buffer and asserts that one exists, but it's the undo plugin that creates it. Keep `UndoPlugin` before `ClientBridgePlugin` in plugin groups and in test apps.
 
@@ -204,7 +205,7 @@ To add a clause to an existing command, such as a new programmer option, skip st
 | `DeskCommand::Eval` and its deserializer | `crates/desk/src/desk_command.rs`, `crates/desk/src/websocket/inbound.rs` |
 | Eval expansion | `expand_pending_eval_commands` and `handle_eval` in `crates/desk/src/systems/event_handlers/desk_events.rs` |
 | `parse_command_string` | `crates/engine/src/lib.rs` |
-| Grammar, AST, and strict parser | `crates/cmd-parse/src/slots/contracts.rs`, `crates/cmd-parse/src/command_family.rs`, `crates/cmd-parse/src/ast.rs`, `crates/cmd-parse/src/parser/strict/` |
+| Grammar, AST, and strict parser | `crates/cmd-parse/src/slots/contracts.rs`, `crates/cmd-parse/src/command_family.rs`, `crates/cmd-parse/src/ast.rs`, `crates/cmd-parse/src/parser/strict.rs`, `crates/cmd-parse/src/parser/strict/`, `crates/cmd-parse/src/slots/catalog.rs`, `crates/cmd-parse/src/completion_groups/catalog.rs` |
 | AST converter registry and `dispatch_ast` | `crates/engine/src/protocol/dispatch_ast.rs` |
 | Programmer AST converter | `crates/programmer/src/ast_conv.rs` |
 | `PendingCommandBuffer` and `PendingEngineOperationBuffer` | `crates/engine/src/protocol/erased.rs` |
