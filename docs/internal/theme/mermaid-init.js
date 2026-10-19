@@ -46,10 +46,12 @@
   import(MERMAID_URL)
     .then(({ default: mermaid }) => {
       let renderedTheme = "";
+      let pending = Promise.resolve();
 
       /**
        * Renders every diagram from its saved source when the theme differs from the last render.
-       * A failed render leaves the source visible and is retried on the next theme change.
+       * A diagram with a syntax error renders as Mermaid's error diagram instead of throwing, so
+       * authors see the error and the docs spec can detect it.
        */
       const render = async () => {
         const theme = mermaidTheme();
@@ -65,20 +67,27 @@
           delete container.dataset.rendered;
           container.textContent = container.dataset.source ?? "";
         }
-        try {
-          await mermaid.run({ nodes: containers });
-          for (const container of containers) {
-            container.style.whiteSpace = "";
-            container.style.fontFamily = "";
-            container.dataset.rendered = theme;
-          }
-        } catch {
-          renderedTheme = "";
+        await mermaid.run({ nodes: containers, suppressErrors: true });
+        for (const container of containers) {
+          container.style.whiteSpace = "";
+          container.style.fontFamily = "";
+          container.dataset.rendered = theme;
         }
       };
 
-      render();
-      new MutationObserver(render).observe(document.documentElement, {
+      /**
+       * Queues a render after any render still in progress, so a theme change during a render
+       * cannot reset containers that Mermaid is still filling. A failed render is retried on the
+       * next theme change.
+       */
+      const scheduleRender = () => {
+        pending = pending.then(render).catch(() => {
+          renderedTheme = "";
+        });
+      };
+
+      scheduleRender();
+      new MutationObserver(scheduleRender).observe(document.documentElement, {
         attributes: true,
         attributeFilter: ["class"],
       });

@@ -14,7 +14,7 @@ Pick the cheapest test that can see the bug. A Rust test runs in milliseconds an
 | --- | --- | --- | --- |
 | Rust unit test | Logic errors inside one module, including private functions | `#[cfg(test)]` modules in `crates/<crate>/src/` | Push hook, CI |
 | Rust integration test | A plugin's systems, messages, and resources working together through the crate's public API | `crates/<crate>/tests/it/` | Push hook, CI |
-| Rust doctest | Code examples in doc comments that no longer compile or pass | Doc comments in `crates/` | CI only |
+| Rust doctest | Code examples in doc comments that no longer compile or pass | Doc comments in `crates/` | CI, or the manual hook stage |
 | Web UI node test | TypeScript logic, store updates, WASM bridge calls, and broken architecture rules | `webui/**/*.node.test.ts` | Push hook, CI |
 | Script test | Broken tooling, CI scoping, workflow structure, and workspace-hack rules | `scripts/*.node.test.mjs` | Push hook, CI |
 | Playwright spec | Rendering bugs, broken UI flows, and protocol mismatches between the UI and the engine | `webui/e2e/*.spec.ts` | Wrapper on demand, smoke specs in CI |
@@ -29,7 +29,7 @@ Rust tests cover most of Nightfall's behavior, because the engine owns all show 
 
 A unit test sits next to the code in a `#[cfg(test)]` module, or in a `tests.rs` file that the module declares. It can reach private functions and types. Use it for pure logic and for a single system in isolation.
 
-An integration test lives under `tests/it/` and sees only the crate's public API. Each crate links all its integration tests into one `tests/it` binary, because every separate file under `tests/` becomes its own executable, and each executable costs link time and, on macOS, a security scan on first run. Add a new integration test as a module in `tests/it/` and declare it in `tests/it/main.rs`. A test that needs its own harness, such as the command parser's design-matrix golden test, gets a separate target with `harness = false`. Helpers it shares with `tests/it` go under `tests/support/`.
+An integration test lives under `tests/it/` and sees only the crate's public API. Most crates link their integration tests into one `tests/it` binary, because every separate file under `tests/` becomes its own executable, and each executable costs link time and, on macOS, a security scan on first run. Add a new integration test as a module in `tests/it/` and declare it in `tests/it/main.rs`. A test that needs its own harness, such as the command parser's design-matrix golden test, gets a separate target with `harness = false`. Helpers it shares with `tests/it` go under `tests/support/`.
 
 ### How a plugin test builds a Bevy app
 
@@ -87,7 +87,7 @@ Web UI node tests are TypeScript files named `*.node.test.ts`, anywhere under `w
 
 ### Architecture tests
 
-Some node tests read the source tree instead of running code. `webui/architecture-boundaries.node.test.ts` enforces the web UI's layer import rules against an exception list, and the `shared-*` tests keep dialogs, portals, menus, and tables on their shared components. The [web UI architecture](../architecture/web-ui.md#import-and-component-rules) page lists each rule and its test. When one fails, move the code to the right layer rather than adding an exception.
+Some node tests read the source tree instead of running code. `webui/architecture-boundaries.node.test.ts` enforces the web UI's layer import rules against an exception list, and the `shared-*` tests keep dialogs, portals, menus, tables, and segmented controls on their shared components. The [web UI architecture](../architecture/web-ui.md#import-and-component-rules) page lists each rule and its test. When one fails, move the code to the right layer rather than adding an exception.
 
 Two scripts check the Rust side in the same spirit. `pnpm run check:crate-boundaries` fails when a crate depends on a crate in a role it must not use, as the [crate map](../architecture/crate-map.md#roles-and-dependency-rules) describes. `pnpm run check:command-architecture` fails when code reintroduces retired command types or moves domain-owned command types into the engine crate. They're scripts, not node tests, and the commit hooks run them.
 
@@ -129,7 +129,7 @@ An embedded-demo run skips the Rust build, so it starts faster. A spec opts into
 
 CI doesn't run every spec. It runs three sets:
 
-- The **Chromium product flows** job runs the five smoke specs in `pnpm run test:webui-smoke` against the backend the native job just built and tested.
+- The **Chromium product flows** job runs the five smoke specs in `pnpm run test:webui-smoke` against the backend the native job just built.
 - The **Browser demo** job, when a PR selects the browser distribution, runs `pnpm run demo:test` against the packaged demo in Chromium and Firefox.
 - The **Full Playwright suite** workflow runs every spec in six shards, but only when you start it by hand.
 
@@ -137,7 +137,7 @@ For a change with visible UI, run the specs for that area locally, and start the
 
 ### Documentation specs
 
-`playwright/tests/docs-*.spec.ts` check the two built mdBooks: the user manual's navigation, and that every Developer Guide diagram renders in light and dark themes. They use their own configuration file, not the wrapper. Build both books, then follow [building the documentation](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#building-the-documentation). The diagram specs need network access to load Mermaid. CI doesn't run these specs. Its **Documentation** job only builds the books and fails on any mdBook error or warning.
+`playwright/tests/docs-*.spec.ts` check the two built mdBooks: the user manual's navigation, and that every Developer Guide diagram renders in light and dark themes. They use their own configuration file, not the wrapper. Build both books as described in [building the documentation](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#building-the-documentation), then run the specs with `playwright/docs.config.ts`. The diagram specs need network access to load Mermaid. CI doesn't run these specs. Its **Documentation** job only builds the books and fails on any mdBook error or warning.
 
 ## What the git hooks run
 
@@ -167,7 +167,7 @@ flowchart TB
   accDescr: Every pull request runs the hook, script, web UI, and WASM jobs and builds the native backend. Rust inputs add Rust tests, doctests, desktop shell tests, and Clippy. Documentation sources add the book build. A pull request that isn't a draft adds the Chromium product flows.
   pr([Pull request changes]) --> always[Prek hooks and script tests<br/>TypeScript and web UI node tests<br/>WASM builds<br/>Native backend build]
   pr --> rust{Touches Rust inputs?}
-  pr --> docs{Touches docs/?}
+  pr --> docs{Touches docs/ or CI scope?}
   pr --> draft{Draft?}
   rust -- yes --> rusttests[nextest, doctests,<br/>desktop shell tests, Clippy]
   docs -- yes --> book[Documentation build]
@@ -189,7 +189,7 @@ For a pull request, the native job runs nextest, doctests, the desktop shell tes
 The scope script also decides the following:
 
 - The **Documentation** job runs for pull requests that touch `docs/`, the scope script, or `ci.yml`, drafts included. Branch pushes and manual runs don't build the books.
-- The **Desktop check** job runs the desktop shell tests on macOS and Windows when a change touches the desktop shell or the startup, shutdown, and diagnostics code it shares with the runtime.
+- The **Desktop check** job runs the desktop shell tests on macOS and Windows when a change touches the desktop shell or the startup, shutdown, diagnostics, and configuration code it shares with the runtime.
 - Desktop installers and the browser demo build when a change touches their packaging inputs. The [workflow README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/.github/workflows/README.md#distribution-selection) has the full table.
 
 ### Draft pull requests

@@ -57,7 +57,7 @@ Every show is a folder whose name ends in `.nightfall-show`. The show called `de
   fixtures/  objects/  fx-modules/        installed libraries shared by all shows
 ```
 
-The engine writes the snapshot gzip-compressed. It also reads a plain `showfile.json`, which is what an export contains, and prefers the compressed file when both exist. A snapshot can be at most 1 GiB uncompressed.
+The engine writes the snapshot gzip-compressed. It also reads a plain `showfile.json`, which is what a zip export contains, and prefers the compressed file when both exist. A snapshot can be at most 1 GiB uncompressed.
 
 The manifest is a small sidecar that the show list reads instead of parsing every snapshot. It holds a hash of the snapshot's contents and the snapshot file's size and modification time, so the engine can tell when the manifest is stale. The engine ignores a missing or stale manifest and writes a new one the next time it loads or saves the show.
 
@@ -162,7 +162,7 @@ Each save keeps the previous saved folder as a timestamped backup. The number of
 
 The final replace step removes the old saved folder and then renames the temporary folder into its place. These are two file system operations, not one atomic rename. If the process stops between them, the saved folder is missing, but the new backup and the working draft still hold the show.
 
-Deleting a show moves its saved folder, draft, and backups into one entry under `trash/`. You can restore it from the show list for 7 days. The engine purges older entries the next time it lists the trash or deletes another show. You can't delete the show that is open.
+Deleting a show moves its saved folder, draft, and backups into one entry under `trash/`. You can restore it from the show list for 7 days. The engine purges older entries the next time it lists deleted shows. You can't delete the show that is open.
 
 ## World swaps: loading without disconnecting
 
@@ -213,7 +213,7 @@ The swap runs in these steps:
 1. The orchestrator swaps the worlds, resumes the new one, and drops the outgoing world.
 1. The new world sends `WorldReplaced` to every client and queues a notice that the current showfile changed.
 
-Staging runs on the engine thread between two frames, so the outgoing world runs no frames while the new world builds. The DMX output workers run on their own threads and keep transmitting the last frame they received, so the lights hold their look until the new world renders.
+Staging runs on the engine thread between two frames, so the outgoing world runs no frames while the new world builds. The DMX output workers run on their own threads. The Art-Net and sACN workers keep resending the last frames they received, so the lights hold their look until the new world renders.
 
 The outgoing world isn't saved before the swap drops it. Changes made since its last draft save, at most 60 seconds earlier, are lost when you load another show without saving first.
 
@@ -235,16 +235,17 @@ A client sees the load command succeed, followed by `WorldReplaced`. The web UI 
 
 If building the new world fails, the orchestrator resumes the outgoing world, restores its app state, and fails the command with the error code `showfile.world_swap_failed`. The current show keeps running and clients stay connected. Most failures, such as an unreadable file, an unsupported version, or conflicting library versions, happen while the engine parses and validates the snapshot, before anything changes on disk.
 
-**Warning:** The draft folder and the active show folder are process-wide, not part of a world. Once the snapshot has parsed and validated, staging replaces the loaded show's draft folder and points the active show folder at it before it builds the rest of the world. If a later step fails, for example the fixture library scan of the show folder, the outgoing world keeps running with its active show folder pointing at the other show's draft. Uploads and draft saves after such a failure can mix files between the two shows.
+**Warning:** The draft folder and the active show folder are process-wide, not part of a world. Once the snapshot has parsed and validated, staging replaces the loaded show's draft folder and points the active show folder at it before it applies the snapshot. If a later step fails, for example the fixture library scan of the show folder, the outgoing world keeps running with its active show folder pointing at the other show's draft. Uploads and draft saves after such a failure can mix files between the two shows.
+
 Importing parts of another showfile is different: the engine merges the selected domains into a combined snapshot and reloads it into the running world in place, without a swap. The browser demo has no showfile handling at all. It applies its packaged demo show once at startup.
 
 ## Add data to the showfile
 
 When a domain gains state that should survive a restart, add it to the snapshot and to that domain's contributors. Two recent changes show both cases: boards were added as a new field and a new load domain without a schema change, and control slots replaced `controlAssignments` with `controlSlots`, which needed a new schema version and a migration.
 
-To add a stored field:
+Follow these steps to add a stored field:
 
-1. Add the field to `ShowfileSnapshot` in `crates/showfile/src/snapshot.rs`. Give it `#[serde(default)]` so files written before the field existed still load, and an explicit camelCase `rename`, as `controlSlots` and `ioSettings` have.
+1. Add the field to `ShowfileSnapshot` in `crates/showfile/src/snapshot.rs`. Give it `#[serde(default)]` so files written before the field existed still load, and an explicit camelCase `rename`, as `controlSlots` and `ioSettings` have. Older fields such as `color_paths` predate this convention.
 1. Add the field to the domain's slice in `crates/showfile/src/contributors/<domain>.rs`. Fill it in the save contributor, and apply it in the load contributor in the right phase: import plain data in the import phase, and create entities only in the materialize phase.
 1. Copy the field between the slice and the snapshot in `apply_save_contribution` and `load_contribution_for_domain` in `crates/showfile/src/contributors/mod.rs`.
 1. If the domain reads a resource the showfile code doesn't have yet, add it to `ShowfileSaveState` in `crates/showfile/src/world.rs`, and to `ShowfileApplyState`, `apply_showfile_snapshot`, and `initialize_showfile_resources` in `crates/showfile/src/apply.rs`.

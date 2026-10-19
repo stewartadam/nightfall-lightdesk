@@ -2,7 +2,7 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-The programmer is where you build a look before you keep it. It holds a list of rows, each one a selection of fixtures with the values and timing you set for them, plus an active selection that later commands can reuse. The engine paints every row as a layer at priority 127, so programmer values override every playback. Storing copies the rows into a cue, and the store mode decides how they combine with what the cue already holds. This page explains the programmer's data model, how it paints, how clearing works, and how the store algorithm turns programmer rows into cue instructions.
+The programmer is where you build a look before you keep it. It holds a list of rows, each one a selection of fixtures with the values and timing you set for them, plus an active selection that later commands can reuse. The engine paints every row as a layer at priority 127, so programmer values override every playback below that priority. Storing copies the rows into a cue, and the store mode decides how they combine with what the cue already holds.
 
 Read this page before you change programmer commands, the programmer painter, or anything that writes cue instructions. Most surprises in this area come from the normalization step of a store, which rewrites the target cue's rows as well as the new ones.
 
@@ -31,7 +31,7 @@ flowchart TB
   row --> timing
 ```
 
-Each row is a `BoundCueInstruction`, the same type a cue uses for its instructions. A row pairs a spatial selection, such as `fixture 1` or `group 2` with a fan or mirror clause, with a `CueInstruction`. The instruction carries:
+Each row is a `BoundCueInstruction`, the same type a cue uses for its instructions. A row pairs a spatial selection, such as `fixture 1` or `group 2`, with a fan or mirror clause, with a `CueInstruction`. The instruction carries:
 
 - A map from attribute to value source. A value source is an inline value, a fanned list of values spread across the selection, `Release`, or `HoldPosition`.
 - An optional blueprint application, for rows that apply a blueprint by reference instead of holding values.
@@ -40,7 +40,7 @@ Each row is a `BoundCueInstruction`, the same type a cue uses for its instructio
 
 Because programmer rows and cue instructions share one type, storing and recalling copy rows without converting them.
 
-The rows live in an ordered map keyed by a UUID. The UUID identifies the row for its whole life, and the painter uses it to find the row's layer from one frame to the next.
+The rows live in a list with a UUID index. Merged rows move to the end, and removing a row moves the last row into its place. Order matters because the later row wins when rows coalesce. The UUID identifies the row for its whole life, and the painter uses it to find the row's layer from one frame to the next.
 
 In the running example, `fixture 1 @ 50` produces one row: selection `fixture 1`, intensity at 50%. With the `programmer_auto_select` desk setting on, the command also makes `fixture 1` the active selection. The setting is off by default, so the active selection changes only through selection commands.
 
@@ -53,7 +53,7 @@ Adding a row doesn't always append one. Two rules keep the list free of conflict
 - **Same selection merges.** When a new row has exactly the same selection as an existing row, its values and timing merge into that row, which keeps its UUID. Typing `fixture 1 red @ 100` after `fixture 1 @ 50` leaves one row with intensity and red. Blueprint rows never merge.
 - **Overlap carves.** When the new row targets some of the same fixture elements and attributes as an existing row with a different selection, the existing row gives those attributes up for those elements. The engine splits the existing row into a row for the elements it keeps unchanged and a row for the overridden elements without the overlapping attributes. A row left with nothing is removed.
 
-Carving means the programmer never holds two rows that set the same attribute on the same element. That matters for painting, because rows paint as separate layers at the same priority, and the merge rule between equal-priority layers would otherwise decide which one wins. Split rows inherit the timing anchors of the row they came from, so a fade that is in progress continues instead of restarting.
+Carving keeps rows added by value commands from setting the same attribute on the same element. Recalling a cue, applying a blueprint, and splitting a row on release add rows without carving. That matters for painting, because rows paint as separate layers at the same priority, and the merge rule between equal-priority layers would otherwise decide which one wins. Split rows inherit the timing anchors of the row they came from, so a fade that is in progress continues instead of restarting.
 
 Carving compares selections at the level of fixture elements. When a carved row has fanned values or fanned timing, the engine splits it into one row per element, so each element keeps the value the fan gave it.
 
@@ -180,8 +180,8 @@ The handler works on a cue part. When the target is part 0, it builds a temporar
 
 Before comparing rows, the handler rewrites them into one shape: one row per fixture or per fixture element, with a resolved selection. It does this to the programmer rows in every mode, and to the cue's existing rows in every mode except Replace. Normalization runs these steps:
 
-1. **Resolve.** Each selection resolves to concrete fixture references, identified by fixture UID and optional element index. A spatial selection with iteration indexes, such as a grid, becomes one row per index, and fanned values and fanned timing resolve for that index.
-1. **Flatten and split.** Each row with several fixtures splits into one row per fixture or element. Fanned values and timing resolve to the value for that position, and per-fixture timing overrides fold into the row's per-attribute timing. When every element of a fixture is selected, the row uses the whole fixture instead of listing elements.
+1. **Resolve.** Each selection resolves to concrete fixture references, identified by fixture UID and optional element index. A spatial selection with iteration indexes, such as a grid, becomes one row per index, and fanned values and fanned timing resolve for that index. When every element of a fixture is selected, the selection uses the whole fixture instead of listing elements.
+1. **Flatten and split.** Each row with several fixtures splits into one row per fixture or element. Fanned values and timing resolve to the value for that position, and per-fixture timing overrides fold into the row's per-attribute timing.
 1. **Promote timing (Replace only).** Row-wide timing moves onto each attribute in the row, so it survives the next step.
 1. **Coalesce.** Rows with identical selections merge into one.
 
@@ -199,10 +199,10 @@ After normalization, the store mode decides how the programmer rows, called inco
 |------|--------------|-------------|
 | Replace | **None** | Discards every existing row of the target part and stores the incoming rows. |
 | Merge | `/merge` | Merges each incoming row into every matching existing row, adding and overwriting attributes and timing. Appends incoming rows that match nothing. |
-| Update | `/update` | Overwrites only values and attribute timing that matching existing rows already store. Ignores new fixtures, new attributes, and row-wide timing. |
+| Update | `/update` | Overwrites values that matching existing rows already store, and the attribute timing of those attributes. Ignores new fixtures, new attributes, and row-wide timing. |
 | Remove | `/remove` | Deletes the incoming rows' attributes from matching existing rows. The incoming values do not matter. Drops rows left with no attributes. |
 
-An incoming row for one element doesn't edit an existing row for the whole fixture. Merge, Update, and Remove skip such rows and send a warning: "Element store skipped existing whole-fixture instruction rows." Blueprint rows only match blueprint rows that apply the same blueprint.
+An incoming row for one element doesn't edit an existing row for the whole fixture. Merge, Update, and Remove skip such rows and send a warning: "Element store skipped existing whole-fixture instruction rows." In Update and Remove, blueprint rows only match blueprint rows that apply the same blueprint. Merge always appends incoming blueprint rows.
 
 The following table shows cue `Red` after storing the programmer's single row, `Practice light` at intensity 50%, with each mode. Before the store, `Red` holds one row for `Practice light` with intensity 100%, red 100%, green 0%, and blue 0%.
 

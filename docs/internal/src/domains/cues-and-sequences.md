@@ -31,7 +31,7 @@ A `Sequence` carries the following fields:
 - `default_timing`, a complete `Transition` that fills any timing a step cue leaves unset. [Timing and the override chain](timing.md) explains how timing resolves.
 - `tracking_mode`, the tracking behavior that cues inherit.
 - `wrap`, which makes Go on the last cue return to the first.
-- `release_on_start`, which the engine stores but doesn't read during playback today.
+- `release_on_start`, which the engine stores but doesn't read during playback.
 
 A `Cue` holds its `trigger`, its timing (`transitions` and `transitions_by_attribute`), its body `instructions`, optional `parts`, and its tracking settings. A `CuePart` is a subset of a cue's instructions with its own timing and lookahead flag. Parts fire at the same moment as their cue and render after the cue body, in part order. When the programmer stores into part 0, it writes the cue body.
 
@@ -80,7 +80,7 @@ The flags apply per parameter, by the parameter's merge rule. An HTP parameter t
 
 In the running example, suppose `Blue` only stores red at 0% and blue at 100%. With the default flags, `Red`'s intensity at 100% tracks into `Blue`, so `Practice light` stays at full. If `Red`'s flags exclude `LTP`, none of its values track, because every `Practice light` attribute is LTP. `Blue` then contributes only red and blue, and intensity falls to whatever the lower layers or the fixture default give it.
 
-**Warning:** Rendering reads the cue-level flags for the whole cue, including its parts. A part's own `tracking_flags` field is stored but not read during playback, except when the programmer stores part 0 and copies them to the cue.
+**Warning:** Rendering reads the cue-level flags for the whole cue, including its parts. A part's own `tracking_flags` field is stored but never read during playback.
 
 ## From authored data to runtime state
 
