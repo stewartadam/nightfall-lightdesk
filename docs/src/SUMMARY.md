@@ -34,6 +34,7 @@
   - [Timelines](user-guide/panels/timelines.md)
   - [Timeline](user-guide/panels/timeline.md)
   - [Timecodes](user-guide/panels/timecodes.md)
+  - [Tempo](user-guide/panels/tempo.md)
   - [Tap Pattern](user-guide/panels/tap-pattern.md)
   - [3D Visualizer](user-guide/panels/3d-visualizer.md)
   - [Object Library](user-guide/panels/object-library.md)

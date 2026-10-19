@@ -7,7 +7,8 @@
  */
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
-import { expect, type Page, test } from "./playwright-fixtures";
+import { openPanel } from "./controller-mapping";
+import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 /** Reads the engine's last reported tempo target from the app stores. */
@@ -29,25 +30,40 @@ async function runCommand(page: Page, command: string): Promise<void> {
 }
 
 /**
- * Verifies the status-bar tempo readout follows the engine: tapping sets the
- * tempo, the tempo menu and the `tempo` command change it, and the beat
- * indicator animates.
+ * Opens a fresh show, waits for the engine's first tempo report and opens the
+ * Tempo panel from the command palette.
  */
-test("status bar tempo responds to taps, the menu and the command line", async ({
-  page,
-  backendSlot,
-}) => {
-  await prepareFreshBackendShowfile(backendSlot.backendPort);
+async function openTempoPanel(
+  page: Page,
+  backendPort: number,
+): Promise<Locator> {
+  await prepareFreshBackendShowfile(backendPort);
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await page.waitForFunction(() =>
     Boolean((window as any).appStores?.showTempo?.get()),
   );
+  await openPanel(page, "Tempo");
+  const panel = page.getByTestId("tempo-panel");
+  await expect(panel).toBeVisible();
+  return panel;
+}
 
-  const controls = page.getByTestId("tempo-controls");
-  const bpm = page.getByTestId("tempo-bpm");
-  await expect(controls).toBeVisible();
+/**
+ * Verifies the Tempo panel follows the engine: tapping sets the tempo, the
+ * fields, toolbar actions and the `tempo` command change it, and the beat
+ * indicator animates.
+ */
+test("tempo panel responds to taps, its fields and the command line", async ({
+  page,
+  backendSlot,
+}) => {
+  const panel = await openTempoPanel(page, backendSlot.backendPort);
+  const bpm = panel.getByTestId("tempo-bpm");
   await expect(bpm).toHaveText("120");
+  await expect(
+    page.getByRole("region", { name: "Application status bar" }),
+  ).not.toContainText("BPM");
 
   await expect
     .poll(
@@ -62,7 +78,7 @@ test("status bar tempo responds to taps, the menu and the command line", async (
     )
     .not.toBe("0");
 
-  const tap = page.getByTestId("tempo-tap");
+  const tap = panel.getByTestId("tempo-tap");
   for (let index = 0; index < 6; index += 1) {
     await tap.dispatchEvent("pointerdown", { button: 0 });
     await page.waitForTimeout(400);
@@ -71,30 +87,39 @@ test("status bar tempo responds to taps, the menu and the command line", async (
     .poll(() => targetBpm(page), { timeout: 5_000 })
     .toBeGreaterThan(140);
   await expect.poll(() => targetBpm(page)).toBeLessThan(160);
-  await page
-    .getByRole("region", { name: "Application status bar" })
-    .screenshot({ path: "test-results/playwright/show-tempo-status-bar.png" });
+  await page.screenshot({ path: "test-results/playwright/tempo-panel.png" });
 
-  await page.getByRole("button", { name: "Tempo", exact: true }).click();
-  const bpmInput = page.getByRole("spinbutton", { name: "Tempo in BPM" });
-  await expect(bpmInput).toBeVisible();
+  const bpmInput = panel.getByRole("spinbutton", { name: "Tempo in BPM" });
   await bpmInput.fill("90");
   await bpmInput.press("Enter");
   await expect.poll(() => targetBpm(page)).toBe(90);
-  await page.screenshot({
-    path: "test-results/playwright/show-tempo-menu.png",
-  });
-  await page.getByRole("button", { name: "Increase tempo" }).click();
-  await page.getByRole("button", { name: "Increase tempo" }).click();
+  await panel.getByRole("button", { name: "Increase tempo" }).click();
+  await panel.getByRole("button", { name: "Increase tempo" }).click();
   await expect(bpmInput).toHaveValue("92");
   await expect.poll(() => targetBpm(page)).toBe(92);
-  await page.getByRole("button", { name: "Double time" }).click();
+  await panel.getByRole("button", { name: "Double time" }).click();
   await expect.poll(() => targetBpm(page)).toBe(184);
   await expect(bpm).toHaveText("184", { timeout: 5_000 });
+  await expect(bpmInput).toHaveValue("184");
+
+  await bpmInput.fill("1");
+  await page.waitForTimeout(800);
+  await expect(bpmInput).toHaveValue("1");
+  await bpmInput.blur();
+  await expect(bpmInput).toHaveValue("184");
+  expect(await targetBpm(page)).toBe(184);
+
+  const beatsPerBar = panel.getByRole("spinbutton", { name: "Beats per bar" });
+  await panel.getByRole("button", { name: "Fewer beats per bar" }).click();
+  await expect(beatsPerBar).toHaveValue("3");
+  await expect(panel.locator(".nf-tempo-beat")).toHaveCount(3, {
+    timeout: 5_000,
+  });
 
   await runCommand(page, "tempo 128");
   await expect.poll(() => targetBpm(page)).toBe(128);
   await expect(bpm).toHaveText("128", { timeout: 5_000 });
+  await expect(bpmInput).toHaveValue("128");
   await runCommand(page, "tempo half");
   await expect.poll(() => targetBpm(page)).toBe(64);
 });
@@ -108,12 +133,7 @@ test("evenly spaced taps fit the exact tempo", async ({
   page,
   backendSlot,
 }) => {
-  await prepareFreshBackendShowfile(backendSlot.backendPort);
-  await page.goto("/?startup:draftRecovery=false&e2e=1");
-  await waitForDockviewApp(page);
-  await page.waitForFunction(() =>
-    Boolean((window as any).appStores?.showTempo?.get()),
-  );
+  await openTempoPanel(page, backendSlot.backendPort);
 
   await page.evaluate(async () => {
     const tap = document.querySelector('[data-testid="tempo-tap"]');
@@ -140,20 +160,13 @@ test("evenly spaced taps fit the exact tempo", async ({
     .toBeLessThan(0.1);
 });
 
-/** Verifies the phone header carries the tempo readout and a working Tap button. */
-test("compact header shows tempo controls on a phone", async ({
-  page,
-  backendSlot,
-}) => {
-  await prepareFreshBackendShowfile(backendSlot.backendPort);
+/** Verifies a phone opens the Tempo panel and taps it, with no tempo in the header. */
+test("tempo panel works on a phone", async ({ page, backendSlot }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/?startup:draftRecovery=false&e2e=1");
-  await page.waitForFunction(() =>
-    Boolean((window as any).appStores?.showTempo?.get()),
-  );
+  const panel = await openTempoPanel(page, backendSlot.backendPort);
   const header = page.getByRole("navigation", { name: "Global" });
-  await expect(header.getByTestId("tempo-controls")).toBeVisible();
-  const tap = header.getByTestId("tempo-tap");
+  await expect(header).not.toContainText("BPM");
+  const tap = panel.getByTestId("tempo-tap");
   for (let index = 0; index < 5; index += 1) {
     await tap.dispatchEvent("pointerdown", { button: 0 });
     await page.waitForTimeout(500);
@@ -162,7 +175,7 @@ test("compact header shows tempo controls on a phone", async ({
     .poll(() => targetBpm(page), { timeout: 5_000 })
     .toBeGreaterThan(110);
   await expect.poll(() => targetBpm(page)).toBeLessThan(130);
-  await header.screenshot({
-    path: "test-results/playwright/show-tempo-compact-header.png",
+  await page.screenshot({
+    path: "test-results/playwright/tempo-panel-phone.png",
   });
 });
