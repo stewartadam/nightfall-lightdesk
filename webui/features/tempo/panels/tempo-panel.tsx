@@ -17,6 +17,7 @@ import { NumericStepper } from "../../../components/ui/numeric-stepper";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { Toolbar } from "../../../components/ui/toolbar";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import { isEditableKeyboardTarget } from "../../../components/widgets/data-grid/event-adapter";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { showTempo } from "../../../state/appStores";
 import { TempoBeatIndicator } from "../components/tempo-beat-indicator";
@@ -24,6 +25,7 @@ import { TempoTapButton } from "../components/tempo-tap-button";
 import {
   createBeatInBar,
   createTempoField,
+  sendTap,
   sendTempoCommand,
 } from "../controllers/tempo-controller";
 import {
@@ -34,6 +36,24 @@ import {
   parseBpmInput,
 } from "../model";
 import "../components/tempo.css";
+
+/**
+ * Returns whether a key press inside the panel should tap: a printable key or Space,
+ * pressed without Ctrl, Cmd or Alt and without auto-repeat, outside the tempo fields and
+ * toolbar buttons (which keep their own keys). The Tap pad handles its own keys first.
+ */
+function isTapKeyEvent(event: KeyboardEvent): boolean {
+  return (
+    !event.defaultPrevented &&
+    !event.repeat &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    event.key.length === 1 &&
+    !isEditableKeyboardTarget(event.target) &&
+    !(event.target instanceof HTMLButtonElement)
+  );
+}
 
 /** One-press tempo actions shown in the panel toolbar. */
 const TEMPO_ACTIONS = [
@@ -82,7 +102,18 @@ export default function TempoPanel(_props: BasePanelComponentProps) {
   });
 
   return (
-    <div class="nf-tempo-panel" data-testid="tempo-panel">
+    <div
+      class="nf-tempo-panel"
+      data-testid="tempo-panel"
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (isTapKeyEvent(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+          sendTap(event);
+        }
+      }}
+    >
       <PanelToolbar
         left={
           <Toolbar label="Tempo actions" class="flex items-center gap-0.5">
@@ -156,6 +187,9 @@ export default function TempoPanel(_props: BasePanelComponentProps) {
               </label>
             </div>
             <TempoTapButton class="nf-tempo-panel-tap" />
+            <div class="nf-tempo-key-hint">
+              Or press any key while this panel has focus
+            </div>
           </div>
         )}
       </Show>

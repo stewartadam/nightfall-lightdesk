@@ -143,8 +143,18 @@
   color: var(--color-gray-400, #9ca3af);
 }
 
+.nf-tempo-panel:focus-visible {
+  outline: none;
+}
+
 .nf-tempo-panel-tap {
-  flex: 1;
-  min-height: 4rem;
-  font-size: 1.25rem;
+  height: 4.5rem;
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.nf-tempo-key-hint {
+  text-align: center;
+  font-size: 0.6875rem;
+  color: var(--color-gray-500, #6b7280);
 }

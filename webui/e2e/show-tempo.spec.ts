@@ -87,7 +87,9 @@ test("tempo panel responds to taps, its fields and the command line", async ({
     .poll(() => targetBpm(page), { timeout: 5_000 })
     .toBeGreaterThan(140);
   await expect.poll(() => targetBpm(page)).toBeLessThan(160);
-  await page.screenshot({ path: "test-results/playwright/tempo-panel.png" });
+  await page.screenshot({
+    path: "test-results/playwright/tempo-panel-taps.png",
+  });
 
   const bpmInput = panel.getByRole("spinbutton", { name: "Tempo in BPM" });
   await bpmInput.fill("90");
@@ -164,6 +166,36 @@ test("evenly spaced taps fit the exact tempo", async ({
       timeout: 5_000,
     })
     .toBeLessThan(0.1);
+});
+
+/**
+ * Verifies key presses tap while the Tempo panel has focus, and typing in its
+ * fields does not tap.
+ */
+test("keys tap while the tempo panel has focus", async ({
+  page,
+  backendSlot,
+}) => {
+  const panel = await openTempoPanel(page, backendSlot.backendPort);
+  await panel.getByTestId("tempo-bpm").click();
+  for (let index = 0; index < 6; index += 1) {
+    await page.keyboard.press(index % 2 === 0 ? "Space" : "j");
+    await page.waitForTimeout(500);
+  }
+  await expect
+    .poll(() => targetBpm(page), { timeout: 5_000 })
+    .toBeGreaterThan(110);
+  await expect.poll(() => targetBpm(page)).toBeLessThan(130);
+  const tapped = await targetBpm(page);
+
+  const beatsPerBar = panel.getByRole("spinbutton", { name: "Beats per bar" });
+  await beatsPerBar.fill("3");
+  await beatsPerBar.press("Enter");
+  await expect(panel.locator(".nf-tempo-beat")).toHaveCount(3, {
+    timeout: 5_000,
+  });
+  expect(await targetBpm(page)).toBe(tapped);
+  await page.screenshot({ path: "test-results/playwright/tempo-panel.png" });
 });
 
 /** Verifies a phone opens the Tempo panel and taps it, with no tempo in the header. */
