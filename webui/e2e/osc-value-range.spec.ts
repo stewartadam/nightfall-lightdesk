@@ -8,6 +8,7 @@
 
 import { createSocket } from "node:dgram";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { globalMaster } from "./controller-mapping";
 import { gridCellByKey } from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
@@ -88,13 +89,9 @@ async function oscPort(page: Page): Promise<number> {
   );
 }
 
-/** Returns the only master's level percentage. */
-function masterLevel(page: Page): Promise<number | undefined> {
-  return page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        ?.level_percent as number | undefined,
-  );
+/** Returns the level percentage of the new show's global intensity master. */
+async function masterLevel(page: Page): Promise<number | undefined> {
+  return (await globalMaster(page))?.level_percent;
 }
 
 /** Returns the stored value range of the only OSC mapping. */
@@ -123,13 +120,8 @@ test("an explicit OSC value range maps integer faders across a master's full lev
   await openApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
   await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
   await expect.poll(() => masterLevel(page)).toBe(100);
-  const masterUid = await page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        .identifiers.uid as string,
-  );
+  const masterUid = (await globalMaster(page)).identifiers.uid;
 
   const upsert = await page.evaluate(
     ({ address, masterUid }) =>

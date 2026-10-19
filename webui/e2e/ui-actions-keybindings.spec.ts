@@ -8,6 +8,7 @@
 
 import { createSocket } from "node:dgram";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { globalMaster, makeGlobalMasterToggle } from "./controller-mapping";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -259,19 +260,8 @@ test("keybindings invoke backend actions with arguments", async ({
   page,
 }) => {
   await openApp(page, backendSlot.backendPort);
-  await page.getByRole("button", { name: "Open command palette" }).click();
-  await page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER).fill("Open Masters");
-  await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await page
-    .locator("[data-master-id] select")
-    .first()
-    .selectOption("toggle-off");
-  const masterUid = await page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        .identifiers.uid as string,
-  );
+  await makeGlobalMasterToggle(page);
+  const masterUid = (await globalMaster(page)).identifiers.uid;
 
   await openKeyboardSettings(page);
   await addKeybinding(
@@ -289,13 +279,7 @@ test("keybindings invoke backend actions with arguments", async ({
   await page.locator("main#app").click({ position: { x: 900, y: 600 } });
   await page.keyboard.press("Alt+Shift+KeyT");
   await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (Object.values((window as any).appStores.masters.get())[0] as any)
-            .mode.data?.active,
-      ),
-    )
+    .poll(() => globalMaster(page).then((master) => master.mode.data?.active))
     .toBe(true);
 });
 

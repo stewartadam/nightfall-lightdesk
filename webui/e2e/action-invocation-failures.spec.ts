@@ -8,6 +8,7 @@
 
 import { createSocket } from "node:dgram";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { globalMaster } from "./controller-mapping";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -126,23 +127,10 @@ test("a failing keybinding shows one labelled toast and records the failure", as
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER).fill("Open Masters");
   await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "New intensity global" }).click();
   await expect
-    .poll(() =>
-      page.evaluate(
-        () => Object.keys((window as any).appStores.masters.get()).length,
-      ),
-    )
-    .toBe(1);
-  await page
-    .locator("[data-master-id] select")
-    .first()
-    .selectOption("AlwaysOn");
-  const masterUid = await page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        .identifiers.uid as string,
-  );
+    .poll(async () => (await globalMaster(page))?.mode.type)
+    .toBe("AlwaysOn");
+  const masterUid = (await globalMaster(page)).identifiers.uid;
 
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page.getByPlaceholder(COMMAND_INPUT_PLACEHOLDER).fill("Open Settings");

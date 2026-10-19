@@ -7,14 +7,14 @@
  */
 
 import {
-  createGlobalMaster,
-  createToggleMaster,
   enterMapping,
+  globalMaster,
   leaveMapping,
-  onlyMaster,
+  makeGlobalMasterToggle,
+  openGlobalMaster,
   openMappingApp,
   openPanel,
-  setOnlyMasterLevel,
+  setGlobalMasterLevel,
 } from "./controller-mapping";
 import { expect, type Page } from "./playwright-fixtures";
 import { test, type VirtualMidi, waitForMidiDevice } from "./virtual-midi";
@@ -45,9 +45,9 @@ function midiMappings(page: Page): Promise<StoredMidiMapping[]> {
   );
 }
 
-/** Returns whether the only master, a toggle master, is on. */
+/** Returns whether the global intensity master, switched to a toggle master, is on. */
 async function masterActive(page: Page): Promise<boolean | undefined> {
-  return (await onlyMaster(page)).mode.data?.active;
+  return (await globalMaster(page)).mode.data?.active;
 }
 
 /**
@@ -85,13 +85,13 @@ async function bindArmedTo(
   await menu.getByRole("menuitem", { name: option }).click();
 }
 
-/** Stores a mapping from a note on the virtual controller to the only master's toggle. */
+/** Stores a mapping from a note on the virtual controller to the global intensity master's toggle. */
 async function storeNoteToggleMapping(
   page: Page,
   midi: VirtualMidi,
   note: number,
 ): Promise<void> {
-  const masterUid = (await onlyMaster(page)).identifiers.uid;
+  const masterUid = (await globalMaster(page)).identifiers.uid;
   await page.evaluate(
     ({ deviceName, masterUid, note }) =>
       (window as any).appStores.sendAndAwait({
@@ -137,11 +137,15 @@ test("a learned MIDI note keeps toggling its master after its panels close", asy
   await page.screenshot({
     path: test.info().outputPath("midi-device-connected.png"),
   });
-  await createToggleMaster(page);
+  await makeGlobalMasterToggle(page);
 
   await enterMapping(page);
   await touchNote(page, virtualMidi, 60);
-  await bindArmedTo(page, "toggle Global Master", "Toggle · On press");
+  await bindArmedTo(
+    page,
+    "toggle Global Intensity Master",
+    "Toggle · On press",
+  );
   await expect
     .poll(async () =>
       (await midiMappings(page)).map((mapping) => ({
@@ -185,7 +189,7 @@ test("pressing a mapped note in mapping mode arms it without firing, then fires 
   virtualMidi,
 }) => {
   await openMidiApp(page, backendSlot.backendPort, virtualMidi);
-  await createToggleMaster(page);
+  await makeGlobalMasterToggle(page);
   await storeNoteToggleMapping(page, virtualMidi, 61);
   await virtualMidi.note(61, true);
   await expect.poll(() => masterActive(page)).toBe(true);
@@ -215,14 +219,18 @@ test("cancelling mapping mode with Escape leaves existing MIDI mappings unchange
   virtualMidi,
 }) => {
   await openMidiApp(page, backendSlot.backendPort, virtualMidi);
-  await createToggleMaster(page);
+  await makeGlobalMasterToggle(page);
   await storeNoteToggleMapping(page, virtualMidi, 62);
   const before = await midiMappings(page);
 
   await enterMapping(page);
   await touchNote(page, virtualMidi, 62);
-  await page.getByRole("button", { name: "Map toggle Global Master" }).click();
-  const menu = page.getByRole("menu", { name: "Map toggle Global Master to" });
+  await page
+    .getByRole("button", { name: "Map toggle Global Intensity Master" })
+    .click();
+  const menu = page.getByRole("menu", {
+    name: "Map toggle Global Intensity Master to",
+  });
   await expect(menu).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
@@ -241,11 +249,11 @@ test("a Hold MIDI binding keeps a master on only while the note is held", async 
   virtualMidi,
 }) => {
   await openMidiApp(page, backendSlot.backendPort, virtualMidi);
-  await createToggleMaster(page);
+  await makeGlobalMasterToggle(page);
 
   await enterMapping(page);
   await touchNote(page, virtualMidi, 64);
-  await bindArmedTo(page, "toggle Global Master", "On while held");
+  await bindArmedTo(page, "toggle Global Intensity Master", "On while held");
   await expect
     .poll(async () =>
       (await midiMappings(page)).map((mapping) => mapping.behavior),
@@ -268,13 +276,17 @@ test("a Flash MIDI binding pushes a master to full while the note is held", asyn
   virtualMidi,
 }) => {
   await openMidiApp(page, backendSlot.backendPort, virtualMidi);
-  await createGlobalMaster(page);
-  await setOnlyMasterLevel(page, 30);
+  await openGlobalMaster(page);
+  await setGlobalMasterLevel(page, 30);
 
   await enterMapping(page);
   await touchNote(page, virtualMidi, 65);
-  await page.getByRole("button", { name: "Map Global Master level" }).click();
-  const menu = page.getByRole("menu", { name: "Map Global Master level to" });
+  await page
+    .getByRole("button", { name: "Map Global Intensity Master level" })
+    .click();
+  const menu = page.getByRole("menu", {
+    name: "Map Global Intensity Master level to",
+  });
   const flash = menu.getByRole("menuitem", { name: "Flash to full" });
   // A note offers only Flash on a level, which binds without a menu.
   if (await flash.isVisible()) await flash.click();
@@ -287,11 +299,11 @@ test("a Flash MIDI binding pushes a master to full while the note is held", asyn
 
   await virtualMidi.note(65, true);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBe(100);
   await virtualMidi.note(65, false);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo(30, 3);
 });
 
@@ -302,14 +314,14 @@ test("a MIDI CC fader bound to a master level drives the level", async ({
   virtualMidi,
 }) => {
   await openMidiApp(page, backendSlot.backendPort, virtualMidi);
-  await createGlobalMaster(page);
+  await openGlobalMaster(page);
 
   await enterMapping(page);
   await virtualMidi.cc(7, 90);
   await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
     `MIDI CC 7 · Ch 1 (${virtualMidi.name})`,
   );
-  await bindArmedTo(page, "Global Master level", "Follow fader");
+  await bindArmedTo(page, "Global Intensity Master level", "Follow fader");
   await expect
     .poll(async () =>
       (await midiMappings(page)).map((mapping) => ({
@@ -324,18 +336,20 @@ test("a MIDI CC fader bound to a master level drives the level", async ({
       },
     ]);
   // The learning move did not move the master.
-  expect((await onlyMaster(page)).level_percent).toBe(100);
+  expect((await globalMaster(page)).level_percent).toBe(100);
   await leaveMapping(page);
 
   await virtualMidi.cc(7, 0);
-  await expect.poll(async () => (await onlyMaster(page)).level_percent).toBe(0);
+  await expect
+    .poll(async () => (await globalMaster(page)).level_percent)
+    .toBe(0);
   await virtualMidi.cc(7, 127);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBe(100);
   await virtualMidi.cc(7, 64);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo((64 / 127) * 100, 3);
   await openPanel(page, "Masters");
   await page.screenshot({

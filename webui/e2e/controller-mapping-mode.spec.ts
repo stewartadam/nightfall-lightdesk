@@ -9,9 +9,12 @@
 import { createSocket } from "node:dgram";
 import {
   enterMapping,
+  GLOBAL_MASTER_ID,
+  globalMaster,
   leaveMapping,
+  makeGlobalMasterToggle,
   mappingClients,
-  onlyMaster,
+  openGlobalMaster,
   openMappingApp,
   openPanel,
   runPaletteEntry,
@@ -78,18 +81,7 @@ test("touching a control then clicking a target binds it and the binding drives 
   await openMappingApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
 
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await expect
-    .poll(async () => (await onlyMaster(page))?.level_percent)
-    .toBe(100);
-  await page
-    .locator("[data-master-id] select")
-    .first()
-    .selectOption("toggle-off");
-  await expect
-    .poll(async () => (await onlyMaster(page)).mode.type)
-    .toBe("Toggle");
+  await makeGlobalMasterToggle(page);
 
   await enterMapping(page);
   const banner = page.locator("[data-mapping-mode-banner]");
@@ -99,11 +91,11 @@ test("touching a control then clicking a target binds it and the binding drives 
   await sendOsc(port, "/e2e/map/level", [0.9]);
   await expect(banner).toContainText("OSC /e2e/map/level");
   const levelOverlay = page.getByRole("button", {
-    name: "Map Global Master level",
+    name: "Map Global Intensity Master level",
   });
   await levelOverlay.click();
   const levelMenu = page.getByRole("menu", {
-    name: "Map Global Master level to",
+    name: "Map Global Intensity Master level to",
   });
   await expect(levelMenu).toContainText(
     "Moving OSC /e2e/map/level sets Master level",
@@ -125,12 +117,14 @@ test("touching a control then clicking a target binds it and the binding drives 
   ).toBeVisible();
   await expect(levelOverlay.locator("[data-mapping-count]")).toHaveText("1");
   // The click bound the slider instead of moving it.
-  expect((await onlyMaster(page)).level_percent).toBe(100);
+  expect((await globalMaster(page)).level_percent).toBe(100);
 
   // Touch an OSC button without arguments, then click the master's Toggle button.
   await sendOsc(port, "/e2e/map/toggle");
   await expect(banner).toContainText("OSC /e2e/map/toggle");
-  await page.getByRole("button", { name: "Map toggle Global Master" }).click();
+  await page
+    .getByRole("button", { name: "Map toggle Global Intensity Master" })
+    .click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -194,11 +188,11 @@ test("touching a control then clicking a target binds it and the binding drives 
 
   await sendOsc(port, "/e2e/map/level", [0.25]);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBe(25);
   await sendOsc(port, "/e2e/map/toggle");
   await expect
-    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .poll(async () => (await globalMaster(page)).mode.data?.active)
     .toBe(true);
 });
 
@@ -232,23 +226,17 @@ test("a Hold binding keeps a toggle master on only while the button is held", as
   await openMappingApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
 
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await page
-    .locator("[data-master-id] select")
-    .first()
-    .selectOption("toggle-off");
-  await expect
-    .poll(async () => (await onlyMaster(page))?.mode.type)
-    .toBe("Toggle");
+  await makeGlobalMasterToggle(page);
 
   await enterMapping(page);
   await touchOscButton(page, port, "/e2e/map/button");
   const toggleOverlay = page.getByRole("button", {
-    name: "Map toggle Global Master",
+    name: "Map toggle Global Intensity Master",
   });
   await toggleOverlay.click();
-  const menu = page.getByRole("menu", { name: "Map toggle Global Master to" });
+  const menu = page.getByRole("menu", {
+    name: "Map toggle Global Intensity Master to",
+  });
   await expect(
     menu
       .getByRole("menuitem")
@@ -261,7 +249,7 @@ test("a Hold binding keeps a toggle master on only while the button is held", as
     "On while held",
   ]);
   await expect(menu).toContainText(
-    "Holding OSC /e2e/map/button runs Master on: 1: Global Master; letting go runs Master off: 1: Global Master.",
+    "Holding OSC /e2e/map/button runs Master on: 1: Global Intensity Master; letting go runs Master off: 1: Global Intensity Master.",
   );
   // A button that sent on then off is suggested to toggle on press, focused for Enter.
   const suggested = menu.getByRole("menuitem", { name: "Toggle · On press" });
@@ -307,11 +295,11 @@ test("a Hold binding keeps a toggle master on only while the button is held", as
   // Pressing turns the master on and releasing turns it back off.
   await sendOsc(port, "/e2e/map/button", [1]);
   await expect
-    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .poll(async () => (await globalMaster(page)).mode.data?.active)
     .toBe(true);
   await sendOsc(port, "/e2e/map/button", [0]);
   await expect
-    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .poll(async () => (await globalMaster(page)).mode.data?.active)
     .toBe(false);
 });
 
@@ -322,16 +310,8 @@ test("a Flash binding pushes a master to full while held and restores it", async
   await openMappingApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
 
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await expect
-    .poll(async () => (await onlyMaster(page))?.level_percent)
-    .toBe(100);
-  const masterId = await page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        .identifiers.id as number,
-  );
+  await openGlobalMaster(page);
+  const masterId = GLOBAL_MASTER_ID;
   await page.evaluate(
     (id) =>
       (window as any).appStores.sendAndAwait({
@@ -344,14 +324,16 @@ test("a Flash binding pushes a master to full while held and restores it", async
     masterId,
   );
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo(30, 3);
 
   await enterMapping(page);
   await touchOscButton(page, port, "/e2e/map/flash");
-  await page.getByRole("button", { name: "Map Global Master level" }).click();
   await page
-    .getByRole("menu", { name: "Map Global Master level to" })
+    .getByRole("button", { name: "Map Global Intensity Master level" })
+    .click();
+  await page
+    .getByRole("menu", { name: "Map Global Intensity Master level to" })
     .getByRole("menuitem", { name: "Flash to full" })
     .click();
   await expect
@@ -365,11 +347,11 @@ test("a Flash binding pushes a master to full while held and restores it", async
 
   await sendOsc(port, "/e2e/map/flash", [1]);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBe(100);
   await sendOsc(port, "/e2e/map/flash", [0]);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo(30, 3);
 });
 
@@ -380,16 +362,8 @@ test("fader slots with an assigned master offer both mapping targets", async ({
   await openMappingApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
 
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await expect
-    .poll(async () => (await onlyMaster(page))?.level_percent)
-    .toBe(100);
-  const masterId = await page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        .identifiers.id as number,
-  );
+  await openGlobalMaster(page);
+  const masterId = GLOBAL_MASTER_ID;
   await page.evaluate(
     (masterId) =>
       (window as any).appStores.sendAndAwait({
@@ -418,8 +392,8 @@ test("fader slots with an assigned master offer both mapping targets", async ({
       ),
   ).resolves.toEqual([
     "Fader slot 1 · Follow fader",
-    "Assigned master: Global Master · Follow fader",
-    "Assigned master: Global Master · Flash to full",
+    "Assigned master: Global Intensity Master · Follow fader",
+    "Assigned master: Global Intensity Master · Flash to full",
   ]);
   await menu
     .getByRole("menuitem", { name: "Fader slot 1 · Follow fader" })
@@ -450,11 +424,14 @@ test("fader slots with an assigned master offer both mapping targets", async ({
   await expect.poll(async () => (await levels())[masterId]).toBeCloseTo(30, 3);
 
   // The binding follows the slot: reassigning another master moves what the fader drives.
+  const existingIds = Object.keys(await levels());
   await openPanel(page, "Masters");
   await page.getByRole("button", { name: "New intensity global" }).click();
-  await expect.poll(async () => Object.keys(await levels()).length).toBe(2);
+  await expect
+    .poll(async () => Object.keys(await levels()).length)
+    .toBe(existingIds.length + 1);
   const secondId = Number(
-    Object.keys(await levels()).find((id) => Number(id) !== masterId),
+    Object.keys(await levels()).find((id) => !existingIds.includes(id)),
   );
   await page.evaluate(
     (masterId) =>
@@ -505,16 +482,8 @@ test("mapping an empty slot's Go follows what is assigned later", async ({
   await leaveMapping(page);
 
   // Assign a toggle master to slot 2; Go on a toggle master flips it.
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await page
-    .locator("[data-master-id] select")
-    .first()
-    .selectOption("toggle-off");
-  await expect
-    .poll(async () => (await onlyMaster(page))?.mode.type)
-    .toBe("Toggle");
-  const masterId = (await onlyMaster(page)).identifiers.id;
+  await makeGlobalMasterToggle(page);
+  const masterId = GLOBAL_MASTER_ID;
   await page.evaluate(
     (masterId) =>
       (window as any).appStores.sendAndAwait({
@@ -529,7 +498,7 @@ test("mapping an empty slot's Go follows what is assigned later", async ({
 
   await sendOsc(port, "/e2e/map/empty-go");
   await expect
-    .poll(async () => (await onlyMaster(page)).mode.data?.active)
+    .poll(async () => (await globalMaster(page)).mode.data?.active)
     .toBe(true);
 });
 
@@ -657,16 +626,8 @@ test("touching a mapped control in mapping mode arms it without firing its actio
   await openMappingApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
 
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await expect
-    .poll(async () => (await onlyMaster(page))?.level_percent)
-    .toBe(100);
-  const masterUid = await page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        .identifiers.uid as string,
-  );
+  await openGlobalMaster(page);
+  const masterUid = (await globalMaster(page)).identifiers.uid;
   await page.evaluate(
     (master) =>
       (window as any).appStores.sendAndAwait({
@@ -689,7 +650,7 @@ test("touching a mapped control in mapping mode arms it without firing its actio
   );
   await sendOsc(port, "/e2e/live/level", [0.5]);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo(50, 3);
 
   // A second client sees that controller actions are paused while this one maps.
@@ -715,7 +676,7 @@ test("touching a mapped control in mapping mode arms it without firing its actio
     )
     .toBeCloseTo(0.2, 3);
   await page.waitForTimeout(250);
-  expect((await onlyMaster(page)).level_percent).toBeCloseTo(50, 3);
+  expect((await globalMaster(page)).level_percent).toBeCloseTo(50, 3);
   await page.screenshot({
     path: test.info().outputPath("controller-mapping-paused.png"),
   });
@@ -728,7 +689,7 @@ test("touching a mapped control in mapping mode arms it without firing its actio
   await expect(observer.locator("[data-mapping-pause-banner]")).toBeHidden();
   await sendOsc(port, "/e2e/live/level", [0.25]);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo(25, 3);
 
   // Closing a client that is mapping releases its pause on the backend.
@@ -741,10 +702,10 @@ test("touching a mapped control in mapping mode arms it without firing its actio
   await observer.close();
   await expect.poll(() => mappingClients(page)).toBe(0);
   await expect(page.locator("[data-mapping-pause-banner]")).toBeHidden();
-  expect((await onlyMaster(page)).level_percent).toBeCloseTo(25, 3);
+  expect((await globalMaster(page)).level_percent).toBeCloseTo(25, 3);
   await sendOsc(port, "/e2e/live/level", [0.6]);
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo(60, 3);
 });
 
@@ -768,22 +729,16 @@ test("rebinding a control names the replaced binding and undo restores it", asyn
   await openMappingApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
 
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await page
-    .locator("[data-master-id] select")
-    .first()
-    .selectOption("toggle-off");
-  await expect
-    .poll(async () => (await onlyMaster(page))?.mode.type)
-    .toBe("Toggle");
+  await makeGlobalMasterToggle(page);
 
   // Bind an OSC button to the master's toggle.
   await enterMapping(page);
   const banner = page.locator("[data-mapping-mode-banner]");
   await sendOsc(port, "/e2e/map/rebind");
   await expect(banner).toContainText("OSC /e2e/map/rebind");
-  await page.getByRole("button", { name: "Map toggle Global Master" }).click();
+  await page
+    .getByRole("button", { name: "Map toggle Global Intensity Master" })
+    .click();
   await expect.poll(() => oscMappingActions(page)).toHaveLength(1);
   const [toggleAction] = await oscMappingActions(page);
   expect(toggleAction).not.toBe("programmer.clear");
@@ -808,7 +763,7 @@ test("rebinding a control names the replaced binding and undo restores it", asyn
     .poll(() => oscMappingActions(page))
     .toEqual(["programmer.clear"]);
   const replacedToast = page.getByText(
-    /^Bound OSC \/e2e\/map\/rebind → Clear programmer · On press \(replaced: .*Global Master\)$/,
+    /^Bound OSC \/e2e\/map\/rebind → Clear programmer · On press \(replaced: .*Global Intensity Master\)$/,
   );
   await expect(replacedToast).toBeInViewport({ ratio: 1 });
   await replacedToast.screenshot({
@@ -833,7 +788,7 @@ test("rebinding a control names the replaced binding and undo restores it", asyn
     rowKey: restoredKey,
   });
   await restoredAction.scrollIntoViewIfNeeded();
-  await expect(restoredAction).toContainText("Global Master");
+  await expect(restoredAction).toContainText("Global Intensity Master");
   await expect(
     gridCellByKey(grid, { columnKey: "address", rowKey: restoredKey }),
   ).toContainText("/e2e/map/rebind");
@@ -887,19 +842,15 @@ test("targets a touched control cannot drive are dimmed", async ({
 }) => {
   await openMappingApp(page, backendSlot.backendPort);
   const port = await oscPort(page);
-  await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
-  await page
-    .locator("[data-master-id] select")
-    .first()
-    .selectOption("toggle-off");
-  await expect
-    .poll(async () => (await onlyMaster(page))?.mode.type)
-    .toBe("Toggle");
+  await makeGlobalMasterToggle(page);
 
   await enterMapping(page);
-  const level = page.getByRole("button", { name: "Map Global Master level" });
-  const toggle = page.getByRole("button", { name: "Map toggle Global Master" });
+  const level = page.getByRole("button", {
+    name: "Map Global Intensity Master level",
+  });
+  const toggle = page.getByRole("button", {
+    name: "Map toggle Global Intensity Master",
+  });
   await expect(level).not.toHaveAttribute("data-mapping-compatible");
 
   // A message without a value can fire the toggle but cannot set a level.
@@ -909,12 +860,9 @@ test("targets a touched control cannot drive are dimmed", async ({
   );
   await expect(level).toHaveAttribute("data-mapping-compatible", "false");
   await expect(toggle).toHaveAttribute("data-mapping-compatible", "true");
-  await page
-    .locator("[data-master-id]")
-    .first()
-    .screenshot({
-      path: test.info().outputPath("mapping-incompatible-target.png"),
-    });
+  await page.locator(`[data-master-id="${GLOBAL_MASTER_ID}"]`).screenshot({
+    path: test.info().outputPath("mapping-incompatible-target.png"),
+  });
   await leaveMapping(page);
 });
 
