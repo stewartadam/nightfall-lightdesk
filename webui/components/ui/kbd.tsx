@@ -6,10 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { ArrowDownIcon } from "@squidlab/phosphor-solid/arrow-down";
 import { ArrowFatUpIcon } from "@squidlab/phosphor-solid/arrow-fat-up";
+import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
+import { ArrowRightIcon } from "@squidlab/phosphor-solid/arrow-right";
+import { ArrowUpIcon } from "@squidlab/phosphor-solid/arrow-up";
 import { BackspaceIcon } from "@squidlab/phosphor-solid/backspace";
 import { CaretUpIcon } from "@squidlab/phosphor-solid/caret-up";
 import { CommandIcon } from "@squidlab/phosphor-solid/command";
+import { KeyReturnIcon } from "@squidlab/phosphor-solid/key-return";
 import { OptionIcon } from "@squidlab/phosphor-solid/option";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
@@ -60,6 +65,11 @@ const GLYPH_ICONS: Record<
   option: OptionIcon,
   shift: ArrowFatUpIcon,
   backspace: BackspaceIcon,
+  enter: KeyReturnIcon,
+  "arrow-up": ArrowUpIcon,
+  "arrow-down": ArrowDownIcon,
+  "arrow-left": ArrowLeftIcon,
+  "arrow-right": ArrowRightIcon,
 };
 
 interface KbdProps {
@@ -79,7 +89,7 @@ interface KbdProps {
  * Renders one keyboard key as a key cap.
  *
  * With `keyName`, modifier keys draw their platform glyph (Command, Option, Shift, Control on
- * Apple platforms) and Backspace draws its icon, each keeping the key's name for assistive
+ * Apple platforms) and Backspace, Enter and the arrow keys draw their icons, each keeping the key's name for assistive
  * technology and as a tooltip; other keys show their conventional label. Without it, the cap shows its children as written.
  */
 export function Kbd(props: KbdProps) {
