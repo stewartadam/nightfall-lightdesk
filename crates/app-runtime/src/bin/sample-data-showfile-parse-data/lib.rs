@@ -417,12 +417,14 @@ fn add_blueprint(world: &mut World) -> Result<(), String> {
         .map_err(|error| format!("failed to add parser blueprint: {error}"))
 }
 
-/// Add fixture-inhibition and playback-rate masters with distinct target scopes.
+/// Replace the new-show default masters with fixture-inhibition and playback-rate masters that
+/// use distinct target scopes and fixed UIDs.
 fn add_masters(world: &mut World) -> Result<(), String> {
     let mut system_state: SystemState<(ResMut<DataProvider<Master>>,)> = SystemState::new(world);
     let (mut master_data_provider,) = system_state
         .get_mut(world)
         .expect("sample data system parameters should be available");
+    master_data_provider.clear();
     master_data_provider
         .add(Master {
             identifiers: Identifiers {

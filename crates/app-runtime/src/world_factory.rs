@@ -10,10 +10,10 @@ use bevy::prelude::{App, Resource};
 use bevy_state::app::AppExtStates;
 use nightfall_config::RuntimeConfig;
 use nightfall_desk::{
-    prelude::{ToastLevel, UiNotification, UiNotificationState},
+    prelude::{Master, ToastLevel, UiNotification, UiNotificationState, add_default_show_masters},
     resources::log_config::LogConfig,
 };
-use nightfall_engine::prelude::AppState;
+use nightfall_engine::prelude::{AppState, DataProvider};
 use nightfall_io::TransportRuntimePolicy;
 use nightfall_websocket::prelude::SharedWebUiAssets;
 
@@ -29,7 +29,7 @@ pub(super) struct PendingSampleDraft(std::path::PathBuf);
 /// Initial world bootstrap source when creating a fresh Bevy app instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorldBootstrap {
-    /// Leave the fresh world empty for callers that will populate it directly.
+    /// Start a blank show that holds only the default global masters.
     Empty {
         /// Optional named `.nightfall-show` folder associated with the empty world.
         showfile_name: Option<String>,
@@ -237,13 +237,16 @@ pub(super) fn initial_world_bootstrap(should_seed_sample_data: bool) -> WorldBoo
     }
 }
 
-/// Assigns a new show's identity and persists its complete initial contents before activation.
+/// Adds the default global masters, assigns a new show's identity, and persists its complete
+/// initial contents before activation.
 fn finalize_new_world(
     app: &mut App,
     showfile_name: Option<&str>,
     seeded: bool,
     resource_dir: Option<&std::path::Path>,
 ) -> Result<(), String> {
+    add_default_show_masters(&mut app.world_mut().resource_mut::<DataProvider<Master>>())
+        .map_err(|error| format!("failed to add default show masters: {error}"))?;
     app.world_mut()
         .resource_mut::<crate::systems::showfile_events::CurrentShowfile>()
         .set_name(showfile_name)?;

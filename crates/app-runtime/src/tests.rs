@@ -35,7 +35,10 @@ use nightfall_cues::prelude::{
     BoundCueInstruction, Cue, CueInstruction, MaterializedSequence, Sequence,
 };
 use nightfall_desk::{
-    prelude::{ToastLevel, UiNotification, UiNotificationState, control_level_action},
+    prelude::{
+        FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
+        ToastLevel, UiNotification, UiNotificationState, control_level_action,
+    },
     resources::log_config::{LogConfig, TracingTarget},
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
@@ -475,6 +478,58 @@ fn world_factory_empty_bootstrap_starts_initializing_without_showfile() {
             .name(),
         None
     );
+}
+
+/// Verifies blank and sample new shows both start with one always-on global intensity master and
+/// one always-on global rate master, each at 100% with the shared default UIDs, so neither
+/// changes output until moved and merges between new shows match them up.
+#[test]
+fn world_factory_new_shows_start_with_global_masters() {
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    for bootstrap in [
+        WorldBootstrap::Empty {
+            showfile_name: None,
+        },
+        WorldBootstrap::SampleData {
+            showfile_name: None,
+        },
+    ] {
+        let app = factory
+            .build(bootstrap.clone())
+            .expect("new world factory build");
+        let masters = app.world().resource::<DataProvider<Master>>();
+        let mut masters: Vec<_> = masters.iter().map(|entry| entry.value().clone()).collect();
+        masters.sort_by_key(|master| master.identifiers.id);
+
+        assert_eq!(masters.len(), 2, "{bootstrap:?} should add two masters");
+        let [intensity, rate] = &masters[..] else {
+            unreachable!()
+        };
+        assert_eq!(intensity.identifiers.id, 1);
+        assert_eq!(
+            intensity.identifiers.uid,
+            nightfall_desk::masters::DEFAULT_INTENSITY_MASTER_UID
+        );
+        assert_eq!(intensity.kind, MasterKind::InhibitiveIntensity);
+        assert_eq!(
+            intensity.target,
+            MasterTarget::Fixtures(FixtureMasterTarget::All)
+        );
+        assert_eq!(rate.identifiers.id, 2);
+        assert_eq!(
+            rate.identifiers.uid,
+            nightfall_desk::masters::DEFAULT_RATE_MASTER_UID
+        );
+        assert_eq!(rate.kind, MasterKind::PlaybackRate);
+        assert_eq!(
+            rate.target,
+            MasterTarget::Instances(InstanceMasterTarget::All)
+        );
+        for master in [intensity, rate] {
+            assert_eq!(master.mode, MasterMode::AlwaysOn);
+            assert_eq!(master.level_percent, 100.0);
+        }
+    }
 }
 
 /// Verifies named empty bootstraps are command-ready after construction.

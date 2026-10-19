@@ -7,6 +7,7 @@
  */
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { GLOBAL_MASTER_ID, globalMaster } from "./controller-mapping";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -79,14 +80,9 @@ async function submissionsFor(
   );
 }
 
-/** Returns the stored level of the only master in the showfile. */
+/** Returns the stored level of the new show's global intensity master. */
 async function masterLevel(page: Page): Promise<number | undefined> {
-  return page.evaluate(() => {
-    const masters = Object.values(
-      (window as any).appStores.masters.get(),
-    ) as Array<{ level_percent: number }>;
-    return masters[0]?.level_percent;
-  });
+  return (await globalMaster(page))?.level_percent;
 }
 
 test("dragging a master level streams updates and commits one undoable change", async ({
@@ -95,10 +91,9 @@ test("dragging a master level streams updates and commits one undoable change", 
 }) => {
   await openInstrumentedApp(page, backendSlot.backendPort);
   await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
   await expect.poll(() => masterLevel(page)).toBe(100);
 
-  const row = page.locator("[data-master-id]").first();
+  const row = page.locator(`[data-master-id="${GLOBAL_MASTER_ID}"]`);
   const handle = row.getByRole("slider");
   await expect(handle).toBeVisible();
   const box = await row.locator(".range-slider").boundingBox();

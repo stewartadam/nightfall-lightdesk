@@ -64,7 +64,7 @@ pub mod prelude {
     pub use crate::group_command::GroupOperation;
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
-        MasterCommand, MasterKind, MasterMode, MasterTarget,
+        MasterCommand, MasterKind, MasterMode, MasterTarget, add_default_show_masters,
     };
     pub use crate::resources::ExclusiveResource;
     pub use crate::resources::network_stats::{NetworkOutputSendFailure, NetworkStats};

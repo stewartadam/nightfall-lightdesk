@@ -7,6 +7,7 @@
  */
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { globalMaster } from "./controller-mapping";
 import { gridCellByKey } from "./data-grid-selectors";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
@@ -57,19 +58,10 @@ test("an OSC mapping whose master is deleted shows a diagnostic in the OSC panel
 }) => {
   await openApp(page, backendSlot.backendPort);
   await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
   await expect
-    .poll(() =>
-      page.evaluate(
-        () => Object.keys((window as any).appStores.masters.get()).length,
-      ),
-    )
-    .toBe(1);
-  const master = await page.evaluate(
-    () =>
-      (Object.values((window as any).appStores.masters.get())[0] as any)
-        .identifiers as { id: number; uid: string },
-  );
+    .poll(async () => (await globalMaster(page))?.level_percent)
+    .toBe(100);
+  const master = (await globalMaster(page)).identifiers;
 
   const mappingId = crypto.randomUUID().replaceAll("-", "");
   const upsert = await page.evaluate(

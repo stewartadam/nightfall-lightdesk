@@ -185,6 +185,58 @@ impl Master {
             MasterMode::Disabled => false,
         }
     }
+
+    /// Builds the always-on master at full level that a new show starts with for a master kind.
+    ///
+    /// Intensity masters cover every fixture and rate masters cover every live instance, so
+    /// the pair gives each new show one grand intensity fader and one show-wide speed fader.
+    fn global(id: u32, uid: Uuid, kind: MasterKind, label: &str) -> Self {
+        let target = match kind {
+            MasterKind::InhibitiveIntensity => MasterTarget::Fixtures(FixtureMasterTarget::All),
+            MasterKind::PlaybackRate => MasterTarget::Instances(InstanceMasterTarget::All),
+        };
+        Self {
+            identifiers: Identifiers {
+                id,
+                uid,
+                label: label.to_owned(),
+            },
+            kind,
+            target,
+            mode: MasterMode::AlwaysOn,
+            level_percent: default_master_level(),
+        }
+    }
+}
+
+/// Stable UID of the global intensity master every new show starts with.
+pub const DEFAULT_INTENSITY_MASTER_UID: Uuid =
+    Uuid::from_u128(0x6e66_6d61_7374_4000_8000_0000_0000_0001);
+
+/// Stable UID of the global rate master every new show starts with.
+pub const DEFAULT_RATE_MASTER_UID: Uuid =
+    Uuid::from_u128(0x6e66_6d61_7374_4000_8000_0000_0000_0002);
+
+/// Adds the global intensity master (ID 1) and global rate master (ID 2) to a new, empty show.
+///
+/// Both start at 100%, so they leave output and playback speed untouched until someone moves
+/// them. Their UIDs are the same in every show, so merging one new show into another matches
+/// the defaults instead of colliding on their numeric IDs.
+pub fn add_default_show_masters(
+    masters: &mut DataProvider<Master>,
+) -> Result<(), DataStoreError<Master>> {
+    masters.add(Master::global(
+        1,
+        DEFAULT_INTENSITY_MASTER_UID,
+        MasterKind::InhibitiveIntensity,
+        "Global Intensity Master",
+    ))?;
+    masters.add(Master::global(
+        2,
+        DEFAULT_RATE_MASTER_UID,
+        MasterKind::PlaybackRate,
+        "Global Rate Master",
+    ))
 }
 
 /// User and UI commands that mutate master configuration or levels.
@@ -455,7 +507,12 @@ pub fn apply_master_inhibition(
         .iter()
         .filter_map(|entry| {
             let master = entry.value().clone();
-            (master.kind == MasterKind::InhibitiveIntensity && master.is_active()).then_some(master)
+            // A master at full level scales by 1.0, so skipping it keeps the default global
+            // master from forcing the per-parameter loop every frame.
+            (master.kind == MasterKind::InhibitiveIntensity
+                && master.is_active()
+                && master.normalized_level() < 1.0)
+                .then_some(master)
         })
         .collect();
 

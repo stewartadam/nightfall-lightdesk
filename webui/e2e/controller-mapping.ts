@@ -86,40 +86,44 @@ export function mappingClients(page: Page): Promise<number> {
   );
 }
 
-/** Returns the only master in the showfile. */
-export async function onlyMaster(page: Page): Promise<MasterSnapshot> {
+/** Numeric ID of the global intensity master every new show starts with. */
+export const GLOBAL_MASTER_ID = 1;
+
+/** Returns the new show's default global intensity master from the frontend store. */
+export async function globalMaster(page: Page): Promise<MasterSnapshot> {
   return page.evaluate(
-    () => Object.values((window as any).appStores.masters.get())[0] as never,
+    (id) =>
+      Object.values((window as any).appStores.masters.get()).find(
+        (master: any) => master.identifiers.id === id,
+      ) as never,
+    GLOBAL_MASTER_ID,
   );
 }
 
-/** Creates the showfile's only master, a global intensity master at full level. */
-export async function createGlobalMaster(page: Page): Promise<void> {
+/** Opens the Masters panel and waits for the default global intensity master at full level. */
+export async function openGlobalMaster(page: Page): Promise<void> {
   await openPanel(page, "Masters");
-  await page.getByRole("button", { name: "New intensity global" }).click();
   await expect
-    .poll(async () => (await onlyMaster(page))?.level_percent)
+    .poll(async () => (await globalMaster(page))?.level_percent)
     .toBe(100);
 }
 
-/** Creates the showfile's only master as a global toggle master that starts off. */
-export async function createToggleMaster(page: Page): Promise<void> {
-  await createGlobalMaster(page);
+/** Switches the default global intensity master to a toggle master that starts off. */
+export async function makeGlobalMasterToggle(page: Page): Promise<void> {
+  await openGlobalMaster(page);
   await page
-    .locator("[data-master-id] select")
-    .first()
+    .locator(`[data-master-id="${GLOBAL_MASTER_ID}"] select`)
     .selectOption("toggle-off");
   await expect
-    .poll(async () => (await onlyMaster(page)).mode.type)
+    .poll(async () => (await globalMaster(page)).mode.type)
     .toBe("Toggle");
 }
 
-/** Sets the only master's level through the backend and waits for it to apply. */
-export async function setOnlyMasterLevel(
+/** Sets the global intensity master's level through the backend and waits for it to apply. */
+export async function setGlobalMasterLevel(
   page: Page,
   levelPercent: number,
 ): Promise<void> {
-  const { id } = (await onlyMaster(page)).identifiers;
   await page.evaluate(
     ({ id, levelPercent }) =>
       (window as any).appStores.sendAndAwait({
@@ -129,9 +133,9 @@ export async function setOnlyMasterLevel(
           data: { id, level_percent: levelPercent },
         },
       }),
-    { id, levelPercent },
+    { id: GLOBAL_MASTER_ID, levelPercent },
   );
   await expect
-    .poll(async () => (await onlyMaster(page)).level_percent)
+    .poll(async () => (await globalMaster(page)).level_percent)
     .toBeCloseTo(levelPercent, 3);
 }
