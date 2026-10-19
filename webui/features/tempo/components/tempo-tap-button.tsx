@@ -6,12 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { JSX } from "solid-js";
 import { sendTap } from "../controllers/tempo-controller";
 import "./tempo.css";
 
 interface TempoTapButtonProps {
   /** Extra classes that size the pad for its surface. */
   class?: string;
+  /** What the pad shows; a plain "Tap" when omitted. */
+  children?: JSX.Element;
 }
 
 /**
@@ -37,7 +40,7 @@ export function TempoTapButton(props: TempoTapButtonProps) {
         }
       }}
     >
-      Tap
+      {props.children ?? "Tap"}
     </button>
   );
 }

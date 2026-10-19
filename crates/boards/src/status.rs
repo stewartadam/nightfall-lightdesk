@@ -229,7 +229,9 @@ impl BoardObjects<'_, '_> {
                     })
                     .collect()
             }
-            BoardElementKind::Frame { .. } | BoardElementKind::Label => Vec::new(),
+            BoardElementKind::Frame { .. } | BoardElementKind::Label | BoardElementKind::Tempo => {
+                Vec::new()
+            }
         }
     }
 

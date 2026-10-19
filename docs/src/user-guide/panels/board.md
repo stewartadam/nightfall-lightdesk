@@ -27,6 +27,7 @@ Add elements from the **+** menu, drag across empty cells to add one sized to th
 - **Collections** that fill themselves from a filter, such as "blueprints 1-10 whose label contains wash", and pick up matching objects as they are created.
 - **Frames** that group buttons under a title.
 - **Labels** for notes and headings.
+- **Tempo** pads that show the show tempo with its beat dots. Pressing one in Operate mode taps the tempo; see [Show tempo and tap tempo](../tempo.md).
 
 You can also drag clips, groups, blueprints, and masters straight onto a board from their own panels, in either mode; a highlight shows where the button will land.
 

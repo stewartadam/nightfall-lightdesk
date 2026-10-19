@@ -10,6 +10,7 @@ import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { FrameCornersIcon } from "@squidlab/phosphor-solid/frame-corners";
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import { HandTapIcon } from "@squidlab/phosphor-solid/hand-tap";
+import { MetronomeIcon } from "@squidlab/phosphor-solid/metronome";
 import { PencilSimpleIcon } from "@squidlab/phosphor-solid/pencil-simple";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
@@ -95,6 +96,12 @@ function AddElementMenu(props: BoardPanelViewProps) {
         onClick={() => controller.addElement({ type: "Label" })}
       >
         Label
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        icon={MetronomeIcon}
+        onClick={() => controller.addElement({ type: "Tempo" })}
+      >
+        Tempo
       </DropdownMenuItem>
     </DropdownMenu>
   );

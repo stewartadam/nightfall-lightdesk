@@ -77,7 +77,8 @@ export type BoardAddRequest =
   | { type: "Target"; targetType: BoardTargetType }
   | { type: "Collection"; targetType: BoardTargetType }
   | { type: "Frame" }
-  | { type: "Label" };
+  | { type: "Label" }
+  | { type: "Tempo" };
 
 /**
  * Owns one Board panel instance: which board it shows, edit mode and element selection, and
@@ -310,6 +311,7 @@ export function createBoardPanelController(
         break;
       case "Frame":
       case "Label":
+      case "Tempo":
         element = createDecorationElement(request.type, cell);
         break;
     }

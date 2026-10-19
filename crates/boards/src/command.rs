@@ -245,7 +245,7 @@ fn validate_element(element: &BoardElement) -> Result<(), CommandError> {
     let object_type = match &element.kind {
         BoardElementKind::Target { target } => Some(target.object_type),
         BoardElementKind::Collection { query, .. } => Some(query.object_type),
-        BoardElementKind::Frame { .. } | BoardElementKind::Label => None,
+        BoardElementKind::Frame { .. } | BoardElementKind::Label | BoardElementKind::Tempo => None,
     };
     if let Some(object_type) = object_type
         && !BOARD_TARGET_TYPES.contains(&object_type)
@@ -423,6 +423,47 @@ mod tests {
                 shown: false,
             },
         ));
+    }
+
+    /// A tempo pad is stored like any other element and, not being a frame, may not cover a
+    /// button.
+    #[test]
+    fn tempo_pads_store_and_keep_clear_of_buttons() {
+        let mut app = board_command_app();
+        run(&mut app, BoardCommand::StoreBoard(board(1)));
+        let tempo_at = |x: u32| BoardElement {
+            cell: BoardCell {
+                x,
+                y: 0,
+                width: 8,
+                height: 3,
+            },
+            kind: BoardElementKind::Tempo,
+            ..Default::default()
+        };
+        assert!(run(
+            &mut app,
+            BoardCommand::StoreBoardElement {
+                board_id: 1,
+                element: group_button(0, 0),
+            },
+        ));
+        assert!(!run(
+            &mut app,
+            BoardCommand::StoreBoardElement {
+                board_id: 1,
+                element: tempo_at(0),
+            },
+        ));
+        let tempo = tempo_at(4);
+        assert!(run(
+            &mut app,
+            BoardCommand::StoreBoardElement {
+                board_id: 1,
+                element: tempo.clone(),
+            },
+        ));
+        assert_eq!(stored(&app, 1).element(tempo.uid), Some(&tempo));
     }
 
     /// Elements may sit anywhere on the open grid up to its far edge.

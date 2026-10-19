@@ -2,7 +2,7 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-Nightfall keeps one tempo for the whole show. The [Tempo panel](panels/tempo.md) shows it as a BPM readout with a row of beat dots, where the larger dot is beat 1 of the bar, and holds the Tap pad and the controls below. Open it from the Command Palette, or keep it in your performance layout. Everything that follows the tempo, such as the [Show Tempo flow node](#flows), reads this same clock.
+Nightfall keeps one tempo for the whole show. The [Tempo panel](panels/tempo.md) shows it as a BPM readout with a row of beat dots, where the larger dot is beat 1 of the bar, and holds the Tap pad and the controls below. Open it from the Command Palette, or keep it in your performance layout. To tap from a busking board, add a **Tempo** element to the [board](panels/board.md): it shows the BPM and beat dots, and pressing it taps. Everything that follows the tempo, such as the [Show Tempo flow node](#flows), reads this same clock.
 
 ## Tapping a tempo
 

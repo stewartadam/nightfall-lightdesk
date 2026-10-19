@@ -286,6 +286,8 @@ pub enum BoardElementKind {
     /// Static heading text.
     #[default]
     Label,
+    /// The show tempo: a beat indicator and BPM readout that work as a tap tempo pad.
+    Tempo,
 }
 
 impl BoardElementKind {

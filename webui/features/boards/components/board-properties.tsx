@@ -393,23 +393,25 @@ export function ElementSettings(
           />
         )}
       </Show>
-      <CommitField
-        label={hasTitleSetting(kind()) ? "Title" : "Label"}
-        placeholder={
-          kind().type === "Target"
-            ? "Object label"
-            : kind().type === "Collection"
-              ? "What it shows"
-              : "None"
-        }
-        value={props.element.label ?? ""}
-        onCommit={(label) =>
-          controller.storeElement({
-            ...props.element,
-            label: label.trim() ? label : undefined,
-          })
-        }
-      />
+      <Show when={kind().type !== "Tempo"}>
+        <CommitField
+          label={hasTitleSetting(kind()) ? "Title" : "Label"}
+          placeholder={
+            kind().type === "Target"
+              ? "Object label"
+              : kind().type === "Collection"
+                ? "What it shows"
+                : "None"
+          }
+          value={props.element.label ?? ""}
+          onCommit={(label) =>
+            controller.storeElement({
+              ...props.element,
+              label: label.trim() ? label : undefined,
+            })
+          }
+        />
+      </Show>
       <Show when={hasTitleSetting(kind())}>
         <label class="flex items-center gap-2 text-xs text-neutral-300">
           <Checkbox
@@ -509,6 +511,8 @@ function kindTitle(kind: types.BoardElementKind): string {
       return "Frame";
     case "Label":
       return "Label";
+    case "Tempo":
+      return "Tempo";
   }
 }
 
