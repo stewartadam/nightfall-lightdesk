@@ -227,7 +227,7 @@ Each external source's input service decodes frames on its own thread and stores
 
 The showfile is the saved show: the rig, the programming, the controls, and the settings. On the native hosts, the engine reads and writes showfiles in its data directory. The showfile format is versioned JSON, and older showfiles go through migrations when they load.
 
-Loading a showfile doesn't edit the running show in place. The host builds a fresh engine world from the showfile and swaps it in once it is complete, so a failed load leaves the current show running. The client connections and the IO services belong to the process rather than to the world, so they carry over. After the swap, the engine tells every client that the world was replaced, and each client asks for fresh state, as it does when it first connects.
+Loading a showfile doesn't edit the running show in place. The host builds a fresh engine world from the showfile and swaps it in once it is complete. When the new world fails to build, the engine keeps the current world running and reports the failure. [Showfiles and loading a show](showfiles.md) describes what a failed load can still change. The client connections and the IO services belong to the process rather than to the world, so they carry over. After the swap, the engine tells every client that the world was replaced, and each client asks for fresh state, as it does when it first connects.
 
 The engine also keeps a draft of unsaved work. It saves a changed draft every 60 seconds and when the last client disconnects, so closing the last browser tab doesn't lose work.
 
