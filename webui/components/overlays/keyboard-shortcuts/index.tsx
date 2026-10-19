@@ -14,19 +14,27 @@ import {
   Index,
   type JSX,
   Show,
+  untrack,
 } from "solid-js";
+import { getFocusedComponentId } from "../../../lib/componentFocusContext";
 import {
   allShortcuts,
   type KeyboardShortcut,
 } from "../../../lib/keyboardShortcuts";
+import {
+  findPanelDefinitionById,
+  findPanelDefinitionByName,
+} from "../../../lib/panel-definitions";
 import { useAppShell } from "../../providers/app-shell";
+import { Badge } from "../../ui/badge";
 import { Dialog, DialogBody } from "../../ui/dialog";
 import { EmptyState } from "../../ui/empty-state";
 import { HighlightedText } from "../../ui/highlighted-text";
 import { Kbd, KbdShortcut } from "../../ui/kbd";
 import { SearchField } from "../../ui/search-field";
 import { searchTerms } from "../../ui/search-match";
-import { matchesShortcutSearch, mergeShortcutRows } from "./shortcut-search";
+import { GLOBAL_GROUP, groupShortcuts } from "./shortcut-groups";
+import { matchesShortcutSearch } from "./shortcut-search";
 
 /**
  * Component that displays all registered keyboard shortcuts in a popup
@@ -38,79 +46,60 @@ export default function ShortcutsPopup() {
     useAppShell();
   const [query, setQuery] = createSignal("");
 
-  /** Starts every opening of the dialog with the full, unfiltered list. */
+  const [activeComponentId, setActiveComponentId] = createSignal<string | null>(
+    null,
+  );
+
+  /**
+   * Starts every opening of the dialog with the full, unfiltered list, and remembers which panel
+   * was active when it opened so that panel's shortcuts can be listed first.
+   */
   createEffect(() => {
-    if (!isShortcutsPopupVisible()) setQuery("");
+    if (isShortcutsPopupVisible()) {
+      setActiveComponentId(
+        untrack(
+          () =>
+            getFocusedComponentId() ?? dockviewApi()?.activePanel?.id ?? null,
+        ),
+      );
+    } else {
+      setQuery("");
+    }
   });
 
-  /** Resolve a human-friendly display name for a group key (panel id or component id) */
-  const getDisplayName = (groupKey: string): string => {
-    if (groupKey === "Global") return "Global";
-
-    // Try to resolve via the dockview API (panels store titles there)
-    try {
-      const panel = dockviewApi()?.getPanel(groupKey as any);
-      if (panel?.title) return panel.title as string;
-    } catch (_e) {
-      // ignore - getPanel may throw if id is not a panel id
-    }
-
-    // Final fallback to the raw group key
-    return groupKey;
+  /**
+   * Names the group a shortcut is listed under: its explicit group, else the type of the panel
+   * that registered it (so every open Timelines panel shares "Timelines"), else Global.
+   */
+  const groupLabel = (shortcut: KeyboardShortcut): string => {
+    if (shortcut.group) return shortcut.group;
+    const componentId = shortcut.componentId;
+    if (!componentId) return GLOBAL_GROUP;
+    const definition =
+      findPanelDefinitionById(componentId) ??
+      findPanelDefinitionByName(
+        dockviewApi()?.getPanel(componentId)?.api.component ?? "",
+      );
+    return definition?.title ?? componentId;
   };
 
   /** Lower-cased words of the search query, shared by filtering and highlighting. */
   const terms = createMemo(() => searchTerms(query()));
 
   /**
-   * Groups the shortcuts that match the search query by panel, sorted by key within each group
-   * and merged into one row per action, with Global first and the remaining groups alphabetical.
-   * Groups without matches are omitted.
+   * Groups the shortcuts that match the search query by panel type, with Global first and the
+   * active panel's type next. Groups without matches are omitted.
    */
   const organizedShortcuts = createMemo(() => {
-    const currentShortcuts = allShortcuts();
-    const searchTerms = terms();
-    const groups: Record<string, KeyboardShortcut[]> = {};
-
-    for (const shortcut of currentShortcuts) {
-      const groupKey = shortcut.group || shortcut.componentId || "Global";
-      const searchable = {
+    const searchTermList = terms();
+    const matching = allShortcuts().filter((shortcut) =>
+      matchesShortcutSearch(searchTermList, {
         description: shortcut.description,
         key: shortcut.key,
-        groupLabel: getDisplayName(groupKey),
-      };
-      if (!matchesShortcutSearch(searchTerms, searchable)) continue;
-      if (!groups[groupKey]) {
-        groups[groupKey] = [];
-      }
-      groups[groupKey].push(shortcut);
-    }
-
-    // Sort each group by key
-    for (const key of Object.keys(groups)) {
-      groups[key].sort((a, b) =>
-        a.key.localeCompare(b.key, undefined, { numeric: true }),
-      );
-    }
-
-    // Ensure Global comes first
-    const orderedGroups: [string, KeyboardShortcut[]][] = [];
-
-    if (groups.Global) {
-      orderedGroups.push(["Global", groups.Global]);
-    }
-
-    // Add other panels in alphabetical order
-    for (const entry of Object.entries(groups)
-      .filter(([key]) => key !== "Global")
-      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))) {
-      orderedGroups.push(entry);
-    }
-
-    return orderedGroups.map(
-      ([groupKey, shortcuts]) =>
-        [groupKey, mergeShortcutRows(shortcuts)] as const,
+        groupLabel: groupLabel(shortcut),
+      }),
     );
+    return groupShortcuts(matching, groupLabel, activeComponentId());
   });
 
   return (
@@ -150,14 +139,16 @@ export default function ShortcutsPopup() {
           <Index each={organizedShortcuts()}>
             {(group) => (
               <div class="mb-8 break-inside-avoid">
-                <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
-                  <HighlightedText
-                    text={getDisplayName(group()[0])}
-                    terms={terms()}
-                  />
+                <h3 class="flex items-center gap-2 text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
+                  <HighlightedText text={group().label} terms={terms()} />
+                  <Show when={group().active}>
+                    <Badge size="xs" appearance="soft" tone="accent">
+                      Active panel
+                    </Badge>
+                  </Show>
                 </h3>
                 <div class="space-y-2">
-                  <Index each={group()[1]}>
+                  <Index each={group().rows}>
                     {(row) => (
                       <div class="flex items-center text-sm gap-2">
                         <span class="flex shrink-0 flex-col items-start gap-1">

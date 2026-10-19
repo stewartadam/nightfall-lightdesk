@@ -69,7 +69,8 @@ export interface ShortcutRow {
 /**
  * Collapses shortcuts that share a description into one row listing each of their keys, such as
  * Backspace and Delete both deleting the selection. Rows keep the order in which each
- * description first appears, and keys keep their input order.
+ * description first appears, and keys keep their input order without repeats, so two open
+ * instances of a panel binding the same key list it once.
  */
 export function mergeShortcutRows(
   shortcuts: readonly { description: string; key: string }[],
@@ -78,7 +79,7 @@ export function mergeShortcutRows(
   for (const shortcut of shortcuts) {
     const row = rows.get(shortcut.description);
     if (row) {
-      row.keys.push(shortcut.key);
+      if (!row.keys.includes(shortcut.key)) row.keys.push(shortcut.key);
     } else {
       rows.set(shortcut.description, {
         description: shortcut.description,

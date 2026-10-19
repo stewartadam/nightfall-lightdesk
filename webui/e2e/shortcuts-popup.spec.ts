@@ -135,6 +135,28 @@ test("filters shortcuts from the search field", async ({ page }, testInfo) => {
   await expect(search).toHaveValue("");
 });
 
+/** Verifies the active panel's shortcuts follow Global and carry the active marker. */
+test("lists the active panel's shortcuts right after Global", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?e2e=1");
+  await expect(page.locator("button[title='Menu']")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Clips", exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+Shift+P");
+  const commandPaletteInput = page.getByPlaceholder(
+    "Type a command or search...",
+  );
+  await commandPaletteInput.fill("Show Keyboard Shortcuts");
+  await commandPaletteInput.press("Enter");
+
+  const headings = page.locator('[data-dialog-kind="shortcuts"] h3');
+  await expect(headings.nth(0)).toHaveText("Global");
+  await expect(headings.nth(1)).toHaveText("ClipsActive panel");
+  await expect(headings.filter({ hasText: "Active panel" })).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath("active-panel.png") });
+});
+
 /** Verifies command palette shortcuts still work while text inputs are focused. */
 test("command palette opens from focused text input", async ({ page }) => {
   await page.goto("/?e2e=1");
