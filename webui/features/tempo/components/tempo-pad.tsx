@@ -18,6 +18,8 @@ import "./tempo.css";
 interface TempoPadProps {
   /** Extra classes that size the pad for its surface. */
   class?: string;
+  /** Takes the pad out of the tab order, such as while a board is being edited. */
+  unfocusable?: boolean;
 }
 
 /**
@@ -29,7 +31,10 @@ export function TempoPad(props: TempoPadProps) {
   const tempo = useStore(showTempo);
   const beat = createBeatInBar();
   return (
-    <TempoTapButton class={`nf-tempo-pad ${props.class ?? ""}`}>
+    <TempoTapButton
+      class={`nf-tempo-pad ${props.class ?? ""}`}
+      unfocusable={props.unfocusable}
+    >
       <Show
         when={tempo()}
         fallback={<span class="nf-tempo-pad-hint">Tap</span>}

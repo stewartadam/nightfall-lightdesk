@@ -232,7 +232,10 @@ function ElementContent(props: {
         <div class="nf-board-label">{props.element.label}</div>
       </Show>
       <Show when={kind().type === "Tempo"}>
-        <TempoPad class="nf-board-tempo" />
+        <TempoPad
+          class="nf-board-tempo"
+          unfocusable={props.controller.editing()}
+        />
       </Show>
     </>
   );

@@ -608,8 +608,10 @@ test("board tempo pad shows and taps the show tempo", async ({
   await page.waitForTimeout(600);
   await tempo.click();
   expect(await targetBpm()).toBe(120);
+  await expect(pad).toHaveAttribute("tabindex", "-1");
 
   await panel.getByRole("tab", { name: "Operate" }).click();
+  await expect(pad).not.toHaveAttribute("tabindex", "-1");
   for (let index = 0; index < 6; index += 1) {
     await pad.dispatchEvent("pointerdown", { button: 0 });
     await page.waitForTimeout(400);

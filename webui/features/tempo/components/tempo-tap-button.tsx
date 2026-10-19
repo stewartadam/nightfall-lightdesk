@@ -13,6 +13,8 @@ import "./tempo.css";
 interface TempoTapButtonProps {
   /** Extra classes that size the pad for its surface. */
   class?: string;
+  /** Takes the pad out of the tab order, such as while a board is being edited. */
+  unfocusable?: boolean;
   /** What the pad shows; a plain "Tap" when omitted. */
   children?: JSX.Element;
 }
@@ -27,6 +29,7 @@ export function TempoTapButton(props: TempoTapButtonProps) {
     <button
       type="button"
       class={`nf-tempo-tap-pad ${props.class ?? ""}`}
+      tabIndex={props.unfocusable ? -1 : undefined}
       aria-label="Tap tempo"
       data-testid="tempo-tap"
       onPointerDown={(event) => {
