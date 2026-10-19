@@ -80,7 +80,7 @@ function SequenceCard(props: SequenceCardProps) {
         );
       }}
     >
-      <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
+      <div class="flex h-5.5 min-w-0 items-center gap-1 font-medium text-neutral-200">
         <span>{props.sequence.identifiers.id}:</span>
         <Show
           when={controller.editingCardLabelUid() === sequenceUid}
@@ -99,7 +99,9 @@ function SequenceCard(props: SequenceCardProps) {
           />
         </Show>
         <Show when={props.sequence.wrap}>
-          <SequenceWrapTag />
+          <span class="ml-auto pl-1">
+            <SequenceWrapTag />
+          </span>
         </Show>
       </div>
       <div class="mt-1 text-xs text-neutral-400">

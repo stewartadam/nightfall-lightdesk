@@ -44,7 +44,7 @@ for (const component of [
     const panel = page.locator(
       `[data-component="${component}"][data-panel-id="view-animation-check"]`,
     );
-    await panel.getByRole("button", { name: "Switch to grid view" }).click();
+    await panel.getByRole("radio", { name: "Grid view" }).click();
     for (const [mode, offset] of [
       ["list", "-100%"],
       ["grid", "100%"],
@@ -53,7 +53,9 @@ for (const component of [
       // trip lets the short slide finish first on a loaded machine.
       expect(
         await panel
-          .getByRole("button", { name: `Switch to ${mode} view` })
+          .getByRole("radio", {
+            name: mode === "list" ? "List view" : "Grid view",
+          })
           .evaluate(async (button) => {
             const root = button.closest("[data-panel-id]")!;
             (button as HTMLButtonElement).click();
@@ -85,10 +87,10 @@ for (const component of [
       .locator(".animate-in")
       .evaluate((element) => element.getAnimations()[0].finish());
     await expect(panel.locator(".animate-in")).toHaveCount(0);
-    await panel.getByRole("button", { name: "Switch to grid view" }).click();
+    await panel.getByRole("radio", { name: "Grid view" }).click();
     await expect(panel.locator(".animate-in")).toHaveCount(0);
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await panel.getByRole("button", { name: "Switch to list view" }).click();
+    await panel.getByRole("radio", { name: "List view" }).click();
     await expect(panel.locator(".animate-in")).toHaveCount(0);
   });
 }

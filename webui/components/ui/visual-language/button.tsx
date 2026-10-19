@@ -19,6 +19,7 @@ export type ButtonSize =
   | "compact"
   | "icon"
   | "icon-compact"
+  | "icon-inline"
   | "inline";
 
 export interface ButtonProps

@@ -19,7 +19,6 @@ import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { SunIcon } from "@squidlab/phosphor-solid/sun";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { VideoCameraIcon } from "@squidlab/phosphor-solid/video-camera";
-import { Dynamic } from "solid-js/web";
 import { v4 as uuidv4 } from "uuid";
 /**
  * Toolbar for Visualizer interaction modes and view/debug toggles.
@@ -37,6 +36,10 @@ import type { AppIcon } from "../../../components/ui/icon";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../../components/ui/segmented-control";
 import {
   TOOLBAR_BUTTON_CLASS,
   ToggleToolbarButton,
@@ -89,6 +92,14 @@ const TOOL_OPTIONS: ReadonlyArray<{
     shortcut: "S",
   },
 ];
+
+const TOOL_SEGMENTS: readonly SegmentedControlOption<VisualizerInteractionMode>[] =
+  TOOL_OPTIONS.map((option) => ({
+    value: option.mode,
+    icon: option.icon,
+    ariaLabel: `${option.label} (${option.shortcut})`,
+    tooltip: `${option.label} (${option.shortcut})`,
+  }));
 
 /**
  * Renders tool mode buttons plus emitter/label/grid toggles.
@@ -274,18 +285,13 @@ export const VisualizerToolToolbar: Component = () => {
         }
         right={
           <>
-            {TOOL_OPTIONS.map((option) => {
-              const isActive = () => context.toolMode() === option.mode;
-              return (
-                <ToggleToolbarButton
-                  label={`${option.label} (${option.shortcut})`}
-                  pressed={isActive()}
-                  onClick={() => context.setToolMode(option.mode)}
-                >
-                  <Dynamic component={option.icon} class="size-4" aria-hidden />
-                </ToggleToolbarButton>
-              );
-            })}
+            <SegmentedControl
+              label="Tool"
+              density="compact"
+              options={TOOL_SEGMENTS}
+              value={context.toolMode()}
+              onChange={context.setToolMode}
+            />
 
             <ToolbarSeparator />
 

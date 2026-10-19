@@ -6,8 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-/* Visual tokens shared by SegmentedTabs and SegmentedControl so both read as one family. */
-:root {
+/*
+ * Visual tokens shared by SegmentedTabs and SegmentedControl so both read as one family. They are
+ * declared on the components so accent tokens resolve against the panel's own (possibly muted) accent.
+ */
+.nf-segmented-control,
+.nf-segmented-tabs {
   --nf-segmented-track-border: #2a2d2f;
   --nf-segmented-track-surface: #0e0f10;
   --nf-segmented-item-color: var(--muted, #9ca3af);

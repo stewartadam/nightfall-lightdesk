@@ -711,49 +711,49 @@ test("toolbar catalog demonstrates shared action and toggle states", async ({
     .getByRole("button", { name: "Add sample group", exact: true })
     .click();
   await expect(panel.getByRole("status")).toHaveText("Sample group added.");
-  await panel.getByRole("button", { name: "List view", exact: true }).click();
+  const views = panel.getByRole("radiogroup", { name: "View", exact: true });
+  await views.getByRole("radio", { name: "List view", exact: true }).click();
   await expect(
-    panel.getByRole("button", { name: "List view", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    views.getByRole("radio", { name: "List view", exact: true }),
+  ).toHaveAttribute("aria-checked", "true");
   await expect(
-    panel.getByRole("button", { name: "Grid view", exact: true }),
-  ).toHaveAttribute("aria-pressed", "false");
-  const listView = panel.getByRole("button", {
-    name: "List view",
+    views.getByRole("radio", { name: "Grid view", exact: true }),
+  ).toHaveAttribute("aria-checked", "false");
+  const loop = panel.getByRole("button", {
+    name: "Loop preview",
     exact: true,
   });
-  await listView.hover();
+  await loop.hover();
   await page.mouse.down();
-  await expect(listView).toHaveCSS("filter", "brightness(0.82)");
-  await expect(listView).toHaveCSS(
-    "transform",
-    "matrix(0.98, 0, 0, 0.98, 0, 2)",
-  );
-  await expect(listView).toHaveAttribute("aria-pressed", "true");
+  await expect(loop).toHaveCSS("filter", "brightness(0.82)");
+  await expect(loop).toHaveCSS("transform", "matrix(0.98, 0, 0, 0.98, 0, 2)");
   await page.mouse.up();
-  await expect(listView).toHaveCSS("transform", "none");
-  const modes = panel.getByRole("group", {
+  await expect(loop).toHaveCSS("transform", "none");
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
+  await loop.click();
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+  const modes = panel.getByRole("radiogroup", {
     name: "Interaction mode",
     exact: true,
   });
   await expect(
-    modes.getByRole("button", { pressed: true }),
+    modes.getByRole("radio", { checked: true }),
   ).toHaveAccessibleName("Camera");
   for (const name of ["Measure", "Move", "Rotate", "Select", "Camera"]) {
-    const mode = modes.getByRole("button", { name, exact: true });
+    const mode = modes.getByRole("radio", { name, exact: true });
     await mode.click();
     await mode.click();
-    await expect(modes.getByRole("button", { pressed: true })).toHaveCount(1);
-    await expect(mode).toHaveAttribute("aria-pressed", "true");
+    await expect(modes.getByRole("radio", { checked: true })).toHaveCount(1);
+    await expect(mode).toHaveAttribute("aria-checked", "true");
     await expect(
       panel.getByText(`${name} mode`, { exact: true }),
     ).toBeVisible();
   }
-  await modes.getByRole("button", { name: "Move", exact: true }).focus();
-  await page.keyboard.press("Space");
+  await modes.getByRole("radio", { name: "Camera", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
   await expect(
-    modes.getByRole("button", { pressed: true }),
-  ).toHaveAccessibleName("Move");
+    modes.getByRole("radio", { checked: true }),
+  ).toHaveAccessibleName("Measure");
 
   const tabs = panel.getByRole("tablist", { name: "Group by", exact: true });
   await expect(panel.getByRole("tabpanel")).toHaveAccessibleName("None");

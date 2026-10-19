@@ -450,9 +450,7 @@ test("cue timings show inherited values and Delete clears overrides", async ({
     const cuePanel = page.locator(
       `[data-panel-id="${context.panelId}"]:visible`,
     );
-    await cuePanel
-      .getByRole("button", { name: "Switch to timings display mode" })
-      .click();
+    await cuePanel.getByRole("radio", { name: "Timings", exact: true }).click();
     const grid = cuePanel
       .locator('[data-grid-owner="cue-editor"]')
       .locator('[data-grid-kind="tanstack"]');
@@ -676,9 +674,7 @@ test("cue timings grid paints preview progress behind timing cells", async ({
   );
 
   const cuePanel = page.locator(`[data-panel-id="${context.panelId}"]:visible`);
-  await cuePanel
-    .getByRole("button", { name: "Switch to timings display mode" })
-    .click();
+  await cuePanel.getByRole("radio", { name: "Timings", exact: true }).click();
   const grid = cuePanel
     .locator('[data-grid-owner="cue-editor"]')
     .locator('[data-grid-kind="tanstack"]');
@@ -1707,9 +1703,7 @@ test("cue timings grid expands fixture rows to element timing rows", async ({
   );
 
   const cuePanel = page.locator(`[data-panel-id="${context.panelId}"]:visible`);
-  await cuePanel
-    .getByRole("button", { name: "Switch to timings display mode" })
-    .click();
+  await cuePanel.getByRole("radio", { name: "Timings", exact: true }).click();
   const grid = cuePanel
     .locator('[data-grid-owner="cue-editor"]')
     .locator('[data-grid-kind="tanstack"]');
@@ -1846,9 +1840,7 @@ test("cue timings fan grouped parent rows within fixtures with Shift+Enter", asy
   );
 
   const cuePanel = page.locator(`[data-panel-id="${context.panelId}"]:visible`);
-  await cuePanel
-    .getByRole("button", { name: "Switch to timings display mode" })
-    .click();
+  await cuePanel.getByRole("radio", { name: "Timings", exact: true }).click();
   const grid = cuePanel
     .locator('[data-grid-owner="cue-editor"]')
     .locator('[data-grid-kind="tanstack"]');
@@ -2162,9 +2154,7 @@ test("cue timings badge varied whole-fixture parent rows within elements", async
     const cuePanel = page.locator(
       `[data-panel-id="${context.panelId}"]:visible`,
     );
-    await cuePanel
-      .getByRole("button", { name: "Switch to timings display mode" })
-      .click();
+    await cuePanel.getByRole("radio", { name: "Timings", exact: true }).click();
     const grid = cuePanel
       .locator('[data-grid-owner="cue-editor"]')
       .locator('[data-grid-kind="tanstack"]');

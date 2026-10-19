@@ -88,6 +88,7 @@ export default function Tooltip(props: TooltipProps) {
   let exitTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let lastAnimationKey: unknown;
   let lastTouchPressAt = Number.NEGATIVE_INFINITY;
+  let focusLeftWithWindow = false;
   let triggerRef: HTMLSpanElement | undefined;
   let tooltipRef: HTMLSpanElement | undefined;
 
@@ -265,6 +266,7 @@ export default function Tooltip(props: TooltipProps) {
     clearCloseTimer();
     timeoutId = setTimeout(() => {
       timeoutId = null;
+      if (!document.hasFocus()) return;
       resetTooltipPosition();
       setVisible(true);
     }, delay());
@@ -302,8 +304,13 @@ export default function Tooltip(props: TooltipProps) {
     handlePointerLeave();
   };
 
-  /** Remembers when a touch press began so the focus it causes does not open the tooltip. */
+  /**
+   * Remembers when a touch press began so the focus it causes does not open
+   * the tooltip. Any press also means the next focus is fresh, not focus the
+   * browser restored after the window became active again.
+   */
   const handleTouchPress = (event: PointerEvent) => {
+    focusLeftWithWindow = false;
     if (event.pointerType === "touch") lastTouchPressAt = performance.now();
   };
 
@@ -349,9 +356,21 @@ export default function Tooltip(props: TooltipProps) {
     document.addEventListener("pointerdown", dismissOnOutsideTap, true);
   };
 
-  /** Opens the tooltip immediately for keyboard focus, but not for focus a tap caused. */
-  const handleFocus = () => {
+  /**
+   * Opens the tooltip immediately for keyboard focus, but not for focus a tap
+   * caused. Focus the browser restores when the window becomes active again
+   * only reopens the tooltip when it was keyboard focus.
+   */
+  const handleFocus = (event: FocusEvent) => {
     if (performance.now() - lastTouchPressAt < TOUCH_FOCUS_WINDOW_MS) return;
+    const restoredWithWindow = focusLeftWithWindow;
+    focusLeftWithWindow = false;
+    if (
+      restoredWithWindow &&
+      event.target instanceof Element &&
+      !event.target.matches(":focus-visible")
+    )
+      return;
     clearOpenTimer();
     clearCloseTimer();
     if (!wantsVisible()) resetTooltipPosition();
@@ -370,6 +389,7 @@ export default function Tooltip(props: TooltipProps) {
   /** Hides the keyboard tooltip after focus leaves the complete interaction. */
   const handleBlur = (event: FocusEvent) => {
     if (retainsInteractiveFocus(event.relatedTarget)) return;
+    focusLeftWithWindow = !document.hasFocus();
     clearOpenTimer();
     clearCloseTimer();
     setVisible(false);
@@ -380,6 +400,22 @@ export default function Tooltip(props: TooltipProps) {
     clearCloseTimer();
     clearExitTimer();
     stopTapDismissal();
+  });
+
+  /**
+   * Hides an open tooltip when the window loses focus, e.g. switching to
+   * another app, since the pointer can leave without a pointerleave event.
+   */
+  createEffect(() => {
+    if (!visible()) return;
+    const handleWindowBlur = () => {
+      clearOpenTimer();
+      clearCloseTimer();
+      stopTapDismissal();
+      setVisible(false);
+    };
+    window.addEventListener("blur", handleWindowBlur);
+    onCleanup(() => window.removeEventListener("blur", handleWindowBlur));
   });
 
   /** Keeps the tooltip mounted briefly after close so opacity can animate out. */

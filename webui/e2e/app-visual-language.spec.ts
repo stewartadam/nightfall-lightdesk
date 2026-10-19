@@ -71,7 +71,7 @@ test("application shares the design lab visual language", async ({
   });
   await page.keyboard.press("Escape");
   await groupsPanel
-    .getByRole("button", { name: "Switch to list view", exact: true })
+    .getByRole("radio", { name: "List view", exact: true })
     .click();
   await expect(page.locator('[role="grid"]:visible').first()).toHaveCSS(
     "background-color",

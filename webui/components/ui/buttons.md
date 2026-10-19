@@ -5,6 +5,7 @@ Use `Button` from `visual-language/button` for ordinary actions. `variant` selec
 - `standard` for dialog footers and prominent actions;
 - `compact` for dense panels, banners, menu headers and preset rows;
 - `icon` (32px) and `icon-compact` (28px) for icon-only actions. Both are square for a lone icon and widen only to fit an icon with a menu caret, such as the compact header's logo menu;
+- `icon-inline` (22px) for a lone icon inside a dense surface, such as the settings button on a clip card;
 - `inline` for a 20px button that sits inside a line of text or a status strip, such as the browser demo's reset action, without raising the line's height.
 
 Native attributes, refs, form submission and event handlers pass through to the button. Icon-only buttons need an accessible label. Pass `tooltip` for hover and focus help instead of `title`; see Tooltips in the README. Do not resize `.nf-button` from surrounding CSS; add a size here instead.

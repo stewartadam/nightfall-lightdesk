@@ -517,15 +517,15 @@ test("boards press blueprints exclusively and select groups", async ({
   // The Boards panel lists boards as cards or rows; clicking a card opens its board.
   await openPanel(page, "Boards");
   const boardList = page.locator('[data-panel-kind="board-list"]');
-  await boardList.getByRole("button", { name: "Switch to grid view" }).click();
+  await boardList.getByRole("radio", { name: "Grid view" }).click();
   await expect(boardList.locator("[data-crud-select-id]")).toHaveCount(2);
   await page.screenshot({ path: testInfo.outputPath("board-list-grid.png") });
-  await boardList.getByRole("button", { name: "Switch to list view" }).click();
+  await boardList.getByRole("radio", { name: "List view" }).click();
   await expect(boardList.getByText("Colors")).toBeAttached();
   // Lets the row grid finish measuring its columns before the screenshot.
   await page.waitForTimeout(500);
   await page.screenshot({ path: testInfo.outputPath("board-list-rows.png") });
-  await boardList.getByRole("button", { name: "Switch to grid view" }).click();
+  await boardList.getByRole("radio", { name: "Grid view" }).click();
   await boardList.getByRole("button", { name: /^Board 1: Busk/ }).click();
   await expect(
     page

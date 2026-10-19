@@ -1225,9 +1225,7 @@ test("cue editor timing input survives live playback fill updates", async ({
     const grid = cueEditorGridForPanel(page, panelId);
     await expect(grid).toBeVisible();
 
-    await panel
-      .getByRole("button", { name: "Switch to timings display mode" })
-      .click();
+    await panel.getByRole("radio", { name: "Timings", exact: true }).click();
 
     const previewTransitions = panel.getByRole("button", {
       name: "Toggle preview transitions",
@@ -2208,9 +2206,7 @@ test("cue editor overwrites tracked values with local assertions", async ({
     await overwrittenCell.click();
     await page.keyboard.press("Delete");
     await expectCueInstructionCount(page, context.cueUid, 0);
-    await panel
-      .getByRole("button", { name: "Switch to timings display mode" })
-      .click();
+    await panel.getByRole("radio", { name: "Timings", exact: true }).click();
     await expect(panel.getByText("No fixture values in cue p0")).toBeVisible();
   } finally {
     await page.evaluate(
@@ -3100,9 +3096,7 @@ test("cue editor toolbar toggles tracked values", async ({
       ).toHaveText(/^20$/);
     }
 
-    await page
-      .getByRole("button", { name: "Switch to timings display mode" })
-      .click();
+    await page.getByRole("radio", { name: "Timings", exact: true }).click();
     await expect(
       gridHeaderByColumnKey(
         grid,
@@ -3444,13 +3438,9 @@ test("cue editor toolbar toggles tracked values", async ({
     panelId = "panel-CueEditor-tracked-values-empty-e2e";
     trackedToggle = cueEditorTrackedToggleForPanel(page, panelId);
     await expect(page.getByText("No fixture values in cue p0")).toBeVisible();
-    await page
-      .getByRole("button", { name: "Switch to timings display mode" })
-      .click();
+    await page.getByRole("radio", { name: "Timings", exact: true }).click();
     await expect(page.getByText("No fixture values in cue p0")).toBeVisible();
-    await page
-      .getByRole("button", { name: "Switch to values display mode" })
-      .click();
+    await page.getByRole("radio", { name: "Values", exact: true }).click();
     await expect(trackedToggle).toHaveAttribute("aria-pressed", "false");
     await trackedToggle.click();
     await expect(trackedToggle).toHaveAttribute("aria-pressed", "true");

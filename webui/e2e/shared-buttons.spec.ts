@@ -52,10 +52,11 @@ test("editor toolbars share the lab button states", async ({
     buttons.getByRole("button", { name: "Unavailable" }),
   ).toBeDisabled();
   await index.getByRole("button", { name: /Toolbars/ }).click();
-  const list = page.getByRole("button", { name: "List view", exact: true });
-  await list.click();
+  const loop = page.getByRole("button", { name: "Loop preview", exact: true });
+  await loop.click();
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
   await page.mouse.move(0, 0);
-  const selected = await buttonAppearance(list);
+  const selected = await buttonAppearance(loop);
 
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
@@ -126,11 +127,12 @@ test("editor toolbars share the lab button states", async ({
     });
   });
   const cueToolbar = page.locator('[data-cue-editor-toolbar="true"]:visible');
-  const timings = cueToolbar.getByRole("button", {
-    name: "Switch to timings display mode",
+  const timings = cueToolbar.getByRole("radio", {
+    name: "Timings",
+    exact: true,
   });
   await timings.click();
-  await expect(timings).toHaveAttribute("aria-pressed", "true");
+  await expect(timings).toHaveAttribute("aria-checked", "true");
   const preview = cueToolbar.getByRole("button", {
     name: "Toggle cue preview",
     exact: true,

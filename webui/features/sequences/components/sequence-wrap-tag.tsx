@@ -7,13 +7,14 @@
  */
 
 import { RepeatIcon } from "@squidlab/phosphor-solid/repeat";
+import { CRUD_CARD_ICON_CLASS } from "../../../components/widgets/crud/crud-panel-styles";
 
 /** Renders the compact visual tag used for sequences that wrap after their final cue. */
 export default function SequenceWrapTag() {
   return (
     <span
       aria-label="Wrap sequence"
-      class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-200"
+      class={`${CRUD_CARD_ICON_CLASS} bg-sky-500/15 text-sky-200`}
       data-sequence-tag="wrap"
       role="img"
       title="Wrap sequence"

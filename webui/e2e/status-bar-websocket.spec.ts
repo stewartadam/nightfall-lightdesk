@@ -129,12 +129,27 @@ test("status bar shows websocket, backend, and frontend frame metrics", async ({
   await expect(separator).toBeVisible();
   await holdDeliveryAndFrameStats(page);
 
-  await expect(statusBar).toContainText(/\d+\.\dms\s*\/\s*\d+\.\dms/);
+  await expect(statusBar).toContainText(/\d+\.\dms.*\d+\.\dms/);
   await expect(statusBar).toContainText(/\d+\sHz/);
   await expect(statusBar).toContainText(/\d+\sFPS/);
   await expect(statusBar).not.toContainText("Backend");
   await expect(statusBar).not.toContainText("UI");
   await page.screenshot({ path: testInfo.outputPath("metrics-separator.png") });
+  const stats = statusBar.locator(
+    '#status-metrics > [data-component="Tooltip"]',
+  );
+  for (const [index, name] of [
+    "Network latency",
+    "UI delivery lag",
+    "Engine frame rate",
+    "UI frame rate",
+  ].entries()) {
+    await stats.nth(index).hover();
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: name }),
+    ).toBeVisible();
+  }
+  await page.screenshot({ path: testInfo.outputPath("metrics-tooltip.png") });
   await statusBar.getByRole("button", { name: "Hide metrics" }).click();
   await expect(statusBar.locator("#status-metrics")).toBeHidden();
   await expect(separator).toBeHidden();

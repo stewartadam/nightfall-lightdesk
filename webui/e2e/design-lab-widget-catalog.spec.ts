@@ -523,6 +523,18 @@ test("tooltip catalog displays placements and interactive content", async ({
   });
 });
 
+/** Verifies a hovered tooltip closes when the window loses focus, as when switching to another app. */
+test("tooltip closes when the window loses focus", async ({ page }) => {
+  const panel = await openDemo(page, "Tooltips", "Tooltip examples");
+  await panel.getByRole("button", { name: "top", exact: true }).hover();
+  const tooltip = page
+    .getByRole("tooltip")
+    .filter({ hasText: "top placement" });
+  await expect(tooltip).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(tooltip).toBeHidden();
+});
+
 /** Verifies alert kinds, border placements, optional titles and icons, the exit transition and timed flashes, and captures the catalog. */
 test("alerts render every kind with a distinct accent border", async ({
   page,

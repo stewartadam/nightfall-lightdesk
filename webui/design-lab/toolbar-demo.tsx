@@ -20,8 +20,8 @@ import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { VideoCameraIcon } from "@squidlab/phosphor-solid/video-camera";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
-import { Dynamic } from "solid-js/web";
 import PanelToolbar, { ToolbarSeparator } from "../components/ui/panel-toolbar";
+import { SegmentedControl } from "../components/ui/segmented-control";
 import { SegmentedTabs } from "../components/ui/segmented-tabs";
 import {
   ToggleToolbarButton,
@@ -104,22 +104,26 @@ export function ToolbarDemo() {
             </>
           }
           right={
-            <>
-              <ToggleToolbarButton
-                label="Grid view"
-                pressed={view() === "grid"}
-                onClick={() => setView("grid")}
-              >
-                <SquaresFourIcon size={16} />
-              </ToggleToolbarButton>
-              <ToggleToolbarButton
-                label="List view"
-                pressed={view() === "list"}
-                onClick={() => setView("list")}
-              >
-                <ListIcon size={16} />
-              </ToggleToolbarButton>
-            </>
+            <SegmentedControl
+              label="View"
+              density="compact"
+              options={[
+                {
+                  value: "grid",
+                  icon: SquaresFourIcon,
+                  ariaLabel: "Grid view",
+                  tooltip: "Grid view",
+                },
+                {
+                  value: "list",
+                  icon: ListIcon,
+                  ariaLabel: "List view",
+                  tooltip: "List view",
+                },
+              ]}
+              value={view()}
+              onChange={setView}
+            />
           }
         />
       </div>
@@ -127,23 +131,18 @@ export function ToolbarDemo() {
         <div class="section-label">Radio modes · 3D visualizer</div>
         <PanelToolbar
           left={
-            <div
-              class="flex items-center gap-0.5"
-              role="group"
-              aria-label="Interaction mode"
-            >
-              <For each={toolModes}>
-                {(mode) => (
-                  <ToggleToolbarButton
-                    label={mode.label}
-                    pressed={toolMode() === mode.label}
-                    onClick={() => setToolMode(mode.label)}
-                  >
-                    <Dynamic component={mode.icon} size={16} aria-hidden />
-                  </ToggleToolbarButton>
-                )}
-              </For>
-            </div>
+            <SegmentedControl
+              label="Interaction mode"
+              density="compact"
+              options={toolModes.map((mode) => ({
+                value: mode.label,
+                icon: mode.icon,
+                ariaLabel: mode.label,
+                tooltip: mode.label,
+              }))}
+              value={toolMode()}
+              onChange={setToolMode}
+            />
           }
           right={<span class="toolbar-readout">{toolMode()} mode</span>}
         />

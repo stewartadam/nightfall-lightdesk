@@ -34,6 +34,7 @@ import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-gr
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
+  CRUD_CARD_ICON_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
@@ -108,12 +109,12 @@ function FxCard(props: FxCardProps) {
           </Show>
         </div>
         <div
-          class="rounded-md border border-neutral-700 bg-neutral-900/70 p-1 text-neutral-300"
+          class={`${CRUD_CARD_ICON_CLASS} border border-neutral-700 bg-neutral-900/70 text-neutral-300`}
           title={`${props.entry.typeLabel} FX`}
         >
           <Dynamic
             component={props.entry.typeIcon}
-            class="size-4"
+            class="size-3"
             aria-hidden
           />
         </div>

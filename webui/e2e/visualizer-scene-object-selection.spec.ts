@@ -241,9 +241,10 @@ test("visualizer click selects scene object and syncs scene object panel", async
   await focusVisualizer(page);
 
   await page.keyboard.press("s");
-  await expect(
-    page.getByRole("button", { name: "Select (S)" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("radio", { name: "Select (S)" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   await clickSeededSceneObject(page);
 
   await expect

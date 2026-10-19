@@ -453,7 +453,7 @@ test("shared timecode tables preserve selection across snapshot updates", async 
     path: test.info().outputPath("shared-timecodes.png"),
     fullPage: true,
   });
-  await panel.getByRole("button", { name: "Switch to grid view" }).click();
+  await panel.getByRole("radio", { name: "Grid view" }).click();
   const card = panel.locator('[data-timecode-uid="tabletimecode"]');
   await expect(card).toHaveAttribute("aria-pressed", "true");
   await expect(card).toContainText("Table clock");
@@ -462,7 +462,7 @@ test("shared timecode tables preserve selection across snapshot updates", async 
     path: test.info().outputPath("timecode-cards.png"),
     fullPage: true,
   });
-  await panel.getByRole("button", { name: "Switch to list view" }).click();
+  await panel.getByRole("radio", { name: "List view" }).click();
   await openPanel(page, "Status Display");
   const controls = page.getByRole("grid", {
     name: "Timecode controls",

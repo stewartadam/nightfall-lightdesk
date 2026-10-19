@@ -212,7 +212,7 @@ async function exerciseRenameSurfaces(
     .locator(`button[data-crud-select-id="${context.sequenceUid}"]:visible`)
     .first();
   const sequencePanel = cardLabel.locator(
-    "xpath=ancestor::div[.//button[@aria-label='Switch to list view']][1]",
+    "xpath=ancestor::div[.//button[@aria-label='List view']][1]",
   );
   await expect(cardLabel).toBeVisible();
   await cardLabel.click({ button: "right" });
@@ -224,7 +224,7 @@ async function exerciseRenameSurfaces(
   await cardInlineEditor.press("Enter");
   await expectSequenceLabel(page, context.sequenceUid, context.inlineLabel);
 
-  await sequencePanel.getByLabel("Switch to list view").click();
+  await sequencePanel.getByRole("radio", { name: "List view" }).click();
   const updatedRowLabel = page
     .locator('[role="gridcell"]:visible')
     .filter({ hasText: context.inlineLabel })
