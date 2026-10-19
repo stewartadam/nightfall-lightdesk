@@ -42,6 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Lists a manual preview run's PR files.
+      pull-requests: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -56,6 +58,21 @@ jobs:
           if [[ "$EVENT_NAME" == pull_request ]]; then
             git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
           fi
+      # A manual preview run checks out the PR's branch without its base, so the PR's file list
+      # stands in for the diff; selection only uses it to decide whether the preview gets docs.
+      - name: Capture the previewed PR's changed paths as data
+        if: inputs.preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PREVIEW_PR: ${{ inputs.preview }}
+        run: |
+          if [[ ! "$PREVIEW_PR" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Invalid preview PR number: $PREVIEW_PR"
+            exit 1
+          fi
+          gh api --paginate "repos/$GH_REPO/pulls/$PREVIEW_PR/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' | tr '\n' '\0' > .ci-changed-files
       # This job never executes repository scripts, installs dependencies, or restores caches.
       - name: Archive credential-free source and Git history
         run: |
@@ -222,8 +239,12 @@ jobs:
 
   preview:
     name: Browser preview
-    needs: [selection, browser-demo]
-    if: needs.selection.outputs.browser_preview == 'true'
+    needs: [selection, browser-demo, docs]
+    # Docs build only when the PR changes them, and a broken book holds back the whole preview.
+    if: >-
+      !cancelled() && needs.selection.outputs.browser_preview == 'true' &&
+      needs.browser-demo.result == 'success' &&
+      (needs.docs.result == 'success' || needs.docs.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Deploys only this run's demo artifact as data; see docs/ci-security.md.
@@ -238,11 +259,21 @@ jobs:
         with:
           name: nightfall-browser-demo-${{ github.sha }}
           path: site/demo/app
+      - name: Download the documentation artifact
+        if: needs.docs.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nightfall-docs-${{ github.sha }}
+          path: site
       - name: Describe the preview Worker
         env:
           WORKER: ${{ vars.CLOUDFLARE_PREVIEW_WORKER }}
         run: |
-          printf '/ /demo/app/ 302\n/demo /demo/app/ 302\n' > site/_redirects
+          # The manual's own index serves the root when the preview includes it.
+          if [[ ! -e site/index.html ]]; then
+            printf '/ /demo/app/ 302\n' > site/_redirects
+          fi
+          printf '/demo /demo/app/ 302\n' >> site/_redirects
           jq -n --arg name "$WORKER" \
             '{name: $name, compatibility_date: "2026-10-01", assets: {directory: "./site"}, previews: {}}' \
             > wrangler.json
@@ -267,8 +298,13 @@ jobs:
             echo "::error::Cloudflare returned an unexpected preview URL"
             exit 1
           fi
+          docs_line=""
+          if [[ -e site/index.html ]]; then
+            docs_line="
+          **Documentation preview:** ${url%/}/"
+          fi
           body="<!-- nightfall-browser-preview -->
-          **Browser preview:** ${url%/}/demo/app/
+          **Browser preview:** ${url%/}/demo/app/${docs_line}
 
           Built from ${HEAD_SHA}. Sign in with Cloudflare Access to open it."
           comment_id="$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
@@ -345,15 +381,29 @@ jobs:
           status=0
           for book in "${books[@]}"; do
             echo "::group::$book"
-            if ! mdbook build "$book" 2>&1 | tee "$RUNNER_TEMP/mdbook.log"; then
+            out="$RUNNER_TEMP/books/${book//\//_}"
+            if ! mdbook build --dest-dir "$out" "$book" 2>&1 | tee "$RUNNER_TEMP/mdbook.log"; then
               status=1
             elif grep -Eq '\[(ERROR|WARN)\]' "$RUNNER_TEMP/mdbook.log"; then
               echo "::error::mdBook reported problems while building $book"
               status=1
+            else
+              # Each book keeps its path under docs/, so the manual's root book is the site root.
+              mount="$RUNNER_TEMP/docs-site/${book#docs}"
+              mkdir -p "$mount"
+              cp -R "$out/." "$mount/"
             fi
             echo '::endgroup::'
           done
           exit "$status"
+      - name: Upload the books for the browser preview
+        if: needs.selection.outputs.browser_preview == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightfall-docs-${{ github.sha }}
+          path: ${{ runner.temp }}/docs-site
+          if-no-files-found: error
+          retention-days: 7
 
   native:
     name: Native
