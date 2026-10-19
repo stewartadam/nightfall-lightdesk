@@ -33,17 +33,14 @@ import AppMenu from "../status-bar/app-menu";
 import { ConnectionIndicator } from "../status-bar/connection-indicator";
 import UndoControls from "../status-bar/undo-controls";
 
-/** Renders the app logo and name in the docked header. */
-function HeaderBrand() {
+/** Renders the app logo that anchors the left edge of the docked header. */
+function HeaderLogo() {
   return (
-    <div class="flex items-center gap-2 text-sm font-semibold">
-      <img
-        src={`${import.meta.env.BASE_URL}logo.svg`}
-        alt="logo"
-        class="h-8 w-8 rounded"
-      />
-      <span>{isEmbeddedDemoRuntime() ? "nightfall demo" : "nightfall"}</span>
-    </div>
+    <img
+      src={`${import.meta.env.BASE_URL}logo.svg`}
+      alt={isEmbeddedDemoRuntime() ? "nightfall demo" : "nightfall"}
+      class="size-8 shrink-0 rounded"
+    />
   );
 }
 
@@ -149,8 +146,11 @@ function CompactHeaderBar() {
 }
 
 /**
- * Renders the global navigation header and command entry affordances. Compact
- * screens get one slim row instead (see `CompactHeaderBar`): the command line
+ * Renders the global navigation header: the logo and layout switcher on the
+ * left, the command line beside the palette and notification buttons on the
+ * right. Below the `lg` breakpoint the layout switcher wraps onto its own row
+ * so the command line keeps a usable width. Compact screens get one slim row
+ * instead (see `CompactHeaderBar`): the command line
  * stays reachable as its own panel, and the layout switcher is left out
  * because the compact shell does not switch named layouts.
  */
@@ -168,21 +168,17 @@ export default function AppHeader() {
     >
       <Show when={!compact()} fallback={<CompactHeaderBar />}>
         <nav
-          class="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3"
+          class="flex min-w-0 w-full flex-wrap items-center gap-x-3 gap-y-1 lg:flex-nowrap"
           aria-label="Global"
         >
-          <div class="min-w-0">
-            <HeaderCommandLine />
+          <HeaderLogo />
+          <div class="order-last min-w-0 basis-full lg:order-none lg:flex-1 lg:basis-auto">
+            <LayoutSwitcher />
           </div>
-          <HeaderBrand />
-          <div class="contents min-w-0 items-center justify-end gap-2 xl:flex">
-            <div class="col-span-3 row-start-2 min-w-0 xl:contents">
-              <LayoutSwitcher />
-            </div>
-            <div class="col-start-3 row-start-1 flex shrink-0 flex-row items-center justify-end gap-2">
-              <ToolbarSeparator />
-              <HeaderActions />
-            </div>
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            <HeaderCommandLine />
+            <ToolbarSeparator />
+            <HeaderActions />
           </div>
         </nav>
       </Show>
