@@ -109,6 +109,12 @@ test("tempo panel responds to taps, its fields and the command line", async ({
   await expect(bpmInput).toHaveValue("184");
   expect(await targetBpm(page)).toBe(184);
 
+  // A stepper press right after typing steps from the typed value.
+  await bpmInput.fill("130");
+  await panel.getByRole("button", { name: "Increase tempo" }).click();
+  await expect(bpmInput).toHaveValue("131");
+  await expect.poll(() => targetBpm(page)).toBe(131);
+
   const beatsPerBar = panel.getByRole("spinbutton", { name: "Beats per bar" });
   await panel.getByRole("button", { name: "Fewer beats per bar" }).click();
   await expect(beatsPerBar).toHaveValue("3");

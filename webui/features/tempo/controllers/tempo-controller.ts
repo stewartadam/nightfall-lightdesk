@@ -140,9 +140,14 @@ export function createTempoField(options: TempoFieldOptions): TempoField {
       schedule();
     },
     commit,
-    /** Applies a valid pending edit, then drops anything unusable for the engine's value. */
+    /**
+     * Applies a valid pending edit, or swaps an unusable one for the engine's value. A sent
+     * edit stays in the field until the engine echoes it, so a stepper press that blurs the
+     * field steps from the typed value rather than the old one.
+     */
     blur: () => {
       commit();
+      if (!unapplied) return;
       unapplied = false;
       follow();
     },
