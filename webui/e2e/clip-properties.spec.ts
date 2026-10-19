@@ -699,12 +699,12 @@ test("numeric clip source references resolve through domain registrations", asyn
   );
   await expect(card).toBeVisible();
 
-  for (const [kind, offset] of [
-    ["Sequence", 20],
-    ["Fx", 10],
-    ["StepFx", 11],
-    ["FxModule", 12],
-    ["Flow", 13],
+  for (const [kind, offset, badge] of [
+    ["Sequence", 20, "SEQ"],
+    ["Fx", 10, "FX"],
+    ["StepFx", 11, "FX-S"],
+    ["FxModule", 12, "FX-M"],
+    ["Flow", 13, "FLOW"],
   ] as const) {
     const result = await page.evaluate(
       async ({ clipId, sourceId, kind }) => {
@@ -723,7 +723,7 @@ test("numeric clip source references resolve through domain registrations", asyn
       },
     );
     expect(result.outcome.type).toBe("Succeeded");
-    await expect(card.getByText(kind, { exact: true })).toBeVisible();
+    await expect(card.getByText(badge, { exact: true })).toBeVisible();
   }
   const before = await page.evaluate(
     (uid) => (window as any).appStores.clips.get()[uid][0].source,
@@ -746,7 +746,7 @@ test("numeric clip source references resolve through domain registrations", asyn
       context.inspectedClipUid,
     ),
   ).toEqual(before);
-  await expect(card.getByText("Flow", { exact: true })).toBeVisible();
+  await expect(card.getByText("FLOW", { exact: true })).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("numeric-source-assignment.png"),
   });

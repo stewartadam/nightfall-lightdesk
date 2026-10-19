@@ -30,6 +30,15 @@ import type * as types from "../../../types";
 
 type ClipEntry = [types.Clip, boolean];
 
+/** Short source-type labels that keep clip card badges compact. */
+const SOURCE_BADGE_LABELS: Record<types.Source["type"], string> = {
+  Sequence: "SEQ",
+  Fx: "FX",
+  StepFx: "FX-S",
+  FxModule: "FX-M",
+  Flow: "FLOW",
+};
+
 interface ClipListViewProps {
   panelId: string;
   viewMode: CrudViewMode;
@@ -287,7 +296,7 @@ export function ClipListView(props: ClipListViewProps) {
                         </Show>
                         <Button
                           variant="subtle"
-                          size="icon-compact"
+                          size="icon-inline"
                           aria-label={`Inspect clip ${clip()?.identifiers.id}`}
                           onClick={(event) => {
                             event.preventDefault();
@@ -295,13 +304,16 @@ export function ClipListView(props: ClipListViewProps) {
                             props.onOpenProperties(uid);
                           }}
                         >
-                          <GearSixIcon class="size-4" aria-hidden />
+                          <GearSixIcon class="size-3" aria-hidden />
                         </Button>
                       </div>
                     </div>
                     <div class="nf-tile-badges">
                       <Badge size="xs" appearance="soft" uppercase>
-                        {clip()?.source?.type ?? "None"}
+                        {(() => {
+                          const type = clip()?.source?.type;
+                          return type ? SOURCE_BADGE_LABELS[type] : "None";
+                        })()}
                       </Badge>
                       <Show when={clip()?.options?.auto_release}>
                         <Badge
