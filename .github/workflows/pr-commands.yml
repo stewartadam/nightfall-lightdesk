@@ -73,8 +73,9 @@ jobs:
           allow_drafts: true
           skip_ci: true
           skip_reviews: true
-      # Reruns the Browser preview job of the PR head's latest CI run, so the deploy
-      # reuses that run's demo artifact. See "Browser previews" in .github/workflows/README.md.
+      # Reruns the Browser preview job of the PR head's latest CI run, so the deploy reuses that
+      # run's demo artifact. Draft PRs skip CI entirely, so they get a manual CI run that builds
+      # only the preview. See "Browser previews" in .github/workflows/README.md.
       - name: Rerun the preview deploy
         if: steps.command.outputs.continue == 'true'
         env:
@@ -82,6 +83,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ steps.command.outputs.issue_number }}
           HEAD_SHA: ${{ steps.command.outputs.sha }}
+          PREVIEW_WORKER: ${{ vars.CLOUDFLARE_PREVIEW_WORKER }}
         run: |
           refuse() {
             echo "::error::$1"
@@ -89,29 +91,73 @@ jobs:
               -f body="Cannot republish the preview: $1" > /dev/null
             exit 1
           }
-          run="$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=1" \
-            --jq '.workflow_runs[0] // empty | "\(.id) \(.status)"')"
+          # Prints "<id> <status>" for the newest CI run of the PR head triggered by event $1.
+          latest_run() {
+            gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?event=$1&head_sha=$HEAD_SHA&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.id) \(.status)"'
+          }
+          # Reruns what completed run $1 needs to redeploy its preview, also rerunning failed
+          # jobs when $2 is "rerun-failed". Returns 1 when the run deployed no preview.
+          rerun_preview() {
+            local run_id="$1" jobs preview job_id job_conclusion artifact
+            # Callers test this function, which turns off errexit inside it, so each call checks.
+            jobs="$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/jobs" --jq '.jobs[]')" \
+              || refuse "could not read the jobs of run ${run_id}."
+            preview="$(jq -sr '[.[] | select(.name == "Browser preview")][0] // empty | "\(.id) \(.conclusion)"' <<< "$jobs")"
+            read -r job_id job_conclusion <<< "$preview"
+            artifact="$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/artifacts" \
+              --jq '.artifacts[] | select((.name | startswith("nightfall-browser-demo-")) and (.expired | not)) | .id')" \
+              || refuse "could not read the artifacts of run ${run_id}."
+
+            if [[ -n "$job_id" && "$job_conclusion" != skipped && -n "$artifact" ]]; then
+              gh api --method POST "repos/$GH_REPO/actions/jobs/$job_id/rerun" > /dev/null \
+                || refuse "could not rerun the preview job of run ${run_id}."
+              echo "Rerunning the Browser preview job of run $run_id" | tee -a "$GITHUB_STEP_SUMMARY"
+            elif [[ -n "$job_id" && "$job_conclusion" != skipped ]]; then
+              # The demo artifact expired, so rebuild it with the whole run.
+              gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun" > /dev/null \
+                || refuse "could not rerun run ${run_id}."
+              echo "Rerunning all of run $run_id because its demo artifact expired" | tee -a "$GITHUB_STEP_SUMMARY"
+            elif [[ "$2" == rerun-failed ]] && jq -se 'any(.[]; .conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")' <<< "$jobs" > /dev/null; then
+              # A failed upstream job skipped the preview; rerunning failed jobs reruns their dependents too.
+              gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun-failed-jobs" > /dev/null \
+                || refuse "could not rerun the failed jobs of run ${run_id}."
+              echo "Rerunning the failed jobs of run $run_id, then the preview" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              return 1
+            fi
+          }
+
+          pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
+          head_repo="$(jq -r '.head.repo.full_name // empty' <<< "$pr")"
+          head_ref="$(jq -r '.head.ref' <<< "$pr")"
+          author="$(jq -r '.user.login' <<< "$pr")"
+          draft="$(jq -r '.draft' <<< "$pr")"
+          # Fork and Dependabot PRs cannot read the deployment secret in CI either.
+          [[ "$head_repo" == "$GH_REPO" && "$author" != 'dependabot[bot]' ]] \
+            || refuse "previews skip fork and Dependabot PRs."
+
+          if [[ "$draft" == true ]]; then
+            [[ -n "$PREVIEW_WORKER" ]] || refuse "previews need CLOUDFLARE_PREVIEW_WORKER."
+            # Reuse the preview that opening the draft or an earlier /republish built for this commit.
+            for event in pull_request workflow_dispatch; do
+              run="$(latest_run "$event")" || refuse "could not list CI runs for ${HEAD_SHA}."
+              read -r run_id run_status <<< "$run"
+              [[ -n "$run_id" ]] || continue
+              [[ "$run_status" == completed ]] \
+                || refuse "CI is still running for ${HEAD_SHA}; try again when it finishes."
+              rerun_preview "$run_id" && exit 0
+            done
+            gh api --method POST "repos/$GH_REPO/actions/workflows/ci.yml/dispatches" \
+              -f ref="$head_ref" -f "inputs[preview]=$PR_NUMBER" > /dev/null \
+              || refuse "could not start a preview build on ${head_ref}. If the branch predates draft previews, bring in develop first."
+            echo "Started a manual CI run that builds the preview from $head_ref" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          run="$(latest_run pull_request)" || refuse "could not list CI runs for ${HEAD_SHA}."
           read -r run_id run_status <<< "$run"
           [[ -n "$run_id" ]] || refuse "no CI run exists for ${HEAD_SHA}."
           [[ "$run_status" == completed ]] || refuse "CI is still running for ${HEAD_SHA}; the preview deploys when it finishes."
-
-          jobs="$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/jobs" --jq '.jobs[]')"
-          preview="$(jq -sr '[.[] | select(.name == "Browser preview")][0] // empty | "\(.id) \(.conclusion)"' <<< "$jobs")"
-          read -r job_id job_conclusion <<< "$preview"
-          artifact="$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/artifacts" \
-            --jq '.artifacts[] | select((.name | startswith("nightfall-browser-demo-")) and (.expired | not)) | .id')"
-
-          if [[ -n "$job_id" && "$job_conclusion" != skipped && -n "$artifact" ]]; then
-            gh api --method POST "repos/$GH_REPO/actions/jobs/$job_id/rerun" > /dev/null
-            echo "Rerunning the Browser preview job of run $run_id" | tee -a "$GITHUB_STEP_SUMMARY"
-          elif [[ -n "$job_id" && "$job_conclusion" != skipped ]]; then
-            # The demo artifact expired, so rebuild it with the whole run.
-            gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun" > /dev/null
-            echo "Rerunning all of run $run_id because its demo artifact expired" | tee -a "$GITHUB_STEP_SUMMARY"
-          elif jq -se 'any(.[]; .conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")' <<< "$jobs" > /dev/null; then
-            # A failed upstream job skipped the preview; rerunning failed jobs reruns their dependents too.
-            gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun-failed-jobs" > /dev/null
-            echo "Rerunning the failed jobs of run $run_id, then the preview" | tee -a "$GITHUB_STEP_SUMMARY"
-          else
-            refuse "CI did not select a preview for this PR (previews skip fork and Dependabot PRs, and need CLOUDFLARE_PREVIEW_WORKER)."
-          fi
+          rerun_preview "$run_id" rerun-failed \
+            || refuse "CI did not select a preview for this PR (previews need CLOUDFLARE_PREVIEW_WORKER)."
