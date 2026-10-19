@@ -7,7 +7,17 @@
  */
 
 /** Modifier and editing-key glyphs that key caps draw as icons instead of text. */
-export type KeyGlyph = "command" | "control" | "option" | "shift" | "backspace";
+export type KeyGlyph =
+  | "command"
+  | "control"
+  | "option"
+  | "shift"
+  | "backspace"
+  | "enter"
+  | "arrow-up"
+  | "arrow-down"
+  | "arrow-left"
+  | "arrow-right";
 
 /** How one key of a shortcut appears on its key cap. */
 export interface KeyCapFace {
@@ -29,11 +39,12 @@ export const IS_APPLE_PLATFORM =
 
 /** Key names whose caps show a short symbol or abbreviation, with the full name as a tooltip. */
 const NAMED_KEYS: Record<string, KeyCapFace> = {
-  ArrowUp: { label: "↑", title: "Up arrow" },
+  ArrowUp: { label: "Up arrow", glyph: "arrow-up" },
+  ArrowDown: { label: "Down arrow", glyph: "arrow-down" },
+  ArrowLeft: { label: "Left arrow", glyph: "arrow-left" },
+  ArrowRight: { label: "Right arrow", glyph: "arrow-right" },
   Backspace: { label: "Backspace", glyph: "backspace" },
-  ArrowDown: { label: "↓", title: "Down arrow" },
-  ArrowLeft: { label: "←", title: "Left arrow" },
-  ArrowRight: { label: "→", title: "Right arrow" },
+  Enter: { label: "Enter", glyph: "enter" },
   Escape: { label: "Esc", title: "Escape" },
   PageUp: { label: "PgUp", title: "Page Up" },
   PageDown: { label: "PgDn", title: "Page Down" },

@@ -63,7 +63,14 @@ test("describeKey labels letters, codes and named keys", () => {
   assert.equal(describeKey("KeyM", false).label, "M");
   assert.equal(describeKey("Digit4", false).label, "4");
   assert.equal(describeKey("p", false).label, "P");
-  assert.equal(describeKey("ArrowUp", false).label, "↑");
+  assert.deepEqual(describeKey("ArrowUp", false), {
+    label: "Up arrow",
+    glyph: "arrow-up",
+  });
+  assert.deepEqual(describeKey("Enter", false), {
+    label: "Enter",
+    glyph: "enter",
+  });
   assert.equal(describeKey("Escape", false).label, "Esc");
   assert.equal(describeKey("Keyboard", false).label, "Keyboard");
   assert.equal(describeKey("?", false).label, "?");

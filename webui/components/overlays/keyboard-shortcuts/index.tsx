@@ -6,13 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   createEffect,
   createMemo,
   createSignal,
   For,
+  Index,
   type JSX,
   Show,
 } from "solid-js";
@@ -23,15 +22,11 @@ import {
 import { useAppShell } from "../../providers/app-shell";
 import { Dialog, DialogBody } from "../../ui/dialog";
 import { EmptyState } from "../../ui/empty-state";
-import { Input, InputGroup } from "../../ui/form-controls";
 import { HighlightedText } from "../../ui/highlighted-text";
 import { Kbd, KbdShortcut } from "../../ui/kbd";
-import { Button } from "../../ui/visual-language/button";
-import {
-  matchesShortcutSearch,
-  mergeShortcutRows,
-  shortcutSearchTerms,
-} from "./shortcut-search";
+import { SearchField } from "../../ui/search-field";
+import { searchTerms } from "../../ui/search-match";
+import { matchesShortcutSearch, mergeShortcutRows } from "./shortcut-search";
 
 /**
  * Component that displays all registered keyboard shortcuts in a popup
@@ -42,13 +37,6 @@ export default function ShortcutsPopup() {
   const { dockviewApi, isShortcutsPopupVisible, hideShortcutsPopup } =
     useAppShell();
   const [query, setQuery] = createSignal("");
-  let searchInput: HTMLInputElement | undefined;
-
-  /** Empties the search and returns focus to the field so typing can continue. */
-  const clearSearch = () => {
-    setQuery("");
-    searchInput?.focus();
-  };
 
   /** Starts every opening of the dialog with the full, unfiltered list. */
   createEffect(() => {
@@ -72,7 +60,7 @@ export default function ShortcutsPopup() {
   };
 
   /** Lower-cased words of the search query, shared by filtering and highlighting. */
-  const terms = createMemo(() => shortcutSearchTerms(query()));
+  const terms = createMemo(() => searchTerms(query()));
 
   /**
    * Groups the shortcuts that match the search query by panel, sorted by key within each group
@@ -140,34 +128,13 @@ export default function ShortcutsPopup() {
       }
     >
       <div class="shrink-0 px-4 pt-4">
-        <InputGroup role="search">
-          <MagnifyingGlassIcon
-            class="ml-2 size-4 shrink-0 self-center text-neutral-400"
-            aria-hidden
-          />
-          <Input
-            type="search"
-            class="w-full [&::-webkit-search-cancel-button]:hidden"
-            ref={searchInput}
-            autofocus
-            aria-label="Search shortcuts"
-            placeholder="Search by action, key or panel"
-            value={query()}
-            onInput={(event) => setQuery(event.currentTarget.value)}
-          />
-          <Show when={query()}>
-            <Button
-              variant="subtle"
-              size="icon"
-              style={{ height: "auto" }}
-              type="button"
-              aria-label="Clear search"
-              onClick={clearSearch}
-            >
-              <XIcon class="size-4" aria-hidden />
-            </Button>
-          </Show>
-        </InputGroup>
+        <SearchField
+          label="Search shortcuts"
+          placeholder="Search by action, key or panel"
+          autofocus
+          value={query()}
+          onInput={setQuery}
+        />
       </div>
       <DialogBody role="region" aria-label="Keyboard shortcuts">
         <Show when={organizedShortcuts().length === 0}>
@@ -180,21 +147,21 @@ export default function ShortcutsPopup() {
           />
         </Show>
         <div class="columns-1 md:columns-2 lg:columns-3 gap-8">
-          <For each={organizedShortcuts()}>
-            {([panelName, panelShortcuts]) => (
+          <Index each={organizedShortcuts()}>
+            {(group) => (
               <div class="mb-8 break-inside-avoid">
                 <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
                   <HighlightedText
-                    text={getDisplayName(panelName)}
+                    text={getDisplayName(group()[0])}
                     terms={terms()}
                   />
                 </h3>
                 <div class="space-y-2">
-                  <For each={panelShortcuts}>
+                  <Index each={group()[1]}>
                     {(row) => (
                       <div class="flex items-center text-sm gap-2">
                         <span class="flex shrink-0 flex-col items-start gap-1">
-                          <For each={row.keys}>
+                          <For each={row().keys}>
                             {(key, index) => (
                               <span class="flex items-center gap-1">
                                 <Show when={index() > 0}>
@@ -209,17 +176,17 @@ export default function ShortcutsPopup() {
                         </span>
                         <span class="min-w-0 flex-1 text-gray-300">
                           <HighlightedText
-                            text={row.description}
+                            text={row().description}
                             terms={terms()}
                           />
                         </span>
                       </div>
                     )}
-                  </For>
+                  </Index>
                 </div>
               </div>
             )}
-          </For>
+          </Index>
         </div>
 
         <div class="mt-4 text-xs text-gray-500 text-center flex items-center justify-center gap-1">

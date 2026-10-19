@@ -8,11 +8,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { searchTerms } from "../../ui/search-match";
 import {
   matchesShortcutSearch,
   mergeShortcutRows,
   type SearchableShortcut,
-  shortcutSearchTerms,
 } from "./shortcut-search";
 
 const undo: SearchableShortcut = {
@@ -33,11 +33,7 @@ function matches(
   shortcut: SearchableShortcut,
   applePlatform = false,
 ): boolean {
-  return matchesShortcutSearch(
-    shortcutSearchTerms(query),
-    shortcut,
-    applePlatform,
-  );
+  return matchesShortcutSearch(searchTerms(query), shortcut, applePlatform);
 }
 
 /** Verifies a blank or whitespace query keeps every shortcut listed. */
