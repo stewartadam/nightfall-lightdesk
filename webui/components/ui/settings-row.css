@@ -55,3 +55,28 @@
   flex-basis: 100%;
   min-width: 0;
 }
+.nf-settings-section ~ .nf-settings-section {
+  margin-top: 8px;
+}
+/* A rule runs from the title to the section's edge, marking where the section starts. */
+.nf-settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  color: var(--color-gray-100);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.nf-settings-section-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line, #34383b);
+}
+/* Indents a titled section's rows and footer beneath its title. */
+.nf-settings-section:has(> .nf-settings-section-title)
+> :not(.nf-settings-section-title) {
+  padding-left: 16px;
+}
