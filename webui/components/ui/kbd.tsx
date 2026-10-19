@@ -7,6 +7,7 @@
  */
 
 import { ArrowFatUpIcon } from "@squidlab/phosphor-solid/arrow-fat-up";
+import { BackspaceIcon } from "@squidlab/phosphor-solid/backspace";
 import { CaretUpIcon } from "@squidlab/phosphor-solid/caret-up";
 import { CommandIcon } from "@squidlab/phosphor-solid/command";
 import { OptionIcon } from "@squidlab/phosphor-solid/option";
@@ -58,6 +59,7 @@ const GLYPH_ICONS: Record<
   control: CaretUpIcon,
   option: OptionIcon,
   shift: ArrowFatUpIcon,
+  backspace: BackspaceIcon,
 };
 
 interface KbdProps {
@@ -77,8 +79,8 @@ interface KbdProps {
  * Renders one keyboard key as a key cap.
  *
  * With `keyName`, modifier keys draw their platform glyph (Command, Option, Shift, Control on
- * Apple platforms) and keep the key's name for assistive technology; other keys show their
- * conventional label. Without it, the cap shows its children as written.
+ * Apple platforms) and Backspace draws its icon, each keeping the key's name for assistive
+ * technology and as a tooltip; other keys show their conventional label. Without it, the cap shows its children as written.
  */
 export function Kbd(props: KbdProps) {
   /** Resolved face for `keyName`, or undefined for a literal cap. */
