@@ -239,18 +239,27 @@ export function createCommandLineController(
     useKeyboardShortcut(
       {
         key: "$mod+l",
-        /** Focuses the preferred command input, falling back to any command field. */
+        /**
+         * Focuses the header command input. When the header has collapsed it to a
+         * Console button, opens or reveals the Console panel and focuses its input.
+         */
         handler: () => {
-          const preferred =
-            (document.getElementById(
-              "header-cmdline",
-            ) as HTMLInputElement | null) ??
-            (document.getElementById("cmdline") as HTMLInputElement | null) ??
-            (document.querySelector(
-              "input[aria-label='Command input'], input[aria-label='Panel command input']",
-            ) as HTMLInputElement | null);
-          preferred?.focus();
-          preferred?.select();
+          const header = document.getElementById(
+            "header-cmdline",
+          ) as HTMLInputElement | null;
+          if (header) {
+            header.focus();
+            header.select();
+            return;
+          }
+          openConsole();
+          requestAnimationFrame(() => {
+            const panelInput = document.getElementById(
+              "cmdline",
+            ) as HTMLInputElement | null;
+            panelInput?.focus();
+            panelInput?.select();
+          });
         },
         description: "Focus command line",
         componentId: undefined,

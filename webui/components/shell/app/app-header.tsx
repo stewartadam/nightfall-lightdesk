@@ -12,7 +12,7 @@ import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { FileIcon } from "@squidlab/phosphor-solid/file";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
-import { Show } from "solid-js";
+import { onMount, Show } from "solid-js";
 import { MappingModeToggle } from "../../../features/io";
 import { useShowfileObjectPalette } from "../../../features/showfile";
 import { TempoControls } from "../../../features/tempo";
@@ -26,6 +26,7 @@ import { ToolbarSeparator } from "../../ui/panel-toolbar";
 import Tooltip from "../../ui/tooltip";
 import { Button } from "../../ui/visual-language/button";
 import HeaderCommandLine from "../header/command-line";
+import { createCommandLineFit } from "../header/command-line-fit";
 import LayoutSwitcher from "../header/layout-switcher";
 import HeaderNotificationHistory from "../header/notification-history";
 import { resetBrowserDemo } from "../runtime/browser-demo-banner";
@@ -146,11 +147,39 @@ function CompactHeaderBar() {
 }
 
 /**
- * Renders the global navigation header: the logo and layout switcher on the
- * left, the command line beside the palette and notification buttons on the
- * right. Below the `lg` breakpoint the layout switcher wraps onto its own row
- * so the command line keeps a usable width. Compact screens get one slim row
- * instead (see `CompactHeaderBar`): the command line
+ * The docked header on wider screens, always one row: the logo and layout
+ * switcher on the left, the command input beside the palette and notification
+ * buttons on the right. When the input would squeeze the layout switcher, it
+ * collapses to a Console button beside Clear (see `createCommandLineFit`).
+ */
+function DockedHeaderBar() {
+  const fit = createCommandLineFit();
+  let switcherSlot: HTMLDivElement | undefined;
+  let commandSlot: HTMLDivElement | undefined;
+  onMount(() => {
+    if (switcherSlot && commandSlot) fit.observe({ switcherSlot, commandSlot });
+  });
+
+  return (
+    <nav class="flex min-w-0 w-full items-center gap-3" aria-label="Global">
+      <HeaderLogo />
+      <div ref={switcherSlot} class="min-w-0 flex-1">
+        <LayoutSwitcher />
+      </div>
+      <div class="flex shrink-0 items-center gap-2">
+        <div ref={commandSlot} class="flex">
+          <HeaderCommandLine collapsed={fit.collapsed} />
+        </div>
+        <ToolbarSeparator />
+        <HeaderActions />
+      </div>
+    </nav>
+  );
+}
+
+/**
+ * Renders the global navigation header (see `DockedHeaderBar`). Compact
+ * screens get one slim row instead (see `CompactHeaderBar`): the command line
  * stays reachable as its own panel, and the layout switcher is left out
  * because the compact shell does not switch named layouts.
  */
@@ -167,20 +196,7 @@ export default function AppHeader() {
       }}
     >
       <Show when={!compact()} fallback={<CompactHeaderBar />}>
-        <nav
-          class="flex min-w-0 w-full flex-wrap items-center gap-x-3 gap-y-1 lg:flex-nowrap"
-          aria-label="Global"
-        >
-          <HeaderLogo />
-          <div class="order-last min-w-0 basis-full lg:order-none lg:flex-1 lg:basis-auto">
-            <LayoutSwitcher />
-          </div>
-          <div class="ml-auto flex shrink-0 items-center gap-2">
-            <HeaderCommandLine />
-            <ToolbarSeparator />
-            <HeaderActions />
-          </div>
-        </nav>
+        <DockedHeaderBar />
       </Show>
     </header>
   );

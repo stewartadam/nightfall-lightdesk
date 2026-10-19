@@ -6,8 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { TerminalWindowIcon } from "@squidlab/phosphor-solid/terminal-window";
+import { Show } from "solid-js";
 import { parseKeybinding } from "tinykeys";
 import { Input, InputGroup } from "../../../components/ui/form-controls";
+import Tooltip from "../../../components/ui/tooltip";
+import { Button } from "../../../components/ui/visual-language/button";
 import { clearConsoleScrollback } from "../../../state/appStores";
 import type { CommandLineController } from "../controllers/command-line-controller";
 import {
@@ -25,8 +29,13 @@ const COMMAND_MODIFIER_LABEL = parseKeybinding("$mod+l")[0][0].includes("Meta")
   ? "⌘"
   : "Ctrl";
 
+/** Width of the full navigation command input, used by the header to decide whether it fits. */
+export const NAV_COMMAND_LINE_WIDTH = 320;
+
 interface CommandLineViewProps {
   controller: CommandLineController;
+  /** Collapses the navigation variant to a Console button beside Clear when the input does not fit. */
+  collapsed?: () => boolean;
 }
 
 /** Renders panel and navigation command-line variants from controller props. */
@@ -155,21 +164,43 @@ export function CommandLineView(props: CommandLineViewProps) {
   }
 
   return (
-    <form
-      onSubmit={controller.handleSubmit}
-      class="hidden md:block"
-      style={{ width: "320px" }}
+    <Show
+      when={!props.collapsed?.()}
+      fallback={
+        <InputGroup class="nf-header-command-group">
+          <Tooltip content={() => "Open console"} position="bottom">
+            <Button
+              size="icon"
+              type="button"
+              class="rounded-r-none"
+              aria-label="Open console"
+              onClick={controller.openConsole}
+            >
+              <TerminalWindowIcon class="size-4" aria-hidden />
+            </Button>
+          </Tooltip>
+          <CommandClearButton
+            variant={controller.variant}
+            onClear={controller.clearProgrammer}
+          />
+        </InputGroup>
+      }
     >
-      <InputGroup
-        class="nf-header-command-group"
-        onKeyDown={controller.handleKeyDown}
+      <form
+        onSubmit={controller.handleSubmit}
+        style={{ width: `${NAV_COMMAND_LINE_WIDTH}px` }}
       >
-        {input}
-        <CommandClearButton
-          variant={controller.variant}
-          onClear={controller.clearProgrammer}
-        />
-      </InputGroup>
-    </form>
+        <InputGroup
+          class="nf-header-command-group"
+          onKeyDown={controller.handleKeyDown}
+        >
+          {input}
+          <CommandClearButton
+            variant={controller.variant}
+            onClear={controller.clearProgrammer}
+          />
+        </InputGroup>
+      </form>
+    </Show>
   );
 }
