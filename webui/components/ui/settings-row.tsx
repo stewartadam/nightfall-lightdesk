@@ -107,7 +107,8 @@ export function SettingsRow(props: SettingsRowProps) {
 }
 
 /**
- * Groups related settings rows under an optional heading, which also names the section. Each
+ * Groups related settings rows under an optional heading, which also names the section. A titled
+ * section draws a rule from its title to the edge and indents its rows beneath it. Each
  * direct child is divided from the next by a thin line, so a row wrapped in a labelled region
  * divides like a bare row; `footer` adds a note beneath the last one. In a settings search, the
  * section hides when none of its rows match, and shows them all when its title matches.
@@ -128,7 +129,7 @@ export function SettingsSection(props: {
     >
       <Show when={props.title}>
         {(title) => (
-          <h3 id={titleId} class="mb-0.5 text-sm font-semibold text-gray-100">
+          <h3 id={titleId} class="nf-settings-section-title">
             {title()}
           </h3>
         )}
