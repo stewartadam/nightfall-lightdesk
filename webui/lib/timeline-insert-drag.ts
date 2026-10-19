@@ -16,7 +16,7 @@ type InsertableActionType =
   | "StopClip"
   | "AdvanceSequence"
   | "BackSequence"
-  | "SetClipRate"
+  | "SetClipSpeed"
   | "JumpToCue"
   | "DeskEval";
 

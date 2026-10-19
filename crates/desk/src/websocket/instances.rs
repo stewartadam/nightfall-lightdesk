@@ -83,7 +83,7 @@ pub fn send_instances(
                     object_ref: object_ref.map(|marker| marker.0.clone()),
                     is_preview: preview.is_some(),
                     is_releasing: release_marker.is_some(),
-                    is_paused: controls.effective_rate() == 0.0
+                    is_paused: controls.effective_speed() == 0.0
                         || clock.is_some_and(|clock| clock.frozen),
                     release_epoch_ms: release_marker
                         .map(|marker| activation_epoch_ms(marker.start_time)),
@@ -95,9 +95,9 @@ pub fn send_instances(
                     priority,
                     bound_clip_id,
                     intensity_scale: controls.intensity_scale,
-                    rate: controls.rate,
-                    rate_master_scale: controls.rate_master_scale,
-                    effective_rate: controls.effective_rate(),
+                    speed: controls.speed,
+                    speed_master_scale: controls.speed_master_scale,
+                    effective_speed: controls.effective_speed(),
                     held_button: held_buttons.get(instance_id),
                     step_fx_preview: step_fx_preview_status(
                         preview,

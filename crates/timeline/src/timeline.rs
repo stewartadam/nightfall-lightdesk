@@ -17,7 +17,7 @@ use nightfall_actions::{
     is_client_action,
 };
 use nightfall_clips::{
-    back_clip_action, go_clip_action, goto_clip_action, set_clip_rate_action, start_clip_action,
+    back_clip_action, go_clip_action, goto_clip_action, set_clip_speed_action, start_clip_action,
     stop_clip_action,
 };
 use nightfall_playback_planner::{
@@ -535,12 +535,12 @@ pub enum ActionKind {
     AdvanceSequence(Uuid),
     /// Go back in a sequence on a clip.
     BackSequence(Uuid),
-    /// Set the rate multiplier for a clip's active playback.
-    SetClipRate {
+    /// Set the speed multiplier for a clip's active playback.
+    SetClipSpeed {
         /// The unique ID of the clip to control.
         uid: Uuid,
-        /// Playback clock rate multiplier.
-        rate: f32,
+        /// Playback clock speed multiplier.
+        speed: f32,
     },
     /// Jump to a specific cue in a sequence on a clip.
     JumpToCue {
@@ -595,7 +595,7 @@ impl ActionKind {
                 TimelinePlaybackActionKind::Start => Self::StartClip(uid),
                 TimelinePlaybackActionKind::Stop => Self::StopClip(uid),
                 TimelinePlaybackActionKind::FireCue => Self::FireCue(uid),
-                TimelinePlaybackActionKind::SetRate(rate) => Self::SetClipRate { uid, rate },
+                TimelinePlaybackActionKind::SetSpeed(speed) => Self::SetClipSpeed { uid, speed },
                 TimelinePlaybackActionKind::Intervene(intervention) => match intervention {
                     PlannedPlaybackInterventionKind::SequenceGo => Self::AdvanceSequence(uid),
                     PlannedPlaybackInterventionKind::SequenceBack => Self::BackSequence(uid),
@@ -619,7 +619,7 @@ impl ActionKind {
             Self::StopClip(uid) => stop_clip_action(*uid),
             Self::AdvanceSequence(uid) => go_clip_action(*uid),
             Self::BackSequence(uid) => back_clip_action(*uid),
-            Self::SetClipRate { uid, rate } => set_clip_rate_action(*uid, *rate),
+            Self::SetClipSpeed { uid, speed } => set_clip_speed_action(*uid, *speed),
             Self::JumpToCue { uid, cue_index } => goto_clip_action(*uid, *cue_index),
             Self::DeskEval(command) => desk_eval_action(command.clone()),
             Self::RegisteredAction(action) => action.clone(),
@@ -696,9 +696,9 @@ pub struct AutomationPoint {
 pub enum ParameterType {
     /// Controls a global variable
     GlobalVariable(String),
-    /// Controls the rate master (speed) of a clip
+    /// Controls a clip's playback speed
     #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
-    RateMaster(Uuid),
+    ClipSpeed(Uuid),
 }
 
 /// Runtime playback, recording, and cursor state for a timeline.

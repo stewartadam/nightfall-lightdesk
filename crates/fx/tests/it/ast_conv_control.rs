@@ -78,8 +78,8 @@ fn test_fx_stop_conversion() {
 }
 
 #[test]
-fn test_fx_set_rate_conversion() {
-    let ast = generate_ast("fx 1 rate 2.5").expect("Failed to parse 'fx 1 rate 2.5'");
+fn test_fx_set_speed_conversion() {
+    let ast = generate_ast("fx 1 speed 2.5").expect("Failed to parse 'fx 1 speed 2.5'");
     let commands = FxAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
@@ -87,21 +87,21 @@ fn test_fx_set_rate_conversion() {
     assert!(cmd.is_some(), "Command is not a StepFxCommand");
 
     match cmd.unwrap() {
-        StepFxCommand::SetRate { fx_id, rate } => {
+        StepFxCommand::SetSpeed { fx_id, speed } => {
             assert_eq!(*fx_id, 1, "Expected FX ID 1, got {}", fx_id);
             assert!(
-                (*rate - 2.5).abs() < 1e-6,
-                "Expected rate 2.5, got {}",
-                rate
+                (*speed - 2.5).abs() < 1e-6,
+                "Expected speed 2.5, got {}",
+                speed
             );
         }
-        other => panic!("Expected SetRate command, got {:?}", other),
+        other => panic!("Expected SetSpeed command, got {:?}", other),
     }
 }
 
 #[test]
-fn test_fx_set_rate_different_values_conversion() {
-    let ast = generate_ast("fx 1 rate 0.5").expect("Failed to parse 'fx 1 rate 0.5'");
+fn test_fx_set_speed_different_values_conversion() {
+    let ast = generate_ast("fx 1 speed 0.5").expect("Failed to parse 'fx 1 speed 0.5'");
     let commands = FxAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
@@ -109,14 +109,14 @@ fn test_fx_set_rate_different_values_conversion() {
     assert!(cmd.is_some(), "Command is not a StepFxCommand");
 
     match cmd.unwrap() {
-        StepFxCommand::SetRate { fx_id, rate } => {
+        StepFxCommand::SetSpeed { fx_id, speed } => {
             assert_eq!(*fx_id, 1, "Expected FX ID 1, got {}", fx_id);
             assert!(
-                (*rate - 0.5).abs() < 1e-6,
-                "Expected rate 0.5, got {}",
-                rate
+                (*speed - 0.5).abs() < 1e-6,
+                "Expected speed 0.5, got {}",
+                speed
             );
         }
-        other => panic!("Expected SetRate command, got {:?}", other),
+        other => panic!("Expected SetSpeed command, got {:?}", other),
     }
 }

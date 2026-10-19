@@ -150,29 +150,29 @@ export default function MastersPanel(
     );
   };
 
-  /** Creates a playback-rate master affecting all live instances. */
-  const createGlobalRateMaster = () => {
+  /** Creates a playback-speed master affecting all live instances. */
+  const createGlobalSpeedMaster = () => {
     sendMasterCommand(
       buildStoreMasterCommand(
         $masters(),
-        types.MasterKind.PlaybackRate,
+        types.MasterKind.PlaybackSpeed,
         allInstancesTarget(),
-        "Playback Rate Master",
+        "Playback Speed Master",
         newMasterUid(),
       ),
     );
   };
 
-  /** Creates a playback-rate master affecting selected clip instances. */
-  const createClipRateMaster = () => {
+  /** Creates a playback-speed master affecting selected clip instances. */
+  const createClipSpeedMaster = () => {
     const clipIds = selectedClipIds();
     if (clipIds.length === 0) return;
     sendMasterCommand(
       buildStoreMasterCommand(
         $masters(),
-        types.MasterKind.PlaybackRate,
+        types.MasterKind.PlaybackSpeed,
         clipPlaybackTarget(clipIds),
-        "Clip Rate Master",
+        "Clip Speed Master",
         newMasterUid(),
       ),
     );
@@ -224,8 +224,8 @@ export default function MastersPanel(
         >
           New group master
         </Button>
-        <Button size="compact" type="button" onClick={createGlobalRateMaster}>
-          New rate global
+        <Button size="compact" type="button" onClick={createGlobalSpeedMaster}>
+          New speed global
         </Button>
         <label class="flex w-48 shrink-0 flex-col gap-1 text-xs text-neutral-400">
           <span>Clips</span>
@@ -254,9 +254,9 @@ export default function MastersPanel(
           size="compact"
           type="button"
           disabled={selectedClipIds().length === 0}
-          onClick={createClipRateMaster}
+          onClick={createClipSpeedMaster}
         >
-          New clip rate
+          New clip speed
         </Button>
       </div>
 

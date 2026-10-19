@@ -109,7 +109,7 @@ fn build_metronome_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
                 flow_nodes::WAVEFORM_FX_IN_WAVEFORM,
                 FlowValue::Waveform(FlowWaveform {
                     kind: WaveformKind::Square,
-                    rate_secs: 1.0,
+                    cycle_length_secs: 1.0,
                     amplitude: 0.0,
                     phase: 0.0,
                     base: 1.0,
@@ -210,19 +210,19 @@ fn build_red_chase_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
             ),
         )],
     );
-    // Waveform that defines the LFO shape for rate modulation
+    // Waveform that defines the LFO shape for cycle length modulation
     let rate_lfo_waveform = flow_node_with_defaults(
         registry,
         2,
         flow_nodes::WAVEFORM_KIND,
-        "Rate LFO Shape",
+        "Cycle Length LFO Shape",
         &[
             (
                 flow_nodes::WAVEFORM_IN_KIND,
                 FlowValue::WaveformKind(WaveformKind::Sin),
             ),
-            (flow_nodes::WAVEFORM_IN_RATE, FlowValue::Number(4.0)),
-            (flow_nodes::WAVEFORM_IN_AMPLITUDE, FlowValue::Number(1.5)), // Modulate rate by +/- 1.5s
+            (flow_nodes::WAVEFORM_IN_CYCLE_LENGTH, FlowValue::Number(4.0)),
+            (flow_nodes::WAVEFORM_IN_AMPLITUDE, FlowValue::Number(1.5)), // Modulate cycle length by +/- 1.5s
             (flow_nodes::WAVEFORM_IN_BASE, FlowValue::Number(0.5)),      // Center around 0.5
         ],
     );
@@ -231,7 +231,7 @@ fn build_red_chase_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
         registry,
         3,
         flow_nodes::OSCILLATOR_KIND,
-        "Rate Oscillator",
+        "Cycle Length Oscillator",
         &[],
     );
     // Main FX waveform whose rate is modulated by the oscillator output
@@ -290,7 +290,7 @@ fn build_red_chase_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
                     port_id: flow_nodes::WAVEFORM_FX_IN_SELECTION,
                 },
             },
-            // Rate LFO Shape -> Rate Oscillator
+            // Cycle Length LFO Shape -> Cycle Length Oscillator
             FlowEdgeDefinition {
                 from: FlowPortRef {
                     node_id: 2,
@@ -301,7 +301,7 @@ fn build_red_chase_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
                     port_id: flow_nodes::OSCILLATOR_IN_WAVEFORM,
                 },
             },
-            // Rate Oscillator -> FX Waveform Rate
+            // Cycle Length Oscillator -> FX Waveform Cycle Length
             FlowEdgeDefinition {
                 from: FlowPortRef {
                     node_id: 3,
@@ -309,7 +309,7 @@ fn build_red_chase_flow(registry: &FlowNodeRegistry) -> FlowDefinition {
                 },
                 to: FlowPortRef {
                     node_id: 4,
-                    port_id: flow_nodes::WAVEFORM_IN_RATE,
+                    port_id: flow_nodes::WAVEFORM_IN_CYCLE_LENGTH,
                 },
             },
             // FX Waveform -> FX

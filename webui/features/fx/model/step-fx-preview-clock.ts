@@ -57,7 +57,7 @@ export function stepFxPreviewBeat(
     Math.max(0, nowEpochMs - preview.sampled_at_epoch_ms) / 1_000;
   const elapsedSeconds =
     durationToSeconds(preview.elapsed) +
-    interpolationSeconds * Math.max(0, preview.elapsed_rate);
+    interpolationSeconds * Math.max(0, preview.elapsed_speed);
   const cycleBeats = stepFxEffectiveCycleBeats(
     totalBeats,
     cycleScale,

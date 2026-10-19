@@ -41,9 +41,9 @@ type ClipPlaybackData = (
     Option<&'static ReleaseMarker>,
 );
 
-/// Rate commands waiting for their target clip playback to materialize.
+/// Speed commands waiting for their target clip playback to materialize.
 #[derive(Default, Resource)]
-pub struct PendingClipPlaybackRates(HashMap<u32, f32>);
+pub struct PendingClipPlaybackSpeeds(HashMap<u32, f32>);
 
 /// Clip access and command lifecycle publishing used to apply clip configuration commands.
 #[derive(SystemParam)]
@@ -449,9 +449,9 @@ fn release_playback_by_id(
         }
 
         commands.entity(entity).insert(ReleaseMarker::default());
-        if let Some(controls) = controls.filter(|controls| controls.rate == 0.0) {
+        if let Some(controls) = controls.filter(|controls| controls.speed == 0.0) {
             let mut resumed_controls = controls.clone();
-            resumed_controls.rate = 1.0;
+            resumed_controls.speed = 1.0;
             commands.entity(entity).insert(resumed_controls);
         }
         return true;
@@ -533,10 +533,10 @@ pub fn forward_clip_ingress_actions(
     }
 }
 
-/// Handles clip runtime commands that directly control attached playback rate.
-pub fn handle_clip_rate_commands(
+/// Handles clip runtime commands that directly control attached playback speed.
+pub fn handle_clip_speed_commands(
     mut events: MessageReader<EngineOperationEnvelope<ClipOperation>>,
-    mut pending_rates: ResMut<PendingClipPlaybackRates>,
+    mut pending_speeds: ResMut<PendingClipPlaybackSpeeds>,
     instance_index: Res<InstanceIndex>,
     materialized_clips: Query<&MaterializedClip>,
     mut instances: Query<(
@@ -545,19 +545,19 @@ pub fn handle_clip_rate_commands(
         Option<&mut InstanceClock>,
     )>,
 ) {
-    let pending = std::mem::take(&mut pending_rates.0);
-    for (id, rate) in pending {
-        if !set_clip_playback_rate(
+    let pending = std::mem::take(&mut pending_speeds.0);
+    for (id, speed) in pending {
+        if !set_clip_playback_speed(
             id,
-            rate,
+            speed,
             &materialized_clips,
             &instance_index,
             &mut instances,
         ) {
             tracing::warn!(
                 clip_id = id,
-                rate,
-                "Dropping queued clip rate command because playback did not materialize"
+                speed,
+                "Dropping queued clip speed command because playback did not materialize"
             );
         }
     }
@@ -573,32 +573,32 @@ pub fn handle_clip_rate_commands(
         .collect::<HashSet<_>>();
 
     for event in event_batch {
-        let ClipOperation::SetRate { clip_id, rate } = &event.operation else {
+        let ClipOperation::SetSpeed { clip_id, speed } = &event.operation else {
             continue;
         };
 
         for id in clip_id.expand() {
-            if set_clip_playback_rate(
+            if set_clip_playback_speed(
                 id,
-                *rate,
+                *speed,
                 &materialized_clips,
                 &instance_index,
                 &mut instances,
             ) {
-                pending_rates.0.remove(&id);
+                pending_speeds.0.remove(&id);
             } else if start_batches.contains(&(event.undo_id, id)) {
-                pending_rates.0.insert(id, *rate);
+                pending_speeds.0.insert(id, *speed);
                 tracing::debug!(
                     clip_id = id,
-                    rate,
+                    speed,
                     undo_id = ?event.undo_id,
-                    "Clip rate command queued for same-batch playback materialization"
+                    "Clip speed command queued for same-batch playback materialization"
                 );
             } else {
                 tracing::warn!(
                     clip_id = id,
-                    rate,
-                    "Clip rate command ignored because clip has no active playback"
+                    speed,
+                    "Clip speed command ignored because clip has no active playback"
                 );
             }
         }
@@ -1015,9 +1015,9 @@ fn release_cross_domain_retarget_playback(
     if release_marker.is_none() {
         entity_commands.insert(ReleaseMarker::default());
     }
-    if let Some(controls) = controls.filter(|controls| controls.rate == 0.0) {
+    if let Some(controls) = controls.filter(|controls| controls.speed == 0.0) {
         let mut resumed_controls = controls.clone();
-        resumed_controls.rate = 1.0;
+        resumed_controls.speed = 1.0;
         entity_commands.insert(resumed_controls);
     }
 }
@@ -1057,10 +1057,10 @@ fn attached_instances_for_clip(
         .collect()
 }
 
-/// Applies a rate to all active instances attached to an clip.
-fn set_clip_playback_rate(
+/// Applies a speed to all active instances attached to an clip.
+fn set_clip_playback_speed(
     clip_id: u32,
-    rate: f32,
+    speed: f32,
     materialized_clips: &Query<&MaterializedClip>,
     instance_index: &InstanceIndex,
     instances: &mut Query<(
@@ -1074,9 +1074,9 @@ fn set_clip_playback_rate(
         .iter()
         .filter(|mexec| mexec.clip_id == clip_id)
     {
-        if set_attached_instance_rate(
+        if set_attached_instance_speed(
             materialized_clip.attached_instance,
-            rate,
+            speed,
             instance_index,
             instances,
         ) {
@@ -1085,17 +1085,17 @@ fn set_clip_playback_rate(
             tracing::warn!(
                 clip_id,
                 instance_id = ?materialized_clip.attached_instance,
-                "Clip rate command could not find attached playback"
+                "Clip speed command could not find attached playback"
             );
         }
     }
     applied
 }
 
-/// Applies a rate to a playback, falling back to a query scan if the index is stale.
-fn set_attached_instance_rate(
+/// Applies a speed to a playback, falling back to a query scan if the index is stale.
+fn set_attached_instance_speed(
     instance_id: InstanceId,
-    rate: f32,
+    speed: f32,
     instance_index: &InstanceIndex,
     instances: &mut Query<(
         &InstanceId,
@@ -1106,9 +1106,9 @@ fn set_attached_instance_rate(
     if let Some(entity) = instance_index.get(&instance_id)
         && let Ok((_id, mut controls, mut clock)) = instances.get_mut(entity)
     {
-        controls.set_rate(rate);
+        controls.set_speed(speed);
         if let Some(clock) = clock.as_deref_mut() {
-            clock.set_rate(controls.effective_rate());
+            clock.set_speed(controls.effective_speed());
         }
         return true;
     }
@@ -1117,9 +1117,9 @@ fn set_attached_instance_rate(
         if *candidate_id != instance_id {
             continue;
         }
-        controls.set_rate(rate);
+        controls.set_speed(speed);
         if let Some(clock) = clock.as_deref_mut() {
-            clock.set_rate(controls.effective_rate());
+            clock.set_speed(controls.effective_speed());
         }
         return true;
     }
@@ -1614,7 +1614,7 @@ mod tests {
                 instance_id,
                 InstanceControls {
                     intensity_scale: 1.0,
-                    rate: 0.0,
+                    speed: 0.0,
                     ..Default::default()
                 },
             ))
@@ -1639,7 +1639,7 @@ mod tests {
             app.world()
                 .get::<InstanceControls>(playback)
                 .expect("controls should remain attached")
-                .rate,
+                .speed,
             1.0
         );
     }
@@ -1657,7 +1657,7 @@ mod tests {
                 instance_id,
                 InstanceControls {
                     intensity_scale: 1.0,
-                    rate: 0.0,
+                    speed: 0.0,
                     ..Default::default()
                 },
             ))
@@ -1680,7 +1680,7 @@ mod tests {
             app.world()
                 .get::<InstanceControls>(playback)
                 .expect("controls should remain attached")
-                .rate,
+                .speed,
             1.0
         );
     }
@@ -1716,14 +1716,14 @@ mod tests {
         assert_eq!(command_results.len(), 2);
     }
 
-    /// Verifies clip rate commands apply to the clip's active playback clock.
+    /// Verifies clip speed commands apply to the clip's active playback clock.
     #[test]
-    fn clip_rate_command_updates_attached_instance_rate() {
+    fn clip_speed_command_updates_attached_instance_speed() {
         let mut app = App::new();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
-        app.insert_resource(PendingClipPlaybackRates::default());
-        app.add_systems(Update, handle_clip_rate_commands);
+        app.insert_resource(PendingClipPlaybackSpeeds::default());
+        app.add_systems(Update, handle_clip_speed_commands);
 
         let instance_id = InstanceId::new();
         let playback = app
@@ -1745,9 +1745,9 @@ mod tests {
 
         submit_clip_command(
             &mut app,
-            ClipCommand::SetRate {
+            ClipCommand::SetSpeed {
                 clip_id: IdExpr::Single(7),
-                rate: 2.0,
+                speed: 2.0,
             },
         );
         app.update();
@@ -1756,24 +1756,24 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 2.0);
+        assert_eq!(controls.speed, 2.0);
         let mut clock = app
             .world_mut()
             .get_mut::<InstanceClock>(playback)
             .expect("playback clock should remain present");
-        assert_eq!(clock.rate, 2.0);
+        assert_eq!(clock.speed, 2.0);
         clock.advance_by_realtime_delta(std::time::Duration::from_millis(250));
         assert_eq!(clock.position, std::time::Duration::from_millis(500));
     }
 
-    /// Verifies clip rate commands wait for deferred playback materialization.
+    /// Verifies clip speed commands wait for deferred playback materialization.
     #[test]
-    fn clip_rate_command_applies_after_playback_materializes() {
+    fn clip_speed_command_applies_after_playback_materializes() {
         let mut app = App::new();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
-        app.insert_resource(PendingClipPlaybackRates::default());
-        app.add_systems(Update, handle_clip_rate_commands);
+        app.insert_resource(PendingClipPlaybackSpeeds::default());
+        app.add_systems(Update, handle_clip_speed_commands);
 
         let undo_id = Uuid::new_v4();
         app.world_mut()
@@ -1788,14 +1788,17 @@ mod tests {
                 OperationId::new(),
                 None,
                 Some(undo_id.into()),
-                ClipOperation::SetRate {
+                ClipOperation::SetSpeed {
                     clip_id: IdExpr::Single(7),
-                    rate: 2.0,
+                    speed: 2.0,
                 },
             ));
         app.update();
         assert_eq!(
-            app.world().resource::<PendingClipPlaybackRates>().0.get(&7),
+            app.world()
+                .resource::<PendingClipPlaybackSpeeds>()
+                .0
+                .get(&7),
             Some(&2.0)
         );
 
@@ -1821,7 +1824,7 @@ mod tests {
 
         assert!(
             app.world()
-                .resource::<PendingClipPlaybackRates>()
+                .resource::<PendingClipPlaybackSpeeds>()
                 .0
                 .is_empty()
         );
@@ -1829,34 +1832,34 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 2.0);
+        assert_eq!(controls.speed, 2.0);
         let clock = app
             .world()
             .get::<InstanceClock>(playback)
             .expect("playback clock should remain present");
-        assert_eq!(clock.rate, 2.0);
+        assert_eq!(clock.speed, 2.0);
     }
 
-    /// Verifies inactive standalone rate commands do not leak into future starts.
+    /// Verifies inactive standalone speed commands do not leak into future starts.
     #[test]
-    fn clip_rate_command_without_same_batch_start_is_not_persisted() {
+    fn clip_speed_command_without_same_batch_start_is_not_persisted() {
         let mut app = App::new();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
-        app.insert_resource(PendingClipPlaybackRates::default());
-        app.add_systems(Update, handle_clip_rate_commands);
+        app.insert_resource(PendingClipPlaybackSpeeds::default());
+        app.add_systems(Update, handle_clip_speed_commands);
 
         submit_clip_command(
             &mut app,
-            ClipCommand::SetRate {
+            ClipCommand::SetSpeed {
                 clip_id: IdExpr::Single(7),
-                rate: 2.0,
+                speed: 2.0,
             },
         );
         app.update();
         assert!(
             app.world()
-                .resource::<PendingClipPlaybackRates>()
+                .resource::<PendingClipPlaybackSpeeds>()
                 .0
                 .is_empty()
         );
@@ -1885,7 +1888,7 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 1.0);
+        assert_eq!(controls.speed, 1.0);
     }
 
     /// Verifies routed domain actions inherit command and undo context while receiving fresh operation identity.

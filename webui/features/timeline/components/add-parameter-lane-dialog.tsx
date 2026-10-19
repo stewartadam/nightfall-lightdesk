@@ -46,9 +46,7 @@ export function AddParameterLaneDialog(props: {
     const clip = clipOptions().find(
       (entry) => entry.identifiers.uid === clipUid(),
     );
-    return clip
-      ? { type: "RateMaster", data: clip.identifiers.uid }
-      : undefined;
+    return clip ? { type: "ClipSpeed", data: clip.identifiers.uid } : undefined;
   });
 
   /** Uses the target label when the optional display name is blank. */
@@ -62,7 +60,7 @@ export function AddParameterLaneDialog(props: {
     const fallback =
       selected.type === "GlobalVariable"
         ? selected.data
-        : `Clip ${clip?.identifiers.id}: ${clip?.identifiers.label} rate`;
+        : `Clip ${clip?.identifiers.id}: ${clip?.identifiers.label} speed`;
     props.onSubmit(name().trim() || fallback, selected);
   };
 
@@ -89,7 +87,7 @@ export function AddParameterLaneDialog(props: {
               }
             >
               <option value="GlobalVariable">Global variable</option>
-              <option value="RateMaster">Clip rate</option>
+              <option value="ClipSpeed">Clip speed</option>
             </NativeSelect>
           </label>
           <Show
@@ -112,7 +110,7 @@ export function AddParameterLaneDialog(props: {
                 </NativeSelect>
                 <Show when={clipOptions().length === 0}>
                   <span class="text-xs text-neutral-400">
-                    Create a clip to add a clip rate lane.
+                    Create a clip to add a clip speed lane.
                   </span>
                 </Show>
               </label>

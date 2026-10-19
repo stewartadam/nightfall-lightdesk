@@ -44,7 +44,7 @@ export interface InsertableActionDefinition {
   family: ActionFamily;
   requiresCueIndex?: boolean;
   requiresCommand?: boolean;
-  requiresRate?: boolean;
+  requiresSpeed?: boolean;
 }
 
 export const INSERTABLE_ACTIONS: InsertableActionDefinition[] = [
@@ -79,11 +79,11 @@ export const INSERTABLE_ACTIONS: InsertableActionDefinition[] = [
     family: "clip",
   },
   {
-    type: "SetClipRate",
-    label: "Set Clip Rate",
-    description: "Set a clip playback rate multiplier",
+    type: "SetClipSpeed",
+    label: "Set Clip Speed",
+    description: "Set a clip playback speed multiplier",
     family: "clip",
-    requiresRate: true,
+    requiresSpeed: true,
   },
   {
     type: "JumpToCue",
@@ -159,7 +159,7 @@ export function buildActionKind(
   type: InsertableActionType,
   targetUid: string,
   cueIndex = 1,
-  rate = 1,
+  speed = 1,
 ): TimelineActionKind {
   switch (type) {
     case "FireCue":
@@ -172,12 +172,12 @@ export function buildActionKind(
       return { type: "AdvanceSequence", data: targetUid };
     case "BackSequence":
       return { type: "BackSequence", data: targetUid };
-    case "SetClipRate":
+    case "SetClipSpeed":
       return {
-        type: "SetClipRate",
+        type: "SetClipSpeed",
         data: {
           uid: targetUid,
-          rate: Number.isFinite(rate) ? Math.max(0, rate) : 0,
+          speed: Number.isFinite(speed) ? Math.max(0, speed) : 0,
         },
       };
     case "JumpToCue":

@@ -75,8 +75,8 @@ impl MaterializedFx {
 
         let render_attribute = |(attribute, waveform): (&Attribute, &FxWaveform)| {
             let mut acc = (Vec::new(), Vec::new());
-            let remaining = elapsed.as_micros() % waveform.rate.as_micros();
-            let ratio = remaining as f32 / waveform.rate.as_micros() as f32;
+            let remaining = elapsed.as_micros() % waveform.cycle_length.as_micros();
+            let ratio = remaining as f32 / waveform.cycle_length.as_micros() as f32;
             let samples = waveform.sample(&resolved_selection, Percentage::from(ratio));
 
             for (selection_index, sampled_value) in
@@ -409,7 +409,7 @@ mod tests {
                         duty_cycle: 1.0,
                     },
                     phase_range: (0.0, 2.0 * std::f32::consts::PI),
-                    rate: Duration::from_secs(2),
+                    cycle_length: Duration::from_secs(2),
                     width: Percentage::from(1.0),
                     is_relative: false,
                 },

@@ -101,8 +101,8 @@ impl FlowNode for OscillatorNode {
 
 /// Sample a waveform value at a given elapsed duration.
 pub fn sample_waveform_value(waveform: &FlowWaveform, elapsed: std::time::Duration) -> f32 {
-    let rate_secs = waveform.rate_secs.max(0.001);
-    let percent = (elapsed.as_secs_f32() / rate_secs).fract();
+    let cycle_length_secs = waveform.cycle_length_secs.max(0.001);
+    let percent = (elapsed.as_secs_f32() / cycle_length_secs).fract();
     let phase = waveform.phase + 2.0 * std::f32::consts::PI * percent;
     let duty_cycle = waveform.duty_cycle.unwrap_or(1.0).clamp(0.0, 1.0);
     let normalized = sample_waveform_radians(waveform.kind, phase, duty_cycle);
@@ -129,7 +129,7 @@ mod tests {
         };
         let waveform = FlowWaveform {
             kind: WaveformKind::Sawtooth,
-            rate_secs: 4.0,
+            cycle_length_secs: 4.0,
             amplitude: 1.0,
             phase: 0.0,
             base: 0.0,
@@ -168,7 +168,7 @@ mod tests {
         };
         let waveform = FlowWaveform {
             kind: WaveformKind::Sawtooth,
-            rate_secs: 4.0,
+            cycle_length_secs: 4.0,
             amplitude: 1.0,
             phase: 0.0,
             base: 0.0,

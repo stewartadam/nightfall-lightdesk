@@ -64,12 +64,12 @@ pub(super) fn parse_clip_action(
     let action = tokens.last()?;
     let action_index = tokens.len().checked_sub(1)?;
 
-    if let Some(rate_index) = tokens.iter().position(|token| {
+    if let Some(speed_index) = tokens.iter().position(|token| {
         canonical_word(token, AliasCanonicalizationContext::default())
-            .is_some_and(|word| word.as_str() == canonical_token_text(TokenId::Rate))
+            .is_some_and(|word| word.as_str() == canonical_token_text(TokenId::Speed))
     }) {
-        let value = parse_decimal_value_from_tokens(command_str, &tokens[rate_index + 1..])?;
-        return Some((rate_index, PlaybackActionAst::Rate(value.0.parse().ok()?)));
+        let value = parse_decimal_value_from_tokens(command_str, &tokens[speed_index + 1..])?;
+        return Some((speed_index, PlaybackActionAst::Speed(value.0.parse().ok()?)));
     }
 
     if action.kind == LexerTokenKind::Number {

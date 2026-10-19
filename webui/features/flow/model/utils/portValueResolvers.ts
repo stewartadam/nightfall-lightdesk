@@ -85,7 +85,7 @@ export function resolveWaveformValue(
  */
 export const DEFAULT_WAVEFORM: FlowWaveform = {
   kind: WaveformKind.Sin,
-  rate_secs: 1,
+  cycle_length_secs: 1,
   amplitude: 1,
   phase: 0,
   base: 0,

@@ -61,7 +61,7 @@ pub fn advance_sequences(
 
         if preview_controls
             .get(sequence_entity)
-            .is_ok_and(|controls| controls.effective_rate() == 0.0)
+            .is_ok_and(|controls| controls.effective_speed() == 0.0)
         {
             continue;
         }

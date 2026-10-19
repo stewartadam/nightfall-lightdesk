@@ -279,7 +279,7 @@ mod tests {
             stopped_at_timeline: Some(Duration::from_secs(4)),
             source_local_start: Duration::ZERO,
             release: None,
-            rate_changes: Vec::new(),
+            speed_changes: Vec::new(),
             explicit_interventions: vec![PlannedPlaybackIntervention {
                 owner: owner("go"),
                 timeline_position: Duration::from_secs(2),

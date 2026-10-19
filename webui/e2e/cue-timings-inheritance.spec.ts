@@ -727,9 +727,9 @@ test("cue timings grid paints preview progress behind timing cells", async ({
         activation_epoch_ms: Date.now() - 1_000,
         owner_uids: [],
         intensity_scale: 1,
-        rate: 1,
-        rate_master_scale: 1,
-        effective_rate: 1,
+        speed: 1,
+        speed_master_scale: 1,
+        effective_speed: 1,
         status: {
           position: { type: "None" },
           source_activation_epoch_ms: Date.now() - 1_000,
@@ -928,7 +928,7 @@ test("sequence timings grid paints active playback progress behind timing cells"
         is_preview: false,
         is_releasing: false,
         intensity_scale: 1,
-        rate: 1,
+        speed: 1,
         status: {
           position: {
             type: "Sequence",

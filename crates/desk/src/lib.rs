@@ -89,7 +89,7 @@ pub struct DeskPlugin {
 impl Plugin for DeskPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering DeskPlugin");
-        app.init_resource::<event_handlers::clip_events::PendingClipPlaybackRates>();
+        app.init_resource::<event_handlers::clip_events::PendingClipPlaybackSpeeds>();
         assert!(
             app.is_plugin_added::<EnginePlugin>(),
             "DeskPlugin requires EnginePlugin (provides CommandIngressRouter)"
@@ -246,7 +246,7 @@ impl Plugin for DeskPlugin {
             (
                 instances::add_missing_instance_clocks,
                 ApplyDeferred,
-                masters::apply_playback_rate_masters,
+                masters::apply_playback_speed_masters,
                 instances::advance_realtime_instance_clocks,
             )
                 .chain()
@@ -258,7 +258,7 @@ impl Plugin for DeskPlugin {
             (
                 event_handlers::clip_events::forward_clip_ingress_actions
                     .in_set(DeskEventSet::ClipForwarding)
-                    .before(event_handlers::clip_events::handle_clip_rate_commands)
+                    .before(event_handlers::clip_events::handle_clip_speed_commands)
                     .before(event_handlers::clip_events::route_clip_playback_actions),
                 event_handlers::clip_events::handle_configuration_commands,
                 event_handlers::clip_events::crud_events,
@@ -273,7 +273,7 @@ impl Plugin for DeskPlugin {
                 event_handlers::instance_events::handle_events,
                 event_handlers::instance_events::handle_playback_commands
                     .in_set(DeskEventSet::InstancePlayback),
-                event_handlers::clip_events::handle_clip_rate_commands
+                event_handlers::clip_events::handle_clip_speed_commands
                     .before(event_handlers::instance_events::handle_playback_control_updates),
                 event_handlers::instance_events::handle_playback_control_updates,
                 controls::handle_control_commands,

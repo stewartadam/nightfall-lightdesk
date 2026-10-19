@@ -22,7 +22,7 @@ const log = getLogger(import.meta.url);
 
 // Waveform node port IDs (must match backend builtin_nodes.rs)
 const WAVEFORM_IN_KIND = 1;
-const WAVEFORM_IN_RATE = 2;
+const WAVEFORM_IN_CYCLE_LENGTH = 2;
 const WAVEFORM_IN_AMPLITUDE = 3;
 const WAVEFORM_IN_PHASE = 4;
 const WAVEFORM_IN_BASE = 5;
@@ -71,7 +71,7 @@ function buildWaveformFromPorts(
 
   return {
     kind,
-    rate_secs: getNumber(WAVEFORM_IN_RATE, 1.0),
+    cycle_length_secs: getNumber(WAVEFORM_IN_CYCLE_LENGTH, 1.0),
     amplitude: getNumber(WAVEFORM_IN_AMPLITUDE, 1.0),
     phase: getNumber(WAVEFORM_IN_PHASE, 0.0),
     base: getNumber(WAVEFORM_IN_BASE, 0.0),
@@ -274,7 +274,7 @@ export function FlowNodeProperties(props: {
 
                   const disabledFields = createMemo(() => ({
                     kind: isPortConnected(WAVEFORM_IN_KIND),
-                    rate: isPortConnected(WAVEFORM_IN_RATE),
+                    cycleLength: isPortConnected(WAVEFORM_IN_CYCLE_LENGTH),
                     amplitude: isPortConnected(WAVEFORM_IN_AMPLITUDE),
                     phase: isPortConnected(WAVEFORM_IN_PHASE),
                     base: isPortConnected(WAVEFORM_IN_BASE),
@@ -294,13 +294,13 @@ export function FlowNodeProperties(props: {
                       );
                     }
                     if (
-                      updates.rate_secs !== undefined &&
-                      !disabledFields().rate
+                      updates.cycle_length_secs !== undefined &&
+                      !disabledFields().cycleLength
                     ) {
                       props.flowContext.updateValue(
                         nodeId,
-                        WAVEFORM_IN_RATE,
-                        { type: "Number", data: updates.rate_secs },
+                        WAVEFORM_IN_CYCLE_LENGTH,
+                        { type: "Number", data: updates.cycle_length_secs },
                         true,
                       );
                     }

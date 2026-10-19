@@ -815,8 +815,8 @@ fn materialize_fx_ast_from_branch_handles_start_action() {
 }
 
 #[test]
-fn materialize_fx_ast_from_branch_handles_rate_action() {
-    let input = "fx 1 rate 50";
+fn materialize_fx_ast_from_branch_handles_speed_action() {
+    let input = "fx 1 speed 50";
     let tokens = crate::parser::lexer::lex_command(input);
     let branches = super::super::structural::execute_branches_from_tokens(
         &super::build_strict_prefix_context(&tokens, input.len()),
@@ -829,7 +829,7 @@ fn materialize_fx_ast_from_branch_handles_rate_action() {
     assert!(matches!(
         super::materialize_fx_ast_from_branch(input, branch),
         Some(CommandAst::Fx(command))
-            if matches!(command.action, FxActionAst::SetRate(ref rate) if rate.value.0 == "50")
+            if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "50")
     ));
 }
 
@@ -861,14 +861,14 @@ fn strict_structural_dispatch_handles_fx_branch() {
         Some(CommandAst::Fx(command)) if matches!(command.action, FxActionAst::Start)
     ));
     assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fx 1 rate 50"),
+        super::materialize_strict_ast_from_structural_dispatch("fx 1 speed 50"),
         Some(CommandAst::Fx(command))
-            if matches!(command.action, FxActionAst::SetRate(ref rate) if rate.value.0 == "50")
+            if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "50")
     ));
     assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fx 1 rate 2.5"),
+        super::materialize_strict_ast_from_structural_dispatch("fx 1 speed 2.5"),
         Some(CommandAst::Fx(command))
-            if matches!(command.action, FxActionAst::SetRate(ref rate) if rate.value.0 == "2.5")
+            if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "2.5")
     ));
     assert!(matches!(
         super::materialize_strict_ast_from_structural_dispatch(
@@ -1445,9 +1445,9 @@ fn strict_parser_handles_fx_commands_in_strict_mode() {
             if matches!(command.action, FxActionAst::Start)
     ));
     assert!(matches!(
-        parse_strict("fx 1 rate 50"),
+        parse_strict("fx 1 speed 50"),
         Ok(CommandAst::Fx(command))
-            if matches!(command.action, FxActionAst::SetRate(ref rate) if rate.value.0 == "50")
+            if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "50")
     ));
     assert!(matches!(
         parse_strict("store fx 1 step fix 1 50% int steps 100 0"),

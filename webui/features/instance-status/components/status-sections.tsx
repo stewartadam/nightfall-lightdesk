@@ -100,7 +100,7 @@ const INSTANCE_COLUMNS: GridColumn[] = [
   { id: "priority", title: "Priority", width: 96, sizing: "fixed" },
   { id: "position", title: "Position", width: 200, sizing: "fixed" },
   { id: "intensity", title: "Int", width: 80, sizing: "fixed" },
-  { id: "rate", title: "Rate", width: 80, sizing: "fixed" },
+  { id: "speed", title: "Speed", width: 80, sizing: "fixed" },
   { id: "tags", title: "Tags", width: 120, sizing: "fixed" },
   { id: "stop", title: "Stop", width: 56, sizing: "fixed" },
 ];
@@ -206,10 +206,10 @@ function activeInstanceCell(
         instance.intensity_scale,
         formatPercent(instance.intensity_scale),
       );
-    case "rate":
+    case "speed":
       return instanceNumberCell(
-        instance.effective_rate,
-        `${instance.effective_rate.toFixed(2)}x`,
+        instance.effective_speed,
+        `${instance.effective_speed.toFixed(2)}x`,
       );
     case "tags":
       return instanceTextCell(

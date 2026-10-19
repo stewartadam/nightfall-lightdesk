@@ -492,7 +492,7 @@ pub enum PlaybackActionAst {
     Go,
     Back,
     Goto(u32),
-    Rate(f32),
+    Speed(f32),
 }
 
 /// Clip command targeting one or more clip ids.
@@ -679,9 +679,9 @@ pub struct FxModuleCommandAst {
     pub action: FxModuleActionAst,
 }
 
-/// Rate value for an FX speed update.
+/// Speed value for an FX speed update.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SetFxRateAst<'i> {
+pub struct SetFxSpeedAst<'i> {
     pub value: ValueAst<'i>,
 }
 
@@ -691,7 +691,7 @@ pub enum FxActionAst<'i> {
     CreateStep(CreateStepFxAst<'i>),
     Start,
     Stop,
-    SetRate(SetFxRateAst<'i>),
+    SetSpeed(SetFxSpeedAst<'i>),
 }
 
 /// FX command targeting one or more FX ids.

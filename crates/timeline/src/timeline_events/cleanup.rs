@@ -61,15 +61,15 @@ fn detach_timeline_sourced_clock(
         return;
     }
 
-    let release_rate = controls
+    let release_speed = controls
         .as_ref()
-        .map(|controls| controls.effective_rate())
-        .filter(|rate| *rate > 0.0)
+        .map(|controls| controls.effective_speed())
+        .filter(|speed| *speed > 0.0)
         .unwrap_or(1.0);
     clock.source = InstanceClockSource::Realtime;
-    clock.set_rate(release_rate);
+    clock.set_speed(release_speed);
 
     if let Some(mut controls) = controls {
-        controls.set_rate(release_rate as f32);
+        controls.set_speed(release_speed as f32);
     }
 }

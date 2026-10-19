@@ -10,8 +10,8 @@ import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, test } from "./playwright-fixtures";
 import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
-/** Edits the production FX rate and relative switch, saves them, and checks compact field geometry. */
-test("FX waveform uses shared fields and persists rate and relative edits", async ({
+/** Edits the production FX cycle length and relative switch, saves them, and checks compact field geometry. */
+test("FX waveform uses shared fields and persists cycle length and relative edits", async ({
   page,
   backendSlot,
 }, testInfo) => {
@@ -36,7 +36,7 @@ test("FX waveform uses shared fields and persists rate and relative edits", asyn
       attributes: {
         Intensity: {
           params: { kind: "sin", min: 0, max: 255, duty_cycle: 1 },
-          rate: { secs: 1, nanos: 0 },
+          cycle_length: { secs: 1, nanos: 0 },
           phase_range: [0, 0],
           width: 1,
           is_relative: false,
@@ -59,11 +59,13 @@ test("FX waveform uses shared fields and persists rate and relative edits", asyn
   }, uid);
   const panel = page.locator('[data-panel-id="shared-fx"]');
   const waveform = panel.locator(".waveform-editor");
-  const rate = waveform.getByRole("spinbutton", { name: /Rate/ });
-  await expect(rate).toHaveValue("1.00");
-  await rate.fill("2.5");
-  await rate.blur();
-  await expect(rate).toHaveValue("2.50");
+  const cycleLength = waveform.getByRole("spinbutton", {
+    name: /Cycle length/,
+  });
+  await expect(cycleLength).toHaveValue("1.00");
+  await cycleLength.fill("2.5");
+  await cycleLength.blur();
+  await expect(cycleLength).toHaveValue("2.50");
   await waveform.getByRole("switch", { name: "Relative", exact: true }).check();
   await waveform.getByRole("button", { name: /Triangle/ }).click();
   await expect(
@@ -75,20 +77,20 @@ test("FX waveform uses shared fields and persists rate and relative edits", asyn
       page.evaluate((uid) => {
         const fx = (window as any).appStores.fx.get()[uid];
         return {
-          rate: fx.attributes.Intensity.rate,
+          cycle_length: fx.attributes.Intensity.cycle_length,
           relative: fx.attributes.Intensity.is_relative,
           kind: fx.attributes.Intensity.params.kind,
         };
       }, uid),
     )
     .toEqual({
-      rate: { secs: 2, nanos: 500_000_000 },
+      cycle_length: { secs: 2, nanos: 500_000_000 },
       relative: true,
       kind: "triangle",
     });
-  await rate.focus();
-  await expect(rate).toHaveCSS("box-shadow", "none");
-  await expect(rate.locator("..")).not.toHaveCSS("box-shadow", "none");
+  await cycleLength.focus();
+  await expect(cycleLength).toHaveCSS("box-shadow", "none");
+  await expect(cycleLength.locator("..")).not.toHaveCSS("box-shadow", "none");
   await waveform.screenshot({
     path: testInfo.outputPath("shared-waveform.png"),
   });

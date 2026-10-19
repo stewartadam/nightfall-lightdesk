@@ -17,7 +17,7 @@ pub struct TimelineSeekDispatch<'w> {
     pub(super) action_registry: Option<Res<'w, ActionRegistry>>,
     /// Generic action invocations emitted for opted-in nondeterministic replay.
     action_invocations: Option<MessageWriter<'w, ActionInvocation>>,
-    /// Clip actions emitted during reconciliation and rate restoration.
+    /// Clip actions emitted during reconciliation and speed restoration.
     pub(super) ev_clip: MessageWriter<'w, EngineOperationEnvelope<ClipOperation>>,
     /// Correlation state for actions emitted on behalf of a timeline.
     pub(super) timeline_command_origins: ResMut<'w, TimelineCommandOrigins>,
@@ -118,29 +118,29 @@ pub(super) fn dispatch_timeline_reconstruction_actions(
             );
             continue;
         }
-        if let ActionKind::SetClipRate { uid, .. } = action
+        if let ActionKind::SetClipSpeed { uid, .. } = action
             && state.direct_materialized_clip_uids.contains(&uid)
         {
             tracing::debug!(
                 action_id,
                 position = ?action_position,
-                "Skipping directly materialized clip rate during seek"
+                "Skipping directly materialized clip speed during seek"
             );
             continue;
         }
         match action {
-            ActionKind::SetClipRate { uid, rate } => {
+            ActionKind::SetClipSpeed { uid, speed } => {
                 let Some((_entity, id)) =
-                    resolve_clip_entity_and_id(clip_snapshot, &uid, "seek-set-clip-rate")
+                    resolve_clip_entity_and_id(clip_snapshot, &uid, "seek-set-clip-speed")
                 else {
                     continue;
                 };
                 write_timeline_clip_action(
                     &mut dispatch.ev_clip,
                     &mut dispatch.timeline_command_origins,
-                    ClipOperation::SetRate {
+                    ClipOperation::SetSpeed {
                         clip_id: IdExpr::Single(id),
-                        rate,
+                        speed,
                     },
                 );
             }
