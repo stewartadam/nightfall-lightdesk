@@ -15,6 +15,12 @@ const DIAGRAM_PAGES = [
   { path: "concepts/show-to-light.html", diagrams: 3 },
   { path: "concepts/priorities-and-merging.html", diagrams: 2 },
   { path: "concepts/concept-map.html", diagrams: 3 },
+  { path: "architecture/system-overview.html", diagrams: 4 },
+  { path: "architecture/client-protocol.html", diagrams: 3 },
+  { path: "architecture/web-ui.html", diagrams: 5 },
+  { path: "architecture/crate-map.html", diagrams: 1 },
+  { path: "engine/frame-loop.html", diagrams: 4 },
+  { path: "engine/command-path.html", diagrams: 2 },
   { path: "contributing/writing-style.html", diagrams: 1 },
 ];
 
@@ -56,6 +62,14 @@ test("developer guide renders Mermaid diagrams in light and dark themes", async 
         path: testInfo.outputPath(`${name}-${theme}.png`),
         fullPage: true,
       });
+      const rendered = page.locator(".mermaid-diagram");
+      for (let index = 0; index < diagrams; index += 1) {
+        await rendered.nth(index).screenshot({
+          path: testInfo.outputPath(
+            `${name}-diagram-${index + 1}-${theme}.png`,
+          ),
+        });
+      }
     }
     await context.close();
   }
