@@ -55,33 +55,39 @@ for (const { path, diagrams } of DIAGRAM_PAGES) {
     browser,
   }, testInfo) => {
     const name = path.replace(/\W+/g, "-");
-    for (const theme of ["light", "navy"]) {
+    for (const [theme, mermaidTheme] of [
+      ["light", "default"],
+      ["navy", "dark"],
+    ]) {
       const context = await browser.newContext();
-      await context.addInitScript((value) => {
-        localStorage.setItem("mdbook-theme", value);
-      }, theme);
-      const page = await context.newPage();
-      await page.goto(guideUrl(path));
-      await expect(
-        page.locator(".mermaid-diagram[data-rendered] svg"),
-      ).toHaveCount(diagrams);
-      await expect(page.locator("code.language-mermaid")).toHaveCount(0);
-      await expect(
-        page.locator(".mermaid-diagram svg .error-icon"),
-      ).toHaveCount(0);
-      await page.screenshot({
-        path: testInfo.outputPath(`${name}-${theme}.png`),
-        fullPage: true,
-      });
-      const rendered = page.locator(".mermaid-diagram");
-      for (let index = 0; index < diagrams; index += 1) {
-        await rendered.nth(index).screenshot({
-          path: testInfo.outputPath(
-            `${name}-diagram-${index + 1}-${theme}.png`,
-          ),
+      try {
+        await context.addInitScript((value) => {
+          localStorage.setItem("mdbook-theme", value);
+        }, theme);
+        const page = await context.newPage();
+        await page.goto(guideUrl(path));
+        await expect(
+          page.locator(`.mermaid-diagram[data-rendered="${mermaidTheme}"] svg`),
+        ).toHaveCount(diagrams);
+        await expect(page.locator("code.language-mermaid")).toHaveCount(0);
+        await expect(
+          page.locator(".mermaid-diagram svg .error-icon"),
+        ).toHaveCount(0);
+        await page.screenshot({
+          path: testInfo.outputPath(`${name}-${theme}.png`),
+          fullPage: true,
         });
+        const rendered = page.locator(".mermaid-diagram");
+        for (let index = 0; index < diagrams; index += 1) {
+          await rendered.nth(index).screenshot({
+            path: testInfo.outputPath(
+              `${name}-diagram-${index + 1}-${theme}.png`,
+            ),
+          });
+        }
+      } finally {
+        await context.close();
       }
-      await context.close();
     }
   });
 }
@@ -92,16 +98,19 @@ for (const { path, diagrams } of DIAGRAM_PAGES) {
  */
 test("developer guide diagrams follow book theme changes", async ({ page }) => {
   await page.goto(guideUrl("concepts/show-to-light.html"));
-  await expect(page.locator(".mermaid-diagram[data-rendered] svg")).toHaveCount(
-    3,
-  );
+  await expect(
+    page.locator('.mermaid-diagram[data-rendered="default"] svg'),
+  ).toHaveCount(3);
   const lightFill = await firstNodeFill(page);
 
   await page.evaluate(() => {
     document.documentElement.classList.remove("light");
     document.documentElement.classList.add("navy");
   });
-  await expect.poll(() => firstNodeFill(page)).not.toBe(lightFill);
+  await expect(
+    page.locator('.mermaid-diagram[data-rendered="dark"] svg'),
+  ).toHaveCount(3);
+  expect(await firstNodeFill(page)).not.toBe(lightFill);
 });
 
 /**

@@ -66,7 +66,7 @@ flowchart TB
 
 A layer only contains the attributes its playback controls. The `First playback` layer says nothing about pan or green, so it leaves those attributes to lower layers, or to the fixture's default value when nothing controls them.
 
-Timing happens inside the layer. During a fade, the layer's value moves from the value the previous cue set toward the new cue's target. When you press Go on `First playback`, its layer fades red down and blue up over the `Blue` cue's fade time.
+Timing happens inside the layer. During a fade, the layer's value moves from the value the earlier cues in the sequence left toward the new cue's target. When you press Go on `First playback`, its layer fades red down and blue up over the `Blue` cue's fade time.
 
 Each playback also has its own level, such as a clip's fader. The level scales the intensity values in that playback's layer before the layers merge. Pulling `First playback` to 50% halves its intensity contribution without affecting the programmer or other clips.
 

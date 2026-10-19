@@ -72,7 +72,7 @@ A layer can hold relative values, such as "intensity 20% lower than it is now." 
 
 ## Fades and releases happen inside a layer
 
-A layer doesn't jump to its values. When a cue starts or a playback advances, each changed value fades toward its target, using the cue's delay and fade time. A sequence fades from the value its previous cue set, or from the attribute's default value when no earlier cue in the sequence set it. The fade doesn't start from what lower layers are doing, so a sequence that takes a fixture over from another playback can jump at the start of its fade. For the details, see [cues, sequences, and tracking](../domains/cues-and-sequences.md).
+A layer doesn't jump to its values. When a cue starts or a playback advances, each changed value fades toward its target, using the cue's delay and fade time. A sequence fades from the value the setup cue and earlier cues in the sequence left, or from the attribute's default value when none of them set it. The fade doesn't start from what lower layers are doing, so a sequence that takes a fixture over from another playback can jump at the start of its fade. For the details, see [cues, sequences, and tracking](../domains/cues-and-sequences.md).
 
 Stopping a playback starts its **release**. The layer stays in the stack while its values fade back toward whatever is below it, then it disappears. The **Status Display** panel shows these playbacks as releasing.
 
