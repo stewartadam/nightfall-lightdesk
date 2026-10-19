@@ -91,6 +91,7 @@ import { InputFormsDemo } from "./input-forms-demo";
 import { CommandPaletteDemo, ShortcutsDemo } from "./keyboard-demos";
 import { InlineRenameDemo, ObjectSelectorDemo } from "./object-demos";
 import { PopoutPreview, PopupDemo } from "./popup-demo";
+import { TabMenuDemo } from "./tab-menu-demo";
 import { ToastDemo } from "./toast-demo";
 import { ToolbarDemo } from "./toolbar-demo";
 
@@ -140,6 +141,7 @@ const componentDemos = [
   { id: "tooltips", title: "Tooltips", component: "tooltips" },
   { id: "color-picker", title: "Color picker", component: "colorPicker" },
   { id: "docking", title: "Docking", component: "docking" },
+  { id: "tab-menu", title: "Tab menu", component: "tabMenu" },
   { id: "dialogs", title: "Dialogs", component: "dialogs" },
   { id: "popups", title: "Popups & popouts", component: "popups" },
   { id: "toasts", title: "Toasts", component: "toasts" },
@@ -915,6 +917,7 @@ function DesignLab() {
                 />
               ),
               toasts: ToastDemo,
+              tabMenu: TabMenuDemo,
               animations: AnimationsDemo,
               docking: () => (
                 <DockingDemo

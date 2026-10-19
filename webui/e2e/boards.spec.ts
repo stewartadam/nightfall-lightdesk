@@ -539,6 +539,24 @@ test("boards press blueprints exclusively and select groups", async ({
   // Colors is the empty board, so the visible panel shows no collection once it is in front.
   await expect(colorsPanel.locator('[data-kind="Collection"]')).toHaveCount(0);
   await colorsPanel.getByRole("button", { name: "Board settings" }).click();
+  await expect(
+    page.getByRole("menu", { name: "Board settings" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Board settings" })).toBeHidden();
+  // The active tab's caret menu reaches the same settings as the toolbar gear.
+  const colorsTab = page
+    .locator(".dv-tab.dv-active-tab .dv-default-tab")
+    .filter({ hasText: "Colors" });
+  await colorsTab.hover();
+  await colorsTab.getByRole("button", { name: /tab menu$/ }).click();
+  await page
+    .locator('[data-menu-kind="context"]')
+    .getByRole("menuitem", { name: /Settings…/ })
+    .click();
+  await page.screenshot({
+    path: testInfo.outputPath("board-settings-from-tab.png"),
+  });
   await page
     .getByRole("menu", { name: "Board settings" })
     .getByRole("button", { name: "Delete board" })

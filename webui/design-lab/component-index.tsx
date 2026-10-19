@@ -31,6 +31,7 @@ const coreDemoIds = new Set([
   "shortcuts",
   "sliders",
   "switches",
+  "tab-menu",
   "toasts",
   "toolbars",
   "tooltips",

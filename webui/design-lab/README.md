@@ -37,6 +37,8 @@ Object tiles keep their dimensions as panels resize or searches filter results; 
 
 The application and lab both load `index.css`, which imports the shared palette, native field defaults, focus rules, and widget styles from `styles/`. Accent choices reference CSS palette variables through `components/ui/visual-language/accents.ts`. Shell layout and CRUD card styles live beside their components. Dockview uses `visualLanguageDockTheme`. Page composition and sample content stay in `design-lab/`.
 
+**Tab menu** hosts the production `IconTabRenderer` with sample panels. Hovering the active tab turns its icon into a caret that opens the tab menu; right-clicking any tab opens the same menu. Panels that register the `OPEN_PANEL_SETTINGS_CAPABILITY` panel capability get **Settings…** at the top of that menu. Devices without hover always show the caret on the active tab.
+
 Tabs use Dockview's smooth drag animation and can be dragged and closed; grips resize regions. **Top tabs / Bottom tabs** moves existing tab strips without discarding edits. **Reset layout** restores the composition and resets panel-local sample edits. Opening or resetting on narrow screens stacks the panels. Native selects only serve as Preline's hidden data backing, never as visible dropdowns.
 
 Grid selections draw a perimeter around the union of selected cells, ranges, rows, and columns. Shared edges disappear with **Column guides** off and use one thin divider with guides on. `--data-grid-column-border` controls guides; `--data-grid-selection-divider` optionally overrides dividers inside selections.

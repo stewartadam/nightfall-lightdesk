@@ -8,8 +8,17 @@
 
 import { useStore } from "@nanostores/solid";
 import type { DockviewPanelApi } from "dockview";
-import { createEffect, createMemo, createSignal } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  untrack,
+} from "solid-js";
+import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { OPEN_PANEL_SETTINGS_CAPABILITY } from "../../../lib/panel-capabilities";
+import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import {
   blueprints,
   boardStates,
@@ -128,6 +137,21 @@ export function createBoardPanelController(
   /** Stops waiting once the new board arrives. */
   createEffect(() => {
     if (board()) setAwaitingNewBoard(false);
+  });
+
+  const { registerPanelCapability } = usePanelCapabilityRegistry();
+  const workspaceActive = useWorkspaceActivity();
+  /** Offers the board settings as Settings… in the tab menu while a board is shown. */
+  createEffect(() => {
+    if (!workspaceActive() || !board()) return;
+    const unregister = untrack(() =>
+      registerPanelCapability(
+        options.panelId,
+        OPEN_PANEL_SETTINGS_CAPABILITY,
+        () => setBoardSettingsOpen(true),
+      ),
+    );
+    onCleanup(unregister);
   });
 
   /** Returns an element of the shown board by UID, if it still exists. */
