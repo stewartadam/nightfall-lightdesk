@@ -271,3 +271,13 @@
   cursor: nwse-resize;
   pointer-events: auto;
 }
+
+/* The tempo pad takes the element color as its outline, like a button's tint. */
+.nf-board-element .nf-board-tempo {
+  border-color: var(--nf-board-color, rgb(82 82 82));
+  background: rgb(38 38 38);
+}
+
+.nf-board-editing .nf-board-tempo {
+  pointer-events: none;
+}

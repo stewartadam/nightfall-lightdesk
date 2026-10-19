@@ -572,3 +572,74 @@ test("boards press blueprints exclusively and select groups", async ({
 
   await submitCommand(page, "clear");
 });
+
+/**
+ * Adds a Tempo element to a board and operates it: it shows the engine's tempo with beat dots,
+ * pressing it in Operate mode taps the tempo, and pressing it while editing selects it without
+ * tapping.
+ */
+test("board tempo pad shows and taps the show tempo", async ({
+  backendSlot,
+  page,
+}) => {
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await page.setViewportSize({ width: 1800, height: 1100 });
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.showTempo?.get()),
+  );
+  const targetBpm = () =>
+    page.evaluate(
+      () => (window as any).appStores.showTempo.get()?.snapshot.target_bpm,
+    );
+
+  await runPaletteCommand(page, "New Board");
+  const panel = page.locator('[data-panel-kind="boards"]:visible');
+  await expect(panel.locator("[data-board-grid]")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await panel.getByRole("button", { name: "Add to board" }).click();
+  await page
+    .getByRole("menu")
+    .getByRole("button", { name: "Tempo", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await boardElements(page))[0]?.kind.type)
+    .toBe("Tempo");
+  expect((await boardElements(page))[0]?.cell).toEqual({
+    x: 0,
+    y: 0,
+    width: 8,
+    height: 3,
+  });
+
+  const tempo = elementOfKind(panel, "Tempo");
+  const pad = tempo.getByRole("button", { name: "Tap tempo" });
+  await expect(tempo.getByTestId("tempo-bpm")).toHaveText("120");
+  await expect(tempo.locator(".nf-tempo-beat")).toHaveCount(4);
+
+  // While editing, pressing the pad selects the element instead of tapping.
+  await tempo.click();
+  await page.waitForTimeout(600);
+  await tempo.click();
+  await page.waitForTimeout(600);
+  await tempo.click();
+  expect(await targetBpm()).toBe(120);
+  await expect(pad).toHaveAttribute("tabindex", "-1");
+
+  await panel.getByRole("tab", { name: "Operate" }).click();
+  await expect(pad).not.toHaveAttribute("tabindex", "-1");
+  for (let index = 0; index < 6; index += 1) {
+    await pad.dispatchEvent("pointerdown", { button: 0 });
+    await page.waitForTimeout(400);
+  }
+  await expect.poll(() => targetBpm(), { timeout: 5_000 }).toBeGreaterThan(140);
+  await expect.poll(() => targetBpm()).toBeLessThan(160);
+  await expect(tempo.getByTestId("tempo-bpm")).not.toHaveText("120", {
+    timeout: 5_000,
+  });
+  await page.screenshot({
+    path: "test-results/playwright/board-tempo-pad.png",
+  });
+});

@@ -21,6 +21,7 @@ import {
 import { DropdownMenu } from "../../../components/ui/dropdown-menu";
 import { dragCarriesObject } from "../../../lib/object-drag";
 import type * as types from "../../../types";
+import { TempoPad } from "../../tempo";
 import { openAddMenu, openElementMenu } from "../controllers/board-menus";
 import type { BoardPanelController } from "../controllers/board-panel-controller";
 import {
@@ -96,6 +97,8 @@ function elementAccessibleName(element: types.BoardElement): string {
       return `Frame ${element.label ?? ""}`.trim();
     case "Label":
       return `Label ${element.label ?? ""}`.trim();
+    case "Tempo":
+      return "Tempo";
   }
 }
 
@@ -145,7 +148,10 @@ function BoardButton(props: {
   );
 }
 
-/** Renders the content of one element: a button, a filled collection, a frame or a label. */
+/**
+ * Renders the content of one element: a button, a filled collection, a frame, a label or a
+ * tempo pad.
+ */
 function ElementContent(props: {
   controller: BoardPanelController;
   element: types.BoardElement;
@@ -224,6 +230,12 @@ function ElementContent(props: {
       </Show>
       <Show when={kind().type === "Label"}>
         <div class="nf-board-label">{props.element.label}</div>
+      </Show>
+      <Show when={kind().type === "Tempo"}>
+        <TempoPad
+          class="nf-board-tempo"
+          unfocusable={props.controller.editing()}
+        />
       </Show>
     </>
   );

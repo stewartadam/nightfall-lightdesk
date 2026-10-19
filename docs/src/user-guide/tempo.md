@@ -2,11 +2,11 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-Nightfall keeps one tempo for the whole show. The status bar shows it as a BPM readout with a row of beat dots, where the larger dot is beat 1 of the bar. On a phone the readout sits in the header. Everything that follows the tempo, such as the [Show Tempo flow node](#flows), reads this same clock.
+Nightfall keeps one tempo for the whole show. The [Tempo panel](panels/tempo.md) shows it as a BPM readout with a row of beat dots, where the larger dot is beat 1 of the bar, and holds the Tap pad and the controls below. Open it from the Command Palette, or keep it in your performance layout. To tap from a busking board, add a **Tempo** element to the [board](panels/board.md): it shows the BPM and beat dots, and pressing it taps. Everything that follows the tempo, such as the [Show Tempo flow node](#flows), reads this same clock.
 
 ## Tapping a tempo
 
-Press **Tap** on the beat. The button responds the moment you press it, so tap on the attack of the beat rather than on release.
+Press **Tap** in the Tempo panel on the beat. The button responds the moment you press it, so tap on the attack of the beat rather than on release.
 
 - **The first tap marks beat 1.** If you haven't tapped for more than 3.5 seconds, your next tap is treated as a downbeat. It moves the bar so that tap becomes beat 1 and leaves the tempo unchanged.
 - **Each tap after that refines the tempo.** From the second tap on, Nightfall fits a steady beat through your recent taps. The BPM comes from their spacing, and the beat is pulled into line with where you tapped.
@@ -26,9 +26,9 @@ Tempo changes glide rather than jump, so chases and effects running on the beat 
 
 **Jump to next downbeat** is the one exception. It moves straight to the start of the next bar.
 
-## Tempo menu
+## Tempo controls
 
-Click the BPM readout to open the tempo menu.
+The Tempo panel has these controls next to the Tap pad.
 
 | Control | What it does |
 | --- | --- |

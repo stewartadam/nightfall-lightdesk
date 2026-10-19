@@ -29,6 +29,7 @@ Open panels from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P). Cue Editor, S
 - [Timelines](timelines.md)
 - [Timeline](timeline.md)
 - [Timecodes](timecodes.md)
+- [Tempo](tempo.md)
 - [Tap Pattern](tap-pattern.md)
 - [3D Visualizer](3d-visualizer.md)
 - [Object Library](object-library.md)

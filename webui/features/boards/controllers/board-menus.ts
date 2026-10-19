@@ -10,6 +10,7 @@ import { ClipboardTextIcon } from "@squidlab/phosphor-solid/clipboard-text";
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { FrameCornersIcon } from "@squidlab/phosphor-solid/frame-corners";
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
+import { MetronomeIcon } from "@squidlab/phosphor-solid/metronome";
 import { PencilSimpleIcon } from "@squidlab/phosphor-solid/pencil-simple";
 import { ScissorsIcon } from "@squidlab/phosphor-solid/scissors";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
@@ -240,6 +241,14 @@ export function openAddMenu(
         disabled: !fits("Label"),
         onSelect: () =>
           controller.addElement({ type: "Label" }, areaFor("Label")),
+      },
+      {
+        id: "add-tempo",
+        label: "Tempo",
+        icon: MetronomeIcon,
+        disabled: !fits("Tempo"),
+        onSelect: () =>
+          controller.addElement({ type: "Tempo" }, areaFor("Tempo")),
       },
       { id: "clipboard-separator", type: "separator" },
       ...clipboardEntries(controller, at, false),

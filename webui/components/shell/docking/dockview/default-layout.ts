@@ -195,6 +195,7 @@ export function createDefaultLayout(
   }
 
   for (const componentName of [
+    "Tempo",
     "TapPattern",
     "CommandLine",
     "Instrumentation",

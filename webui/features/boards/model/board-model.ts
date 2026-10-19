@@ -136,21 +136,27 @@ export function createCollectionElement(
   };
 }
 
-/** Builds a frame or label element with a starting caption. */
+/**
+ * Builds an element that presses no object: a frame or label with a starting caption, or a
+ * tempo pad, which shows the show tempo instead of a caption.
+ */
 export function createDecorationElement(
-  type: "Frame" | "Label",
+  type: "Frame" | "Label" | "Tempo",
   cell: BoardCell,
 ): BoardElement {
-  return {
-    uid: newBoardUid(),
-    cell,
-    show_title: true,
-    label: type === "Frame" ? "Frame" : "Label",
-    kind:
-      type === "Frame"
-        ? { type: "Frame", data: { exclusive: false } }
-        : { type: "Label" },
-  };
+  const element = { uid: newBoardUid(), cell, show_title: true };
+  switch (type) {
+    case "Frame":
+      return {
+        ...element,
+        label: "Frame",
+        kind: { type: "Frame", data: { exclusive: false } },
+      };
+    case "Label":
+      return { ...element, label: "Label", kind: { type: "Label" } };
+    case "Tempo":
+      return { ...element, kind: { type: "Tempo" } };
+  }
 }
 
 /** Returns the default size, in cells, a newly added element of `type` takes. */
@@ -170,6 +176,8 @@ export function defaultElementSize(
       };
     case "Label":
       return { width: BUTTON_SPAN.width * 2, height: 2 };
+    case "Tempo":
+      return { width: BUTTON_SPAN.width * 2, height: BUTTON_SPAN.height };
     case "Target":
       return { ...BUTTON_SPAN };
   }

@@ -6,4 +6,4 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-export { TempoControls } from "./tempo-controls";
+export { TempoPad } from "./components/tempo-pad";

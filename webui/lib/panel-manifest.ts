@@ -40,6 +40,7 @@ import selectionVisualizerPanel from "../features/selection-visualizer/panels/se
 import sequenceEditorPanel from "../features/sequences/panels/sequence-editor.definition";
 import sequenceListPanel from "../features/sequences/panels/sequence-list.definition";
 import tapPatternPanel from "../features/tap-pattern/panels/tap-pattern.definition";
+import tempoPanel from "../features/tempo/panels/tempo.definition";
 import timecodesPanel from "../features/timecode/definition";
 import timelinePanel from "../features/timeline/panels/timeline-editor.definition";
 import timelinesPanel from "../features/timeline/panels/timeline-list.definition";
@@ -74,6 +75,7 @@ export const PANEL_MODULES = [
   clipListPanel,
   statusDisplayPanel,
   tapPatternPanel,
+  tempoPanel,
   timelinePanel,
   timecodesPanel,
   timelinesPanel,

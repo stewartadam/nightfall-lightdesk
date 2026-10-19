@@ -15,7 +15,6 @@ import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { onMount, Show } from "solid-js";
 import { MappingModeToggle } from "../../../features/io";
 import { useShowfileObjectPalette } from "../../../features/showfile";
-import { TempoControls } from "../../../features/tempo";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { currentShowfileName } from "../../../lib/showfile-loading";
@@ -84,7 +83,7 @@ function HeaderActions() {
  * The phone header: one slim row that also carries what the status bar holds
  * on wider screens. The logo opens the application menu, which also names the
  * showfile and holds the object palette and demo reset. The connection dot
- * sits beside the logo; tempo, undo, search and notifications sit on the right.
+ * sits beside the logo; undo, search and notifications sit on the right.
  */
 function CompactHeaderBar() {
   const { showPalette: openCommandPalette } = useCommandPalette();
@@ -130,7 +129,6 @@ function CompactHeaderBar() {
       <ConnectionIndicator class="nf-toolbar-slot" />
       <span class="flex-1" />
       <Show when={connectionStatus() === "connected"}>
-        <TempoControls placement="below" />
         <UndoControls placement="below" />
       </Show>
       <Button
