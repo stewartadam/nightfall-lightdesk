@@ -8,7 +8,9 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
 
@@ -58,14 +60,12 @@ test("validation jobs wait only for their preparation prerequisites", () => {
 
 /** Execute the production aggregate guard against failed, cancelled, and skipped prerequisites. */
 test("the required check accepts only successful prerequisite results", () => {
-  assert.equal(
-    jobs.gate.name,
-    `\${{ inputs.preview && 'Preview gate' || 'CI gate' }}`,
-  );
+  assert.equal(jobs.gate.name, "CI gate");
   assert.match(jobs.gate.if, /!cancelled\(\)/);
   assert.match(jobs.gate.if, /needs.scope.result != 'skipped'/);
-  assert.match(jobs.gate.if, /!inputs.preview/);
-  const guard = jobs.gate.steps[0];
+  const [draftGuard, guard] = jobs.gate.steps;
+  assert.equal(draftGuard.if, "inputs.preview");
+  assert.equal(guard.if, `\${{ !inputs.preview }}`);
   assert.equal(guard.env.JOB_RESULTS, `\${{ toJSON(needs) }}`);
   const results = Object.fromEntries(
     jobs.gate.needs.map((id) => [id, { result: "success" }]),
@@ -126,4 +126,35 @@ test("draft PRs skip the whole workflow", () => {
       );
     }
   }
+});
+
+/**
+ * A manual preview run reports the required check on the PR head, so it must pass only while
+ * the PR is a draft and fail once the PR is ready, when the full run decides the check.
+ */
+test("preview runs pass the gate only for draft PRs", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "nightfall-gate-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(join(directory, "gh"), '#!/bin/sh\necho "$PR_DRAFT"\n', {
+    mode: 0o755,
+  });
+  const draftGuard = jobs.gate.steps.find(
+    (step) => step.if === "inputs.preview",
+  );
+  /** Run the draft guard against a stubbed GitHub CLI reporting the given draft state. */
+  const run = (draft) =>
+    spawnSync("bash", ["-e", "-o", "pipefail", "-c", draftGuard.run], {
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        PR_DRAFT: draft,
+        PR_NUMBER: "7",
+        GH_REPO: "owner/repo",
+        GITHUB_STEP_SUMMARY: join(directory, "summary"),
+      },
+      encoding: "utf8",
+    }).status;
+  assert.equal(run("true"), 0);
+  assert.notEqual(run("false"), 0);
+  assert.notEqual(run(""), 0);
 });

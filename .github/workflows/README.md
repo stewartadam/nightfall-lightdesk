@@ -91,9 +91,10 @@ browser demo and deploys it as a Cloudflare Workers Preview named `pr-<number>`,
 independent of the table above. Draft PRs build a preview only when a maintainer
 comments `/republish`, which dispatches `ci.yml` on the PR branch with the
 `preview` input set to the PR number. That manual run builds the two WASM packages
-and the demo, deploys the preview, and runs nothing else. Its skipped gate is named
-`Preview gate`, because GitHub counts a skipped check as passing and a skipped
-`CI gate` on the PR head could stand in for the real result. A preview-only build skips the browser product
+and the demo, deploys the preview, and runs nothing else. It still reports `CI gate`
+on the PR head, so its gate passes only while the PR is a draft. If the PR was
+marked ready before that gate ran, it fails instead, so it can never stand in for
+the full run's result. A preview-only build skips the browser product
 flows, which still run whenever the browser distribution is selected. The
 `Browser preview` job starts as soon as that build finishes, publishes it at
 `https://pr-<number>-<worker>.<subdomain>.workers.dev/demo/app/`, and keeps one

@@ -114,6 +114,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
     "ci.yml/release": { contents: "write" },
     "ci.yml/preview": { "pull-requests": "write" },
+    "ci.yml/gate": { "pull-requests": "read" },
     "pr-commands.yml/recheck-cla": {
       checks: "read",
       issues: "write",

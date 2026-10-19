@@ -448,16 +448,35 @@ jobs:
         uses: ./.github/actions/playwright-smoke
 
   gate:
-    # Single required check that aggregates every validation job. Manual preview runs validate
-    # nothing, so their skipped gate takes another name: GitHub counts a skipped check as passing,
-    # and one named "CI gate" on the PR head could stand in for the real result.
-    name: ${{ inputs.preview && 'Preview gate' || 'CI gate' }}
+    # Single required check that aggregates every validation job.
+    name: CI gate
     needs: [scope, selection, source-checks, docs, native, wasm-bridge, browser-runtime, webui, browser-smoke]
-    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
+    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Reads only the preview PR's draft state.
+    permissions:
+      pull-requests: read
     steps:
+      # A manual preview run validates nothing but still reports this check on the PR head, and
+      # a skipped check counts as passing. It passes only while the PR is a draft: a draft cannot
+      # merge, and marking it ready starts a full run whose gate lands later. If the PR became
+      # ready first, failing keeps this run from standing in for that full run's result.
+      - name: Require the previewed PR to still be a draft
+        if: inputs.preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.preview }}
+        run: |
+          draft="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq .draft)"
+          if [[ "$draft" != true ]]; then
+            echo "::error::PR #$PR_NUMBER is ready for review; its own CI run decides this check"
+            exit 1
+          fi
+          echo "Preview-only run for draft PR #$PR_NUMBER; CI runs when it is marked ready." >> "$GITHUB_STEP_SUMMARY"
       - name: Require all validation jobs to succeed
+        if: ${{ !inputs.preview }}
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
           DOCS: ${{ needs.selection.outputs.docs }}
