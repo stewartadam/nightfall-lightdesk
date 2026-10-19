@@ -35,12 +35,11 @@ test("validation jobs wait only for their preparation prerequisites", () => {
     "native",
     "wasm-bridge",
   ]);
-  assert.equal(
-    jobs["browser-smoke"].if,
-    `\${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.product_flows == 'true' }}`,
-  );
-  for (const id of ["source-checks", "native", "webui"]) {
-    assert.equal(jobs[id].if, `\${{ !startsWith(github.ref, 'refs/tags/') }}`);
+  for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
+    assert.equal(
+      jobs[id].if,
+      `\${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}`,
+    );
   }
   assert.deepEqual(jobs.docs.needs, ["scope", "selection"]);
   for (const id of [
@@ -59,16 +58,20 @@ test("validation jobs wait only for their preparation prerequisites", () => {
 
 /** Execute the production aggregate guard against failed, cancelled, and skipped prerequisites. */
 test("the required check accepts only successful prerequisite results", () => {
-  assert.equal(jobs.gate.name, "CI gate");
+  assert.equal(
+    jobs.gate.name,
+    `\${{ inputs.preview && 'Preview gate' || 'CI gate' }}`,
+  );
   assert.match(jobs.gate.if, /!cancelled\(\)/);
   assert.match(jobs.gate.if, /needs.scope.result != 'skipped'/);
+  assert.match(jobs.gate.if, /!inputs.preview/);
   const guard = jobs.gate.steps[0];
   assert.equal(guard.env.JOB_RESULTS, `\${{ toJSON(needs) }}`);
   const results = Object.fromEntries(
     jobs.gate.needs.map((id) => [id, { result: "success" }]),
   );
   /** Run the workflow shell against a controlled collection of dependency outcomes. */
-  function runGuard(outcomes, productFlows = "true", docs = "true") {
+  function runGuard(outcomes, docs = "true") {
     const result = spawnSync(
       "bash",
       ["-e", "-o", "pipefail", "-c", guard.run],
@@ -76,7 +79,6 @@ test("the required check accepts only successful prerequisite results", () => {
         env: {
           ...process.env,
           JOB_RESULTS: JSON.stringify(outcomes),
-          PRODUCT_FLOWS: productFlows,
           DOCS: docs,
         },
         encoding: "utf8",
@@ -95,29 +97,33 @@ test("the required check accepts only successful prerequisite results", () => {
       );
     }
   }
-  assert.equal(
-    guard.env.PRODUCT_FLOWS,
-    `\${{ needs.selection.outputs.product_flows }}`,
-  );
-  const draft = { ...results, "browser-smoke": { result: "skipped" } };
-  assert.equal(runGuard(draft, "false"), 0, "draft skips product flows");
-  assert.notEqual(runGuard(draft, ""), 0, "missing selection stays strict");
-  assert.notEqual(
-    runGuard({ ...draft, native: { result: "failure" } }, "false"),
-    0,
-    "draft still requires other jobs",
-  );
   assert.equal(guard.env.DOCS, `\${{ needs.selection.outputs.docs }}`);
   const noDocs = { ...results, docs: { result: "skipped" } };
-  assert.equal(runGuard(noDocs, "true", "false"), 0, "unselected docs skip");
+  assert.equal(runGuard(noDocs, "false"), 0, "unselected docs skip");
   assert.notEqual(
-    runGuard(noDocs, "true", ""),
+    runGuard(noDocs, ""),
     0,
     "missing docs selection stays strict",
   );
   assert.notEqual(
-    runGuard({ ...noDocs, native: { result: "failure" } }, "true", "false"),
+    runGuard({ ...noDocs, native: { result: "failure" } }, "false"),
     0,
     "skipped docs still require other jobs",
   );
+});
+
+/** Drafts acquire no source, so every job and the gate skip until the PR is ready for review. */
+test("draft PRs skip the whole workflow", () => {
+  assert.match(
+    jobs.scope.if,
+    /^github\.event\.pull_request\.draft != true && \(/,
+  );
+  for (const [id, job] of Object.entries(jobs)) {
+    if (id !== "scope") {
+      assert.ok(
+        [job.needs ?? []].flat().length > 0,
+        `${id} must depend on source acquisition`,
+      );
+    }
+  }
 });

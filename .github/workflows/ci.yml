@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    # ready_for_review runs the desktop installers and product flows that draft PRs skip.
+    # Draft PRs run nothing (see the scope job); ready_for_review runs CI in full.
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
@@ -16,6 +16,10 @@ on:
         type: choice
         default: all
         options: [all, desktop, browser]
+      preview:
+        description: PR number to build and deploy a browser preview for, instead of running CI
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -26,11 +30,13 @@ concurrency:
 jobs:
   scope:
     name: Acquire source and select validation
-    # Run standalone PRs and the lowest unmerged/top PRs of a stack.
+    # Run standalone ready PRs and the lowest unmerged/top ready PRs of a stack. Draft PRs skip
+    # every job, including the gate; `/republish` builds their preview through a manual run.
     if: >-
+      github.event.pull_request.draft != true && (
       github.event.pull_request.stack == null ||
       github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref ||
-      github.event.pull_request.stack.position == github.event.pull_request.stack.size
+      github.event.pull_request.stack.position == github.event.pull_request.stack.size)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -86,7 +92,7 @@ jobs:
       desktop_package: ${{ steps.select.outputs.desktop_package }}
       browser_package: ${{ steps.select.outputs.browser_package }}
       browser_preview: ${{ steps.select.outputs.browser_preview }}
-      product_flows: ${{ steps.select.outputs.product_flows }}
+      preview_pr: ${{ steps.select.outputs.preview_pr }}
       docs: ${{ steps.select.outputs.docs }}
       rust: ${{ steps.select.outputs.rust }}
     steps:
@@ -105,7 +111,8 @@ jobs:
         env:
           DISTRIBUTION: ${{ inputs.distribution }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
-          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PREVIEW_PR: ${{ inputs.preview }}
           # Dependabot PRs cannot read Actions secrets, so they never deploy a preview.
           PREVIEW_WORKER: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PREVIEW_WORKER || '' }}
         run: |
@@ -207,8 +214,8 @@ jobs:
     if: needs.selection.outputs.browser_package == 'true' || needs.selection.outputs.browser_preview == 'true'
     uses: ./.github/workflows/browser-demo.yml
     with:
-      # Preview-only and draft builds skip the product flows that release packaging requires.
-      product-flows: ${{ needs.selection.outputs.browser_package == 'true' && needs.selection.outputs.product_flows == 'true' }}
+      # Preview-only builds skip the product flows that release packaging requires.
+      product-flows: ${{ needs.selection.outputs.browser_package == 'true' }}
 
   preview:
     name: Browser preview
@@ -220,7 +227,7 @@ jobs:
     permissions:
       pull-requests: write
     concurrency:
-      group: preview-${{ github.event.pull_request.number }}
+      group: preview-${{ needs.selection.outputs.preview_pr }}
       cancel-in-progress: true
     steps:
       - name: Download the demo artifact
@@ -243,13 +250,13 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_PREVIEW_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: 4.147.0
-          command: preview --name=pr-${{ github.event.pull_request.number }}
+          command: preview --name=pr-${{ needs.selection.outputs.preview_pr }}
       - name: Link the preview on the PR
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ needs.selection.outputs.preview_pr }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PREVIEW_URL: ${{ steps.deploy.outputs.preview-url }}
         run: |
           url="$PREVIEW_URL"
@@ -272,7 +279,7 @@ jobs:
   source-checks:
     name: Prek hooks and script tests
     needs: scope
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -348,7 +355,7 @@ jobs:
   native:
     name: Native
     needs: [scope, selection]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
     uses: ./.github/workflows/native-validation.yml
     with:
       rust-tests: ${{ needs.selection.outputs.rust == 'true' }}
@@ -356,7 +363,7 @@ jobs:
   webui:
     name: TypeScript and WebUI Node tests
     needs: [scope, wasm-bridge, browser-runtime]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -400,7 +407,7 @@ jobs:
   browser-smoke:
     name: Chromium product flows
     needs: [scope, selection, native, wasm-bridge]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.product_flows == 'true' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -441,19 +448,20 @@ jobs:
         uses: ./.github/actions/playwright-smoke
 
   gate:
-    # Single required check that aggregates every validation job.
-    name: CI gate
+    # Single required check that aggregates every validation job. Manual preview runs validate
+    # nothing, so their skipped gate takes another name: GitHub counts a skipped check as passing,
+    # and one named "CI gate" on the PR head could stand in for the real result.
+    name: ${{ inputs.preview && 'Preview gate' || 'CI gate' }}
     needs: [scope, selection, source-checks, docs, native, wasm-bridge, browser-runtime, webui, browser-smoke]
-    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') && !inputs.preview }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require all validation jobs to succeed
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
-          PRODUCT_FLOWS: ${{ needs.selection.outputs.product_flows }}
           DOCS: ${{ needs.selection.outputs.docs }}
-        # Draft PRs deliberately skip the product flows; documentation builds only when selected.
+        # Documentation builds only when selected.
         run: |
-          printf '%s' "$JOB_RESULTS" | jq -e --arg flows "$PRODUCT_FLOWS" --arg docs "$DOCS" \
-            'with_entries(select(($flows != "false" or .key != "browser-smoke") and ($docs != "false" or .key != "docs"))) | all(.[]; .result == "success")'
+          printf '%s' "$JOB_RESULTS" | jq -e --arg docs "$DOCS" \
+            'with_entries(select($docs != "false" or .key != "docs")) | all(.[]; .result == "success")'

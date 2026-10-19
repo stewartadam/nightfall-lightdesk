@@ -77,14 +77,15 @@ const documentation = [
  * Browser previews build the demo for every same-repository PR once a preview target is
  * configured. Fork PRs never receive the deployment credential, so they never select one.
  *
- * Draft PRs skip desktop installers and Chromium product flows; marking the PR ready for review
- * re-runs selection and runs them then.
+ * Draft PRs never reach selection: the workflow skips source acquisition for them, so CI runs
+ * nothing until the PR is marked ready for review. The `/republish` PR command builds a draft's
+ * preview through a manual run whose preview PR number selects only that PR's preview.
  *
  * Documentation builds only for PRs that touch the mdBook sources or the workflow that builds them.
  *
  * Rust tests, doctests and Clippy run for every push and manual run, but only for PRs that touch
  * Rust sources, their build and lint configuration, or files the Rust code embeds. Native
- * validation still builds the headless backend for every PR because the Chromium product flows
+ * validation still builds the headless backend for every ready PR because the Chromium product flows
  * run against it.
  */
 export function selectScope({
@@ -94,8 +95,23 @@ export function selectScope({
   distribution = "all",
   previewTarget = false,
   sameRepository = false,
-  draft = false,
+  pullRequest = "",
+  previewPr = "",
 }) {
+  if (event === "workflow_dispatch" && previewPr) {
+    if (!/^[1-9][0-9]*$/.test(previewPr)) {
+      throw new Error(`Invalid preview PR number: ${previewPr}`);
+    }
+    return {
+      desktop_check: false,
+      desktop_package: false,
+      browser_package: false,
+      browser_preview: previewTarget,
+      preview_pr: previewTarget ? previewPr : "",
+      docs: false,
+      rust: false,
+    };
+  }
   let desktopPackage = false;
   let browserPackage = false;
   let browserPreview = false;
@@ -132,10 +148,10 @@ export function selectScope({
   }
   return {
     desktop_check: desktopCheck,
-    desktop_package: desktopPackage && !draft,
+    desktop_package: desktopPackage,
     browser_package: browserPackage,
     browser_preview: browserPreview,
-    product_flows: !draft,
+    preview_pr: browserPreview ? pullRequest : "",
     docs,
     rust,
   };
@@ -159,7 +175,8 @@ if (
     sameRepository:
       Boolean(process.env.HEAD_REPOSITORY) &&
       process.env.HEAD_REPOSITORY === process.env.GITHUB_REPOSITORY,
-    draft: process.env.PR_DRAFT === "true",
+    pullRequest: process.env.PR_NUMBER || "",
+    previewPr: process.env.PREVIEW_PR || "",
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,

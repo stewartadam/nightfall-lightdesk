@@ -18,7 +18,7 @@ const none = {
   desktop_package: false,
   browser_package: false,
   browser_preview: false,
-  product_flows: true,
+  preview_pr: "",
   docs: false,
 };
 const desktop = { ...none, desktop_package: true };
@@ -156,11 +156,13 @@ test("browser previews require a configured target and a same-repository PR", ()
       event: "pull_request",
       ref: "refs/pull/1/merge",
       paths: ["webui/components/example.tsx"],
+      pullRequest: "1",
       ...options,
     });
   assert.deepEqual(select({ previewTarget: true, sameRepository: true }), {
     ...none,
     browser_preview: true,
+    preview_pr: "1",
   });
   assert.deepEqual(
     select({ previewTarget: true, sameRepository: false }),
@@ -175,10 +177,11 @@ test("browser previews require a configured target and a same-repository PR", ()
       event: "pull_request",
       ref: "refs/pull/1/merge",
       paths: ["crates/browser-runtime/src/lib.rs"],
+      pullRequest: "1",
       previewTarget: true,
       sameRepository: true,
     }),
-    { ...browser, browser_preview: true },
+    { ...browser, browser_preview: true, preview_pr: "1" },
   );
   for (const [event, ref] of [
     ["push", "refs/heads/main"],
@@ -193,39 +196,36 @@ test("browser previews require a configured target and a same-repository PR", ()
   }
 });
 
-/** Draft PRs defer installers and product flows until ready for review but keep checks and previews. */
-test("draft PRs skip desktop installers and product flows", () => {
-  /** Select a PR touching shared packaging, desktop shell, and browser inputs. */
-  const select = (draft) =>
-    selectScope({
-      event: "pull_request",
-      ref: "refs/pull/1/merge",
-      paths: ["Cargo.lock", "desktop/app-tauri/src/main.rs"],
-      previewTarget: true,
-      sameRepository: true,
-      draft,
+/** A manual run naming a PR builds only that PR's preview, so `/republish` can serve drafts. */
+test("manual preview runs select only the preview", () => {
+  /** Select a manual preview run, which ignores the packaging choice it is dispatched with. */
+  const select = (options) =>
+    selectFullScope({
+      event: "workflow_dispatch",
+      ref: "refs/heads/feature",
+      distribution: "all",
+      previewPr: "42",
+      ...options,
     });
-  assert.deepEqual(select(false), {
-    ...both,
-    desktop_check: true,
+  assert.deepEqual(select({ previewTarget: true }), {
+    ...none,
     browser_preview: true,
+    preview_pr: "42",
+    rust: false,
   });
-  assert.deepEqual(select(true), {
-    ...browser,
-    desktop_check: true,
-    browser_preview: true,
-    product_flows: false,
-  });
+  assert.deepEqual(select({ previewTarget: false }), { ...none, rust: false });
+  for (const previewPr of ["0", "4a", "-1", "1 2"]) {
+    assert.throws(() => select({ previewTarget: true, previewPr }), previewPr);
+  }
 });
 
-/** Documentation builds follow PR paths, including drafts, and never run for branch or manual events. */
+/** Documentation builds follow PR paths and never run for branch or manual events. */
 test("documentation builds only for PRs that touch the manual", () => {
   assert.equal(
     selectScope({
       event: "pull_request",
       ref: "refs/pull/1/merge",
       paths: ["docs/src/user-guide/index.md"],
-      draft: true,
     }).docs,
     true,
   );

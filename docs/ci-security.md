@@ -80,7 +80,7 @@ Publication (fresh runner; contents: write; no Apple credentials)
   release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. In the tag workflow, only this
   job uses a write-capable GitHub token; the reusable-workflow caller supplies
   that permission ceiling, while the signer retains `permissions: {}`.
-- **Preview:** for same-repository PRs, a fresh runner downloads this run's
+- **Preview:** for ready same-repository PRs, and for drafts through `/republish`, a fresh runner downloads this run's
   browser-demo artifact as data and uploads it as a private Cloudflare Workers
   Preview, then comments the link on the PR. It is the one credentialed job that
   runs installed tooling: the pinned `cloudflare/wrangler-action` installs an exact
@@ -94,7 +94,10 @@ Publication (fresh runner; contents: write; no Apple credentials)
   acquires source or runs project code. `/recheck-cla` only calls the public
   cla-assistant.io check URL and reads commit statuses. `/republish` holds
   `actions: write` solely to rerun jobs of the PR's existing CI run, so the rerun
-  keeps that run's own permissions and artifacts.
+  keeps that run's own permissions and artifacts, or, for a draft PR, to dispatch
+  `ci.yml` on the PR's own branch with the preview input. That manual run follows
+  the same boundaries as the PR's CI run, and `/republish` refuses fork and
+  Dependabot PRs, so it never hands the preview credential to code CI would not.
 - **Debug symbols:** on version tags, a fresh runner downloads this run's debug
   symbol artifacts as data and uploads them to the error service so crash stack
   traces resolve to functions and lines. It holds only `GLITCHTIP_AUTH_TOKEN`,

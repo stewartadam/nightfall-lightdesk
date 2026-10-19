@@ -39,13 +39,16 @@ scripts never execute in the credentialed acquisition job.
 | Desktop installer tooling | No (packaging compiles only) | Yes | No |
 | Browser runtime or browser packaging tooling | No | No | Yes |
 | Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
-| Draft PR (any changes) | As above | No | As above |
+| Draft PR (any changes) | No | No | No |
 | Main push | No (packaging compiles only) | Yes | Yes |
 | Develop push | No | No | No |
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
-All non-tag events still run native and WebUI validation. PRs run the native job's
+Draft PRs run nothing: the source-acquisition job skips them, so every other job
+and the CI gate skip too, like PRs higher in a stack. Pushing to a draft costs no
+runner time, and marking it ready for review runs CI in full. All other non-tag
+events run native and WebUI validation. Ready PRs run the native job's
 Rust tests, doctests, desktop shell tests and Clippy only when they touch Rust inputs:
 `crates/`, `desktop/`, Cargo manifests and configuration, the toolchain, lint and hook
 configuration, the native workflow, and the files outside `crates/` that Rust embeds
@@ -67,9 +70,6 @@ Desktop checks link test binaries but do not validate the release build or
 installers. Full main-branch and
 release builds remain the cross-platform packaging backstop. Use manual dispatch
 with `desktop`, `browser`, or `all` when an artifact is needed before merging.
-Draft PRs never build desktop installers or run the Chromium product flows (the
-smoke job and the browser demo's packaged-artifact flows); marking a PR ready for
-review re-runs CI with them.
 Lockfile selection remains conservative; an ordinary lockfile update selects
 both distributions. Release-note-only changes do not select packaging.
 
@@ -77,7 +77,7 @@ PRs that touch `docs/` (or the CI scope policy and workflow) also run the
 **Documentation** job, which builds every mdBook under `docs/` with the mdBook
 version pinned in `CONTRIBUTING.md`. It fails on missing chapter files and on any
 error or warning mdBook logs, such as a broken `{{#include}}`, because mdBook still
-exits successfully for those. Drafts run it too; branch pushes and manual dispatches do not.
+exits successfully for those. Drafts, branch pushes and manual dispatches do not run it.
 
 Keep policy tests in sync with added packaging inputs. Validate them with
 `node --test scripts/ci-scope.node.test.mjs`, and validate workflow syntax with
@@ -86,9 +86,14 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 
 ## Browser previews
 
-Once a preview Worker is configured, every same-repository PR also builds the
+Once a preview Worker is configured, every ready same-repository PR also builds the
 browser demo and deploys it as a Cloudflare Workers Preview named `pr-<number>`,
-independent of the table above. A preview-only build skips the browser product
+independent of the table above. Draft PRs build a preview only when a maintainer
+comments `/republish`, which dispatches `ci.yml` on the PR branch with the
+`preview` input set to the PR number. That manual run builds the two WASM packages
+and the demo, deploys the preview, and runs nothing else. Its skipped gate is named
+`Preview gate`, because GitHub counts a skipped check as passing and a skipped
+`CI gate` on the PR head could stand in for the real result. A preview-only build skips the browser product
 flows, which still run whenever the browser distribution is selected. The
 `Browser preview` job starts as soon as that build finishes, publishes it at
 `https://pr-<number>-<worker>.<subdomain>.workers.dev/demo/app/`, and keeps one
@@ -123,7 +128,7 @@ or 👎 when it finishes.
 | Comment | Effect |
 | --- | --- |
 | `/recheck-cla` | Asks cla-assistant.io to revalidate the PR, then waits up to two minutes for the `license/cla` status. Use it when the check is stuck on "Waiting for status to be reported". Works on fork PRs. |
-| `/republish` | Reruns the **Browser preview** job of the PR's latest CI run. If that run's demo artifact expired, it reruns the whole run; if a failed job skipped the preview, it reruns the failed jobs. When CI is still running or never selected a preview, it explains why in a comment instead. |
+| `/republish` | On a draft PR, starts a manual CI run that builds and deploys only the preview from the PR branch, or reruns the preview job of an earlier such run for the same commit. On a ready PR, reruns the **Browser preview** job of the PR's latest CI run. If that run's demo artifact expired, it reruns the whole run; if a failed job skipped the preview, it reruns the failed jobs. When CI is still running or never selected a preview, it explains why in a comment instead. |
 
 Both run from the default branch's copy of the workflow, never the PR's, and
 neither checks out PR code. The steps are gated by

@@ -252,7 +252,7 @@ test("browser previews deploy same-run artifacts without source or build tools",
   assert.deepEqual(secrets, ["secrets.CLOUDFLARE_PREVIEW_TOKEN"]);
   assert.match(
     preview.steps.find((step) => step.id === "deploy").with.command,
-    /^preview --name=pr-\$\{\{ github\.event\.pull_request\.number \}\}$/,
+    /^preview --name=pr-\$\{\{ needs\.selection\.outputs\.preview_pr \}\}$/,
   );
   for (const step of preview.steps) {
     assert.equal(step.with?.["run-id"], undefined);
