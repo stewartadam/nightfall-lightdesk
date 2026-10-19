@@ -715,6 +715,55 @@ test("narrow windows keep edge groups on screen", async ({ page }) => {
     .toBeLessThanOrEqual(900);
 });
 
+/**
+ * Verifies a window too narrow for the grid minimum still lets the expanded
+ * right edge group collapse from its tab: the clipped Visualizer's render
+ * overlay must not sit on top of the edge group and swallow the click.
+ */
+test("narrow windows keep edge group tabs clickable over clipped panels", async ({
+  page,
+}) => {
+  await installDockviewStartupSeed(page, {
+    clearOnceKey: "edge-grid-overlay-click-test-cleared",
+  });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+
+  await page.goto("/?e2e=1");
+  await waitForDockview(page);
+  await resetToDefaultLayout(page);
+  await expandRightEdgeGroup(page);
+  // Shrink the window afterwards, like a user resizing it, until the
+  // Visualizer is squeezed out of the grid underneath the edge group.
+  await page.setViewportSize({ width: 1400, height: 800 });
+  await page.waitForTimeout(500);
+  await page.screenshot({
+    path: test.info().outputPath("01-expanded-narrow.png"),
+  });
+
+  const propertiesTab = page
+    .getByTestId("dv-edge-group-edge-Properties")
+    .getByRole("tab", { name: "Properties", exact: true });
+  const box = await propertiesTab.boundingBox();
+  if (!box) throw new Error("Missing Properties tab bounds");
+  // Click the label, below the caret that opens the tab menu.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.dockApi
+          .get()
+          .getEdgeGroup("right")
+          ?.isCollapsed(),
+      ),
+    )
+    .toBe(true);
+  await page.mouse.move(700, 300);
+  await page.screenshot({
+    path: test.info().outputPath("02-collapsed-narrow.png"),
+  });
+});
+
 /** Verifies unarmed edge drops continue to use Dockview's normal grid behavior. */
 test("unarmed edge drops do not enter hidden edge groups", async ({ page }) => {
   await installDockviewStartupSeed(page);
