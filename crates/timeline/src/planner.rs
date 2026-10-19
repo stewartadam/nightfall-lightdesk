@@ -13,10 +13,10 @@ use std::time::Duration;
 
 use nightfall_playback_planner::{
     PlannedNoOp, PlannedNoOpReason, PlannedPlaybackInterval, PlannedPlaybackIntervention,
-    PlannedPlaybackInterventionKind, PlannedPlaybackLifecycle, PlannedPlaybackRateChange,
-    PlannedPlaybackSource, PlannedReleaseInterval, PlannedTimelineEvent, PlannedTimelineEventKind,
-    PlaybackDurationProfile, PlaybackExtent, TimelinePlan, TimelinePlannerDiagnostic,
-    TimelinePlannerDiagnosticSeverity, TimelinePlaybackOwner,
+    PlannedPlaybackInterventionKind, PlannedPlaybackLifecycle, PlannedPlaybackSource,
+    PlannedPlaybackSpeedChange, PlannedReleaseInterval, PlannedTimelineEvent,
+    PlannedTimelineEventKind, PlaybackDurationProfile, PlaybackExtent, TimelinePlan,
+    TimelinePlannerDiagnostic, TimelinePlannerDiagnosticSeverity, TimelinePlaybackOwner,
 };
 use uuid::Uuid;
 
@@ -166,14 +166,14 @@ pub fn plan_timeline_at(
                     resolver,
                 );
             }
-            ActionKind::SetClipRate { uid, rate } => {
-                push_rate_change(
+            ActionKind::SetClipSpeed { uid, speed } => {
+                push_speed_change(
                     &mut plan,
                     &active_by_clip_uid,
                     uid,
                     owner,
                     action.position,
-                    rate,
+                    speed,
                 );
             }
             ActionKind::DeskEval(command) => {
@@ -219,7 +219,7 @@ fn push_started_interval(
         stopped_at_timeline: None,
         source_local_start: Duration::ZERO,
         release: None,
-        rate_changes: Vec::new(),
+        speed_changes: Vec::new(),
         explicit_interventions: Vec::new(),
         lifecycle: PlannedPlaybackLifecycle::Active,
     };
@@ -430,30 +430,30 @@ fn push_missing_active_interval(
     });
 }
 
-fn push_rate_change(
+fn push_speed_change(
     plan: &mut TimelinePlan,
     active_by_clip_uid: &HashMap<Uuid, usize>,
     clip_uid: Uuid,
     owner: TimelinePlaybackOwner,
     timeline_position: Duration,
-    rate: f32,
+    speed: f32,
 ) {
     let Some(interval_index) = active_by_clip_uid.get(&clip_uid).copied() else {
-        push_missing_active_interval(plan, owner, "set-clip-rate");
+        push_missing_active_interval(plan, owner, "set-clip-speed");
         return;
     };
     let Some(interval) = plan.instances.get_mut(interval_index) else {
-        push_missing_active_interval(plan, owner, "set-clip-rate");
+        push_missing_active_interval(plan, owner, "set-clip-speed");
         return;
     };
     let playback_position = interval.playback_position_at(timeline_position);
     interval
-        .rate_changes
-        .push(PlannedPlaybackRateChange::from_multiplier(
+        .speed_changes
+        .push(PlannedPlaybackSpeedChange::from_multiplier(
             owner,
             timeline_position,
             playback_position,
-            rate,
+            speed,
         ));
 }
 
@@ -693,9 +693,9 @@ mod tests {
         );
     }
 
-    /// Verifies clip rate actions change planned source-local playback positions.
+    /// Verifies clip speed actions change planned source-local playback positions.
     #[test]
-    fn plan_applies_clip_rate_changes_to_playback_position() {
+    fn plan_applies_clip_speed_changes_to_playback_position() {
         let timeline_uid = Uuid::new_v4();
         let clip_uid = Uuid::new_v4();
         let sequence_uid = Uuid::new_v4();
@@ -717,10 +717,10 @@ mod tests {
             [
                 action("start", ActionKind::StartClip(clip_uid), 0),
                 action(
-                    "rate",
-                    ActionKind::SetClipRate {
+                    "speed",
+                    ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 2.0,
+                        speed: 2.0,
                     },
                     100,
                 ),
@@ -735,7 +735,7 @@ mod tests {
             Duration::from_millis(500)
         );
         assert_eq!(
-            plan.instances[0].playback_rate_at(Duration::from_millis(300)),
+            plan.instances[0].playback_speed_at(Duration::from_millis(300)),
             2.0
         );
         assert_eq!(

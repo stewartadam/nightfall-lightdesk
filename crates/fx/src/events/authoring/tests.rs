@@ -357,7 +357,7 @@ fn same_frame_replacement_step_fx_store_then_delete_leaves_no_definition() {
         .spawn(ActiveStepFx {
             fx_entity: original_entity,
             priority: Priority(50),
-            rate: 1.0,
+            speed: 1.0,
             is_playing: true,
         })
         .id();
@@ -399,7 +399,7 @@ fn store_step_fx_rebinds_active_playback_at_same_phase() {
             ActiveStepFx {
                 fx_entity: old_entity,
                 priority: Priority(50),
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             },
             InstanceClock {

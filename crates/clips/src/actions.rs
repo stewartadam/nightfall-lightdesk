@@ -30,8 +30,8 @@ pub const CLIP_BACK_ACTION_ID: &str = "clip.back";
 /// Stable action ID for jumping a sequence clip to a cue.
 pub const CLIP_GOTO_ACTION_ID: &str = "clip.goto";
 
-/// Stable action ID for setting a clip's playback rate.
-pub const CLIP_SET_RATE_ACTION_ID: &str = "clip.set-rate";
+/// Stable action ID for setting a clip's playback speed.
+pub const CLIP_SET_SPEED_ACTION_ID: &str = "clip.set-speed";
 
 /// Persisted arguments shared by clip lifecycle actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,15 +53,15 @@ pub struct ClipGotoActionArguments {
     pub cue_index: u32,
 }
 
-/// Persisted arguments for setting a clip's playback rate.
+/// Persisted arguments for setting a clip's playback speed.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct ClipRateActionArguments {
+pub struct ClipSpeedActionArguments {
     /// Persistent UID of the addressed clip.
     #[typeshare(serialized_as = "String")]
     pub clip: Uuid,
-    /// Playback clock rate multiplier.
-    pub rate: f32,
+    /// Playback clock speed multiplier.
+    pub speed: f32,
 }
 
 /// Creates a persisted start-clip action reference.
@@ -93,13 +93,13 @@ pub fn goto_clip_action(clip: Uuid, cue_index: u32) -> ActionReference {
     .expect("clip goto arguments should serialize")
 }
 
-/// Creates a persisted clip-rate action reference.
-pub fn set_clip_rate_action(clip: Uuid, rate: f32) -> ActionReference {
+/// Creates a persisted clip-speed action reference.
+pub fn set_clip_speed_action(clip: Uuid, speed: f32) -> ActionReference {
     ActionReference::with_arguments(
-        CLIP_SET_RATE_ACTION_ID,
-        &ClipRateActionArguments { clip, rate },
+        CLIP_SET_SPEED_ACTION_ID,
+        &ClipSpeedActionArguments { clip, speed },
     )
-    .expect("clip rate arguments should serialize")
+    .expect("clip speed arguments should serialize")
 }
 
 /// Creates a clip lifecycle action reference with its typed clip argument.

@@ -22,14 +22,14 @@ import {
   roundStepFxWidthBeats,
   stepFxAuthoredPassBeats,
   stepFxAutomaticCycleBeats,
+  stepFxBeatValue,
   stepFxCycleBeats,
   stepFxEquals,
   stepFxPasteInsertionIndex,
   stepFxPhaseOffset,
   stepFxPhaseSlots,
-  stepFxSpeedValue,
   stepFxStepsFromClipboard,
-  stepFxTimingFromSpeed,
+  stepFxTimingFromBeat,
   validateStepFxDraft,
 } from "./step-fx-editor-model";
 
@@ -66,24 +66,24 @@ function draft(): StepFx {
   };
 }
 
-test("speed units round-trip through canonical beat duration", () => {
+test("beat units round-trip through canonical beat duration", () => {
   for (const [unit, value] of [
     ["BPM", 120],
     ["Hz", 2],
     ["Seconds", 0.5],
     ["Milliseconds", 500],
   ] as const) {
-    const timing = stepFxTimingFromSpeed(value, unit);
+    const timing = stepFxTimingFromBeat(value, unit);
     assert.ok(timing);
-    assert.ok(Math.abs(stepFxSpeedValue(timing, unit) - value) < 0.0001);
+    assert.ok(Math.abs(stepFxBeatValue(timing, unit) - value) < 0.0001);
   }
 });
 
-/** Verifies operator-facing speed text hides integer-duration conversion noise. */
-test("speed display values omit duration quantization artifacts", () => {
-  const timing = stepFxTimingFromSpeed(9.5, "BPM");
+/** Verifies operator-facing beat text hides integer-duration conversion noise. */
+test("beat display values omit duration quantization artifacts", () => {
+  const timing = stepFxTimingFromBeat(9.5, "BPM");
   assert.ok(timing);
-  assert.equal(stepFxSpeedValue(timing, "BPM"), 9.5);
+  assert.equal(stepFxBeatValue(timing, "BPM"), 9.5);
 });
 
 /** Verifies cycle readouts hide backend float serialization noise. */

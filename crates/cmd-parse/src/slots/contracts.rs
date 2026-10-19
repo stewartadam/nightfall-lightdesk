@@ -54,7 +54,7 @@ pub enum SlotId {
     FxModuleIdentifier,
     FxModuleAction,
     FxIdentifier,
-    /// FX action token slot (for verbs like `start`, `stop`, and `rate`) after an FX identifier.
+    /// FX action token slot (for verbs like `start`, `stop`, and `speed`) after an FX identifier.
     FxAction,
     /// Step FX creation token after a stored FX identifier.
     StoreFxAction,

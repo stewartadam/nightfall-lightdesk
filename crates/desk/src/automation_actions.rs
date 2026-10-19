@@ -20,9 +20,9 @@ use nightfall_actions::{
     submit_command,
 };
 use nightfall_clips::{
-    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_RATE_ACTION_ID,
+    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_SPEED_ACTION_ID,
     CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipGotoActionArguments,
-    ClipRateActionArguments,
+    ClipSpeedActionArguments,
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
@@ -163,29 +163,29 @@ pub fn register_desk_actions(app: &mut App) {
             })
         },
     );
-    app.register_command_action::<ClipRateActionArguments, ClipCommand, _>(
-        ActionDescriptor::new(CLIP_SET_RATE_ACTION_ID, "Set clip rate", "Clips")
-            .with_description("Sets the playback rate multiplier of a running clip")
+    app.register_command_action::<ClipSpeedActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_SET_SPEED_ACTION_ID, "Set clip speed", "Clips")
+            .with_description("Sets the playback speed multiplier of a running clip")
             .with_parameter(clip_parameter())
             .with_parameter(ActionParameter::required(
-                "rate",
-                "Rate",
+                "speed",
+                "Speed",
                 ActionParameterKind::Number { min: 0.0, max: 4.0 },
             )),
         |world, arguments| {
-            Ok(ClipCommand::SetRate {
+            Ok(ClipCommand::SetSpeed {
                 clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
-                rate: arguments.rate,
+                speed: arguments.speed,
             })
         },
     )
-    .register_action_capability::<ClipRateActionArguments, TimelinePlaybackActionPlan, _>(
-        CLIP_SET_RATE_ACTION_ID,
+    .register_action_capability::<ClipSpeedActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_SET_SPEED_ACTION_ID,
         TimelinePlaybackActionPlan::CAPABILITY,
         |arguments| {
             Ok(TimelinePlaybackActionPlan {
                 owner_uid: arguments.clip,
-                kind: TimelinePlaybackActionKind::SetRate(arguments.rate),
+                kind: TimelinePlaybackActionKind::SetSpeed(arguments.speed),
             })
         },
     );
@@ -779,7 +779,7 @@ mod tests {
             },
             ..Default::default()
         });
-        add_rate_master(&mut app);
+        add_speed_master(&mut app);
 
         assert!(validate(&app, &start_clip_action(clip_uid)).is_ok());
         assert!(validate(&app, &master_level_action(master_uid)).is_ok());
@@ -841,7 +841,7 @@ mod tests {
     #[test]
     fn only_master_set_changes_mark_action_targets_changed() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         app.update();
         app.update();
         /// Returns when action targets were last marked changed.
@@ -887,8 +887,8 @@ mod tests {
         );
     }
 
-    /// Stores a toggle-mode playback rate master and returns its persistent UID.
-    fn add_rate_master(app: &mut App) -> Uuid {
+    /// Stores a toggle-mode playback speed master and returns its persistent UID.
+    fn add_speed_master(app: &mut App) -> Uuid {
         let uid = Uuid::from_u128(41);
         app.world_mut()
             .resource_mut::<DataProvider<Master>>()
@@ -896,9 +896,9 @@ mod tests {
                 identifiers: nightfall::prelude::Identifiers {
                     id: 4,
                     uid,
-                    label: "Rate".to_string(),
+                    label: "Speed".to_string(),
                 },
-                kind: crate::masters::MasterKind::PlaybackRate,
+                kind: crate::masters::MasterKind::PlaybackSpeed,
                 target: crate::masters::MasterTarget::Instances(
                     crate::masters::InstanceMasterTarget::All,
                 ),
@@ -911,9 +911,9 @@ mod tests {
 
     /// Verifies master level input is scaled to the master kind's range as an untracked update.
     #[test]
-    fn master_level_action_scales_rate_masters() {
+    fn master_level_action_scales_speed_masters() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         app.world_mut().write_message(ActionInvocation::scalar(
             master_level_action(uid),
             ActionSurface::Midi,
@@ -939,7 +939,7 @@ mod tests {
     #[test]
     fn master_toggle_action_submits_toggle_command() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         app.world_mut().write_message(ActionInvocation::trigger(
             master_toggle_action(uid),
             ActionSurface::Osc,
@@ -961,7 +961,7 @@ mod tests {
     #[test]
     fn master_on_and_off_set_toggle_state() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         let on = master_action_reference(MASTER_ON_ACTION_ID, uid);
         assert_eq!(
             app.world()
@@ -995,7 +995,7 @@ mod tests {
     #[test]
     fn master_level_flash_restores_the_previous_level() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         for input in [ActionInput::Press, ActionInput::Release] {
             app.world_mut().write_message(ActionInvocation::new(
                 master_level_action(uid),

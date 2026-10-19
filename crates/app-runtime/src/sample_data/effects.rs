@@ -58,7 +58,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
             duty_cycle: 1.0,
         },
         phase_range: (0.0, 2.0 * std::f32::consts::PI),
-        rate: Duration::from_secs(4),
+        cycle_length: Duration::from_secs(4),
         width: Percentage::from(1.0),
         is_relative: false,
     };
@@ -113,7 +113,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
             duty_cycle: 1.0,
         },
         phase_range: (0.0, 2.0 * std::f32::consts::PI),
-        rate: Duration::from_secs(2),
+        cycle_length: Duration::from_secs(2),
         width: Percentage::from(1.0),
         is_relative: false,
     };

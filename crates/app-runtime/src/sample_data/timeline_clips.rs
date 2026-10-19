@@ -674,7 +674,7 @@ fn add_sparkles(world: &mut World) {
             duty_cycle: 1.0,
         },
         phase_range: (phase_start, phase_start + 2.0 * std::f32::consts::PI),
-        rate: Duration::from_secs(1),
+        cycle_length: Duration::from_secs(1),
         width: Percentage::from(1.0),
         is_relative: false,
     };

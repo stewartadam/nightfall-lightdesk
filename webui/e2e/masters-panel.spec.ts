@@ -227,7 +227,7 @@ test("masters can be created and assigned to a control", async ({
   ).not.toHaveClass(/is-disabled/);
 });
 
-test("playback rate masters use control midpoint as normal speed", async ({
+test("playback speed masters use control midpoint as normal speed", async ({
   backendSlot,
   page,
 }) => {
@@ -259,7 +259,7 @@ test("playback rate masters use control midpoint as normal speed", async ({
 
   const mastersPanel = page.locator(".panel-Masters-assignment-e2e");
   const initialMasterCount = await masterCount(page);
-  await mastersPanel.getByRole("button", { name: "New rate global" }).click();
+  await mastersPanel.getByRole("button", { name: "New speed global" }).click();
   await expect.poll(() => masterCount(page)).toBe(initialMasterCount + 1);
 
   const master = await newestMaster(page);

@@ -311,7 +311,7 @@ async function stepFxPlayheadError(
         preview.elapsed.secs +
         preview.elapsed.nanos / 1_000_000_000 +
         (Math.max(0, Date.now() - preview.sampled_at_epoch_ms) / 1_000) *
-          preview.elapsed_rate;
+          preview.elapsed_speed;
       const continuityOffset =
         preview.track_phase_offsets.find(
           (candidate: any) => candidate.attribute.type === "Intensity",
@@ -438,12 +438,12 @@ async function setEditorSelection(
   await expect(editor).toBeVisible();
 }
 
-/** Opens and returns the compact speed-and-scaling toolbar menu. */
+/** Opens and returns the compact timing-and-scaling toolbar menu. */
 async function openStepFxTimingControls(
   page: Page,
   editor: Locator,
 ): Promise<Locator> {
-  const trigger = editor.getByRole("button", { name: "Speed and scaling" });
+  const trigger = editor.getByRole("button", { name: "Timing and scaling" });
   if ((await trigger.getAttribute("aria-expanded")) !== "true")
     await trigger.click();
   const menu = page.locator('[data-menu-kind="step-fx-timing"]');
@@ -1564,7 +1564,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   });
   await expect(overridesButton).toBeVisible();
   await expect(
-    toolbarLeft.getByRole("button", { name: "Speed and scaling" }),
+    toolbarLeft.getByRole("button", { name: "Timing and scaling" }),
   ).toContainText("120 BPM · Auto");
   const startPositionButton = toolbarLeft.getByRole("button", {
     name: "Start position",
@@ -1575,7 +1575,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   });
   const directionBox = await directionGroup.boundingBox();
   const speedBox = await toolbarLeft
-    .getByRole("button", { name: "Speed and scaling" })
+    .getByRole("button", { name: "Timing and scaling" })
     .boundingBox();
   const startSeparatorBox = await toolbarLeft
     .locator("[data-step-fx-start-position-separator]")
@@ -1769,12 +1769,12 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   ).toBeVisible();
   const timingMenu = await openStepFxTimingControls(page, editor);
   await expect(
-    timingMenu.getByLabel("Step FX speed", { exact: true }),
+    timingMenu.getByLabel("Step FX beat", { exact: true }),
   ).toHaveValue("120");
   await expect(
     timingMenu
-      .locator('[data-input-group="speed"]')
-      .getByLabel("Step FX speed unit"),
+      .locator('[data-input-group="beat"]')
+      .getByLabel("Step FX beat unit"),
   ).toHaveValue("BPM");
   const cycleScaleGroup = timingMenu.locator(
     '[data-input-group="cycle-scale"]',
@@ -1791,7 +1791,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await cycleScaleGroup.getByLabel("Fixed cycle scaling").check();
   await fixedScaleInput.fill("8");
   await expect(
-    editor.getByRole("button", { name: "Speed and scaling" }),
+    editor.getByRole("button", { name: "Timing and scaling" }),
   ).toContainText("120 BPM · Fixed");
   await cycleScaleGroup.getByLabel("Automatic cycle scaling").check();
   await expect(fixedScaleInput).toBeDisabled();
@@ -1801,13 +1801,13 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await expect(fixedScaleInput).toHaveValue("8");
   await cycleScaleGroup.getByLabel("Automatic cycle scaling").check();
   await expect(
-    editor.getByRole("button", { name: "Speed and scaling" }),
+    editor.getByRole("button", { name: "Timing and scaling" }),
   ).toContainText("120 BPM · Auto");
   await page.screenshot({
     path: testInfo.outputPath("step-fx-timing-auto-mode.png"),
     fullPage: true,
   });
-  await editor.getByRole("button", { name: "Speed and scaling" }).click();
+  await editor.getByRole("button", { name: "Timing and scaling" }).click();
   await expect(timingMenu).toBeHidden();
   await expect(editor.locator("[data-step-fx-sheet] tbody tr")).toHaveCount(2);
   await expect(
@@ -2539,13 +2539,13 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     .toBe(true);
 
   const editTimingMenu = await openStepFxTimingControls(page, editor);
-  const speedInput = editTimingMenu.getByLabel("Step FX speed", {
+  const speedInput = editTimingMenu.getByLabel("Step FX beat", {
     exact: true,
   });
   await speedInput.fill("8.5");
   await speedInput.press("ArrowUp");
   await expect(speedInput).toHaveValue("9.5");
-  await editTimingMenu.getByLabel("Step FX speed unit").selectOption("Hz");
+  await editTimingMenu.getByLabel("Step FX beat unit").selectOption("Hz");
   await speedInput.fill("4");
   await speedInput.press("Tab");
   await editTimingMenu.getByLabel("Fixed cycle scaling").check();
@@ -2658,7 +2658,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     "3",
   );
   await expect(trackTimingMenu).toContainText("Relative steps cycle: 6 beats");
-  await editor.getByRole("button", { name: "Speed and scaling" }).click();
+  await editor.getByRole("button", { name: "Timing and scaling" }).click();
   await expect(trackTimingMenu).toBeHidden();
   await editor.getByRole("tab", { name: "Absolute", exact: false }).click();
   await expect(
@@ -2672,7 +2672,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     "2",
   );
   await expect(trackTimingMenu).toContainText("Absolute steps cycle: 4 beats");
-  await editor.getByRole("button", { name: "Speed and scaling" }).click();
+  await editor.getByRole("button", { name: "Timing and scaling" }).click();
   await expect(trackTimingMenu).toBeHidden();
   await editor.getByRole("tab", { name: "Relative", exact: false }).click();
   await expect(
@@ -2702,7 +2702,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await expect(waveform.locator("[data-step-fx-waveform-point]")).toHaveCount(
     6,
   );
-  await editor.getByRole("button", { name: "Speed and scaling" }).click();
+  await editor.getByRole("button", { name: "Timing and scaling" }).click();
   await expect(trackTimingMenu).toHaveCount(0);
   await editor.getByRole("button", { name: "Move selected steps up" }).click();
   await editor.getByRole("button", { name: "Stop preview" }).click();
@@ -2921,7 +2921,7 @@ test("Step FX editor hotkeys accelerate popover editing", async ({
   const timingMenu = page.locator('[data-menu-kind="step-fx-timing"]');
   await expect(timingMenu).toBeVisible();
   await expect(
-    timingMenu.getByLabel("Step FX speed", { exact: true }),
+    timingMenu.getByLabel("Step FX beat", { exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(timingMenu).toBeHidden();
@@ -2939,7 +2939,7 @@ test("Step FX editor hotkeys accelerate popover editing", async ({
   const overrides = page.getByRole("region", { name: "Overrides" });
   await expect(overrides).toBeVisible();
   await expect(
-    overrides.getByRole("checkbox", { name: "Override speed" }),
+    overrides.getByRole("checkbox", { name: "Override beat" }),
   ).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(overrides).toBeHidden();
@@ -2999,7 +2999,7 @@ test("Step FX editor hotkeys accelerate popover editing", async ({
 
   await shortcutAnchor.focus();
   await page.keyboard.press("b");
-  const speed = timingMenu.getByLabel("Step FX speed", { exact: true });
+  const speed = timingMenu.getByLabel("Step FX beat", { exact: true });
   await speed.fill("100");
   await speed.dispatchEvent("change");
   await expect(speed).toBeFocused();
@@ -3290,7 +3290,7 @@ test("Step FX Overrides expands after reopening a stored effect", async ({
   const overridesContent = page.getByRole("region", { name: "Overrides" });
   await expect(overridesContent).toBeVisible();
   const speedOverride = overridesContent.getByRole("checkbox", {
-    name: "Override speed",
+    name: "Override beat",
   });
   const phaseOverride = overridesContent.getByRole("checkbox", {
     name: "Override start position",
@@ -3304,7 +3304,7 @@ test("Step FX Overrides expands after reopening a stored effect", async ({
   await expect(speedField).toHaveValue("120");
   await expect(phaseField).toHaveValue("0>360");
   const speedSection = overridesContent.locator(
-    '[data-step-fx-lane-override="speed"]',
+    '[data-step-fx-lane-override="beat"]',
   );
   const phaseSection = overridesContent.locator(
     '[data-step-fx-lane-override="start-position"]',
@@ -3315,7 +3315,7 @@ test("Step FX Overrides expands after reopening a stored effect", async ({
     phaseSection.boundingBox(),
     speedField.boundingBox(),
     phaseField.boundingBox(),
-    speedSection.getByText("Override speed", { exact: true }).boundingBox(),
+    speedSection.getByText("Override beat", { exact: true }).boundingBox(),
     phaseSection
       .getByText("Override start position", { exact: true })
       .boundingBox(),
@@ -3337,7 +3337,7 @@ test("Step FX Overrides expands after reopening a stored effect", async ({
     phaseSection.boundingBox(),
     speedField.boundingBox(),
     phaseField.boundingBox(),
-    speedSection.getByText("Override speed", { exact: true }).boundingBox(),
+    speedSection.getByText("Override beat", { exact: true }).boundingBox(),
     phaseSection
       .getByText("Override start position", { exact: true })
       .boundingBox(),

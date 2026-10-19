@@ -6,30 +6,30 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use nightfall_cmd_parse::ast::{FxActionAst, SetFxRateAst, ValueAst};
+use nightfall_cmd_parse::ast::{FxActionAst, SetFxSpeedAst, ValueAst};
 use nightfall_cmd_parse::generate_ast;
 use nightfall_fx::events::StepFxCommand;
 use nightfall_fx::stepfx_commands_from_ast;
 
 #[test]
-fn set_rate_conversion() {
+fn set_speed_conversion() {
     // Test AST conversion directly
-    let set_rate = SetFxRateAst {
+    let set_speed = SetFxSpeedAst {
         value: ValueAst("2.5"),
     };
-    let action = FxActionAst::SetRate(set_rate);
+    let action = FxActionAst::SetSpeed(set_speed);
     let cmds = stepfx_commands_from_ast(7, &action).expect("conversion should succeed");
     assert_eq!(cmds.len(), 1);
     match &cmds[0] {
-        StepFxCommand::SetRate { fx_id, rate } => {
+        StepFxCommand::SetSpeed { fx_id, speed } => {
             assert_eq!(*fx_id, 7);
-            assert!(((*rate) - 2.5).abs() < 1e-6);
+            assert!(((*speed) - 2.5).abs() < 1e-6);
         }
         other => panic!("unexpected command variant: {:?}", other),
     }
 
     // Test that parsing produces consistent ASTs
-    let _base_ast = generate_ast("fx 1 rate 2.5").expect("Failed to parse 'fx 1 rate 2.5'");
+    let _base_ast = generate_ast("fx 1 speed 2.5").expect("Failed to parse 'fx 1 speed 2.5'");
 }
 
 #[test]

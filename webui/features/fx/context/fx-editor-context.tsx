@@ -112,8 +112,8 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
       left.params.duty_cycle === right.params.duty_cycle &&
       left.phase_range[0] === right.phase_range[0] &&
       left.phase_range[1] === right.phase_range[1] &&
-      left.rate.secs === right.rate.secs &&
-      left.rate.nanos === right.rate.nanos &&
+      left.cycle_length.secs === right.cycle_length.secs &&
+      left.cycle_length.nanos === right.cycle_length.nanos &&
       left.width === right.width &&
       left.is_relative === right.is_relative
     );

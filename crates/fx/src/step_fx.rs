@@ -380,7 +380,7 @@ pub struct ActiveStepFx {
     /// Layer priority for this playback.
     pub priority: Priority,
     /// Playback speed multiplier.
-    pub rate: f32,
+    pub speed: f32,
     /// Whether the runtime should currently evaluate.
     pub is_playing: bool,
 }
@@ -429,7 +429,7 @@ impl Default for ActiveStepFx {
         Self {
             fx_entity: Entity::PLACEHOLDER,
             priority: Priority(50),
-            rate: 1.0,
+            speed: 1.0,
             is_playing: false,
         }
     }
@@ -459,7 +459,7 @@ pub fn spawn_reconstructed_step_fx_for_clip(
             ActiveStepFx {
                 fx_entity,
                 priority,
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             },
             Owner(clip_uid),

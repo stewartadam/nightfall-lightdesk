@@ -170,7 +170,7 @@ export function Control(props: ControlProps): JSX.Element {
 
   /** Returns the value label for the assigned control target. */
   const valueLabel = () => {
-    if (props.assignedMaster?.kind === MasterKind.PlaybackRate) {
+    if (props.assignedMaster?.kind === MasterKind.PlaybackSpeed) {
       return `${Math.round(props.displayValue * 2)}%`;
     }
     return `${Math.round(props.displayValue)}%`;

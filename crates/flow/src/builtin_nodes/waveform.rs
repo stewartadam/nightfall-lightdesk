@@ -19,8 +19,8 @@ use crate::types::{
 pub const WAVEFORM_KIND: &str = "waveform";
 /// Port id for the waveform kind input.
 pub const WAVEFORM_IN_KIND: FlowPortId = 1;
-/// Port id for the waveform rate (cycle length in seconds) input.
-pub const WAVEFORM_IN_RATE: FlowPortId = 2;
+/// Port id for the waveform cycle length (seconds) input.
+pub const WAVEFORM_IN_CYCLE_LENGTH: FlowPortId = 2;
 /// Port id for the waveform amplitude input.
 pub const WAVEFORM_IN_AMPLITUDE: FlowPortId = 3;
 /// Port id for the waveform phase offset input.
@@ -36,7 +36,7 @@ pub const WAVEFORM_OUT: FlowPortId = 7;
 pub fn default_waveform() -> FlowWaveform {
     FlowWaveform {
         kind: WaveformKind::Sin,
-        rate_secs: 1.0,
+        cycle_length_secs: 1.0,
         amplitude: 1.0,
         phase: 0.0,
         base: 0.0,
@@ -70,12 +70,12 @@ impl FlowNodeFactory for WaveformFactory {
                     enum_options: None,
                 },
                 FlowPortDefinition {
-                    port_id: WAVEFORM_IN_RATE,
-                    name: "Rate (s)".to_string(),
+                    port_id: WAVEFORM_IN_CYCLE_LENGTH,
+                    name: "Cycle length (s)".to_string(),
                     direction: FlowPortDirection::Input,
                     port_type: FlowPortType::Number,
                     is_optional: true,
-                    default_value: Some(FlowValue::Number(defaults.rate_secs)),
+                    default_value: Some(FlowValue::Number(defaults.cycle_length_secs)),
                     enum_options: None,
                 },
                 FlowPortDefinition {
@@ -150,7 +150,8 @@ impl FlowNode for WaveformNode {
             Some(FlowValue::WaveformKind(value)) => *value,
             _ => defaults.kind,
         };
-        let rate_secs = number_input(inputs, WAVEFORM_IN_RATE, defaults.rate_secs);
+        let cycle_length_secs =
+            number_input(inputs, WAVEFORM_IN_CYCLE_LENGTH, defaults.cycle_length_secs);
         let amplitude = number_input(inputs, WAVEFORM_IN_AMPLITUDE, defaults.amplitude);
         let phase = number_input(inputs, WAVEFORM_IN_PHASE, defaults.phase);
         let base = number_input(inputs, WAVEFORM_IN_BASE, defaults.base);
@@ -162,7 +163,7 @@ impl FlowNode for WaveformNode {
 
         let waveform = FlowWaveform {
             kind,
-            rate_secs,
+            cycle_length_secs,
             amplitude,
             phase,
             base,

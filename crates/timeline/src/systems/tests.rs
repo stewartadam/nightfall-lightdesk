@@ -51,7 +51,7 @@ use uuid::Uuid;
 
 use super::lookahead::{MaterializedLookaheadProvider, TimelineLookahead, TimelineLookaheadLayer};
 use super::{
-    PendingStoppedTimelineReleaseClocks, TimelinePausedPlaybackRates, cleanup_timeline_entities,
+    PendingStoppedTimelineReleaseClocks, TimelinePausedPlaybackSpeeds, cleanup_timeline_entities,
     detach_stopped_timeline_release_clocks, handle_timeline_seek_system,
     intervention_reconstruction_timing_from_evaluated_instance,
     populate_materialized_lookahead_assertions_system, process_actions_system,
@@ -248,7 +248,7 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
     app.add_message::<CommandEnvelope<TimecodeCommand>>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
     app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.init_resource::<PendingStoppedTimelineReleaseClocks>();
     app.add_systems(
         Update,
@@ -281,14 +281,14 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
         ..Default::default()
     };
     clock.seek_to(Duration::from_secs(3));
-    clock.set_rate(0.0);
+    clock.set_speed(0.0);
     let playback_entity = app
         .world_mut()
         .spawn((
             InstanceId::new(),
             InstanceMetadata::new(InstanceKind::Sequence),
             InstanceControls {
-                rate: 0.0,
+                speed: 0.0,
                 ..Default::default()
             },
             ReleaseMarker::default(),
@@ -310,11 +310,11 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
         .expect("instance should keep a release clock");
     assert_eq!(clock.source, InstanceClockSource::Realtime);
     assert!(!clock.frozen, "release clock should continue after stop");
-    assert_eq!(clock.rate, 1.0);
+    assert_eq!(clock.speed, 1.0);
     let controls = playback_ref
         .get::<InstanceControls>()
         .expect("instance controls should remain present");
-    assert_eq!(controls.rate, 1.0);
+    assert_eq!(controls.speed, 1.0);
 }
 
 /// Verifies paused timeline release tails stay attached without a stop command.
@@ -556,7 +556,7 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     app.init_resource::<UndoManager>();
     app.init_resource::<UndoRegistry>();
     app.init_resource::<TimelineCommandOrigins>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.init_resource::<PendingStoppedTimelineReleaseClocks>();
     app.init_resource::<TimelineLookaheadActionStatuses>();
     app.init_resource::<nightfall_compositor::prelude::FinalLayerOutput>();

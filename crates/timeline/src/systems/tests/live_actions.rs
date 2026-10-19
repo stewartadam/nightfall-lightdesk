@@ -10,7 +10,7 @@ use nightfall_actions::{ActionInvocation, ActionReference, ActionSurface, Action
 use nightfall_clips::InstanceIndex;
 use nightfall_clips::{CLIP_START_ACTION_ID, start_clip_action};
 use nightfall_desk::systems::event_handlers::clip_events::{
-    PendingClipPlaybackRates, handle_clip_rate_commands,
+    PendingClipPlaybackSpeeds, handle_clip_speed_commands,
 };
 
 use super::*;
@@ -474,7 +474,7 @@ fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(
         Update,
         (
@@ -642,7 +642,7 @@ fn process_actions_releases_bounded_fire_cue_at_action_end() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(
         Update,
         (
@@ -2499,9 +2499,9 @@ fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
     ));
 }
 
-/// Verifies inserting an elapsed rate action before an active start replays the rate change.
+/// Verifies inserting an elapsed speed action before an active start replays the speed change.
 #[test]
-fn process_actions_replays_inserted_rate_before_active_start() {
+fn process_actions_replays_inserted_speed_before_active_start() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<EvalOperation>>();
@@ -2534,7 +2534,7 @@ fn process_actions_replays_inserted_rate_before_active_start() {
         identifiers: Identifiers {
             id: timeline_id,
             uid: Uuid::new_v4(),
-            label: "timeline-rate-before-start".to_owned(),
+            label: "timeline-speed-before-start".to_owned(),
         },
         timecode_uid: spawn_timecode(&mut app, timeline_id, Duration::from_millis(2500)),
         tracks: vec![Track {
@@ -2575,13 +2575,13 @@ fn process_actions_replays_inserted_rate_before_active_start() {
         .insert(
             0,
             Action {
-                id: "action-rate".to_owned(),
-                label: "Set rate".to_owned(),
+                id: "action-speed".to_owned(),
+                label: "Set speed".to_owned(),
                 position: Duration::from_millis(500),
                 duration: Duration::ZERO,
-                action: ActionKind::SetClipRate {
+                action: ActionKind::SetClipSpeed {
                     uid: clip_uid,
-                    rate: 2.0,
+                    speed: 2.0,
                 }
                 .to_reference(),
             },
@@ -2598,18 +2598,18 @@ fn process_actions_replays_inserted_rate_before_active_start() {
     assert!(
         clip_events.iter().any(|event| matches!(
             event,
-            ClipOperation::SetRate {
+            ClipOperation::SetSpeed {
                 clip_id: IdExpr::Single(id),
-                rate,
-            } if *id == clip_id && (*rate - 2.0).abs() < f32::EPSILON
+                speed,
+            } if *id == clip_id && (*speed - 2.0).abs() < f32::EPSILON
         )),
-        "inserted elapsed rate before active start should replay: {clip_events:?}"
+        "inserted elapsed speed before active start should replay: {clip_events:?}"
     );
 }
 
-/// Verifies changing an elapsed rate action into a no-op stop replays later active state.
+/// Verifies changing an elapsed speed action into a no-op stop replays later active state.
 #[test]
-fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
+fn process_actions_replays_start_after_speed_becomes_stop_before_it() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
     app.add_message::<EngineOperationEnvelope<EvalOperation>>();
@@ -2642,7 +2642,7 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
         identifiers: Identifiers {
             id: timeline_id,
             uid: Uuid::new_v4(),
-            label: "timeline-rate-to-stop-before-start".to_owned(),
+            label: "timeline-speed-to-stop-before-start".to_owned(),
         },
         timecode_uid: spawn_timecode(&mut app, timeline_id, Duration::from_millis(2500)),
         tracks: vec![Track {
@@ -2653,13 +2653,13 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
             expanded: false,
             actions: vec![
                 Action {
-                    id: "action-rate".to_owned(),
-                    label: "Set rate".to_owned(),
+                    id: "action-speed".to_owned(),
+                    label: "Set speed".to_owned(),
                     position: Duration::from_millis(500),
                     duration: Duration::ZERO,
-                    action: ActionKind::SetClipRate {
+                    action: ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 2.0,
+                        speed: 2.0,
                     }
                     .to_reference(),
                 },
@@ -2710,13 +2710,13 @@ fn process_actions_replays_start_after_rate_becomes_stop_before_it() {
             Duration::from_secs(1),
             Duration::from_millis(2500)
         )),
-        "changing a prior rate into a no-op stop should preserve the active start: {clip_events:?}"
+        "changing a prior speed into a no-op stop should preserve the active start: {clip_events:?}"
     );
     assert!(
         clip_events
             .iter()
-            .all(|event| !matches!(event, ClipOperation::SetRate { .. })),
-        "removed rate action should not replay a SetRate command: {clip_events:?}"
+            .all(|event| !matches!(event, ClipOperation::SetSpeed { .. })),
+        "removed speed action should not replay a SetSpeed command: {clip_events:?}"
     );
 }
 
@@ -3166,7 +3166,7 @@ fn process_actions_desk_eval_delete_does_not_duplicate_active_fire_cue() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(
         Update,
         (
@@ -3356,7 +3356,7 @@ fn process_actions_drops_skipped_deleted_action_trigger_state() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(
         Update,
         (
@@ -3459,7 +3459,7 @@ fn process_actions_does_not_pretrigger_skipped_future_action() {
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(
         Update,
         (
@@ -4073,12 +4073,12 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
     );
 }
 
-/// Verifies paused timelines freeze and restore rates for owned clip instances.
+/// Verifies paused timelines freeze and restore speeds for owned clip instances.
 #[test]
-fn paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
+fn paused_timeline_sets_owned_playback_speed_to_zero_and_restores() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(Update, sync_timeline_paused_instance_controls_system);
 
     let timecode_id = 901;
@@ -4105,7 +4105,7 @@ fn paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
         instance_id,
         InstanceControls {
             intensity_scale: 1.0,
-            rate: 0.75,
+            speed: 0.75,
             ..Default::default()
         },
     ));
@@ -4146,7 +4146,7 @@ fn paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should exist");
-    assert_eq!(controls.rate, 0.0);
+    assert_eq!(controls.speed, 0.0);
 
     let mut timecodes = app.world_mut().query::<&mut TimecodeGenerator>();
     timecodes
@@ -4160,7 +4160,7 @@ fn paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should exist");
-    assert_eq!(controls.rate, 0.75);
+    assert_eq!(controls.speed, 0.75);
 }
 
 /// Verifies timeline-owned clip playback clocks follow timeline action elapsed time.
@@ -4168,7 +4168,7 @@ fn paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
 fn timeline_syncs_owned_clip_instance_clock_from_action_position() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(Update, sync_timeline_paused_instance_controls_system);
 
     let timecode_id = 904;
@@ -4195,7 +4195,7 @@ fn timeline_syncs_owned_clip_instance_clock_from_action_position() {
         instance_id,
         InstanceControls {
             intensity_scale: 1.0,
-            rate: 1.0,
+            speed: 1.0,
             ..Default::default()
         },
         InstanceClock::default(),
@@ -4281,19 +4281,19 @@ fn timeline_syncs_owned_clip_instance_clock_from_action_position() {
     assert_eq!(clock.position, Duration::from_millis(2500));
 }
 
-/// Verifies live clip-rate actions drive clocks without the authored plan overwriting the property.
+/// Verifies live clip-speed actions drive clocks without the authored plan overwriting the property.
 #[test]
-fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
+fn timeline_syncs_owned_fx_module_clip_clock_from_shared_speed_actions() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.init_resource::<InstanceIndex>();
-    app.init_resource::<PendingClipPlaybackRates>();
+    app.init_resource::<PendingClipPlaybackSpeeds>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_systems(
         Update,
         (
-            handle_clip_rate_commands,
+            handle_clip_speed_commands,
             sync_timeline_paused_instance_controls_system,
         )
             .chain(),
@@ -4324,7 +4324,7 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
         instance_id,
         InstanceControls {
             intensity_scale: 1.0,
-            rate: 1.0,
+            speed: 1.0,
             ..Default::default()
         },
         InstanceClock::default(),
@@ -4336,7 +4336,7 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
         identifiers: Identifiers {
             id: timecode_id,
             uid: timeline_uid,
-            label: "rate-aware-fx-module-timeline".to_owned(),
+            label: "speed-aware-fx-module-timeline".to_owned(),
         },
         timecode_uid,
         tracks: vec![
@@ -4355,24 +4355,24 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
                         action: ActionKind::StartClip(clip_uid).to_reference(),
                     },
                     Action {
-                        id: "rate-1".to_owned(),
-                        label: "Set rate".to_owned(),
+                        id: "speed-1".to_owned(),
+                        label: "Set speed".to_owned(),
                         position: Duration::from_secs(2),
                         duration: Duration::ZERO,
-                        action: ActionKind::SetClipRate {
+                        action: ActionKind::SetClipSpeed {
                             uid: clip_uid,
-                            rate: 2.0,
+                            speed: 2.0,
                         }
                         .to_reference(),
                     },
                     Action {
-                        id: "rate-0".to_owned(),
-                        label: "Set zero rate".to_owned(),
+                        id: "speed-0".to_owned(),
+                        label: "Set zero speed".to_owned(),
                         position: Duration::from_secs(3),
                         duration: Duration::ZERO,
-                        action: ActionKind::SetClipRate {
+                        action: ActionKind::SetClipSpeed {
                             uid: clip_uid,
-                            rate: 0.0,
+                            speed: 0.0,
                         }
                         .to_reference(),
                     },
@@ -4386,13 +4386,13 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
                 solo: false,
                 expanded: false,
                 actions: vec![Action {
-                    id: "muted-rate-1".to_owned(),
-                    label: "Muted rate".to_owned(),
+                    id: "muted-speed-1".to_owned(),
+                    label: "Muted speed".to_owned(),
                     position: Duration::from_millis(1500),
                     duration: Duration::ZERO,
-                    action: ActionKind::SetClipRate {
+                    action: ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 4.0,
+                        speed: 4.0,
                     }
                     .to_reference(),
                 }],
@@ -4436,7 +4436,7 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should exist");
-    assert_eq!(controls.rate, 1.0);
+    assert_eq!(controls.speed, 1.0);
 
     app.world_mut()
         .query::<&mut TimecodeGenerator>()
@@ -4446,9 +4446,9 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
         .current_time = Duration::from_millis(2500);
 
     app.world_mut()
-        .write_message(EngineOperationEnvelope::detached(ClipOperation::SetRate {
+        .write_message(EngineOperationEnvelope::detached(ClipOperation::SetSpeed {
             clip_id: IdExpr::Single(clip_id),
-            rate: 0.5,
+            speed: 0.5,
         }));
     app.update();
     let mut clock_query = app.world_mut().query::<&InstanceClock>();
@@ -4461,7 +4461,7 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should still exist");
-    assert_eq!(controls.rate, 0.5);
+    assert_eq!(controls.speed, 0.5);
 
     app.world_mut()
         .query::<&mut TimecodeGenerator>()
@@ -4471,22 +4471,22 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
         .current_time = Duration::from_millis(3500);
 
     app.world_mut()
-        .write_message(EngineOperationEnvelope::detached(ClipOperation::SetRate {
+        .write_message(EngineOperationEnvelope::detached(ClipOperation::SetSpeed {
             clip_id: IdExpr::Single(clip_id),
-            rate: 0.0,
+            speed: 0.0,
         }));
     app.update();
     let mut clock_query = app.world_mut().query::<&InstanceClock>();
     let clock = clock_query
         .single(app.world())
-        .expect("playback clock should still exist after rate change");
+        .expect("playback clock should still exist after speed change");
     assert_eq!(clock.position, Duration::from_secs(1));
     assert_eq!(clock.delta, Duration::ZERO);
     let mut controls_query = app.world_mut().query::<&InstanceControls>();
     let controls = controls_query
         .single(app.world())
-        .expect("playback controls should still exist after zero rate");
-    assert_eq!(controls.rate, 0.0);
+        .expect("playback controls should still exist after zero speed");
+    assert_eq!(controls.speed, 0.0);
 
     app.update();
     let mut clock_query = app.world_mut().query::<&InstanceClock>();
@@ -4497,12 +4497,12 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_rate_actions() {
     assert_eq!(clock.delta, Duration::ZERO);
 }
 
-/// Verifies source-owned timeline clocks without clip attachments still use planned rates.
+/// Verifies source-owned timeline clocks without clip attachments still use planned speeds.
 #[test]
-fn timeline_syncs_source_owned_clock_without_materialized_clip_from_rate_aware_plan() {
+fn timeline_syncs_source_owned_clock_without_materialized_clip_from_speed_aware_plan() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(Update, sync_timeline_paused_instance_controls_system);
 
     let timecode_id = 906;
@@ -4534,7 +4534,7 @@ fn timeline_syncs_source_owned_clock_without_materialized_clip_from_rate_aware_p
         instance_id,
         InstanceControls {
             intensity_scale: 1.0,
-            rate: 1.0,
+            speed: 1.0,
             ..Default::default()
         },
         clock,
@@ -4546,7 +4546,7 @@ fn timeline_syncs_source_owned_clock_without_materialized_clip_from_rate_aware_p
         identifiers: Identifiers {
             id: timecode_id,
             uid: timeline_uid,
-            label: "source-owned-rate-aware-timeline".to_owned(),
+            label: "source-owned-speed-aware-timeline".to_owned(),
         },
         timecode_uid,
         tracks: vec![Track {
@@ -4564,13 +4564,13 @@ fn timeline_syncs_source_owned_clock_without_materialized_clip_from_rate_aware_p
                     action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
-                    id: "rate-1".to_owned(),
-                    label: "Set rate".to_owned(),
+                    id: "speed-1".to_owned(),
+                    label: "Set speed".to_owned(),
                     position: Duration::from_secs(2),
                     duration: Duration::ZERO,
-                    action: ActionKind::SetClipRate {
+                    action: ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 2.0,
+                        speed: 2.0,
                     }
                     .to_reference(),
                 },
@@ -4604,27 +4604,27 @@ fn timeline_syncs_source_owned_clock_without_materialized_clip_from_rate_aware_p
         .single(app.world())
         .expect("playback clock should exist");
     assert_eq!(clock.position, Duration::from_secs(2));
-    assert_eq!(clock.rate, 2.0);
+    assert_eq!(clock.speed, 2.0);
     let mut controls_query = app.world_mut().query::<&InstanceControls>();
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should exist");
-    assert_eq!(controls.rate, 2.0);
+    assert_eq!(controls.speed, 2.0);
 }
 
-/// Verifies timeline rate-master automation lanes drive attached playback controls.
+/// Verifies timeline clip speed lanes drive attached playback controls.
 #[test]
-fn process_parameters_applies_rate_master_to_attached_instance() {
+fn process_parameters_applies_clip_speed_lane_to_attached_instance() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
     app.init_resource::<GlobalVariables>();
     app.init_resource::<TimelineCommandOrigins>();
     app.init_resource::<InstanceIndex>();
-    app.init_resource::<PendingClipPlaybackRates>();
+    app.init_resource::<PendingClipPlaybackSpeeds>();
     app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_systems(
         Update,
-        (process_parameters_system, handle_clip_rate_commands).chain(),
+        (process_parameters_system, handle_clip_speed_commands).chain(),
     );
 
     let clip_uid = Uuid::new_v4();
@@ -4633,7 +4633,7 @@ fn process_parameters_applies_rate_master_to_attached_instance() {
         identifiers: Identifiers {
             id: clip_id,
             uid: clip_uid,
-            label: "rate-target".to_owned(),
+            label: "speed-target".to_owned(),
         },
         ..Default::default()
     });
@@ -4648,7 +4648,7 @@ fn process_parameters_applies_rate_master_to_attached_instance() {
         instance_id,
         InstanceControls {
             intensity_scale: 1.0,
-            rate: 1.0,
+            speed: 1.0,
             ..Default::default()
         },
     ));
@@ -4665,7 +4665,7 @@ fn process_parameters_applies_rate_master_to_attached_instance() {
         identifiers: Identifiers {
             id: 905,
             uid: Uuid::new_v4(),
-            label: "rate-master-timeline".to_owned(),
+            label: "clip-speed-timeline".to_owned(),
         },
         timecode_uid,
         tracks: vec![Track {
@@ -4676,14 +4676,14 @@ fn process_parameters_applies_rate_master_to_attached_instance() {
             expanded: false,
             actions: Vec::new(),
             automation_lanes: vec![AutomationLane {
-                id: "rate-1".to_owned(),
-                name: "Rate".to_owned(),
+                id: "speed-1".to_owned(),
+                name: "Speed".to_owned(),
                 color: "#ffffff".to_owned(),
                 points: vec![AutomationPoint {
                     position: Duration::ZERO,
                     value: 0.75,
                 }],
-                parameter_type: ParameterType::RateMaster(clip_uid),
+                parameter_type: ParameterType::ClipSpeed(clip_uid),
             }],
         }],
         ..Default::default()
@@ -4697,12 +4697,12 @@ fn process_parameters_applies_rate_master_to_attached_instance() {
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should exist");
-    assert_eq!(controls.rate, 0.75);
+    assert_eq!(controls.speed, 0.75);
 }
 
-/// Verifies Step FX and WASM FX clocks consume the same rate property set by automation and manual actions.
+/// Verifies Step FX and WASM FX clocks consume the same speed property set by automation and manual actions.
 #[test]
-fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
+fn clip_speed_automation_drives_step_fx_and_wasm_fx_clocks() {
     for source in [
         Source::StepFx(Uuid::new_v4()),
         Source::FxModule(Uuid::new_v4()),
@@ -4711,14 +4711,14 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
         crate::install_timeline_test_actions(&mut app);
         app.init_resource::<GlobalVariables>();
         app.init_resource::<TimelineCommandOrigins>();
-        app.init_resource::<TimelinePausedPlaybackRates>();
+        app.init_resource::<TimelinePausedPlaybackSpeeds>();
         app.init_resource::<InstanceIndex>();
-        app.init_resource::<PendingClipPlaybackRates>();
+        app.init_resource::<PendingClipPlaybackSpeeds>();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.add_systems(
             Update,
             (
-                handle_clip_rate_commands,
+                handle_clip_speed_commands,
                 sync_timeline_paused_instance_controls_system,
                 process_parameters_system,
             )
@@ -4731,7 +4731,7 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
                 identifiers: Identifiers {
                     id: 42,
                     uid: clip_uid,
-                    label: "rate target".into(),
+                    label: "speed target".into(),
                 },
                 source: Some(source),
                 ..Default::default()
@@ -4768,14 +4768,14 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
                     action: ActionKind::StartClip(clip_uid).to_reference(),
                 }],
                 automation_lanes: vec![AutomationLane {
-                    id: "rate".into(),
-                    name: "Rate".into(),
+                    id: "speed".into(),
+                    name: "Speed".into(),
                     color: "#fff".into(),
                     points: vec![AutomationPoint {
                         position: Duration::ZERO,
                         value: 0.25,
                     }],
-                    parameter_type: ParameterType::RateMaster(clip_uid),
+                    parameter_type: ParameterType::ClipSpeed(clip_uid),
                 }],
             }],
             ..Default::default()
@@ -4786,17 +4786,17 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
             ("track".into(), "start".into(), SpawnedEntityType::Clip),
         );
         let timeline_entity = app.world_mut().spawn(timeline).id();
-        set_rate_test_time(&mut app, Duration::ZERO);
+        set_speed_test_time(&mut app, Duration::ZERO);
         app.update();
         app.update();
         assert_eq!(
             app.world()
                 .get::<InstanceControls>(playback_entity)
                 .unwrap()
-                .rate,
+                .speed,
             0.25
         );
-        set_rate_test_time(&mut app, Duration::from_secs(2));
+        set_speed_test_time(&mut app, Duration::from_secs(2));
         app.update();
         assert_eq!(
             app.world()
@@ -4806,7 +4806,7 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
             Duration::from_millis(500)
         );
 
-        for (rate, next_time, expected_position) in [(0.0, 3, 500), (0.5, 4, 1000)] {
+        for (speed, next_time, expected_position) in [(0.0, 3, 500), (0.5, 4, 1000)] {
             app.world_mut()
                 .get_mut::<MaterializedTimeline>(timeline_entity)
                 .unwrap()
@@ -4814,26 +4814,26 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
                 .tracks[0]
                 .automation_lanes[0]
                 .points[0]
-                .value = rate;
+                .value = speed;
             app.update();
             app.update();
-            set_rate_test_time(&mut app, Duration::from_secs(next_time));
+            set_speed_test_time(&mut app, Duration::from_secs(next_time));
             app.update();
             let controls = app
                 .world()
                 .get::<InstanceControls>(playback_entity)
                 .unwrap();
             let clock = app.world().get::<InstanceClock>(playback_entity).unwrap();
-            assert_eq!(controls.rate, rate);
-            assert_eq!(clock.rate, f64::from(rate));
+            assert_eq!(controls.speed, speed);
+            assert_eq!(clock.speed, f64::from(speed));
             assert_eq!(clock.position, Duration::from_millis(expected_position));
         }
 
         app.world_mut()
             .get_mut::<InstanceControls>(playback_entity)
             .unwrap()
-            .set_rate_master_scale(2.0);
-        set_rate_test_time(&mut app, Duration::from_secs(5));
+            .set_speed_master_scale(2.0);
+        set_speed_test_time(&mut app, Duration::from_secs(5));
         app.update();
         assert_eq!(
             app.world()
@@ -4842,7 +4842,7 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
                 .position,
             Duration::from_secs(2)
         );
-        // Removing one of two lanes must preserve the remaining lane's zero rate.
+        // Removing one of two lanes must preserve the remaining lane's zero speed.
         {
             let mut timeline = app
                 .world_mut()
@@ -4851,7 +4851,7 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
             let lanes = &mut timeline.timeline.tracks[0].automation_lanes;
             lanes[0].points[0].value = 0.0;
             let mut duplicate = lanes[0].clone();
-            duplicate.id = "duplicate-rate-lane".to_owned();
+            duplicate.id = "duplicate-speed-lane".to_owned();
             lanes.push(duplicate);
         }
         app.update();
@@ -4869,7 +4869,7 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
             app.world()
                 .get::<InstanceControls>(playback_entity)
                 .unwrap()
-                .rate,
+                .speed,
             0.0
         );
         app.world_mut()
@@ -4894,39 +4894,39 @@ fn clip_rate_automation_drives_step_fx_and_wasm_fx_clocks() {
             app.world()
                 .get::<InstanceControls>(playback_entity)
                 .unwrap()
-                .rate,
+                .speed,
             0.0
         );
-        set_rate_test_time(&mut app, Duration::from_secs(5));
+        set_speed_test_time(&mut app, Duration::from_secs(5));
         app.update();
         app.update();
         assert_eq!(
             app.world()
                 .get::<InstanceControls>(playback_entity)
                 .unwrap()
-                .rate,
+                .speed,
             1.0
         );
         app.world_mut()
-            .write_message(EngineOperationEnvelope::detached(ClipOperation::SetRate {
+            .write_message(EngineOperationEnvelope::detached(ClipOperation::SetSpeed {
                 clip_id: IdExpr::Single(42),
-                rate: 0.75,
+                speed: 0.75,
             }));
-        set_rate_test_time(&mut app, Duration::from_secs(6));
+        set_speed_test_time(&mut app, Duration::from_secs(6));
         app.update();
         let controls = app
             .world()
             .get::<InstanceControls>(playback_entity)
             .unwrap();
         let clock = app.world().get::<InstanceClock>(playback_entity).unwrap();
-        assert_eq!(controls.rate, 0.75);
-        assert_eq!(clock.rate, controls.effective_rate());
+        assert_eq!(controls.speed, 0.75);
+        assert_eq!(clock.speed, controls.effective_speed());
         assert_eq!(clock.position, Duration::from_millis(3500));
     }
 }
 
 /// Positions the test timecode without invoking seek reconstruction so live clock advancement is observable.
-fn set_rate_test_time(app: &mut App, position: Duration) {
+fn set_speed_test_time(app: &mut App, position: Duration) {
     let mut query = app.world_mut().query::<&mut TimecodeGenerator>();
     let mut timecode = query
         .single_mut(app.world_mut())
@@ -4937,10 +4937,10 @@ fn set_rate_test_time(app: &mut App, position: Duration) {
 
 /// Verifies a stopped manual timeline still freezes previously spawned clip instances while timecode is paused.
 #[test]
-fn inactive_paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
+fn inactive_paused_timeline_sets_owned_playback_speed_to_zero_and_restores() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(Update, sync_timeline_paused_instance_controls_system);
 
     let timecode_id = 903;
@@ -4967,7 +4967,7 @@ fn inactive_paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
         instance_id,
         InstanceControls {
             intensity_scale: 1.0,
-            rate: 0.75,
+            speed: 0.75,
             ..Default::default()
         },
     ));
@@ -5007,7 +5007,7 @@ fn inactive_paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should exist");
-    assert_eq!(controls.rate, 0.0);
+    assert_eq!(controls.speed, 0.0);
 
     let mut timecodes = app.world_mut().query::<&mut TimecodeGenerator>();
     timecodes
@@ -5021,7 +5021,7 @@ fn inactive_paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
     let controls = controls_query
         .single(app.world())
         .expect("playback controls should exist");
-    assert_eq!(controls.rate, 0.75);
+    assert_eq!(controls.speed, 0.75);
 }
 
 /// Verifies paused timelines freeze clocked cues without shifting host-time anchors.
@@ -5029,7 +5029,7 @@ fn inactive_paused_timeline_sets_owned_playback_rate_to_zero_and_restores() {
 fn paused_timeline_freezes_owned_cue_instance_clock_without_shifting() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.add_systems(Update, sync_timeline_paused_instance_controls_system);
 
     let timecode_id = 903;

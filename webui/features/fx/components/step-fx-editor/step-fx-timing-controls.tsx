@@ -19,10 +19,10 @@ import {
 } from "../../../../components/ui/segmented-control";
 import type * as types from "../../../../types";
 import {
-  type StepFxSpeedUnit,
+  type StepFxBeatUnit,
   type StepFxTrackKind,
-  stepFxSpeedValue,
-  stepFxTimingFromSpeed,
+  stepFxBeatValue,
+  stepFxTimingFromBeat,
 } from "../../model/step-fx-editor-model";
 import { STEP_FX_FIELD_CLASS } from "./step-fx-editor-styles";
 
@@ -33,18 +33,18 @@ const CYCLE_SCALE_OPTIONS: readonly SegmentedControlOption<
   { value: "Fixed", label: "Fixed", ariaLabel: "Fixed cycle scaling" },
 ];
 
-/** Renders compact effect-wide speed and cycle scaling in a toolbar menu. */
+/** Renders compact effect-wide beat timing and cycle scaling in a toolbar menu. */
 export function StepFxTimingControls(props: {
   stepFx: types.StepFx;
   open: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  speedUnit: StepFxSpeedUnit;
+  beatUnit: StepFxBeatUnit;
   cycleBeatText: string | null;
   fixedScaleDefault: number;
   trackKind: StepFxTrackKind;
-  speedError?: string;
+  beatError?: string;
   scaleError?: string;
-  onSpeedUnitChange: (unit: StepFxSpeedUnit) => void;
+  onBeatUnitChange: (unit: StepFxBeatUnit) => void;
   onTimingChange: (timing: types.StepFxTiming) => void;
   onCycleScaleChange: (scale: types.StepFxCycleScale) => void;
 }) {
@@ -64,14 +64,14 @@ export function StepFxTimingControls(props: {
     <DropdownMenu
       placement="below"
       align="start"
-      triggerLabel="Speed and scaling"
+      triggerLabel="Timing and scaling"
       open={props.open}
       onOpenChange={props.onOpenChange}
       triggerSize="compact"
       trigger={
         <span class="inline-flex items-center gap-1.5 tabular-nums">
-          {stepFxSpeedValue(props.stepFx.timing, props.speedUnit)}{" "}
-          {props.speedUnit}{" "}
+          {stepFxBeatValue(props.stepFx.timing, props.beatUnit)}{" "}
+          {props.beatUnit}{" "}
           <span class="text-neutral-400">
             · {props.stepFx.cycle_scale.type}
           </span>
@@ -82,28 +82,28 @@ export function StepFxTimingControls(props: {
       <div class="w-80 py-1" data-menu-kind="step-fx-timing">
         <div class="px-3 py-2">
           <div class="text-xs font-medium uppercase tracking-wide text-neutral-400">
-            Speed and scaling
+            Timing and scaling
           </div>
           <div class="text-xs text-neutral-500">Effect-wide cycle timing</div>
         </div>
         <DropdownMenuSeparator />
         <div class="space-y-3 px-3 py-2">
           <label class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3">
-            <span class="text-xs text-neutral-300">Speed</span>
-            <div class="relative min-w-0" data-input-group="speed">
+            <span class="text-xs text-neutral-300">Beat</span>
+            <div class="relative min-w-0" data-input-group="beat">
               <Input
                 density="compact"
-                aria-label="Step FX speed"
-                aria-invalid={Boolean(props.speedError)}
+                aria-label="Step FX beat"
+                aria-invalid={Boolean(props.beatError)}
                 type="number"
                 min="0.001"
                 step="any"
-                class={`${STEP_FX_FIELD_CLASS} w-full min-w-0 pe-28 ${props.speedError ? "border-red-500" : ""}`}
-                value={stepFxSpeedValue(props.stepFx.timing, props.speedUnit)}
+                class={`${STEP_FX_FIELD_CLASS} w-full min-w-0 pe-28 ${props.beatError ? "border-red-500" : ""}`}
+                value={stepFxBeatValue(props.stepFx.timing, props.beatUnit)}
                 onChange={(event) => {
-                  const timing = stepFxTimingFromSpeed(
+                  const timing = stepFxTimingFromBeat(
                     Number(event.currentTarget.value),
-                    props.speedUnit,
+                    props.beatUnit,
                   );
                   if (timing) props.onTimingChange(timing);
                 }}
@@ -111,12 +111,12 @@ export function StepFxTimingControls(props: {
               <div class="absolute inset-y-px right-px flex items-center">
                 <NativeSelect
                   density="compact"
-                  aria-label="Step FX speed unit"
+                  aria-label="Step FX beat unit"
                   class="h-full w-28 rounded-r border-0 border-l border-neutral-700 bg-neutral-800 px-2 pe-7 text-xs text-neutral-200 focus:border-[var(--accent)] focus:outline-none"
-                  value={props.speedUnit}
+                  value={props.beatUnit}
                   onChange={(event) =>
-                    props.onSpeedUnitChange(
-                      event.currentTarget.value as StepFxSpeedUnit,
+                    props.onBeatUnitChange(
+                      event.currentTarget.value as StepFxBeatUnit,
                     )
                   }
                 >

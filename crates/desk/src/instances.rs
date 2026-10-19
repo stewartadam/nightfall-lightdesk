@@ -40,7 +40,7 @@ pub fn advance_realtime_instance_clocks(
 
     for (mut clock, controls) in clocks.iter_mut() {
         if let Some(controls) = controls {
-            clock.set_rate(controls.effective_rate());
+            clock.set_speed(controls.effective_speed());
         }
 
         if matches!(clock.source, InstanceClockSource::Realtime) {

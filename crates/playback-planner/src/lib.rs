@@ -400,8 +400,8 @@ pub enum TimelinePlaybackActionKind {
     Stop,
     /// Apply an intervention to the owner's active playback.
     Intervene(PlannedPlaybackInterventionKind),
-    /// Set the playback clock rate multiplier of the owner's active playback.
-    SetRate(f32),
+    /// Set the playback clock speed multiplier of the owner's active playback.
+    SetSpeed(f32),
     /// Play the owning cue as a transient playback lasting the timeline action's duration.
     FireCue,
 }
@@ -441,39 +441,39 @@ impl PlannedReleaseInterval {
     }
 }
 
-/// Authored playback-rate change inside a planned playback interval.
+/// Authored playback-speed change inside a planned playback interval.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct PlannedPlaybackRateChange {
-    /// Timeline action owner for this rate change.
+pub struct PlannedPlaybackSpeedChange {
+    /// Timeline action owner for this speed change.
     pub owner: TimelinePlaybackOwner,
-    /// Absolute timeline position where the rate change occurs.
+    /// Absolute timeline position where the speed change occurs.
     pub timeline_position: Duration,
-    /// Source-local playback position where the rate change occurs.
+    /// Source-local playback position where the speed change occurs.
     pub playback_position: Duration,
-    /// Non-negative playback rate multiplier in millionths.
-    pub rate_micros: u32,
+    /// Non-negative playback speed multiplier in millionths.
+    pub speed_micros: u32,
 }
 
-impl PlannedPlaybackRateChange {
-    /// Builds a rate change from a user-facing floating-point multiplier.
+impl PlannedPlaybackSpeedChange {
+    /// Builds a speed change from a user-facing floating-point multiplier.
     pub fn from_multiplier(
         owner: TimelinePlaybackOwner,
         timeline_position: Duration,
         playback_position: Duration,
-        rate: f32,
+        speed: f32,
     ) -> Self {
         Self {
             owner,
             timeline_position,
             playback_position,
-            rate_micros: playback_rate_micros(rate),
+            speed_micros: playback_speed_micros(speed),
         }
     }
 
-    /// Returns the playback rate multiplier represented by this rate change.
-    pub fn rate_multiplier(&self) -> f32 {
-        self.rate_micros as f32 / PLAYBACK_RATE_MICROS_PER_UNIT as f32
+    /// Returns the playback speed multiplier represented by this speed change.
+    pub fn speed_multiplier(&self) -> f32 {
+        self.speed_micros as f32 / PLAYBACK_SPEED_MICROS_PER_UNIT as f32
     }
 }
 
@@ -493,8 +493,8 @@ pub struct PlannedPlaybackInterval {
     pub source_local_start: Duration,
     /// Release interval, if the playback is releasing or complete after release.
     pub release: Option<PlannedReleaseInterval>,
-    /// Authored playback-rate changes inside this interval.
-    pub rate_changes: Vec<PlannedPlaybackRateChange>,
+    /// Authored playback-speed changes inside this interval.
+    pub speed_changes: Vec<PlannedPlaybackSpeedChange>,
     /// Explicit authored interventions inside this interval.
     pub explicit_interventions: Vec<PlannedPlaybackIntervention>,
     /// Coarse lifecycle at the plan target.
@@ -506,40 +506,40 @@ impl PlannedPlaybackInterval {
     pub fn playback_position_at(&self, target_time: Duration) -> Duration {
         let mut cursor_timeline = self.started_at_timeline;
         let mut cursor_source = self.source_local_start;
-        let mut rate_micros = PLAYBACK_RATE_MICROS_PER_UNIT;
-        let mut rate_changes = self
-            .rate_changes
+        let mut speed_micros = PLAYBACK_SPEED_MICROS_PER_UNIT;
+        let mut speed_changes = self
+            .speed_changes
             .iter()
             .filter(|change| change.timeline_position <= target_time)
             .collect::<Vec<_>>();
-        rate_changes.sort_by_key(|change| change.timeline_position);
+        speed_changes.sort_by_key(|change| change.timeline_position);
 
-        for change in rate_changes {
+        for change in speed_changes {
             if change.timeline_position >= cursor_timeline {
-                let computed_source = cursor_source.saturating_add(scale_duration_by_rate(
+                let computed_source = cursor_source.saturating_add(scale_duration_by_speed(
                     change.timeline_position.saturating_sub(cursor_timeline),
-                    rate_micros,
+                    speed_micros,
                 ));
                 debug_assert_eq!(computed_source, change.playback_position);
                 cursor_timeline = change.timeline_position;
             }
             cursor_source = change.playback_position;
-            rate_micros = change.rate_micros;
+            speed_micros = change.speed_micros;
         }
 
-        cursor_source.saturating_add(scale_duration_by_rate(
+        cursor_source.saturating_add(scale_duration_by_speed(
             target_time.saturating_sub(cursor_timeline),
-            rate_micros,
+            speed_micros,
         ))
     }
 
-    /// Returns the playback rate multiplier active at a target timeline position.
-    pub fn playback_rate_at(&self, target_time: Duration) -> f32 {
-        self.rate_changes
+    /// Returns the playback speed multiplier active at a target timeline position.
+    pub fn playback_speed_at(&self, target_time: Duration) -> f32 {
+        self.speed_changes
             .iter()
             .filter(|change| change.timeline_position <= target_time)
             .max_by_key(|change| change.timeline_position)
-            .map_or(1.0, PlannedPlaybackRateChange::rate_multiplier)
+            .map_or(1.0, PlannedPlaybackSpeedChange::speed_multiplier)
     }
 
     /// Returns true when this interval is known to be an aggregate no-op at `target_time`.
@@ -551,21 +551,21 @@ impl PlannedPlaybackInterval {
     }
 }
 
-const PLAYBACK_RATE_MICROS_PER_UNIT: u32 = 1_000_000;
+const PLAYBACK_SPEED_MICROS_PER_UNIT: u32 = 1_000_000;
 
-/// Converts a floating-point rate multiplier into finite non-negative millionths.
-pub fn playback_rate_micros(rate: f32) -> u32 {
-    if !rate.is_finite() {
+/// Converts a floating-point speed multiplier into finite non-negative millionths.
+pub fn playback_speed_micros(speed: f32) -> u32 {
+    if !speed.is_finite() {
         return 0;
     }
-    (rate.max(0.0) * PLAYBACK_RATE_MICROS_PER_UNIT as f32)
+    (speed.max(0.0) * PLAYBACK_SPEED_MICROS_PER_UNIT as f32)
         .round()
         .clamp(0.0, u32::MAX as f32) as u32
 }
 
-fn scale_duration_by_rate(duration: Duration, rate_micros: u32) -> Duration {
-    let scaled_nanos = duration.as_nanos().saturating_mul(rate_micros as u128)
-        / PLAYBACK_RATE_MICROS_PER_UNIT as u128;
+fn scale_duration_by_speed(duration: Duration, speed_micros: u32) -> Duration {
+    let scaled_nanos = duration.as_nanos().saturating_mul(speed_micros as u128)
+        / PLAYBACK_SPEED_MICROS_PER_UNIT as u128;
     Duration::from_nanos(scaled_nanos.min(u64::MAX as u128) as u64)
 }
 
@@ -761,7 +761,7 @@ mod planning_contract_tests {
             stopped_at_timeline: release.map(|release| release.released_at_timeline),
             source_local_start: Duration::from_millis(10),
             release,
-            rate_changes: Vec::new(),
+            speed_changes: Vec::new(),
             explicit_interventions: Vec::new(),
             lifecycle,
         }

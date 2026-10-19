@@ -34,12 +34,12 @@ pub enum StepFxCommand {
     Start(u32),
     /// Stop a step FX
     Stop(u32),
-    /// Set rate multiplier for a step FX
-    SetRate {
+    /// Set speed multiplier for a step FX
+    SetSpeed {
         /// ID of the FX
         fx_id: u32,
-        /// Rate multiplier
-        rate: f32,
+        /// Speed multiplier
+        speed: f32,
     },
 }
 

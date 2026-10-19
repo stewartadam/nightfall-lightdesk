@@ -39,7 +39,7 @@ pub struct InstanceInfo {
     pub is_preview: bool,
     /// Whether this playback is fading out after a stop/release command.
     pub is_releasing: bool,
-    /// Whether this playback clock is currently frozen or held at zero rate.
+    /// Whether this playback clock is currently frozen or held at zero speed.
     pub is_paused: bool,
     /// Wall-clock timestamp when this playback began releasing, if applicable.
     pub release_epoch_ms: Option<f64>,
@@ -55,12 +55,12 @@ pub struct InstanceInfo {
     pub bound_clip_id: Option<u32>,
     /// Current intensity scale (0.0-1.0)
     pub intensity_scale: f32,
-    /// Current rate multiplier
-    pub rate: f32,
-    /// Runtime master scale applied on top of the current rate.
-    pub rate_master_scale: f32,
-    /// Current effective rate after master scaling.
-    pub effective_rate: f64,
+    /// Current speed multiplier
+    pub speed: f32,
+    /// Runtime master scale applied on top of the current speed.
+    pub speed_master_scale: f32,
+    /// Current effective speed after master scaling.
+    pub effective_speed: f64,
     /// Backend-authored clock and phase state for an editor-owned Step FX preview.
     pub step_fx_preview: Option<StepFxPreviewPlaybackStatus>,
     /// How a held control slot Flash or Swop changes this playback, if one does.

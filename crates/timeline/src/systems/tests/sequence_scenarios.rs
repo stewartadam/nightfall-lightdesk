@@ -2441,9 +2441,9 @@ fn seek_start_clip_duration_does_not_release_auto_progressing_sequence() {
     );
 }
 
-/// Verifies sequence seek reconstruction folds authored rate actions into the playback clock.
+/// Verifies sequence seek reconstruction folds authored speed actions into the playback clock.
 #[test]
-fn seek_timeline_sequence_reconstructs_authored_rate() {
+fn seek_timeline_sequence_reconstructs_authored_speed() {
     let (mut app, _parameter, timeline_id) = setup_sequence_timeline_app(true);
     {
         let mut timeline_query = app.world_mut().query::<&mut MaterializedTimeline>();
@@ -2455,13 +2455,13 @@ fn seek_timeline_sequence_reconstructs_authored_rate() {
             .and_then(|uid| Uuid::parse_str(uid).ok())
             .expect("helper timeline should start a clip");
         timeline.timeline.tracks[0].actions.push(Action {
-            id: "action-rate".to_owned(),
-            label: "Set sequence rate".to_owned(),
+            id: "action-speed".to_owned(),
+            label: "Set sequence speed".to_owned(),
             position: Duration::from_millis(600),
             duration: Duration::ZERO,
-            action: ActionKind::SetClipRate {
+            action: ActionKind::SetClipSpeed {
                 uid: clip_uid,
-                rate: 2.0,
+                speed: 2.0,
             }
             .to_reference(),
         });
@@ -2474,7 +2474,7 @@ fn seek_timeline_sequence_reconstructs_authored_rate() {
         .single(app.world())
         .expect("timeline sequence should reconstruct one instance clock");
     assert_eq!(clock.position, Duration::from_millis(2500));
-    assert_eq!(clock.rate, 2.0);
+    assert_eq!(clock.speed, 2.0);
 }
 
 /// Verifies paused timeline-owned sequence output and auto-progression remain frozen.

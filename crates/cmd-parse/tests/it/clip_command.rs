@@ -156,18 +156,18 @@ fn test_clip_goto_position_one() {
     }
 }
 
-/// Verifies clip rate commands parse as playback rate actions.
+/// Verifies clip speed commands parse as playback speed actions.
 #[test]
-fn test_clip_rate_command() {
-    let input = "exec 1 rate 2.5";
-    let command_ast = generate_ast(input).expect("Failed to parse clip rate command");
+fn test_clip_speed_command() {
+    let input = "exec 1 speed 2.5";
+    let command_ast = generate_ast(input).expect("Failed to parse clip speed command");
 
     match command_ast {
         CommandAst::Clip(clip_cmd) => {
             assert_eq!(
                 clip_cmd.action,
-                PlaybackActionAst::Rate(2.5),
-                "Expected Rate action with multiplier 2.5"
+                PlaybackActionAst::Speed(2.5),
+                "Expected Speed action with multiplier 2.5"
             );
         }
         other => panic!("Expected Clip command, got {:?}", other),

@@ -109,7 +109,7 @@ pub struct FxWaveform {
     #[typeshare(serialized_as = "Array<number>")]
     pub phase_range: (f32, f32),
     /// The duration one complete cycle of the waveform should take
-    pub rate: Duration,
+    pub cycle_length: Duration,
     /// The width of the waveform (0-100%), scales amplitude around midpoint (127.5).
     #[serde_as(as = "PercentageAsF64")]
     pub width: Percentage,
@@ -147,7 +147,7 @@ impl FxWaveform {
             .enumerate()
             .map(|(index, _)| {
                 // Start at phase_start, distribute fixtures across phase_span
-                // Time offset advances through one complete cycle (2π) per rate period
+                // Time offset advances through one complete cycle (2π) per cycle length
                 let phase = phase_start
                     + (index as f32 * spacing)
                     + 2.0 * std::f32::consts::PI * percent.as_f32();
@@ -191,7 +191,7 @@ mod tests {
                 duty_cycle: 1.0,
             },
             phase_range,
-            rate: Duration::from_secs(1),
+            cycle_length: Duration::from_secs(1),
             width: Percentage::from(1.0),
             is_relative: false,
         }

@@ -903,7 +903,7 @@ fn delete_timeline_releases_owned_cue_instances() {
             },
             InstanceControls {
                 intensity_scale: 1.0,
-                rate: 0.0,
+                speed: 0.0,
                 ..Default::default()
             },
         ))
@@ -932,7 +932,7 @@ fn delete_timeline_releases_owned_cue_instances() {
         app.world()
             .get::<InstanceControls>(playback)
             .expect("controls should remain attached")
-            .rate,
+            .speed,
         1.0
     );
 }

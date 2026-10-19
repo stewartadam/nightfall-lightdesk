@@ -85,7 +85,7 @@ async function seedShowfileObjects(page: Page): Promise<void> {
         },
         attributes: {
           Intensity: {
-            rate: { secs: 1, nanos: 0 },
+            cycle_length: { secs: 1, nanos: 0 },
             width: 1,
             phase_range: [0, 6.283185307179586],
             is_relative: false,

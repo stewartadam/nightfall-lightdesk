@@ -266,7 +266,7 @@ fn phase_offsets_detect_reposition(
 /// Returns the effective elapsed time used to sample a step FX playback.
 fn step_fx_elapsed(active_fx: &ActiveStepFx, clock: Option<&InstanceClock>) -> Duration {
     let base_elapsed = clock.map(|clock| clock.position).unwrap_or_default();
-    Duration::from_secs_f64(base_elapsed.as_secs_f64() * f64::from(active_fx.rate.max(0.0)))
+    Duration::from_secs_f64(base_elapsed.as_secs_f64() * f64::from(active_fx.speed.max(0.0)))
 }
 
 /// Apply FX sample values for a single fixture to a layer
@@ -365,13 +365,13 @@ mod tests {
         StepFxTrackPhaseOffsets,
     };
 
-    /// Verifies clock-backed Step FX elapsed time still honors the local Step FX rate.
+    /// Verifies clock-backed Step FX elapsed time still honors the local Step FX speed.
     #[test]
-    fn step_fx_elapsed_uses_instance_clock_position_and_local_rate() {
+    fn step_fx_elapsed_uses_instance_clock_position_and_local_speed() {
         let active_fx = ActiveStepFx {
             fx_entity: Entity::from_bits(42),
             priority: Priority::default(),
-            rate: 2.0,
+            speed: 2.0,
             is_playing: true,
         };
         let clock = InstanceClock {
@@ -390,7 +390,7 @@ mod tests {
         let active_fx = ActiveStepFx {
             fx_entity: Entity::from_bits(42),
             priority: Priority::default(),
-            rate: 2.0,
+            speed: 2.0,
             is_playing: true,
         };
 
@@ -414,7 +414,7 @@ mod tests {
                 ActiveStepFx {
                     fx_entity,
                     priority: Priority::default(),
-                    rate: 1.0,
+                    speed: 1.0,
                     is_playing: true,
                 },
                 InstanceClock {
@@ -546,7 +546,7 @@ mod tests {
             .spawn(ActiveStepFx {
                 fx_entity,
                 priority: Priority::default(),
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             })
             .id();
@@ -660,7 +660,7 @@ mod tests {
             .spawn(ActiveStepFx {
                 fx_entity,
                 priority: Priority::default(),
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             })
             .id();
@@ -687,7 +687,7 @@ mod tests {
             .spawn(ActiveStepFx {
                 fx_entity: definition_entity,
                 priority: Priority::default(),
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             })
             .id();

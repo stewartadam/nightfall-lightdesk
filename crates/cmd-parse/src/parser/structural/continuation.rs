@@ -431,13 +431,13 @@ pub(in crate::parser) fn slot_requires_followup_value(
         }) || bezier_expression_in_progress(fills);
     }
     if slot == SlotId::ClipAction {
-        return fx_rate_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value)
+        return fx_speed_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value)
             || fills.last().is_some_and(|item| {
                 token_id_for_text(item.surface.as_str()) == Some(TokenId::Goto)
             });
     }
     if slot == SlotId::FxAction {
-        return fx_rate_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value);
+        return fx_speed_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value);
     }
     if slot == SlotId::TempoAction {
         return tempo_action_requires_followup(fills);

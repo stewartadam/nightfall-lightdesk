@@ -120,10 +120,10 @@ fn preview_seek_moves_backward_and_resumes_only_the_owned_preview() {
         for (id, clock, controls) in query.iter(app.world()) {
             if *id == target_id {
                 assert_eq!(clock.position, Duration::from_secs(seconds));
-                assert_eq!(controls.rate, if playing { 1.0 } else { 0.0 });
+                assert_eq!(controls.speed, if playing { 1.0 } else { 0.0 });
             } else {
                 assert_eq!(clock.position, Duration::ZERO);
-                assert_eq!(controls.rate, 1.0);
+                assert_eq!(controls.speed, 1.0);
             }
         }
     }

@@ -56,7 +56,7 @@ function actionActionTypeFromElement(
     case "StopClip":
     case "AdvanceSequence":
     case "BackSequence":
-    case "SetClipRate":
+    case "SetClipSpeed":
     case "JumpToCue":
     case "DeskEval":
       return actionType;
