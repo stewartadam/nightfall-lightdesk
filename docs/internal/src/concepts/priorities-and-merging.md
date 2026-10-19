@@ -39,7 +39,7 @@ Most layers come from clips, and a clip's priority is a setting on the clip. The
 | Source | Priority | Description |
 |--------|----------|-------------|
 | DMX input | -128 | Incoming DMX routed to fixtures by input bindings. Everything else overrides it. |
-| Manual channel values | -127 | Console DMX channel values set with the `channel` command. |
+| Manual channel values | -127 | Console DMX channel values set with the `channel` command. The written byte also keeps its console channel on the wire until released, as [fixtures, patching, and DMX output](../domains/fixtures-and-output.md#console-universes-and-output-transports) describes. |
 | Clips | Set per clip, 0 by default | Sequences, FX, Step FX, and flows started from a clip use the clip's priority. |
 | Flow started directly | 0 | A flow started with the `flow start` command, outside a clip. |
 | Step FX started from its editor | 50 | Step FX playback started outside a clip. |
@@ -72,7 +72,7 @@ A layer can hold relative values, such as "intensity 20% lower than it is now." 
 
 ## Fades and releases happen inside a layer
 
-A layer doesn't jump to its values. When a cue starts or a playback advances, each changed value fades from the value currently below the layer toward its target, using the cue's delay and fade time. Because the fade starts from the merged value underneath, a cue that takes over from another playback blends smoothly from what the fixture is actually doing.
+A layer doesn't jump to its values. When a cue starts or a playback advances, each changed value fades toward its target, using the cue's delay and fade time. A sequence fades from the value its previous cue set, or from the attribute's default value when no earlier cue in the sequence set it. The fade doesn't start from what lower layers are doing, so a sequence that takes a fixture over from another playback can jump at the start of its fade. For the details, see [cues, sequences, and tracking](../domains/cues-and-sequences.md).
 
 Stopping a playback starts its **release**. The layer stays in the stack while its values fade back toward whatever is below it, then it disappears. The **Status Display** panel shows these playbacks as releasing.
 

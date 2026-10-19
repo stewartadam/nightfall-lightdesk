@@ -135,7 +135,7 @@ Undo history closes the command's undo group in `Last`, which runs after the fra
 
 A frame skips its render pass only when the frame limiter woke early for input. The next section describes these input-only frames.
 
-While the engine builds and swaps in a new world for a showfile, it pauses command processing (`InputHandling`, `ActionInvocationHandling`, `EventHandling`, and showfile handling) and client and DMX output (`ClientOutput`, `DmxOutput`, and `ClientFeedback`) in the outgoing and staged worlds. `Render` still runs in those worlds, but nothing leaves the engine.
+While the engine builds and swaps in a new world for a showfile, it pauses command processing (`InputHandling`, `ActionInvocationHandling`, `EventHandling`, and showfile handling) and client and DMX output (`ClientOutput`, `DmxOutput`, and `ClientFeedback`) in the outgoing and staged worlds. On native hosts the swap happens between two frames, so in practice neither world runs a frame while it is paused. For the whole swap, see [showfiles and loading a show](../architecture/showfiles.md).
 
 Hosts without a frame limiter render in every frame. `RenderPass` defaults to rendering, so tests and the embedded browser runtime, whose worker calls `update` on its own timer, render on every update.
 
