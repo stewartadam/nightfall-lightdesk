@@ -82,6 +82,13 @@ flowchart LR
 - Don't put links inside diagrams.
 - Prefer several small diagrams over one diagram that shows everything.
 
+When a diagram needs precise layout that Mermaid can't produce, such as a dense architecture picture, draw it in [draw.io](https://www.drawio.com/) instead:
+
+- Save it as a `.drawio.svg` file next to the page that uses it. The file is an ordinary SVG with the draw.io source embedded, so the book shows it as an image and you edit the same file again with the draw.io desktop app or the Draw.io Integration extension for Visual Studio Code.
+- Embed it with an image link and alt text: `![Engine and its hosts](hosts.drawio.svg)`.
+- Give the diagram a solid background so it stays readable in the dark book themes.
+- Keep Mermaid as the default. A draw.io diagram is harder to review, because pull requests show its source as XML.
+
 Screenshots are PNG files no larger than 1000 by 500 pixels and about 100 KB. Name them in lowercase with hyphens, and give each one alt text of 155 characters or fewer.
 
 ## Callouts
