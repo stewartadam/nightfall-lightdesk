@@ -79,7 +79,7 @@ Node tests scan the source tree and fail when code breaks a layer rule or bypass
 | `cross-feature-imports-must-use-public-entrypoints` | `architecture-boundaries.node.test.ts` | Code in `components/` or one feature imports another feature only through `features/<domain>` or `features/<domain>/index`. |
 | Component root has five layers | `architecture-boundaries.node.test.ts` | `components/` contains only the `ui`, `widgets`, `providers`, `shell`, and `overlays` folders. |
 | Dialog chrome stays in `Dialog` | `shared-dialogs.node.test.ts` | Only the shared `Dialog` renders `Modal`, `DialogBackdrop`, or `DialogCloseButton`. The connection overlay and the palettes are listed exceptions. |
-| Portals mount on an explicit host | `shared-overlays.node.test.ts` | Every `<Portal>` passes a `mount` that isn't `document.body`. Use `overlayHost()`. |
+| Portals mount on an explicit host | `shared-overlays.node.test.ts` | Every `<Portal>` passes a `mount` that isn't `document.body`, apart from the shared `Modal` and a listed few. Use `overlayHost()`. |
 | Menu roles stay in shared menus | `shared-overlays.node.test.ts` | Only `components/ui` and the context-menu widget assign `menu`, `menubar`, or `menuitem*` roles, apart from a listed few. |
 | Tab and radio roles stay in segmented components | `shared-segmented-controls.node.test.ts` | Outside `components/ui`, only three listed files assign `tablist`, `tab`, `radiogroup`, or `radio` roles. Use `SegmentedTabs` or `SegmentedControl`. |
 | Native tables stay in `Table` | `shared-tables.node.test.ts` | Only the shared `Table` component renders a native `<table>`. |
@@ -109,7 +109,7 @@ A feature folder owns one domain end to end, from its panels to the commands it 
 - `state/` holds UI-only state, such as panel preferences kept in browser storage.
 - `context/` holds Solid contexts that a feature's components share, such as the cue editor context.
 
-The feature's `index.ts` is its public surface. Other features, and the shell, import only what `index.ts` exports. For example, the `property-inspector` feature exports `usePropertiesInspector` and the provider, and keeps everything else private. A feature without an `index.ts` can't be imported by another feature at all. Its panels still reach the app through their definition files, because the panel manifest in `lib/` isn't subject to the boundary rules.
+The feature's `index.ts` is its public surface. Other features, and the shell, import only what `index.ts` exports. For example, the `property-inspector` feature exports the provider, `usePropertiesInspector`, and `usePropertiesContext`, and keeps everything else private. A feature without an `index.ts` can't be imported by another feature at all. Its panels still reach the app through their definition files, because the panel manifest in `lib/` isn't subject to the boundary rules.
 
 ## Panels
 
@@ -135,7 +135,7 @@ A definition file default-exports the result of `definePanel`. The definition ho
 
 - `panelId`, the Dockview ID of the panel, such as `panel-ClipList`.
 - `componentName`, the name Dockview uses to find the component, such as `ClipList`.
-- `title`, `icon`, and an optional `shortcut`.
+- `title`, and an optional `icon` and `shortcut`.
 - `minWidth` and `minHeight` for the dock group.
 - `loadComponent`, a dynamic import of the panel component, so panel code loads only when a panel first opens.
 - `showInPalette`, which controls whether the command palette lists an **Open** command for it.
@@ -150,11 +150,11 @@ A panel component receives its Dockview panel ID as `props.id` and the Dockview 
 
 A capability is an optional service a panel offers to the rest of the app. Nightfall has three:
 
-- `panel-focus` lets the app focus the panel. Every panel gets it unless its definition sets `focusable: false`.
+- `focus-panel` lets the app focus the panel. Every panel gets it unless its definition sets `focusable: false`.
 - `render-properties` lets the panel show content in the **Properties** panel.
 - `reveal-object` lets the panel scroll to and select a show object, which the showfile object palette uses to jump to a cue, clip, or fixture.
 
-A panel declares its capabilities in its definition and registers a handler for each one at runtime through the panel capability registry, a provider in `components/providers`. Registering a capability the definition doesn't declare logs a warning.
+A panel declares its capabilities in its definition and registers a handler for each one at runtime through the panel capability registry in `lib/`, which the provider in `components/providers/panel-capabilities` exposes. Registering a capability the definition doesn't declare logs a warning.
 
 The **Properties** panel shows settings for whatever the operator is working with in another panel. It renders nothing of its own. Instead, each panel that has properties registers a renderer with `usePropertiesInspector(panelId, label, component)`. The properties provider watches Dockview's active panel and shows the renderer registered for it. When the operator focuses **Properties** itself, it keeps showing the panel that was active before.
 
@@ -176,7 +176,7 @@ State lives in one of three places, depending on who owns it and who reads it. T
 | Feature `state/` folders | One feature | Usually persisted in browser storage | UI preferences that only one feature reads, such as a panel's column settings or the height of the clip controls. |
 | Solid contexts | A provider component | The provider's subtree | State scoped to part of the tree. App-wide providers, such as keyboard shortcuts and the panel capability registry, wrap the whole app. Feature contexts, such as the cue editor context, wrap one panel. |
 
-The global stores are [Nanostores](https://github.com/nanostores/nanostores) atoms and deep maps. A component subscribes with `useStore`, or with `useSharedStore` when many components read the same large store and should share one reconciled copy. In development and end-to-end test builds, the stores are also available in the browser console as `window.appStores`. Shipped builds don't expose them.
+The global stores are [Nanostores](https://github.com/nanostores/nanostores) atoms and deep maps. A component subscribes with `useStore`, or with `useSharedStore` when many components read the same large store and should share one reconciled copy. In development builds, end-to-end test builds, and the browser demo opened with `?e2e=1`, the stores are also available in the browser console as `window.appStores`. Other shipped builds don't expose them.
 
 Put a value in a context, not a global store, when two instances of the same panel must not share it.
 
@@ -263,11 +263,11 @@ After you change Rust code that the bridge uses, such as command parsing, rebuil
 
 Use the module logger in `lib/logger.ts`, not `console.log`. Create one logger per file with `const log = getLogger(import.meta.url)`. The logger derives the module name from the file's path below `webui/`, with slashes replaced by colons, so `lib/engine-runtime.ts` logs as `lib:engine-runtime`.
 
-Log levels use the same syntax as `RUST_LOG`. The default is `debug` in development and `info` in other builds. You can change levels at runtime from the browser console with `nightfallLog.configure('warn,engine-runtime=debug')`, or once with a `logLevel` URL parameter, and the setting persists in browser storage. A module override matches a module's full name or its trailing path segments.
+Log levels use the same syntax as `RUST_LOG`. The default is `debug` in development and `info` in other builds. You can change levels at runtime from the browser console with `nightfallLog.configure('warn,engine-runtime=debug')`, which persists in browser storage. A `logLevel` URL parameter applies a level for one page load only and isn't saved. A module override matches a module's full name or its trailing path segments.
 
 When you add temporary debug output, put a `// Debug` comment above it so it's easy to find and remove.
 
-Uncaught errors are handled once for the whole app. The entry module installs a reporter first, so even errors while other modules load are caught. The reporter shows the operator a fatal error dialog and forwards the error to the engine, which decides whether to send an error report based on the operator's consent.
+Uncaught errors are handled once for the whole app. The entry module installs a reporter before the app's modules load, so even errors while they load are caught. The reporter shows the operator a fatal error dialog and, on native hosts, forwards the error to the engine, which decides whether to send an error report based on the operator's consent.
 
 ## Overlays and dialogs
 

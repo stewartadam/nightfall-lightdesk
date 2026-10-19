@@ -184,7 +184,7 @@ The rest of the repository holds the web UI, the desktop shell, and the tooling 
 | `playwright/` | Playwright specs and configuration for checking the documentation books, plus a few app checks. The app's main specs live in `webui/e2e/`, configured by `playwright.config.ts` at the repository root. |
 | `scripts/` | Node scripts for building WASM, the Playwright wrapper, CI scoping, architecture checks, packaging, and release notes. Most scripts have a node test beside them. |
 | `docs/` | The user manual in `docs/src/`, this guide in `docs/internal/`, decision records in `docs/adr/`, and notes on CI security and desktop releases. |
-| `config/` | Architecture rules for crates and the web UI, license header templates, third-party notices, and project links. |
+| `config/` | Architecture rules for crates and the web UI, license header templates, third-party notices, project links, and the beat detection model manifest. |
 | `test-fixtures/` | Instructions and data for repeatable performance workloads. |
 | `worktree-dashboard/` | The local dashboard and its Model Context Protocol (MCP) server, which start and stop development services for each worktree. |
 

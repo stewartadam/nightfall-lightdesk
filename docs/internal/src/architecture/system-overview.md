@@ -62,7 +62,7 @@ flowchart TB
   bridge <--> world
 ```
 
-The transport worker is a web worker that owns the connection. It receives the engine's messages and decodes them off the main thread, then hands the main thread batches of decoded messages. This keeps decoding work from delaying the UI's rendering. The UI sends commands and updates as JSON. The engine sends binary messages: one leading byte says whether the message must arrive in order or may be replaced by a newer one, and the rest is the message body in Concise Binary Object Representation (CBOR).
+The transport worker is a web worker that owns the connection. It receives the engine's messages and decodes them off the main thread, then hands the main thread batches of decoded messages. This keeps decoding work from delaying the UI's rendering. The UI sends commands and updates as JSON. The engine sends binary messages: one leading byte says whether the message must arrive in order, may be replaced by a newer one, or builds on the previous message of its type, and the rest is the message body in Concise Binary Object Representation (CBOR).
 
 The client bridge is the engine's side of this boundary, and it doesn't know about sockets. It accepts command and update envelopes from a host and hands back encoded messages. The websocket host is one adapter that connects it to the network. The browser demo, described later on this page, plugs in a different adapter with no network at all.
 
@@ -91,7 +91,7 @@ Each host wraps the same engine in a different program. The following diagram sh
 ```mermaid
 flowchart TB
   accTitle: The three hosts
-  accDescr: The headless server runs the native engine session behind a websocket server that browsers and the CLI connect to. The desktop app runs the same session and websocket server, and its Tauri window connects over the loopback address, as do paired devices. In the browser demo, the web UI's transport worker runs the engine compiled to WebAssembly, with no server.
+  accDescr: The headless server runs the native engine session behind a websocket server that browsers and the CLI connect to. The desktop app runs the same session and websocket server, and its Tauri window connects over the loopback address, and paired devices connect over the network. In the browser demo, the web UI's transport worker runs the engine compiled to WebAssembly, with no server.
   subgraph headless[Headless server: nightfall-headless]
     direction LR
     h_clients([Browsers and the CLI]) <--> h_ws[Websocket server]
