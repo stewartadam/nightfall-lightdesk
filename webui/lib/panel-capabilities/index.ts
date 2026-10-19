@@ -8,6 +8,8 @@
 
 import type { PanelFocusCapability } from "./focus";
 import { PANEL_FOCUS_CAPABILITY } from "./focus";
+import type { OpenPanelSettingsCapability } from "./open-settings";
+import { OPEN_PANEL_SETTINGS_CAPABILITY } from "./open-settings";
 import type { RenderPropertiesCapability } from "./properties";
 import { RENDER_PROPERTIES_CAPABILITY } from "./properties";
 import type { RevealObjectCapability } from "./reveal-object";
@@ -18,6 +20,10 @@ export {
   type PanelFocusCapability,
 } from "./focus";
 export {
+  OPEN_PANEL_SETTINGS_CAPABILITY,
+  type OpenPanelSettingsCapability,
+} from "./open-settings";
+export {
   RENDER_PROPERTIES_CAPABILITY,
   type RenderPropertiesCapability,
   type RenderPropertiesMetadata,
@@ -27,11 +33,13 @@ export {
   type RevealObjectCapability,
 } from "./reveal-object";
 export type KnownPanelCapability =
+  | OpenPanelSettingsCapability
   | PanelFocusCapability
   | RenderPropertiesCapability
   | RevealObjectCapability;
 export type PanelCapabilityId = KnownPanelCapability["id"];
 export const KNOWN_PANEL_CAPABILITY_IDS = [
+  OPEN_PANEL_SETTINGS_CAPABILITY.id,
   PANEL_FOCUS_CAPABILITY.id,
   RENDER_PROPERTIES_CAPABILITY.id,
   REVEAL_OBJECT_CAPABILITY.id,

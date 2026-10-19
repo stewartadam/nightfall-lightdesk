@@ -7,7 +7,10 @@
  */
 
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
-import { RENDER_PROPERTIES_CAPABILITY } from "../../../lib/panel-capabilities";
+import {
+  OPEN_PANEL_SETTINGS_CAPABILITY,
+  RENDER_PROPERTIES_CAPABILITY,
+} from "../../../lib/panel-capabilities";
 import { definePanel } from "../../../lib/panel-module";
 
 export default definePanel({
@@ -18,7 +21,10 @@ export default definePanel({
   minHeight: 160,
   icon: SquaresFourIcon,
   loadComponent: () => import("./board"),
-  capabilities: [RENDER_PROPERTIES_CAPABILITY.id],
+  capabilities: [
+    RENDER_PROPERTIES_CAPABILITY.id,
+    OPEN_PANEL_SETTINGS_CAPABILITY.id,
+  ],
   // Each board opens in its own panel from the Boards list or the object palette.
   showInPalette: false,
   singleton: "multi",

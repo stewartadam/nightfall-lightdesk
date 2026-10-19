@@ -194,6 +194,17 @@ a:focus-visible {
 .dockview-theme-nightfall-graphite .dv-tab:hover .dv-default-tab-action {
   opacity: 1;
 }
+/* The caret grows its hit area without shifting the tab title. */
+.dockview-theme-nightfall-graphite .dv-default-tab .nf-tab-menu-caret {
+  box-sizing: content-box;
+  margin: -5px;
+  padding: 5px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.dockview-theme-nightfall-graphite .dv-default-tab .nf-tab-menu-caret:hover {
+  background-color: var(--dv-icon-hover-background-color);
+}
 .dockview-theme-nightfall-graphite .dv-sash:not(.dv-disabled)::after {
   content: "";
   position: absolute;

@@ -9,7 +9,7 @@
 import {
   createDockview,
   type DockviewApi,
-  type DockviewOptions,
+  type DockviewComponentOptions,
   type DockviewTheme,
 } from "dockview";
 import {
@@ -36,7 +36,10 @@ export const visualLanguageDockTheme: DockviewTheme = {
 
 interface DockviewHostProps {
   components: Record<string, Component>;
-  options?: Omit<DockviewOptions, "createComponent" | "defaultHeaderPosition">;
+  options?: Omit<
+    DockviewComponentOptions,
+    "createComponent" | "defaultHeaderPosition"
+  >;
   tabPosition?: "top" | "bottom";
   onReady: (api: DockviewApi, element: HTMLDivElement) => void;
   class?: string;

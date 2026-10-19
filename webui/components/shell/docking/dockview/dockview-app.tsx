@@ -37,6 +37,7 @@ import {
 import { describeUncaughtError } from "../../../../lib/uncaught-error";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { appearanceSettings } from "../../../../state/appearance";
+import { usePanelCapabilityRegistry } from "../../../providers/panel-capabilities/context-core";
 import { ErrorFallback } from "../../../ui/error-fallback";
 import { ScrollIndicators } from "../../../ui/scroll-area";
 import { Button } from "../../../ui/visual-language/button";
@@ -111,6 +112,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
   let dockviewHostRef: HTMLDivElement | undefined;
   const [portals, setPortals] = createSignal<PortalEntry[]>([]);
   const panelComponentById = new Map<string, string>();
+  const panelCapabilities = usePanelCapabilityRegistry();
   const appearance = useStore(appearanceSettings);
   /** Limits tab relocation to changes in the tab preference. */
   const tabPosition = createMemo(() => appearance().tabPosition);
@@ -171,7 +173,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       },
       createTabComponent: (options: CreateComponentOptions) => {
         if (options.name === "PanelTab") {
-          return new IconTabRenderer(panelComponentById);
+          return new IconTabRenderer(panelComponentById, panelCapabilities);
         }
         return undefined;
       },
