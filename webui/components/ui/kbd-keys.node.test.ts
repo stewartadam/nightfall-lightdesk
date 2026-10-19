@@ -52,6 +52,10 @@ test("describeKey resolves modifiers per platform", () => {
     title: "Control",
   });
   assert.equal(describeKey("Shift", false).glyph, "shift");
+  assert.deepEqual(describeKey("Backspace", false), {
+    label: "Backspace",
+    glyph: "backspace",
+  });
 });
 
 /** Verifies physical key codes, letters and named keys get their conventional cap labels. */

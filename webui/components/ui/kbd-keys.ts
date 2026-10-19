@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-/** Modifier glyphs that key caps draw as icons instead of text. */
-export type KeyGlyph = "command" | "control" | "option" | "shift";
+/** Modifier and editing-key glyphs that key caps draw as icons instead of text. */
+export type KeyGlyph = "command" | "control" | "option" | "shift" | "backspace";
 
 /** How one key of a shortcut appears on its key cap. */
 export interface KeyCapFace {
@@ -30,6 +30,7 @@ export const IS_APPLE_PLATFORM =
 /** Key names whose caps show a short symbol or abbreviation, with the full name as a tooltip. */
 const NAMED_KEYS: Record<string, KeyCapFace> = {
   ArrowUp: { label: "↑", title: "Up arrow" },
+  Backspace: { label: "Backspace", glyph: "backspace" },
   ArrowDown: { label: "↓", title: "Down arrow" },
   ArrowLeft: { label: "←", title: "Left arrow" },
   ArrowRight: { label: "→", title: "Right arrow" },
