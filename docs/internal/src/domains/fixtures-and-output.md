@@ -137,7 +137,7 @@ The `fixture-library` crate scans the library directory for `.gdtf` and `.json` 
 
 Both importers map unknown attribute names to `Attribute::Custom` with the source name as its label, so no channel is silently dropped for having an unfamiliar name.
 
-**Warning:** OFL parameters are `Sequential`, so their addresses depend on every earlier parameter being present. The OFL importer skips mode entries it can't find in `availableChannels`, including `null` placeholders and fine channel aliases such as `Pan fine`, and every later channel then lands one slot early. Matrix fixtures also pack the `Master` element before the pixels, whatever order the mode lists them in. Check the addresses of OFL modes with 16-bit or unused channels before you rely on them.
+**Warning:** OFL parameters are `Sequential`, so their addresses depend on every earlier parameter being present. The OFL importer skips mode entries it can't find in `availableChannels`, including `null` placeholders and fine channel aliases such as `Pan fine`, and every later channel then lands one slot early. Within each pixel element, channels follow the profile's template channel map, not the mode's channel order, so pixel channel addresses can differ from the profile. Matrix fixtures also pack the `Master` element before the pixels, whatever order the mode lists them in. Check the addresses of OFL modes with 16-bit or unused channels before you rely on them.
 
 The GDTF importer resolves each mode once and records diagnostics for problems it works around:
 
@@ -328,7 +328,7 @@ The following steps trace `Practice light` at the moment `First playback` finish
 
 1. The OFL importer converts mode **4 channel** into one element with four coarse, sequential, LTP parameters, as the profile table above shows.
 1. The library command spawns four parameter entities. The patch wizard's binding gives them console universe 1, addresses 1 to 4.
-1. The compositor merges the layers. The programmer at priority 127 sets intensity to 50%, which is a logical value of 127.5. `First playback` at priority 0 sets red to 255. Green and blue stay at their default of 0.
+1. The compositor merges the layers. The programmer at priority 127 sets intensity to 50%, which is a logical value of 127.5. `First playback` at priority 0 sets intensity to full, red to 255, and green and blue to 0. The programmer's higher priority wins intensity.
 1. No intensity master targets the fixture. It has no `VirtualIntensity` and no relations, so `VdimProcessing` changes nothing.
 1. `dmx_universes` encodes each value. Intensity normalizes to 0.5, scales to 127.5, and rounds to 128.
 1. With no console-to-transport binding, the bytes stay in console universe 1, visible in the **Console DMX** panel. After you add a binding from console universe 1 to `artnet` universe 1, the composed Art-Net frame for universe 1 carries the same bytes in channels 1 to 4 and zeros elsewhere. It leaves the computer once **Network output** is on in **I/O Transports**.
