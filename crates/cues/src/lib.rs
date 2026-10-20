@@ -174,6 +174,10 @@ impl Plugin for CuePlugin {
                 .after(events::handle_sequence_playback_actions),
         );
         app.add_systems(
+            Update,
+            materialized_sequence::sync_sequence_instance_timebase.after(EventHandling),
+        );
+        app.add_systems(
             Render,
             (
                 (

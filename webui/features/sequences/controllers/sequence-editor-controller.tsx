@@ -38,6 +38,7 @@ import {
   sequenceLookaheadStates,
 } from "../../../state/appStores";
 import { $settings } from "../../../state/settings";
+import { Timebase } from "../../../types";
 import {
   selectedTimeDisplayColumnIds,
   TransitionScrubber,
@@ -146,11 +147,18 @@ export function SequenceEditorController(props: {
 
   /** Hides pending conflict hover UI when the editor unmounts. */
   onCleanup(clearConflictTooltip);
-  /** Returns the panel-local display unit for a timing column. */
-  const timingDisplayUnit = (columnId: string | undefined) =>
-    columnId
+  /** Whether the open sequence counts its trigger and fade times in show-tempo beats. */
+  const beatTimed = () => ctx.sequence()?.timebase === Timebase.Beats;
+  /**
+   * Returns the display unit for a timing column: beats for a beat-timed sequence, otherwise
+   * the panel-local override or the desk default.
+   */
+  const timingDisplayUnit = (columnId: string | undefined) => {
+    if (beatTimed()) return "beats";
+    return columnId
       ? (timingColumnDisplayUnits()[columnId] ?? defaultTimingDisplayUnit())
       : defaultTimingDisplayUnit();
+  };
 
   /** Stores panel-local display unit overrides for timing columns. */
   const setTimingColumnDisplayUnitsForColumns = (
@@ -459,8 +467,9 @@ export function SequenceEditorController(props: {
       rows,
       columns,
       expandedCueUids,
-      timingColumnDisplayUnits,
-      defaultTimingDisplayUnit,
+      timingColumnDisplayUnits: () =>
+        beatTimed() ? {} : timingColumnDisplayUnits(),
+      defaultTimingDisplayUnit: () => timingDisplayUnit(undefined),
     });
   const { onCellEdited, onCellsEdited } = createSequenceEditorEditController({
     context: ctx,
@@ -500,6 +509,7 @@ export function SequenceEditorController(props: {
       return;
     }
     event.preventDefault();
+    if (beatTimed()) return;
     openContextMenu({
       x: event.clientX,
       y: event.clientY,
@@ -572,6 +582,7 @@ export function SequenceEditorController(props: {
                   : undefined;
               })()}
               enabled={ctx.previewEnabled() && ctx.previewApplyTransitions()}
+              unitSuffix={beatTimed() ? "b" : "s"}
             />
 
             <SequenceEditorGrid

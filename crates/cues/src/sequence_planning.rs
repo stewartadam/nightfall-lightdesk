@@ -59,7 +59,7 @@ impl SequenceTimelineSeekTarget {
 }
 
 /// Sequence-domain replay state used while reducing timeline navigation actions.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SequenceTimelineSeekPlayback {
     clip_id: u32,
     position: u32,
@@ -70,6 +70,10 @@ pub struct SequenceTimelineSeekPlayback {
     clamp_jumps: bool,
     step_timings: Vec<SequenceTimelineStepTiming>,
     step_started_at: Vec<Option<Duration>>,
+    /// Sequence time that passes per second of planned playback, such as the timeline's beats
+    /// per second for a beat-timed sequence. Every source-local position this replay keeps is in
+    /// sequence time, so cue triggers and fades compare against them directly.
+    source_scale: f64,
 }
 
 impl SequenceTimelineSeekPlayback {
@@ -151,6 +155,34 @@ impl SequenceTimelineSeekPlayback {
         step_timings: Vec<SequenceTimelineStepTiming>,
     ) -> Option<Self> {
         Self::new_with_step_timings(clip_id, wrap, started_at, step_timings)
+    }
+
+    /// Sets how much sequence time passes per second of planned playback.
+    ///
+    /// A beat-timed sequence on a timeline counts beats, so the timeline passes its beats per
+    /// second here; seconds-timed sequences keep the default of one.
+    pub fn with_source_scale(mut self, source_scale: f64) -> Self {
+        if source_scale.is_finite() && source_scale > 0.0 {
+            self.source_scale = source_scale;
+        }
+        self
+    }
+
+    /// Converts a planned source-local playback position into this sequence's own time.
+    pub fn source_position(&self, playback_position: Duration) -> Duration {
+        playback_position.mul_f64(self.source_scale)
+    }
+
+    /// Converts planned reconstruction timing into this sequence's own time, keeping its source.
+    pub fn source_reconstruction_timing(
+        &self,
+        timing: PlaybackReconstructionTiming,
+    ) -> PlaybackReconstructionTiming {
+        PlaybackReconstructionTiming {
+            started_at: self.source_position(timing.started_at),
+            position: self.source_position(timing.position),
+            ..timing
+        }
     }
 
     /// Advances to the next cue when sequence rules allow it.
@@ -253,7 +285,7 @@ impl SequenceTimelineSeekPlayback {
     ) {
         self.replay_planned_interventions_until(interval, evaluated_at_timeline, |_, _| {});
         self.advance_autonomous_until_source_position(
-            interval.playback_position_at(evaluated_at_timeline),
+            self.source_position(interval.playback_position_at(evaluated_at_timeline)),
         );
     }
 
@@ -276,16 +308,17 @@ impl SequenceTimelineSeekPlayback {
         interventions.sort_by_key(|intervention| intervention.timeline_position);
 
         for intervention in interventions {
-            self.advance_autonomous_until_source_position(intervention.playback_position);
+            let playback_position = self.source_position(intervention.playback_position);
+            self.advance_autonomous_until_source_position(playback_position);
             match intervention.kind {
                 PlannedPlaybackInterventionKind::SequenceGo => {
-                    self.advance_at_source_position(intervention.playback_position);
+                    self.advance_at_source_position(playback_position);
                 }
                 PlannedPlaybackInterventionKind::SequenceBack => {
-                    self.back_at_source_position(intervention.playback_position);
+                    self.back_at_source_position(playback_position);
                 }
                 PlannedPlaybackInterventionKind::SequenceGotoCue(position) => {
-                    self.jump_to_source_position(position, intervention.playback_position);
+                    self.jump_to_source_position(position, playback_position);
                 }
                 PlannedPlaybackInterventionKind::Stop => {}
             }
@@ -417,6 +450,7 @@ impl SequenceTimelineSeekPlayback {
             step_count,
             wrap,
             clamp_jumps: true,
+            source_scale: 1.0,
             step_timings: vec![
                 SequenceTimelineStepTiming {
                     trigger: CueTriggerType::Manual,
@@ -451,6 +485,7 @@ impl SequenceTimelineSeekPlayback {
             step_count,
             wrap,
             clamp_jumps: true,
+            source_scale: 1.0,
             step_timings,
             step_started_at: {
                 let mut step_started_at = vec![None; step_count as usize];
@@ -535,7 +570,7 @@ impl SequenceTimelineSeekPlayback {
 
     /// Converts an absolute timeline position into this sequence playback's source-local position.
     fn source_position_at_timeline(&self, timeline_position: Duration) -> Duration {
-        timeline_position.saturating_sub(self.playback_started_at_timeline)
+        self.source_position(timeline_position.saturating_sub(self.playback_started_at_timeline))
     }
 }
 
@@ -1640,6 +1675,46 @@ mod tests {
 
         assert_eq!(target.position, 2);
         assert_eq!(target.started_at, Duration::from_millis(200));
+    }
+
+    /// Verifies a beat-timed replay counts trigger delays in beats: at 120 BPM a two-beat
+    /// AfterDelay fires one timeline second after the sequence starts, and every position the
+    /// replay reports, including planned interval positions, is in beats.
+    #[test]
+    fn beat_timed_seek_playback_counts_trigger_delays_in_beats() {
+        let mut playback = SequenceTimelineSeekPlayback::from_step_timings(
+            19,
+            false,
+            Duration::from_secs(10),
+            vec![
+                SequenceTimelineStepTiming {
+                    trigger: CueTriggerType::Manual,
+                    assertion_duration: Duration::ZERO,
+                },
+                SequenceTimelineStepTiming {
+                    trigger: CueTriggerType::AfterDelay(Duration::from_secs(2)),
+                    assertion_duration: Duration::ZERO,
+                },
+            ],
+        )
+        .expect("sequence should be plannable")
+        .with_source_scale(2.0);
+
+        let mut before = playback.clone();
+        before.advance_autonomous_until(Duration::from_millis(10_900));
+        assert_eq!(before.target().position, 1);
+
+        let interval = planned_sequence_interval(Duration::from_secs(10), Vec::new());
+        playback.apply_planned_interval_until(&interval, Duration::from_millis(11_500));
+        let target = playback.target();
+        assert_eq!(target.position, 2);
+        assert_eq!(target.started_at, Duration::from_secs(2));
+        assert_eq!(
+            playback
+                .reconstruction_timing(Duration::from_millis(11_500))
+                .position,
+            Duration::from_secs(3)
+        );
     }
 
     /// Verifies AfterDelay starts from the current cue start while retained assertions complete.

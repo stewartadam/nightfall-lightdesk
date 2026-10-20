@@ -441,6 +441,19 @@ fn default_audio_enabled() -> bool {
     true
 }
 
+impl Timeline {
+    /// Returns how many beats this timeline plays per second at its BPM, or one when the BPM
+    /// is unset.
+    pub fn beats_per_second(&self) -> f64 {
+        let bpm = f64::from(self.bpm);
+        if bpm.is_finite() && bpm > 0.0 {
+            bpm / 60.0
+        } else {
+            1.0
+        }
+    }
+}
+
 impl Default for Timeline {
     fn default() -> Self {
         Self {

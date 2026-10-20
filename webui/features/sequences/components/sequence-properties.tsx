@@ -12,12 +12,14 @@ import {
   Input,
   NativeSelect,
 } from "../../../components/ui/form-controls";
+import { TimebaseControl } from "../../../components/widgets/timebase-control";
 import {
   durationToSeconds,
   msToDuration,
   transitionModeToSeconds,
 } from "../../../lib/duration";
 import type * as types from "../../../types";
+import { Timebase } from "../../../types";
 import {
   type TrackingFlagId,
   TrackingFlagsAdvancedSelect,
@@ -245,6 +247,9 @@ export default function SequenceProperties() {
   return (
     <Show when={ctx.sequence()} fallback={<div class="p-4">No sequence</div>}>
       {(sequence) => {
+        /** Short unit for the sequence's time fields: beats when it follows the show tempo. */
+        const timeUnit = () =>
+          sequence().timebase === Timebase.Beats ? "beats" : "s";
         const selectedCue = () => {
           const cue = ctx.selectedCue();
           if (cue?.identifiers.uid === sequence().release_cue.identifiers.uid) {
@@ -291,6 +296,12 @@ export default function SequenceProperties() {
                   }}
                 />
               </label>
+              <TimebaseControl
+                value={sequence().timebase ?? Timebase.Seconds}
+                onChange={(timebase) =>
+                  ctx.updateSequence({ ...sequence(), timebase })
+                }
+              />
               <label class="flex items-center justify-between text-sm">
                 <span>Wrap</span>
                 <Checkbox
@@ -300,7 +311,7 @@ export default function SequenceProperties() {
               </label>
               <Show when={sequence().wrap}>
                 <label class="text-xs block">
-                  {WRAP_DELAY_TRIGGER_LABEL}
+                  {WRAP_DELAY_TRIGGER_LABEL} ({timeUnit()})
                   <Input
                     density="compact"
                     type="number"
@@ -345,7 +356,7 @@ export default function SequenceProperties() {
 
             <div class="space-y-2">
               <h4 class="text-xs font-semibold uppercase text-neutral-400">
-                Sequence Default Timing (s)
+                Sequence Default Timing ({timeUnit()})
               </h4>
               <div class="grid grid-cols-2 gap-2">
                 <label class="text-xs">
@@ -505,7 +516,7 @@ export default function SequenceProperties() {
 
                     <Show when={isDurationTrigger(cue().trigger)}>
                       <label class="text-xs block">
-                        Trigger Time (s)
+                        Trigger Time ({timeUnit()})
                         <Input
                           density="compact"
                           type="number"

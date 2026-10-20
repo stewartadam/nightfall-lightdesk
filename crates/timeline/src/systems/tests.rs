@@ -643,14 +643,19 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
                 nightfall_clips::add_instances_to_index,
                 nightfall_undo::dispatcher::process_pending_commands,
                 ApplyDeferred,
-                nightfall_cues::events::handle_sequence_playback_actions,
-                nightfall_cues::materialized_sequence::release_materialized_sequences,
-                sync_timeline_paused_instance_controls_system,
-                nightfall_cues::materialized_sequence::advance_sequences,
-                ApplyDeferred,
-                nightfall_cues::materialized_sequence::release_materialized_sequences,
-                nightfall_cues::materialized_sequence::paint_materialized_sequences,
-                nightfall_cues::materialized_sequence::sync_sequence_playback_runtime_status,
+                (
+                    nightfall_cues::events::handle_sequence_playback_actions,
+                    nightfall_cues::materialized_sequence::release_materialized_sequences,
+                    nightfall_cues::materialized_sequence::sync_sequence_instance_timebase,
+                    ApplyDeferred,
+                    sync_timeline_paused_instance_controls_system,
+                    nightfall_cues::materialized_sequence::advance_sequences,
+                    ApplyDeferred,
+                    nightfall_cues::materialized_sequence::release_materialized_sequences,
+                    nightfall_cues::materialized_sequence::paint_materialized_sequences,
+                    nightfall_cues::materialized_sequence::sync_sequence_playback_runtime_status,
+                )
+                    .chain(),
             )
                 .chain(),
         );
@@ -683,6 +688,8 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
                     nightfall_cues::materialized_sequence::despawn_materialized_sequences,
                     ApplyDeferred,
                     detach_stopped_timeline_release_clocks,
+                    nightfall_cues::materialized_sequence::sync_sequence_instance_timebase,
+                    ApplyDeferred,
                     sync_timeline_paused_instance_controls_system,
                     nightfall_cues::materialized_sequence::advance_sequences,
                     ApplyDeferred,
@@ -1106,6 +1113,22 @@ fn setup_four_cue_auto_sequence_timeline_app(
     seek_mode: bool,
     stop_position: Option<Duration>,
 ) -> (App, Vec<Instance<Parameter>>, u32) {
+    setup_four_cue_auto_sequence_timeline_app_with_timebase(
+        seek_mode,
+        stop_position,
+        Timebase::Seconds,
+    )
+}
+
+/// Builds a timeline app with a four-cue auto-progressing sequence on a 120 BPM timeline.
+///
+/// Each cue waits 2 time units after the previous one, then fades in for 1 unit after a
+/// 0.5-unit delay; `timebase` decides whether those units are seconds or timeline beats.
+fn setup_four_cue_auto_sequence_timeline_app_with_timebase(
+    seek_mode: bool,
+    stop_position: Option<Duration>,
+    timebase: Timebase,
+) -> (App, Vec<Instance<Parameter>>, u32) {
     let mut app = setup_sequence_timeline_test_app(seek_mode);
 
     let mut fixture_refs = Vec::new();
@@ -1184,6 +1207,7 @@ fn setup_four_cue_auto_sequence_timeline_app(
                 uid: sequence_uid,
                 label: "four-cue-sequence".to_owned(),
             },
+            timebase,
             steps: cue_uids.into_iter().map(Into::into).collect(),
             release_cue: Cue {
                 identifiers: Identifiers {
