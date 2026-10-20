@@ -115,7 +115,9 @@ test("parameter state baseline instrumentation is exposed", async ({
   );
 
   const instrumentation = await openInstrumentationPanel(page);
-  await instrumentation.getByRole("button", { name: /^▶\s*Backend\b/ }).click();
+  await instrumentation
+    .getByRole("button", { name: "Backend", exact: true })
+    .click();
 
   await expect(instrumentation.getByText("ParameterState Build")).toBeVisible();
   await expect(
@@ -142,9 +144,32 @@ test("parameter state baseline instrumentation is exposed", async ({
   await expect(
     instrumentation.getByRole("columnheader", { name: "Max" }),
   ).toBeVisible();
-  await expect(
-    instrumentation.getByText("websocket-main.parameter-state.process"),
-  ).toBeVisible();
+  const measures = instrumentation.getByRole("grid", {
+    name: "Performance metrics",
+  });
+  const processScope = measures.getByRole("gridcell", {
+    name: "websocket-main.parameter-state.process",
+    exact: true,
+  });
+  // The grid only renders the rows in view, so page through it until the scope appears.
+  await expect
+    .poll(
+      async () => {
+        if ((await processScope.count()) > 0) return true;
+        await measures.evaluate((grid) => {
+          const scroller = [grid, ...grid.querySelectorAll("*")].find(
+            (element) =>
+              /auto|scroll/.test(getComputedStyle(element).overflowY) &&
+              element.scrollHeight > element.clientHeight + 1,
+          );
+          if (scroller) scroller.scrollTop += scroller.clientHeight;
+        });
+        return false;
+      },
+      { intervals: [100], timeout: 20_000 },
+    )
+    .toBe(true);
+  await expect(processScope).toBeVisible();
 
   const timingNames = await page.evaluate(() =>
     Object.keys((window as any).appStores.performanceMeasureStats.get()),

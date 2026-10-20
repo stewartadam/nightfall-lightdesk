@@ -74,24 +74,28 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
     await toggle.press("Space");
     await expect(toggle).toBeChecked({ checked });
   }
-  const quality = dialog.getByRole("slider", { name: "Quality preset" });
-  await quality.focus();
-  await quality.press("Home");
-  await expect(quality).toHaveAttribute("aria-valuetext", "Low (faster)");
+  const quality = dialog.getByRole("radiogroup", { name: "Quality preset" });
+  await quality.locator('[role="radio"][tabindex="0"]').focus();
+  await page.keyboard.press("Home");
+  const low = quality.getByRole("radio", { name: "Low (faster)" });
+  await expect(low).toBeChecked();
+  await expect(low).toBeFocused();
   await expect(
     dialog.getByText(
       "Simple geometry beams without surface lighting, for maximum performance.",
     ),
   ).toBeVisible();
-  await quality.press("ArrowRight");
-  await expect(quality).toHaveAttribute("aria-valuetext", "Medium");
+  await page.keyboard.press("ArrowRight");
+  await expect(quality.getByRole("radio", { name: "Medium" })).toBeChecked();
   await expect(
     dialog.getByText(
       "Smoothly shaded beams and surface lighting, without fog or glow.",
     ),
   ).toBeVisible();
-  await quality.press("End");
-  await expect(quality).toHaveAttribute("aria-valuetext", "High (slower)");
+  await page.keyboard.press("End");
+  await expect(
+    quality.getByRole("radio", { name: "High (slower)" }),
+  ).toBeChecked();
   await expect(
     dialog.getByText("Atmospheric beams, fog, glow, and optical effects."),
   ).toBeVisible();

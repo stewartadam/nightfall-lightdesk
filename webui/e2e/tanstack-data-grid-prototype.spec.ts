@@ -37,7 +37,9 @@ test.beforeEach(async ({ backendSlot, page }) => {
 
 /** Stops playback, replaces the backend, and proves every owned store is blank. */
 test.afterEach(async ({ backendSlot, page }) => {
-  if (!page.isClosed() && page.url() !== "about:blank") {
+  const appUrl =
+    !page.isClosed() && page.url() !== "about:blank" ? page.url() : undefined;
+  if (appUrl) {
     await page
       .evaluate(async () => {
         const stores = (window as any).appStores;
@@ -48,11 +50,14 @@ test.afterEach(async ({ backendSlot, page }) => {
         });
       })
       .catch(() => undefined);
+    // Unload the app first: an open sequence editor can publish its preview again
+    // after the stop, and that instance would outlive the world swap below.
+    await page.goto("about:blank");
   }
 
   await prepareFreshBackendShowfile(backendSlot.backendPort);
-  if (page.isClosed() || page.url() === "about:blank") return;
-  await page.reload();
+  if (!appUrl) return;
+  await page.goto(appUrl);
   await waitForDockviewApp(page);
   await expect
     .poll(() => ownedTanStackStoreCounts(page))

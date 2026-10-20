@@ -512,7 +512,7 @@ test("insert action picker inserts sequence goto target with cue index", async (
 
   await expect(
     timelineSurface.locator('[data-timeline-action="true"]').filter({
-      hasText: /Seq 1\.2: E2E Unique Goto via Exec 9101/,
+      hasText: /Jump 1\.2: Main Playback/,
     }),
   ).toBeVisible();
   await expect

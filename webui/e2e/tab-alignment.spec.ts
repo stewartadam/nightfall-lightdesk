@@ -66,6 +66,12 @@ test("app tab alignment covers regular and edge groups and persists", async ({
     }
     for (const edge of ["left", "right", "bottom"]) {
       const group = api.getEdgeGroup(edge);
+      // Justified tabs never shrink below their label, so keep each edge's tabs few
+      // enough to share its length evenly once the extra tab joins them.
+      const edgeGroup = api.groups.find(
+        (candidate: { id: string }) => candidate.id === group.id,
+      );
+      for (const panel of edgeGroup.panels.slice(3)) panel.api.close();
       api.addPanel({
         id: `alignment-${edge}`,
         component: "GroupsPanel",

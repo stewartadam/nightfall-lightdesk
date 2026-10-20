@@ -250,19 +250,28 @@ a:focus-visible {
 .nf-dock-panel-root {
   height: 100%;
 }
-/* Detached content must follow the inside of the edge group's one-pixel border. */
+/*
+ * Detached content must follow the inside of the edge group's one-pixel border.
+ * Chrome does not always apply a rounded overflow clip to input on the panel
+ * toolbar, so clip-path rounds the corners for both painting and hit testing.
+ */
 .dockview-theme-nightfall-graphite [data-panel-edge] {
   --nf-edge-content-radius: max(0px, calc(var(--nf-corner-radius, 7px) - 1px));
   overflow: hidden;
+  border-radius: var(--nf-edge-content-corners);
+  clip-path: inset(0 round var(--nf-edge-content-corners));
 }
 .dockview-theme-nightfall-graphite [data-panel-edge="left"] {
-  border-radius: 0 var(--nf-edge-content-radius) var(--nf-edge-content-radius) 0;
+  --nf-edge-content-corners: 0 var(--nf-edge-content-radius)
+    var(--nf-edge-content-radius) 0;
 }
 .dockview-theme-nightfall-graphite [data-panel-edge="bottom"] {
-  border-radius: var(--nf-edge-content-radius) var(--nf-edge-content-radius) 0 0;
+  --nf-edge-content-corners: var(--nf-edge-content-radius)
+    var(--nf-edge-content-radius) 0 0;
 }
 .dockview-theme-nightfall-graphite [data-panel-edge="right"] {
-  border-radius: var(--nf-edge-content-radius) 0 0 var(--nf-edge-content-radius);
+  --nf-edge-content-corners: var(--nf-edge-content-radius) 0 0
+    var(--nf-edge-content-radius);
 }
 .nf-dock-panel-root > div {
   height: 100%;

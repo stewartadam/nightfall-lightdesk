@@ -117,12 +117,18 @@ test("compact shell navigates one panel at a time on a phone", async ({
     if (!(await toolbar.isVisible())) continue;
     expect((await toolbar.boundingBox())?.height ?? 0).toBeLessThanOrEqual(50);
   }
-  // The 3D Visualizer toolbar overflows, so its right edge shows a scroll cue
-  // sitting over the toolbar it belongs to.
+  // The 3D Visualizer toolbar overflows, so once the sheet reveals it, its right
+  // edge shows a scroll cue sitting over the toolbar it belongs to.
+  await nav.getByRole("button", { name: "Panels" }).click();
+  await page
+    .getByRole("dialog", { name: "Panels" })
+    .getByRole("button", { name: "3D Visualizer", exact: true })
+    .click();
   const rightCue = page
     .locator(
       '.nf-panel-toolbar-scroll [data-edge="right"][data-visible="true"]',
     )
+    .filter({ visible: true })
     .first();
   await expect(rightCue).toBeVisible();
   const cueBox = await rightCue.boundingBox();
