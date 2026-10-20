@@ -223,6 +223,8 @@ pub(super) enum DeskWsMessage<'a> {
     Controls(&'a [ControlSnapshot]),
     /// Current undo/redo state
     UndoState(&'a UndoStateMessage),
+    /// Live clip launches waiting for the next beat or bar
+    ArmedLaunches(&'a [ArmedLaunch]),
 }
 
 /// One Blueprint's current reverse-dependency descriptions.

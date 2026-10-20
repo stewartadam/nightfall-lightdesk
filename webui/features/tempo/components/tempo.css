@@ -190,3 +190,12 @@
   text-transform: uppercase;
   color: var(--color-gray-400, #9ca3af);
 }
+
+.nf-tempo-launch-quantize {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-gray-400, #9ca3af);
+}

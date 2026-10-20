@@ -17,6 +17,7 @@ import { Button } from "../../../components/ui/visual-language/button";
 import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
 import {
+  type ArmedLaunchAction,
   type Clip,
   ControlButtonMode,
   type HeldButtonEffect,
@@ -38,6 +39,8 @@ export interface ControlProps {
   assignedMaster?: Master;
   /** Whether the assigned clip is currently active */
   isClipActive: boolean;
+  /** What the assigned clip does when its launch quantize beat arrives, while it waits. */
+  armedLaunch?: ArmedLaunchAction;
   /** Backend-authored display value */
   displayValue: number;
   /** Position of the slot's physical fader, absent when no physical fader drives the slot */
@@ -340,6 +343,7 @@ export function Control(props: ControlProps): JSX.Element {
           data-control-button-index={props.index}
           data-control-button-mode={props.buttonMode}
           data-control-button-flashing={props.isFlashing}
+          data-launch-armed={props.armedLaunch}
           aria-label={`${modeText().label} control ${props.index}`}
           variant={props.isFlashing ? "primary" : "secondary"}
           class="w-full px-1!"

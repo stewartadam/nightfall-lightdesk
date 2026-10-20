@@ -21,7 +21,7 @@ use serde_json::Value;
 use web_time::Instant;
 
 use crate::engine::TempoSnapshot;
-use crate::{ShowTempo, TempoCommand};
+use crate::{LaunchQuantize, ShowTempo, TempoCommand};
 
 /// Minimum interval between state messages while tempo or phase is easing.
 const SETTLING_INTERVAL: Duration = Duration::from_millis(100);
@@ -36,8 +36,28 @@ const JUMP_TOLERANCE_BEATS: f64 = 0.02;
 #[serde(tag = "type", content = "data")]
 #[typeshare::typeshare]
 pub enum TempoWsMessage {
-    /// Current tempo and beat counter.
-    TempoState(TempoSnapshot),
+    /// Current tempo, beat counter and launch quantize mode.
+    TempoState(TempoState),
+}
+
+/// Show tempo state sent to clients.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[typeshare::typeshare]
+pub struct TempoState {
+    /// Tempo and beat counter at the last engine advance.
+    pub snapshot: TempoSnapshot,
+    /// Whether live clip launches wait for the next beat or bar.
+    pub launch_quantize: LaunchQuantize,
+}
+
+impl TempoState {
+    /// Captures the current state of the show tempo.
+    fn of(tempo: &ShowTempo) -> Self {
+        Self {
+            snapshot: tempo.snapshot(),
+            launch_quantize: tempo.launch_quantize(),
+        }
+    }
 }
 
 /// Deserializes a client tempo command and queues it for the command pipeline.
@@ -66,6 +86,8 @@ pub struct LastTempoSend {
     sent_at: Option<Instant>,
     /// The snapshot that was sent.
     snapshot: Option<TempoSnapshot>,
+    /// The launch quantize mode that was sent.
+    launch_quantize: Option<LaunchQuantize>,
 }
 
 /// Returns whether a new state message is due, given the previous send and the current state.
@@ -96,17 +118,16 @@ pub fn send_tempo_state(
     broadcaster: Res<ClientEventSink>,
     mut last: Local<LastTempoSend>,
 ) {
-    let snapshot = tempo.snapshot();
+    let state = TempoState::of(&tempo);
     let now = Instant::now();
-    if !tempo_send_due(&last, &snapshot, tempo.is_settling(), now) {
+    let mode_changed = last.launch_quantize != Some(state.launch_quantize);
+    if !mode_changed && !tempo_send_due(&last, &state.snapshot, tempo.is_settling(), now) {
         return;
     }
-    broadcaster.publish(
-        DISCRIMINATOR_DROPPABLE,
-        &TempoWsMessage::TempoState(snapshot),
-    );
+    broadcaster.publish(DISCRIMINATOR_DROPPABLE, &TempoWsMessage::TempoState(state));
     last.sent_at = Some(now);
-    last.snapshot = Some(snapshot);
+    last.snapshot = Some(state.snapshot);
+    last.launch_quantize = Some(state.launch_quantize);
 }
 
 /// Sends the tempo state immediately when a client asks for a full resync.
@@ -120,7 +141,7 @@ pub fn handle_resync_state(
     }
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
-        &TempoWsMessage::TempoState(tempo.snapshot()),
+        &TempoWsMessage::TempoState(TempoState::of(&tempo)),
     );
 }
 
@@ -146,6 +167,7 @@ mod tests {
         LastTempoSend {
             sent_at: Some(sent_at),
             snapshot: Some(snapshot),
+            launch_quantize: Some(LaunchQuantize::Off),
         }
     }
 

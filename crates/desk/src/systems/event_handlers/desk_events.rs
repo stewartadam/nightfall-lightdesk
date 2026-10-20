@@ -11,6 +11,7 @@ use nightfall_cmd_parse::split_command_statements;
 use nightfall_engine::prelude::*;
 use web_time::Instant;
 
+use crate::launch_quantize::INTERNAL_DESK_ACTION_ORIGIN;
 use crate::prelude::*;
 
 fn parse_debug_panic_worker_command(input: &str) -> Option<&str> {
@@ -45,18 +46,33 @@ pub fn handle_eval(
     mut responder: CommandResponder,
 ) {
     let mut evals = events.read().cloned().collect::<Vec<_>>();
-    evals.extend(actions.read().map(|event| {
+    for event in actions.read() {
         let EvalOperation(command) = &event.operation;
-        CommandEnvelope::with_context(
-            event.operation_id.0.into(),
-            event
-                .undo_id
-                .unwrap_or_else(|| UndoId::from(event.operation_id.0)),
-            CommandOrigin::Remote("InternalDeskAction".to_owned()),
+        let command_id: CommandId = event.operation_id.0.into();
+        let undo_id = event
+            .undo_id
+            .unwrap_or_else(|| UndoId::from(event.operation_id.0));
+        let origin = CommandOrigin::Remote(INTERNAL_DESK_ACTION_ORIGIN.to_owned());
+        // Registered so the commands the eval produces keep this origin, which tells clip
+        // launches from a timeline apart from a person's.
+        if !responder.is_active(command_id)
+            && let Err(error) = responder.register_context(
+                command_id,
+                undo_id,
+                origin.clone(),
+                ReplyTarget::Detached,
+            )
+        {
+            tracing::warn!(%command_id, %error, "desk_action_eval_registration_failed");
+        }
+        evals.push(CommandEnvelope::with_context(
+            command_id,
+            undo_id,
+            origin,
             ReplyTarget::Detached,
             DeskCommand::Eval(command.clone()),
-        )
-    }));
+        ));
+    }
 
     for event in &evals {
         tracing::debug!(?event, "Received eval event");
