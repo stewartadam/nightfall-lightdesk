@@ -122,6 +122,18 @@ pub enum PlaybackExtent {
 }
 
 impl PlaybackExtent {
+    /// Divides a finite extent by `source_scale`, leaving open-ended extents unchanged.
+    fn in_playback_time(self, source_scale: f64) -> Self {
+        match self {
+            Self::Finite(duration) if source_scale.is_finite() && source_scale > 0.0 => {
+                Self::Finite(duration.div_f64(source_scale))
+            }
+            extent => extent,
+        }
+    }
+}
+
+impl PlaybackExtent {
     /// Returns true when the extent is known to finish without an external stop.
     pub fn is_finite(self) -> bool {
         matches!(self, Self::Finite(_))
@@ -253,6 +265,16 @@ impl PlaybackDurationProfile {
             assertion: PlaybackExtent::Unknown,
             release: PlaybackExtent::Unknown,
             total: PlaybackExtent::Unknown,
+        }
+    }
+
+    /// Converts a profile measured in the source's own time into planned playback time, for a
+    /// source where `source_scale` units pass per second, such as beats at a timeline's tempo.
+    pub fn in_playback_time(self, source_scale: f64) -> Self {
+        Self {
+            assertion: self.assertion.in_playback_time(source_scale),
+            release: self.release.in_playback_time(source_scale),
+            total: self.total.in_playback_time(source_scale),
         }
     }
 }

@@ -95,7 +95,7 @@ pub fn sync_timeline_paused_instance_controls_system(
         let timeline_position = timeline.get_playback_position(*timecode_time);
         beats_per_second_by_timeline_uid.insert(
             timeline.timeline.identifiers.uid,
-            timeline_beats_per_second(&timeline.timeline),
+            timeline.timeline.beats_per_second(),
         );
         timeline_positions_by_uid.insert(
             timeline.timeline.identifiers.uid,
@@ -340,16 +340,6 @@ fn sync_timeline_owned_instance_clock(
         set_timeline_owned_instance_clock_speed(clock, final_speed);
     }
     source_positions.insert(*instance_id, source_position);
-}
-
-/// Returns how many beats a timeline plays per second at its BPM, or one when the BPM is unset.
-fn timeline_beats_per_second(timeline: &Timeline) -> f64 {
-    let bpm = f64::from(timeline.bpm);
-    if bpm.is_finite() && bpm > 0.0 {
-        bpm / 60.0
-    } else {
-        1.0
-    }
 }
 
 /// Applies the final timeline-owned clock speed without discarding this frame's delta.

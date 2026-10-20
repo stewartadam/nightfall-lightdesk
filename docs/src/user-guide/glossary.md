@@ -29,7 +29,7 @@
 | Speed | A multiplier on how fast a playback runs: ×2 runs twice as fast, ×½ half as fast. Set per clip, or for many playbacks at once with a speed master. Unlike some consoles, a speed master has no BPM of its own; the show has one [tempo](tempo.md). |
 | Timecode | A clock position used to coordinate time-based playback. |
 | Tempo | The show's beats per minute, set by tapping or typing in the Tempo panel. |
-| Timing | Whether an effect's times are **Seconds**, which run on the clock, or **Beats**, which follow the show [tempo](tempo.md). |
+| Timing | Whether an effect's or sequence's times are **Seconds**, which run on the clock, or **Beats**, which follow the show [tempo](tempo.md). |
 | Timeline | Tracks of actions scheduled against a linked timecode. |
 | Tracking | Carrying earlier attribute values into later cues that do not explicitly change them. |
 | Universe | A bank of 512 DMX channels. |

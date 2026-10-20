@@ -73,6 +73,24 @@ test("duration input rejects invalid or negative values", () => {
   assert.equal(parseDurationInput("0bpm", { minMs: 1 }), null);
 });
 
+/** Verifies beat fields read bare numbers, beat suffixes and fractions as beats and refuse clock units. */
+test("duration input parses beats for beat-timed fields", () => {
+  const beats = (input: string) =>
+    parseDurationInput(input, { beats: true }) &&
+    durationToMilliseconds(parseDurationInput(input, { beats: true })!);
+  assert.equal(beats("2"), 2000);
+  assert.equal(beats("2b"), 2000);
+  assert.equal(beats("1.5 beats"), 1500);
+  assert.equal(beats("3/4"), 750);
+  assert.equal(beats("2s"), null);
+  assert.equal(beats("120bpm"), null);
+  assert.equal(beats("1/0"), null);
+  assert.equal(
+    formatDurationInputValue({ secs: 0, nanos: 750_000_000 }, "beats"),
+    "0.75b",
+  );
+});
+
 test("duration formatting supports user display units", () => {
   const duration = parseDurationInput("1250ms")!;
 

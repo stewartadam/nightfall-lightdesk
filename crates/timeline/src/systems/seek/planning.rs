@@ -307,6 +307,7 @@ pub(super) fn plan_timeline_reconstruction(
                     sequence_data_provider,
                     fixture_data_provider,
                     selection_resolver,
+                    timeline.timeline.beats_per_second(),
                 ),
             )
         })
@@ -324,6 +325,7 @@ pub(super) fn plan_timeline_reconstruction(
                                 sequence_data_provider,
                                 fixture_data_provider,
                                 selection_resolver,
+                                timeline.timeline.beats_per_second(),
                             ),
                         ))
                     }
