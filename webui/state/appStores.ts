@@ -287,6 +287,8 @@ export const sequences = deepMap<SequenceMap>({});
 export const colorPaths = deepMap<ColorPathMap>({});
 export const colorPathDefaults = atom<ColorPathDefaultList>([]);
 export const clips = deepMap<ClipMap>({});
+/** Live clip launches waiting for the next beat or bar, keyed by clip ID. */
+export const armedLaunches = atom<Record<number, types.ArmedLaunch>>({});
 export const fixtures = deepMap<FixtureMap>({});
 
 /** Scene objects (trusses, audience, stage elements, etc.) keyed by UID */
@@ -517,6 +519,8 @@ export const inputContributionTrace = atom<types.OutboundInputContribution[]>(
 /** Last show tempo received from the engine, with its local receive time for extrapolation. */
 export interface ShowTempoState {
   snapshot: types.TempoSnapshot;
+  /** Whether live clip launches wait for the next beat or bar. */
+  launchQuantize: types.LaunchQuantize;
   receivedAtMs: number;
 }
 export const showTempo = atom<ShowTempoState | undefined>(undefined);
@@ -1160,6 +1164,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     inputContributionTrace,
     activeInstances,
     controls,
+    armedLaunches,
     showTempo,
     undoState,
     engineMetrics,

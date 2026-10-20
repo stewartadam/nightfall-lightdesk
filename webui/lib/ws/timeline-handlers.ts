@@ -52,7 +52,8 @@ export function registerTimelineHandlers(
 ): void {
   registry.register("TempoState", (message) => {
     setStoreAction(showTempo, "Receive TempoState", {
-      snapshot: message.data,
+      snapshot: message.data.snapshot,
+      launchQuantize: message.data.launch_quantize,
       receivedAtMs: performance.now(),
     });
   });

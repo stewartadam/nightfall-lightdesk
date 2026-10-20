@@ -15,7 +15,12 @@ import {
   commandSucceeded,
 } from "../../../lib/command-result";
 import { engineRuntime } from "../../../lib/engine-runtime";
-import { controls, masters, pushToast } from "../../../state/appStores";
+import {
+  armedLaunches,
+  controls,
+  masters,
+  pushToast,
+} from "../../../state/appStores";
 import {
   type Clip,
   ControlButtonMode,
@@ -45,6 +50,7 @@ export function Controls(props: ControlsProps): JSX.Element {
   const controlCount = () => props.controlCount ?? 10;
   const $controls = useStore(controls);
   const $masters = useStore(masters);
+  const $armedLaunches = useStore(armedLaunches);
 
   /** Sends a tracked control command and surfaces backend or transport failure. */
   const sendCommand = async (command: ControlCommand): Promise<void> => {
@@ -104,12 +110,21 @@ export function Controls(props: ControlsProps): JSX.Element {
           /** Returns whether the assigned clip is currently active. */
           const isClipActive = () => getAssignedClipEntry()?.[1] ?? false;
 
+          /** Returns what the assigned clip does when its armed launch fires, if it waits. */
+          const armedLaunch = () => {
+            const clipId = getControlState()?.assigned_clip_id;
+            return clipId === undefined || clipId === null
+              ? undefined
+              : $armedLaunches()[clipId]?.action;
+          };
+
           return (
             <Control
               index={controlIndex}
               assignedClip={getAssignedClip()}
               assignedMaster={getAssignedMaster()}
               isClipActive={isClipActive()}
+              armedLaunch={armedLaunch()}
               displayValue={getControlState()?.display_value ?? 0}
               hardwareValue={getControlState()?.hardware_value ?? undefined}
               consoleValue={getControlState()?.console_value ?? 0}

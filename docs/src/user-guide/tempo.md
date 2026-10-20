@@ -38,6 +38,20 @@ The Tempo panel has these controls next to the Tap pad.
 | **Resync to downbeat** | Makes this moment beat 1 of a bar without changing the tempo. Use it when the tempo is right but the "1" has drifted. |
 | **Jump to next downbeat** | Skips straight to the start of the next bar. |
 
+## Launch quantize
+
+**Launch quantize** in the Tempo panel makes live clip launches land on the beat. It is a show setting with three choices:
+
+- **Off**: clips start and stop as soon as you press them.
+- **Beat**: starts, Go presses and stops wait for the next beat.
+- **Bar**: they wait for the next downbeat.
+
+A press that lands just after the beat or downbeat (within a twentieth of a beat) fires straight away rather than waiting a whole beat or bar. While a clip waits, its slot button and any board button for it pulse. Pressing the same button again before the beat cancels the launch, and stopping a clip that is still waiting to start cancels its start.
+
+**Launch armed clips now** (the lightning button in the Tempo panel toolbar, also available as a mappable action) fires everything that is waiting straight away.
+
+Held **Flash** and **Swop** buttons always act at once, and timeline and flow playback never wait.
+
 ## Commands
 
 The [command line](commands.md) controls the same tempo.
@@ -77,4 +91,4 @@ The **Show Tempo** node outputs the current **BPM**, the **Beat** within the bar
 
 ## Saved with the show
 
-The tempo and beats per bar are saved in the showfile. Opening a show restores them straight away, without gliding from the previous tempo. A new show starts at 120 BPM in 4/4.
+The tempo, beats per bar and launch quantize mode are saved in the showfile. Opening a show restores them straight away, without gliding from the previous tempo. A new show starts at 120 BPM in 4/4.

@@ -81,6 +81,7 @@ impl Undoable for ClipCommand {
             } => Some(Box::new(ClipCommand::StartClip(id_expr.clone()))),
             ClipCommand::GoClip(_)
             | ClipCommand::BackClip(_)
+            | ClipCommand::LaunchArmed
             | ClipCommand::SetSpeed { .. }
             | ClipCommand::GotoClip { .. }
             | ClipCommand::RenderClipAt { .. } => None,
@@ -119,6 +120,7 @@ impl Undoable for ClipCommand {
             } => format!("Stop Clip {id_expr}"),
             ClipCommand::GoClip(id_expr) => format!("Go Clip {id_expr}"),
             ClipCommand::BackClip(id_expr) => format!("Back Clip {id_expr}"),
+            ClipCommand::LaunchArmed => "Launch Armed Clips".to_string(),
             ClipCommand::SetSpeed { clip_id, speed } => {
                 format!("Set Clip {clip_id} Speed {speed}")
             }

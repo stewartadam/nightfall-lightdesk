@@ -69,6 +69,13 @@ pub const MASTER_SPEED_DOUBLE_ACTION_ID: &str = "master.speed-double";
 /// Stable action ID for returning a speed master to ×1.
 pub const MASTER_SPEED_RESET_ACTION_ID: &str = "master.speed-reset";
 
+/// Stable action ID for firing every live launch waiting for the next beat or bar now.
+pub const CLIP_LAUNCH_ARMED_ACTION_ID: &str = "clip.launch-armed";
+
+/// Arguments for actions that take none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct NoArguments {}
+
 /// Persisted arguments for externally-driven control actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -167,6 +174,18 @@ pub fn register_desk_actions(app: &mut App) {
                 ),
             })
         },
+    );
+    app.register_command_action::<NoArguments, ClipCommand, _>(
+        ActionDescriptor::new(
+            CLIP_LAUNCH_ARMED_ACTION_ID,
+            "Launch armed clips now",
+            "Clips",
+        )
+        .with_description(
+            "Fires every clip waiting for the next beat or bar at once, skipping launch \
+                 quantize",
+        ),
+        |_, _| Ok(ClipCommand::LaunchArmed),
     );
     app.register_command_action::<ClipSpeedActionArguments, ClipCommand, _>(
         ActionDescriptor::new(CLIP_SET_SPEED_ACTION_ID, "Set clip speed", "Clips")

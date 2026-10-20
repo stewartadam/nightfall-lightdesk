@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { clips } from "../../state/appStores";
+import { armedLaunches, clips } from "../../state/appStores";
 import type * as types from "../../types";
 import { getLogger } from "../logger";
 import { setStoreAction, setStoreKeyAction } from "../nanostore-action";
@@ -25,6 +25,14 @@ export function registerClipHandlers(
       clipMap[clip.identifiers.uid] = [clip, is_active];
     }
     setStoreAction(clips, "Receive ClipDefinitions", clipMap);
+  });
+
+  registry.register("ArmedLaunches", (message) => {
+    const byClip: Record<number, types.ArmedLaunch> = {};
+    for (const launch of message.data) {
+      byClip[launch.clip_id] = launch;
+    }
+    setStoreAction(armedLaunches, "Receive ArmedLaunches", byClip);
   });
 
   registry.register("ClipCommand", (message) => {
