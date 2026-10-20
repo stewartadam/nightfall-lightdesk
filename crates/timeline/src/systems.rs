@@ -35,7 +35,7 @@ use nightfall_fx::prelude::{
 };
 use nightfall_instances::{
     DomainInstanceReconstructionRequest, InstanceClock, InstanceClockDiscontinuity,
-    InstanceClockSource, InstanceControls, InstanceId, InstanceOptions, Owner,
+    InstanceClockSource, InstanceControls, InstanceId, InstanceOptions, Owner, Timebase,
     instance_clock_from_reconstruction_timing_with_speed,
 };
 use nightfall_playback_planner::{

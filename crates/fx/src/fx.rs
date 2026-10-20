@@ -11,6 +11,7 @@ use std::{collections::HashMap, time::Duration};
 use nightfall::prelude::*;
 use nightfall_dmx::PercentageAsF64;
 use nightfall_dmx::prelude::*;
+use nightfall_instances::Timebase;
 use nightfall_selection::{
     HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
     selection_validation_warnings,
@@ -32,6 +33,9 @@ pub struct Fx {
     #[typeshare(serialized_as = "Record<String, FxWaveform>")]
     #[serde_as(as = "HashMap<DisplayFromStr, _>")]
     pub attributes: HashMap<Attribute, FxWaveform>,
+    /// Whether waveform cycle lengths are seconds or beats of the show tempo.
+    #[serde(default)]
+    pub timebase: Timebase,
 }
 
 impl HasIdentifiers for Fx {

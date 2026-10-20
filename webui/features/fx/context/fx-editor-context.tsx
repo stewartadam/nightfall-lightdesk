@@ -33,7 +33,7 @@ import { getLogger } from "../../../lib/logger";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { fx } from "../../../state/appStores";
 import type * as types from "../../../types";
-import type { FlowWaveform } from "../../../types";
+import { type FlowWaveform, Timebase } from "../../../types";
 
 const log = getLogger(import.meta.url);
 
@@ -63,6 +63,10 @@ export interface FxEditorContextType {
   selection: Accessor<types.SpatialSelection | undefined>;
   /** Update the FX spatial selection */
   setSelection: (selection: types.SpatialSelection) => void;
+  /** Whether cycle lengths are seconds or beats of the show tempo */
+  timebase: Accessor<Timebase>;
+  /** Switch cycle lengths between seconds and beats */
+  setTimebase: (timebase: Timebase) => void;
   /** Whether local state differs from stored state */
   isDirty: Accessor<boolean>;
   /** Save current state to backend */
@@ -97,6 +101,9 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
   >({});
   const [localSelection, setLocalSelection] =
     createSignal<types.SpatialSelection>();
+  const [localTimebase, setLocalTimebase] = createSignal<Timebase>(
+    Timebase.Seconds,
+  );
   const [isDirty, setIsDirty] = createSignal(false);
   const [previewActive, setPreviewActive] = createSignal(false);
   const [pendingSavedFx, setPendingSavedFx] = createSignal<types.Fx>();
@@ -129,6 +136,13 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
     }
 
     if (JSON.stringify(left.selection) !== JSON.stringify(right.selection)) {
+      return false;
+    }
+
+    if (
+      (left.timebase ?? Timebase.Seconds) !==
+      (right.timebase ?? Timebase.Seconds)
+    ) {
       return false;
     }
 
@@ -180,6 +194,7 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
       setLocalWaveforms(waveforms);
       setLocalIsRelative(isRelative);
       setLocalSelection(stored.selection);
+      setLocalTimebase(stored.timebase ?? Timebase.Seconds);
     }
   });
 
@@ -200,7 +215,7 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
       );
     }
 
-    return { identifiers, selection, attributes };
+    return { identifiers, selection, attributes, timebase: localTimebase() };
   };
 
   // Auto-start preview when FX is first loaded
@@ -324,6 +339,12 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
     triggerPreview();
   };
 
+  const setTimebase = (timebase: Timebase) => {
+    setLocalTimebase(timebase);
+    setIsDirty(true);
+    triggerPreview();
+  };
+
   const save = () => {
     const built = buildFx();
     if (built) {
@@ -356,6 +377,8 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
         removeAttribute,
         selection: localSelection,
         setSelection,
+        timebase: localTimebase,
+        setTimebase,
         isDirty,
         save,
         previewActive,

@@ -17,6 +17,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
+use smart_default::SmartDefault;
 use web_time::Instant;
 
 pub mod actions;
@@ -29,7 +30,7 @@ use crate::engine::{TapTime, TempoEngine, TempoSnapshot};
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::engine::{TapTime, TempoEngine, TempoSnapshot};
-    pub use crate::{ShowTempo, TempoCommand, TempoPlugin, TempoUpdate};
+    pub use crate::{ShowTempo, TempoCommand, TempoPlugin, TempoSettings, TempoUpdate};
 }
 
 /// Plugin that owns the show tempo resource, its commands, actions and client updates.
@@ -115,6 +116,18 @@ impl TempoCommand {
     }
 }
 
+/// Tempo settings saved in a show, restored when it opens.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, SmartDefault)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TempoSettings {
+    /// Tempo in beats per minute.
+    #[default(engine::DEFAULT_BPM)]
+    pub bpm: f64,
+    /// Number of beats in one bar.
+    #[default(engine::DEFAULT_BEATS_PER_BAR)]
+    pub beats_per_bar: u8,
+}
+
 /// The show-wide tempo shared by every client and every tempo-following playback.
 #[derive(Resource, Debug, Clone)]
 pub struct ShowTempo {
@@ -143,6 +156,20 @@ impl ShowTempo {
     /// Returns whether tempo or phase is still easing toward a target.
     pub fn is_settling(&self) -> bool {
         self.engine.is_settling()
+    }
+
+    /// Returns the settings a show saves: the tempo being eased toward and the bar length.
+    pub fn settings(&self) -> TempoSettings {
+        let snapshot = self.snapshot();
+        TempoSettings {
+            bpm: snapshot.target_bpm,
+            beats_per_bar: snapshot.beats_per_bar,
+        }
+    }
+
+    /// Restores saved settings immediately, without easing from the previous tempo.
+    pub fn restore(&mut self, settings: &TempoSettings) {
+        self.engine.restore(settings.bpm, settings.beats_per_bar);
     }
 
     /// Advances the beat counter to the current wall-clock time.
@@ -262,6 +289,26 @@ mod tests {
             engine::MAX_BPM,
             "back-to-back taps on the engine clock fit the fastest tempo, not the 150 BPM \
              the supplied times imply"
+        );
+    }
+
+    /// Verifies saved settings round-trip and restore without easing from the old tempo.
+    #[test]
+    fn settings_round_trip_without_easing() {
+        let mut tempo = ShowTempo::default();
+        tempo.restore(&TempoSettings {
+            bpm: 140.0,
+            beats_per_bar: 3,
+        });
+        let snapshot = tempo.snapshot();
+        assert_eq!(snapshot.bpm, 140.0, "a restored tempo applies immediately");
+        assert!(!tempo.is_settling());
+        assert_eq!(
+            tempo.settings(),
+            TempoSettings {
+                bpm: 140.0,
+                beats_per_bar: 3
+            }
         );
     }
 

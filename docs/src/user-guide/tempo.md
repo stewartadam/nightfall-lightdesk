@@ -2,7 +2,7 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-Nightfall keeps one tempo for the whole show. The [Tempo panel](panels/tempo.md) shows it as a BPM readout with a row of beat dots, where the larger dot is beat 1 of the bar, and holds the Tap pad and the controls below. Open it from the Command Palette, or keep it in your performance layout. To tap from a busking board, add a **Tempo** element to the [board](panels/board.md): it shows the BPM and beat dots, and pressing it taps. Everything that follows the tempo, such as the [Show Tempo flow node](#flows), reads this same clock.
+Nightfall keeps one tempo for the whole show. The [Tempo panel](panels/tempo.md) shows it as a BPM readout with a row of beat dots, where the larger dot is beat 1 of the bar, and holds the Tap pad and the controls below. Open it from the Command Palette, or keep it in your performance layout. To tap from a busking board, add a **Tempo** element to the [board](panels/board.md): it shows the BPM and beat dots, and pressing it taps. Everything that follows the tempo, such as the [Show Tempo flow node](#flows) and effects whose **Timing** is set to **Beats** in the [FX Editor](panels/fx-editor.md), reads this same clock.
 
 ## Tapping a tempo
 
@@ -75,6 +75,6 @@ Tempo actions run when a button is pressed and ignore the release. Taps from a M
 
 The **Show Tempo** node outputs the current **BPM**, the **Beat** within the bar and the **Bar** count (both starting at 1), and the **Phase** through the current beat from 0 to 1. Its **On Beat** and **On Bar** triggers fire once for every beat and every downbeat.
 
-## Limitations
+## Saved with the show
 
-The tempo is not yet saved in the showfile. Each session starts at 120 BPM in 4/4.
+The tempo and beats per bar are saved in the showfile. Opening a show restores them straight away, without gliding from the previous tempo. A new show starts at 120 BPM in 4/4.
