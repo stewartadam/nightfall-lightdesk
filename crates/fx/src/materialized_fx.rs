@@ -414,6 +414,7 @@ mod tests {
                     is_relative: false,
                 },
             )]),
+            timebase: Default::default(),
         };
 
         let materialized_fx = MaterializedFx::materialize(&fx, Priority::default());

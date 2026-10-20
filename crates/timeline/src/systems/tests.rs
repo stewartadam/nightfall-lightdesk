@@ -38,7 +38,7 @@ use nightfall_fx_module::instances::ActiveFxModuleLayer;
 use nightfall_fx_module::prelude::{ActiveFxModuleIds, ActiveFxModuleTimings, StoredFxModule};
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceDisplayKind, InstanceId,
-    InstanceKind, InstanceMetadata, InstanceOptions, InstancePosition, InstanceStatus,
+    InstanceKind, InstanceMetadata, InstanceOptions, InstancePosition, InstanceStatus, Timebase,
 };
 use nightfall_lookahead::LookaheadAssertions;
 use nightfall_playback_planner::{
@@ -441,6 +441,72 @@ fn keep_state_stop_keeps_releasing_timeline_instance_clock_attached() {
             timeline_uid,
             started_at_timeline: Duration::from_secs(1)
         }
+    );
+}
+
+/// Syncs one timeline-owned playback started 1 s into a 120 BPM timeline at 4 s and returns
+/// its clock position.
+fn timeline_owned_position_at_120_bpm(timebase: Option<Timebase>) -> Duration {
+    let mut app = App::new();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
+    app.add_systems(Update, sync_timeline_paused_instance_controls_system);
+
+    let timecode_id = 94;
+    let timeline_uid = Uuid::new_v4();
+    let timecode_uid = spawn_timecode(&mut app, timecode_id, Duration::from_secs(4));
+    let mut timeline = MaterializedTimeline::new(Timeline {
+        identifiers: Identifiers {
+            id: timecode_id,
+            uid: timeline_uid,
+            label: "beat-timed".to_owned(),
+        },
+        timecode_uid,
+        bpm: 120.0,
+        ..Default::default()
+    });
+    timeline.is_active = true;
+    app.world_mut().spawn(timeline);
+
+    let mut playback = app.world_mut().spawn((
+        InstanceId::new(),
+        InstanceControls::default(),
+        InstanceClock {
+            source: InstanceClockSource::Timeline {
+                timeline_uid,
+                started_at_timeline: Duration::from_secs(1),
+            },
+            ..Default::default()
+        },
+    ));
+    if let Some(timebase) = timebase {
+        playback.insert(timebase);
+    }
+    let playback_entity = playback.id();
+
+    app.update();
+
+    app.world()
+        .entity(playback_entity)
+        .get::<InstanceClock>()
+        .expect("playback keeps its clock")
+        .position
+}
+
+/// Verifies beat-timed timeline playback counts the timeline's beats, so 3 s at 120 BPM reads
+/// as 6 beats, while seconds-timed playback keeps reading seconds.
+#[test]
+fn timeline_owned_beat_timed_clock_follows_timeline_bpm() {
+    assert_eq!(
+        timeline_owned_position_at_120_bpm(Some(Timebase::Beats)),
+        Duration::from_secs(6)
+    );
+    assert_eq!(
+        timeline_owned_position_at_120_bpm(Some(Timebase::Seconds)),
+        Duration::from_secs(3)
+    );
+    assert_eq!(
+        timeline_owned_position_at_120_bpm(None),
+        Duration::from_secs(3)
     );
 }
 

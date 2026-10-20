@@ -24,6 +24,7 @@ import PanelToolbar from "../../../components/ui/panel-toolbar";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
+import { TimebaseControl } from "../../../components/widgets/timebase-control";
 import { createDefaultFlowWaveform } from "../../../lib/fx-service";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { useSharedStore } from "../../../lib/use-shared-store";
@@ -32,6 +33,7 @@ import {
   fx as fxStore,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { Timebase } from "../../../types";
 import { SpatialSelectionField } from "../../selection";
 import { FxAttributePicker } from "../components/fx-attribute-picker";
 import { WaveformEditor } from "../components/waveform-editor";
@@ -61,6 +63,8 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
     removeAttribute,
     selection,
     setSelection,
+    timebase,
+    setTimebase,
     isDirty,
     save,
     previewActive,
@@ -209,6 +213,12 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
                 availableAttributes={availableAttributes()}
               />
 
+              <TimebaseControl
+                class="md:max-w-sm"
+                value={timebase()}
+                onChange={setTimebase}
+              />
+
               {/* Attribute waveforms */}
               <For each={getAttributeKeys()}>
                 {(attr) => {
@@ -223,6 +233,9 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
                             updateWaveform(attr, updates)
                           }
                           showRelative={true}
+                          cycleLengthUnit={
+                            timebase() === Timebase.Beats ? "beats" : "seconds"
+                          }
                           isRelative={getIsRelative(attr)}
                           onRelativeChange={(rel) => setIsRelative(attr, rel)}
                         />

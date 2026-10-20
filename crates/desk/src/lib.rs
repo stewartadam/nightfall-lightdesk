@@ -261,7 +261,8 @@ impl Plugin for DeskPlugin {
                 instances::advance_realtime_instance_clocks,
             )
                 .chain()
-                .in_set(ClockUpdate),
+                .in_set(ClockUpdate)
+                .after(nightfall_tempo::TempoUpdate),
         );
 
         app.add_systems(

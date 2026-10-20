@@ -24,6 +24,7 @@ use nightfall_input_midi::prelude::*;
 use nightfall_input_osc::prelude::*;
 use nightfall_io::IoRuntimeSettings;
 use nightfall_scene_objects::prelude::*;
+use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 
@@ -70,6 +71,7 @@ pub struct ShowfileSaveState<'w, 's> {
     /// Mutable desk settings allow the native save workflow to apply save-time UI state first.
     pub desk_settings: ResMut<'w, DeskSettings>,
     io_settings: Res<'w, IoRuntimeSettings>,
+    tempo: Option<Res<'w, ShowTempo>>,
 }
 
 /// Convert runtime resources into the canonical, flat showfile snapshot.
@@ -81,6 +83,7 @@ pub fn snapshot_from_save_state(
         &showfile_save_state.controls,
         &showfile_save_state.desk_settings,
         &showfile_save_state.io_settings,
+        showfile_save_state.tempo.as_deref(),
     );
     let fixtures_patch_contributor = FixturesPatchSaveContributor::new(
         &showfile_save_state.fixture_data_provider,

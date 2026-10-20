@@ -568,7 +568,7 @@ fn default_master_level() -> f32 {
 }
 
 /// Clamp a user-supplied master level to the supported percent range.
-fn clamp_master_level(kind: MasterKind, level_percent: f32) -> f32 {
+pub(crate) fn clamp_master_level(kind: MasterKind, level_percent: f32) -> f32 {
     match kind {
         MasterKind::InhibitiveIntensity => level_percent.clamp(0.0, 100.0),
         MasterKind::PlaybackSpeed => level_percent.clamp(0.0, 200.0),

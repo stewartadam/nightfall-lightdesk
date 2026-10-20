@@ -118,6 +118,7 @@ pub(super) fn merge_showfile_snapshots(
         ),
         settings: merge_single(current.settings, incoming.settings, options.settings),
         io_settings: merge_single(current.io_settings, incoming.io_settings, options.settings),
+        tempo: merge_single(current.tempo, incoming.tempo, options.settings),
         routes: merge_routes(current.routes, incoming.routes, options.routes)?,
         #[cfg(feature = "midi")]
         midi_mappings: merge_plain_vec(

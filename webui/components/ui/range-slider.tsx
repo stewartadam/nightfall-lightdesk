@@ -40,7 +40,15 @@ interface RangeSliderOptions {
   showInputs?: boolean;
   /** Enables handle value tooltips unless explicitly disabled. */
   tooltips?: boolean;
+  /**
+   * Values a dragged handle settles on when released near them, marked under the track.
+   * Keys and numeric entry still reach every value in between.
+   */
+  detents?: readonly number[];
 }
+
+/** Share of the slider's range within which a dragged handle settles on a detent. */
+const DETENT_RADIUS = 0.03;
 
 export type RangeSliderProps = RangeSliderOptions &
   (
@@ -95,6 +103,18 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
       Number(Number(value).toFixed(10)),
     );
   };
+  /** Moves each value within the detent radius of a detent onto it. */
+  const snapToDetents = (next: number[]) => {
+    const detents = props.detents;
+    if (!detents?.length) return next;
+    const radius = (max() - min()) * DETENT_RADIUS;
+    return next.map((value) => {
+      const nearest = detents.reduce((best, detent) =>
+        Math.abs(detent - value) < Math.abs(best - value) ? detent : best,
+      );
+      return Math.abs(nearest - value) <= radius ? nearest : value;
+    });
+  };
   /** Reports a completed interaction to the optional commit callback unless it left the values unchanged. */
   const emitCommit = () => {
     const next = settledValues();
@@ -127,8 +147,14 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
         "aria-label": label(index),
         ...(props.describedBy ? { "aria-describedby": props.describedBy } : {}),
       })),
-      pips:
-        props.showPips === false
+      pips: props.detents?.length
+        ? {
+            mode: PipsMode.Values,
+            values: [...props.detents],
+            density: 100,
+            format: { to: formatValue },
+          }
+        : props.showPips === false
           ? undefined
           : {
               mode: PipsMode.Count,
@@ -157,7 +183,16 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     sliderApi.on("slide", emitChange);
     sliderApi.on("set", emitChange);
     sliderApi.on("change", () => {
-      if (!syncing) emitCommit();
+      if (syncing) return;
+      const settled = settledValues();
+      // Only a released pointer drag settles; keys, taps and typed values land exactly.
+      const snapped = dragging ? snapToDetents(settled) : settled;
+      if (snapped.some((value, index) => value !== settled[index])) {
+        syncing = true;
+        sliderApi?.set(snapped, false);
+        syncing = false;
+      }
+      emitCommit();
     });
     committed = settledValues();
     /** Mirrors controlled values, leaving an active drag in place so delayed echoes cannot pull the handle back. */

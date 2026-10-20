@@ -57,6 +57,7 @@ export function StepFxEditorToolbar(props: {
             }
             onBeatUnitChange={props.editor.setBeatUnit}
             onTimingChange={edit.setTiming}
+            onTimebaseChange={edit.setTimebase}
             onCycleScaleChange={edit.setCycleScale}
           />
           <ToolbarSeparator data-step-fx-start-position-separator />

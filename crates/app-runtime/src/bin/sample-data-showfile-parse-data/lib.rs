@@ -584,6 +584,7 @@ fn add_fx(world: &mut World, fixture_ref: FixtureRef) -> Result<(), String> {
                     is_relative: false,
                 },
             )]),
+            timebase: Default::default(),
         })
         .map_err(|error| format!("failed to add parser FX: {error}"))?;
     commands.spawn_instance(Clip {
@@ -674,6 +675,7 @@ fn add_step_fx(world: &mut World, fixture_ref: FixtureRef) {
             }),
             relative: None,
         }],
+        timebase: Default::default(),
     });
 }
 
