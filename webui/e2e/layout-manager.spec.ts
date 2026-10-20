@@ -115,22 +115,25 @@ async function resetToDefaultLayout(page: Page) {
     .toBe(true);
 }
 
-/** Expands the right edge group and waits for Dockview to report it expanded. */
+/**
+ * Expands the right edge group and waits until it stays expanded. A layout reset
+ * re-collapses its edge groups a frame after it runs, so an expand that lands
+ * first is retried.
+ */
 async function expandRightEdgeGroup(page: Page) {
-  await page.evaluate(() =>
-    (window as any).appStores.dockApi.get().getEdgeGroup("right")?.expand(),
-  );
-
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        (window as any).appStores.dockApi
-          .get()
-          .getEdgeGroup("right")
-          ?.isCollapsed(),
-      ),
-    )
-    .toBe(false);
+  await expect(async () => {
+    const collapsed = await page.evaluate(async () => {
+      const edge = (window as any).appStores.dockApi
+        .get()
+        .getEdgeGroup("right");
+      edge?.expand();
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      return edge?.isCollapsed();
+    });
+    expect(collapsed).toBe(false);
+  }).toPass();
 }
 
 /** Returns the current rendered width of the right edge group. */
@@ -345,6 +348,8 @@ test("stores and loads named layouts with edge panels and sizing", async ({
   page,
 }, testInfo) => {
   const layoutName = `Edge Board ${testInfo.workerIndex}-${Date.now()}`;
+  // Edge groups stop growing at the grid and Clips minimums, so leave room for a 520px edge.
+  await page.setViewportSize({ width: 2200, height: 1000 });
 
   await clearLayoutStorageOnFirstLoad(page);
 
@@ -417,6 +422,8 @@ test("restores draft layout edge sizing after page refresh", async ({
   page,
 }, testInfo) => {
   const layoutName = `Draft Edge ${testInfo.workerIndex}-${Date.now()}`;
+  // Edge groups stop growing at the grid and Clips minimums, so leave room for a 520px edge.
+  await page.setViewportSize({ width: 2200, height: 1000 });
 
   await clearLayoutStorageOnFirstLoad(page);
 
@@ -491,12 +498,16 @@ test("closes the active panel with the close-panel shortcut", async ({
 
 /** Verifies Tauri keeps the chord shortcut and adds the native close alias. */
 test("closes the active panel with both Tauri close-panel shortcuts", async ({
+  backendSlot,
   page,
 }) => {
-  await page.addInitScript(() => {
+  // The desktop shell talks to its backend directly on the port it injects,
+  // bypassing the dev proxy that routes other tests to their own backend.
+  await page.addInitScript((backendPort) => {
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
       {};
-  });
+    window.__NIGHTFALL_BACKEND_PORT__ = backendPort;
+  }, backendSlot.backendPort);
   await page.goto("/?e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
 

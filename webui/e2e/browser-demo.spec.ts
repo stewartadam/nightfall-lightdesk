@@ -893,9 +893,13 @@ test("demo engine reports and adjusts its frame rate", async ({
     });
     panel.api.setActive();
   });
-  const backendSection = page.getByRole("button", { name: /^▶\s*Backend/ });
-  await expect(backendSection).toContainText(/[1-9]\d*\.\d fps/);
-  await backendSection.click();
+  const backendSection = page.locator(".nf-collapsible").filter({
+    has: page.getByRole("button", { name: "Backend", exact: true }),
+  });
+  await expect(backendSection.locator(".nf-collapsible-header")).toContainText(
+    /[1-9]\d*\.\d fps/,
+  );
+  await backendSection.locator(".nf-collapsible-trigger").click();
   await page.screenshot({
     path: testInfo.outputPath("demo-engine-fps-44.png"),
     fullPage: true,

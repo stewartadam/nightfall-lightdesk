@@ -169,8 +169,11 @@ test("lab dropdown uses the context-menu primitives and action states", async ({
   await trigger.click();
   await expect(details.locator("svg")).toHaveCount(0);
   const open = dropdown.getByRole("button", { name: /Open selection/ });
-  await trigger.focus();
-  await trigger.press("Tab");
+  // Reopen from the keyboard so the first item takes keyboard focus and shows its focus ring.
+  await page.keyboard.press("Escape");
+  await expect(dropdown).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.press("Enter");
   await expect(open).toBeFocused();
   await expect(open).not.toHaveCSS("box-shadow", "none");
   await page.screenshot({ path: testInfo.outputPath("lab-dropdown.png") });
