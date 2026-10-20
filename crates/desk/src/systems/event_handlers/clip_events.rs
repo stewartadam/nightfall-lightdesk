@@ -31,6 +31,9 @@ use nightfall_instances::{
     InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstanceOptions,
 };
 use nightfall_playback_planner::PlaybackReconstructionTiming;
+use nightfall_tempo::prelude::ShowTempo;
+
+use crate::launch_quantize::{ArmedLaunches, origin_follows_launch_quantize, quantized_action};
 
 /// Playback identity and control state used to resolve clip actions.
 type ClipPlaybackData = (
@@ -520,16 +523,68 @@ pub fn handle_restore_clip_source(
 }
 
 /// Plans live clip ingress commands as concrete runtime actions.
+///
+/// While the show's launch quantize mode is on, live starts, Go presses and stops wait in
+/// [`ArmedLaunches`] for the next beat or bar; launches whose beat has arrived fire first, and a
+/// Launch Armed command fires everything still waiting.
 pub fn forward_clip_ingress_actions(
     mut commands: MessageReader<CommandEnvelope<ClipCommand>>,
     mut runtime_actions: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
+    tempo: Option<Res<ShowTempo>>,
+    mut armed: ResMut<ArmedLaunches>,
+    materialized_clips: Query<&MaterializedClip>,
+    mut responder: CommandResponder,
 ) {
+    if !armed.is_empty() {
+        let beat_position = tempo
+            .as_ref()
+            .map_or(f64::INFINITY, |tempo| tempo.snapshot().beat_position);
+        let due = armed.bypass_change_detection().take_due(beat_position);
+        if !due.is_empty() {
+            armed.set_changed();
+            runtime_actions.write_batch(due);
+        }
+    }
+
     for envelope in commands.read() {
+        if matches!(envelope.command, ClipCommand::LaunchArmed) {
+            runtime_actions.write_batch(armed.take_all());
+            complete_clip_command(&mut responder, Some(envelope.command_id));
+            continue;
+        }
         let Some(action) = clip_action_from_command(&envelope.command) else {
             continue;
         };
+        let operation = EngineOperationEnvelope::for_command(envelope, action);
+        let quantized = quantized_action(&operation.operation)
+            .filter(|_| origin_follows_launch_quantize(&envelope.origin))
+            .map(|(_, clip_id)| clip_id.expand());
+        let target_beat = quantized
+            .as_ref()
+            .and_then(|_| tempo.as_ref().and_then(|tempo| tempo.launch_target_beat()));
+        match (target_beat, quantized) {
+            (Some(target_beat), Some(clip_ids)) => {
+                let clips_running = materialized_clips
+                    .iter()
+                    .any(|materialized| clip_ids.contains(&materialized.clip_id));
+                for command_id in armed.arm(target_beat, operation, clips_running) {
+                    complete_clip_command(&mut responder, command_id);
+                }
+            }
+            _ => {
+                runtime_actions.write(operation);
+            }
+        }
+    }
+}
 
-        runtime_actions.write(EngineOperationEnvelope::for_command(envelope, action));
+/// Reports a clip command as done without routing it, such as a launch a later press made
+/// pointless.
+fn complete_clip_command(responder: &mut CommandResponder, command_id: Option<CommandId>) {
+    if let Some(command_id) = command_id
+        && let Err(error) = responder.succeed(command_id)
+    {
+        tracing::error!(%command_id, %error, "clip_command_completion_failed");
     }
 }
 
@@ -1455,10 +1510,7 @@ mod tests {
     /// Verifies live ingress commands retain command and undo identity at the runtime boundary.
     #[test]
     fn live_clip_command_forwards_with_lifecycle_context() {
-        let mut app = App::new();
-        app.add_message::<CommandEnvelope<ClipCommand>>();
-        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
-        app.add_systems(Update, forward_clip_ingress_actions);
+        let mut app = setup_clip_forwarding_app();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
 
@@ -1482,6 +1534,121 @@ mod tests {
         assert!(matches!(
             actions[0].operation,
             ClipOperation::Go(IdExpr::Single(7))
+        ));
+    }
+
+    /// Builds an app that forwards live clip commands, with command completion and armed
+    /// launches installed but no show tempo.
+    fn setup_clip_forwarding_app() -> App {
+        let mut app = App::new();
+        app.add_message::<CommandEnvelope<ClipCommand>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
+        app.add_message::<CommandResult>();
+        app.add_message::<CommandReply>();
+        app.add_message::<FinishedCommand>();
+        app.add_message::<CommandNoticeReply>();
+        app.init_resource::<CommandTracker>();
+        app.init_resource::<ArmedLaunches>();
+        app.add_systems(Update, forward_clip_ingress_actions);
+        app
+    }
+
+    /// Sends one live clip command to the forwarding app.
+    fn send_live_clip_command(app: &mut App, command: ClipCommand) {
+        app.world_mut().write_message(CommandEnvelope::with_context(
+            CommandId::new(),
+            UndoId::new(),
+            CommandOrigin::WebUi,
+            ReplyTarget::Detached,
+            command,
+        ));
+    }
+
+    /// Drains the clip operations the forwarding app produced.
+    fn forwarded_operations(app: &mut App) -> Vec<ClipOperation> {
+        app.world_mut()
+            .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
+            .drain()
+            .map(|envelope| envelope.operation)
+            .collect()
+    }
+
+    /// Verifies that with bar quantize on, a live start waits as an armed launch while a Go To
+    /// fires at once, a stop of the idle clip cancels the waiting start, and Launch Armed fires
+    /// a waiting start now.
+    #[test]
+    fn quantized_launches_wait_until_launched() {
+        let mut app = setup_clip_forwarding_app();
+        let mut tempo = ShowTempo::default();
+        tempo.apply(
+            &nightfall_tempo::TempoCommand::SetLaunchQuantize(nightfall_tempo::LaunchQuantize::Bar),
+            None,
+        );
+        tempo.advance();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        tempo.advance();
+        app.insert_resource(tempo);
+
+        send_live_clip_command(&mut app, ClipCommand::StartClip(IdExpr::Single(3)));
+        send_live_clip_command(
+            &mut app,
+            ClipCommand::GotoClip {
+                clip_id: IdExpr::Single(5),
+                position: 2,
+                timing: None,
+            },
+        );
+        app.update();
+        assert!(matches!(
+            forwarded_operations(&mut app).as_slice(),
+            [ClipOperation::Goto { .. }]
+        ));
+        assert_eq!(app.world().resource::<ArmedLaunches>().status().len(), 1);
+
+        send_live_clip_command(&mut app, ClipCommand::StopClip(IdExpr::Single(3)));
+        app.update();
+        assert!(forwarded_operations(&mut app).is_empty());
+        assert!(
+            app.world().resource::<ArmedLaunches>().is_empty(),
+            "stopping an idle clip only cancels its waiting start"
+        );
+
+        send_live_clip_command(&mut app, ClipCommand::StartClip(IdExpr::Single(3)));
+        send_live_clip_command(&mut app, ClipCommand::LaunchArmed);
+        app.update();
+        assert!(matches!(
+            forwarded_operations(&mut app).as_slice(),
+            [ClipOperation::Start(IdExpr::Single(3))]
+        ));
+        assert!(app.world().resource::<ArmedLaunches>().is_empty());
+    }
+
+    /// Verifies a clip start a timeline desk action evaluates fires at once even with launch
+    /// quantize on, so timeline playback stays on its own grid.
+    #[test]
+    fn timeline_desk_actions_skip_launch_quantize() {
+        let mut app = setup_clip_forwarding_app();
+        let mut tempo = ShowTempo::default();
+        tempo.apply(
+            &nightfall_tempo::TempoCommand::SetLaunchQuantize(nightfall_tempo::LaunchQuantize::Bar),
+            None,
+        );
+        tempo.advance();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        tempo.advance();
+        app.insert_resource(tempo);
+
+        app.world_mut().write_message(CommandEnvelope::with_context(
+            CommandId::new(),
+            UndoId::new(),
+            CommandOrigin::Remote(crate::launch_quantize::INTERNAL_DESK_ACTION_ORIGIN.to_owned()),
+            ReplyTarget::Detached,
+            ClipCommand::StartClip(IdExpr::Single(3)),
+        ));
+        app.update();
+        assert!(matches!(
+            forwarded_operations(&mut app).as_slice(),
+            [ClipOperation::Start(IdExpr::Single(3))]
         ));
     }
 

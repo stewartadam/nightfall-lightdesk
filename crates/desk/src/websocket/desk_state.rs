@@ -385,3 +385,29 @@ pub fn send_external_control_state(state: &ExternalControlState, broadcaster: &C
         &DeskWsMessage::ExternalControlState(state),
     );
 }
+
+/// Send the live clip launches waiting for the next beat or bar.
+pub fn send_armed_launches(armed: &ArmedLaunches, broadcaster: &ClientEventSink) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &DeskWsMessage::ArmedLaunches(&armed.status()),
+    );
+}
+
+/// Send armed launches when a launch is armed, fires or is cancelled.
+pub fn send_armed_launches_on_change(armed: Res<ArmedLaunches>, broadcaster: Res<ClientEventSink>) {
+    if armed.is_changed() {
+        send_armed_launches(&armed, &broadcaster);
+    }
+}
+
+/// Send armed launches to a client that asked for a full resync.
+pub fn send_armed_launches_on_resync(
+    mut events: MessageReader<ResyncRequested>,
+    armed: Res<ArmedLaunches>,
+    broadcaster: Res<ClientEventSink>,
+) {
+    if events.read().next().is_some() {
+        send_armed_launches(&armed, &broadcaster);
+    }
+}

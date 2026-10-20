@@ -444,3 +444,27 @@ a:focus-visible {
     transform: none;
   }
 }
+
+/* A clip launch waiting for the next beat or bar (launch quantize) pulses until it fires. */
+[data-launch-armed] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  animation: nf-launch-armed-pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes nf-launch-armed-pulse {
+  from {
+    outline-color: color-mix(in srgb, var(--accent) 35%, transparent);
+    box-shadow: none;
+  }
+  to {
+    outline-color: var(--accent);
+    box-shadow: 0 0 0.75rem color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-launch-armed] {
+    animation: none;
+  }
+}

@@ -68,6 +68,8 @@ pub enum ClipCommand {
     GoClip(IdExpr),
     /// Moves attached playback backward.
     BackClip(IdExpr),
+    /// Fires every live launch waiting for the next beat or bar now.
+    LaunchArmed,
     /// Sets the speed multiplier for attached playback.
     SetSpeed {
         /// ID of the clip.
@@ -225,7 +227,8 @@ pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipOperation> 
             timing: *timing,
             instance_options: *instance_options,
         }),
-        ClipCommand::AssignSource { .. }
+        ClipCommand::LaunchArmed
+        | ClipCommand::AssignSource { .. }
         | ClipCommand::AssignSourceById { .. }
         | ClipCommand::ClearSource(_)
         | ClipCommand::UpdateClipOptions { .. }

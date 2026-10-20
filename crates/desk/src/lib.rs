@@ -44,6 +44,7 @@ pub mod controls;
 pub mod desk_command;
 pub mod group_command;
 pub mod instances;
+pub mod launch_quantize;
 pub mod masters;
 pub mod object_crud;
 mod panel_layouts;
@@ -101,6 +102,7 @@ impl Plugin for DeskPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering DeskPlugin");
         app.init_resource::<event_handlers::clip_events::PendingClipPlaybackSpeeds>();
+        app.init_resource::<launch_quantize::ArmedLaunches>();
         assert!(
             app.is_plugin_added::<EnginePlugin>(),
             "DeskPlugin requires EnginePlugin (provides CommandIngressRouter)"
@@ -412,6 +414,7 @@ impl Plugin for DeskPlugin {
                 websocket::send_clips_on_change,
                 websocket::send_instances_on_change,
                 websocket::send_controls_on_change,
+                websocket::send_armed_launches_on_change,
             )
                 .in_set(ClientFeedback),
         );
@@ -436,7 +439,11 @@ impl Plugin for DeskPlugin {
 
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            (
+                websocket::handle_resync_state,
+                websocket::send_armed_launches_on_resync,
+            )
+                .in_set(ResyncHandling),
         );
     }
 }
