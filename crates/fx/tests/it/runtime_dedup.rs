@@ -95,6 +95,7 @@ fn minimal_step_fx(id: u32, uid: Uuid, label: &str, beat_duration: Duration) -> 
             }),
             relative: None,
         }],
+        timebase: Default::default(),
     }
 }
 

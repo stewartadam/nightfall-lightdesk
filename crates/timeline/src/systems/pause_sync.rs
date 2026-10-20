@@ -18,6 +18,7 @@ type TimelineInstanceControlData = (
     &'static mut InstanceControls,
     Option<&'static mut InstanceClock>,
     Option<&'static Owner>,
+    Option<&'static Timebase>,
 );
 
 /// Playback speeds captured while timeline pause owns a playback-speed override.
@@ -78,6 +79,7 @@ pub fn sync_timeline_paused_instance_controls_system(
     let mut playback_sources = HashMap::new();
     let mut playback_states_by_timeline_clip_uid = HashMap::new();
     let mut timeline_positions_by_uid = HashMap::new();
+    let mut beats_per_second_by_timeline_uid = HashMap::new();
     let mut should_pause_cue = HashMap::new();
     let mut cue_positions = HashMap::new();
     let mut cue_sources = HashMap::new();
@@ -91,6 +93,10 @@ pub fn sync_timeline_paused_instance_controls_system(
             continue;
         };
         let timeline_position = timeline.get_playback_position(*timecode_time);
+        beats_per_second_by_timeline_uid.insert(
+            timeline.timeline.identifiers.uid,
+            timeline_beats_per_second(&timeline.timeline),
+        );
         timeline_positions_by_uid.insert(
             timeline.timeline.identifiers.uid,
             (*timecode_is_active, timeline_position),
@@ -177,7 +183,7 @@ pub fn sync_timeline_paused_instance_controls_system(
     }
 
     let mut seen_instances = HashSet::new();
-    for (instance_id, mut controls, clock, owner) in instance_controls.iter_mut() {
+    for (instance_id, mut controls, clock, owner, timebase) in instance_controls.iter_mut() {
         let mut should_pause = should_pause_playback
             .get(instance_id)
             .copied()
@@ -237,7 +243,20 @@ pub fn sync_timeline_paused_instance_controls_system(
         if let Some(mut clock) = clock
             && let Some(position) = playback_position
         {
-            clock.set_speed(controls.effective_speed());
+            // Beat-timed playback reads one beat per source second at the timeline's BPM.
+            let beat_scale = match (timebase, playback_source) {
+                (
+                    Some(Timebase::Beats),
+                    Some(InstanceClockSource::Timeline { timeline_uid, .. }),
+                ) => beats_per_second_by_timeline_uid
+                    .get(&timeline_uid)
+                    .copied()
+                    .unwrap_or(1.0),
+                _ => 1.0,
+            };
+            let position = position.mul_f64(beat_scale);
+            let speed = controls.effective_speed() * beat_scale;
+            clock.set_speed(speed);
             if let Some(source_position) = playback_source_position {
                 sync_timeline_owned_instance_clock(
                     instance_id,
@@ -245,7 +264,7 @@ pub fn sync_timeline_paused_instance_controls_system(
                     playback_source,
                     source_position,
                     position,
-                    controls.effective_speed(),
+                    speed,
                     should_pause,
                     &mut paused_speeds.source_positions,
                 );
@@ -321,6 +340,16 @@ fn sync_timeline_owned_instance_clock(
         set_timeline_owned_instance_clock_speed(clock, final_speed);
     }
     source_positions.insert(*instance_id, source_position);
+}
+
+/// Returns how many beats a timeline plays per second at its BPM, or one when the BPM is unset.
+fn timeline_beats_per_second(timeline: &Timeline) -> f64 {
+    let bpm = f64::from(timeline.bpm);
+    if bpm.is_finite() && bpm > 0.0 {
+        bpm / 60.0
+    } else {
+        1.0
+    }
 }
 
 /// Applies the final timeline-owned clock speed without discarding this frame's delta.

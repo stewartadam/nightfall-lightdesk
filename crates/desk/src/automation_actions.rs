@@ -35,7 +35,9 @@ use uuid::Uuid;
 use crate::clips::{Clip, ClipCommand};
 use crate::controls::{ControlCommand, ControlUpdate, Controls};
 use crate::desk_command::DeskCommand;
-use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
+use crate::masters::{
+    Master, MasterCommand, MasterKind, MasterMode, MasterUpdate, clamp_master_level,
+};
 
 /// Stable action ID for driving a control slot's level from external hardware input.
 pub const CONTROL_LEVEL_ACTION_ID: &str = "control.level";
@@ -57,6 +59,15 @@ pub const MASTER_ON_ACTION_ID: &str = "master.on";
 
 /// Stable action ID for turning a toggle-mode master off.
 pub const MASTER_OFF_ACTION_ID: &str = "master.off";
+
+/// Stable action ID for halving a speed master.
+pub const MASTER_SPEED_HALF_ACTION_ID: &str = "master.speed-half";
+
+/// Stable action ID for doubling a speed master.
+pub const MASTER_SPEED_DOUBLE_ACTION_ID: &str = "master.speed-double";
+
+/// Stable action ID for returning a speed master to ×1.
+pub const MASTER_SPEED_RESET_ACTION_ID: &str = "master.speed-reset";
 
 /// Persisted arguments for externally-driven control actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,6 +281,33 @@ pub fn register_desk_actions(app: &mut App) {
             move |world, arguments| set_master_active(world, arguments.master, active),
         );
     }
+    for (action_id, label, description, step) in [
+        (
+            MASTER_SPEED_HALF_ACTION_ID,
+            "Speed master ×½",
+            "Halves a speed master, down to ×¼",
+            SpeedMasterStep::Half,
+        ),
+        (
+            MASTER_SPEED_DOUBLE_ACTION_ID,
+            "Speed master ×2",
+            "Doubles a running speed master, up to ×2",
+            SpeedMasterStep::Double,
+        ),
+        (
+            MASTER_SPEED_RESET_ACTION_ID,
+            "Speed master ×1",
+            "Returns a speed master to normal speed",
+            SpeedMasterStep::Reset,
+        ),
+    ] {
+        app.register_command_action::<MasterActionArguments, MasterCommand, _>(
+            ActionDescriptor::new(action_id, label, "Masters")
+                .with_description(description)
+                .with_parameter(master_parameter()),
+            move |world, arguments| step_speed_master(world, arguments.master, step),
+        );
+    }
     app.register_action::<DeskEvalActionArguments, _>(
         ActionDescriptor::new(DESK_EVAL_ACTION_ID, "Evaluate command", "Desk")
             .with_description("Runs a desk command line as if it were typed")
@@ -413,6 +451,53 @@ fn resolve_master(world: &World, uid: Uuid) -> Result<Master, InvocationError> {
             )
             .with_details(serde_json::json!({ "master": uid }))
         })
+}
+
+/// One press of a speed master's ×½, ×2 or ×1 action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpeedMasterStep {
+    /// Halve the current speed.
+    Half,
+    /// Double the current speed.
+    Double,
+    /// Return to normal speed.
+    Reset,
+}
+
+/// Lowest level the ×½ action steps down to, so repeated presses never stop playback.
+const SPEED_MASTER_MIN_STEP_PERCENT: f32 = 25.0;
+
+/// Lowers a speed master's ×½, ×2 or ×1 action to an undoable level change.
+///
+/// Halving stops at ×¼ and doubling at the master's ×2 maximum. Masters of any other kind
+/// reject the action, since halving an intensity master is not a speed change.
+fn step_speed_master(
+    world: &World,
+    uid: Uuid,
+    step: SpeedMasterStep,
+) -> Result<MasterCommand, InvocationError> {
+    let master = resolve_master(world, uid)?;
+    if master.kind != MasterKind::PlaybackSpeed {
+        return Err(InvocationError::new(
+            "master.not_speed",
+            format!(
+                "Master '{}' is not a speed master",
+                master.identifiers.label
+            ),
+        )
+        .with_details(serde_json::json!({ "master": uid })));
+    }
+    let level_percent = match step {
+        SpeedMasterStep::Half => (master.level_percent / 2.0)
+            .max(SPEED_MASTER_MIN_STEP_PERCENT)
+            .min(master.level_percent),
+        SpeedMasterStep::Double => master.level_percent * 2.0,
+        SpeedMasterStep::Reset => 100.0,
+    };
+    Ok(MasterCommand::SetMasterLevel {
+        id: master.identifiers.id,
+        level_percent: clamp_master_level(MasterKind::PlaybackSpeed, level_percent),
+    })
 }
 
 /// Lowers turning a toggle-mode master on or off to a mode change.
@@ -891,6 +976,51 @@ mod tests {
                 .and_then(|envelope| envelope.payload.as_any().downcast_ref::<MasterCommand>()),
             Some(MasterCommand::ToggleMaster { id: 4 })
         ));
+    }
+
+    /// Invokes one speed-step action on a speed master at `level_percent` and returns the
+    /// level it sets.
+    fn speed_step_level(action_id: &str, level_percent: f32) -> f32 {
+        let mut app = desk_action_app();
+        let uid = add_speed_master(&mut app);
+        let mut masters = app.world_mut().resource_mut::<DataProvider<Master>>();
+        let mut master = masters.remove(&uid).expect("speed master is stored");
+        master.level_percent = level_percent;
+        masters.add(master).expect("speed master re-stores");
+        app.world_mut().write_message(ActionInvocation::trigger(
+            master_action_reference(action_id, uid),
+            ActionSurface::Midi,
+        ));
+        app.update();
+
+        match take_pending_commands(&mut app)
+            .first()
+            .and_then(|envelope| envelope.payload.as_any().downcast_ref::<MasterCommand>())
+        {
+            Some(MasterCommand::SetMasterLevel {
+                id: 4,
+                level_percent,
+            }) => *level_percent,
+            other => panic!("expected a speed master level change, got {other:?}"),
+        }
+    }
+
+    /// Verifies ×½ and ×2 step a speed master between ×¼ and ×2, and ×1 resets it.
+    #[test]
+    fn speed_master_steps_halve_double_and_reset() {
+        assert_eq!(speed_step_level(MASTER_SPEED_HALF_ACTION_ID, 100.0), 50.0);
+        assert_eq!(speed_step_level(MASTER_SPEED_HALF_ACTION_ID, 40.0), 25.0);
+        assert_eq!(
+            speed_step_level(MASTER_SPEED_HALF_ACTION_ID, 10.0),
+            10.0,
+            "halving below x1/4 never speeds a master up"
+        );
+        assert_eq!(speed_step_level(MASTER_SPEED_DOUBLE_ACTION_ID, 50.0), 100.0);
+        assert_eq!(
+            speed_step_level(MASTER_SPEED_DOUBLE_ACTION_ID, 150.0),
+            200.0
+        );
+        assert_eq!(speed_step_level(MASTER_SPEED_RESET_ACTION_ID, 37.0), 100.0);
     }
 
     /// Verifies Master on and off set a toggle master's state and pair up for Hold.

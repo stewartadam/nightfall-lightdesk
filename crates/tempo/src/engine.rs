@@ -338,6 +338,19 @@ impl TempoEngine {
         }
     }
 
+    /// Jumps straight to a saved tempo and bar length without easing, as when a show opens.
+    ///
+    /// The beat counter keeps running, so playbacks already following it stay continuous.
+    pub fn restore(&mut self, bpm: f64, beats_per_bar: u8) {
+        if bpm.is_finite() {
+            self.bpm = bpm.clamp(MIN_BPM, MAX_BPM);
+            self.target_bpm = self.bpm;
+            self.effective_bpm = self.bpm;
+            self.bpm_slew = 0.0;
+        }
+        self.set_beats_per_bar(beats_per_bar);
+    }
+
     /// Multiplies the tempo target, e.g. `2.0` for double time and `0.5` for half time.
     pub fn multiply(&mut self, factor: f64) {
         if factor.is_finite() && factor > 0.0 {

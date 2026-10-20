@@ -8,11 +8,12 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
-use bevy_ecs::prelude::Commands;
+use bevy_ecs::prelude::{Commands, World};
 use nightfall::prelude::*;
 use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::IoRuntimeSettings;
+use nightfall_tempo::prelude::*;
 
 use super::{ShowfileContribution, ShowfileLoadContributor, ShowfileSaveContributor};
 use crate::{ShowfileLoadDomain, ShowfileLoadPhase};
@@ -23,6 +24,7 @@ pub(crate) struct DeskStateSnapshot<'a> {
     pub(super) control_slots: Cow<'a, [ControlSlotConfig]>,
     pub(super) settings: Cow<'a, DeskSettings>,
     pub(super) io_settings: Cow<'a, IoRuntimeSettings>,
+    pub(super) tempo: Cow<'a, TempoSettings>,
 }
 
 /// Save contributor for desk-level settings and global variables.
@@ -31,6 +33,7 @@ pub(crate) struct DeskStateSaveContributor<'a> {
     controls: &'a Controls,
     desk_settings: &'a DeskSettings,
     io_settings: &'a IoRuntimeSettings,
+    tempo: Option<&'a ShowTempo>,
 }
 
 impl<'a> DeskStateSaveContributor<'a> {
@@ -40,12 +43,14 @@ impl<'a> DeskStateSaveContributor<'a> {
         controls: &'a Controls,
         desk_settings: &'a DeskSettings,
         io_settings: &'a IoRuntimeSettings,
+        tempo: Option<&'a ShowTempo>,
     ) -> Self {
         Self {
             global_variables,
             controls,
             desk_settings,
             io_settings,
+            tempo,
         }
     }
 }
@@ -58,6 +63,7 @@ impl ShowfileSaveContributor for DeskStateSaveContributor<'_> {
             variables: Cow::Owned(self.global_variables.get_all()),
             settings: Cow::Owned(self.desk_settings.clone()),
             io_settings: Cow::Owned(self.io_settings.clone()),
+            tempo: Cow::Owned(self.tempo.map(ShowTempo::settings).unwrap_or_default()),
         }))
     }
 }
@@ -114,6 +120,10 @@ impl ShowfileLoadContributor for DeskStateLoadContributor<'_> {
         commands.insert_resource(Controls::from_slot_configs(&contribution.control_slots));
         *self.desk_settings = contribution.settings.clone().into_owned();
         *self.io_settings = contribution.io_settings.clone().into_owned();
+        let tempo = contribution.tempo.clone().into_owned();
+        commands.queue(move |world: &mut World| {
+            world.get_resource_or_init::<ShowTempo>().restore(&tempo);
+        });
 
         Ok(())
     }

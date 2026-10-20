@@ -23,6 +23,7 @@ import { Mappable } from "../io";
 import {
   masterHoldControl,
   masterLevelControl,
+  masterSpeedStepControls,
   masterToggleControl,
 } from "./model/control-actions";
 import {
@@ -49,6 +50,9 @@ import {
 } from "./services/master-commands";
 
 const MASTER_DRAG_TYPE = "application/x-master";
+
+/** Speed master levels a dragged fader settles on: ×¼, ×½, ×1 and ×2. */
+const SPEED_MASTER_DETENTS = [25, 50, 100, 200] as const;
 
 /** Renders the master/submaster management panel. */
 export default function MastersPanel(
@@ -340,7 +344,14 @@ export default function MastersPanel(
                     <Mappable
                       class="flex w-full"
                       label={`${master.identifiers.label} level`}
-                      choices={() => [levelControl(master)]}
+                      choices={() =>
+                        master.kind === types.MasterKind.PlaybackSpeed
+                          ? [
+                              levelControl(master),
+                              ...masterSpeedStepControls(master),
+                            ]
+                          : [levelControl(master)]
+                      }
                     >
                       <RangeSlider
                         value={master.level_percent}
@@ -348,6 +359,11 @@ export default function MastersPanel(
                         ariaLabel={`${master.identifiers.label} level`}
                         containerClass="w-full min-w-[260px]"
                         showPips={false}
+                        detents={
+                          master.kind === types.MasterKind.PlaybackSpeed
+                            ? SPEED_MASTER_DETENTS
+                            : undefined
+                        }
                         tooltips={false}
                         onChange={(value) =>
                           levelControl(master).handlers.drag(value)

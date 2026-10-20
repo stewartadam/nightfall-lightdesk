@@ -6,13 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::time::Duration;
+
 use bevy_ecs::prelude::*;
 use nightfall_clips::{ClipReleaseAfterInstance, InstanceIndex};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceId, PlaybackOperation,
-    PlaybackScope,
+    PlaybackScope, Timebase,
 };
+use nightfall_tempo::prelude::*;
 use web_time::Instant;
 
 use crate::clips::{Clip, MaterializedClip};
@@ -27,10 +30,28 @@ pub fn add_missing_instance_clocks(
     }
 }
 
-/// Advances playback clocks that are driven by wall-clock frame deltas.
+/// Query data for playback clocks advanced by [`advance_realtime_instance_clocks`].
+type AdvancedClockData = (
+    &'static mut InstanceClock,
+    Option<&'static InstanceControls>,
+    Option<&'static Timebase>,
+);
+
+/// Advances playback clocks that are driven by wall-clock frame deltas or the show tempo.
+///
+/// Beat-timed playbacks move onto the show tempo and seconds-timed ones back onto the clock;
+/// timeline-owned and externally driven clocks keep their source. A playback that starts
+/// beat-timed is placed at the progress of the beat in progress, so it lands on the beat grid
+/// the moment it is launched instead of waiting for the next beat. One switched between
+/// timebases while running keeps how far through it is, converted at the current tempo.
+///
+/// Tempo-driven clocks advance by the beats the show tempo moved this frame, read as seconds,
+/// so speed changes scale from the current position without jumping.
 pub fn advance_realtime_instance_clocks(
-    mut clocks: Query<(&mut InstanceClock, Option<&InstanceControls>)>,
+    mut clocks: Query<AdvancedClockData>,
+    tempo: Option<Res<ShowTempo>>,
     mut last_update: Local<Option<Instant>>,
+    mut last_beat_position: Local<Option<f64>>,
 ) {
     let now = Instant::now();
     let real_delta = last_update
@@ -38,13 +59,45 @@ pub fn advance_realtime_instance_clocks(
         .unwrap_or_default();
     *last_update = Some(now);
 
-    for (mut clock, controls) in clocks.iter_mut() {
+    let snapshot = tempo.map(|tempo| tempo.snapshot());
+    let beat_position = snapshot.as_ref().map(|snapshot| snapshot.beat_position);
+    let beats_per_second = snapshot
+        .as_ref()
+        .map_or(1.0, |snapshot| snapshot.bpm / 60.0);
+    let beat_delta = match (*last_beat_position, beat_position) {
+        (Some(last), Some(current)) => Duration::from_secs_f64((current - last).max(0.0)),
+        _ => Duration::ZERO,
+    };
+    *last_beat_position = beat_position;
+
+    for (mut clock, controls, timebase) in clocks.iter_mut() {
         if let Some(controls) = controls {
             clock.set_speed(controls.effective_speed());
         }
 
-        if matches!(clock.source, InstanceClockSource::Realtime) {
-            clock.advance_by_realtime_delta(real_delta);
+        match (timebase.copied().unwrap_or_default(), clock.source) {
+            (Timebase::Beats, InstanceClockSource::Realtime) => {
+                clock.source = InstanceClockSource::Tempo;
+                if clock.position.is_zero() {
+                    let beat_phase = beat_position.unwrap_or_default().fract();
+                    let start = Duration::from_secs_f64(beat_phase * clock.speed);
+                    clock.seek_to(start);
+                } else {
+                    // A playback already partway through was placed in seconds; carry it into beats.
+                    let elapsed_beats = clock.position.mul_f64(beats_per_second);
+                    clock.seek_to(elapsed_beats);
+                    clock.advance_by_source_delta(beat_delta);
+                }
+            }
+            (Timebase::Seconds, InstanceClockSource::Tempo) => {
+                clock.source = InstanceClockSource::Realtime;
+                let elapsed_seconds = clock.position.div_f64(beats_per_second);
+                clock.seek_to(elapsed_seconds);
+                clock.advance_by_realtime_delta(real_delta);
+            }
+            (_, InstanceClockSource::Realtime) => clock.advance_by_realtime_delta(real_delta),
+            (_, InstanceClockSource::Tempo) => clock.advance_by_source_delta(beat_delta),
+            _ => {}
         }
     }
 }
@@ -264,5 +317,102 @@ mod tests {
             remaining_bindings, 0,
             "expected stale MaterializedClip to despawn after the added frame"
         );
+    }
+
+    /// Builds an app that advances the show tempo and then the playback clocks each update.
+    fn tempo_clock_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<ShowTempo>();
+        app.add_systems(
+            Update,
+            (
+                |mut tempo: ResMut<ShowTempo>| tempo.advance(),
+                advance_realtime_instance_clocks,
+            )
+                .chain(),
+        );
+        app
+    }
+
+    /// Returns the show tempo's beat counter.
+    fn beat_position(app: &App) -> f64 {
+        app.world().resource::<ShowTempo>().snapshot().beat_position
+    }
+
+    /// Returns the clock on `entity`.
+    fn clock(app: &App, entity: Entity) -> &InstanceClock {
+        app.world()
+            .entity(entity)
+            .get::<InstanceClock>()
+            .expect("playback keeps its clock")
+    }
+
+    /// Verifies a beat-timed playback starts on the beat in progress and then advances by
+    /// exactly the beats the show tempo moved, scaled by its speed.
+    #[test]
+    fn beat_timed_clock_follows_show_tempo_beats() {
+        let mut app = tempo_clock_app();
+        app.update();
+        std::thread::sleep(Duration::from_millis(20));
+
+        let playback = app
+            .world_mut()
+            .spawn((
+                InstanceClock::default(),
+                InstanceControls {
+                    speed: 2.0,
+                    ..Default::default()
+                },
+                Timebase::Beats,
+            ))
+            .id();
+        app.update();
+        let started_beat = beat_position(&app);
+        let started_position = clock(&app, playback).position.as_secs_f64();
+        assert_eq!(clock(&app, playback).source, InstanceClockSource::Tempo);
+        assert!(
+            (started_position - started_beat.fract() * 2.0).abs() < 1e-6,
+            "a beat-timed playback starts at the progress of the current beat"
+        );
+
+        std::thread::sleep(Duration::from_millis(20));
+        app.update();
+        let moved_beats = beat_position(&app) - started_beat;
+        let moved_position = clock(&app, playback).position.as_secs_f64() - started_position;
+        assert!(moved_beats > 0.0);
+        assert!(
+            (moved_position - moved_beats * 2.0).abs() < 1e-6,
+            "moved {moved_position} for {moved_beats} beats at x2"
+        );
+    }
+
+    /// Verifies a playback already partway through converts its position between seconds and
+    /// beats at the show tempo when its timebase changes, and swaps its clock source.
+    #[test]
+    fn switching_timebase_converts_position_at_show_tempo() {
+        let mut app = tempo_clock_app();
+        let playback = app
+            .world_mut()
+            .spawn((
+                InstanceClock {
+                    position: Duration::from_secs(3),
+                    ..Default::default()
+                },
+                Timebase::Beats,
+            ))
+            .id();
+        app.update();
+        assert_eq!(clock(&app, playback).source, InstanceClockSource::Tempo);
+        // Three seconds at the default 120 BPM is six beats.
+        let beats = clock(&app, playback).position;
+        assert!(beats >= Duration::from_secs(6) && beats < Duration::from_millis(6_100));
+
+        app.world_mut()
+            .entity_mut(playback)
+            .insert(Timebase::Seconds);
+        app.update();
+        assert_eq!(clock(&app, playback).source, InstanceClockSource::Realtime);
+        let seconds = clock(&app, playback).position;
+        assert!(seconds >= Duration::from_secs(3) && seconds < Duration::from_millis(3_100));
     }
 }

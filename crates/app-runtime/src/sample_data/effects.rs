@@ -71,6 +71,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
             },
             selection: bstrip_selection.clone().into(),
             attributes: HashMap::from([(Attribute::Red, waveform.to_owned())]),
+            timebase: Default::default(),
         })
         .expect("sample data should not have duplicate IDs");
     commands.spawn_instance(Clip {
@@ -92,6 +93,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
         },
         selection: bstrip_selection.clone().into(),
         attributes: HashMap::from([(Attribute::Blue, waveform.to_owned())]),
+        timebase: Default::default(),
     });
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
@@ -125,6 +127,7 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
         },
         selection: bstrip_selection.clone().into(),
         attributes: HashMap::from([(Attribute::Green, waveform)]),
+        timebase: Default::default(),
     });
     commands.spawn_instance(Clip {
         identifiers: Identifiers {
@@ -269,6 +272,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        timebase: Default::default(),
     };
     commands.spawn(rainbow_step_fx);
     commands.spawn_instance(Clip {
@@ -413,6 +417,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        timebase: Default::default(),
     };
     commands.spawn(circle_step_fx);
     commands.spawn_instance(Clip {
@@ -518,6 +523,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        timebase: Default::default(),
     };
     commands.spawn(chase_step_fx);
     commands.spawn_instance(Clip {
@@ -625,6 +631,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        timebase: Default::default(),
     };
     commands.spawn(single_bar_fx);
     commands.spawn_instance(Clip {
@@ -767,6 +774,7 @@ pub(super) fn add_visualizer_demo_fx(world: &mut World) {
                 relative: None,
             },
         ],
+        timebase: Default::default(),
     };
     commands.spawn(strobe_pixel_rainbow_fx);
 

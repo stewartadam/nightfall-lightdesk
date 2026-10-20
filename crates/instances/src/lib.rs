@@ -282,6 +282,21 @@ fn normalized_playback_speed(value: f32) -> f32 {
     }
 }
 
+/// Unit an object's authored times are written in.
+///
+/// Seconds-timed objects run on the clock. Beat-timed objects read one authored second as one
+/// beat: live they follow the show tempo, and on a timeline they follow its BPM. As a component
+/// on an instance it tells the clock systems which of the two the playback follows.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum Timebase {
+    /// Times are seconds of real time.
+    #[default]
+    Seconds,
+    /// Times are beats of the show tempo.
+    Beats,
+}
+
 /// Indicates whether an instance clock update represents continuous playback or a reposition.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum InstanceClockDiscontinuity {
@@ -298,6 +313,9 @@ pub enum InstanceClockSource {
     /// Free-running instance advanced from wall-clock frame deltas.
     #[default]
     Realtime,
+    /// Beat-timed playback advanced by the show tempo's beat counter, one beat per source
+    /// second, so every playback following the tempo moves with taps, nudges and resyncs.
+    Tempo,
     /// Playback derived from a timeline/timecode position.
     Timeline {
         /// Timeline runtime UID that owns the source position.

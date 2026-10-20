@@ -1807,6 +1807,28 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     path: testInfo.outputPath("step-fx-timing-auto-mode.png"),
     fullPage: true,
   });
+  const timing = timingMenu.getByRole("radiogroup", { name: "Timing" });
+  await timing.getByRole("radio", { name: "Beats" }).check();
+  await expect(
+    editor.getByRole("button", { name: "Timing and scaling" }),
+  ).toContainText("Show tempo · Auto");
+  await expect(
+    timingMenu.getByLabel("Step FX beat", { exact: true }),
+  ).toHaveCount(0);
+  await expect
+    .poll(async () => (await storedStepFx(page))?.timebase)
+    .toBe("Beats");
+  await page.screenshot({
+    path: testInfo.outputPath("step-fx-timing-show-tempo.png"),
+    fullPage: true,
+  });
+  await timing.getByRole("radio", { name: "Seconds" }).check();
+  await expect(
+    editor.getByRole("button", { name: "Timing and scaling" }),
+  ).toContainText("120 BPM · Auto");
+  await expect
+    .poll(async () => (await storedStepFx(page))?.timebase)
+    .toBe("Seconds");
   await editor.getByRole("button", { name: "Timing and scaling" }).click();
   await expect(timingMenu).toBeHidden();
   await expect(editor.locator("[data-step-fx-sheet] tbody tr")).toHaveCount(2);

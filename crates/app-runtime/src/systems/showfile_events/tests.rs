@@ -1319,6 +1319,7 @@ fn merge_showfile_snapshots_skip_fixtures_retargets_fx_selection_by_id() {
             index: Some(1),
         }])),
         attributes: HashMap::new(),
+        timebase: Default::default(),
     }];
 
     let options = ShowfileImportOptions {
@@ -1360,6 +1361,7 @@ fn merge_showfile_snapshots_skip_groups_retargets_fx_selection_by_id() {
             uid: incoming_group_uid,
         })),
         attributes: HashMap::new(),
+        timebase: Default::default(),
     }];
     incoming.sequences[0].setup_cue.instructions = vec![BoundCueInstruction {
         selection: SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ByUid {
@@ -1456,6 +1458,7 @@ fn merge_showfile_snapshots_stabilizes_authored_group_ids() {
             current_group.identifiers.id,
         ))),
         attributes: HashMap::new(),
+        timebase: Default::default(),
     }];
 
     let options = ShowfileImportOptions {
@@ -3225,6 +3228,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
+            tempo: Default::default(),
         },
     );
 
@@ -3304,6 +3308,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
+            tempo: Default::default(),
         },
     );
 
@@ -3371,6 +3376,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
+            tempo: Default::default(),
         },
     );
 
@@ -4154,6 +4160,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         boards: vec![],
         settings: DeskSettings::default(),
         io_settings: IoRuntimeSettings::default(),
+        tempo: Default::default(),
     };
 
     let result = try_load_snapshot_in_place(&mut target_world, invalid_snapshot);
@@ -4209,6 +4216,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             variables: HashMap::new(),
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
+            tempo: Default::default(),
             bindings: BindingsSnapshot {
                 input: vec![],
                 output: vec![],
@@ -4305,6 +4313,7 @@ fn load_materializes_timecodes_and_timelines() {
             variables: HashMap::new(),
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
+            tempo: Default::default(),
             bindings: BindingsSnapshot {
                 input: vec![],
                 output: vec![],

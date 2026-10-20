@@ -12,6 +12,7 @@ nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-engine = { path = "../engine" }
 serde.workspace = true
 serde_json.workspace = true
+smart-default.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 web-time.workspace = true

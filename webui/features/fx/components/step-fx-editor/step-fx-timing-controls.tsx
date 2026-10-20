@@ -7,7 +7,7 @@
  */
 
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import {
   DropdownMenu,
   DropdownMenuSeparator,
@@ -17,7 +17,9 @@ import {
   SegmentedControl,
   type SegmentedControlOption,
 } from "../../../../components/ui/segmented-control";
+import { TimebaseControl } from "../../../../components/widgets/timebase-control";
 import type * as types from "../../../../types";
+import { Timebase } from "../../../../types";
 import {
   type StepFxBeatUnit,
   type StepFxTrackKind,
@@ -46,8 +48,10 @@ export function StepFxTimingControls(props: {
   scaleError?: string;
   onBeatUnitChange: (unit: StepFxBeatUnit) => void;
   onTimingChange: (timing: types.StepFxTiming) => void;
+  onTimebaseChange: (timebase: types.Timebase) => void;
   onCycleScaleChange: (scale: types.StepFxCycleScale) => void;
 }) {
+  const followsTempo = () => props.stepFx.timebase === Timebase.Beats;
   const [fixedScaleValue, setFixedScaleValue] = createSignal(
     props.stepFx.cycle_scale.type === "Fixed"
       ? props.stepFx.cycle_scale.data
@@ -70,8 +74,10 @@ export function StepFxTimingControls(props: {
       triggerSize="compact"
       trigger={
         <span class="inline-flex items-center gap-1.5 tabular-nums">
-          {stepFxBeatValue(props.stepFx.timing, props.beatUnit)}{" "}
-          {props.beatUnit}{" "}
+          <Show when={!followsTempo()} fallback={<>Show tempo </>}>
+            {stepFxBeatValue(props.stepFx.timing, props.beatUnit)}{" "}
+            {props.beatUnit}{" "}
+          </Show>
           <span class="text-neutral-400">
             · {props.stepFx.cycle_scale.type}
           </span>
@@ -88,46 +94,52 @@ export function StepFxTimingControls(props: {
         </div>
         <DropdownMenuSeparator />
         <div class="space-y-3 px-3 py-2">
-          <label class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3">
-            <span class="text-xs text-neutral-300">Beat</span>
-            <div class="relative min-w-0" data-input-group="beat">
-              <Input
-                density="compact"
-                aria-label="Step FX beat"
-                aria-invalid={Boolean(props.beatError)}
-                type="number"
-                min="0.001"
-                step="any"
-                class={`${STEP_FX_FIELD_CLASS} w-full min-w-0 pe-28 ${props.beatError ? "border-red-500" : ""}`}
-                value={stepFxBeatValue(props.stepFx.timing, props.beatUnit)}
-                onChange={(event) => {
-                  const timing = stepFxTimingFromBeat(
-                    Number(event.currentTarget.value),
-                    props.beatUnit,
-                  );
-                  if (timing) props.onTimingChange(timing);
-                }}
-              />
-              <div class="absolute inset-y-px right-px flex items-center">
-                <NativeSelect
+          <Show when={!followsTempo()}>
+            <label class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3">
+              <span class="text-xs text-neutral-300">Beat</span>
+              <div class="relative min-w-0" data-input-group="beat">
+                <Input
                   density="compact"
-                  aria-label="Step FX beat unit"
-                  class="h-full w-28 rounded-r border-0 border-l border-neutral-700 bg-neutral-800 px-2 pe-7 text-xs text-neutral-200 focus:border-[var(--accent)] focus:outline-none"
-                  value={props.beatUnit}
-                  onChange={(event) =>
-                    props.onBeatUnitChange(
-                      event.currentTarget.value as StepFxBeatUnit,
-                    )
-                  }
-                >
-                  <option>BPM</option>
-                  <option>Hz</option>
-                  <option>Seconds</option>
-                  <option>Milliseconds</option>
-                </NativeSelect>
+                  aria-label="Step FX beat"
+                  aria-invalid={Boolean(props.beatError)}
+                  type="number"
+                  min="0.001"
+                  step="any"
+                  class={`${STEP_FX_FIELD_CLASS} w-full min-w-0 pe-28 ${props.beatError ? "border-red-500" : ""}`}
+                  value={stepFxBeatValue(props.stepFx.timing, props.beatUnit)}
+                  onChange={(event) => {
+                    const timing = stepFxTimingFromBeat(
+                      Number(event.currentTarget.value),
+                      props.beatUnit,
+                    );
+                    if (timing) props.onTimingChange(timing);
+                  }}
+                />
+                <div class="absolute inset-y-px right-px flex items-center">
+                  <NativeSelect
+                    density="compact"
+                    aria-label="Step FX beat unit"
+                    class="h-full w-28 rounded-r border-0 border-l border-neutral-700 bg-neutral-800 px-2 pe-7 text-xs text-neutral-200 focus:border-[var(--accent)] focus:outline-none"
+                    value={props.beatUnit}
+                    onChange={(event) =>
+                      props.onBeatUnitChange(
+                        event.currentTarget.value as StepFxBeatUnit,
+                      )
+                    }
+                  >
+                    <option>BPM</option>
+                    <option>Hz</option>
+                    <option>Seconds</option>
+                    <option>Milliseconds</option>
+                  </NativeSelect>
+                </div>
               </div>
-            </div>
-          </label>
+            </label>
+          </Show>
+          <TimebaseControl
+            value={props.stepFx.timebase ?? Timebase.Seconds}
+            onChange={props.onTimebaseChange}
+          />
           <div class="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-3">
             <span class="pt-2 text-xs text-neutral-300">Scale cycle</span>
             <div class="min-w-0 space-y-1">

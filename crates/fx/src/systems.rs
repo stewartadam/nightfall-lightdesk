@@ -19,11 +19,12 @@ use nightfall_engine::prelude::DataProvider;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
-    InstanceClock, InstanceClockDiscontinuity, InstancePosition, InstanceStatus,
+    InstanceClock, InstanceClockDiscontinuity, InstancePosition, InstanceStatus, Timebase,
 };
 use nightfall_selection::filter_existing_selection;
 
 use crate::events::PreviewStepFxDefinition;
+use crate::materialized_fx::MaterializedFx;
 use crate::step_fx::{ActiveStepFx, StepFx, StepFxLanePhaseOffsets};
 
 /// Active playback components sampled and re-anchored by the Step FX evaluator.
@@ -339,6 +340,41 @@ fn step_fx_output_value_for_parameter(
     })
 }
 
+/// Copies each FX playback's timebase from its definition onto the playback entity.
+///
+/// The clock systems read the [`Timebase`] component to decide whether a playback follows the
+/// show tempo. A Step FX switched between Seconds and Beats changes while it plays; a waveform
+/// effect picks up the change the next time it starts.
+pub fn sync_fx_instance_timebase(
+    mut commands: Commands,
+    waveform_fx: Query<(Entity, &MaterializedFx, Option<&Timebase>)>,
+    active_step_fx: Query<(Entity, &ActiveStepFx, Option<&Timebase>)>,
+    step_fx_definitions: Query<&StepFx>,
+    preview_step_fx_definitions: Query<&PreviewStepFxDefinition>,
+) {
+    let waveform_timebases = waveform_fx
+        .iter()
+        .map(|(entity, fx, current)| (entity, fx.fx.timebase, current));
+    let step_timebases = active_step_fx
+        .iter()
+        .filter_map(|(entity, active_fx, current)| {
+            let definition = step_fx_definitions
+                .get(active_fx.fx_entity)
+                .or_else(|_| {
+                    preview_step_fx_definitions
+                        .get(active_fx.fx_entity)
+                        .map(|preview| &preview.0)
+                })
+                .ok()?;
+            Some((entity, definition.timebase, current))
+        });
+    for (entity, timebase, current) in waveform_timebases.chain(step_timebases) {
+        if current != Some(&timebase) {
+            commands.entity(entity).insert(timebase);
+        }
+    }
+}
+
 /// Despawns step FX that are marked for release
 pub fn despawn_step_fx(
     mut commands: Commands,
@@ -490,6 +526,7 @@ mod tests {
                     }],
                 }),
             }],
+            timebase: Default::default(),
         }
     }
 
