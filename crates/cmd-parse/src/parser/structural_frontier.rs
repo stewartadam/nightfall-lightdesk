@@ -26,7 +26,7 @@ use crate::parser::structural::{
 use crate::parser::structural_expectation::{
     clause_expectation, filtered_slot_expectation, slot_expectation, slot_value_expectation,
 };
-use crate::parser::structural_fx::{fx_rate_value_surface, step_fx_shaping_expected_tokens};
+use crate::parser::structural_fx::{fx_speed_value_surface, step_fx_shaping_expected_tokens};
 use crate::parser::structural_programmer::programmer_placement_frontier;
 use crate::parser::structural_tempo::{tempo_action_can_extend, tempo_followup_expected_tokens};
 use crate::slots::contracts::{ClauseCardinality, ClauseId, SlotCardinality, SlotId, clause_rules};
@@ -1044,7 +1044,7 @@ pub(super) fn slot_keeps_expression_continuation_live(
                 && fills.len() > 1
         }
         SlotId::FxAction | SlotId::ClipAction => {
-            fx_rate_value_surface(fills).is_some_and(|surface| {
+            fx_speed_value_surface(fills).is_some_and(|surface| {
                 crate::parser::structural::is_complete_decimal_value(surface.as_str())
                     && !surface.contains('.')
             })

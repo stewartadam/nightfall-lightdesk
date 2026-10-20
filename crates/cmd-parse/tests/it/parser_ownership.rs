@@ -279,7 +279,7 @@ fn planner_preserves_committed_structure() {
 
 /// FX Module continuations must use the module action grammar rather than regular FX actions.
 #[test]
-fn fx_module_frontier_excludes_regular_fx_rate_action() {
+fn fx_module_frontier_excludes_regular_fx_speed_action() {
     let input = "fx module 1 ";
     let response = complete_command(input, input.len());
     assert!(
@@ -287,7 +287,7 @@ fn fx_module_frontier_excludes_regular_fx_rate_action() {
             .parse
             .frontier
             .expected_tokens
-            .contains(&ExpectedToken::Token(TokenId::Rate))
+            .contains(&ExpectedToken::Token(TokenId::Speed))
     );
     assert!(
         response
@@ -299,7 +299,7 @@ fn fx_module_frontier_excludes_regular_fx_rate_action() {
         !response
             .candidates
             .iter()
-            .any(|candidate| candidate.insert_text == "rate")
+            .any(|candidate| candidate.insert_text == "speed")
     );
 }
 

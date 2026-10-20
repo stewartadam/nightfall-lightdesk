@@ -360,8 +360,13 @@ fn store_step_fx_definition(
                 .unwrap_or(&old_step_fx);
             let mut updated = active.clone();
             updated.fx_entity = new_entity;
-            let (clock, offsets) =
-                reanchored_step_fx_runtime(clock, offsets, active.rate, original_step_fx, &step_fx);
+            let (clock, offsets) = reanchored_step_fx_runtime(
+                clock,
+                offsets,
+                active.speed,
+                original_step_fx,
+                &step_fx,
+            );
             commands
                 .entity(active_entity)
                 .insert((
@@ -520,7 +525,7 @@ pub fn handle_step_fx_commands(
                             ActiveStepFx {
                                 fx_entity,
                                 priority: Priority(50),
-                                rate: 1.0,
+                                speed: 1.0,
                                 is_playing: true,
                             },
                             InstanceId::new(),
@@ -584,9 +589,9 @@ pub fn handle_step_fx_commands(
                 Ok(())
             }
 
-            StepFxCommand::SetRate { fx_id, rate } => {
+            StepFxCommand::SetSpeed { fx_id, speed } => {
                 let fx_id = *fx_id;
-                let rate = *rate;
+                let speed = *speed;
 
                 // Find the StepFx entity by ID
                 let fx_entity = step_fx_query
@@ -599,11 +604,11 @@ pub fn handle_step_fx_commands(
                     let mut updated = false;
                     for (active_entity, active, _, _, _, _, _, _) in active_fx_query.iter() {
                         if active.fx_entity == fx_entity && active.is_playing {
-                            tracing::debug!(fx_id = fx_id, rate = rate, "Setting step FX rate");
+                            tracing::debug!(fx_id = fx_id, speed = speed, "Setting step FX speed");
                             commands.entity(active_entity).insert(ActiveStepFx {
                                 fx_entity,
                                 priority: active.priority,
-                                rate,
+                                speed,
                                 is_playing: true,
                             });
                             updated = true;

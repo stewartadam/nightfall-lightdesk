@@ -253,7 +253,7 @@ fn apply_playback_release(
     }
 }
 
-/// Marks a playback for release and restores zero-rate controls so release can progress.
+/// Marks a playback for release and restores zero-speed controls so release can progress.
 fn release_playback_now(
     commands: &mut Commands,
     entity: Entity,
@@ -264,9 +264,9 @@ fn release_playback_now(
         commands.entity(entity).insert(ReleaseMarker::default());
     }
 
-    if let Some(controls) = controls.filter(|controls| controls.rate == 0.0) {
+    if let Some(controls) = controls.filter(|controls| controls.speed == 0.0) {
         let mut resumed_controls = controls.clone();
-        resumed_controls.rate = 1.0;
+        resumed_controls.speed = 1.0;
         commands.entity(entity).insert(resumed_controls);
     }
 }
@@ -301,18 +301,18 @@ pub fn handle_playback_control_updates(
                 }
             }
 
-            InstanceControlUpdate::SetRate { instance_id, value } => {
+            InstanceControlUpdate::SetSpeed { instance_id, value } => {
                 let mut handled = false;
                 if let Some(entity) = instance_index.get(instance_id) {
                     if let Ok((_id, mut controls, mut clock)) = instance_query.get_mut(entity) {
                         tracing::debug!(
                             instance_id = ?instance_id,
                             value = %value,
-                            "Setting playback rate"
+                            "Setting playback speed"
                         );
-                        controls.set_rate(*value);
+                        controls.set_speed(*value);
                         if let Some(clock) = clock.as_deref_mut() {
-                            clock.set_rate(controls.effective_rate());
+                            clock.set_speed(controls.effective_speed());
                         }
                         handled = true;
                     }
@@ -328,17 +328,17 @@ pub fn handle_playback_control_updates(
                     tracing::debug!(
                         instance_id = ?instance_id,
                         value = %value,
-                        "Setting playback rate after falling back to playback query"
+                        "Setting playback speed after falling back to playback query"
                     );
-                    controls.set_rate(*value);
+                    controls.set_speed(*value);
                     if let Some(clock) = clock.as_deref_mut() {
-                        clock.set_rate(controls.effective_rate());
+                        clock.set_speed(controls.effective_speed());
                     }
                     handled = true;
                     break;
                 }
                 if !handled {
-                    tracing::warn!(instance_id = ?instance_id, "Playback not found for SetRate command");
+                    tracing::warn!(instance_id = ?instance_id, "Playback not found for SetSpeed command");
                 }
             }
         }
@@ -437,7 +437,7 @@ mod tests {
         );
     }
 
-    /// Verifies stopping a zero-rate playback resumes it so release can advance immediately.
+    /// Verifies stopping a zero-speed playback resumes it so release can advance immediately.
     #[test]
     fn stop_command_resumes_paused_playback_for_release() {
         let mut app = App::new();
@@ -451,7 +451,7 @@ mod tests {
                 InstanceMetadata::new(InstanceKind::Cue),
                 InstanceControls {
                     intensity_scale: 1.0,
-                    rate: 0.0,
+                    speed: 0.0,
                     ..Default::default()
                 },
             ))
@@ -472,7 +472,7 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 1.0);
+        assert_eq!(controls.speed, 1.0);
         assert!(app.world().get::<ReleaseMarker>(playback).is_some());
     }
 
@@ -501,9 +501,9 @@ mod tests {
         ));
     }
 
-    /// Verifies per-playback rate commands update the active clock multiplier.
+    /// Verifies per-playback speed commands update the active clock multiplier.
     #[test]
-    fn set_rate_command_updates_instance_clock_rate() {
+    fn set_speed_command_updates_instance_clock_speed() {
         let mut app = App::new();
         app.add_message::<InstanceControlUpdate>();
         app.insert_resource(InstanceIndex::default());
@@ -524,7 +524,7 @@ mod tests {
 
         app.world_mut()
             .resource_mut::<Messages<InstanceControlUpdate>>()
-            .write(InstanceControlUpdate::SetRate {
+            .write(InstanceControlUpdate::SetSpeed {
                 instance_id,
                 value: 2.0,
             });
@@ -534,21 +534,21 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 2.0);
+        assert_eq!(controls.speed, 2.0);
 
         let mut clock = app
             .world_mut()
             .get_mut::<InstanceClock>(playback)
             .expect("playback clock should remain present");
-        assert_eq!(clock.rate, 2.0);
+        assert_eq!(clock.speed, 2.0);
         clock.advance_by_realtime_delta(std::time::Duration::from_millis(250));
         assert_eq!(clock.position, std::time::Duration::from_millis(500));
         assert_eq!(clock.delta, std::time::Duration::from_millis(500));
     }
 
-    /// Verifies rate commands can address instances before InstanceIndex catches up.
+    /// Verifies speed commands can address instances before InstanceIndex catches up.
     #[test]
-    fn set_rate_command_falls_back_to_instance_query_when_index_is_stale() {
+    fn set_speed_command_falls_back_to_instance_query_when_index_is_stale() {
         let mut app = App::new();
         app.add_message::<InstanceControlUpdate>();
         app.insert_resource(InstanceIndex::default());
@@ -566,7 +566,7 @@ mod tests {
 
         app.world_mut()
             .resource_mut::<Messages<InstanceControlUpdate>>()
-            .write(InstanceControlUpdate::SetRate {
+            .write(InstanceControlUpdate::SetSpeed {
                 instance_id,
                 value: 1.5,
             });
@@ -576,11 +576,11 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 1.5);
+        assert_eq!(controls.speed, 1.5);
         let clock = app
             .world()
             .get::<InstanceClock>(playback)
             .expect("playback clock should remain present");
-        assert_eq!(clock.rate, 1.5);
+        assert_eq!(clock.speed, 1.5);
     }
 }

@@ -11,8 +11,8 @@ import { DropdownMenu } from "../../../../components/ui/dropdown-menu";
 import { Checkbox, Input } from "../../../../components/ui/form-controls";
 import type * as types from "../../../../types";
 import {
-  stepFxSpeedValue,
-  stepFxTimingFromSpeed,
+  stepFxBeatValue,
+  stepFxTimingFromBeat,
 } from "../../model/step-fx-editor-model";
 import { StepFxPhaseField } from "../step-fx-phase-field";
 import { STEP_FX_FIELD_CLASS } from "./step-fx-editor-styles";
@@ -74,9 +74,9 @@ function AdvancedLaneControls(props: {
     <div class="space-y-1 text-xs">
       <div
         class="grid grid-cols-[minmax(0,1fr)_8.5rem] items-center gap-2 rounded px-1 py-1"
-        data-step-fx-lane-override="speed"
+        data-step-fx-lane-override="beat"
         role="group"
-        aria-label="Speed override"
+        aria-label="Beat override"
       >
         <label class="flex min-w-0 items-center gap-2 text-neutral-200">
           <Checkbox
@@ -90,7 +90,7 @@ function AdvancedLaneControls(props: {
               )
             }
           />
-          <span class="whitespace-nowrap">Override speed</span>
+          <span class="whitespace-nowrap">Override beat</span>
         </label>
         <Input
           density="compact"
@@ -99,12 +99,12 @@ function AdvancedLaneControls(props: {
           min="0.001"
           disabled={!props.lane.timing_override}
           class={`${STEP_FX_FIELD_CLASS} w-full min-w-0`}
-          value={stepFxSpeedValue(
+          value={stepFxBeatValue(
             props.lane.timing_override ?? props.overall.timing,
             "BPM",
           )}
           onChange={(event) => {
-            const next = stepFxTimingFromSpeed(
+            const next = stepFxTimingFromBeat(
               Number(event.currentTarget.value),
               "BPM",
             );

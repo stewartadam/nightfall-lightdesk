@@ -45,7 +45,7 @@ completion_group_ids! {
     ProgrammerTimings => "programmer/timings",
     ProgrammerPlacement3d => "programmer/3d_placement",
     FxIdentifier => "fx/identifier",
-    /// Completion group for FX action keywords such as `start`, `stop`, and `rate`.
+    /// Completion group for FX action keywords such as `start`, `stop`, and `speed`.
     FxAction => "fx/action",
     StepFx => "fx/step",
     StepFxSelection => "fx/step/selection",

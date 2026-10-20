@@ -43,7 +43,8 @@ use super::parse_specs::{
 use super::structural_frontier::branch_frontier_state_for_branch;
 use super::structural_frontier::slot_keeps_expression_continuation_live;
 use super::structural_fx::{
-    filled_value_for_fx_rate_followup, fx_rate_requires_followup, promote_ready_step_fx_definition,
+    filled_value_for_fx_speed_followup, fx_speed_requires_followup,
+    promote_ready_step_fx_definition,
 };
 use super::structural_tempo::{filled_value_for_tempo_followup, tempo_action_requires_followup};
 use super::structural_tree::{clause_tree_from_branch, filled_value_from_consumed_item};

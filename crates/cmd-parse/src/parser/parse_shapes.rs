@@ -25,7 +25,7 @@ const CLIP_ACTION_TOKENS: &[TokenId] = &[
     TokenId::Go,
     TokenId::Back,
     TokenId::Goto,
-    TokenId::Rate,
+    TokenId::Speed,
 ];
 const FLOW_ACTION_TOKENS: &[TokenId] = &[
     TokenId::Start,

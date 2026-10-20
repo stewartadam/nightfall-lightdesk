@@ -28,7 +28,7 @@ pub struct StepFxPreviewPlaybackStatus {
     /// Effective Step FX elapsed time at the sample epoch.
     pub elapsed: Duration,
     /// Effective Step FX elapsed seconds advanced per wall-clock second.
-    pub elapsed_rate: f64,
+    pub elapsed_speed: f64,
     /// Continuity corrections retained for each lane contribution after live edits.
     pub track_phase_offsets: Vec<StepFxPreviewTrackPhaseOffsets>,
 }
@@ -60,10 +60,10 @@ pub fn step_fx_preview_status(
     else {
         return None;
     };
-    let active_rate = f64::from(active_step_fx.rate.max(0.0));
-    let elapsed = Duration::from_secs_f64(clock.position.as_secs_f64() * active_rate);
-    let elapsed_rate = if active_step_fx.is_playing && !clock.frozen {
-        controls.effective_rate() * active_rate
+    let active_speed = f64::from(active_step_fx.speed.max(0.0));
+    let elapsed = Duration::from_secs_f64(clock.position.as_secs_f64() * active_speed);
+    let elapsed_speed = if active_step_fx.is_playing && !clock.frozen {
+        controls.effective_speed() * active_speed
     } else {
         0.0
     };
@@ -80,7 +80,7 @@ pub fn step_fx_preview_status(
         session_id: *session_id,
         sampled_at_epoch_ms,
         elapsed,
-        elapsed_rate,
+        elapsed_speed,
         track_phase_offsets,
     })
 }
@@ -93,7 +93,7 @@ mod tests {
 
     use super::*;
 
-    /// Verifies preview projection reports backend elapsed time, rate, identity, and offsets.
+    /// Verifies preview projection reports backend elapsed time, speed, identity, and offsets.
     #[test]
     fn step_fx_preview_status_projects_authoritative_runtime_anchor() {
         let preview = EditorPreviewInstance;
@@ -101,7 +101,7 @@ mod tests {
         let active_step_fx = ActiveStepFx {
             fx_entity: Entity::PLACEHOLDER,
             priority: Priority::default(),
-            rate: 2.0,
+            speed: 2.0,
             is_playing: true,
         };
         let clock = InstanceClock {
@@ -109,7 +109,7 @@ mod tests {
             ..Default::default()
         };
         let controls = InstanceControls {
-            rate: 0.5,
+            speed: 0.5,
             ..Default::default()
         };
         let phase_offsets = StepFxLanePhaseOffsets::new(
@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(status.session_id, session_id);
         assert_eq!(status.sampled_at_epoch_ms, 42_000.0);
         assert_eq!(status.elapsed, Duration::from_millis(1500));
-        assert_eq!(status.elapsed_rate, 1.0);
+        assert_eq!(status.elapsed_speed, 1.0);
         assert_eq!(status.track_phase_offsets.len(), 1);
         assert_eq!(status.track_phase_offsets[0].attribute, Attribute::Pan);
         assert_eq!(status.track_phase_offsets[0].absolute, 0.25);

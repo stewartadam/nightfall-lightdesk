@@ -926,7 +926,7 @@ mod tests {
     use nightfall_playback_planner::PlaybackPositionSource;
     use nightfall_playback_planner::{
         PlannedPlaybackInterval, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
-        PlannedPlaybackLifecycle, PlannedPlaybackRateChange, PlannedPlaybackSource,
+        PlannedPlaybackLifecycle, PlannedPlaybackSource, PlannedPlaybackSpeedChange,
         TimelinePlaybackOwner,
     };
 
@@ -1212,7 +1212,7 @@ mod tests {
             stopped_at_timeline: None,
             source_local_start: Duration::ZERO,
             release: None,
-            rate_changes: Vec::new(),
+            speed_changes: Vec::new(),
             explicit_interventions: interventions,
             lifecycle: PlannedPlaybackLifecycle::Active,
         }
@@ -1755,9 +1755,9 @@ mod tests {
         assert_eq!(target.started_at, Duration::from_millis(350));
     }
 
-    /// Verifies planned rate changes affect autonomous sequence progression.
+    /// Verifies planned speed changes affect autonomous sequence progression.
     #[test]
-    fn planned_interval_rate_changes_accelerate_autonomous_progression() {
+    fn planned_interval_speed_changes_accelerate_autonomous_progression() {
         let mut playback = SequenceTimelineSeekPlayback::from_step_timings(
             32,
             false,
@@ -1780,9 +1780,9 @@ mod tests {
         .expect("sequence should be plannable");
         let mut interval = planned_sequence_interval(Duration::ZERO, Vec::new());
         interval
-            .rate_changes
-            .push(PlannedPlaybackRateChange::from_multiplier(
-                owner("rate"),
+            .speed_changes
+            .push(PlannedPlaybackSpeedChange::from_multiplier(
+                owner("speed"),
                 Duration::from_millis(100),
                 Duration::from_millis(100),
                 2.0,

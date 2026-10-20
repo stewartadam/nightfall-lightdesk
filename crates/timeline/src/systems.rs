@@ -36,7 +36,7 @@ use nightfall_fx::prelude::{
 use nightfall_instances::{
     DomainInstanceReconstructionRequest, InstanceClock, InstanceClockDiscontinuity,
     InstanceClockSource, InstanceControls, InstanceId, InstanceOptions, Owner,
-    instance_clock_from_reconstruction_timing_with_rate,
+    instance_clock_from_reconstruction_timing_with_speed,
 };
 use nightfall_playback_planner::{
     EvaluatedInstanceState, PlannedNoOpReason, PlannedPlaybackIntervention,
@@ -79,7 +79,7 @@ pub use lookahead::{
     update_timeline_lookahead_sources_system,
 };
 pub use parameters::process_parameters_system;
-pub use pause_sync::{TimelinePausedPlaybackRates, sync_timeline_paused_instance_controls_system};
+pub use pause_sync::{TimelinePausedPlaybackSpeeds, sync_timeline_paused_instance_controls_system};
 pub use planned_cues::update_timeline_planned_cues_system;
 #[cfg(test)]
 use planner_adapter::{

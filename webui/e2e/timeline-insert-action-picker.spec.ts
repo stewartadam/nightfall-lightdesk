@@ -16,7 +16,7 @@ const SEQUENCE_GOTO_CUE_ONE_UID = "10000000000040008000000000000001";
 const SEQUENCE_GOTO_CUE_TWO_UID = "10000000000040008000000000000002";
 const SEQUENCE_GOTO_SEQUENCE_UID = "20000000000040008000000000000001";
 const SEQUENCE_GOTO_CLIP_UID = "30000000000040008000000000000001";
-const CLIP_RATE_UID = "40000000000040008000000000000001";
+const CLIP_SPEED_UID = "40000000000040008000000000000001";
 const SHOWFILE_NAME_PREFIX = "timeline-insert-action-picker";
 
 /** Opens an isolated showfile and creates one backend-owned timeline fixture. */
@@ -267,8 +267,8 @@ async function seedSequenceGotoTargets(page: Page) {
   );
 }
 
-/** Seeds a clip target for rate action insertion tests. */
-async function seedClipRateTarget(page: Page) {
+/** Seeds a clip target for speed action insertion tests. */
+async function seedClipSpeedTarget(page: Page) {
   await page.evaluate((clipUid) => {
     const stores = (window as any).appStores;
     stores.clips.set({
@@ -278,7 +278,7 @@ async function seedClipRateTarget(page: Page) {
           identifiers: {
             id: 9201,
             uid: clipUid,
-            label: "E2E Rate Target",
+            label: "E2E Speed Target",
           },
           priority: 0,
           options: { auto_release: false, deactivate_on_sequence_end: false },
@@ -286,7 +286,7 @@ async function seedClipRateTarget(page: Page) {
         false,
       ],
     });
-  }, CLIP_RATE_UID);
+  }, CLIP_SPEED_UID);
 }
 
 /** Reads the inserted sequence goto action for the seeded clip. */
@@ -313,8 +313,8 @@ async function insertedSequenceGotoAction(page: Page) {
   }, SEQUENCE_GOTO_CLIP_UID);
 }
 
-/** Reads the inserted clip rate action for the seeded clip. */
-async function insertedClipRateAction(page: Page) {
+/** Reads the inserted clip speed action for the seeded clip. */
+async function insertedClipSpeedAction(page: Page) {
   return page.evaluate((clipUid) => {
     const stores = (window as any).appStores;
     const timelines = stores.timelines.get();
@@ -322,19 +322,19 @@ async function insertedClipRateAction(page: Page) {
       for (const track of timeline.tracks ?? []) {
         for (const item of track.actions ?? []) {
           if (
-            item.action?.id === "clip.set-rate" &&
+            item.action?.id === "clip.set-speed" &&
             item.action.arguments?.clip === clipUid
           ) {
             return {
               uid: item.action.arguments.clip,
-              rate: item.action.arguments.rate,
+              speed: item.action.arguments.speed,
             };
           }
         }
       }
     }
     return null;
-  }, CLIP_RATE_UID);
+  }, CLIP_SPEED_UID);
 }
 
 /** Reads whether a desk eval command exists on any timeline action. */
@@ -520,42 +520,44 @@ test("insert action picker inserts sequence goto target with cue index", async (
     .toEqual({ uid: SEQUENCE_GOTO_CLIP_UID, cue_index: 2 });
 });
 
-/** Verifies Set Clip Rate insertion collects a target and rate multiplier. */
-test("insert action picker inserts clip rate actions", async ({ page }) => {
+/** Verifies Set Clip Speed insertion collects a target and speed multiplier. */
+test("insert action picker inserts clip speed actions", async ({ page }) => {
   const timelineUid = await openOwnedTimelineApp(page);
   const timelineSurface = page.locator(
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
   );
   await expect(timelineSurface).toBeVisible();
-  await seedClipRateTarget(page);
+  await seedClipSpeedTarget(page);
   await timelineSurface.click();
 
   await page.keyboard.press("i");
-  await page.getByPlaceholder("Insert action...").fill("Set Clip Rate");
+  await page.getByPlaceholder("Insert action...").fill("Set Clip Speed");
   await page.keyboard.press("Enter");
 
-  const targetFilter = page.getByPlaceholder(/Select target for Set Clip Rate/);
+  const targetFilter = page.getByPlaceholder(
+    /Select target for Set Clip Speed/,
+  );
   await expect(targetFilter).toBeVisible();
-  await targetFilter.fill("E2E Rate Target");
+  await targetFilter.fill("E2E Speed Target");
   await page.keyboard.press("Enter");
 
-  const rateInput = page.getByPlaceholder("Rate multiplier...");
-  await expect(rateInput).toBeVisible();
-  await rateInput.fill("2.5");
+  const speedInput = page.getByPlaceholder("Speed multiplier...");
+  await expect(speedInput).toBeVisible();
+  await speedInput.fill("2.5");
   await page.keyboard.press("Enter");
 
   await expect(
     timelineSurface.locator('[data-timeline-action="true"]').filter({
-      hasText: /Rate 2\.50x: E2E Rate Target/,
+      hasText: /Speed 2\.50x: E2E Speed Target/,
     }),
   ).toBeVisible();
   await expect
-    .poll(() => insertedClipRateAction(page))
-    .toEqual({ uid: CLIP_RATE_UID, rate: 2.5 });
+    .poll(() => insertedClipSpeedAction(page))
+    .toEqual({ uid: CLIP_SPEED_UID, speed: 2.5 });
 });
 
-/** Verifies a typed rate above the action's maximum is clamped instead of rejected. */
-test("insert action picker clamps clip rates to the action's range", async ({
+/** Verifies a typed speed above the action's maximum is clamped instead of rejected. */
+test("insert action picker clamps clip speeds to the action's range", async ({
   page,
 }) => {
   const timelineUid = await openOwnedTimelineApp(page);
@@ -563,22 +565,22 @@ test("insert action picker clamps clip rates to the action's range", async ({
     `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
   );
   await expect(timelineSurface).toBeVisible();
-  await seedClipRateTarget(page);
+  await seedClipSpeedTarget(page);
   await timelineSurface.click();
 
   await page.keyboard.press("i");
-  await page.getByPlaceholder("Insert action...").fill("Set Clip Rate");
+  await page.getByPlaceholder("Insert action...").fill("Set Clip Speed");
   await page.keyboard.press("Enter");
   await page
-    .getByPlaceholder(/Select target for Set Clip Rate/)
-    .fill("E2E Rate Target");
+    .getByPlaceholder(/Select target for Set Clip Speed/)
+    .fill("E2E Speed Target");
   await page.keyboard.press("Enter");
-  await page.getByPlaceholder("Rate multiplier...").fill("6");
+  await page.getByPlaceholder("Speed multiplier...").fill("6");
   await page.keyboard.press("Enter");
 
   await expect
-    .poll(() => insertedClipRateAction(page))
-    .toEqual({ uid: CLIP_RATE_UID, rate: 4 });
+    .poll(() => insertedClipSpeedAction(page))
+    .toEqual({ uid: CLIP_SPEED_UID, speed: 4 });
 });
 
 /** Keeps retained timeline portals and keyboard handlers scoped to their active layout. */

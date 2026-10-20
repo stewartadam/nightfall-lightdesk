@@ -129,7 +129,7 @@ pub(super) fn desk_eval_clip_tracking(
             ),
             ClipCommand::GoClip(id_expr)
             | ClipCommand::BackClip(id_expr)
-            | ClipCommand::SetRate {
+            | ClipCommand::SetSpeed {
                 clip_id: id_expr, ..
             }
             | ClipCommand::GotoClip {
@@ -480,7 +480,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
         }
         let target = match &action.action {
             ActionKind::AdvanceSequence(uid) | ActionKind::BackSequence(uid) => *uid,
-            ActionKind::JumpToCue { uid, .. } | ActionKind::SetClipRate { uid, .. } => *uid,
+            ActionKind::JumpToCue { uid, .. } | ActionKind::SetClipSpeed { uid, .. } => *uid,
             _ => continue,
         };
         if target == clip_uid {

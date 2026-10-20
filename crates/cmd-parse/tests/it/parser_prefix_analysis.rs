@@ -88,7 +88,7 @@ fn prefix_analysis_fx_emits_action_expectations() {
         expected_tokens.contains(&ExpectedToken::Token(TokenId::Step))
             || expected_tokens.contains(&ExpectedToken::Token(TokenId::Start))
             || expected_tokens.contains(&ExpectedToken::Token(TokenId::Stop))
-            || expected_tokens.contains(&ExpectedToken::Token(TokenId::Rate))
+            || expected_tokens.contains(&ExpectedToken::Token(TokenId::Speed))
     );
 }
 

@@ -636,8 +636,8 @@ fn execute_branches_from_tokens_keeps_repeated_fx_step_values_in_value_slot() {
 }
 
 #[test]
-fn execute_branches_from_tokens_preserves_fx_rate_value() {
-    let tokens = lex_command("fx 1 rate 50");
+fn execute_branches_from_tokens_preserves_fx_speed_value() {
+    let tokens = lex_command("fx 1 speed 50");
     let branches = execute_branches_from_tokens(
         &crate::parser::analysis::CommandPrefixContext {
             token_count: 4,
@@ -664,7 +664,7 @@ fn execute_branches_from_tokens_preserves_fx_rate_value() {
                     .count()
                     == 2
         })
-        .expect("expected a completed structural branch that preserves the fx rate payload");
+        .expect("expected a completed structural branch that preserves the fx speed payload");
 
     assert!(branch.consumed_items.iter().any(|item| {
         item.slot.slot == crate::slots::contracts::SlotId::FxAction
@@ -672,10 +672,10 @@ fn execute_branches_from_tokens_preserves_fx_rate_value() {
     }));
 }
 
-/// Verifies clip rate actions keep their decimal payload inside the action slot.
+/// Verifies clip speed actions keep their decimal payload inside the action slot.
 #[test]
-fn execute_branches_from_tokens_preserves_clip_rate_value() {
-    let input = "clip 1 rate 2.5";
+fn execute_branches_from_tokens_preserves_clip_speed_value() {
+    let input = "clip 1 speed 2.5";
     let tokens = lex_command(input);
     let branches = execute_branches_from_tokens(
         &crate::parser::analysis::CommandPrefixContext {
@@ -701,18 +701,18 @@ fn execute_branches_from_tokens_preserves_clip_rate_value() {
             branch.status == PathStatus::Completed
                 && branch.consumed_items.iter().any(|item| {
                     item.slot.slot == crate::slots::contracts::SlotId::ClipAction
-                        && item.surface == "rate"
+                        && item.surface == "speed"
                 })
         })
-        .expect("expected a completed structural branch that preserves clip rate payload");
+        .expect("expected a completed structural branch that preserves clip speed payload");
 
-    let rate_surface = branch
+    let speed_surface = branch
         .consumed_items
         .iter()
         .filter(|item| item.slot.slot == crate::slots::contracts::SlotId::ClipAction)
         .map(|item| item.surface.as_str())
         .collect::<String>();
-    assert_eq!(rate_surface, "rate2.5");
+    assert_eq!(speed_surface, "speed2.5");
 }
 
 #[test]

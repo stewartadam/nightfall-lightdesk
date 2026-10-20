@@ -192,7 +192,7 @@ pub fn handle_step_fx_preview_commands(
             if let Some((playback_entity, _, active, clock, offsets, metadata)) = existing_playback
             {
                 let (clock, offsets) =
-                    reanchored_step_fx_runtime(clock, offsets, active.rate, &previous.0, step_fx);
+                    reanchored_step_fx_runtime(clock, offsets, active.speed, &previous.0, step_fx);
                 commands.entity(playback_entity).insert((
                     clock,
                     offsets,
@@ -213,7 +213,7 @@ pub fn handle_step_fx_preview_commands(
             ActiveStepFx {
                 fx_entity: definition_entity,
                 priority: Priority(75),
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             },
             session_id,

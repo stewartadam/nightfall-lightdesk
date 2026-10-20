@@ -414,7 +414,7 @@ pub fn handle_events(
                 let active_step_fx = ActiveStepFx {
                     fx_entity,
                     priority: context.priority,
-                    rate: 1.0,
+                    speed: 1.0,
                     is_playing: true,
                 };
                 let instance_clock =

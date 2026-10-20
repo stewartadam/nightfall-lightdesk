@@ -12,6 +12,7 @@
 //! data that no longer has a runtime type can still be read and converted.
 
 mod action_references;
+mod speed_names;
 
 use nightfall_fixtures::bindings::{DmxRange, OutputSource};
 use serde_json::Value;
@@ -32,6 +33,7 @@ pub(crate) fn migrate_showfile_json(showfile: &mut Value, version: u32) -> Resul
             17 => remove_output_disabled_bindings(showfile)?,
             18 => action_references::migrate_v18_to_v19(showfile)?,
             19 => control_assignments_to_slots(showfile)?,
+            20 => speed_names::migrate_v20_to_v21(showfile)?,
             _ => return Err(format!("no migration from showfile version {version}")),
         }
         version += 1;

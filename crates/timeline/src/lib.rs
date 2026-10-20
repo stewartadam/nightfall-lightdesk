@@ -151,7 +151,7 @@ impl Plugin for TimelinePlugin {
         app.init_resource::<recording::TimelineRecordingStates>();
         app.init_resource::<recording::TimelineRecordingSessions>();
         app.init_resource::<recording::TimelineCommandOrigins>();
-        app.init_resource::<systems::TimelinePausedPlaybackRates>();
+        app.init_resource::<systems::TimelinePausedPlaybackSpeeds>();
         app.init_resource::<systems::TimelineReconstructionDeferredFlush>();
         app.init_resource::<timeline::TimelineLookaheadActionStatuses>();
         app.init_resource::<timeline::TimelinePlannedCuesByAction>();

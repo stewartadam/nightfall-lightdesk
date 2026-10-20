@@ -22,7 +22,7 @@ use crate::ast::{
     CreateStepFxAst, CurveNameAst, DelaysAst, FadesAst, FixturePlacementCommandAst, FxActionAst,
     FxAttributeStepsAst, FxCommandAst, FxKeyword, FxModuleActionAst, FxModuleCommandAst, FxStepAst,
     OffsetValueAst, ParameterValueMode, PlacementActionsAst, PositionActionAst, PositionValueAst,
-    RotationActionAst, RotationValueAst, SetAttributeAst, SetFxRateAst, StoreBlueprintCommandAst,
+    RotationActionAst, RotationValueAst, SetAttributeAst, SetFxSpeedAst, StoreBlueprintCommandAst,
     StoreClipCommandAst, StoreFixtureCommandAst, StoreFixtureOffsetCommandAst, StoreFlowCommandAst,
     StoreStepFxCommandAst, StoreTimecodeCommandAst, StoreTimelineCommandAst, TimingClauseAst,
     TimingDirectionAst, TimingsAst, TupleValueAst, ValueMarkerAst, ValueRangeAst,

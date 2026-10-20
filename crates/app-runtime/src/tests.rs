@@ -481,7 +481,7 @@ fn world_factory_empty_bootstrap_starts_initializing_without_showfile() {
 }
 
 /// Verifies blank and sample new shows both start with one always-on global intensity master and
-/// one always-on global rate master, each at 100% with the shared default UIDs, so neither
+/// one always-on global speed master, each at 100% with the shared default UIDs, so neither
 /// changes output until moved and merges between new shows match them up.
 #[test]
 fn world_factory_new_shows_start_with_global_masters() {
@@ -502,7 +502,7 @@ fn world_factory_new_shows_start_with_global_masters() {
         masters.sort_by_key(|master| master.identifiers.id);
 
         assert_eq!(masters.len(), 2, "{bootstrap:?} should add two masters");
-        let [intensity, rate] = &masters[..] else {
+        let [intensity, speed] = &masters[..] else {
             unreachable!()
         };
         assert_eq!(intensity.identifiers.id, 1);
@@ -515,17 +515,17 @@ fn world_factory_new_shows_start_with_global_masters() {
             intensity.target,
             MasterTarget::Fixtures(FixtureMasterTarget::All)
         );
-        assert_eq!(rate.identifiers.id, 2);
+        assert_eq!(speed.identifiers.id, 2);
         assert_eq!(
-            rate.identifiers.uid,
-            nightfall_desk::masters::DEFAULT_RATE_MASTER_UID
+            speed.identifiers.uid,
+            nightfall_desk::masters::DEFAULT_SPEED_MASTER_UID
         );
-        assert_eq!(rate.kind, MasterKind::PlaybackRate);
+        assert_eq!(speed.kind, MasterKind::PlaybackSpeed);
         assert_eq!(
-            rate.target,
+            speed.target,
             MasterTarget::Instances(InstanceMasterTarget::All)
         );
-        for master in [intensity, rate] {
+        for master in [intensity, speed] {
             assert_eq!(master.mode, MasterMode::AlwaysOn);
             assert_eq!(master.level_percent, 100.0);
         }
@@ -843,7 +843,7 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
         for (action, kind) in &actions {
             let (ActionKind::StartClip(uid)
             | ActionKind::StopClip(uid)
-            | ActionKind::SetClipRate { uid, .. }) = kind
+            | ActionKind::SetClipSpeed { uid, .. }) = kind
             else {
                 panic!("unexpected sample action {:?}", action.action);
             };

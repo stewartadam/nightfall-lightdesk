@@ -1413,7 +1413,7 @@ fn start_step_fx_command_preserves_controls_on_active_playback() {
             .single_mut(app.world_mut())
             .expect("expected controls on active step fx");
         controls.intensity_scale = 0.4;
-        controls.rate = 0.5;
+        controls.speed = 0.5;
     }
 
     app.world_mut()
@@ -1425,7 +1425,7 @@ fn start_step_fx_command_preserves_controls_on_active_playback() {
         .single(app.world())
         .expect("expected controls on restarted step fx");
     assert_eq!(controls.intensity_scale, 0.4);
-    assert_eq!(controls.rate, 0.5);
+    assert_eq!(controls.speed, 0.5);
 }
 
 #[test]
@@ -1594,7 +1594,7 @@ fn redefining_running_step_fx_preserves_normalized_phase() {
             ActiveStepFx {
                 fx_entity: old_fx_entity,
                 priority: Priority(50),
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             },
             Layer::new("orphan candidate".to_owned(), Priority::default()),
@@ -1689,7 +1689,7 @@ fn redefining_clip_owned_step_fx_preserves_playback_binding() {
         ActiveStepFx {
             fx_entity: old_fx_entity,
             priority: Priority(50),
-            rate: 1.0,
+            speed: 1.0,
             is_playing: true,
         },
         instance_id,

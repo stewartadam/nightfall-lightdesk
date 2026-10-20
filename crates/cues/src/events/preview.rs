@@ -308,7 +308,7 @@ pub fn handle_cue_preview_commands(context: CuePreviewContext, mut commands: Com
                         });
                     let anchor = clock.position.saturating_sub(elapsed);
                     clock.seek_to(anchor.saturating_add(position));
-                    controls.set_rate(if playing { 1.0 } else { 0.0 });
+                    controls.set_speed(if playing { 1.0 } else { 0.0 });
                 }
             }
             PendingPreviewRequest::Cue(cue) => {

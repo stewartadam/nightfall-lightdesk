@@ -8,7 +8,7 @@
 
 use super::*;
 
-/// Samples automation and sends clip-rate changes through the shared playback action path.
+/// Samples automation and sends clip-speed changes through the shared playback action path.
 pub fn process_parameters_system(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
@@ -17,7 +17,7 @@ pub fn process_parameters_system(
     materialized_clips: Query<&MaterializedClip>,
     mut clip_actions: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
     mut origins: ResMut<TimelineCommandOrigins>,
-    mut applied_rate_targets: Local<HashMap<Uuid, Uuid>>,
+    mut applied_speed_targets: Local<HashMap<Uuid, Uuid>>,
 ) {
     let clip_snapshot = clip_lookup.snapshot();
     // Preserve shared targets until their last populated lane is removed, including while paused.
@@ -27,11 +27,11 @@ pub fn process_parameters_system(
         .flat_map(|track| &track.automation_lanes)
         .filter(|lane| !lane.points.is_empty())
         .filter_map(|lane| match lane.parameter_type {
-            ParameterType::RateMaster(uid) => Some(uid),
+            ParameterType::ClipSpeed(uid) => Some(uid),
             ParameterType::GlobalVariable(_) => None,
         })
         .collect();
-    applied_rate_targets.retain(|uid, timecode_uid| {
+    applied_speed_targets.retain(|uid, timecode_uid| {
         if retained_targets.contains(uid) {
             return true;
         }
@@ -41,7 +41,7 @@ pub fn process_parameters_system(
         }) {
             return true;
         }
-        apply_rate_master_value(
+        apply_clip_speed_value(
             *uid,
             1.0,
             &clip_snapshot,
@@ -93,9 +93,9 @@ pub fn process_parameters_system(
                             tracing::trace!("Setting global variable {} to {}", var_id, value);
                             global_vars.set(var_id, VariableValue::Float(*value));
                         }
-                        ParameterType::RateMaster(clip_uid) => {
-                            applied_rate_targets.insert(*clip_uid, timeline.timeline.timecode_uid);
-                            apply_rate_master_value(
+                        ParameterType::ClipSpeed(clip_uid) => {
+                            applied_speed_targets.insert(*clip_uid, timeline.timeline.timecode_uid);
+                            apply_clip_speed_value(
                                 *clip_uid,
                                 *value,
                                 &clip_snapshot,
@@ -111,8 +111,8 @@ pub fn process_parameters_system(
     }
 }
 
-/// Uses the same SetRate action as authored timeline actions and manual clip controls.
-fn apply_rate_master_value(
+/// Uses the same SetSpeed action as authored timeline actions and manual clip controls.
+fn apply_clip_speed_value(
     clip_uid: Uuid,
     value: f32,
     clip_lookup: &ClipLookupSnapshot,
@@ -123,7 +123,7 @@ fn apply_rate_master_value(
     let Ok((_, clip)) = clip_lookup.by_uid(clip_uid) else {
         tracing::warn!(
             clip_uid = %clip_uid,
-            "Timeline rate master target clip not found"
+            "Timeline clip speed lane target clip not found"
         );
         return;
     };
@@ -134,9 +134,9 @@ fn apply_rate_master_value(
         write_timeline_clip_action(
             clip_actions,
             origins,
-            ClipOperation::SetRate {
+            ClipOperation::SetSpeed {
                 clip_id: IdExpr::Single(clip.identifiers.id),
-                rate: value,
+                speed: value,
             },
         );
     }

@@ -90,7 +90,7 @@ type DragInsertDefaults = {
   targetUid?: string;
   targetLabel?: string;
   cueIndex?: number;
-  rate?: number;
+  speed?: number;
 };
 
 const TrackContents = (props: TrackListProps) => {
@@ -386,7 +386,7 @@ const TrackContents = (props: TrackListProps) => {
           actionType,
           selectedTarget.uid,
           defaults?.cueIndex ?? selectedTarget.cueIndex ?? 1,
-          defaults?.rate,
+          defaults?.speed,
         ),
       ),
     };
@@ -656,13 +656,13 @@ const TrackContents = (props: TrackListProps) => {
                 targetUid,
                 targetLabel,
                 cueIndex,
-                rate,
+                speed,
               }) => {
                 insertActionForAction(actionType, intent(), {
                   targetUid,
                   targetLabel,
                   cueIndex,
-                  rate,
+                  speed,
                 });
                 setPickerIntent(undefined);
               }}

@@ -94,7 +94,7 @@ const TOKEN_SPECS: &[TokenSpec] = &[
     spec(TokenId::Go, "go"),
     spec(TokenId::Back, "back"),
     spec(TokenId::Goto, "goto"),
-    spec(TokenId::Rate, "rate"),
+    spec(TokenId::Speed, "speed"),
     spec(TokenId::Width, "width"),
     spec(TokenId::Ramp, "ramp"),
     spec(TokenId::Steps, "steps"),

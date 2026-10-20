@@ -151,13 +151,13 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
                     action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
-                    id: "fx-rate".to_owned(),
-                    label: "Set FX rate".to_owned(),
+                    id: "fx-speed".to_owned(),
+                    label: "Set FX speed".to_owned(),
                     position: Duration::from_secs(2),
                     duration: Duration::ZERO,
-                    action: ActionKind::SetClipRate {
+                    action: ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 2.0,
+                        speed: 2.0,
                     }
                     .to_reference(),
                 },
@@ -190,7 +190,7 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
         "resolvable classic FX seek should materialize directly instead of replaying clip commands: {clip_events:?}"
     );
 
-    let (materialized_fx_uid, clock_position, clock_rate, clock_source, instance_id) = {
+    let (materialized_fx_uid, clock_position, clock_speed, clock_source, instance_id) = {
         let mut materialized_fx_query =
             app.world_mut()
                 .query::<(&MaterializedFx, &InstanceClock, &InstanceId)>();
@@ -200,7 +200,7 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
                 (
                     mfx.identifiers().uid,
                     clock.position,
-                    clock.rate,
+                    clock.speed,
                     clock.source,
                     *instance_id,
                 )
@@ -215,7 +215,7 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
     };
     assert_eq!(materialized_fx_uid, fx_uid);
     assert_eq!(clock_position, Duration::from_secs(3));
-    assert_eq!(clock_rate, 2.0);
+    assert_eq!(clock_speed, 2.0);
     assert_eq!(
         clock_source,
         InstanceClockSource::Timeline {
@@ -650,13 +650,13 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
                     action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
-                    id: "fx-module-rate".to_owned(),
-                    label: "Set FX Module rate".to_owned(),
+                    id: "fx-module-speed".to_owned(),
+                    label: "Set FX Module speed".to_owned(),
                     position: Duration::from_secs(2),
                     duration: Duration::ZERO,
-                    action: ActionKind::SetClipRate {
+                    action: ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 2.0,
+                        speed: 2.0,
                     }
                     .to_reference(),
                 },
@@ -704,7 +704,7 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
         .cloned()
         .expect("direct FX module seek should seed a playback clock");
     assert_eq!(clock.position, Duration::from_secs(3));
-    assert_eq!(clock.rate, 2.0);
+    assert_eq!(clock.speed, 2.0);
     assert_eq!(
         clock.source,
         InstanceClockSource::Timeline {
@@ -961,13 +961,13 @@ fn seek_replay_direct_materializes_flow_clip() {
                     action: ActionKind::StartClip(clip_uid).to_reference(),
                 },
                 Action {
-                    id: "flow-rate".to_owned(),
-                    label: "Set Flow rate".to_owned(),
+                    id: "flow-speed".to_owned(),
+                    label: "Set Flow speed".to_owned(),
                     position: Duration::from_secs(2),
                     duration: Duration::ZERO,
-                    action: ActionKind::SetClipRate {
+                    action: ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 2.0,
+                        speed: 2.0,
                     }
                     .to_reference(),
                 },
@@ -1000,7 +1000,7 @@ fn seek_replay_direct_materializes_flow_clip() {
         "resolvable Flow seek should materialize directly instead of replaying clip commands: {clip_events:?}"
     );
 
-    let (flow_id, clock_position, clock_rate, clock_source, display_kind) = {
+    let (flow_id, clock_position, clock_speed, clock_source, display_kind) = {
         let mut flow_query = app
             .world_mut()
             .query::<(&FlowInstance, &InstanceClock, &InstanceMetadata)>();
@@ -1010,7 +1010,7 @@ fn seek_replay_direct_materializes_flow_clip() {
                 (
                     instance.flow_id,
                     clock.position,
-                    clock.rate,
+                    clock.speed,
                     clock.source,
                     metadata.display_kind.clone(),
                 )
@@ -1025,7 +1025,7 @@ fn seek_replay_direct_materializes_flow_clip() {
     };
     assert_eq!(flow_id, 23);
     assert_eq!(clock_position, Duration::from_secs(3));
-    assert_eq!(clock_rate, 2.0);
+    assert_eq!(clock_speed, 2.0);
     assert_eq!(
         clock_source,
         InstanceClockSource::Timeline {

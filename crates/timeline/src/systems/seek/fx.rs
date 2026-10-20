@@ -84,14 +84,14 @@ pub(super) fn materialize_timeline_fx(
             clip.identifiers.uid,
             clip.priority,
             &fx,
-            instance_clock_from_reconstruction_timing_with_rate(
+            instance_clock_from_reconstruction_timing_with_speed(
                 PlaybackReconstructionTiming::timeline_source_local(
                     Duration::ZERO,
                     instance.instance_clock_position,
                     timeline_uid,
                     instance.started_at_timeline,
                 ),
-                evaluated_instance_playback_rate_at_target(
+                evaluated_instance_playback_speed_at_target(
                     instance,
                     &plan.timeline_plan,
                     plan.timeline_plan.target_time,
@@ -165,14 +165,14 @@ pub(super) fn materialize_timeline_fx(
             clip.priority,
             step_fx_entity,
             step_fx,
-            instance_clock_from_reconstruction_timing_with_rate(
+            instance_clock_from_reconstruction_timing_with_speed(
                 PlaybackReconstructionTiming::timeline_source_local(
                     Duration::ZERO,
                     instance.instance_clock_position,
                     timeline_uid,
                     instance.started_at_timeline,
                 ),
-                evaluated_instance_playback_rate_at_target(
+                evaluated_instance_playback_speed_at_target(
                     instance,
                     &plan.timeline_plan,
                     plan.timeline_plan.target_time,

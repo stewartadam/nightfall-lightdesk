@@ -327,8 +327,8 @@ pub(super) fn parse_fx_action_from_tokens<'i>(
         canonical if canonical == canonical_token_text(TokenId::Stop) && tokens.len() == 1 => {
             Some(FxActionAst::Stop)
         }
-        canonical if canonical == canonical_token_text(TokenId::Rate) => {
-            Some(FxActionAst::SetRate(SetFxRateAst {
+        canonical if canonical == canonical_token_text(TokenId::Speed) => {
+            Some(FxActionAst::SetSpeed(SetFxSpeedAst {
                 value: parse_decimal_value_from_tokens(command_str, &tokens[1..])?,
             }))
         }

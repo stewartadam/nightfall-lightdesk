@@ -131,7 +131,7 @@ export const getMarkerStyle = (
         chip: "border-orange-700 bg-orange-950 text-orange-100",
         stem: "bg-orange-600/90",
       };
-    case "SetClipRate":
+    case "SetClipSpeed":
       return {
         chip: "border-cyan-500 bg-cyan-950 text-cyan-100",
         stem: "bg-cyan-400/90",

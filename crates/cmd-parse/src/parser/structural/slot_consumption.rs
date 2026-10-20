@@ -301,7 +301,7 @@ pub(in crate::parser) fn consume_slot<'i>(
             })
         }
     } else if matches!(slot_id, SlotId::FxAction | SlotId::ClipAction) && existing_fills > 0 {
-        filled_value_for_fx_rate_followup(
+        filled_value_for_fx_speed_followup(
             slot.slot,
             &slot_fills,
             token,

@@ -183,27 +183,28 @@ pub struct InstanceControls {
     pub intensity_scale: f32,
     /// Operator-authored playback speed multiplier. Default 1.0.
     #[default(1.0)]
-    pub rate: f32,
-    /// Runtime master scale applied on top of the authored rate. Default 1.0.
+    pub speed: f32,
+    /// Runtime master scale applied on top of the authored speed. Default 1.0.
     #[default(1.0)]
-    pub rate_master_scale: f32,
+    pub speed_master_scale: f32,
 }
 
 impl InstanceControls {
     /// Sets the playback speed multiplier to a finite non-negative value.
-    pub fn set_rate(&mut self, value: f32) {
-        self.rate = normalized_playback_rate(value);
+    pub fn set_speed(&mut self, value: f32) {
+        self.speed = normalized_playback_speed(value);
     }
 
-    /// Sets the master rate scale to a finite non-negative value.
-    pub fn set_rate_master_scale(&mut self, value: f32) {
-        self.rate_master_scale = normalized_playback_rate(value);
+    /// Sets the master speed scale to a finite non-negative value.
+    pub fn set_speed_master_scale(&mut self, value: f32) {
+        self.speed_master_scale = normalized_playback_speed(value);
     }
 
-    /// Returns the sanitized rate multiplier used by playback clocks.
-    pub fn effective_rate(&self) -> f64 {
+    /// Returns the sanitized speed multiplier used by playback clocks.
+    pub fn effective_speed(&self) -> f64 {
         f64::from(
-            normalized_playback_rate(self.rate) * normalized_playback_rate(self.rate_master_scale),
+            normalized_playback_speed(self.speed)
+                * normalized_playback_speed(self.speed_master_scale),
         )
     }
 }
@@ -272,8 +273,8 @@ pub enum ClipInstanceRequest {
     Go(IdExpr),
 }
 
-/// Normalizes playback rates before they reach timing math.
-fn normalized_playback_rate(value: f32) -> f32 {
+/// Normalizes playback speeds before they reach timing math.
+fn normalized_playback_speed(value: f32) -> f32 {
     if value.is_finite() {
         value.max(0.0)
     } else {
@@ -329,19 +330,19 @@ impl From<PlaybackPositionSource> for InstanceClockSource {
 pub fn instance_clock_from_reconstruction_timing(
     timing: PlaybackReconstructionTiming,
 ) -> InstanceClock {
-    instance_clock_from_reconstruction_timing_with_rate(timing, 1.0)
+    instance_clock_from_reconstruction_timing_with_speed(timing, 1.0)
 }
 
-/// Builds an instance clock positioned from reconstruction timing with an explicit rate.
-pub fn instance_clock_from_reconstruction_timing_with_rate(
+/// Builds an instance clock positioned from reconstruction timing with an explicit speed.
+pub fn instance_clock_from_reconstruction_timing_with_speed(
     timing: PlaybackReconstructionTiming,
-    rate: f32,
+    speed: f32,
 ) -> InstanceClock {
     let mut clock = InstanceClock {
         source: timing.source.into(),
         ..Default::default()
     };
-    clock.set_rate(f64::from(rate));
+    clock.set_speed(f64::from(speed));
     clock.seek_to(timing.position);
     clock
 }
@@ -356,7 +357,7 @@ pub struct InstanceClock {
     /// Effective source-local advancement in the current engine tick.
     pub delta: Duration,
     /// Playback speed multiplier applied when this clock accumulates real time.
-    pub rate: f64,
+    pub speed: f64,
     /// Whether position is intentionally frozen.
     pub frozen: bool,
     /// Whether this update was a normal tick or an explicit reposition.
@@ -373,7 +374,7 @@ impl Default for InstanceClock {
             position: Duration::ZERO,
             previous_position: Duration::ZERO,
             delta: Duration::ZERO,
-            rate: 1.0,
+            speed: 1.0,
             frozen: false,
             discontinuity: InstanceClockDiscontinuity::Continuous,
             source: InstanceClockSource::Realtime,
@@ -391,12 +392,12 @@ impl InstanceClock {
         }
     }
 
-    /// Advances from a real elapsed duration, applying rate and freeze policy.
+    /// Advances from a real elapsed duration, applying speed and freeze policy.
     pub fn advance_by_realtime_delta(&mut self, real_delta: Duration) {
         self.advance_by_source_delta(real_delta);
     }
 
-    /// Advances from a source elapsed delta, applying rate and freeze policy.
+    /// Advances from a source elapsed delta, applying speed and freeze policy.
     pub fn advance_by_source_delta(&mut self, source_delta: Duration) {
         self.previous_position = self.position;
         self.discontinuity = InstanceClockDiscontinuity::Continuous;
@@ -406,19 +407,23 @@ impl InstanceClock {
             return;
         }
 
-        let scaled_delta = if self.rate == 1.0 {
+        let scaled_delta = if self.speed == 1.0 {
             source_delta
         } else {
-            source_delta.mul_f64(self.rate)
+            source_delta.mul_f64(self.speed)
         };
         self.position = self.position.saturating_add(scaled_delta);
         self.delta = self.position.saturating_sub(self.previous_position);
     }
 
-    /// Sets the clock rate and updates freeze state for zero-rate playback.
-    pub fn set_rate(&mut self, rate: f64) {
-        self.rate = if rate.is_finite() { rate.max(0.0) } else { 0.0 };
-        if self.rate == 0.0 {
+    /// Sets the clock speed and updates freeze state for zero-speed playback.
+    pub fn set_speed(&mut self, speed: f64) {
+        self.speed = if speed.is_finite() {
+            speed.max(0.0)
+        } else {
+            0.0
+        };
+        if self.speed == 0.0 {
             self.freeze();
         } else if self.frozen {
             self.unfreeze();
@@ -492,7 +497,7 @@ pub enum InstancePosition {
     },
     /// Elapsed runtime for time-based playback sources.
     Time {
-        /// Elapsed playback duration after rate scaling where applicable.
+        /// Elapsed playback duration after speed scaling where applicable.
         elapsed: Duration,
     },
     /// Playback has no inspectable position.
@@ -617,8 +622,8 @@ impl EngineOperation for PlaybackReleaseOperation {}
 pub enum InstanceControlUpdate {
     /// Set the intensity scale for a playback.
     SetIntensityScale { instance_id: InstanceId, value: f32 },
-    /// Set the rate multiplier for a playback.
-    SetRate { instance_id: InstanceId, value: f32 },
+    /// Set the speed multiplier for a playback.
+    SetSpeed { instance_id: InstanceId, value: f32 },
 }
 
 #[cfg(test)]
@@ -663,25 +668,25 @@ mod tests {
     fn instance_controls_defaults() {
         let controls = InstanceControls::default();
         assert_eq!(controls.intensity_scale, 1.0);
-        assert_eq!(controls.rate, 1.0);
-        assert_eq!(controls.rate_master_scale, 1.0);
+        assert_eq!(controls.speed, 1.0);
+        assert_eq!(controls.speed_master_scale, 1.0);
     }
 
-    /// Verifies mastered playback rate multiplies the authored base rate.
+    /// Verifies mastered playback speed multiplies the authored base speed.
     #[test]
-    fn instance_controls_effective_rate_multiplies_master_scale() {
+    fn instance_controls_effective_speed_multiplies_master_scale() {
         let mut controls = InstanceControls::default();
-        controls.set_rate(0.5);
-        controls.set_rate_master_scale(2.0);
+        controls.set_speed(0.5);
+        controls.set_speed_master_scale(2.0);
 
-        assert_eq!(controls.effective_rate(), 1.0);
+        assert_eq!(controls.effective_speed(), 1.0);
     }
 
-    /// Verifies real-time clock advancement applies playback rate to the source delta.
+    /// Verifies real-time clock advancement applies playback speed to the source delta.
     #[test]
-    fn instance_clock_advances_realtime_delta_with_rate() {
+    fn instance_clock_advances_realtime_delta_with_speed() {
         let mut clock = InstanceClock {
-            rate: 2.0,
+            speed: 2.0,
             ..Default::default()
         };
 

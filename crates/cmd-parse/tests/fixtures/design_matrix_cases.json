@@ -328,7 +328,7 @@
           "status": "error"
         },
         "completion_groups": ["fx/identifier", "fx/action"],
-        "candidates": ["+", "-", "0..9", ">", "rate", "start", "stop"],
+        "candidates": ["+", "-", "0..9", ">", "speed", "start", "stop"],
         "current_breadcrumb": "FX > Identifier",
         "breadcrumb": {
           "state": "ambiguous_clause_path"
@@ -343,7 +343,7 @@
           "status": "error"
         },
         "completion_groups": ["fx/identifier", "fx/action"],
-        "candidates": ["+", "-", "0..9", ">", "rate", "start", "stop"],
+        "candidates": ["+", "-", "0..9", ">", "speed", "start", "stop"],
         "current_breadcrumb": "FX > Identifier",
         "breadcrumb": {
           "state": "ambiguous_clause_path"
@@ -351,14 +351,14 @@
       }
     },
     {
-      "name": "matrix case 16: fx 1 rate",
-      "input": "fx 1 rate",
+      "name": "matrix case 16: fx 1 speed",
+      "input": "fx 1 speed",
       "response": {
         "parse": {
           "status": "error"
         },
         "completion_groups": ["fx/action"],
-        "candidates": ["rate"],
+        "candidates": ["speed"],
         "current_breadcrumb": "FX > Action",
         "breadcrumb": {
           "state": "current_clause_path",
@@ -732,7 +732,7 @@
           "back",
           "go",
           "goto",
-          "rate",
+          "speed",
           "start",
           "stop"
         ],

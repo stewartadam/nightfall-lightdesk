@@ -190,7 +190,7 @@ fn evaluate_app(fixture_count: usize, fx_count: usize) -> App {
             ActiveStepFx {
                 fx_entity,
                 priority: Priority(fx_index as i8),
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             },
             InstanceClock {
