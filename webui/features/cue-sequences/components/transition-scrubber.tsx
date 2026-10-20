@@ -34,6 +34,8 @@ export function TransitionScrubber(props: {
   playback: types.InstanceInfo | undefined;
   cue: types.Cue | undefined;
   enabled: boolean;
+  /** Suffix for the position readout: "s" for seconds, "b" for a beat-timed sequence. */
+  unitSuffix?: string;
 }) {
   const [now, setNow] = createSignal(Date.now());
   const [pendingPosition, setPendingPosition] = createSignal<number>();
@@ -155,7 +157,8 @@ export function TransitionScrubber(props: {
           onInput={(event) => seek(event.currentTarget.valueAsNumber)}
         />
         <span class="whitespace-nowrap tabular-nums">
-          {position().toFixed(2)} / {duration().toFixed(2)}s
+          {position().toFixed(2)} / {duration().toFixed(2)}
+          {props.unitSuffix ?? "s"}
         </span>
         <ToolbarButton
           label="Step transition forward"

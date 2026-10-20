@@ -12,6 +12,7 @@ use std::{collections::HashMap, time::Duration};
 
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
+use nightfall_instances::Timebase;
 use nightfall_selection::{
     HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
     selection_validation_warnings,
@@ -551,6 +552,9 @@ pub struct Sequence {
     /// Tracking mode inherited by cues in this sequence.
     #[serde(default = "TrackingMode::explicit_default")]
     pub tracking_mode: TrackingMode,
+    /// Whether cue triggers, delays and fades count seconds or show-tempo beats.
+    #[serde(default)]
+    pub timebase: Timebase,
 }
 
 impl Default for Sequence {
@@ -574,6 +578,7 @@ impl Default for Sequence {
             release_cue,
             default_timing: Transition::default(),
             tracking_mode: TrackingMode::explicit_default(),
+            timebase: Timebase::default(),
         }
     }
 }

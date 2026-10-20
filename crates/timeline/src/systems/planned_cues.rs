@@ -60,8 +60,21 @@ struct ResolvedSequenceTiming {
     steps: Vec<Uuid>,
     /// Seek replay timing of each step, or `None` when a step cue is missing.
     step_timings: Option<Vec<SequenceTimelineStepTiming>>,
-    /// Planner extents of the whole sequence.
+    /// Planner extents of the whole sequence, in the sequence's own time.
     duration_profile: PlaybackDurationProfile,
+    /// Whether the sequence counts seconds or timeline beats.
+    timebase: Timebase,
+}
+
+impl ResolvedSequenceTiming {
+    /// Returns how much sequence time passes per second of a timeline playing at
+    /// `beats_per_second`.
+    fn source_scale(&self, beats_per_second: f64) -> f64 {
+        match self.timebase {
+            Timebase::Beats => beats_per_second,
+            Timebase::Seconds => 1.0,
+        }
+    }
 }
 
 /// Per-system cache of resolved sequence timings and the sequences last navigated.
@@ -193,7 +206,9 @@ fn resolved_sequence_timing<'a>(
                 Some(sequence_data_provider),
                 &inputs.fixture_data_provider,
                 &inputs.selection_resolver,
+                1.0,
             ),
+            timebase: sequence.timebase,
         };
         cache.insert(sequence_uid, timing);
     }
@@ -219,7 +234,13 @@ fn resolve_timeline_planned_cues(
             planning_actions
                 .iter()
                 .any(|action| navigation_clip_uid(&action.action).is_some())
-                .then(|| (timeline.value().identifiers.uid, planning_actions))
+                .then(|| {
+                    (
+                        timeline.value().identifiers.uid,
+                        timeline.value().beats_per_second(),
+                        planning_actions,
+                    )
+                })
         })
         .collect::<Vec<_>>();
     if timelines.is_empty() {
@@ -235,7 +256,7 @@ fn resolve_timeline_planned_cues(
         .collect::<HashMap<_, _>>();
     cache.navigated_sequences = timelines
         .iter()
-        .flat_map(|(_, actions)| actions.iter())
+        .flat_map(|(_, _, actions)| actions.iter())
         .filter_map(|action| navigation_clip_uid(&action.action))
         .filter_map(|clip_uid| match source_by_clip_uid.get(&clip_uid) {
             Some(PlannedPlaybackSource::Sequence(sequence_uid)) => Some(*sequence_uid),
@@ -246,29 +267,40 @@ fn resolve_timeline_planned_cues(
     cache
         .sequences
         .retain(|sequence_uid, _| navigated_sequences.contains(sequence_uid));
-    let mut duration_by_source = HashMap::new();
     for sequence_uid in cache.navigated_sequences.clone() {
-        if let Some(timing) = resolved_sequence_timing(
+        resolved_sequence_timing(
             &mut cache.sequences,
             sequence_uid,
             sequence_data_provider,
             inputs,
-        ) {
-            duration_by_source.insert(
-                PlannedPlaybackSource::Sequence(sequence_uid),
-                timing.duration_profile,
-            );
-        }
+        );
     }
-    let resolver = TimelinePlannerResolver {
-        source_by_clip_uid,
-        duration_by_source,
-    };
 
     let mut planned_cues = timelines
         .into_iter()
-        .flat_map(|(timeline_uid, planning_actions)| {
-            timeline_planned_cues(timeline_uid, planning_actions, &cache.sequences, &resolver)
+        .flat_map(|(timeline_uid, beats_per_second, planning_actions)| {
+            let resolver = TimelinePlannerResolver {
+                source_by_clip_uid: source_by_clip_uid.clone(),
+                duration_by_source: cache
+                    .sequences
+                    .iter()
+                    .map(|(sequence_uid, timing)| {
+                        (
+                            PlannedPlaybackSource::Sequence(*sequence_uid),
+                            timing
+                                .duration_profile
+                                .in_playback_time(timing.source_scale(beats_per_second)),
+                        )
+                    })
+                    .collect(),
+            };
+            timeline_planned_cues(
+                timeline_uid,
+                beats_per_second,
+                planning_actions,
+                &cache.sequences,
+                &resolver,
+            )
         })
         .collect::<Vec<_>>();
     planned_cues.sort_by(|left, right| {
@@ -287,6 +319,7 @@ fn resolve_timeline_planned_cues(
 /// between actions advance the sequence exactly as playback would.
 fn timeline_planned_cues(
     timeline_uid: Uuid,
+    beats_per_second: f64,
     planning_actions: Vec<TimelinePlanningAction>,
     sequences: &HashMap<Uuid, ResolvedSequenceTiming>,
     resolver: &TimelinePlannerResolver,
@@ -317,7 +350,8 @@ fn timeline_planned_cues(
             timing.wrap,
             interval.started_at_timeline,
             step_timings,
-        ) else {
+        )
+        .map(|playback| playback.with_source_scale(timing.source_scale(beats_per_second))) else {
             continue;
         };
         playback.replay_planned_interventions_until(interval, end, |intervention, position| {

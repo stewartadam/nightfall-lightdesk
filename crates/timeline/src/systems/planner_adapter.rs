@@ -334,8 +334,10 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
     stop_position: Duration,
     current_position: Duration,
     cue_data_provider: &DataProvider<Cue>,
+    sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
     selection_resolver: &SpatialSelectionResolver<'_>,
+    timeline_beats_per_second: f64,
 ) -> Option<PlaybackReconstructionTiming> {
     let (origin_track_id, origin_action_id, origin_position) = tracked_spawned_entities
         .get(&entity)
@@ -362,6 +364,7 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
                 None,
                 fixture_data_provider,
                 selection_resolver,
+                1.0,
             ),
         )]),
     };
@@ -395,6 +398,22 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
         .and_then(|instance| {
             release_reconstruction_timing_from_evaluated_instance(instance, timeline_uid)
         })
+        .map(|timing| {
+            // A beat-timed sequence counts its release in beats, so its anchors must be too.
+            let PlannedPlaybackSource::Sequence(sequence_uid) = source else {
+                return timing;
+            };
+            let scale = sequence_source_scale(
+                sequence_uid,
+                sequence_data_provider,
+                timeline_beats_per_second,
+            );
+            PlaybackReconstructionTiming {
+                started_at: timing.started_at.mul_f64(scale),
+                position: timing.position.mul_f64(scale),
+                ..timing
+            }
+        })
 }
 
 /// Planner-derived sequence render state for a timeline-authored intervention.
@@ -427,6 +446,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
     fixture_data_provider: &FixtureDataProviderExt,
     selection_resolver: &SpatialSelectionResolver<'_>,
     intervention_kind: PlannedPlaybackInterventionKind,
+    timeline_beats_per_second: f64,
 ) -> Option<PlannedClipRenderTarget> {
     let (origin_track_id, origin_action_id, origin_position) = tracked_spawned_entities
         .get(&entity)
@@ -453,6 +473,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
                 sequence_data_provider,
                 fixture_data_provider,
                 selection_resolver,
+                timeline_beats_per_second,
             ),
         )]),
     };
@@ -516,7 +537,12 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
         fixture_data_provider,
         selection_resolver,
         origin_position,
-    )?;
+    )?
+    .with_source_scale(sequence_source_scale(
+        sequence_uid,
+        sequence_data_provider,
+        timeline_beats_per_second,
+    ));
     sequence_playback.apply_planned_interval_until(interval, current_position);
     let intervention = interval
         .explicit_interventions
@@ -529,10 +555,12 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
     let instance = interval.evaluate_at(current_position);
     Some(PlannedClipRenderTarget {
         position: sequence_playback.target().position,
-        timing: intervention_reconstruction_timing_from_evaluated_instance(
-            &instance,
-            intervention,
-            timeline_uid,
+        timing: sequence_playback.source_reconstruction_timing(
+            intervention_reconstruction_timing_from_evaluated_instance(
+                &instance,
+                intervention,
+                timeline_uid,
+            ),
         ),
     })
 }
@@ -565,12 +593,15 @@ pub(super) fn planned_source_for_clip(clip: &Clip) -> Option<PlannedPlaybackSour
     }
 }
 
+/// Resolves a source's planner extents in timeline seconds; a beat-timed sequence's extents are
+/// converted at the timeline's `timeline_beats_per_second`.
 pub(super) fn playback_duration_profile_for_source(
     source: PlannedPlaybackSource,
     cue_data_provider: &DataProvider<Cue>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
     selection_resolver: &SpatialSelectionResolver<'_>,
+    timeline_beats_per_second: f64,
 ) -> PlaybackDurationProfile {
     match source {
         PlannedPlaybackSource::Cue(cue_uid) => cue_data_provider
@@ -588,6 +619,13 @@ pub(super) fn playback_duration_profile_for_source(
             fixture_data_provider,
             selection_resolver,
         )
+        .map(|profile| {
+            profile.in_playback_time(sequence_source_scale(
+                sequence_uid,
+                sequence_data_provider,
+                timeline_beats_per_second,
+            ))
+        })
         .unwrap_or_else(PlaybackDurationProfile::unknown),
         PlannedPlaybackSource::Fx(_) => PlaybackDurationProfile::indefinite(
             PlaybackExtent::Indefinite,
@@ -596,5 +634,22 @@ pub(super) fn playback_duration_profile_for_source(
         PlannedPlaybackSource::StepFx(_)
         | PlannedPlaybackSource::FxModule(_)
         | PlannedPlaybackSource::Flow(_) => PlaybackDurationProfile::unknown(),
+    }
+}
+
+/// Returns how much sequence time passes per timeline second: the timeline's beats per second
+/// for a beat-timed sequence, otherwise one.
+pub(super) fn sequence_source_scale(
+    sequence_uid: Uuid,
+    sequence_data_provider: Option<&DataProvider<Sequence>>,
+    timeline_beats_per_second: f64,
+) -> f64 {
+    let beat_timed = sequence_data_provider
+        .and_then(|provider| provider.get(sequence_uid).ok())
+        .is_some_and(|sequence| sequence.timebase == Timebase::Beats);
+    if beat_timed {
+        timeline_beats_per_second
+    } else {
+        1.0
     }
 }

@@ -177,6 +177,7 @@ fn evaluate_isolated_action(
                 None,
                 &sources.source_data.fixture_data_provider,
                 &sources.selection_resolver,
+                1.0,
             ),
         )]),
     };
@@ -343,8 +344,10 @@ fn stop_clip(
                 triggered.action.position,
                 scan.current_position,
                 &sources.source_data.cue_data_provider,
+                sources.source_data.sequence_data_provider.as_deref(),
                 &sources.source_data.fixture_data_provider,
                 &sources.selection_resolver,
+                scan.beats_per_second,
             )
         })
         .map(|timing| ClipOperation::StopAtTiming {
@@ -410,6 +413,7 @@ fn navigate_sequence(
                 &sources.source_data.fixture_data_provider,
                 &sources.selection_resolver,
                 navigation.intervention,
+                scan.beats_per_second,
             )
         })
         .map(|render_target| ClipOperation::RenderAt {

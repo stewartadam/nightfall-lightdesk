@@ -23,6 +23,7 @@ export const TIME_DISPLAY_UNIT_LABELS: Record<RichTimeDisplayUnit, string> = {
   milliseconds: "Milliseconds",
   bpm: "BPM",
   hertz: "Hertz",
+  beats: "Beats",
 };
 
 /** Converts the desk time display preference into a rich-cell display unit. */
