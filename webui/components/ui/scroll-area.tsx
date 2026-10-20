@@ -173,15 +173,29 @@ export function ScrollIndicators(props: ScrollIndicatorsProps) {
     observeContent();
     viewport.addEventListener("scroll", schedule, { passive: true });
     viewport.addEventListener("load", schedule, true);
+    // Hosts such as Dockview's render overlays move or reveal a viewport by restyling an
+    // ancestor without resizing it, which no other observer above reports.
+    const placementMutation = new MutationObserver(schedule);
     if (props.fixed) {
       window.addEventListener("scroll", schedule, true);
       window.addEventListener("resize", schedule);
+      for (
+        let ancestor = viewport.parentElement;
+        ancestor && ancestor !== document.body;
+        ancestor = ancestor.parentElement
+      ) {
+        placementMutation.observe(ancestor, {
+          attributes: true,
+          attributeFilter: ["style", "class", "hidden"],
+        });
+      }
     }
 
     onCleanup(() => {
       cancelAnimationFrame(frame);
       resize.disconnect();
       mutation.disconnect();
+      placementMutation.disconnect();
       viewport.removeEventListener("scroll", schedule);
       viewport.removeEventListener("load", schedule, true);
       window.removeEventListener("scroll", schedule, true);
