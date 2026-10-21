@@ -32,9 +32,6 @@ flowchart BT
 
 Layers with the same priority are applied in the order they were activated, so the most recently activated layer is applied last.
 
-> [!WARNING]
-> Sequence layers currently take a new activation time in every frame, while FX and FX module layers keep the time they started. As a result, a sequence clip sits above an FX clip of the same priority whichever started first, and the order between two sequence clips of the same priority doesn't follow their start order. Don't rely on start order between equal-priority sequences until this is fixed.
-
 ## Where priorities come from
 
 Most layers come from clips, and a clip's priority is a setting on the clip. The other sources use fixed priorities.
@@ -43,12 +40,11 @@ Most layers come from clips, and a clip's priority is a setting on the clip. The
 |--------|----------|-------------|
 | DMX input | -128 | Incoming DMX routed to fixtures by input bindings. Everything else overrides it. |
 | Manual channel values | -127 | Console DMX channel values set with the `channel` command. |
-| Clips | Set per clip, 0 by default | Sequences, FX, and Step FX started from a clip use the clip's priority. |
-| Flow playback | 0 | Flow layers use 0 today, even when a clip with another priority starts them. |
+| Clips | Set per clip, 0 by default | Sequences, FX, Step FX, and flows started from a clip use the clip's priority. |
+| Flow started directly | 0 | A flow started with the `flow start` command, outside a clip. |
 | Step FX started from its editor | 50 | Step FX playback started outside a clip. |
 | FX module playback | 50 | FX module layers use 50 today, even when a clip with another priority starts them. |
-| FX preview | 75 | Previewing an FX from its editor. |
-| Cue preview | 126 | Previewing a cue from the **Sequence Editor**. |
+| Editor previews | 126 | Previewing a cue, sequence, FX, Step FX, or FX module from its editor. |
 | Programmer | 127 | Live programmer values. The programmer always wins. |
 
 > [!WARNING]
