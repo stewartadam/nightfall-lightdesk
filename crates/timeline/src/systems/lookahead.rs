@@ -557,13 +557,9 @@ fn lookahead_fixture_darkness(
         return (Some(parameter), false);
     };
 
-    let output_value = if final_layer_output.0.absolute.contains_key(parameter)
-        || final_layer_output.0.relative.contains_key(parameter)
-    {
-        final_layer_output.0.get_effective_value(parameter)
-    } else {
-        parameter_ref.get_default_value()
-    };
+    let output_value = final_layer_output
+        .0
+        .effective_value(parameter, parameter_ref.get_default_value());
     (Some(parameter), output_value <= 0.0)
 }
 

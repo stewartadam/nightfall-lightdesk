@@ -115,6 +115,35 @@ fn count_changed_parameters(
     changed_count.0 = changed_parameters.iter().count();
 }
 
+/// Verifies a relative assertion with no absolute value beneath it offsets the parameter's
+/// default instead of zero.
+#[test]
+fn compositor_applies_lone_relative_to_parameter_default() {
+    let mut app = App::new();
+    add_compositor_removal_observers::<Parameter>(&mut app);
+    app.init_resource::<FinalLayerAttributedAssertions>();
+    app.add_systems(Update, compositor::<Parameter>);
+
+    let parameter_entity = spawn_test_parameter(&mut app, 100.0, 100.0);
+    let parameter = unsafe { Instance::<Parameter>::from_entity_unchecked(parameter_entity) };
+    let mut layer = Layer::new("relative".to_owned(), Priority(1));
+    layer
+        .relative
+        .insert(parameter, (ParameterValue::Relative { offset: 20.0 }, None));
+    app.world_mut().spawn((
+        ObjectRefMarker(ObjectRef::ById {
+            object_type: ObjectType::Cue,
+            id: 1,
+        }),
+        layer,
+    ));
+
+    app.update();
+
+    let param = app.world().get::<Parameter>(parameter_entity).unwrap();
+    assert_eq!(param.values.current_value, 120.0);
+}
+
 /// Verifies the compositor publishes computed output values for downstream semantic invalidation.
 #[test]
 fn compositor_publishes_final_computed_output_layer() {
@@ -138,7 +167,7 @@ fn compositor_publishes_final_computed_output_layer() {
 
     let parameter = unsafe { Instance::<Parameter>::from_entity_unchecked(parameter_entity) };
     let output_layer = app.world().resource::<FinalLayerOutput>();
-    assert_eq!(output_layer.0.get_effective_value(parameter), 120.0);
+    assert_eq!(output_layer.0.effective_value(parameter, 0.0), 120.0);
 }
 
 /// Updates a running test effect layer against the current fixture parameter entity.
@@ -477,7 +506,7 @@ fn compositor_recomputes_when_release_marker_is_removed() {
         app.world()
             .resource::<FinalLayerOutput>()
             .0
-            .get_effective_value(parameter),
+            .effective_value(parameter, 0.0),
         0.0
     );
 
@@ -492,7 +521,7 @@ fn compositor_recomputes_when_release_marker_is_removed() {
         app.world()
             .resource::<FinalLayerOutput>()
             .0
-            .get_effective_value(parameter),
+            .effective_value(parameter, 0.0),
         120.0
     );
 }
@@ -555,7 +584,7 @@ fn compositor_recomputes_when_layer_compositing_context_is_removed() {
         app.world()
             .resource::<FinalLayerOutput>()
             .0
-            .get_effective_value(parameter),
+            .effective_value(parameter, 0.0),
         0.0
     );
 }

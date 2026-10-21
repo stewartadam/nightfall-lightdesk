@@ -552,7 +552,13 @@ pub fn apply_master_inhibition(
         }
 
         parameter.values.current_value *= scale;
-        scale_final_layer_parameter(&mut final_layer_output.0, parameter_instance, scale);
+        let default_value = parameter.values.default_value;
+        scale_final_layer_parameter(
+            &mut final_layer_output.0,
+            parameter_instance,
+            default_value,
+            scale,
+        );
     }
 }
 
@@ -666,11 +672,21 @@ fn master_targets_parameter(
 }
 
 /// Scale final layer output maps so layer/output inspection matches mastered values.
+///
+/// A relative offset with no absolute value beneath it applies to the parameter's default, which
+/// the master scales along with the offset, so that default is written into the absolute map
+/// before scaling.
 fn scale_final_layer_parameter(
     final_layer_output: &mut ComputedLayer,
     parameter: Instance<Parameter>,
+    default_value: ParameterDmxValue,
     scale: f32,
 ) {
+    if final_layer_output.relative.contains_key(parameter)
+        && !final_layer_output.absolute.contains_key(parameter)
+    {
+        final_layer_output.absolute.insert(parameter, default_value);
+    }
     if let Some(value) = final_layer_output.absolute.get_mut(parameter) {
         *value *= scale;
     }

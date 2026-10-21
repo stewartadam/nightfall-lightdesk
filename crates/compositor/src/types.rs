@@ -678,20 +678,24 @@ impl ComputedLayer {
         }
     }
 
-    /// Get the final computed value for a parameter by combining absolute and relative values
-    pub fn get_effective_value<P>(&self, param: P) -> ParameterDmxValue
+    /// Returns a parameter's output value: its merged absolute value plus its summed relative
+    /// offset.
+    ///
+    /// When no layer asserts an absolute value, the offset applies to `default_value`, so a
+    /// relative assertion on its own moves the parameter away from its default rather than from
+    /// zero. A parameter with no assertions at all outputs `default_value`.
+    pub fn effective_value<P>(
+        &self,
+        param: P,
+        default_value: ParameterDmxValue,
+    ) -> ParameterDmxValue
     where
         P: Into<ParameterRef>,
     {
         let param = param.into();
-        let absolute = self.absolute.get(param).unwrap_or(&0.0);
-        let relative = self.relative.get(param).unwrap_or(&0.0);
-
-        if self.absolute.contains_key(param) || self.relative.contains_key(param) {
-            *absolute + *relative
-        } else {
-            *absolute
-        }
+        let absolute = self.absolute.get(param).copied().unwrap_or(default_value);
+        let relative = self.relative.get(param).copied().unwrap_or_default();
+        absolute + relative
     }
 
     /// Get all parameters that have values (absolute or relative)
