@@ -8,7 +8,7 @@ Nightfall has four kinds of automated tests, and each one catches a different ki
 
 ## Which test catches which bug
 
-Pick the cheapest test that can see the bug. A Rust test runs in milliseconds and points at one system. A Playwright test takes seconds, builds the whole app, and fails far from the cause, but it's the only kind that sees what the operator sees. A Rust test can check that the `Red` cue sets `Practice light` to full red, while only a Playwright spec can check that the visualizer then draws the fixture red.
+Pick the cheapest test that can see the bug. A Rust test runs in milliseconds and points at one system. A Playwright test takes seconds, builds the whole app, and fails far from the cause, but it's the only kind that sees what the operator sees. A Rust test can check that the `Red` cue sets `Par 1` to full red, while only a Playwright spec can check that the visualizer then draws the fixture red.
 
 | Test kind | Catches | Lives in | Runs on |
 | --- | --- | --- | --- |

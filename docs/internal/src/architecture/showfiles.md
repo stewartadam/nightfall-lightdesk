@@ -28,12 +28,12 @@ flowchart TB
   snapshot --> settings
 ```
 
-In the running example, `Practice light` is one entry in the fixture list, with its profile embedded so the show opens on a machine that doesn't have the profile installed. Its patch at console universe 1, address 1 and the bindings that route that universe to an output are in the patch bindings. `First sequence` is in the sequence list, `Red` and `Blue` are in the cue list, and `First playback` is in the clip list.
+In the running example, `Par 1` is one entry in the fixture list, with its profile embedded so the show opens on a machine that doesn't have the profile installed. Its patch at console universe 1, address 1 and the bindings that route that universe to an output are in the patch bindings. `First sequence` is in the sequence list, `Red` and `Blue` are in the cue list, and `First playback` is in the clip list.
 
 A showfile stores definitions, never live state. These things are not saved:
 
 - Running playbacks, their positions, and fades in progress. After a load, no clip is running, even if `First playback` was in `Red` when you saved.
-- The programmer. The 50% intensity you held on `Practice light` is gone after a load.
+- The programmer. The 50% intensity you held on `Par 1` is gone after a load.
 - Undo history.
 - Control slot levels and pickup state. A control slot saves its assignment and button mode only.
 
@@ -115,7 +115,7 @@ Desk state and boards have no dependencies. The crate sorts the domains with a d
 
 Loading then runs in three phases, and each phase visits every domain in that order before the next phase starts:
 
-1. **Import definitions.** Each domain copies its definitions into the world's stores and plain settings. `Practice light`, `First sequence`, `Red`, and `Blue` arrive here.
+1. **Import definitions.** Each domain copies its definitions into the world's stores and plain settings. `Par 1`, `First sequence`, `Red`, and `Blue` arrive here.
 1. **Resolve links.** This phase is for work that needs another domain's definitions. No domain uses it today.
 1. **Materialize runtime.** Domains create the runtime objects that the frame needs, derived from the definitions: fixture parameters, step FX, clip instances such as `First playback`, timecode generators, and timelines.
 

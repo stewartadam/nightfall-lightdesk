@@ -4,7 +4,7 @@
 
 A fixture profile tells Nightfall what each DMX channel of a light means. The patch tells it where those channels live. Together they decide which bytes leave the computer. This page follows that path from an imported GDTF or Open Fixture Library (OFL) file to the bytes in an Art-Net, sACN, or USB frame: the profile model, the importers, the parameter entities a patched fixture becomes, the binding graph and how patch changes are validated, and the order in which console universes, direct fixture patches, and DMX input combine into one output frame. Read it before you change an importer, the patch, or anything in the `DmxOutput` system set.
 
-The page builds on [how a show becomes light](../concepts/show-to-light.md) and [priorities and merging](../concepts/priorities-and-merging.md), and it places each step in the render pass that [the frame loop](../engine/frame-loop.md) describes. It follows `Practice light`, patched at console universe 1, address 1.
+The page builds on [how a show becomes light](../concepts/show-to-light.md) and [priorities and merging](../concepts/priorities-and-merging.md), and it places each step in the render pass that [the frame loop](../engine/frame-loop.md) describes. It follows `Par 1`, patched at console universe 1, address 1.
 
 ## From profile to wire in one picture
 
@@ -108,9 +108,9 @@ An intensity master scales a parameter only when both conditions hold:
 
 Both importers set `use_grandmaster` on intensity parameters. The GDTF importer then clears it on some virtual dimmers so that a master scales each light path once, as the next section describes. Setting `use_grandmaster` on any other attribute has no effect.
 
-### The profile of `Practice light`
+### The profile of `Par 1`
 
-`Practice light` comes from the tutorial's OFL file, `nightfall@practice-rgbi.json`, mode **4 channel**. The importer produces one element, labeled `Main`, with four parameters:
+`Par 1` comes from the tutorial's OFL file, `nightfall@tutorial-rgbi-par.json`, mode **4 channel**. The importer produces one element, labeled `Main`, with four parameters:
 
 | Attribute | Resolution | Slots | Merge rule | Masters affect it | Default |
 |-----------|------------|-------|------------|-------------------|---------|
@@ -162,7 +162,7 @@ Each parameter starts at its profile default. When the profile gives no default,
 > [!WARNING]
 > The `StoreFixture` command only stores the fixture definition. It doesn't spawn or rebuild parameter entities, so a fixture created or reshaped through it has no parameters to control or patch. Create fixtures through the library commands.
 
-For `Practice light`, the result is one stored fixture, one element reference with index 1, and four parameter entities for intensity, red, green, and blue.
+For `Par 1`, the result is one stored fixture, one element reference with index 1, and four parameter entities for intensity, red, green, and blue.
 
 ## The binding graph
 
@@ -196,7 +196,7 @@ A fixture binding can select whole fixtures, one element, or one parameter. It p
 - Fixture bindings route break 1. Each additional DMX break needs its own `FixtureBreak` binding with its own address.
 - Parameters without slots, including `VirtualIntensity`, get no output address. An input binding that targets a fixture can still drive a `VirtualIntensity` parameter, which it treats as one sequential intensity byte.
 
-The **Patch** wizard creates `Practice light` through the library, then adds one output binding: source fixture 1, target console universe 1 at address 1, priority 0, no clone. The fixture's footprint is four slots, so its parameters get console addresses 1 to 4.
+The **Patch** wizard creates `Par 1` through the library, then adds one output binding: source fixture 1, target console universe 1 at address 1, priority 0, no clone. The fixture's footprint is four slots, so its parameters get console addresses 1 to 4.
 
 ### How bindings resolve each frame
 
@@ -326,9 +326,9 @@ The order matters. A master scales a virtual dimmer before the virtual dimmer sc
 
 Relations between two real channels don't run here. The fixture applies them itself, and the 3D visualizer evaluates them through the WASM bridge to show what the fixture will do.
 
-## Following `Practice light` from profile to wire
+## Following `Par 1` from profile to wire
 
-The following steps trace `Practice light` at the moment `First playback` finishes fading into `Red` while the programmer holds intensity at 50%:
+The following steps trace `Par 1` at the moment `First playback` finishes fading into `Red` while the programmer holds intensity at 50%:
 
 1. The OFL importer converts mode **4 channel** into one element with four coarse, sequential, LTP parameters, as the profile table above shows.
 1. The library command spawns four parameter entities. The patch wizard's binding gives them console universe 1, addresses 1 to 4.
@@ -346,7 +346,7 @@ The bytes in console universe 1 are:
 | 3 | Green | 0 | 0 |
 | 4 | Blue | 0 | 0 |
 
-An intensity master at 50% on `Practice light` would halve the intensity to 63.75, which encodes as 64. It wouldn't touch red, green, or blue, because the profile sets `use_grandmaster` only on intensity.
+An intensity master at 50% on `Par 1` would halve the intensity to 63.75, which encodes as 64. It wouldn't touch red, green, or blue, because the profile sets `use_grandmaster` only on intensity.
 
 ## In the code
 
