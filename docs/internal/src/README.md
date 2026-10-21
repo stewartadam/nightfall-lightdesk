@@ -25,7 +25,7 @@ Several parts are still being written. The [writing style](contributing/writing-
 
 Pages in the first parts follow one small show, built in the user manual's [Your first show](../user-guide/getting-started.html) tutorial:
 
-- One fixture, `Practice light`, with intensity, red, green, and blue channels, patched at console universe 1, address 1.
+- One fixture, `Par 1`, with intensity, red, green, and blue channels, patched at console universe 1, address 1.
 - A sequence, `First sequence`, with two cues: `Red` and `Blue`.
 - A clip, `First playback`, that plays `First sequence`.
 

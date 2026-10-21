@@ -4,7 +4,7 @@
 
 Nightfall recalculates every fixture's output many times a second. Each time, everything that is currently running contributes values for the fixture attributes it controls. Nightfall merges those contributions by priority, adjusts the result with masters, and converts it into Digital Multiplex (DMX) channel values that go out to the lights. Nightfall calls this cycle a frame. By default the engine runs 44 frames per second, matching the DMX output rate, and it never runs fewer than 30.
 
-This page follows one frame from start to finish, using the [running example](../README.md#a-running-example): `Practice light`, `First sequence` with its `Red` and `Blue` cues, and the `First playback` clip.
+This page follows one frame from start to finish, using the [running example](../README.md#a-running-example): `Par 1`, `First sequence` with its `Red` and `Blue` cues, and the `First playback` clip.
 
 ## The journey in one picture
 
@@ -26,8 +26,8 @@ flowchart TB
 
 A showfile holds what you programmed. Nothing in it produces light on its own.
 
-- A **fixture** is a patched light. Its **profile** lists the attributes it has, such as intensity, red, or pan, and how each one maps to DMX channels. `Practice light` has four attributes: intensity, red, green, and blue.
-- A **cue** stores instructions: "set these attributes on these fixtures to these values, with this timing." `Red` sets `Practice light` to full intensity and full red.
+- A **fixture** is a patched light. Its **profile** lists the attributes it has, such as intensity, red, or pan, and how each one maps to DMX channels. `Par 1` has four attributes: intensity, red, green, and blue.
+- A **cue** stores instructions: "set these attributes on these fixtures to these values, with this timing." `Red` sets `Par 1` to full intensity and full red.
 - A **sequence** orders cues and decides how they advance. `First sequence` plays `Red`, then waits for Go before `Blue`.
 - A **clip** says what to play and how. `First playback` points at `First sequence` and carries the playback's priority and options.
 
@@ -53,7 +53,7 @@ The **programmer** is a special case. It isn't stored, and it doesn't need start
 
 In every frame, each playback works out the values it currently wants. The result is a **layer**: a set of values for specific attributes of specific fixtures, together with a priority.
 
-The following diagram shows the layers for the running example at the moment `First playback` finishes fading into `Red`, while the programmer holds `Practice light` at 50% intensity:
+The following diagram shows the layers for the running example at the moment `First playback` finishes fading into `Red`, while the programmer holds `Par 1` at 50% intensity:
 
 ```mermaid
 flowchart TB
@@ -101,7 +101,7 @@ Rate masters are different. They change how fast the targeted playbacks run, so 
 
 ## Values become DMX
 
-Each fixture's profile converts its final attribute values into DMX channel values at the fixture's patched address. `Practice light` is patched at console universe 1, address 1, so its intensity, red, green, and blue land in channels 1 to 4 of console universe 1.
+Each fixture's profile converts its final attribute values into DMX channel values at the fixture's patched address. `Par 1` is patched at console universe 1, address 1, so its intensity, red, green, and blue land in channels 1 to 4 of console universe 1.
 
 Console universes are Nightfall's internal address space. Patch bindings route them to output transports, which send DMX to hardware: Art-Net or sACN network gateways, or a USB DMX interface. Until a binding routes a console universe to a transport, nothing leaves the computer. This is why the tutorial can run without hardware.
 

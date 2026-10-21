@@ -15,7 +15,7 @@ It builds on [how a show becomes light](show-to-light.md), which introduces play
 
 Every layer carries a priority, a whole number from -128 to 127. In each frame, Nightfall sorts the layers from lowest to highest priority and applies them in that order, starting from the fixture default values. Each layer replaces the values of the attributes it sets and leaves the others alone. The only exception is between layers of equal priority, where the merge rule decides. Because the highest-priority layer is applied last, its values are the ones left at the end, so it decides every attribute it sets.
 
-The following diagram shows the stack for the running example, with an FX running on `Practice light` from a second clip at priority 10:
+The following diagram shows the stack for the running example, with an FX running on `Par 1` from a second clip at priority 10:
 
 ```mermaid
 flowchart BT
@@ -62,7 +62,7 @@ The fixture profile sets the rule for each attribute, and the importers decide i
 - GDTF profiles make intensity HTP and every other attribute LTP.
 - Open Fixture Library (OFL) profiles use each channel's `precedence` field, and fall back to LTP when the field is missing. OFL matrix template channels make intensity and color-mixing attributes HTP.
 
-`Practice light` comes from an OFL file without `precedence` fields, so all of its attributes, including intensity, merge LTP.
+`Par 1` comes from an OFL file without `precedence` fields, so all of its attributes, including intensity, merge LTP.
 
 Between different priorities the merge rule doesn't matter. A priority 10 clip at 20% intensity overrides a priority 0 clip at 100%, even when intensity is HTP.
 
@@ -82,7 +82,7 @@ sequenceDiagram
   accDescr: The clip is stopped, its layer fades out over the release time while the programmer and lower layers show through, and then the layer is removed.
   participant Op as Operator
   participant Clip as First playback layer
-  participant Out as Practice light output
+  participant Out as Par 1 output
   Op->>Clip: Stop clip
   Clip->>Out: Fade values toward the layers below
   Clip->>Clip: Remove layer when the release ends
