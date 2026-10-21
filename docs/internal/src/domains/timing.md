@@ -76,13 +76,13 @@ One exception keeps simple cues natural. When a cue's own chain, without the seq
 
 Release uses the sequence's release cue, with the same rule by merge type: HTP parameters use its out timing and LTP parameters use its in timing. [Cues, sequences, and tracking](cues-and-sequences.md#release) explains how release chooses timing for each value.
 
-## Worked example: `Practice light` from `Red` to `Blue`
+## Worked example: `Par 1` from `Red` to `Blue`
 
 Suppose you add timing to `First sequence` as follows:
 
 - The sequence's default timing has a 2-second fade-in.
 - The `Blue` cue sets a 3-second fade-in.
-- `Blue`'s instruction for `Practice light` overrides the blue attribute with a 0.5-second delay-in and a 1-second fade-in.
+- `Blue`'s instruction for `Par 1` overrides the blue attribute with a 0.5-second delay-in and a 1-second fade-in.
 
 When you press Go, `Blue` becomes active at the playback clock's current position, and each value resolves through the chain:
 
@@ -93,7 +93,7 @@ When you press Go, `Blue` becomes active at the playback clock's current positio
 | Green | 0% to 0% | 0 s | 3 s | `Blue` restates green at 0%, so the fade has no visible effect. |
 | Blue | 0% to 100% | 0.5 s | 1 s | The instruction's attribute override wins over the cue and the sequence default. |
 
-`Practice light` is one fixture, so each instruction has one slot, and a fanned mode would resolve to its first value. Every `Practice light` attribute merges LTP, so red uses its in timing even though it goes down. With a GDTF profile, intensity would be HTP, and a cue that lowered it would use the out timing, or the in timing under the exception described earlier.
+`Par 1` is one fixture, so each instruction has one slot, and a fanned mode would resolve to its first value. Every `Par 1` attribute merges LTP, so red uses its in timing even though it goes down. With a GDTF profile, intensity would be HTP, and a cue that lowered it would use the out timing, or the in timing under the exception described earlier.
 
 Red reaches 0% 3 seconds after Go. Blue starts moving half a second after Go and reaches full 1.5 seconds after Go.
 
