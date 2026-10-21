@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+export { TimecodeAudioInputFields } from "./audio-input-fields";
 export {
   type TimecodeStatus,
   type TimecodeStatusTone,

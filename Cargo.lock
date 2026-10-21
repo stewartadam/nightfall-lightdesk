@@ -265,6 +265,7 @@ dependencies = [
  "nightfall-fx",
  "nightfall-fx-module",
  "nightfall-input-artnet",
+ "nightfall-input-ltc",
  "nightfall-input-midi",
  "nightfall-input-osc",
  "nightfall-input-sacn",
@@ -5736,6 +5737,22 @@ dependencies = [
  "socket2",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "nightfall-input-ltc"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "nightfall-engine",
+ "nightfall-timecode",
+ "nightfall-workspace-hack",
+ "rodio",
+ "serde",
+ "tracing",
+ "typeshare",
+ "uuid",
 ]
 
 [[package]]

@@ -141,6 +141,7 @@ export type AnyWsMessage =
   | types.TimecodeWsMessage
   | types.TimelineWsMessage
   | types.MidiWsMessage
+  | types.LtcWsMessage
   | types.OscWsMessage
   | types.ActionsWsMessage
   | types.EngineClientMessage

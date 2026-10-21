@@ -310,6 +310,33 @@ test("timeline properties expose and persist timeline configuration", async ({
     path: test.info().outputPath("timecode-source-properties.png"),
   });
 
+  await expect(page.getByLabel("Timecode audio input")).toHaveCount(0);
+  await page.getByLabel("Timecode source").selectOption("SmpteLtc");
+  await expect(page.getByLabel("Timecode audio input")).toHaveValue("");
+  await page.getByLabel("Timecode audio channel").selectOption({ label: "2" });
+  await expect
+    .poll(() =>
+      page.evaluate((timecodeUid) => {
+        const timecode = (window as any).appStores.timecodes.get()[
+          timecodeUid
+        ]?.[0];
+        return {
+          source: timecode?.source,
+          rate: timecode?.rate,
+          audio_input: timecode?.audio_input,
+        };
+      }, context.initialTimecodeUid),
+    )
+    .toEqual({
+      source: "SmpteLtc",
+      rate: "Fps25",
+      audio_input: { channel: 1 },
+    });
+  await expect(page.getByLabel("Timecode audio channel")).toHaveValue("1");
+  await page.screenshot({
+    path: test.info().outputPath("timecode-ltc-input-properties.png"),
+  });
+
   await linkedTimecode.selectOption(context.alternateTimecodeUid);
   await expect
     .poll(() =>

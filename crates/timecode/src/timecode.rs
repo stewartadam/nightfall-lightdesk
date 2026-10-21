@@ -24,6 +24,10 @@ pub struct Timecode {
     pub rate: TimecodeRate,
     /// Timecode source
     pub source: TimecodeSource,
+    /// Audio input carrying the timecode when the source is [`TimecodeSource::SmpteLtc`]. `None`
+    /// reads the first channel of the system default input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_input: Option<TimecodeAudioInput>,
 }
 
 impl Default for Timecode {
@@ -32,8 +36,21 @@ impl Default for Timecode {
             identifiers: Identifiers::default(),
             rate: TimecodeRate::Fps30,
             source: TimecodeSource::Internal,
+            audio_input: None,
         }
     }
+}
+
+/// An audio device channel that linear timecode is read from.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct TimecodeAudioInput {
+    /// Id of the audio input device, or `None` for the system default input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    /// Zero-based channel carrying the timecode.
+    #[serde(default)]
+    pub channel: u16,
 }
 
 impl HasIdentifiers for Timecode {

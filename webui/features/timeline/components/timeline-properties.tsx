@@ -20,7 +20,11 @@ import { useShallowStore } from "../../../lib/use-shallow-store";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timecodes, timelines } from "../../../state/appStores";
 import * as types from "../../../types";
-import { timecodeRateLabel, timecodeSourceName } from "../../timecode";
+import {
+  TimecodeAudioInputFields,
+  timecodeRateLabel,
+  timecodeSourceName,
+} from "../../timecode";
 
 type TimelinePropertiesProps = {
   timelineUid: string;
@@ -133,7 +137,7 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
 
   /**
    * Stores a change to the linked timecode itself. Every timeline sharing
-   * that timecode follows the new source or rate. Edits the
+   * that timecode follows the new source, rate, or audio input. Edits the
    * engine hasn't reported yet are merged in, so a second edit made before the
    * engine applies the first doesn't revert it.
    */
@@ -304,6 +308,18 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
                       </For>
                     </NativeSelect>
                   </label>
+                  <Show
+                    when={timecode().source === types.TimecodeSource.SmpteLtc}
+                  >
+                    <div class="col-span-2">
+                      <TimecodeAudioInputFields
+                        input={timecode().audio_input}
+                        onChange={(audio_input) =>
+                          updateTimecode(timecode(), { audio_input })
+                        }
+                      />
+                    </div>
+                  </Show>
                 </div>
               )}
             </Show>

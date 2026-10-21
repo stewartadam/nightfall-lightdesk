@@ -314,6 +314,7 @@ fn start_timeline(app: &mut App, actions: Vec<Action>, mode: TimelineLookaheadMo
         },
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
+        audio_input: None,
     };
     let timecode_uid = timecode.identifiers.uid;
     app.world_mut()

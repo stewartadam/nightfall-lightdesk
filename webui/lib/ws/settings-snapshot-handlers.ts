@@ -9,6 +9,7 @@
 import {
   applyActionCatalogSnapshot,
   applyActionInvocationFailure,
+  applyAudioInputDevicesSnapshot,
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
@@ -64,6 +65,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("AvailableAudioDevices", (message) => {
     applyAvailableAudioDevicesSnapshot(message.data);
+  });
+
+  registry.register("AudioInputDevices", (message) => {
+    applyAudioInputDevicesSnapshot(message.data);
   });
 
   registry.register("AvailableUsbDmxDevices", (message) => {

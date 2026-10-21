@@ -32,10 +32,11 @@ pub mod prelude {
     pub use crate::TimecodePlugin;
     pub use crate::components::TimecodeGenerator;
     pub use crate::external::{
-        ExternalTimecodeFeed, ExternalTimecodeFeeds, ExternalTimecodeFrame, SmpteTime,
+        ExternalTimecodeFeed, ExternalTimecodeFeeds, ExternalTimecodeFrame, PlayStateInference,
+        SmpteTime,
     };
     pub use crate::timecode::{
-        Timecode, TimecodeRate, TimecodeSignal, TimecodeSource, TimecodeState,
+        Timecode, TimecodeAudioInput, TimecodeRate, TimecodeSignal, TimecodeSource, TimecodeState,
     };
     pub use crate::{TimecodeCommand, TimecodeEvent, TimecodeOperation};
 }

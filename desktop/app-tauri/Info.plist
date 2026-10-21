@@ -6,5 +6,7 @@
 <dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Nightfall sends lighting data to fixtures and nodes on your network, and lets your other devices connect to control the show.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nightfall reads SMPTE linear timecode (LTC) from the audio input you choose for a timecode.</string>
 </dict>
 </plist>

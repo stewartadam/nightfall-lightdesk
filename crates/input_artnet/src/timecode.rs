@@ -9,15 +9,13 @@
 //! Art-Net timecode (ArtTimeCode) decoding.
 //!
 //! A sender transmits one ArtTimeCode packet per frame while playing. Packets carry no play
-//! state, so the decoder infers it: a packet that moves the position a little forward is
-//! playing, anything else is a locate.
-use std::time::{Duration, Instant};
+//! state, so the decoder infers it with [`PlayStateInference`].
+use std::time::Instant;
 
 use artnet_protocol::{FrameType, Timecode};
-use nightfall_timecode::prelude::{ExternalTimecodeFrame, SmpteTime, TimecodeRate};
-
-/// Largest forward step between consecutive packets still treated as playing rather than a jump.
-const MAX_PLAYING_STEP: Duration = Duration::from_secs(1);
+use nightfall_timecode::prelude::{
+    ExternalTimecodeFrame, PlayStateInference, SmpteTime, TimecodeRate,
+};
 
 /// Maps an ArtTimeCode frame type to a frame rate.
 fn rate_from_frame_type(frame_type: FrameType) -> TimecodeRate {
@@ -32,15 +30,15 @@ fn rate_from_frame_type(frame_type: FrameType) -> TimecodeRate {
 /// Decodes the Art-Net timecode stream received by one listener.
 #[derive(Debug, Default)]
 pub(crate) struct ArtNetTimecodeDecoder {
-    /// Position of the previous packet, to tell playing from locating.
-    previous: Option<Duration>,
+    /// Tells playing from locating across consecutive packets.
+    play_state: PlayStateInference,
 }
 
 impl ArtNetTimecodeDecoder {
     /// Converts one ArtTimeCode packet into a frame.
     ///
-    /// The packet counts as playing when it is at most [`MAX_PLAYING_STEP`] ahead of the previous
-    /// one. A repeated position, a backwards step, a long jump or the first packet is a locate.
+    /// The packet counts as playing when it moves a little forward from the previous one, and as
+    /// a locate otherwise.
     pub(crate) fn decode(
         &mut self,
         timecode: &Timecode,
@@ -54,10 +52,7 @@ impl ArtNetTimecodeDecoder {
             frames: timecode.frames,
         }
         .to_duration(rate);
-        let running = self
-            .previous
-            .is_some_and(|previous| position > previous && position - previous <= MAX_PLAYING_STEP);
-        self.previous = Some(position);
+        let running = self.play_state.observe(position);
         ExternalTimecodeFrame {
             position,
             rate,
@@ -69,6 +64,8 @@ impl ArtNetTimecodeDecoder {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     /// Builds an ArtTimeCode packet at 25 fps.

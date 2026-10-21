@@ -278,6 +278,7 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
         },
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
+        audio_input: None,
     };
     app.world_mut()
         .resource_mut::<DataProvider<Timecode>>()

@@ -43,7 +43,7 @@ pub fn update_timecode_system(
         );
         let frame = feeds
             .as_ref()
-            .and_then(|feeds| feeds.latest(generator.timecode.source));
+            .and_then(|feeds| feeds.latest(&generator.timecode));
         generator.advance(delta, frame, now);
     }
 }

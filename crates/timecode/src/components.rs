@@ -48,6 +48,7 @@ impl Default for TimecodeGenerator {
             },
             rate: TimecodeRate::Fps30,
             source: TimecodeSource::Internal,
+            audio_input: None,
         })
     }
 }
@@ -230,6 +231,7 @@ mod tests {
             },
             rate: TimecodeRate::Fps24,
             source: TimecodeSource::Internal,
+            audio_input: None,
         };
 
         let generator = TimecodeGenerator::new(timecode.clone());

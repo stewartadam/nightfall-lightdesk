@@ -17,9 +17,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
+use uuid::Uuid;
 use web_time::Instant;
 
-use crate::timecode::{TimecodeRate, TimecodeSource};
+use crate::timecode::{Timecode, TimecodeRate, TimecodeSource};
 
 /// One timecode position decoded from an external source.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -57,22 +58,76 @@ impl ExternalTimecodeFeed {
     }
 }
 
-/// Feeds registered by the input plugins present in this engine, keyed by the source they read.
+/// Feeds registered by the input plugins present in this engine.
 ///
-/// A source without a feed, such as MIDI timecode in the browser demo, never receives frames, so
-/// timecodes following it wait for signal.
+/// Inputs shared by every timecode with a given source, such as MIDI timecode, register once for
+/// that source. Inputs a timecode configures for itself, such as the audio channel LTC arrives on,
+/// register for that timecode. A timecode without a feed, such as one following MIDI timecode in
+/// the browser demo, never receives frames, so it waits for signal.
 #[derive(Resource, Default)]
-pub struct ExternalTimecodeFeeds(HashMap<TimecodeSource, ExternalTimecodeFeed>);
+pub struct ExternalTimecodeFeeds {
+    by_source: HashMap<TimecodeSource, ExternalTimecodeFeed>,
+    by_timecode: HashMap<Uuid, (TimecodeSource, ExternalTimecodeFeed)>,
+}
 
 impl ExternalTimecodeFeeds {
     /// Makes `feed` the input for every timecode whose source is `source`.
     pub fn register(&mut self, source: TimecodeSource, feed: ExternalTimecodeFeed) {
-        self.0.insert(source, feed);
+        self.by_source.insert(source, feed);
     }
 
-    /// Returns the latest frame received for `source`.
-    pub fn latest(&self, source: TimecodeSource) -> Option<ExternalTimecodeFrame> {
-        self.0.get(&source).and_then(ExternalTimecodeFeed::latest)
+    /// Makes `feed` the input for the timecode `uid` while its source is `source`. It takes
+    /// precedence over a feed registered for the whole source.
+    pub fn register_timecode(
+        &mut self,
+        uid: Uuid,
+        source: TimecodeSource,
+        feed: ExternalTimecodeFeed,
+    ) {
+        self.by_timecode.insert(uid, (source, feed));
+    }
+
+    /// Removes the feed registered for the timecode `uid`, if any.
+    pub fn unregister_timecode(&mut self, uid: Uuid) {
+        self.by_timecode.remove(&uid);
+    }
+
+    /// Returns the latest frame received for `timecode`, from its own feed when one is registered
+    /// for its current source, otherwise from its source's shared feed.
+    pub fn latest(&self, timecode: &Timecode) -> Option<ExternalTimecodeFrame> {
+        let own_feed = self
+            .by_timecode
+            .get(&timecode.identifiers.uid)
+            .filter(|(source, _)| *source == timecode.source)
+            .map(|(_, feed)| feed);
+        own_feed
+            .or_else(|| self.by_source.get(&timecode.source))
+            .and_then(ExternalTimecodeFeed::latest)
+    }
+}
+
+/// Largest forward step between consecutive frames still treated as playing rather than a jump.
+pub const MAX_PLAYING_STEP: Duration = Duration::from_secs(1);
+
+/// Infers whether a sender is playing, for sources whose frames carry no play state, such as
+/// Art-Net timecode and LTC.
+///
+/// Such senders transmit a frame per frame while playing, and some keep repeating the parked
+/// frame while stopped. A frame at most [`MAX_PLAYING_STEP`] ahead of the previous one counts as
+/// playing; a repeated position, a backwards step, a long jump or the first frame is a locate.
+#[derive(Debug, Default, Clone)]
+pub struct PlayStateInference {
+    previous: Option<Duration>,
+}
+
+impl PlayStateInference {
+    /// Records the position of a newly received frame and returns whether the sender is playing.
+    pub fn observe(&mut self, position: Duration) -> bool {
+        let running = self
+            .previous
+            .is_some_and(|previous| position > previous && position - previous <= MAX_PLAYING_STEP);
+        self.previous = Some(position);
+        running
     }
 }
 
@@ -142,6 +197,68 @@ pub const POSITION_JUMP_THRESHOLD: Duration = Duration::from_millis(250);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Builds a frame at `seconds` for feed lookup tests.
+    fn frame_at(seconds: u64) -> ExternalTimecodeFrame {
+        ExternalTimecodeFrame {
+            position: Duration::from_secs(seconds),
+            rate: TimecodeRate::Fps25,
+            running: true,
+            received_at: Instant::now(),
+        }
+    }
+
+    /// Builds a timecode following `source`.
+    fn timecode_following(source: TimecodeSource) -> Timecode {
+        Timecode {
+            source,
+            ..Timecode::default()
+        }
+    }
+
+    /// Small forward steps count as playing; the first frame, repeats, backward steps and long
+    /// jumps count as locates.
+    #[test]
+    fn play_state_inference_tells_playing_from_locating() {
+        let mut inference = PlayStateInference::default();
+        assert!(!inference.observe(Duration::from_secs(10)));
+        assert!(inference.observe(Duration::from_millis(10_040)));
+        assert!(!inference.observe(Duration::from_millis(10_040)));
+        assert!(!inference.observe(Duration::from_secs(9)));
+        assert!(!inference.observe(Duration::from_secs(60)));
+        assert!(inference.observe(Duration::from_millis(60_040)));
+    }
+
+    /// A timecode's own feed wins over its source's shared feed, but only while the timecode
+    /// still follows the source the feed was registered for.
+    #[test]
+    fn own_feed_takes_precedence_only_for_its_source() {
+        let shared = ExternalTimecodeFeed::default();
+        shared.publish(frame_at(1));
+        let own = ExternalTimecodeFeed::default();
+        own.publish(frame_at(2));
+        let mut feeds = ExternalTimecodeFeeds::default();
+        feeds.register(TimecodeSource::MidiMtc, shared);
+
+        let mut timecode = timecode_following(TimecodeSource::SmpteLtc);
+        assert_eq!(feeds.latest(&timecode), None);
+
+        feeds.register_timecode(timecode.identifiers.uid, TimecodeSource::SmpteLtc, own);
+        assert_eq!(
+            feeds.latest(&timecode).map(|frame| frame.position),
+            Some(Duration::from_secs(2))
+        );
+
+        timecode.source = TimecodeSource::MidiMtc;
+        assert_eq!(
+            feeds.latest(&timecode).map(|frame| frame.position),
+            Some(Duration::from_secs(1))
+        );
+
+        timecode.source = TimecodeSource::SmpteLtc;
+        feeds.unregister_timecode(timecode.identifiers.uid);
+        assert_eq!(feeds.latest(&timecode), None);
+    }
 
     /// Non-drop rates add whole seconds and a fraction of a second per frame.
     #[test]

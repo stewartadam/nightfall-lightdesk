@@ -12,8 +12,9 @@ Choose a timecode's **Source** and **Rate** in [Timeline](timeline.md) Propertie
 
 - **MIDI timecode** follows MIDI timecode (MTC) from any connected MIDI input.
 - **Art-Net** follows Art-Net timecode (ArtTimeCode) arriving on the network interface used for Art-Net input. **Network input** must be enabled (see [I/O Transports](io-transports.md)).
+- **LTC** follows SMPTE linear timecode arriving as audio. Pick the **Audio input** and **Channel** carrying it under the source; each LTC timecode can read its own input. **Default input** follows the system's default input device. The input opens only while the timecode is started, so the first start may ask for microphone access. If the device is missing or unplugged, the timecode shows **No signal** and reconnects within a few seconds once the device is back.
 
-Both behave the same way:
+All three behave the same way:
 
 - **Start** arms the timecode. It runs only while timecode arrives, and its timelines play and pause with the sender. **Pause** and **Stop** stop following the sender.
 - When the sender locates without playing, the timecode jumps to that position and stays paused.
@@ -22,7 +23,7 @@ Both behave the same way:
 
 The status shows **No signal** while an armed timecode is waiting for the sender, **Receiving** while timecode arrives, and **Freewheel** during a dropout. When the sender's frame rate differs from the timecode's rate, the source names the rate it sends.
 
-The LTC source can be selected but isn't read yet, so a timecode following it always shows **No signal**. The browser demo has no MIDI or network input, so external timecodes there always show **No signal** too.
+The browser demo has no MIDI, network, or audio input, so external timecodes there always show **No signal**.
 
 Configure the linked timecode from [Timeline](timeline.md) Properties and operate it with the timeline's transport controls. This panel is a monitor, not a full timecode editor.
 
