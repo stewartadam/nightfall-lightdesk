@@ -231,6 +231,7 @@ mod gdtf_tests {
 #[cfg(test)]
 mod ofl_tests {
     use nightfall_dmx::prelude::*;
+    use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::*;
 
     use super::super::ofl::*;
@@ -512,6 +513,10 @@ mod ofl_tests {
             fixture.elements[0].parameters[0].attribute,
             Attribute::Intensity
         );
+        assert_eq!(
+            fixture.elements[0].parameters[0].merge_type,
+            MergeStrategy::HTP
+        );
 
         // Next 4 elements should be pixels
         for (i, element) in fixture.elements.iter().enumerate().skip(1).take(4) {
@@ -535,6 +540,14 @@ mod ofl_tests {
             assert!(has_red, "Pixel {} missing Red", i);
             assert!(has_green, "Pixel {} missing Green", i);
             assert!(has_blue, "Pixel {} missing Blue", i);
+            assert!(
+                element
+                    .parameters
+                    .iter()
+                    .all(|p| p.merge_type == MergeStrategy::LTP),
+                "Pixel {} color channels should merge LTP",
+                i
+            );
         }
     }
 
@@ -592,6 +605,65 @@ mod ofl_tests {
         let physical = fixture.physical.expect("default photometry");
         assert_eq!((physical.beam_angle, physical.field_angle), (15.0, 40.0));
         assert_eq!(physical.lumens, DEFAULT_LUMENS);
+    }
+
+    /// Verifies OFL channels without a `precedence` field merge HTP for intensity and LTP
+    /// otherwise, while an explicit `precedence` still overrides the attribute default.
+    #[test]
+    fn test_missing_precedence_defaults_by_attribute() {
+        use open_fixture_library::OflFixture;
+
+        use super::super::ofl::*;
+
+        let fixture_json = r#"{
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
+            "name": "Test RGB Par",
+            "categories": ["Color Changer"],
+            "meta": {
+                "authors": ["Test"],
+                "createDate": "2024-01-01",
+                "lastModifyDate": "2024-01-01"
+            },
+            "availableChannels": {
+                "Dimmer": {
+                    "capabilities": [{ "type": "Intensity", "dmxRange": [0, 255] }]
+                },
+                "Red": {
+                    "capabilities": [{ "type": "ColorIntensity", "color": "Red", "dmxRange": [0, 255] }]
+                },
+                "Green": {
+                    "precedence": "HTP",
+                    "capabilities": [{ "type": "ColorIntensity", "color": "Green", "dmxRange": [0, 255] }]
+                },
+                "Master": {
+                    "precedence": "LTP",
+                    "capabilities": [{ "type": "Intensity", "dmxRange": [0, 255] }]
+                }
+            },
+            "modes": [{
+                "name": "4-channel",
+                "channels": ["Dimmer", "Red", "Green", "Master"]
+            }]
+        }"#;
+
+        let ofl = OflFixture::from_json(fixture_json).expect("fixture JSON should parse");
+        let (fixture, _) =
+            convert_ofl_to_fixture(&ofl, "4-channel", 1).expect("fixture should convert");
+        let merge_types: Vec<_> = fixture.elements[0]
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.attribute.clone(), parameter.merge_type.clone()))
+            .collect();
+
+        assert_eq!(
+            merge_types,
+            vec![
+                (Attribute::Intensity, MergeStrategy::HTP),
+                (Attribute::Red, MergeStrategy::LTP),
+                (Attribute::Green, MergeStrategy::HTP),
+                (Attribute::Intensity, MergeStrategy::LTP),
+            ]
+        );
     }
 
     /// Verifies OFL focus metadata turns raw position channels into degree-valued parameters.
