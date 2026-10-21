@@ -8,7 +8,7 @@ The table shows each timecode's ID, current time in hours/minutes/seconds/frames
 
 ## Following MIDI timecode
 
-A timecode whose source is **MIDI timecode** follows MIDI timecode (MTC) from any connected MIDI input instead of the engine clock, so its timelines chase the playback deck, DAW, or console sending it.
+Choose a timecode's **Source** and **Rate** in [Timeline](timeline.md) Properties; the change applies to every timeline sharing that timecode. A timecode whose source is **MIDI timecode** follows MIDI timecode (MTC) from any connected MIDI input instead of the engine clock, so its timelines chase the playback deck, DAW, or console sending it.
 
 - **Start** arms the timecode. It runs only while timecode arrives, and its timelines play and pause with the sender. **Pause** and **Stop** stop following the sender.
 - When the sender locates without playing, the timecode jumps to that position and stays paused.

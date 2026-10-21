@@ -34,6 +34,11 @@ export function timecodeRateLabel(rate: string): string {
   return `${rate.replace("Fps", "").replace("_", ".")} fps`;
 }
 
+/** Names a timecode source the way the UI shows it, such as "MIDI timecode". */
+export function timecodeSourceName(source: TimecodeSource): string {
+  return SOURCE_LABELS[source] ?? String(source);
+}
+
 /**
  * Names a timecode's source, noting the rate an external source actually
  * sends when it differs from the timecode's configured rate.
@@ -42,7 +47,7 @@ export function timecodeSourceLabel(
   timecode: Timecode,
   state: TimecodeState | undefined,
 ): string {
-  const label = SOURCE_LABELS[timecode.source] ?? String(timecode.source);
+  const label = timecodeSourceName(timecode.source);
   const sourceRate = state?.source_rate;
   return sourceRate && sourceRate !== timecode.rate
     ? `${label} (sends ${timecodeRateLabel(sourceRate)})`

@@ -20,6 +20,7 @@ import { useShallowStore } from "../../../lib/use-shallow-store";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timecodes, timelines } from "../../../state/appStores";
 import * as types from "../../../types";
+import { timecodeRateLabel, timecodeSourceName } from "../../timecode";
 
 type TimelinePropertiesProps = {
   timelineUid: string;
@@ -67,10 +68,29 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
     ),
   );
   let latestTimeline = timeline();
+  let pendingTimecodeEdit:
+    | { uid: string; patch: Partial<types.Timecode> }
+    | undefined;
 
   /** Keeps property edits merging against the latest optimistic timeline snapshot. */
   createEffect(() => {
     latestTimeline = timeline();
+  });
+
+  /**
+   * Drops the pending timecode edits once the engine reports them. Until then,
+   * a periodic timecode broadcast sent before the engine applied an edit can
+   * still carry the old values, so later edits keep merging the pending ones.
+   */
+  createEffect(() => {
+    const timecode = linkedTimecode();
+    if (!pendingTimecodeEdit) return;
+    const settled =
+      timecode?.identifiers.uid !== pendingTimecodeEdit.uid ||
+      Object.entries(pendingTimecodeEdit.patch).every(
+        ([key, value]) => timecode[key as keyof types.Timecode] === value,
+      );
+    if (settled) pendingTimecodeEdit = undefined;
   });
 
   const storeTimeline = (nextTimeline: types.Timeline) => {
@@ -93,6 +113,34 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
       nextTimeline,
     );
     storeTimeline(nextTimeline);
+  };
+
+  /**
+   * Stores a change to the linked timecode itself. Every timeline sharing
+   * that timecode follows the new source or rate. Edits not yet reported back
+   * by the engine are merged in, so a second edit before the engine applies
+   * the first doesn't revert it.
+   */
+  const updateTimecode = (
+    timecode: types.Timecode,
+    patch: Partial<types.Timecode>,
+  ) => {
+    const uid = timecode.identifiers.uid;
+    const entry = timecodes.get()[uid];
+    if (!entry) return;
+    const pendingPatch =
+      pendingTimecodeEdit?.uid === uid ? pendingTimecodeEdit.patch : {};
+    pendingTimecodeEdit = { uid, patch: { ...pendingPatch, ...patch } };
+    const nextTimecode = { ...entry[0], ...pendingTimecodeEdit.patch };
+    setStoreKeyAction(timecodes, "Update Timecode", uid, [
+      nextTimecode,
+      entry[1],
+    ]);
+    const command: types.TimecodeCommand = {
+      type: "StoreTimecode",
+      data: nextTimecode,
+    };
+    commandClient.emit("TimecodeCommand", command);
   };
 
   const updateStartMs = (value: string) => {
@@ -197,20 +245,55 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
               </NativeSelect>
             </label>
 
-            <div class="grid grid-cols-2 gap-3 text-xs text-neutral-400">
-              <div>
-                <div class="uppercase tracking-wide">Rate</div>
-                <div class="mt-1 text-neutral-200">
-                  {linkedTimecode()?.rate ?? "Unknown"}
+            <Show when={linkedTimecode()}>
+              {(timecode) => (
+                <div class="grid grid-cols-2 gap-3">
+                  <label class="block space-y-1">
+                    <span class="text-xs text-neutral-400">Source</span>
+                    <NativeSelect
+                      density="compact"
+                      aria-label="Timecode source"
+                      value={timecode().source}
+                      onChange={(event) =>
+                        updateTimecode(timecode(), {
+                          source: event.currentTarget
+                            .value as types.TimecodeSource,
+                        })
+                      }
+                    >
+                      <For each={Object.values(types.TimecodeSource)}>
+                        {(source) => (
+                          <option value={source}>
+                            {timecodeSourceName(source)}
+                          </option>
+                        )}
+                      </For>
+                    </NativeSelect>
+                  </label>
+                  <label class="block space-y-1">
+                    <span class="text-xs text-neutral-400">Rate</span>
+                    <NativeSelect
+                      density="compact"
+                      aria-label="Timecode rate"
+                      value={timecode().rate}
+                      onChange={(event) =>
+                        updateTimecode(timecode(), {
+                          rate: event.currentTarget.value as types.TimecodeRate,
+                        })
+                      }
+                    >
+                      <For each={Object.values(types.TimecodeRate)}>
+                        {(rate) => (
+                          <option value={rate}>
+                            {timecodeRateLabel(rate)}
+                          </option>
+                        )}
+                      </For>
+                    </NativeSelect>
+                  </label>
                 </div>
-              </div>
-              <div>
-                <div class="uppercase tracking-wide">Source</div>
-                <div class="mt-1 text-neutral-200">
-                  {linkedTimecode()?.source ?? "Unknown"}
-                </div>
-              </div>
-            </div>
+              )}
+            </Show>
 
             <label class="block space-y-1">
               <span class="text-xs text-neutral-400">Timecode start (ms)</span>

@@ -11,6 +11,7 @@ export {
   type TimecodeStatusTone,
   timecodeRateLabel,
   timecodeSourceLabel,
+  timecodeSourceName,
   timecodeStatus,
   timecodeStatusPillClass,
 } from "./status";
