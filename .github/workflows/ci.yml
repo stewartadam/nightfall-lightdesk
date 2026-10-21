@@ -298,11 +298,15 @@ jobs:
             echo "::error::Cloudflare returned an unexpected preview URL"
             exit 1
           fi
+          # Link each guide's first page, in the order the manual's table of contents lists them.
           docs_line=""
-          if [[ -e site/index.html ]]; then
-            docs_line="
-          **Documentation preview:** ${url%/}/"
-          fi
+          for guide in "User guide:user-guide" "Developer guide:developer-reference"; do
+            page="$(grep -so "href=\"${guide#*:}/[A-Za-z0-9._/-]*\.html\"" site/toc.html | head -n 1 | cut -d '"' -f 2)" || true
+            if [[ -n "$page" ]]; then
+              docs_line+="
+          **${guide%%:*} preview:** ${url%/}/${page}"
+            fi
+          done
           body="<!-- nightfall-browser-preview -->
           **Browser preview:** ${url%/}/demo/app/${docs_line}
 

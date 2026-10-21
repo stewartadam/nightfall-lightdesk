@@ -105,7 +105,9 @@ comment on the PR pointing at the latest preview. It is not part of the CI gate.
 When the PR touches the mdBook inputs, the preview also waits for the
 **Documentation** job, including on drafts and `/republish` runs, and publishes the
 books beside the demo: the manual from `docs/` at the preview's root (for example
-`/user-guide/`), and any other book at its path under `docs/`. A book that fails
+`/user-guide/`), and any other book at its path under `docs/`. The PR comment
+links the first page of the user guide and of the developer guide, taken from the
+manual's table of contents. A book that fails
 to build holds back the whole preview. A `/republish` run reads the PR's file list
 from the GitHub API to decide whether to include the books, since its checkout has
 no base to diff against.
