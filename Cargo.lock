@@ -5731,6 +5731,7 @@ dependencies = [
  "nightfall-fixtures",
  "nightfall-io",
  "nightfall-service-host",
+ "nightfall-timecode",
  "nightfall-workspace-hack",
  "socket2",
  "tokio",
