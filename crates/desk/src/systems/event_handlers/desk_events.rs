@@ -75,6 +75,31 @@ pub fn handle_eval(
     }
 }
 
+/// Fails every showfile storage command when the runtime has no disk storage.
+///
+/// Runs only while [`disk_storage_available`] is false, so hosts without a filesystem (such as
+/// the browser demo) answer open, save, import, and trash commands immediately with an
+/// operator-facing reason instead of leaving the caller waiting for a result that never comes.
+pub fn reject_disk_storage_commands(
+    mut events: MessageReader<CommandEnvelope<DeskCommand>>,
+    mut responder: CommandResponder,
+) {
+    for event in events
+        .read()
+        .filter(|event| event.command.requires_disk_storage())
+    {
+        if let Err(error) = responder.fail(
+            event.command_id,
+            CommandError::new(
+                "desk.disk_storage_unavailable",
+                "This version of nightfall has no disk storage, so it cannot create, open, save, import, or delete shows.",
+            ),
+        ) {
+            tracing::error!(command_id = %event.command_id, %error, "disk_storage_command_failure_failed");
+        }
+    }
+}
+
 /// Expands queued eval wrappers before command dispatch closes for the current update.
 ///
 /// WebSocket ingress reaches the pending buffer during `InputHandling`. Expanding there
@@ -566,5 +591,121 @@ mod tests {
             super::parse_debug_panic_worker_command("debug panic system bevy_main"),
             None
         );
+    }
+
+    /// Creates a focused app that runs the disk storage guard under the given capabilities.
+    ///
+    /// A downstream spy records every desk command still open after the guard ran, standing in
+    /// for the native showfile handler.
+    fn disk_storage_guard_app(capabilities: RuntimeCapabilities) -> App {
+        let mut app = eval_app();
+        app.insert_resource(capabilities);
+        app.init_resource::<OpenDeskCommands>();
+        app.add_systems(
+            Update,
+            (
+                reject_disk_storage_commands.run_if(not(disk_storage_available)),
+                record_open_desk_commands,
+            )
+                .chain(),
+        );
+        app
+    }
+
+    /// Desk commands that a later handler could still answer after the guard ran.
+    #[derive(Resource, Default)]
+    struct OpenDeskCommands(Vec<CommandId>);
+
+    /// Records desk commands whose lifecycle is still active for a later handler.
+    fn record_open_desk_commands(
+        mut events: MessageReader<CommandEnvelope<DeskCommand>>,
+        responder: CommandResponder,
+        mut open: ResMut<OpenDeskCommands>,
+    ) {
+        for event in events.read() {
+            if responder.is_active(event.command_id) {
+                open.0.push(event.command_id);
+            }
+        }
+    }
+
+    /// Registers and submits one desk command as if it came from the web UI.
+    fn submit_desk_command(app: &mut App, command: DeskCommand) -> CommandId {
+        let command_id = CommandId::new();
+        app.world_mut()
+            .resource_mut::<CommandTracker>()
+            .register_context(
+                command_id,
+                command_id.into(),
+                CommandOrigin::WebUi,
+                ReplyTarget::ClientBroadcast,
+            )
+            .expect("desk command should register");
+        app.world_mut().write_message(CommandEnvelope::with_context(
+            command_id,
+            command_id.into(),
+            CommandOrigin::WebUi,
+            ReplyTarget::ClientBroadcast,
+            command,
+        ));
+        command_id
+    }
+
+    /// Drains the terminal command results published during the last update.
+    fn drain_results(app: &mut App) -> Vec<CommandResult> {
+        app.world_mut()
+            .resource_mut::<Messages<CommandResult>>()
+            .drain()
+            .collect()
+    }
+
+    /// Verifies the browser demo answers load and save commands with a failure in the same frame.
+    #[test]
+    fn storage_commands_fail_fast_without_disk_storage() {
+        let mut app = disk_storage_guard_app(RuntimeCapabilities::embedded_demo());
+        let save = submit_desk_command(&mut app, DeskCommand::SaveShowfile);
+        let load = submit_desk_command(&mut app, DeskCommand::LoadNamedShowfile("tour".into()));
+
+        app.update();
+
+        let results = drain_results(&mut app);
+        for command_id in [save, load] {
+            assert!(
+                results.iter().any(|result| result.command_id == command_id
+                    && matches!(
+                        &result.outcome,
+                        CommandOutcome::Failed(CommandError { code, .. })
+                            if code == "desk.disk_storage_unavailable"
+                    )),
+                "expected {command_id} to fail with the disk storage error, got {results:?}",
+            );
+        }
+    }
+
+    /// Verifies the guard leaves commands that do not touch disk to their own handlers.
+    #[test]
+    fn non_storage_commands_pass_the_disk_storage_guard() {
+        let mut app = disk_storage_guard_app(RuntimeCapabilities::embedded_demo());
+        let command_id = submit_desk_command(&mut app, DeskCommand::ReleaseStaleInputs);
+
+        app.update();
+
+        assert!(drain_results(&mut app).is_empty());
+        assert_eq!(app.world().resource::<OpenDeskCommands>().0, [command_id]);
+    }
+
+    /// Verifies the guard stays out of the way when the host can store shows on disk.
+    #[test]
+    fn storage_commands_reach_handlers_with_disk_storage() {
+        let mut app = disk_storage_guard_app(RuntimeCapabilities {
+            disk_storage: true,
+            ..RuntimeCapabilities::default()
+        });
+        let command_id = submit_desk_command(&mut app, DeskCommand::SaveShowfile);
+
+        app.update();
+
+        assert!(drain_results(&mut app).is_empty());
+        assert_eq!(app.world().resource::<OpenDeskCommands>().0, [command_id]);
     }
 }

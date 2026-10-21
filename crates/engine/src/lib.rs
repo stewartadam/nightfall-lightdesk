@@ -119,8 +119,8 @@ pub mod prelude {
     pub use crate::register_ingress_command;
     pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
     pub use crate::runtime_capabilities::{
-        FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
-        RuntimeMode, TimelineAudioCapability,
+        FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
+        TimelineAudioCapability, disk_storage_available,
     };
     pub use crate::variables::GlobalVariables;
     pub use crate::{

@@ -285,6 +285,12 @@ impl Plugin for DeskPlugin {
             )
                 .in_set(EventHandling),
         );
+        app.add_systems(
+            Update,
+            event_handlers::desk_events::reject_disk_storage_commands
+                .run_if(not(disk_storage_available))
+                .in_set(EventHandling),
+        );
 
         app.add_systems(
             Update,

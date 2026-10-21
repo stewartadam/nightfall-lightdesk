@@ -265,3 +265,39 @@ pub enum DeskCommand {
 }
 
 impl IngressCommand for DeskCommand {}
+
+impl DeskCommand {
+    /// Reports whether this command reads or writes showfiles on disk.
+    ///
+    /// Runtimes without the disk storage capability reject these commands up front instead of
+    /// leaving them unanswered. New showfiles count as storage commands because creating one
+    /// replaces the working show with a fresh draft folder.
+    #[must_use]
+    pub const fn requires_disk_storage(&self) -> bool {
+        match self {
+            Self::NewShowfile
+            | Self::NewNamedShowfile(_)
+            | Self::SaveShowfile
+            | Self::SaveNamedShowfile(_)
+            | Self::SaveDraftShowfile
+            | Self::SaveNamedDraftShowfile(_)
+            | Self::LoadShowfile
+            | Self::LoadNamedShowfile(_)
+            | Self::LoadDraftShowfile(_)
+            | Self::LoadShowfileRevision(_)
+            | Self::DiscardDraftShowfile(_)
+            | Self::DeleteShowfile(_)
+            | Self::RestoreDeletedShowfile(_)
+            | Self::EmptyShowfileTrash
+            | Self::ImportShowfile(_) => true,
+            Self::Quit
+            | Self::SetLogLevel(_)
+            | Self::TraceFixture { .. }
+            | Self::SetTracingFilter { .. }
+            | Self::ClearTracingFilter
+            | Self::ReleaseStaleInputs
+            | Self::Eval(_)
+            | Self::Sleep(_) => false,
+        }
+    }
+}

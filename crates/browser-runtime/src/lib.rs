@@ -604,6 +604,47 @@ mod tests {
         }
     }
 
+    /// Verify the demo answers showfile save and load commands with a disk storage failure
+    /// on the next tick instead of leaving them pending forever.
+    #[test]
+    fn showfile_storage_commands_fail_fast() {
+        let mut engine = sample_engine();
+
+        for command in [
+            json!({ "type": "SaveShowfile" }),
+            json!({ "type": "LoadNamedShowfile", "data": "tour" }),
+        ] {
+            let command_id = Uuid::new_v4();
+            let envelope = serde_json::from_value(json!({
+                "command_id": command_id,
+                "module": "DeskCommand",
+                "command": command,
+            }))
+            .expect("desk command should deserialize");
+            engine
+                .enqueue_command_core(envelope)
+                .expect("desk command should enqueue");
+            engine.tick_core(16.0);
+
+            let command_id_text = command_id.simple().to_string();
+            let result = engine
+                .drain_output_core()
+                .iter()
+                .filter_map(|bytes| decode_publication(bytes))
+                .find(|message| {
+                    message["type"] == "CommandResult"
+                        && message.pointer("/data/command_id").and_then(Value::as_str)
+                            == Some(command_id_text.as_str())
+                })
+                .unwrap_or_else(|| panic!("{command} should complete within one tick"));
+            assert_eq!(result["data"]["outcome"]["type"], "Failed", "{result:#?}");
+            assert_eq!(
+                result["data"]["outcome"]["data"]["code"], "desk.disk_storage_unavailable",
+                "{result:#?}"
+            );
+        }
+    }
+
     /// Reject malformed showfile bytes before the embedded runtime becomes ready.
     #[test]
     fn malformed_showfile_fails_construction() {
