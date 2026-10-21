@@ -286,7 +286,7 @@ When you change a message or payload in Rust, run `pnpm run typeshare` and fix w
 
 ## What the UI receives in the running example
 
-In the [running example](../README.md#a-running-example), the programmer holds `Practice light` at 50% intensity, and the operator starts the `First playback` clip, which fades into the `Red` cue. The UI sends one command:
+In the [running example](../README.md#a-running-example), the programmer holds `Par 1` at 50% intensity, and the operator starts the `First playback` clip, which fades into the `Red` cue. The UI sends one command:
 
 ```json
 { "command_id": "<uuid>", "undo_id": "<uuid>", "module": "ClipCommand", "command": { "type": "StartClip", "data": "<clip>" } }
@@ -299,7 +299,7 @@ Two kinds of messages answer it. Fixture values travel in the parameter stream a
 | `CommandResult` | Non-droppable | The client that started the clip | Once, when the command finishes | Success or failure of `StartClip`. |
 | `ActiveInstances` | Droppable | Every client | When the playback starts or its controls change, and about 10 times a second | The `First playback` playback: its position in `First sequence` (current cue `Red`, next cue `Blue`), priority, level, activation time, elapsed transition time, and whether it is releasing. |
 | `Controls` | Non-droppable | Every client | When a control slot's linked playback changes | Control slot state, when the clip is assigned to a control slot. |
-| `ParameterState` | Delta, with droppable keyframes | Every client | Every render pass while values change | `Practice light`'s output values and asserted values, by layout slot. |
+| `ParameterState` | Delta, with droppable keyframes | Every client | Every render pass while values change | `Par 1`'s output values and asserted values, by layout slot. |
 | `LayerStack` | Droppable | Every client | About 10 times a second, when it changed | Each layer's values for the **Layers** panel: the programmer layer and the `First playback` layer. |
 | `DmxUniverseChannels` | Droppable | Only clients watching console universe 1 | At most every 100 ms, when the values changed | Channels 1 to 4 of console universe 1. |
 

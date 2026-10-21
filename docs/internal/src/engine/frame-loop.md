@@ -68,9 +68,9 @@ Resync runs in `Update` on purpose. The resync completion message goes out befor
 > [!WARNING]
 > A system that queues commands outside `InputHandling` must order itself before `PendingCommandProcessing`. Otherwise its commands wait in the buffer until the next frame, and they miss undo capture for this frame.
 
-### What happens to `Practice light` in `Update`
+### What happens to `Par 1` in `Update`
 
-Suppose you press Go on `First playback` while the programmer already holds `Practice light` at 50% intensity. The web UI sends a clip command, and `Update` applies it:
+Suppose you press Go on `First playback` while the programmer already holds `Par 1` at 50% intensity. The web UI sends a clip command, and `Update` applies it:
 
 1. `InputHandling` receives the command envelope and registers it with the command tracker, so its result can be reported later.
 1. `PendingCommandProcessing` writes it as a clip command message.
@@ -96,13 +96,13 @@ flowchart TB
 
 The stages map onto the journey from [how a show becomes light](../concepts/show-to-light.md):
 
-| Stage | What runs there | What happens to `Practice light` |
+| Stage | What runs there | What happens to `Par 1` |
 |-------|-----------------|----------------------------------|
 | `ClockUpdate` | Adds a clock to new playbacks, applies rate masters, and advances every real-time clock by the wall-clock time since the previous render pass. The show tempo and timecode generators also advance here. | `First playback` gets its clock and moves up to one frame period into the `Red` cue's fade. |
 | `LayerGeneration` | Each playback type paints its layer: sequences, cues, FX, Step FX, FX modules, flows, timelines, and the programmer. Incoming DMX also lands in its input layer here. | `First playback` paints a priority 0 layer with intensity and red partway up the fade. The programmer paints a priority 127 layer with intensity at 50%. |
 | Between layers and compositing | The desk resolves held Flash and Swop buttons and scales each playback's intensity values by its level. These systems belong to no set. They order themselves after `LayerGeneration` and before `Compositing`. | If `First playback`'s fader sits at 50%, its intensity contribution halves. The programmer layer is unaffected. |
 | `Compositing` | The compositor sorts layers by priority and activation time, merges them, and writes the final value into each fixture parameter. | Intensity comes out at 50% from the programmer, and red follows `First playback`'s fade. |
-| `VdimProcessing` | Applies intensity masters, then virtual dimmers, then virtual relations to the merged values. | An intensity master that targets `Practice light` scales its intensity. Virtual dimming does not apply, because `Practice light` has a real intensity channel. |
+| `VdimProcessing` | Applies intensity masters, then virtual dimmers, then virtual relations to the merged values. | An intensity master that targets `Par 1` scales its intensity. Virtual dimming does not apply, because `Par 1` has a real intensity channel. |
 | `DmxOutput` | Resolves patch bindings, packs parameter values into console universes, composes output frames, and hands them to the Art-Net, sACN, and USB outputs. | Intensity, red, green, and blue land in channels 1 to 4 of console universe 1. If a binding routes that universe to Art-Net, the Art-Net worker receives the new frame. |
 | `ClientOutput` | Publishes render-derived state to clients: parameter values, layer stacks, playback status, and changed show objects. | The 3D visualizer and the **Fixtures** panel receive the new values. |
 
@@ -187,7 +187,7 @@ A wake ends the limiter's sleep and starts an input-only frame. That frame runs 
 
 A wake that arrives while a frame is running isn't lost. The waker counts wakes, and the limiter compares the count with the one it saw when the frame started.
 
-The input-only frame changes nothing on the stage. In the running example, the Go command spawns the playback and returns its result in the input-only frame, and `Practice light` starts its fade in the next render pass.
+The input-only frame changes nothing on the stage. In the running example, the Go command spawns the playback and returns its result in the input-only frame, and `Par 1` starts its fade in the next render pass.
 
 > [!NOTE]
 > The `fps` command sets the limiter's period directly, and `fps 0` turns the limiter off. The limiter keeps that setting until the IO settings change, for example on the next show load, which resets it to follow the DMX output rate. While the limiter is off, every frame renders and the engine doesn't sleep between frames.
