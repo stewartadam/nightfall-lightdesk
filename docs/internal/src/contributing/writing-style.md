@@ -106,7 +106,7 @@ Use these types:
 - `[!NOTE]` for information that is easy to miss.
 - `[!WARNING]` for data loss, breaking behavior, or rules that cause bugs when ignored.
 
-GitHub renders these alerts in the Markdown source, and the guide's `theme/callouts.js` renders them in the book. Don't use blockquotes for anything else.
+GitHub and mdBook both render these alerts. Don't use blockquotes for anything else.
 
 ## Review status
 

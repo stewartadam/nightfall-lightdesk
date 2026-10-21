@@ -44,35 +44,3 @@ table.sortable th[aria-sort="descending"] .sort-button::after {
   content: "↓";
   opacity: 1;
 }
-
-/* GitHub-style alerts rendered by callouts.js. */
-blockquote.callout {
-  --callout-color: var(--links);
-  border-inline-start: 4px solid var(--callout-color);
-  border-block: none;
-  background-color: color-mix(in srgb, var(--callout-color) 8%, transparent);
-  padding: 0.5em 1em;
-  border-radius: 4px;
-}
-
-blockquote.callout-tip {
-  --callout-color: #1a7f37;
-}
-
-blockquote.callout-important {
-  --callout-color: #8250df;
-}
-
-blockquote.callout-warning {
-  --callout-color: #bf8700;
-}
-
-blockquote.callout-caution {
-  --callout-color: #cf222e;
-}
-
-blockquote.callout .callout-title {
-  font-weight: 600;
-  color: var(--callout-color);
-  margin-block-end: 0.25em;
-}

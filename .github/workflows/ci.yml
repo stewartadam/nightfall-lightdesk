@@ -378,7 +378,7 @@ jobs:
         # Keep in sync with the version in CONTRIBUTING.md.
         uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
-          tool: mdbook@0.4.49
+          tool: mdbook@0.5.4
       - name: Build every mdBook
         # mdBook exits successfully on broken includes, so any logged error or warning fails the job.
         env:

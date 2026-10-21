@@ -642,7 +642,7 @@ Performance specs are opt-in because their timings depend on the machine. `optic
 The user-facing manual is an mdBook in `docs/`. Its navigation lives in `docs/src/SUMMARY.md`; add a navigation entry for every new user-facing page. The [panel guide](docs/src/user-guide/panels/index.md) covers first-release panels, with Flows excluded.
 
 ```sh
-cargo install --locked mdbook --version 0.4.49
+cargo install --locked mdbook --version 0.5.4
 mdbook build docs
 mdbook serve docs --open
 ```

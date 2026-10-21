@@ -94,7 +94,7 @@ test("developer guide sidebar highlights the current page on extensionless URLs"
   });
 
   await page.goto("http://guide.test/internal/concepts/priorities-and-merging");
-  const active = page.locator("#sidebar a.active");
+  const active = page.locator("#mdbook-sidebar a.active");
   await expect(active).toHaveCount(1);
   await expect(active).toContainText("Priorities and merging");
   await expect(active).toHaveCSS("font-weight", "600");
@@ -131,7 +131,7 @@ test("developer guide renders GitHub-style alerts as callouts", async ({
   page,
 }) => {
   await page.goto(guideUrl("concepts/priorities-and-merging.html"));
-  const callout = page.locator("blockquote.callout-warning").first();
-  await expect(callout.locator(".callout-title")).toHaveText("Warning");
+  const callout = page.locator("blockquote.blockquote-tag-warning").first();
+  await expect(callout.locator(".blockquote-tag-title")).toHaveText("Warning");
   await expect(callout).not.toContainText("[!WARNING]");
 });
