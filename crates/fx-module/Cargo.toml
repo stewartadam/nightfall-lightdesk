@@ -27,7 +27,7 @@ typeshare.workspace = true
 uuid.workspace = true
 # Default features add the module cache, WAT parsing, async, GC, threads and profiling, none of
 # which fx modules use.
-wasmtime = { version = "49.0", default-features = false, features = ["addr2line", "backtrace", "component-model", "cranelift", "demangle", "parallel-compilation", "runtime", "std"] }
+wasmtime = { version = "50.0", default-features = false, features = ["addr2line", "backtrace", "component-model", "cranelift", "demangle", "parallel-compilation", "runtime", "std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
