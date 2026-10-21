@@ -78,8 +78,9 @@ pub mod prelude {
         Audience, ClientBridgeHost, ClientBridgePlugin, ClientDisconnectReport, ClientDisconnected,
         ClientEventSink, ClientPresenceSender, CommandDeserializerRegistry, CommandJsonEnvelope,
         CommandSender, DISCRIMINATOR_DELTA, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, LastClientDisconnected, OutboundFrame, SharedClientBridge,
-        UpdateDeserializerRegistry, UpdateJsonEnvelope, encode_client_cbor,
+        EncodedClientMessage, LastClientDisconnected, OutboundFrame, PendingAudience,
+        PendingReplies, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        encode_client_cbor,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -119,7 +120,7 @@ pub mod prelude {
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
     pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
-    pub use crate::resync::{ResyncReplies, ResyncRequested, resync_audiences};
+    pub use crate::resync::{ResyncReplies, ResyncRequested, resync_audience};
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
         RuntimeMode, TimelineAudioCapability,
@@ -469,16 +470,14 @@ fn send_resync_complete(
     mut responder: CommandResponder,
 ) {
     let requests = events.read().cloned().collect::<Vec<_>>();
-    if requests.is_empty() {
+    let Some(audience) = resync_audience(&requests) else {
         return;
-    }
+    };
 
-    broadcaster
-        .narrowed_to(resync_audiences(&requests).into())
-        .publish(
-            DISCRIMINATOR_NON_DROPPABLE,
-            &EngineClientMessage::ResyncComplete,
-        );
+    broadcaster.narrowed_to(audience.into_audiences()).publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &EngineClientMessage::ResyncComplete,
+    );
     for request in requests {
         let Some(command_id) = request.command_id else {
             continue;

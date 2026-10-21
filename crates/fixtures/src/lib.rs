@@ -158,6 +158,7 @@ impl Plugin for FixturePlugin {
         app.init_resource::<bindings::ConsoleDmxAddresses>();
         app.init_resource::<binding_validation::BindingValidationSettings>();
         app.init_resource::<parameter_state::ParameterStateProjection>();
+        app.init_resource::<websocket::ParameterStateRequests>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
         app.init_resource::<universe::InputUniverseStaleTimeout>();

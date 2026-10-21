@@ -127,12 +127,22 @@ pub fn register_fixture_websocket_diagnostics(app: &mut App) {
         .register_diagnostic(Diagnostic::new(PARAMETER_STATE_BROADCAST_MS).with_suffix(" ms"));
 }
 
+/// Clients waiting for the parameter layout or a keyframe of the parameter stream.
+#[derive(Resource, Default)]
+pub struct ParameterStateRequests {
+    /// Clients that resynced and need the layout, which a keyframe then follows.
+    pub layout: PendingReplies,
+    /// Clients that need a keyframe, after resyncing or missing frames.
+    pub keyframe: PendingReplies,
+}
+
 /// Publish the current absolute, relative, and computed output parameter values.
 pub fn send_parameter_state(
     fixture_data_provider: Res<FixtureDataProviderExt>,
     parameters_query: Query<&crate::parameter::Parameter>,
     final_layer_attributed_assertions: Res<FinalLayerAttributedAssertions>,
     mut projection: ResMut<ParameterStateProjection>,
+    mut requests: ResMut<ParameterStateRequests>,
     mut diagnostics: Diagnostics,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -143,17 +153,29 @@ pub fn send_parameter_state(
         &fixture_data_provider.parameter_index(),
         fixture_data_provider.is_changed(),
     );
-    // Replies carry the state clients hold before this frame, so they go out first and the
-    // frame's shared delta then applies on top of them.
-    let replies = projection.take_replies(build_start);
-    if let Some((audiences, layout)) = replies.layout {
-        broadcaster.narrowed_to(audiences).publish(
+    // Requests for every client are answered on the shared stream. Replies to individual clients
+    // carry the state the stream last left everyone in, so they go out before this frame and its
+    // shared delta then applies on top of them.
+    let layout_requests = requests.layout.take();
+    let keyframe_requests = requests.keyframe.take();
+    if layout_requests == Some(PendingAudience::Everyone) {
+        projection.request_layout();
+    }
+    if keyframe_requests == Some(PendingAudience::Everyone) {
+        projection.request_keyframe();
+    }
+    if let Some(PendingAudience::Clients(clients)) = layout_requests
+        && let Some(layout) = projection.layout_reply()
+    {
+        broadcaster.narrowed_to(clients).publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &FixtureWsMessage::ParameterLayout(layout),
         );
     }
-    if let Some((audiences, frame)) = replies.keyframe {
-        broadcaster.narrowed_to(audiences).publish(
+    if let Some(PendingAudience::Clients(clients)) = keyframe_requests
+        && let Some(frame) = projection.keyframe_reply(build_start)
+    {
+        broadcaster.narrowed_to(clients).publish(
             DISCRIMINATOR_DROPPABLE,
             &FixtureWsMessage::ParameterState(&frame),
         );
@@ -259,8 +281,9 @@ pub fn deserialize_parameter_keyframe_request(
     sender: Audience,
 ) -> Result<(), String> {
     world
-        .resource_mut::<ParameterStateProjection>()
-        .request_keyframe(sender);
+        .resource_mut::<ParameterStateRequests>()
+        .keyframe
+        .request(sender);
     Ok(())
 }
 
@@ -568,14 +591,16 @@ pub fn handle_resync_state(
     output_bindings: Res<OutputBindings>,
     disabled_bindings: Res<DisabledBindings>,
     binding_validation_settings: Res<BindingValidationSettings>,
-    mut parameter_state: ResMut<ParameterStateProjection>,
+    mut parameter_requests: ResMut<ParameterStateRequests>,
     mut universe_stream: ResMut<DmxUniverseStream>,
 ) {
     let Some(broadcaster) = resync.sink() else {
         return;
     };
 
-    parameter_state.request_layout(broadcaster.audiences());
+    let audiences = broadcaster.audiences().iter().copied();
+    parameter_requests.layout.request_each(audiences.clone());
+    parameter_requests.keyframe.request_each(audiences);
     universe_stream.request_list(broadcaster.audiences());
     // Send fixtures with geometry if provider is available
     send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {

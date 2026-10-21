@@ -138,6 +138,70 @@ impl Audience {
     }
 }
 
+/// Clients waiting for a reply that a publisher sends at its next opportunity, such as a snapshot
+/// for clients that resynced.
+#[derive(Clone, Debug, Default)]
+pub struct PendingReplies {
+    /// Whether some request was for every client.
+    everyone: bool,
+    /// Distinct clients that asked, when no request was for every client.
+    clients: Vec<Audience>,
+}
+
+/// Who a batch of [`PendingReplies`] is for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PendingAudience {
+    /// Some request was for every client, which also covers every targeted request.
+    Everyone,
+    /// Only these clients asked.
+    Clients(Arc<[Audience]>),
+}
+
+impl PendingAudience {
+    /// Returns the audiences to narrow a [`ClientEventSink`] to for this reply.
+    pub fn into_audiences(self) -> Arc<[Audience]> {
+        match self {
+            PendingAudience::Everyone => Arc::new([Audience::All]),
+            PendingAudience::Clients(clients) => clients,
+        }
+    }
+}
+
+impl PendingReplies {
+    /// Records that `audience` waits for the reply.
+    pub fn request(&mut self, audience: Audience) {
+        if audience == Audience::All {
+            self.everyone = true;
+        } else if !self.clients.contains(&audience) {
+            self.clients.push(audience);
+        }
+    }
+
+    /// Records that every audience in `audiences` waits for the reply.
+    pub fn request_each(&mut self, audiences: impl IntoIterator<Item = Audience>) {
+        for audience in audiences {
+            self.request(audience);
+        }
+    }
+
+    /// Whether nobody waits for the reply.
+    pub fn is_empty(&self) -> bool {
+        !self.everyone && self.clients.is_empty()
+    }
+
+    /// Takes the recorded requests, or returns `None` when nobody asked.
+    pub fn take(&mut self) -> Option<PendingAudience> {
+        let clients = std::mem::take(&mut self.clients);
+        if std::mem::take(&mut self.everyone) {
+            Some(PendingAudience::Everyone)
+        } else if clients.is_empty() {
+            None
+        } else {
+            Some(PendingAudience::Clients(clients.into()))
+        }
+    }
+}
+
 /// One encoded client message and the clients it is addressed to.
 #[derive(Clone, Debug)]
 pub struct OutboundFrame {

@@ -20,7 +20,6 @@
 //! Keyframes follow every layout publication and recur every [`KEYFRAME_INTERVAL`], so a client
 //! never stays wrong for longer than that even if it misses a gap.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
@@ -29,7 +28,6 @@ use moonshine_kind::Instance;
 use nightfall::prelude::FixtureRef;
 use nightfall_compositor::prelude::{AttributedAssertionsLayer, ParameterMap, ParameterRef};
 use nightfall_dmx::prelude::ParameterValue;
-use nightfall_engine::prelude::Audience;
 use serde::{Serialize, Serializer};
 use uuid::Uuid;
 use web_time::Instant;
@@ -200,42 +198,14 @@ pub struct ParameterStateProjection {
     keyframe_pending: bool,
     last_keyframe: Option<Instant>,
     keyframes_only: bool,
-    /// Clients that resynced and must be sent the current layout on its own.
-    layout_requests: Vec<Audience>,
-    /// Clients that must be sent a keyframe of their own, after resyncing or missing frames.
-    keyframe_requests: Vec<Audience>,
-}
-
-/// Messages answering clients that asked for the layout or a keyframe, sent to them alone so the
-/// rest of the stream's clients are not sent state they already hold.
-pub struct ParameterStateReplies<'a> {
-    /// Clients to send the layout to, or `None` when no client needs it on its own.
-    pub layout: Option<(Arc<[Audience]>, &'a ParameterLayout)>,
-    /// Clients to send a keyframe to, or `None` when no client needs one on its own.
-    pub keyframe: Option<(Arc<[Audience]>, ParameterStateFrame<'a>)>,
-}
-
-/// Adds `audience` to `requests` unless it is already there.
-fn push_request(requests: &mut Vec<Audience>, audience: Audience) {
-    if !requests.contains(&audience) {
-        requests.push(audience);
-    }
 }
 
 impl ParameterStateProjection {
-    /// Marks the current layout for `audiences`, clients that just resynced, followed by a keyframe
-    /// so they get complete values straight away. A request for every client republishes both
-    /// on the shared stream.
-    pub fn request_layout(&mut self, audiences: &[Audience]) {
-        for &audience in audiences {
-            if audience == Audience::All {
-                self.layout_pending = true;
-                self.keyframe_pending = true;
-            } else {
-                push_request(&mut self.layout_requests, audience);
-                push_request(&mut self.keyframe_requests, audience);
-            }
-        }
+    /// Marks the current layout for publication on the next frame, for every client after a
+    /// resync. The frame after it is a keyframe, so clients get complete values straight away.
+    pub fn request_layout(&mut self) {
+        self.layout_pending = true;
+        self.keyframe_pending = true;
     }
 
     /// Chooses between sending only changed slots between keyframes, the default, and sending a
@@ -249,29 +219,25 @@ impl ParameterStateProjection {
         self.keyframes_only
     }
 
-    /// Sends `audience`, a client that missed part of the stream, a keyframe of its own before the
-    /// next frame. A request for every client makes the next shared frame a keyframe instead.
-    pub fn request_keyframe(&mut self, audience: Audience) {
-        if audience == Audience::All {
-            self.keyframe_pending = true;
-        } else {
-            push_request(&mut self.keyframe_requests, audience);
-        }
+    /// Makes the next published frame a keyframe for every client.
+    pub fn request_keyframe(&mut self) {
+        self.keyframe_pending = true;
     }
 
-    /// Takes the pending layout and keyframe requests of individual clients and returns the
-    /// replies to send them before this frame's shared stream output.
+    /// Returns the layout for a client that needs it on its own, such as one that resynced, or
+    /// `None` when the next frame publishes it to everyone anyway.
+    pub fn layout_reply(&self) -> Option<&ParameterLayout> {
+        (!self.layout_pending).then_some(&self.layout)
+    }
+
+    /// Returns a keyframe for a client that needs one on its own, after resyncing or missing
+    /// frames, or `None` when the frame published at `now` is a keyframe for everyone anyway.
     ///
-    /// Call after [`Self::refresh_layout`] and before [`Self::fill_values`]. The keyframe is a
-    /// copy of the last published state, numbered like the last published frame, so it does not
-    /// move the shared stream: the next shared delta applies on top of it. Requests that the
-    /// shared stream answers anyway this frame get no reply of their own, such as a layout
-    /// already pending publication to everyone or a keyframe due for everyone by `now`.
-    pub fn take_replies(&mut self, now: Instant) -> ParameterStateReplies<'_> {
-        let layout_requests = std::mem::take(&mut self.layout_requests);
-        let keyframe_requests = std::mem::take(&mut self.keyframe_requests);
-        let layout = (!self.layout_pending && !layout_requests.is_empty())
-            .then(|| (Arc::from(layout_requests), &self.layout));
+    /// Call after [`Self::refresh_layout`] and before [`Self::fill_values`], and send the reply
+    /// before that frame. It is a copy of the last published state, numbered like the last
+    /// published frame, so it does not move the shared stream: the next delta applies on top
+    /// of it.
+    pub fn keyframe_reply(&self, now: Instant) -> Option<ParameterStateFrame<'_>> {
         let stream_keyframe_due = self.layout_pending
             || self.keyframe_pending
             || self.keyframes_only
@@ -279,23 +245,19 @@ impl ParameterStateProjection {
                 .last_keyframe
                 .is_none_or(|at| now.duration_since(at) >= KEYFRAME_INTERVAL)
             || self.output.len() != self.slots.len() * size_of::<f32>();
-        let keyframe = (!stream_keyframe_due && !keyframe_requests.is_empty()).then(|| {
-            let frame = ParameterStateFrame {
-                layout_id: self.layout.layout_id,
-                seq: self.seq,
-                keyframe: true,
-                verifiable: false,
-                changed_slots: WireBytes(&[]),
-                output: WireBytes(&self.output),
-                assertions_included: true,
-                absolute_count: self.assertions.absolute_count,
-                assertion_slots: WireBytes(&self.assertions.slots),
-                assertion_kinds: WireBytes(&self.assertions.kinds),
-                assertion_values: WireBytes(&self.assertions.values),
-            };
-            (Arc::from(keyframe_requests), frame)
-        });
-        ParameterStateReplies { layout, keyframe }
+        (!stream_keyframe_due).then(|| ParameterStateFrame {
+            layout_id: self.layout.layout_id,
+            seq: self.seq,
+            keyframe: true,
+            verifiable: false,
+            changed_slots: WireBytes(&[]),
+            output: WireBytes(&self.output),
+            assertions_included: true,
+            absolute_count: self.assertions.absolute_count,
+            assertion_slots: WireBytes(&self.assertions.slots),
+            assertion_kinds: WireBytes(&self.assertions.kinds),
+            assertion_values: WireBytes(&self.assertions.values),
+        })
     }
 
     /// Rebuilds the slot layout when the patch may have changed since it was last built.
@@ -514,7 +476,7 @@ mod tests {
     use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
     use nightfall_dmx::prelude::{Attribute, DmxValueResolution, Percentage};
     use nightfall_engine::prelude::{
-        ClientEventSink, ClientId, DISCRIMINATOR_NON_DROPPABLE, OutboundFrame,
+        Audience, ClientEventSink, ClientId, DISCRIMINATOR_NON_DROPPABLE, OutboundFrame,
     };
     use nightfall_io::OutputTransport;
 
@@ -523,7 +485,9 @@ mod tests {
         BENCH_FIXTURE_PARAMETERS, BenchParameter, patch_bench_fixtures,
         patch_bench_fixtures_with_profile,
     };
-    use crate::websocket::{register_fixture_websocket_diagnostics, send_parameter_state};
+    use crate::websocket::{
+        ParameterStateRequests, register_fixture_websocket_diagnostics, send_parameter_state,
+    };
 
     /// Builds an app publishing parameter state for `fixture_count` patched bench fixtures.
     fn projection_app(fixture_count: usize) -> (App, Vec<BenchParameter>, Receiver<OutboundFrame>) {
@@ -532,6 +496,7 @@ mod tests {
         register_fixture_websocket_diagnostics(&mut app);
         app.init_resource::<FinalLayerAttributedAssertions>();
         app.init_resource::<ParameterStateProjection>();
+        app.init_resource::<ParameterStateRequests>();
         let (sender, receiver) = async_channel::unbounded();
         app.insert_resource(ClientEventSink::new(sender));
         app.add_systems(Update, send_parameter_state);
@@ -647,16 +612,16 @@ mod tests {
 
     /// Output of one [`step_with_replies`].
     struct Step {
-        /// Clients sent the layout on their own, in reply to a resync.
-        layout_reply: Option<Vec<Audience>>,
-        /// Clients sent a keyframe on their own, and the keyframe.
-        keyframe_reply: Option<(Vec<Audience>, OwnedFrame)>,
+        /// Whether a client asking for the layout would be sent it on its own.
+        layout_reply: bool,
+        /// The keyframe a client asking for one would be sent on its own.
+        keyframe_reply: Option<OwnedFrame>,
         /// The frame published on the shared stream.
         frame: Option<OwnedFrame>,
     }
 
-    /// Runs one [`step`], also taking the replies to individual clients' requests before the fill
-    /// as `send_parameter_state` does.
+    /// Runs one [`step`], also building the replies a client asking for the layout or a keyframe
+    /// would get before the fill, as `send_parameter_state` does.
     fn step_with_replies(app: &mut App, now: Instant) -> Step {
         app.world_mut()
             .resource_scope(|world, mut projection: Mut<ParameterStateProjection>| {
@@ -669,11 +634,10 @@ mod tests {
                     .get(world)
                     .expect("projection test resources should exist");
                 projection.refresh_layout(&provider, &provider.parameter_index(), false);
-                let replies = projection.take_replies(now);
-                let layout_reply = replies.layout.map(|(audiences, _)| audiences.to_vec());
-                let keyframe_reply = replies
-                    .keyframe
-                    .map(|(audiences, frame)| (audiences.to_vec(), OwnedFrame::new(&frame)));
+                let layout_reply = projection.layout_reply().is_some();
+                let keyframe_reply = projection
+                    .keyframe_reply(now)
+                    .map(|frame| OwnedFrame::new(&frame));
                 projection.fill_values(&parameters, &assertions.0);
                 projection.take_pending_layout();
                 let frame = projection
@@ -860,11 +824,11 @@ mod tests {
         assert_eq!(frame.assertions, Some(projection_assertions(&app)));
     }
 
-    /// Verifies a client's keyframe request is answered with a keyframe for that client alone,
-    /// numbered like the last shared frame, while the shared stream carries on with deltas that
-    /// both the requester and the other clients can apply.
+    /// Verifies a keyframe reply copies the last published state with its sequence number, so a
+    /// client that lost its place applies it and then the next shared delta, which every other
+    /// client applies too, and all end up exact.
     #[test]
-    fn keyframe_request_is_answered_only_to_the_requester() {
+    fn keyframe_reply_does_not_move_the_stream() {
         let start = Instant::now();
         let (mut app, parameters, first) = delta_app(1, start);
         let mut other = StreamClient::default();
@@ -873,20 +837,13 @@ mod tests {
         let delta = step(&mut app, start).expect("a change should publish a delta");
         assert!(other.apply(&delta));
 
-        let requester = Audience::Client(ClientId(1));
-        app.world_mut()
-            .resource_mut::<ParameterStateProjection>()
-            .request_keyframe(requester);
         set_output(&mut app, &parameters[1], 4.0);
         let step_output = step_with_replies(&mut app, start);
-
-        let (audiences, reply) = step_output
+        let reply = step_output
             .keyframe_reply
-            .expect("the requester should get a keyframe of its own");
-        assert_eq!(audiences, vec![requester]);
+            .expect("a keyframe reply should be available mid-stream");
         assert!(reply.keyframe && !reply.verifiable);
         assert_eq!(reply.seq, delta.seq, "the reply does not move the stream");
-        assert!(step_output.layout_reply.is_none());
         let shared = step_output
             .frame
             .expect("the change should publish a shared frame");
@@ -905,54 +862,70 @@ mod tests {
         assert!(other.apply(&shared));
         assert_eq!(recovered.output, projection_output(&app));
         assert_eq!(other.output, projection_output(&app));
-        assert!(
-            step_with_replies(&mut app, start).keyframe_reply.is_none(),
-            "a request is answered once"
-        );
     }
 
-    /// Verifies a resyncing client alone is sent the layout and a keyframe, and that a keyframe
-    /// already due on the shared stream answers it instead of a reply of its own.
+    /// Verifies no reply is offered when the next shared frame answers the request anyway: a
+    /// layout or keyframe already pending for everyone, or the interval keyframe falling due.
     #[test]
-    fn resync_layout_and_keyframe_go_to_the_requester() {
+    fn replies_defer_to_shared_keyframes() {
         let start = Instant::now();
         let (mut app, _, _) = delta_app(1, start);
-        let requester = Audience::Client(ClientId(2));
-        app.world_mut()
-            .resource_mut::<ParameterStateProjection>()
-            .request_layout(&[requester]);
-        let resynced = step_with_replies(&mut app, start);
-        assert_eq!(resynced.layout_reply, Some(vec![requester]));
-        assert!(
-            resynced
-                .keyframe_reply
-                .is_some_and(|(audiences, _)| audiences == vec![requester])
-        );
-        assert!(
-            resynced.frame.is_none(),
-            "nothing changed for other clients"
-        );
+        let idle = step_with_replies(&mut app, start);
+        assert!(idle.layout_reply && idle.keyframe_reply.is_some());
+        assert!(idle.frame.is_none(), "nothing changed for other clients");
 
         app.world_mut()
             .resource_mut::<ParameterStateProjection>()
-            .request_layout(&[requester]);
-        app.world_mut()
-            .resource_mut::<ParameterStateProjection>()
-            .request_keyframe(Audience::All);
-        let shared = step_with_replies(&mut app, start);
-        assert_eq!(shared.layout_reply, Some(vec![requester]));
-        assert!(shared.keyframe_reply.is_none());
-        assert!(shared.frame.is_some_and(|frame| frame.keyframe));
+            .request_keyframe();
+        let keyframe = step_with_replies(&mut app, start);
+        assert!(keyframe.layout_reply);
+        assert!(keyframe.keyframe_reply.is_none());
+        assert!(keyframe.frame.is_some_and(|frame| frame.keyframe));
 
         app.world_mut()
             .resource_mut::<ParameterStateProjection>()
-            .request_keyframe(requester);
+            .request_layout();
+        let layout = step_with_replies(&mut app, start);
+        assert!(!layout.layout_reply && layout.keyframe_reply.is_none());
+
         let interval = step_with_replies(&mut app, start + KEYFRAME_INTERVAL);
         assert!(
             interval.keyframe_reply.is_none(),
             "the interval keyframe answers the request"
         );
         assert!(interval.frame.is_some_and(|frame| frame.keyframe));
+    }
+
+    /// Verifies the publisher sends a client's layout and keyframe requests to that client alone,
+    /// and answers a request for every client on the shared stream.
+    #[test]
+    fn publisher_routes_replies_to_the_requester() {
+        let (mut app, _, receiver) = projection_app(1);
+        app.update();
+        let audiences = |receiver: &Receiver<OutboundFrame>| -> Vec<Audience> {
+            std::iter::from_fn(|| receiver.try_recv().ok())
+                .map(|frame| frame.audience)
+                .collect()
+        };
+        assert_eq!(audiences(&receiver), vec![Audience::All, Audience::All]);
+
+        let requester = Audience::Client(ClientId(3));
+        let mut requests = app.world_mut().resource_mut::<ParameterStateRequests>();
+        requests.layout.request(requester);
+        requests.keyframe.request(requester);
+        app.update();
+        assert_eq!(
+            audiences(&receiver),
+            vec![requester, requester],
+            "the requester alone gets the layout and a keyframe"
+        );
+
+        app.world_mut()
+            .resource_mut::<ParameterStateRequests>()
+            .keyframe
+            .request(Audience::All);
+        app.update();
+        assert_eq!(audiences(&receiver), vec![Audience::All]);
     }
 
     /// Verifies keyframes recur after the interval, on request, on a new layout, and when a delta
@@ -969,7 +942,7 @@ mod tests {
 
         app.world_mut()
             .resource_mut::<ParameterStateProjection>()
-            .request_keyframe(Audience::All);
+            .request_keyframe();
         let requested = step(&mut app, late).expect("a request should publish a keyframe");
         assert!(requested.keyframe);
 
@@ -1237,7 +1210,7 @@ mod tests {
 
         app.world_mut()
             .resource_mut::<ParameterStateProjection>()
-            .request_layout(&[Audience::All]);
+            .request_layout();
         app.update();
         assert_eq!(drain_layout_count(&receiver), 1);
         assert_eq!(

@@ -131,7 +131,7 @@ pub struct DmxUniverseStream {
     /// List last broadcast; `None` publishes it at the next opportunity.
     last_list: Option<Vec<DmxUniverseSummary>>,
     /// Resyncing clients that must be sent the list at the next opportunity.
-    list_requests: Vec<Audience>,
+    list_requests: PendingReplies,
     watchers: HashMap<Audience, Watcher>,
     /// Watchers whose watch changed since their last publication, sent without waiting.
     pending: Vec<Audience>,
@@ -163,13 +163,7 @@ impl DmxUniverseStream {
 
     /// Sends the universe list to `audiences` at the next opportunity, for clients that resync.
     pub fn request_list(&mut self, audiences: &[Audience]) {
-        for audience in audiences {
-            if *audience == Audience::All {
-                self.last_list = None;
-            } else if !self.list_requests.contains(audience) {
-                self.list_requests.push(*audience);
-            }
-        }
+        self.list_requests.request_each(audiences.iter().copied());
     }
 
     /// Returns whether a publication is due at `now`: the interval elapsed, a watch changed, or
@@ -335,15 +329,16 @@ pub fn send_dmx_universes(
     let sources = collect_universes(&console, &output_frames, &inputs, stale_after_ms, now);
 
     let list: Vec<DmxUniverseSummary> = sources.iter().map(UniverseSource::summary).collect();
-    let list_requests = std::mem::take(&mut stream.list_requests);
+    let list_requests = stream.list_requests.take();
     if stream.last_list.as_ref() != Some(&list) {
+        // A changed list goes to everyone, which answers the requests too.
         broadcaster.publish(
             DISCRIMINATOR_DROPPABLE,
             &FixtureWsMessage::DmxUniverseList(&list),
         );
         stream.last_list = Some(list);
-    } else if !list_requests.is_empty() {
-        broadcaster.narrowed_to(list_requests.into()).publish(
+    } else if let Some(audience) = list_requests {
+        broadcaster.narrowed_to(audience.into_audiences()).publish(
             DISCRIMINATOR_DROPPABLE,
             &FixtureWsMessage::DmxUniverseList(&list),
         );

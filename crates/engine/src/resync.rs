@@ -13,13 +13,13 @@
 //! addressing just the requesting clients, so one phone reconnecting does not push the whole show
 //! down every other connection.
 
-use std::sync::Arc;
-
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 
 use crate::EngineCommand;
-use crate::prelude::{Audience, ClientEventSink, CommandEnvelope, CommandId};
+use crate::prelude::{
+    Audience, ClientEventSink, CommandEnvelope, CommandId, PendingAudience, PendingReplies,
+};
 
 /// Fact published when an external command or internal transition requests a state resync.
 #[derive(Clone, Debug, Message)]
@@ -46,21 +46,13 @@ pub(crate) fn begin_resync(
     }
 }
 
-/// Returns the distinct audiences of `requests`, or every client alone when any request is for
-/// every client. Empty when there are no requests.
-pub fn resync_audiences<'a>(
+/// Returns who `requests` ask to be resynced, or `None` when there are none.
+pub fn resync_audience<'a>(
     requests: impl IntoIterator<Item = &'a ResyncRequested>,
-) -> Vec<Audience> {
-    let mut audiences = Vec::new();
-    for request in requests {
-        if request.audience == Audience::All {
-            return vec![Audience::All];
-        }
-        if !audiences.contains(&request.audience) {
-            audiences.push(request.audience);
-        }
-    }
-    audiences
+) -> Option<PendingAudience> {
+    let mut pending = PendingReplies::default();
+    pending.request_each(requests.into_iter().map(|request| request.audience));
+    pending.take()
 }
 
 /// This frame's resync requests and the client sink their snapshots go out on.
@@ -77,17 +69,16 @@ impl ResyncReplies<'_, '_> {
     /// Requests from several clients in one frame share the sink, so each snapshot is still
     /// encoded once.
     pub fn sink(&mut self) -> Option<ClientEventSink> {
-        let audiences = resync_audiences(self.requests.read());
-        if audiences.is_empty() {
-            return None;
-        }
+        let audience = resync_audience(self.requests.read())?;
         let sink = self.sink.as_deref()?;
-        Some(sink.narrowed_to(Arc::from(audiences)))
+        Some(sink.narrowed_to(audience.into_audiences()))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::prelude::ClientId;
 
@@ -109,8 +100,11 @@ mod tests {
         ];
 
         assert_eq!(
-            resync_audiences(&requests),
-            vec![Audience::Client(ClientId(1)), Audience::Client(ClientId(2))]
+            resync_audience(&requests),
+            Some(PendingAudience::Clients(Arc::from([
+                Audience::Client(ClientId(1)),
+                Audience::Client(ClientId(2)),
+            ])))
         );
     }
 
@@ -122,7 +116,7 @@ mod tests {
             request(Audience::All),
         ];
 
-        assert_eq!(resync_audiences(&requests), vec![Audience::All]);
-        assert!(resync_audiences(&[]).is_empty());
+        assert_eq!(resync_audience(&requests), Some(PendingAudience::Everyone));
+        assert_eq!(resync_audience(&[]), None);
     }
 }

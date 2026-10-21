@@ -136,10 +136,9 @@ pub struct ReferenceReportState {
     issues: Vec<ReferenceIssue>,
     /// Whether the next update audits every object.
     full_audit_requested: bool,
-    /// Whether the health message must be broadcast at the next client output.
-    health_pending: bool,
-    /// Resyncing clients that must be sent the health message at the next client output.
-    health_requests: Vec<Audience>,
+    /// Clients that must be sent the health message at the next client output: every client
+    /// after a change, or the clients that resynced.
+    health_pending: PendingReplies,
     /// Clients that receive the full reference list.
     watchers: HashSet<Audience>,
     /// Watchers that must be sent the full list at the next client output.
@@ -187,7 +186,7 @@ impl ReferenceReportState {
             self.issues = self.book.issues();
         }
         if applied.issues || *self.book.summary() != summary_before {
-            self.health_pending = true;
+            self.health_pending.request(Audience::All);
         }
         applied
     }
@@ -330,33 +329,22 @@ fn queue_health_on_resync(
     mut events: MessageReader<ResyncRequested>,
     mut state: ResMut<ReferenceReportState>,
 ) {
-    for audience in resync_audiences(events.read()) {
-        if !state.health_requests.contains(&audience) {
-            state.health_requests.push(audience);
-        }
-    }
+    state
+        .health_pending
+        .request_each(events.read().map(|request| request.audience));
 }
 
 /// Publishes queued health, list and list update messages.
 fn send_reference_report(mut state: ResMut<ReferenceReportState>, sink: Res<ClientEventSink>) {
-    if !state.health_pending
-        && state.health_requests.is_empty()
+    if state.health_pending.is_empty()
         && state.list_pending.is_empty()
         && state.list_updates.is_empty()
     {
         return;
     }
     let state = &mut *state;
-    let health_requests = std::mem::take(&mut state.health_requests);
-    // A broadcast reaches the resyncing clients too.
-    let health_audiences =
-        if std::mem::take(&mut state.health_pending) || health_requests.contains(&Audience::All) {
-            vec![Audience::All]
-        } else {
-            health_requests
-        };
-    if !health_audiences.is_empty() {
-        sink.narrowed_to(health_audiences.into()).publish(
+    if let Some(audience) = state.health_pending.take() {
+        sink.narrowed_to(audience.into_audiences()).publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &ReferenceWsMessage::ReferenceHealth(ReferenceHealth {
                 summary: state.book.summary(),

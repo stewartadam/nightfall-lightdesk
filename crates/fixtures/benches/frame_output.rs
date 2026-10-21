@@ -15,7 +15,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use nightfall::prelude::{ObjectRef, ObjectType};
 use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
 use nightfall_dmx::prelude::ParameterValue;
-use nightfall_engine::prelude::{Audience, ClientEventSink, OutboundFrame};
+use nightfall_engine::prelude::{ClientEventSink, OutboundFrame};
 use nightfall_fixtures::prelude::{
     ConsoleDmxUniverses, FixtureDataProviderExt, Parameter, ParameterStateProjection,
 };
@@ -23,7 +23,9 @@ use nightfall_fixtures::testing::{
     BENCH_FIXTURE_PARAMETERS, BenchParameter, bench_universe_count, patch_bench_fixtures,
 };
 use nightfall_fixtures::universe::dmx_universes;
-use nightfall_fixtures::websocket::{register_fixture_websocket_diagnostics, send_parameter_state};
+use nightfall_fixtures::websocket::{
+    ParameterStateRequests, register_fixture_websocket_diagnostics, send_parameter_state,
+};
 use nightfall_io::{ArtNetDelivery, OutputTransport};
 
 const DEFAULT_FIXTURE_COUNTS: &[usize] = &[64, 512, 2_048];
@@ -105,6 +107,7 @@ fn bench_parameter_state(c: &mut Criterion) {
             app.add_plugins(DiagnosticsPlugin);
             register_fixture_websocket_diagnostics(&mut app);
             app.init_resource::<ParameterStateProjection>();
+            app.init_resource::<ParameterStateRequests>();
             app.add_systems(Update, send_parameter_state);
             app.update();
             assert!(
@@ -118,7 +121,7 @@ fn bench_parameter_state(c: &mut Criterion) {
             let frame_bytes = drain_bytes(&receiver);
             app.world_mut()
                 .resource_mut::<ParameterStateProjection>()
-                .request_keyframe(Audience::All);
+                .request_keyframe();
             app.update();
             let keyframe_bytes = drain_bytes(&receiver);
             println!(
