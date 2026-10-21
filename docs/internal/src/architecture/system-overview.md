@@ -43,23 +43,29 @@ Browsers on other devices must pair before they can control the engine. The engi
 
 ## Inside the web UI
 
-The UI splits its connection work across a main thread and a transport worker. The following diagram shows the path from a panel to the engine on a native host:
+The UI splits its connection work across a main thread and a transport worker. The following diagram shows the path from a panel to the engine on a native host, where the engine process is the headless server or the desktop app:
 
 ```mermaid
 flowchart TB
   accTitle: Path from the web UI to the engine
-  accDescr: Panels and stores on the UI main thread exchange messages with the transport worker. The worker holds the websocket connection to the websocket host, which passes messages through the client bridge into the engine world. The main thread also calls the WASM bridge directly for shared logic.
-  main[UI main thread: panels and stores]
-  wasm[[WASM bridge]]
-  worker[Transport worker]
-  host[Websocket host]
-  bridge[Client bridge]
-  world[(Engine world)]
-  main -- calls --> wasm
-  main <-->|messages| worker
+  accDescr: In the browser, panels and stores on the UI main thread call the WASM bridge directly for shared logic and exchange messages with the transport worker. The worker holds the websocket connection to the engine process, where the websocket host passes messages through the client bridge into the engine world.
+  subgraph browser[Browser]
+    direction TB
+    main[UI main thread: panels and stores]
+    wasm[[WASM bridge]]
+    worker[Transport worker]
+    main -- calls --> wasm
+    main <-->|messages| worker
+  end
+  subgraph backend[Engine process]
+    direction TB
+    host[Websocket host]
+    bridge[Client bridge]
+    world[(Engine world)]
+    host <--> bridge
+    bridge <--> world
+  end
   worker <-->|websocket| host
-  host <--> bridge
-  bridge <--> world
 ```
 
 The transport worker is a web worker that owns the connection. It receives the engine's messages and decodes them off the main thread, then hands the main thread batches of decoded messages. This keeps decoding work from delaying the UI's rendering. The UI sends commands and updates as JSON. The engine sends binary messages: one leading byte says whether the message must arrive in order, may be replaced by a newer one, or builds on the previous message of its type, and the rest is the message body in Concise Binary Object Representation (CBOR).
@@ -72,17 +78,17 @@ The message types are Rust types. The `pnpm run typeshare` script generates matc
 
 ### The WASM bridge shares engine logic with the UI
 
-Some engine logic has to run inside the UI to keep it responsive. The command line offers completions and flags errors as you type, the spatial selection field parses its expression on each keystroke, and the 3D visualizer converts DMX channel values into beam colors and positions for every fixture. The UI doesn't reimplement this logic in TypeScript. Instead, the WASM bridge compiles the relevant Rust crates to WebAssembly and exposes them to the UI as functions:
+Some engine logic has to run inside the UI to keep it responsive, and the UI doesn't reimplement it in TypeScript. Instead, the WASM bridge is a small Rust crate that exports functions to the UI. Each function calls logic in other Nightfall crates, and the build keeps only the code those functions reach, rather than compiling whole domain crates to WebAssembly. The bridge covers:
 
-- Command parsing: completion, validation, and splitting a line into separate statements.
-- Selection: parsing, formatting, and resolving spatial selections.
+- Command parsing: completion and error checking as you type, and splitting a line into separate statements.
+- Selection: parsing, formatting, and resolving spatial selections on each keystroke.
 - Timing previews: Step FX phases, sequence lookahead projections, and sequence durations.
-- Fixture profiles: evaluating channel values for the visualizer.
+- Fixture profiles: converting DMX channel values into beam colors and positions for the 3D visualizer.
 - Boards: checking where a board element fits.
 
 The WASM bridge is a library, not a second engine. It holds no show state and never talks to the engine. When you press <kbd>Enter</kbd> in the command line, the UI uses the bridge to split the line into statements, and then sends each statement to the engine, which parses it again with the same parser and decides the result.
 
-The crates behind the bridge must compile for the `wasm32` target. Keep them free of native-only dependencies such as Bevy's runtime, sockets, or threads. After you change command parsing or another bridged crate, rebuild the bridge with `pnpm run wasm:bridge --dev` so the UI picks up the change.
+The code the bridge calls must compile for the `wasm32` target. Keep the crates it depends on free of native-only dependencies such as Bevy's runtime, sockets, or threads. The [crate map](crate-map.md#what-the-wasm-bridge-exports) lists each export and the crates it calls. After you change one of those crates, rebuild the bridge with `pnpm run wasm:bridge --dev` so the UI picks up the change.
 
 ## Three hosts around one engine
 
