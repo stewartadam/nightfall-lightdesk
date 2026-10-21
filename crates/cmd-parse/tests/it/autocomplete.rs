@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use nightfall_cmd_parse::autocomplete::{ParseStatus, complete_command};
+use nightfall_cmd_parse::autocomplete::{
+    CommandCompletionResponse, CompletionInventory, ParseStatus, complete_command,
+    complete_command_with_inventory,
+};
 use nightfall_cmd_parse::completion_groups::contracts::CompletionGroupId;
 use nightfall_cmd_parse::parser::analysis::{ExpectedToken, TokenId, ValueKind};
 use nightfall_cmd_parse::slots::contracts::ClauseId;
@@ -524,6 +527,127 @@ fn complete_command_omits_console_target_for_console_sources() {
             "'{input}' should still suggest transport universe/address digits"
         );
     }
+}
+
+/// Builds a completion inventory with the built-in outputs plus custom `stage-left` and `fog`.
+fn configured_outputs() -> CompletionInventory {
+    CompletionInventory {
+        output_targets: ["sacn", "artnet", "udmx", "stage-left", "fog"]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    }
+}
+
+/// Returns the apply text of the candidate inserting `insert_text`, requiring that the UI can
+/// show it, either loose or inside a completion group.
+fn offered_apply_text(response: &CommandCompletionResponse, insert_text: &str) -> Option<String> {
+    let candidate = response
+        .candidates
+        .iter()
+        .find(|candidate| candidate.insert_text == insert_text)?;
+    let visible = response
+        .slot_plan
+        .loose_candidate_ids
+        .contains(&candidate.id)
+        || response
+            .slot_plan
+            .completion_groups
+            .iter()
+            .any(|group| group.candidate_ids.contains(&candidate.id));
+    visible.then(|| candidate.apply_text.clone())
+}
+
+/// Wherever a command names an output, completion lists the show's configured outputs and
+/// inserts them without a trailing space so the `:universe` can follow directly.
+#[test]
+fn complete_command_offers_configured_output_targets() {
+    let inventory = configured_outputs();
+    for input in [
+        "ch ",
+        "release ch ",
+        "patch fixture 1 @ ",
+        "patch console:1 @ ",
+    ] {
+        let response = complete_command_with_inventory(input, input.len(), &inventory);
+        for target in ["sacn", "artnet", "udmx", "stage-left", "fog"] {
+            assert_eq!(
+                offered_apply_text(&response, target).as_deref(),
+                Some(target),
+                "'{input}' should offer output '{target}'"
+            );
+        }
+    }
+}
+
+/// Unconfigured outputs are not offered, while patch sources (inputs) keep the keywords.
+#[test]
+fn complete_command_limits_outputs_to_configured_targets() {
+    let inventory = CompletionInventory {
+        output_targets: vec!["sacn".into(), "stage-left".into()],
+    };
+    let response = complete_command_with_inventory("ch ", 3, &inventory);
+    assert!(offered_apply_text(&response, "stage-left").is_some());
+    assert!(!has_candidate_insert(&response, "artnet"));
+    assert!(!has_candidate_insert(&response, "udmx"));
+
+    let response = complete_command_with_inventory("patch ", 6, &inventory);
+    assert!(has_candidate_insert(&response, "artnet"));
+    assert!(!has_candidate_insert(&response, "stage-left"));
+}
+
+/// A partly typed output name, including one split by hyphens, completes to the whole name.
+#[test]
+fn complete_command_completes_partial_output_names() {
+    let inventory = configured_outputs();
+    for (input, replace_start) in [
+        ("ch st", 3),
+        ("ch stage-", 3),
+        ("ch stage-l", 3),
+        ("release ch stage-l", 11),
+        ("patch fixture 1 @ stage-", 18),
+    ] {
+        let response = complete_command_with_inventory(input, input.len(), &inventory);
+        let candidate = response
+            .candidates
+            .iter()
+            .find(|candidate| candidate.insert_text == "stage-left")
+            .unwrap_or_else(|| panic!("'{input}' should offer 'stage-left'"));
+        assert_eq!(
+            (candidate.replace.start, candidate.replace.end),
+            (replace_start, input.len()),
+            "'{input}' should replace the whole typed name"
+        );
+        assert!(offered_apply_text(&response, "stage-left").is_some());
+        assert!(
+            !has_candidate_insert(&response, "fog"),
+            "'{input}' should only offer names starting with the typed text"
+        );
+    }
+}
+
+/// Inside a hyphenated patch target, outputs replace the whole typed name, never only the
+/// fragment after the last hyphen (which would turn `fog-f` into `fog-fog-fx`).
+#[test]
+fn complete_command_replaces_whole_hyphenated_patch_target() {
+    let inventory = CompletionInventory {
+        output_targets: vec!["fog".into(), "fog-fx".into()],
+    };
+    let input = "patch fixture 1 @ fog-f";
+    let response = complete_command_with_inventory(input, input.len(), &inventory);
+    let outputs = response
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.insert_text.starts_with("fog"))
+        .map(|candidate| {
+            (
+                candidate.insert_text.as_str(),
+                candidate.replace.start,
+                candidate.replace.end,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(outputs, [("fog-fx", 18, input.len())]);
 }
 
 #[test]

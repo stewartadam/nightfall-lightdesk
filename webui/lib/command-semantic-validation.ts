@@ -9,9 +9,8 @@
 import type * as types from "../types";
 import {
   isReservedOutputTargetKeyword,
-  networkDmxOutputsFromSettings,
+  outputTargetIdsFromSettings,
   reservedOutputTargetKeywordsReady,
-  usbDmxOutputsFromSettings,
 } from "./network-dmx-output-targets";
 import { splitCommandStatements } from "./wasm-bridge";
 
@@ -64,10 +63,7 @@ export async function validateCommandSemantics(
  */
 function outputTargetIds(settings: types.IoRuntimeSettings): Set<string> {
   return new Set(
-    [
-      ...networkDmxOutputsFromSettings(settings).targets,
-      ...usbDmxOutputsFromSettings(settings).targets,
-    ].map((target) => normalizePatchTargetName(target.id)),
+    outputTargetIdsFromSettings(settings).map(normalizePatchTargetName),
   );
 }
 

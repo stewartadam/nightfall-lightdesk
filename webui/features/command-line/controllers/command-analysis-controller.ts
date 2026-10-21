@@ -148,7 +148,11 @@ export function createCommandAnalysisController(
   /** Refreshes autocomplete results while discarding stale async responses. */
   const refreshAutocomplete = async (value: string, cursor: number) => {
     const requestId = ++autocompleteRequestId;
-    const analysis = await analyzeCommandAutocomplete(value, cursor);
+    const analysis = await analyzeCommandAutocomplete(
+      value,
+      cursor,
+      settings(),
+    );
     if (requestId !== autocompleteRequestId) return;
     if (!analysis) {
       clearSuggestions();

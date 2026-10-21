@@ -239,6 +239,18 @@ pub(in crate::parser) fn dmx_transport_prefix_expected_tokens(
     })
 }
 
+/// Returns what may begin a direct DMX channel expression after `release ch`: an output
+/// prefix (`sacn:`), a parenthesized group, or a console `universe.address`.
+pub(in crate::parser) fn dmx_channel_expression_start_tokens() -> Vec<ExpectedToken> {
+    vec![
+        ExpectedToken::Token(TokenId::Sacn),
+        ExpectedToken::Token(TokenId::Artnet),
+        ExpectedToken::Token(TokenId::Udmx),
+        ExpectedToken::Token(TokenId::LeftParen),
+        ExpectedToken::Placeholder(ValueKind::NumericDigit),
+    ]
+}
+
 /// Decides whether a token may extend a direct DMX channel expression.
 ///
 /// Words and the colon only form the leading transport prefix, written without spaces
