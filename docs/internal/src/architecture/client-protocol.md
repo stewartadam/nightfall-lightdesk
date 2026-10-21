@@ -210,8 +210,10 @@ Other events start a resync too:
 - A reconnect, after the connection dropped or the host closed a lagging client.
 - An overflow in the worker. If more than 10,000 non-droppable messages wait for the main thread, the worker discards everything it staged, stops staging, and asks the main thread to resync.
 
+Resync output goes only to the clients that asked for it. Resync handlers take the `ResyncReplies` system parameter, whose sink addresses the clients that requested a resync this frame, so a phone reconnecting doesn't push the whole show down every other connection. When several clients resync in the same frame, they share one sink, and each snapshot is still encoded once. `ResyncComplete` goes to the same clients. A `ParameterKeyframeRequest` is answered the same way: the client that asked gets a layout and keyframe copied from the last published frame and numbered like it, and the shared delta stream carries on unchanged for everyone else.
+
 > [!WARNING]
-> Resync output goes to every client. When one client connects or reconnects, every connected client receives the full state and a `ResyncComplete` again. In the same way, one client's `ParameterKeyframeRequest` makes the next parameter frame a keyframe for every client. Keep resync handlers idempotent, and keep the UI's resync handling cheap for clients that didn't ask.
+> Two messages still go to every client after a resync: the layer stack snapshot and the sequence lookahead projection. Keep the UI's handling of those cheap for clients that didn't ask. A new resync handler must publish through the `ResyncReplies` sink, not the shared client sink, or its snapshot reaches every client again.
 
 ## The browser transport worker
 
