@@ -6,7 +6,7 @@ The programmer is where you build a look before you keep it. It holds a list of 
 
 Read this page before you change programmer commands, the programmer painter, or anything that writes cue instructions. Most surprises in this area come from the normalization step of a store, which rewrites the target cue's rows as well as the new ones.
 
-The examples use the [running example](../README.md#a-running-example). The programmer holds `Practice light` at 50% intensity, and cue `Red` of `First sequence` stores `Practice light` at full intensity and full red. For how a typed command such as `fixture 1 @ 50` reaches the programmer, see [from command to state change](../engine/command-path.md).
+The examples use the [running example](../README.md#a-running-example). The programmer holds `Par 1` at 50% intensity, and cue `Red` of `First sequence` stores `Par 1` at full intensity and full red. For how a typed command such as `fixture 1 @ 50` reaches the programmer, see [from command to state change](../engine/command-path.md).
 
 ## What the programmer holds
 
@@ -208,16 +208,16 @@ After normalization, the store mode decides how the programmer rows, called inco
 
 An incoming row for one element doesn't edit an existing row for the whole fixture. Merge, Update, and Remove skip such rows and send a warning: "Element store skipped existing whole-fixture instruction rows." In Update and Remove, blueprint rows only match blueprint rows that apply the same blueprint. Merge always appends incoming blueprint rows.
 
-The following table shows cue `Red` after storing the programmer's single row, `Practice light` at intensity 50%, with each mode. Before the store, `Red` holds one row for `Practice light` with intensity 100%, red 100%, green 0%, and blue 0%.
+The following table shows cue `Red` after storing the programmer's single row, `Par 1` at intensity 50%, with each mode. Before the store, `Red` holds one row for `Par 1` with intensity 100%, red 100%, green 0%, and blue 0%.
 
 | Mode | Command | `Red` afterwards | Description |
 |------|---------|------------------|-------------|
 | Replace | `store cue 1.1` | Intensity 50% | Red, green, and blue are no longer stored. The cue keeps its label and timing. |
 | Merge | `store cue 1.1 /merge` | Intensity 50%, red 100%, green 0%, blue 0% | The intensity value is overwritten and the color values stay. |
-| Update | `store cue 1.1 /update` | Intensity 50%, red 100%, green 0%, blue 0% | Same as Merge, because `Red` already stores intensity for `Practice light`. |
+| Update | `store cue 1.1 /update` | Intensity 50%, red 100%, green 0%, blue 0% | Same as Merge, because `Red` already stores intensity for `Par 1`. |
 | Remove | `store cue 1.1 /remove` | Red 100%, green 0%, blue 0% | Intensity is removed. The stored 50% plays no part. |
 
-Merge and Update differ when the programmer holds something the cue doesn't. If the programmer also held `Practice light` at green 40% and `Red` stored no green, Merge would add green and Update would leave it out. The same goes for a fixture the cue doesn't store: Merge adds a row for it and Update ignores it.
+Merge and Update differ when the programmer holds something the cue doesn't. If the programmer also held `Par 1` at green 40% and `Red` stored no green, Merge would add green and Update would leave it out. The same goes for a fixture the cue doesn't store: Merge adds a row for it and Update ignores it.
 
 #### Timing, labels, and recalled cues
 
@@ -229,7 +229,7 @@ Recalling a cue, with `recall cue 1.1`, clears the programmer, loads the cue's r
 
 A store changes what a cue asserts, and tracking decides what that means for later cues. With tracking, a value carries forward into later cues until a cue changes it. For the terms, see the [concept map](../concepts/concept-map.md). A new cue gets the `Inherit` tracking mode, so it follows its sequence. A store into an existing cue keeps the cue's tracking mode and flags.
 
-This makes Remove and Replace different from clearing a value. After `store cue 1.1 /remove`, `Red` no longer asserts intensity, so intensity tracks in from earlier cues. `Red` is the first cue in `First sequence`, so nothing tracks in, and once you clear the programmer, `Practice light` plays at its default intensity during `Red`. In a later cue, the same store would let the previous cue's intensity show through. To make a cue actively drop a tracked value, store the `Release` value source for that attribute instead.
+This makes Remove and Replace different from clearing a value. After `store cue 1.1 /remove`, `Red` no longer asserts intensity, so intensity tracks in from earlier cues. `Red` is the first cue in `First sequence`, so nothing tracks in, and once you clear the programmer, `Par 1` plays at its default intensity during `Red`. In a later cue, the same store would let the previous cue's intensity show through. To make a cue actively drop a tracked value, store the `Release` value source for that attribute instead.
 
 Storing 50% into `Red` doesn't change `Blue`, because `Blue` stores its own intensity. In the tutorial, the programmer still held intensity when you stored `Blue`.
 

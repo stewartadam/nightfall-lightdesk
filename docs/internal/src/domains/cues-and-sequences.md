@@ -4,7 +4,7 @@
 
 A sequence is an ordered list of cues, and a running sequence paints one layer in every render pass. To compute that layer, the engine renders the sequence's setup cue and then each cue it still retains, in order, so values from earlier cues can carry into later ones. That carrying is called tracking. The `cues` crate owns the whole path: the authored types a showfile stores, the runtime state built when a clip starts a sequence, the Go, Back, and Goto operations that move it, and the release that fades it out. Read this before you change how cues are stored, how a sequence advances, or what a sequence layer contains.
 
-The examples use the [running example](../README.md#a-running-example): `First sequence` holds `Red`, which sets `Practice light` to full intensity and full red, and `Blue`, whose trigger is **Manual** so it waits for Go. Every attribute of `Practice light` merges latest takes precedence (LTP), as [priorities and merging](../concepts/priorities-and-merging.md) explains.
+The examples use the [running example](../README.md#a-running-example): `First sequence` holds `Red`, which sets `Par 1` to full intensity and full red, and `Blue`, whose trigger is **Manual** so it waits for Go. Every attribute of `Par 1` merges latest takes precedence (LTP), as [priorities and merging](../concepts/priorities-and-merging.md) explains.
 
 ## The authored model
 
@@ -78,7 +78,7 @@ A cue's effective flags resolve in this order:
 
 The flags apply per parameter, by the parameter's merge rule. An HTP parameter tracks when the flags include `HTP`, and an LTP parameter tracks when they include `LTP`. Sequence tracking doesn't read the `FX` flag. New sequences from the web UI use `Flags` with all three flags, and their step cues and release cue use `Inherit`.
 
-In the running example, suppose `Blue` only stores red at 0% and blue at 100%. With the default flags, `Red`'s intensity at 100% tracks into `Blue`, so `Practice light` stays at full. If `Red`'s flags exclude `LTP`, none of its values track, because every `Practice light` attribute is LTP. `Blue` then contributes only red and blue, and intensity falls to whatever the lower layers or the fixture default give it.
+In the running example, suppose `Blue` only stores red at 0% and blue at 100%. With the default flags, `Red`'s intensity at 100% tracks into `Blue`, so `Par 1` stays at full. If `Red`'s flags exclude `LTP`, none of its values track, because every `Par 1` attribute is LTP. `Blue` then contributes only red and blue, and intensity falls to whatever the lower layers or the fixture default give it.
 
 > [!WARNING]
 > Rendering reads the cue-level flags for the whole cue, including its parts. A part's own `tracking_flags` field is stored but never read during playback.
