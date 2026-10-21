@@ -142,7 +142,7 @@ Integration crates combine several domains, which domain crates can't do themsel
 | `boards` | Demo | Boards: grids of buttons, button presses, and button status. |
 | `references` | Demo | Show-wide report of which objects use which, for the **References** panel and delete guards. |
 | `showfile` | Demo | The versioned showfile JSON format, migrations, applying a showfile to an engine world, and snapshots of a world. |
-| `wasm-bridge` | Bridge | Functions the web UI calls in WASM: command parsing, selection, timing previews, fixture evaluation, and board placement. |
+| `wasm-bridge` | Bridge | Functions the web UI calls in WASM. See [what the WASM bridge exports](#what-the-wasm-bridge-exports). |
 
 ## Composition: hosts and tools
 
@@ -154,6 +154,22 @@ Composition crates assemble the others into programs.
 | `browser-runtime` | Is the demo | The browser demo engine, with its own hand-written plugin list. |
 | `cli` | No | `nightfall-cli`, an interactive terminal client that sends commands to the engine over a websocket. |
 | `desktop/app-tauri` (`app-tauri`) | No | The Tauri desktop shell and the `nightfall-app` binary. It lives outside `crates/`, and plain `cargo` commands leave it out unless you pass `-p app-tauri`. |
+
+## What the WASM bridge exports
+
+The `wasm-bridge` crate is the only Rust code the web UI calls directly. It isn't a WASM build of the domain crates. It exports a small set of functions, and each one calls into the crates listed below, so only the code those functions reach is compiled to WebAssembly. A change to one of these crates can change what the UI computes, so rebuild the bridge after you change one.
+
+| Export | Functions | Crates it calls |
+|--------|-----------|-----------------|
+| Command line | `complete_command`, `validate_command`, `split_command_statements` | `cmd-parse` |
+| Selection text | `parse_spatial_selection`, `format_spatial_selection` | `cmd-parse`, `common` |
+| Selection resolution | `resolve_spatial_selection`, `project_resolved_spatial_selection` | `selection`, `common` |
+| Step FX phases | `parse_step_fx_phase`, `format_step_fx_phase` | `cmd-parse` |
+| Transition modes | `resolve_transition_modes` | `common` |
+| Sequence previews | `project_sequence_lookahead`, `sequence_duration_summary` | `lookahead-projection` |
+| Fixture evaluation | `FixtureChannelEvaluator`, `fixture_reading_stride` | `fixture-model` |
+| Board placement | `BoardPlacement`, `board_max_dimension` | `common` |
+| Reserved DMX target names | `reserved_network_dmx_target_keywords`, `reserved_usb_dmx_target_keywords` | `io`, without its `ecs` feature |
 
 ## What lives in `desk` and why
 
@@ -198,6 +214,7 @@ The rest of the repository holds the web UI, the desktop shell, and the tooling 
 | Boundary check | `scripts/check-crate-boundaries.mjs` |
 | Browser demo dependencies | `crates/browser-runtime/Cargo.toml`, `scripts/check-browser-demo-dependencies.mjs` |
 | WASM bridge dependencies | `crates/wasm-bridge/Cargo.toml` |
+| WASM bridge exports | `crates/wasm-bridge/src/lib.rs`, `board_placement.rs`, `fixture_evaluation.rs` |
 | Native feature selection | `crates/app-runtime/Cargo.toml` |
 | `desk` plugin registration | `crates/desk/src/lib.rs` |
 

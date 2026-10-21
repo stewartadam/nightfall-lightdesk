@@ -257,7 +257,7 @@ The bridge gives the UI the engine's answer without a round trip. It doesn't mak
 
 **Warning:** Don't reimplement an engine rule in TypeScript. A copy drifts from the engine and shows the operator something the engine won't do. If the UI needs the rule, expose it through the bridge, or ask the engine with a command and use its result.
 
-After you change Rust code that the bridge uses, such as command parsing, rebuild it with `pnpm run wasm:bridge --dev`.
+After you change a crate the bridge calls, such as `cmd-parse`, rebuild it with `pnpm run wasm:bridge --dev`. The [crate map](crate-map.md#what-the-wasm-bridge-exports) lists the bridge's exports and the crates behind them.
 
 ## Logging and error reporting
 
