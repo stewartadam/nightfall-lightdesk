@@ -6,17 +6,27 @@ The web UI is a SolidJS app in `webui/` that shows engine state and sends the op
 
 ## The UI is a view of the engine
 
-The engine runs the show and the UI renders it. The following diagram shows the two directions of traffic:
+The engine runs the show and the UI renders it. The following diagram shows the parts of the UI and the two directions of traffic:
 
 ```mermaid
 flowchart TB
   accTitle: Engine and web UI
-  accDescr: The engine sends state messages to the web UI, which stores them and renders panels. The web UI sends commands and updates back to the engine. The WASM bridge gives the UI read-only access to shared Rust logic.
-  engine([Engine]) -- state messages --> stores[(Stores in the web UI)]
-  stores --> panels[Panels]
+  accDescr: The engine sends state messages to the message handlers in the web UI. The handlers write the Nanostores stores. Panels, which are Solid components, subscribe to the stores and render. Panels send commands and updates back to the engine, and call the WASM bridge for read-only access to shared Rust logic.
+  engine([Engine])
+  subgraph webui [Web UI]
+    handlers[Message handlers]
+    stores[(Nanostores stores)]
+    panels[Panels<br/>Solid components]
+    wasm[[WASM bridge]]
+  end
+  engine -- state messages --> handlers
+  handlers -- write --> stores
+  stores -- subscribe --> panels
   panels -- commands and updates --> engine
-  panels -- parse, validate, project --> wasm[[WASM bridge]]
+  panels -- parse, validate, project --> wasm
 ```
+
+The stores are the UI's copy of engine state. Message handlers write them when a state message arrives, and Solid components subscribe to them, so a panel re-renders when the engine sends new state. The [where state lives](#where-state-lives) section describes the stores in more detail.
 
 State flows one way. A panel never changes engine state by writing a store. It sends a command, the engine applies it, and the engine's next state message updates the store. This keeps every connected screen consistent, because each one renders the same messages. The [control layers](../engine/control-layers.md) page describes what commands and updates are on the engine side.
 
@@ -43,26 +53,27 @@ The following table lists the top-level folders under `webui/`:
 | `design-lab` | Not classified | A development-only page that demonstrates the shared components with sample data. |
 | `e2e` | Not classified | Playwright specs. |
 
-The following diagram shows which layer may import which. An arrow means "may import from":
+The layers stack from top to bottom. The following diagram shows the stack, where an arrow means "may import from":
 
 ```mermaid
 flowchart TB
   accTitle: Web UI layers and allowed imports
-  accDescr: Shell and overlays may import features, providers, widgets, UI primitives, lib, and state. Features may import providers, widgets, UI primitives, lib, and state, but not shell or overlays. Providers may import widgets, UI primitives, lib, and state, but not features. Widgets may import UI primitives and lib, but not state or the engine runtime. UI primitives may import only other UI primitives.
+  accDescr: The layers stack from top to bottom as shell and overlays, features, providers, widgets, and UI primitives. Each layer may import from the layer below it and from every layer further down, but never from a layer above it.
   shell[Shell and overlays] --> features[Features]
-  shell --> providers
   features --> providers[Providers]
-  features --> widgets
   providers --> widgets[Widgets]
   widgets --> ui[UI primitives]
-  shared[(lib and state)]
-  shell -.-> shared
-  features -.-> shared
-  providers -.-> shared
-  widgets -. lib only, not the engine runtime .-> shared
 ```
 
-Every layer may also import from the layers below the ones it points to. For example, features may import UI primitives directly. One more rule applies across features: a feature may import another feature only through that feature's public `index.ts`.
+A layer may import from the layer below it and from every layer further down, but never from a layer above it. For example, features may import UI primitives directly, but not the shell. Files within one layer may import each other, and the shell and overlays may import each other.
+
+Access to `lib/` and `state/` depends on the layer. The following rules apply:
+
+- UI primitives import nothing outside `components/ui`, not even `lib/`.
+- Widgets may import `lib/`, apart from the engine runtime (`lib/engine-runtime*`), and may not import `state/`.
+- Providers, features, the shell, and overlays may import both `lib/` and `state/`.
+
+One more rule applies across features: code outside a feature, including the shell and overlays, may import that feature only through its public `index.ts`.
 
 `lib/` and `state/` sit outside the layer model. The boundaries test doesn't classify files there, so they may import anything, and a few do: the panel manifest in `lib/` imports every feature's panel definition, and `appStores.ts` imports a type from the visualizer feature. Treat `lib/` and `state/` as shared infrastructure and keep feature-specific code in `features/`.
 
@@ -113,23 +124,42 @@ The feature's `index.ts` is its public surface. Other features, and the shell, i
 
 ## Panels
 
-Every dockable view in the app is a panel. The shell docks panels with [Dockview](https://dockview.dev/), and the command palette offers an **Open** command for each one.
+Every dockable view in the app is a panel. The shell docks panels with [Dockview](https://dockview.dev/).
 
 ### How a panel is registered
 
-A panel is described by a definition file and listed in one manifest. The following diagram shows how a definition becomes a mounted panel:
+A panel is described by a definition file and listed in one manifest, `PANEL_MODULES`. The following diagram shows how a definition is registered at startup and then opened:
 
 ```mermaid
-flowchart TB
-  accTitle: Panel registration
-  accDescr: Each feature's definition file calls definePanel. The panel manifest lists every definition. At startup the shell registers every manifest entry with the panel registry. Dockview asks the registry for a component by name, and the component loads lazily the first time it mounts.
-  def[Feature definition file<br/>definePanel] --> manifest[Panel manifest<br/>PANEL_MODULES]
-  manifest --> startup[Shell startup<br/>registerAllComponents]
-  startup --> registry[(Panel registry)]
-  manifest --> palette[Command palette<br/>Open panel commands]
-  dockview([Dockview]) -- component name --> registry
-  registry --> lazy[Lazy-loaded panel component]
+sequenceDiagram
+  accTitle: Panel registration and opening
+  accDescr: A feature's definition file default-exports definePanel, and the panel manifest imports it. At startup, registerAllComponents registers every manifest entry with the panel registry by component name. Later, an opener such as an Open command reads the definition and asks Dockview to add the panel by ID and component name. Dockview asks the panel registry for the component, which loads the panel code on first mount.
+  participant Def as Definition file
+  participant Manifest as Panel manifest
+  participant Registry as Panel registry
+  participant Opener
+  participant Dock as Dockview
+  Def->>Manifest: definePanel({ ... }), listed in PANEL_MODULES
+  Note over Manifest,Registry: App startup
+  Manifest->>Registry: registerAllComponents() by componentName
+  Note over Manifest,Dock: The operator opens the panel
+  Opener->>Manifest: look up the definition
+  Manifest-->>Opener: panelId, componentName, title
+  Opener->>Dock: addPanel, or focus the open panel
+  Dock->>Registry: component for componentName
+  Registry-->>Dock: focus-tracked component
+  Note over Dock: Panel code loads on first mount
 ```
+
+The panel registry only holds components for Dockview. Many other parts of the app read the same definitions, by panel ID or component name, which is why each fact about a panel lives in one place. The following code reads panel definitions:
+
+- Open commands. The shell registers an **Open** `<title>` action for every definition with `showInPalette`. The command palette lists these actions, and the definition's `shortcut`, if any, opens the panel from the keyboard.
+- The compact (phone-width) shell's panel sheet, which lists the same panels.
+- The default layout, which builds the first arrangement from definitions.
+- Dockview group sizing, which applies each panel's `minWidth` and `minHeight`.
+- The panel capability registry and the focus wrapper, which check the capabilities a definition declares.
+- The showfile object palette, which finds the panel that reveals each kind of show object.
+- Features that open their own panels, such as the command line and boards.
 
 A definition file default-exports the result of `definePanel`. The definition holds:
 
@@ -138,7 +168,7 @@ A definition file default-exports the result of `definePanel`. The definition ho
 - `title`, and an optional `icon` and `shortcut`.
 - `minWidth` and `minHeight` for the dock group.
 - `loadComponent`, a dynamic import of the panel component, so panel code loads only when a panel first opens.
-- `showInPalette`, which controls whether the command palette lists an **Open** command for it.
+- `showInPalette`, which controls whether the panel gets an **Open** command and appears in the compact shell's panel sheet.
 - `singleton`, which is `singleton` for a panel that opens once or `multi` for a panel that can open several instances.
 - `capabilities`, the optional features the panel supports.
 
@@ -154,7 +184,7 @@ A capability is an optional service a panel offers to the rest of the app. Night
 - `render-properties` lets the panel show content in the **Properties** panel.
 - `reveal-object` lets the panel scroll to and select a show object, which the showfile object palette uses to jump to a cue, clip, or fixture.
 
-A panel declares its capabilities in its definition and registers a handler for each one at runtime through the panel capability registry in `lib/`, which the provider in `components/providers/panel-capabilities` exposes. Registering a capability the definition doesn't declare logs a warning.
+A panel declares its capabilities in its definition and registers a handler for each one at runtime through the panel capability registry in `lib/`, which the provider in `components/providers/panel-capabilities` exposes.
 
 The **Properties** panel shows settings for whatever the operator is working with in another panel. It renders nothing of its own. Instead, each panel that has properties registers a renderer with `usePropertiesInspector(panelId, label, component)`. The properties provider watches Dockview's active panel and shows the renderer registered for it. When the operator focuses **Properties** itself, it keeps showing the panel that was active before.
 
@@ -176,7 +206,18 @@ State lives in one of three places, depending on who owns it and who reads it. T
 | Feature `state/` folders | One feature | Usually persisted in browser storage | UI preferences that only one feature reads, such as a panel's column settings or the height of the clip controls. |
 | Solid contexts | A provider component | The provider's subtree | State scoped to part of the tree. App-wide providers, such as keyboard shortcuts and the panel capability registry, wrap the whole app. Feature contexts, such as the cue editor context, wrap one panel. |
 
-The global stores are [Nanostores](https://github.com/nanostores/nanostores) atoms and deep maps. A component subscribes with `useStore`, or with `useSharedStore` when many components read the same large store and should share one reconciled copy. In development builds, end-to-end test builds, and the browser demo opened with `?e2e=1`, the stores are also available in the browser console as `window.appStores`. Other shipped builds don't expose them.
+The global stores are [Nanostores](https://github.com/nanostores/nanostores) atoms and deep maps. A Solid component reads one through a hook that turns the store into a Solid accessor. Two hooks do this, and they differ in what each update costs.
+
+`useStore`, from `@nanostores/solid`, gives each calling component its own Solid copy of the store's value. On every store update, each copy runs Solid's `reconcile`, which walks the new value, compares it with the old one, and keeps unchanged objects in place so that keyed lists re-render only the rows that changed. For a small value, such as a flag or a selected ID, that walk is cheap. For a large snapshot, such as every fixture in the show, the walk is expensive, and with `useStore` it runs once per component that reads the store.
+
+`useSharedStore`, in `lib/use-shared-store.ts`, keeps one Solid copy per Nanostores store and hands the same accessor to every component that calls it. Each update is reconciled once, however many components are mounted, and the copy and its listener are released when the last of those components unmounts. Components read the same values either way, so only the cost changes.
+
+Follow this rule when you choose:
+
+- Use `useSharedStore` for a large collection store that several mounted components read, such as `fixtures`, `groups`, `fx`, or `sceneObjects`.
+- Use `useStore` for everything else. It is the default, and it accepts reconcile options, such as a custom key, that `useSharedStore` doesn't.
+
+In development builds, end-to-end test builds, and the browser demo opened with `?e2e=1`, the stores are also available in the browser console as `window.appStores`. Other shipped builds don't expose them.
 
 Put a value in a context, not a global store, when two instances of the same panel must not share it.
 
@@ -242,7 +283,8 @@ sequenceDiagram
 
 Every command gets a command ID, which also serves as its undo ID unless the caller sets one. When the `CommandResult` arrives, its handler resolves any waiting promise, updates the console scrollback, and shows an error toast for a failed command. You don't need to report failures yourself unless you want a more specific message.
 
-**Warning:** Don't change a store to predict what a command will do. If the engine rejects the command, or applies it differently, the UI shows something the engine doesn't have. Wait for the engine's state message.
+> [!WARNING]
+> Don't change a store to predict what a command will do. If the engine rejects the command, or applies it differently, the UI shows something the engine doesn't have. Wait for the engine's state message.
 
 ## Shared logic through the WASM bridge
 
@@ -255,7 +297,8 @@ Some rules must behave the same in the UI and the engine, such as the command gr
 
 The bridge gives the UI the engine's answer without a round trip. It doesn't make the UI authoritative: anything the operator commits still goes to the engine as a command, and the engine checks it again.
 
-**Warning:** Don't reimplement an engine rule in TypeScript. A copy drifts from the engine and shows the operator something the engine won't do. If the UI needs the rule, expose it through the bridge, or ask the engine with a command and use its result.
+> [!WARNING]
+> Don't reimplement an engine rule in TypeScript. A copy drifts from the engine and shows the operator something the engine won't do. If the UI needs the rule, expose it through the bridge, or ask the engine with a command and use its result.
 
 After you change a crate the bridge calls, such as `cmd-parse`, rebuild it with `pnpm run wasm:bridge --dev`. The [crate map](crate-map.md#what-the-wasm-bridge-exports) lists the bridge's exports and the crates behind them.
 
@@ -300,7 +343,7 @@ The following steps add a panel to a feature. For a small working example, compa
 | Properties panel | `webui/features/property-inspector/` |
 | App-wide providers | `webui/components/shell/app/app-providers.tsx` |
 | Layouts | `webui/lib/layout-management.ts`, `webui/lib/layoutStorage.ts` |
-| Global stores | `webui/state/appStores.ts` |
+| Global stores | `webui/state/appStores.ts`, `webui/lib/use-shared-store.ts` |
 | Transport worker | `webui/lib/engine-runtime-worker-core.ts` |
 | Main-thread runtime and command sending | `webui/lib/engine-runtime.ts`, `webui/lib/command-client.ts` |
 | Message handlers | `webui/lib/ws/message-registry.ts`, `webui/lib/ws/main-thread-handlers.ts`, `webui/lib/ws/<domain>-handlers.ts` |

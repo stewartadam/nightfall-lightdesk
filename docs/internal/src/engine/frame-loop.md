@@ -65,7 +65,8 @@ The `ActionInvocationHandling` set belongs to the actions crate, which orders it
 
 Resync runs in `Update` on purpose. The resync completion message goes out before clock and layer work starts, so a slow first render after a show load doesn't delay the moment a client knows it has the full state.
 
-**Warning:** A system that queues commands outside `InputHandling` must order itself before `PendingCommandProcessing`. Otherwise its commands wait in the buffer until the next frame, and they miss undo capture for this frame.
+> [!WARNING]
+> A system that queues commands outside `InputHandling` must order itself before `PendingCommandProcessing`. Otherwise its commands wait in the buffer until the next frame, and they miss undo capture for this frame.
 
 ### What happens to `Practice light` in `Update`
 
@@ -109,7 +110,8 @@ The stages map onto the journey from [how a show becomes light](../concepts/show
 
 Some sets in `Render` skip work when nothing changed. The compositor returns early when no layer and no parameter changed since its last run, so an idle show costs less than a fading one.
 
-**Warning:** If you add a client system that reports values produced in `DmxOutput`, order it after `DmxOutput`. Membership in `ClientOutput` alone doesn't guarantee that DMX packing has run.
+> [!WARNING]
+> If you add a client system that reports values produced in `DmxOutput`, order it after `DmxOutput`. Membership in `ClientOutput` alone doesn't guarantee that DMX packing has run.
 
 ### DMX output runs on its own threads
 
@@ -126,7 +128,8 @@ In the running example, the Go command's result goes out in `CommandFeedbackEgre
 
 Undo history closes the command's undo group in `Last`, which runs after the frame limiter's sleep.
 
-**Warning:** Put messages that acknowledge input in `ClientFeedback` and render-derived state in `ClientOutput`. A command acknowledgement in `ClientOutput` is delayed until the next render pass.
+> [!WARNING]
+> Put messages that acknowledge input in `ClientFeedback` and render-derived state in `ClientOutput`. A command acknowledgement in `ClientOutput` is delayed until the next render pass.
 
 ## When a frame renders
 
@@ -136,15 +139,15 @@ While the engine builds and swaps in a new world for a showfile, it pauses comma
 
 Hosts without a frame limiter render in every frame. `RenderPass` defaults to rendering, so tests and the embedded browser runtime, whose worker calls `update` on its own timer, render on every update.
 
-## The frame limiter and the shared tick grid
+## The frame limiter and the shared send schedule
 
 The engine's frame rate follows the DMX output rate. The showfile's IO settings set the DMX output rate, 44 Hz by default and between 1 and 60 Hz. When the rate is 30 Hz or more, the engine renders once per output interval. Below 30 Hz, the engine renders an equal division of the output interval that keeps it at 30 frames per second or more, so clients and timeline playback stay responsive. At 20 Hz output, for example, the engine renders twice per output interval, at 40 frames per second. When a showfile load changes the output rate, the limiter follows.
 
-### Every scheduler shares one grid
+### Every scheduler shares one schedule
 
-The DMX output workers and the frame limiter compute their deadlines from one process-wide tick grid: the ticks fall at `epoch + n * period`, from an epoch fixed when the process first asks for it. Two schedulers with the same period therefore tick at the same instants, on different threads, and across world swaps.
+The DMX output workers and the frame limiter compute their deadlines from one process-wide schedule, which the code calls the tick grid. Its send times, called ticks, fall at `epoch + n * period`, from an epoch fixed when the process first asks for it. Two schedulers with the same period therefore tick at the same instants, on different threads, and across world swaps.
 
-The frame limiter starts each render pass a short lead before a grid tick, so the render finishes just before the output worker sends on that tick. The lead is twice the recent average render time plus 1 ms, at least 2 ms and at most half the frame period. A 3 ms render gets a 7 ms lead. If a render still runs past its tick, its frames go out on the following tick.
+The frame limiter starts each render pass a short lead before a tick, so the render finishes just before the output worker sends on that tick. The lead is twice the recent average render time plus 1 ms, at least 2 ms and at most half the frame period. A 3 ms render gets a 7 ms lead. If a render still runs past its tick, its frames go out on the following tick.
 
 The following diagram shows two frames at 44 Hz, with a Go command arriving between render passes:
 
@@ -186,7 +189,8 @@ A wake that arrives while a frame is running isn't lost. The waker counts wakes,
 
 The input-only frame changes nothing on the stage. In the running example, the Go command spawns the playback and returns its result in the input-only frame, and `Practice light` starts its fade in the next render pass.
 
-**Note:** The `fps` command sets the limiter's period directly, and `fps 0` turns the limiter off. The limiter keeps that setting until the IO settings change, for example on the next show load, which resets it to follow the DMX output rate. While the limiter is off, every frame renders and the engine doesn't sleep between frames.
+> [!NOTE]
+> The `fps` command sets the limiter's period directly, and `fps 0` turns the limiter off. The limiter keeps that setting until the IO settings change, for example on the next show load, which resets it to follow the DMX output rate. While the limiter is off, every frame renders and the engine doesn't sleep between frames.
 
 ## The cost of one thread
 
@@ -244,7 +248,7 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 | `FrameWaker` | `crates/engine/src/frame_waker.rs` |
 | Command and disconnect senders that wake the limiter | `crates/engine/src/client_bridge.rs` |
 | Frame limiter, render lead, and early-frame limits | `crates/framepace/src/lib.rs` |
-| Shared tick grid | `crates/service_host/src/tick_grid.rs` |
+| Shared send schedule (tick grid) | `crates/service_host/src/tick_grid.rs` |
 | Fixed-rate output worker | `crates/service_host/src/fixed_rate.rs` |
 | Frame rate from the DMX output rate, and the 30 Hz floor | `crates/app-runtime/src/composition.rs` |
 | Default, minimum, and maximum DMX output rate | `crates/io/src/settings.rs` |

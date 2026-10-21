@@ -135,7 +135,7 @@ Release builds embed the web UI's files in the executable. The shell also hands 
 
 ### Browser demo
 
-The browser demo runs the whole show in a web page with no backend. The engine compiled to WASM runs inside the UI's transport worker, in place of the websocket connection. The worker passes commands and updates to the engine directly and drains its published messages after each frame, in the same binary format a websocket would carry. Everything above the worker works unchanged.
+The browser demo runs the whole show in a web page, with no separate backend process. The engine still runs, compiled to WASM inside the UI's transport worker, in place of the websocket connection. The worker passes commands and updates to the engine directly and drains its published messages after each frame, in the same binary format a websocket would carry. Everything above the worker works unchanged.
 
 The browser can't sleep a thread until the next DMX tick, so the worker drives the engine's clock itself. It calls the engine about 60 times a second by default, and passes the elapsed time in as the frame's duration. The `fps` command changes the rate within 10 to 120 frames a second. The demo loads a packaged demo show at startup and can't save it.
 
@@ -175,7 +175,8 @@ Today the browser list differs from the native groups in these ways:
 - It has none of the showfile handling systems, such as draft autosave and showfile loading.
 - It adds the scene object plugin after the fixture compositor plugin. The native core group adds it before.
 
-**Warning:** Nothing checks that the two lists stay in step. When you add a plugin to the native plugin groups, decide whether the browser demo needs it too, and either add it to the browser runtime or report the missing feature through the runtime capabilities. The `check:browser-demo-dependencies` script only confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime. It doesn't compare plugin lists.
+> [!WARNING]
+> Nothing checks that the two lists stay in step. When you add a plugin to the native plugin groups, decide whether the browser demo needs it too, and either add it to the browser runtime or report the missing feature through the runtime capabilities. The `check:browser-demo-dependencies` script only confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime. It doesn't compare plugin lists.
 
 ## Inputs and outputs
 
@@ -206,7 +207,7 @@ The IO services live as long as the process. They start once and keep running wh
 
 ### DMX output
 
-In every frame, the engine composes one DMX frame for each output universe. Patch bindings decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net and sACN each run on their own thread and transmit on a fixed schedule. These workers and the engine's frame limiter share one grid of ticks: the engine starts each frame shortly before a tick, so each transmission carries the most recently finished frame. USB DMX output doesn't follow the grid. It writes each frame to the interface as soon as the engine finishes it. The default DMX output rate is 44 frames a second.
+In every frame, the engine composes one DMX frame for each output universe. Patch bindings decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net and sACN each run on their own thread and transmit on a fixed schedule. These workers and the engine's frame limiter share one schedule of send times, a fixed interval apart. The engine starts each frame shortly before a send time, so each transmission carries the most recently finished frame. USB DMX output doesn't follow this schedule. It writes each frame to the interface as soon as the engine finishes it. The default DMX output rate is 44 frames a second.
 
 Output transports are off until something routes to them. A console universe reaches the wire only when a patch binding routes it to a transport, as [how a show becomes light](../concepts/show-to-light.md) describes.
 
@@ -220,7 +221,8 @@ The other services bring outside input into the show:
 - Timeline audio plays through the engine's audio service on the native hosts. Set `NIGHTFALL_TIMELINE_AUDIO_ENABLED=0` to keep it silent while you develop.
 - Beat detection analyzes a timeline's audio files to build its beat grid. It uses a machine learning model whose weights you install on request.
 
-**Warning:** A timecode object can name an external source, such as MIDI timecode, SMPTE linear timecode (LTC), or Art-Net timecode, but the engine doesn't read any external source yet. Every timecode advances from the engine's own clock, whatever its source setting says.
+> [!WARNING]
+> A timecode object can name an external source, such as MIDI timecode, SMPTE linear timecode (LTC), or Art-Net timecode, but the engine doesn't read any external source yet. Every timecode advances from the engine's own clock, whatever its source setting says.
 
 ## Where the showfile fits
 
@@ -253,7 +255,7 @@ The browser demo reads its packaged demo showfile, in the same format, when it s
 | WASM builds | `scripts/build-wasm.mjs` |
 | Browser demo dependency check | `scripts/check-browser-demo-dependencies.mjs` |
 | DMX output frames | `crates/fixtures/src/output_frames.rs` |
-| Shared tick grid and output workers | `crates/service_host/src/tick_grid.rs`, `crates/service_host/src/fixed_rate.rs` |
+| Shared send schedule (tick grid) and output workers | `crates/service_host/src/tick_grid.rs`, `crates/service_host/src/fixed_rate.rs` |
 | Startup settings | `crates/config/src/lib.rs` |
 | Timecode clock | `crates/timecode/src/systems.rs` |
 

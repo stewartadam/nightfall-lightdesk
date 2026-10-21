@@ -100,7 +100,8 @@ The programmer's converter handles `CommandAst::Attribute`. It parses the select
 
 Expansion pushes the resulting commands back into the pending buffer under the wrapper's command ID and undo ID. When the text produces more than one command, expansion tells the command tracker how many completions to expect, and the command succeeds only after all of them succeed. Any parse or conversion error finishes the command as failed with `desk.eval.parse_failed`.
 
-**Warning:** Converters live in a process-wide list, not in a Bevy resource. Every plugin build appends to it and nothing removes entries, so each world swap that rebuilds the plugins adds another copy of every converter. Behavior stays correct because the first match wins, but tests that build several apps share the same list. Focused tests guard registration with `std::sync::Once`, and `clear_converters` exists for tests that need a clean list.
+> [!WARNING]
+> Converters live in a process-wide list, not in a Bevy resource. Every plugin build appends to it and nothing removes entries, so each world swap that rebuilds the plugins adds another copy of every converter. Behavior stays correct because the first match wins, but tests that build several apps share the same list. Focused tests guard registration with `std::sync::Once`, and `clear_converters` exists for tests that need a clean list.
 
 ### Undo capture runs before anything changes
 
@@ -156,7 +157,8 @@ The undo system uses a two-phase design, described in the [undo crate's design r
 
 Some changes are captured at the operation stage instead. An engine operation registered for undo is captured when it leaves its own pending buffer, just before the systems that apply it. Fixture snapshots and MIDI and OSC mapping edits use this route. For how commands and operations relate, see [control layers](control-layers.md).
 
-**Note:** The design record describes command-stage capture only. It doesn't cover operation-stage capture or the rule that a failed command's undo group is discarded. Trust the code in `crates/undo/src/` when the two disagree.
+> [!NOTE]
+> The design record describes command-stage capture only. It doesn't cover operation-stage capture or the rule that a failed command's undo group is discarded. Trust the code in `crates/undo/src/` when the two disagree.
 
 ## Actions take a shorter path in
 
@@ -193,7 +195,8 @@ To add a new top-level command to the command language, follow the path of an ex
 
 To add a clause to an existing command, such as a new programmer option, skip steps 4 and 5 and extend the existing clause, AST node, and converter instead.
 
-**Warning:** Plugins check their dependencies by resource, not by plugin. The client bridge requires a pending command buffer and asserts that one exists, but it's the undo plugin that creates it. Keep `UndoPlugin` before `ClientBridgePlugin` in plugin groups and in test apps.
+> [!WARNING]
+> Plugins check their dependencies by resource, not by plugin. The client bridge requires a pending command buffer and asserts that one exists, but it's the undo plugin that creates it. Keep `UndoPlugin` before `ClientBridgePlugin` in plugin groups and in test apps.
 
 ## In the code
 
