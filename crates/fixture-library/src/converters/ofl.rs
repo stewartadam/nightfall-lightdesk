@@ -14,7 +14,7 @@ use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use uuid::Uuid;
 
-use crate::converters::apply_position_physical_range;
+use crate::converters::{apply_position_physical_range, default_merge_strategy};
 use crate::{FixtureLibraryError, Result};
 
 /// Convert an OFL fixture to a nightfall Fixture.
@@ -228,11 +228,10 @@ fn convert_channel_to_parameter(
     // Parse default value (TODO: currently unused because parameters are not stored in our parameter metadata)
     let _default_value = parse_dmx_value(&channel.default_value).unwrap_or(0.0);
 
-    // Determine merge strategy from precedence
     let merge_type = match channel.precedence.as_deref() {
         Some("HTP") => MergeStrategy::HTP,
         Some("LTP") => MergeStrategy::LTP,
-        _ => MergeStrategy::LTP,
+        _ => default_merge_strategy(&attribute),
     };
 
     let use_grandmaster = matches!(
@@ -283,23 +282,7 @@ fn convert_template_channel_to_parameter(
         _ => DmxValueResolution::Coarse,
     };
 
-    // Template channels typically use HTP for intensity, LTP for everything else
-    let merge_type = match attribute {
-        Attribute::Intensity
-        | Attribute::VirtualIntensity
-        | Attribute::Red
-        | Attribute::Green
-        | Attribute::Blue
-        | Attribute::White
-        | Attribute::Amber
-        | Attribute::UV
-        | Attribute::Cyan
-        | Attribute::Magenta
-        | Attribute::Yellow
-        | Attribute::WarmWhite
-        | Attribute::CoolWhite => MergeStrategy::HTP,
-        _ => MergeStrategy::LTP,
-    };
+    let merge_type = default_merge_strategy(&attribute);
 
     let use_grandmaster = matches!(
         attribute,
