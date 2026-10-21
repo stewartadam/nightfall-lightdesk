@@ -294,6 +294,22 @@ test("timeline properties expose and persist timeline configuration", async ({
   await expect(page.getByText("Markers", { exact: true })).toHaveCount(1);
   await expect(page.getByText("Regions", { exact: true })).toHaveCount(1);
 
+  await page.getByLabel("Timecode source").selectOption("MidiMtc");
+  await page.getByLabel("Timecode rate").selectOption("Fps25");
+  await expect
+    .poll(() =>
+      page.evaluate((timecodeUid) => {
+        const timecode = (window as any).appStores.timecodes.get()[
+          timecodeUid
+        ]?.[0];
+        return { source: timecode?.source, rate: timecode?.rate };
+      }, context.initialTimecodeUid),
+    )
+    .toEqual({ source: "MidiMtc", rate: "Fps25" });
+  await page.screenshot({
+    path: test.info().outputPath("timecode-source-properties.png"),
+  });
+
   await linkedTimecode.selectOption(context.alternateTimecodeUid);
   await expect
     .poll(() =>
@@ -315,22 +331,6 @@ test("timeline properties expose and persist timeline configuration", async ({
       ),
     )
     .toBe(context.initialTimecodeUid);
-
-  await page.getByLabel("Timecode source").selectOption("MidiMtc");
-  await page.getByLabel("Timecode rate").selectOption("Fps25");
-  await expect
-    .poll(() =>
-      page.evaluate((timecodeUid) => {
-        const timecode = (window as any).appStores.timecodes.get()[
-          timecodeUid
-        ]?.[0];
-        return { source: timecode?.source, rate: timecode?.rate };
-      }, context.initialTimecodeUid),
-    )
-    .toEqual({ source: "MidiMtc", rate: "Fps25" });
-  await page.screenshot({
-    path: test.info().outputPath("timecode-source-properties.png"),
-  });
 
   await page.getByLabel("Trigger mode").selectOption("Manual");
   await expect

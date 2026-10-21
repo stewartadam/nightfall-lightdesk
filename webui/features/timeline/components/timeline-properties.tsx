@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import {
   Checkbox,
@@ -68,9 +68,21 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
     ),
   );
   let latestTimeline = timeline();
-  let pendingTimecodeEdit:
-    | { uid: string; patch: Partial<types.Timecode> }
-    | undefined;
+  const [pendingTimecodeEdit, setPendingTimecodeEdit] = createSignal<
+    { uid: string; patch: Partial<types.Timecode> } | undefined
+  >();
+  /**
+   * The linked timecode with edits the engine hasn't reported yet applied, so
+   * the controls keep showing a choice while timecode broadcasts sent before
+   * the engine applied it still carry the old values.
+   */
+  const shownTimecode = createMemo(() => {
+    const timecode = linkedTimecode();
+    const pending = pendingTimecodeEdit();
+    return timecode && pending?.uid === timecode.identifiers.uid
+      ? { ...timecode, ...pending.patch }
+      : timecode;
+  });
 
   /** Keeps property edits merging against the latest optimistic timeline snapshot. */
   createEffect(() => {
@@ -78,19 +90,23 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
   });
 
   /**
-   * Drops the pending timecode edits once the engine reports them. Until then,
-   * a periodic timecode broadcast sent before the engine applied an edit can
-   * still carry the old values, so later edits keep merging the pending ones.
+   * Drops the pending timecode edits once the engine reports all of them. The
+   * timecode store is only written by the engine, so a match confirms the
+   * edits were applied. Edits stay pending while the timeline briefly reports
+   * another linked timecode, since the next edit to this one still needs them.
    */
   createEffect(() => {
-    const timecode = linkedTimecode();
-    if (!pendingTimecodeEdit) return;
+    const pending = pendingTimecodeEdit();
+    if (!pending) return;
+    const timecode = $timecodes()[pending.uid]?.[0];
     const settled =
-      timecode?.identifiers.uid !== pendingTimecodeEdit.uid ||
-      Object.entries(pendingTimecodeEdit.patch).every(
-        ([key, value]) => timecode[key as keyof types.Timecode] === value,
+      !timecode ||
+      Object.entries(pending.patch).every(
+        ([key, value]) =>
+          JSON.stringify(timecode[key as keyof types.Timecode]) ===
+          JSON.stringify(value),
       );
-    if (settled) pendingTimecodeEdit = undefined;
+    if (settled) setPendingTimecodeEdit(undefined);
   });
 
   const storeTimeline = (nextTimeline: types.Timeline) => {
@@ -117,25 +133,22 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
 
   /**
    * Stores a change to the linked timecode itself. Every timeline sharing
-   * that timecode follows the new source or rate. Edits not yet reported back
-   * by the engine are merged in, so a second edit before the engine applies
-   * the first doesn't revert it.
+   * that timecode follows the new source or rate. Edits the
+   * engine hasn't reported yet are merged in, so a second edit made before the
+   * engine applies the first doesn't revert it.
    */
   const updateTimecode = (
     timecode: types.Timecode,
     patch: Partial<types.Timecode>,
   ) => {
     const uid = timecode.identifiers.uid;
-    const entry = timecodes.get()[uid];
-    if (!entry) return;
-    const pendingPatch =
-      pendingTimecodeEdit?.uid === uid ? pendingTimecodeEdit.patch : {};
-    pendingTimecodeEdit = { uid, patch: { ...pendingPatch, ...patch } };
-    const nextTimecode = { ...entry[0], ...pendingTimecodeEdit.patch };
-    setStoreKeyAction(timecodes, "Update Timecode", uid, [
-      nextTimecode,
-      entry[1],
-    ]);
+    const reported = timecodes.get()[uid]?.[0];
+    if (!reported) return;
+    const pending = pendingTimecodeEdit();
+    const pendingPatch = pending?.uid === uid ? pending.patch : {};
+    const nextPatch = { ...pendingPatch, ...patch };
+    setPendingTimecodeEdit({ uid, patch: nextPatch });
+    const nextTimecode = { ...reported, ...nextPatch };
     const command: types.TimecodeCommand = {
       type: "StoreTimecode",
       data: nextTimecode,
@@ -245,7 +258,7 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
               </NativeSelect>
             </label>
 
-            <Show when={linkedTimecode()}>
+            <Show when={shownTimecode()}>
               {(timecode) => (
                 <div class="grid grid-cols-2 gap-3">
                   <label class="block space-y-1">
