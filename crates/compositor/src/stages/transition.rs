@@ -147,19 +147,21 @@ pub fn evaluate_transitions_with_compositing_context(
         if let Some(param) = parameters.parameter_compositing_context(param_ref) {
             let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
 
-            let default_value = 0.0; // For relative values, default is 0
-            let base_value = base.relative.get(param_ref).unwrap_or(&default_value);
-            let asserted_value = param.resolve_value_with_current(value, *base_value);
+            // A layer outputs only its own offset, fading from and releasing to zero. The merge
+            // stage adds it to the offsets below, so resolving against them here would count
+            // them twice.
+            let base_value: ParameterDmxValue = 0.0;
+            let asserted_value = param.resolve_value_with_current(value, base_value);
 
             let target = if is_releasing {
-                *base.relative.get(param_ref).unwrap_or(&0.0)
+                base_value
             } else {
                 asserted_value
             };
             if transition_should_skip_output(
                 &param,
                 transition.as_ref(),
-                *base_value,
+                base_value,
                 asserted_value,
                 is_releasing,
                 context,
@@ -172,13 +174,13 @@ pub fn evaluate_transitions_with_compositing_context(
                 let transition_source = if is_releasing {
                     transition_value_at_release_context(
                         &param,
-                        *base_value,
+                        base_value,
                         asserted_value,
                         transition,
                         context,
                     )
                 } else {
-                    *base_value
+                    base_value
                 };
                 process_transition_with_compositing_context(
                     &param,
@@ -814,6 +816,94 @@ mod tests {
         assert!(
             (19.0..=21.0).contains(&value),
             "relative release should fade the relative offset toward zero, got {value}"
+        );
+    }
+
+    /// Verifies a relative layer above other offsets outputs only its own offset, both while
+    /// active and while releasing, so the merge stage does not count the offsets below twice.
+    #[test]
+    fn stacked_relative_outputs_own_offset_only() {
+        let mut world = World::new();
+        let param = create_test_parameter(&mut world, TestMergeMode::Ltp, Attribute::Blue);
+        let transition = create_test_transition(
+            Duration::ZERO,
+            Duration::ZERO,
+            Duration::ZERO,
+            Duration::from_secs(2),
+        );
+        let mut base = ComputedLayer::default();
+        base.relative.insert(param, 10.0);
+
+        let mut param_query_state = world.query::<InstanceMut<TestParameter>>();
+        let param_query = param_query_state.query_mut(&mut world);
+
+        let mut active = Layer::new("active".to_string(), Priority(1));
+        active
+            .relative
+            .insert(param, (ParameterValue::Relative { offset: 40.0 }, None));
+        let computed = apply_transitions_with_compositing_context(
+            &mut active,
+            &base,
+            &param_query,
+            false,
+            LayerCompositingContext::default(),
+        );
+        assert_eq!(computed.relative.get(param).copied(), Some(40.0));
+
+        let mut fading_in = Layer::new("fading in".to_string(), Priority(1));
+        fading_in.relative.insert(
+            param,
+            (
+                ParameterValue::Relative { offset: 40.0 },
+                Some(create_test_transition(
+                    Duration::ZERO,
+                    Duration::from_secs(2),
+                    Duration::ZERO,
+                    Duration::ZERO,
+                )),
+            ),
+        );
+        let computed = apply_transitions_with_compositing_context(
+            &mut fading_in,
+            &base,
+            &param_query,
+            false,
+            LayerCompositingContext {
+                position: Duration::from_secs(1),
+                released_at: None,
+            },
+        );
+        let value = *computed
+            .relative
+            .get(param)
+            .expect("fading relative should output an offset");
+        assert!(
+            (19.0..=21.0).contains(&value),
+            "fade-in should rise from zero toward the layer's own offset, got {value}"
+        );
+
+        let mut releasing = Layer::new("releasing".to_string(), Priority(1));
+        releasing.relative.insert(
+            param,
+            (ParameterValue::Relative { offset: 40.0 }, Some(transition)),
+        );
+        let computed = apply_transitions_with_compositing_context(
+            &mut releasing,
+            &base,
+            &param_query,
+            true,
+            LayerCompositingContext {
+                position: Duration::from_secs(1),
+                released_at: Some(Duration::ZERO),
+            },
+        );
+        let value = *computed
+            .relative
+            .get(param)
+            .expect("releasing relative should still output an offset");
+        assert!(
+            (19.0..=21.0).contains(&value),
+            "release should fade the layer's own offset toward zero, got {value}"
         );
     }
 
