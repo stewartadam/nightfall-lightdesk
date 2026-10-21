@@ -80,7 +80,8 @@ The flags apply per parameter, by the parameter's merge rule. An HTP parameter t
 
 In the running example, suppose `Blue` only stores red at 0% and blue at 100%. With the default flags, `Red`'s intensity at 100% tracks into `Blue`, so `Practice light` stays at full. If `Red`'s flags exclude `LTP`, none of its values track, because every `Practice light` attribute is LTP. `Blue` then contributes only red and blue, and intensity falls to whatever the lower layers or the fixture default give it.
 
-**Warning:** Rendering reads the cue-level flags for the whole cue, including its parts. A part's own `tracking_flags` field is stored but never read during playback.
+> [!WARNING]
+> Rendering reads the cue-level flags for the whole cue, including its parts. A part's own `tracking_flags` field is stored but never read during playback.
 
 ## From authored data to runtime state
 
@@ -157,7 +158,8 @@ A timeline that seeks, or starts playback partway through a song, needs the sequ
 1. `SequenceTimelineSeekPlayback` replays those interventions and the automatic triggers between them on step timings alone. It produces a target cue position and the position where that cue started, without materializing anything.
 1. `spawn_reconstructed_sequence_for_clip` materializes the sequence and calls `set_position_reconstructing_prefix_at_playback_position`. That walks back from the target while each cue was entered by an automatic trigger, and gives each one the activation and release positions it would have had. The walk stops at the first cue with a `Manual` trigger.
 
-**Warning:** Reconstruction retains only the cues back to the nearest manual boundary, while a live Goto retains every cue from the first. A timeline that seeks into `Blue` retains only `Blue`, because `Blue`'s trigger is `Manual`. Values that `Red` would track into `Blue` aren't in the reconstructed layer.
+> [!WARNING]
+> Reconstruction retains only the cues back to the nearest manual boundary, while a live Goto retains every cue from the first. A timeline that seeks into `Blue` retains only `Blue`, because `Blue`'s trigger is `Manual`. Values that `Red` would track into `Blue` aren't in the reconstructed layer.
 
 ## How the sequence paints its layer
 
@@ -189,7 +191,8 @@ Rendering every retained cue in every frame gets expensive in long tracking sequ
 
 A cache entry is valid only for clock positions at or after the position where it was built, and only while `composition_order` still starts with the cached cues. Navigation, priority changes, rematerialization, and a setup cue that is still fading all drop the cache.
 
-**Warning:** If you add state that changes what a sequence renders, call `invalidate_render_prefix_cache` wherever that state changes. Otherwise the sequence keeps painting the old output for the cached cues.
+> [!WARNING]
+> If you add state that changes what a sequence renders, call `invalidate_render_prefix_cache` wherever that state changes. Otherwise the sequence keeps painting the old output for the cached cues.
 
 ### Activation time of sequence layers
 

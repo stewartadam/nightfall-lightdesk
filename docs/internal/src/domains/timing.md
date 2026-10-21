@@ -48,7 +48,8 @@ Each attribute lookup applies the logical attribute's entry first, then the entr
 
 Any field still unset after the chain takes the `Transition` default: zero delay, zero fade, and a linear curve.
 
-**Note:** The setup cue, the release cue, and cues that play outside a sequence, such as standalone cue preview, don't get a sequence default. For these cues, an attribute other than intensity whose `fade_in` or `delay_in` is unset borrows its `fade_out` or `delay_out`.
+> [!NOTE]
+> The setup cue, the release cue, and cues that play outside a sequence, such as standalone cue preview, don't get a sequence default. For these cues, an attribute other than intensity whose `fade_in` or `delay_in` is unset borrows its `fade_out` or `delay_out`.
 
 ## Fanned timing across a selection
 
