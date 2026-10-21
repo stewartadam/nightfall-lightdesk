@@ -28,7 +28,7 @@ The web UI is a client. It sends the engine two kinds of messages:
 
 [Control layers](../engine/control-layers.md) explains how commands and updates differ inside the engine. The engine answers with published state: fixture values, playback status, stored objects, and so on. Every connected UI sees the same show state, so two screens never disagree about the show.
 
-In the running example, typing `fixture 1 @ 50` sends the text to the engine as a command. The engine parses it, and the programmer starts holding `Practice light` at 50% intensity. In the next frame, the engine merges that programmer layer over `First playback`, publishes the new values to every connected UI, and sends the DMX to the lights. The UI shows 50% because the engine published it, not because the UI predicted it.
+In the running example, typing `fixture 1 @ 50` sends the text to the engine as a command. The engine parses it, and the programmer starts holding `Par 1` at 50% intensity. In the next frame, the engine merges that programmer layer over `First playback`, publishes the new values to every connected UI, and sends the DMX to the lights. The UI shows 50% because the engine published it, not because the UI predicted it.
 
 ## Why the UI talks to the engine over a websocket
 

@@ -27,7 +27,7 @@ All of this, except the render pass, happens in one engine update. An update is 
 
 ## Follow `fixture 1 red @ 100`
 
-In the running example, `Practice light` is fixture 1. Typing `fixture 1 red @ 100` in the command line adds an instruction to the programmer: set red to 100% on fixture 1. The following sequence diagram shows every hand-off. The sections after it explain each step.
+In the running example, `Par 1` is fixture 1. Typing `fixture 1 red @ 100` in the command line adds an instruction to the programmer: set red to 100% on fixture 1. The following sequence diagram shows every hand-off. The sections after it explain each step.
 
 ```mermaid
 sequenceDiagram
@@ -140,7 +140,7 @@ Results travel as non-droppable messages, so a busy connection never loses them.
 
 ### The light changes on the next render pass
 
-The handler changed the programmer resource, not the output. The `Render` schedule turns state into light, and it only runs in updates that the frame limiter marks as render passes. In its layer generation stage, the programmer paints its layer from its current instructions. `Practice light` then gets red at 100% from the programmer layer at priority 127. For what happens after that, see [how a show becomes light](../concepts/show-to-light.md).
+The handler changed the programmer resource, not the output. The `Render` schedule turns state into light, and it only runs in updates that the frame limiter marks as render passes. In its layer generation stage, the programmer paints its layer from its current instructions. `Par 1` then gets red at 100% from the programmer layer at priority 127. For what happens after that, see [how a show becomes light](../concepts/show-to-light.md).
 
 Render systems read world state and never input messages. This is why handlers apply commands to resources and components in `Update`: any number of input-only updates can run between two render passes.
 
