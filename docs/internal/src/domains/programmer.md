@@ -61,7 +61,8 @@ Carving compares selections at the level of fixture elements. When a carved row 
 
 The data model has two row lists, `live_instructions` and `blind_instructions`, and a `ProgrammerMode` that picks the active one. Every command, the painter, the web UI feed, and the store algorithm read and write only the active list.
 
-**Warning:** No command changes the mode. It starts as `Blind`, so all programmer work happens in the blind list, and the painter renders it like a live list. The doc comment on `ProgrammerMode::Blind` says blind rows aren't rendered, but nothing implements that. Treat blind programming as unimplemented. `commit_blind` exists but has no caller.
+> [!WARNING]
+> No command changes the mode. It starts as `Blind`, so all programmer work happens in the blind list, and the painter renders it like a live list. The doc comment on `ProgrammerMode::Blind` says blind rows aren't rendered, but nothing implements that. Treat blind programming as unimplemented. `commit_blind` exists but has no caller.
 
 ## One programmer for every client
 
@@ -95,7 +96,8 @@ An existing row is rematerialized in every render pass, whether it changed or no
 
 When a row disappears, the painter marks its entity as releasing. If nothing has marked it yet, the painter also zeroes the layer's release timing, so the values drop out at once instead of fading with the row's authored fade-out time.
 
-**Warning:** The `clear` and `release` handlers mark removed rows as releasing themselves, through a cue lifecycle operation that runs in `Update`, before the painter sees them. The painter then skips its zeroing step, so on that path a row with authored fade-out timing may fade out instead of dropping at once. The painter test that checks the instant drop clears the resource directly and doesn't cover the command path.
+> [!WARNING]
+> The `clear` and `release` handlers mark removed rows as releasing themselves, through a cue lifecycle operation that runs in `Update`, before the painter sees them. The painter then skips its zeroing step, so on that path a row with authored fade-out timing may fade out instead of dropping at once. The painter test that checks the instant drop clears the resource directly and doesn't cover the command path.
 
 The painter passes no color path data when it materializes rows, so a color path on a programmer row doesn't affect live output.
 
@@ -187,9 +189,11 @@ Before comparing rows, the handler rewrites them into one shape: one row per fix
 
 After normalization, stored cue rows refer to fixtures by UID, so a cue survives renumbering fixtures.
 
-**Warning:** Merge, Update, and Remove normalize the target's existing rows too. A cue row that targeted `group 1` comes back as one row per fixture in the group, and the group reference is gone, even when the programmer didn't touch those fixtures. Replace leaves no existing rows to normalize because it discards them.
+> [!WARNING]
+> Merge, Update, and Remove normalize the target's existing rows too. A cue row that targeted `group 1` comes back as one row per fixture in the group, and the group reference is gone, even when the programmer didn't touch those fixtures. Replace leaves no existing rows to normalize because it discards them.
 
-**Warning:** Only Replace promotes row-wide timing to attributes before coalescing. In the other modes, two rows for the same fixture with different row-wide timing coalesce into one row whose timing comes from the later row, so the earlier row's attributes can change timing.
+> [!WARNING]
+> Only Replace promotes row-wide timing to attributes before coalescing. In the other modes, two rows for the same fixture with different row-wide timing coalesce into one row whose timing comes from the later row, so the earlier row's attributes can change timing.
 
 #### What each store mode does
 
@@ -241,7 +245,8 @@ Undoing a store doesn't touch the programmer, because the store didn't change it
 
 Programmer edits undo differently. Adding a row, clearing values, and releasing through `ProgrammerCommand` capture a snapshot of the whole programmer as their inverse, because merging and carving can change many rows at once. Selection commands capture the previous selection.
 
-**Warning:** Two programmer changes leave no undo step. `RecallCue` replaces the programmer's rows without capturing an inverse. Typed `clear` and `release` text parses into a `UserCommand`, which the planner turns into `ProgrammerOperation`s, and neither type is registered with the undo registry. The **Programmer** panel's clear button sends `ProgrammerCommand::ClearProgrammer`, which is undoable.
+> [!WARNING]
+> Two programmer changes leave no undo step. `RecallCue` replaces the programmer's rows without capturing an inverse. Typed `clear` and `release` text parses into a `UserCommand`, which the planner turns into `ProgrammerOperation`s, and neither type is registered with the undo registry. The **Programmer** panel's clear button sends `ProgrammerCommand::ClearProgrammer`, which is undoable.
 
 ## In the code
 

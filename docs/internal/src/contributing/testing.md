@@ -39,7 +39,8 @@ Tests that only need to call one system against a prepared world skip the `App` 
 
 A bare app has the `Update` schedule but not the engine's `Render` schedule. `EnginePlugin` adds `Render` to the main schedule order, so a test without `EnginePlugin` must call `add_render_schedule` before adding systems to `Render`. The [frame loop](../engine/frame-loop.md#register-the-render-schedule-in-plugin-tests) page explains why. The `RenderPass` resource defaults to rendering, so in a test every `app.update()` runs a render pass. Some compositor tests instead add the compositor system to `Update` directly, which is fine when the test doesn't depend on the order of the render sets.
 
-**Warning:** A system added to `Render` in an app that never called `add_render_schedule` doesn't run, and Bevy reports no error. A test that asserts on render output then fails for a confusing reason, or passes because it only checks defaults.
+> [!WARNING]
+> A system added to `Render` in an app that never called `add_render_schedule` doesn't run, and Bevy reports no error. A test that asserts on render output then fails for a confusing reason, or passes because it only checks defaults.
 
 Because every `app.update()` in a test renders, tests don't exercise input-only frames. A render system that reads messages can pass its tests and still miss input in the running engine. Follow the frame loop's rules for render systems rather than relying on a test to catch this.
 
@@ -182,7 +183,8 @@ The **Prek hooks and script tests** job runs every pre-commit hook against all f
 
 For a pull request, the native job runs nextest, doctests, the desktop shell tests, and Clippy only when the change touches a path in the `rustTests` list in `ci-scope.mjs`. That list covers `crates/`, `desktop/`, the Cargo manifests and lockfile, the toolchain file, Cargo, nextest, Clippy, rustfmt, and hook configuration, the native workflow, and a few files outside `crates/`. A pull request that only changes the web UI or the docs skips the Rust tests but still builds the backend. Pushes to `main` and `develop` and manual runs always run every Rust step.
 
-**Warning:** Rust code that embeds a file from outside `crates/` with `include_str!` or `include_bytes!` depends on that file, but CI can't see the dependency. Add the file's path to `rustTests` in `scripts/ci-scope.mjs`, and add a case for it in `ci-scope.node.test.mjs`. Otherwise a pull request that changes only that file skips the Rust tests that would catch the break. The list today covers the browser demo showfile, the beat model notice and configuration, and `config/project-links.json`.
+> [!WARNING]
+> Rust code that embeds a file from outside `crates/` with `include_str!` or `include_bytes!` depends on that file, but CI can't see the dependency. Add the file's path to `rustTests` in `scripts/ci-scope.mjs`, and add a case for it in `ci-scope.node.test.mjs`. Otherwise a pull request that changes only that file skips the Rust tests that would catch the break. The list today covers the browser demo showfile, the beat model notice and configuration, and `config/project-links.json`.
 
 ### Other selections
 
