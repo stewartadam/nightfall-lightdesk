@@ -15,7 +15,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use nightfall::prelude::{ObjectRef, ObjectType};
 use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
 use nightfall_dmx::prelude::ParameterValue;
-use nightfall_engine::prelude::{ClientEventSink, OutboundFrame};
+use nightfall_engine::prelude::{Audience, ClientEventSink, OutboundFrame};
 use nightfall_fixtures::prelude::{
     ConsoleDmxUniverses, FixtureDataProviderExt, Parameter, ParameterStateProjection,
 };
@@ -118,7 +118,7 @@ fn bench_parameter_state(c: &mut Criterion) {
             let frame_bytes = drain_bytes(&receiver);
             app.world_mut()
                 .resource_mut::<ParameterStateProjection>()
-                .request_keyframe();
+                .request_keyframe(Audience::All);
             app.update();
             let keyframe_bytes = drain_bytes(&receiver);
             println!(

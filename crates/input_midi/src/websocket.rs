@@ -75,18 +75,15 @@ pub fn deserialize_midi_command(
 
 /// System to send MIDI state on resync
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     devices: Res<MidiDevices>,
     mappings: Res<MidiMappings>,
     diagnostics: Res<MidiMappingDiagnostics>,
     last_event: Res<LastMidiEvent>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_device_list(&devices, &broadcaster);
     send_mappings(&mappings, &broadcaster);

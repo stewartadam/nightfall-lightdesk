@@ -32,6 +32,8 @@
 //! }
 //! ```
 
+use std::sync::Arc;
+
 use async_channel::{Receiver, Sender};
 use bevy_app::{App, Plugin, PostUpdate, Update};
 use bevy_ecs::message::MessageCursor;
@@ -123,6 +125,17 @@ impl Audience {
             Audience::Client(target) => target == client,
         }
     }
+
+    /// Returns who should see messages answering a command with this reply target: the session
+    /// that submitted it, or every client when no client submitted it.
+    pub fn of_reply_target(target: &ReplyTarget) -> Self {
+        match target {
+            ReplyTarget::Client(client) => Audience::Client(*client),
+            ReplyTarget::ClientBroadcast | ReplyTarget::Cli | ReplyTarget::Detached => {
+                Audience::All
+            }
+        }
+    }
 }
 
 /// One encoded client message and the clients it is addressed to.
@@ -137,44 +150,78 @@ pub struct OutboundFrame {
 /// Byte-oriented client event sink for domain plugins.
 ///
 /// This resource lets plugins publish pre-serialized messages without depending
-/// on a concrete transport or browser host.
+/// on a concrete transport or browser host. The resource addresses every client; a copy made
+/// with [`Self::narrowed_to`] addresses only some, so code that sends a snapshot can serve both
+/// a broadcast and a reply to the clients that asked for it.
 #[derive(Resource, Clone)]
 pub struct ClientEventSink {
     /// Sender for addressed byte frames
     tx: Sender<OutboundFrame>,
+    /// Clients that [`Self::send`] and [`Self::publish`] address.
+    audiences: Arc<[Audience]>,
 }
 
 impl ClientEventSink {
     /// Create a new client event sink from an outbound frame sender.
     pub fn new(tx: Sender<OutboundFrame>) -> Self {
-        Self { tx }
+        Self {
+            tx,
+            audiences: Arc::new([Audience::All]),
+        }
     }
 
-    /// Send a pre-encoded message to every client of the attached host adapter.
+    /// Returns a copy of this sink whose [`Self::send`] and [`Self::publish`] reach only
+    /// `audiences`, each message encoded once however many clients it goes to.
+    pub fn narrowed_to(&self, audiences: Arc<[Audience]>) -> Self {
+        Self {
+            tx: self.tx.clone(),
+            audiences,
+        }
+    }
+
+    /// Clients that [`Self::send`] and [`Self::publish`] address.
+    pub fn audiences(&self) -> &[Audience] {
+        &self.audiences
+    }
+
+    /// Send a pre-encoded message to this sink's audiences, every client unless narrowed.
     pub fn send(&self, message: EncodedClientMessage) {
-        self.send_to(Audience::All, message);
+        let bytes = message.to_bytes();
+        let Some((last, rest)) = self.audiences.split_last() else {
+            return;
+        };
+        for audience in rest {
+            self.send_frame(*audience, bytes.clone());
+        }
+        self.send_frame(*last, bytes);
     }
 
     /// Send a pre-encoded message to the given clients of the attached host adapter.
     pub fn send_to(&self, audience: Audience, message: EncodedClientMessage) {
-        let frame = OutboundFrame {
-            audience,
-            bytes: message.to_bytes(),
-        };
-        if let Err(e) = self.tx.try_send(frame) {
+        self.send_frame(audience, message.to_bytes());
+    }
+
+    /// Queues one encoded frame for `audience` on the host adapter's output channel.
+    fn send_frame(&self, audience: Audience, bytes: Vec<u8>) {
+        if let Err(e) = self.tx.try_send(OutboundFrame { audience, bytes }) {
             tracing::warn!("Failed to publish client message: {}", e);
         }
     }
 
-    /// Serialize and publish a value to every client of the attached host adapter.
+    /// Serialize and publish a value to this sink's audiences, every client unless narrowed.
     ///
     /// This serializes the value directly to CBOR, prepends the discriminator,
     /// and publishes it. Use for anything describing shared show state.
     pub fn publish<T: Serialize>(&self, discriminator: u8, command: &T) {
-        self.publish_to(Audience::All, discriminator, command);
+        if let Some(message) = EncodedClientMessage::new(discriminator, command) {
+            self.send(message);
+        } else {
+            tracing::warn!("Failed to serialize client message");
+        }
     }
 
-    /// Serialize and publish a value to the given clients of the attached host adapter.
+    /// Serialize and publish a value to the given clients of the attached host adapter, whatever
+    /// audiences this sink was narrowed to.
     ///
     /// Use for messages that answer one client, such as command feedback, so other
     /// sessions never see replies to requests they did not make.
@@ -473,14 +520,8 @@ fn forward_command_feedback(
         replies: reply_cursor,
     } = &mut *cursors;
     for reply in notice_cursor.read(&notices) {
-        let audience = match reply.reply_target {
-            ReplyTarget::Client(client) => Audience::Client(client),
-            ReplyTarget::ClientBroadcast | ReplyTarget::Cli | ReplyTarget::Detached => {
-                Audience::All
-            }
-        };
         client_events.publish_to(
-            audience,
+            Audience::of_reply_target(&reply.reply_target),
             DISCRIMINATOR_NON_DROPPABLE,
             &EngineClientMessage::CommandNotice(&reply.notice),
         );
@@ -779,6 +820,30 @@ mod client_bridge_tests {
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(reports, vec![LastClientDisconnected]);
+    }
+
+    /// Verifies a narrowed sink sends one identical frame to each of its audiences while the
+    /// shared sink keeps addressing every client.
+    #[test]
+    fn narrowed_sink_publishes_only_to_its_audiences() {
+        let (tx, rx) = async_channel::unbounded();
+        let sink = ClientEventSink::new(tx);
+        let first = Audience::Client(ClientId(1));
+        let second = Audience::Client(ClientId(2));
+
+        sink.narrowed_to(Arc::from([first, second])).publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &EngineClientMessage::ResyncComplete,
+        );
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &EngineClientMessage::ResyncComplete,
+        );
+
+        let frames: Vec<OutboundFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let audiences: Vec<Audience> = frames.iter().map(|frame| frame.audience).collect();
+        assert_eq!(audiences, vec![first, second, Audience::All]);
+        assert!(frames.iter().all(|frame| frame.bytes == frames[0].bytes));
     }
 
     /// Verifies JSON nulls nested in opaque values, such as action arguments, reach clients

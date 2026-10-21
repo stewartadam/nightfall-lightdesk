@@ -139,7 +139,7 @@ impl Plugin for FixturePlugin {
             app,
             websocket::deserialize_fixture_command,
         );
-        register_update_deserializer(
+        register_client_update_deserializer(
             app,
             parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE,
             websocket::deserialize_parameter_keyframe_request,

@@ -130,6 +130,8 @@ struct Watcher {
 pub struct DmxUniverseStream {
     /// List last broadcast; `None` publishes it at the next opportunity.
     last_list: Option<Vec<DmxUniverseSummary>>,
+    /// Resyncing clients that must be sent the list at the next opportunity.
+    list_requests: Vec<Audience>,
     watchers: HashMap<Audience, Watcher>,
     /// Watchers whose watch changed since their last publication, sent without waiting.
     pending: Vec<Audience>,
@@ -159,9 +161,15 @@ impl DmxUniverseStream {
         self.watchers.remove(&audience);
     }
 
-    /// Republishes the universe list at the next opportunity, for a client that resyncs.
-    pub fn request_list(&mut self) {
-        self.last_list = None;
+    /// Sends the universe list to `audiences` at the next opportunity, for clients that resync.
+    pub fn request_list(&mut self, audiences: &[Audience]) {
+        for audience in audiences {
+            if *audience == Audience::All {
+                self.last_list = None;
+            } else if !self.list_requests.contains(audience) {
+                self.list_requests.push(*audience);
+            }
+        }
     }
 
     /// Returns whether a publication is due at `now`: the interval elapsed, a watch changed, or
@@ -175,7 +183,10 @@ impl DmxUniverseStream {
         }
         Due {
             interval_elapsed,
-            any: interval_elapsed || !self.pending.is_empty() || self.last_list.is_none(),
+            any: interval_elapsed
+                || !self.pending.is_empty()
+                || !self.list_requests.is_empty()
+                || self.last_list.is_none(),
         }
     }
 }
@@ -324,12 +335,18 @@ pub fn send_dmx_universes(
     let sources = collect_universes(&console, &output_frames, &inputs, stale_after_ms, now);
 
     let list: Vec<DmxUniverseSummary> = sources.iter().map(UniverseSource::summary).collect();
+    let list_requests = std::mem::take(&mut stream.list_requests);
     if stream.last_list.as_ref() != Some(&list) {
         broadcaster.publish(
             DISCRIMINATOR_DROPPABLE,
             &FixtureWsMessage::DmxUniverseList(&list),
         );
         stream.last_list = Some(list);
+    } else if !list_requests.is_empty() {
+        broadcaster.narrowed_to(list_requests.into()).publish(
+            DISCRIMINATOR_DROPPABLE,
+            &FixtureWsMessage::DmxUniverseList(&list),
+        );
     }
 
     let pending = std::mem::take(&mut stream.pending);
@@ -558,18 +575,28 @@ mod tests {
         app.update();
         drain(&rx);
 
+        let requester = Audience::Client(ClientId(5));
         app.world_mut()
             .resource_mut::<DmxUniverseStream>()
-            .request_list();
+            .request_list(&[requester]);
         app.update();
         let published = drain(&rx);
         assert!(
             matches!(
                 published.as_slice(),
-                [(Audience::All, Decoded::DmxUniverseList(_))]
+                [(audience, Decoded::DmxUniverseList(_))] if *audience == requester
             ),
-            "expected only the list, got {published:?}"
+            "expected only the list for the requester, got {published:?}"
         );
+
+        app.world_mut()
+            .resource_mut::<DmxUniverseStream>()
+            .request_list(&[Audience::All]);
+        app.update();
+        assert!(matches!(
+            drain(&rx).as_slice(),
+            [(Audience::All, Decoded::DmxUniverseList(_))]
+        ));
     }
 
     /// A watcher gets only its universe's values: at once when it starts watching, then only

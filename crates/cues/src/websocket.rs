@@ -586,20 +586,17 @@ pub fn send_stale_sequence_lookahead_states(
 
 /// Handle ResyncState by sending cues and sequences immediately and queueing their lookahead projection
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     cue_data_provider: Res<DataProvider<Cue>>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     selection_resolver: SpatialSelectionResolver,
     seq_data_provider: Res<DataProvider<Sequence>>,
     mut sequence_lookahead_dirty: ResMut<SequenceLookaheadStateDirty>,
     color_path_data_provider: Res<DataProvider<ColorPath>>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_cues(
         &cue_data_provider,

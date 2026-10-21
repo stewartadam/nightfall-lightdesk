@@ -143,6 +143,21 @@ pub fn send_parameter_state(
         &fixture_data_provider.parameter_index(),
         fixture_data_provider.is_changed(),
     );
+    // Replies carry the state clients hold before this frame, so they go out first and the
+    // frame's shared delta then applies on top of them.
+    let replies = projection.take_replies(build_start);
+    if let Some((audiences, layout)) = replies.layout {
+        broadcaster.narrowed_to(audiences).publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FixtureWsMessage::ParameterLayout(layout),
+        );
+    }
+    if let Some((audiences, frame)) = replies.keyframe {
+        broadcaster.narrowed_to(audiences).publish(
+            DISCRIMINATOR_DROPPABLE,
+            &FixtureWsMessage::ParameterState(&frame),
+        );
+    }
     projection.fill_values(&parameters_query, &final_layer_attributed_assertions.0);
 
     let build_elapsed = build_start.elapsed();
@@ -155,7 +170,7 @@ pub fn send_parameter_state(
             &FixtureWsMessage::ParameterLayout(layout),
         );
     }
-    if let Some(frame) = projection.publish_frame(Instant::now()) {
+    if let Some(frame) = projection.publish_frame(build_start) {
         // A keyframe may replace a queued frame; a delta must never, since it builds on it.
         let discriminator = if frame.keyframe {
             DISCRIMINATOR_DROPPABLE
@@ -236,14 +251,16 @@ pub fn deserialize_fixture_command(
 ///
 /// A client sends this after it detects a gap in the parameter frame sequence
 /// (or otherwise loses confidence in its rebuilt state). The payload carries no
-/// data; the next published frame becomes a full keyframe for every client.
+/// data; the sender alone gets a keyframe before the next frame, so other clients
+/// keep receiving deltas.
 pub fn deserialize_parameter_keyframe_request(
     world: &mut World,
     _json: Value,
+    sender: Audience,
 ) -> Result<(), String> {
     world
         .resource_mut::<ParameterStateProjection>()
-        .request_keyframe();
+        .request_keyframe(sender);
     Ok(())
 }
 
@@ -544,7 +561,7 @@ pub fn send_binding_validation_settings_on_change(
 
 /// Handle ResyncState by sending fixtures and patch data.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     geometry_provider: Option<Res<crate::geometry::GeometryProviderResource>>,
     input_bindings: Res<InputBindings>,
@@ -553,16 +570,13 @@ pub fn handle_resync_state(
     binding_validation_settings: Res<BindingValidationSettings>,
     mut parameter_state: ResMut<ParameterStateProjection>,
     mut universe_stream: ResMut<DmxUniverseStream>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
-    parameter_state.request_layout();
-    universe_stream.request_list();
+    parameter_state.request_layout(broadcaster.audiences());
+    universe_stream.request_list(broadcaster.audiences());
     // Send fixtures with geometry if provider is available
     send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {
         geometry_provider
