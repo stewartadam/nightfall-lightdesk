@@ -433,3 +433,59 @@ test("global release returns console and wire DMX to parameter defaults", async 
     .poll(() => outputUniverse(page, "sACN", 30))
     .toEqual(wireDefaults);
 });
+
+/**
+ * `ch sacn:12.5 @ 200` holds a wire slot on an sACN universe nothing is patched to, leaves
+ * console space untouched, and `release ch sacn:12.5` plus undo free and restore the hold.
+ */
+test("transport channel holds a wire slot until released and undo restores it", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await openBlankApp(page, backendSlot.backendPort);
+
+  await submitCommand(page, "ch sacn:12.5 @ 200");
+  await expectSlotValue(page, "sACN", 12, 5, 200);
+  await expect.poll(() => outputUniverse(page, "Console", 12)).toBeNull();
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const commandInput = page.getByPlaceholder("Type a command or search...");
+  await commandInput.fill("Open Console DMX");
+  await page.keyboard.press("Enter");
+  const panel = page.locator('[data-component="DmxUniverse"]:visible');
+  await panel.getByRole("combobox").selectOption("sACN");
+  await panel
+    .getByRole("tablist", { name: "DMX universes" })
+    .getByRole("tab", { name: "Univ. 12", exact: true })
+    .click();
+  await expect(
+    panel.locator('[data-dmx-channel-value="5"]').first(),
+  ).toHaveText("200");
+  await page.screenshot({
+    path: testInfo.outputPath("transport-channel-hold.png"),
+  });
+
+  await submitCommand(page, "release ch sacn:12.5");
+  await expect.poll(() => outputUniverse(page, "sACN", 12)).toBeNull();
+
+  await submitCommand(page, "undo");
+  await expectSlotValue(page, "sACN", 12, 5, 200);
+});
+
+/** A transport hold wins over the patched value on its slot; plain `release` drops it. */
+test("transport channel hold overrides patched output until global release", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await submitCommand(page, "patch console:7 @ sacn:17");
+  await submitCommand(page, "ch 7.1 @ 50");
+  await expectSlotValue(page, "sACN", 17, 1, 50);
+
+  await submitCommand(page, "ch sacn:17.1 @ 255");
+  await expectSlotValue(page, "sACN", 17, 1, 255);
+  await expectSlotValue(page, "Console", 7, 1, 50);
+
+  await submitCommand(page, "release");
+  await expect.poll(() => outputUniverse(page, "sACN", 17)).toBeNull();
+});

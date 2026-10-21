@@ -942,11 +942,70 @@
           "status": "error"
         },
         "completion_groups": ["channel_override/identifier"],
-        "candidates": ["(", ")", "+", "-", ".", "0..9", ">"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          ".",
+          "0..9",
+          ">",
+          "artnet",
+          "sacn",
+          "udmx"
+        ],
         "current_breadcrumb": "Channel Override",
         "breadcrumb": {
           "state": "current_clause_path",
           "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "A transport target ID must be followed by a colon.",
+      "input": "channel sacn",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["channel_override/identifier"],
+        "candidates": [":", "sacn"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "A transport prefix is followed by the channel expression.",
+      "input": "channel sacn:",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["channel_override/identifier"],
+        "candidates": ["(", "0..9", ":"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "Release channel accepts a transport prefix.",
+      "input": "release channel artnet",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["release/channel"],
+        "candidates": [":"],
+        "current_breadcrumb": "Release > Channel",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["release", "release_channel"]
         }
       }
     },

@@ -158,6 +158,12 @@ impl ProgrammerCommandPlanner {
                     channels: channels.clone(),
                 })]
             }
+            Some(ReleaseTarget::TransportChannels { target, channels }) => {
+                vec![planned(DmxOperation::ReleaseTransportChannels {
+                    target: target.clone(),
+                    channels: channels.clone(),
+                })]
+            }
         }
     }
 }

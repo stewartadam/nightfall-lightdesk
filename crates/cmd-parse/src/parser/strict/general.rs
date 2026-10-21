@@ -603,9 +603,12 @@ pub(super) fn materialize_release_ast<'i>(
             if attributes.is_some() {
                 return None;
             }
-            let channels = parse_release_dmx_channel_expression_from_tokens(&channel_tokens[1..])?;
+            let (transport, channel_tokens) =
+                split_dmx_transport_prefix(ctx.command_str, &channel_tokens[1..])?;
+            let channels = parse_release_dmx_channel_expression_from_tokens(channel_tokens)?;
             ReleaseTargetAst::Dmx(ReleaseDmxTargetAst {
                 _channel: ReleaseChannelKeyword,
+                transport,
                 channels,
             })
         } else {

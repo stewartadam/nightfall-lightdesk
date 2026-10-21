@@ -90,6 +90,31 @@ pub(in crate::parser) fn filled_value_for_slot(
             normalized_value_for_fill(slot, &value, &token.text),
         ));
     }
+    // Transport target IDs prefixing direct DMX channels (`ch stage-left:1.1`) are configured
+    // names, so any word is a candidate; consume_slot limits words and the colon to the
+    // prefix position.
+    if matches!(
+        slot,
+        SlotId::ChannelOverrideIdentifier | SlotId::ReleaseChannelExpr
+    ) {
+        if token.kind == LexerTokenKind::Colon {
+            let value = FilledValue::Token(TokenId::Colon);
+            return Some((
+                value.clone(),
+                normalized_value_for_fill(slot, &value, &token.text),
+            ));
+        }
+        if token.kind == LexerTokenKind::Word
+            && token_id_for_slot_surface(slot, token.text.as_str())
+                .is_none_or(|token_id| !slot_accepts_token(slot, token_id))
+        {
+            let value = FilledValue::Lexeme(token.text.clone());
+            return Some((
+                value.clone(),
+                normalized_value_for_fill(slot, &value, &token.text),
+            ));
+        }
+    }
     if slot == SlotId::StoreFxModulePayload {
         let value = FilledValue::Lexeme(token.text.clone());
         return Some((

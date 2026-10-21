@@ -280,6 +280,9 @@ pub fn update_manual_assertion_layer(
 ) {
     let Ok(mut layer) = layer_query.single_mut() else {
         for event in dmx_actions.read() {
+            if is_transport_dmx_operation(&event.operation) {
+                continue;
+            }
             if let Some(command_id) = event.command_id
                 && let Err(error) = responder.fail(
                     command_id,
@@ -323,6 +326,10 @@ pub fn update_manual_assertion_layer(
     }
 
     for event in dmx_actions.read() {
+        // Wire holds bypass console space and answer their own commands.
+        if is_transport_dmx_operation(&event.operation) {
+            continue;
+        }
         match &event.operation {
             DmxOperation::ReleaseChannels { channels } => {
                 for channel in channels.expand() {
@@ -362,12 +369,24 @@ pub fn update_manual_assertion_layer(
                     }
                 }
             }
+            DmxOperation::ReleaseTransportChannels { .. }
+            | DmxOperation::RestoreTransportChannels { .. } => {}
         }
         if let Some(command_id) = event.command_id
             && let Err(error) = responder.succeed(command_id)
         {
             tracing::error!(%command_id, %error, "dmx_release_success_response_failed");
         }
+    }
+}
+
+/// Returns whether a DMX operation targets output transport wire holds rather than console
+/// channels; those are applied by [`crate::transport_holds`].
+fn is_transport_dmx_operation(operation: &DmxOperation) -> bool {
+    match operation {
+        DmxOperation::ReleaseTransportChannels { .. }
+        | DmxOperation::RestoreTransportChannels { .. } => true,
+        DmxOperation::ReleaseChannels { .. } | DmxOperation::RestoreChannels { .. } => false,
     }
 }
 

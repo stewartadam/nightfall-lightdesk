@@ -8,7 +8,7 @@
 
 //! Undo/redo implementations for fixture commands.
 
-use nightfall::command_types::DmxChannelRef;
+use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{ColorPathDefault, FixtureRef};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
@@ -19,6 +19,7 @@ use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::transport_holds::snapshot_held_channels;
 
 /// Snapshot of a single parameter's data for restoration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +185,19 @@ impl Undoable for RestoreOffsetSnapshot {
     }
 }
 
+/// Captures the hold state of the wire channels an expression addresses on a target output.
+fn snapshot_transport_holds(
+    ctx: &UndoContext,
+    target: &str,
+    channels: &DmxChannelExpr,
+) -> Vec<HeldTransportDmxChannelState> {
+    snapshot_held_channels(
+        ctx.world.resource::<ConsoleDmxUniverses>(),
+        target,
+        channels.expand(),
+    )
+}
+
 /// Captures the current manual write state of each channel so undo can put it back.
 fn snapshot_manual_channels(
     ctx: &UndoContext,
@@ -224,6 +238,33 @@ impl Undoable for DmxOperation {
                     ),
                 }))
             }
+            DmxOperation::ReleaseTransportChannels { target, channels } => {
+                let snapshot = snapshot_transport_holds(ctx, target, channels);
+                // Releasing channels that hold nothing changes nothing worth undoing.
+                snapshot
+                    .iter()
+                    .any(|state| state.held_value.is_some())
+                    .then(|| {
+                        Box::new(DmxOperation::RestoreTransportChannels { channels: snapshot })
+                            as Box<dyn Undoable>
+                    })
+            }
+            DmxOperation::RestoreTransportChannels { channels } => {
+                let universes = ctx.world.resource::<ConsoleDmxUniverses>();
+                Some(Box::new(DmxOperation::RestoreTransportChannels {
+                    channels: channels
+                        .iter()
+                        .map(|state| HeldTransportDmxChannelState {
+                            held_value: universes.held_wire_value(
+                                &state.target,
+                                state.channel.universe,
+                                state.channel.address,
+                            ),
+                            ..state.clone()
+                        })
+                        .collect(),
+                }))
+            }
         }
     }
 
@@ -231,6 +272,12 @@ impl Undoable for DmxOperation {
         match self {
             DmxOperation::ReleaseChannels { channels } => format!("Release DMX {channels}"),
             DmxOperation::RestoreChannels { .. } => "Restore DMX Channels".to_string(),
+            DmxOperation::ReleaseTransportChannels { target, channels } => {
+                format!("Release DMX {target}:{channels}")
+            }
+            DmxOperation::RestoreTransportChannels { .. } => {
+                "Restore Held DMX Channels".to_string()
+            }
         }
     }
 }
@@ -288,6 +335,11 @@ impl Undoable for FixtureCommand {
                     channels: snapshot_manual_channels(ctx, channels.expand()),
                 }))
             }
+            FixtureCommand::SetTransportDmxChannels {
+                target, channels, ..
+            } => Some(Box::new(DmxOperation::RestoreTransportChannels {
+                channels: snapshot_transport_holds(ctx, target, channels),
+            })),
             FixtureCommand::UpdateFixturePlacements { updates } => {
                 let mut inverse_updates = Vec::new();
                 for update in updates {
@@ -355,6 +407,11 @@ impl Undoable for FixtureCommand {
             FixtureCommand::SetDmxChannels { channels, value } => {
                 format!("Set DMX {} @ {}", channels, value)
             }
+            FixtureCommand::SetTransportDmxChannels {
+                target,
+                channels,
+                value,
+            } => format!("Set DMX {target}:{channels} @ {value}"),
             FixtureCommand::UpdateFixturePlacements { updates } => {
                 format!("Update {} Fixture Placements", updates.len())
             }

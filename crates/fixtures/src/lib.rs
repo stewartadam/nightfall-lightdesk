@@ -30,6 +30,7 @@ pub mod placement;
 pub mod selection;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+pub mod transport_holds;
 pub mod undo;
 pub mod universe;
 pub mod universe_stream;
@@ -63,6 +64,19 @@ pub enum DmxOperation {
         /// Per-channel manual state to restore.
         channels: Vec<ManualDmxChannelState>,
     },
+    /// Release values held on an output transport's wire universes, so the slots carry
+    /// whatever is patched to them again.
+    ReleaseTransportChannels {
+        /// Output transport target ID, as used by patch commands.
+        target: String,
+        /// Wire channels to release.
+        channels: DmxChannelExpr,
+    },
+    /// Put wire channels back into a previously captured hold state (used by undo).
+    RestoreTransportChannels {
+        /// Per-channel hold state to restore.
+        channels: Vec<HeldTransportDmxChannelState>,
+    },
 }
 
 /// Manual write state of one console DMX channel, captured for undo.
@@ -72,6 +86,17 @@ pub struct ManualDmxChannelState {
     pub channel: DmxChannelRef,
     /// Manually written value, or `None` when no manual write owned the channel.
     pub manual_value: Option<ChannelDmxValue>,
+}
+
+/// Hold state of one wire channel of an output transport, captured for undo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldTransportDmxChannelState {
+    /// Output transport target ID, as used by patch commands.
+    pub target: String,
+    /// Wire channel the state belongs to.
+    pub channel: DmxChannelRef,
+    /// Held value, or `None` when no hold owned the channel.
+    pub held_value: Option<ChannelDmxValue>,
 }
 
 impl EnginePayload for DmxOperation {}
@@ -121,7 +146,8 @@ pub mod prelude {
     pub use crate::wire_layout::{PlacedParameter, WireLayout};
     pub use crate::{
         BindingEndpoint, DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
-        FixturePlacementRotationUpdate, FixturePlugin, ManualDmxChannelState,
+        FixturePlacementRotationUpdate, FixturePlugin, HeldTransportDmxChannelState,
+        ManualDmxChannelState,
     };
 }
 
@@ -193,6 +219,7 @@ impl Plugin for FixturePlugin {
             Update,
             (
                 events::handle_set_dmx_channels,
+                transport_holds::handle_set_transport_dmx_channels,
                 events::handle_restore_fixture_snapshot
                     .after(nightfall_undo::systems::handle_undo_commands),
                 events::handle_restore_binding_snapshot,
@@ -202,6 +229,13 @@ impl Plugin for FixturePlugin {
             )
                 .chain()
                 .in_set(EventHandling),
+        );
+
+        // Runs after every event handler, like the console manual layer, so releases planned
+        // by user commands in this update apply before the next render.
+        app.add_systems(
+            Update,
+            transport_holds::handle_transport_dmx_operations.after(EventHandling),
         );
 
         app.add_systems(
@@ -222,6 +256,7 @@ impl Plugin for FixturePlugin {
                 binding_resolution::resolve_output_bindings,
                 output_frames::update_input_routing,
                 universe::dmx_universes,
+                transport_holds::resolve_transport_holds,
                 output_frames::compose_output_frames,
                 universe::dmx_universes_debug,
             )
@@ -370,6 +405,16 @@ pub enum FixtureCommand {
     /// Set raw DMX channel values
     SetDmxChannels {
         /// DMX channel selection expression
+        channels: DmxChannelExpr,
+        /// Raw DMX value (0-255)
+        value: ChannelDmxValue,
+    },
+
+    /// Hold raw values on an output transport's wire universes, over anything patched there
+    SetTransportDmxChannels {
+        /// Output transport target ID, as used by patch commands
+        target: String,
+        /// Wire channel selection expression
         channels: DmxChannelExpr,
         /// Raw DMX value (0-255)
         value: ChannelDmxValue,
