@@ -528,10 +528,53 @@ mod tests {
             })
             .filter_map(|bytes| decode_publication(bytes))
             .filter(|message| message["type"] == "TimelineAudioDirective")
+            .filter(|message| message["data"]["type"] != "Sync")
             .collect::<Vec<_>>();
         assert!(
             repeated_directives.is_empty(),
             "steady playback must not repeatedly seek browser media: {repeated_directives:#?}"
+        );
+    }
+
+    /// Verify playing browser media receives engine clock reports once per second of playback.
+    #[test]
+    fn timecode_playback_reports_engine_clock_to_browser_audio() {
+        let mut engine = sample_engine();
+        let envelope = serde_json::from_value(json!({
+            "command_id": Uuid::new_v4(),
+            "module": "TimecodeCommand",
+            "command": { "type": "StartTimecode", "data": 1 }
+        }))
+        .expect("timecode command should deserialize");
+        engine
+            .enqueue_command_core(envelope)
+            .expect("timecode command should enqueue");
+
+        // 2.5 seconds of engine playback, in 50 ms frames.
+        for _ in 0..50 {
+            engine.tick_core(50.0);
+        }
+        let sync_offsets = engine
+            .drain_output_core()
+            .iter()
+            .filter_map(|bytes| decode_publication(bytes))
+            .filter(|message| {
+                message["type"] == "TimelineAudioDirective" && message["data"]["type"] == "Sync"
+            })
+            .map(|message| {
+                serde_json::from_value::<std::time::Duration>(
+                    message["data"]["data"]["offset"].clone(),
+                )
+                .expect("sync offset should be a duration")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(sync_offsets.len(), 2, "sync offsets: {sync_offsets:?}");
+        assert!(
+            sync_offsets
+                .windows(2)
+                .all(|pair| pair[1] - pair[0] >= std::time::Duration::from_secs(1)),
+            "sync offsets: {sync_offsets:?}"
         );
     }
 

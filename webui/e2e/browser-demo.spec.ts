@@ -719,10 +719,17 @@ test("embedded demo decodes and plays timeline audio", async ({
     const seekCount = await page.evaluate(
       () => (window as any).demoAudioSeekCount,
     );
+    const playheadBeforeMs = await timelinePositionMs(page, timelineUid);
     await page.waitForTimeout(750);
-    expect(await page.evaluate(() => (window as any).demoAudioSeekCount)).toBe(
-      seekCount,
-    );
+    const engineAdvanceMs =
+      (await timelinePositionMs(page, timelineUid)) - playheadBeforeMs;
+    // A starved engine runs slower than real time and media is then rightly pulled back
+    // onto it, so steady playback is only seek-free when the engine keeps up.
+    if (engineAdvanceMs >= 712) {
+      expect(
+        await page.evaluate(() => (window as any).demoAudioSeekCount),
+      ).toBe(seekCount);
+    }
     await expect
       .poll(async () => (await readDemoAudioState(page)).positionMs)
       .toBeGreaterThan(500);
@@ -759,6 +766,66 @@ test("embedded demo decodes and plays timeline audio", async ({
   await expect
     .poll(() => readDemoAudioState(page))
     .toMatchObject({ status: "unloaded" });
+});
+
+/**
+ * Phones fetch timeline audio only once playback starts, so sound begins seconds after the
+ * engine clock. Delaying unmuted media starts reproduces that, and the audio must still
+ * catch up with the playhead instead of trailing it for the rest of the song.
+ */
+test("embedded demo audio catches up with the playhead after a slow start", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const play = HTMLMediaElement.prototype.play;
+    Object.defineProperty(HTMLMediaElement.prototype, "play", {
+      configurable: true,
+      /** Hold audible starts for two seconds, like a phone waiting on the network. */
+      value(this: HTMLMediaElement) {
+        if (this.muted) return play.call(this);
+        return new Promise<void>((resolve) => setTimeout(resolve, 2_000)).then(
+          () => play.call(this),
+        );
+      },
+    });
+  });
+  const basePath =
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+      ? "/demo/app/"
+      : "/";
+  await page.goto(
+    `${basePath}?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false`,
+  );
+  await waitForDemoShow(page);
+  const { timelineUid } = await readDemoState(page);
+  await openDemoTimeline(page, timelineUid);
+  const surface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  try {
+    await surface.getByRole("button", { name: "Play timeline" }).click();
+    await expect
+      .poll(() => readDemoAudioState(page), { timeout: 10_000 })
+      .toMatchObject({ status: "playing" });
+    // Without correction the audio trails the playhead by the full two seconds.
+    await expect
+      .poll(
+        async () => {
+          const [audioMs, playheadMs] = await Promise.all([
+            readDemoAudioState(page).then((state) => state.positionMs),
+            timelinePositionMs(page, timelineUid),
+          ]);
+          return playheadMs > 500 && Math.abs(audioMs - playheadMs) < 500;
+        },
+        { timeout: 6_000 },
+      )
+      .toBe(true);
+    await surface.screenshot({
+      path: testInfo.outputPath("slow-start-audio-in-sync.png"),
+    });
+  } finally {
+    await surface.getByRole("button", { name: "Stop timeline" }).click();
+  }
 });
 
 /** Verifies demo identity, toolbar placement, and reset without changing the local showfile selection. */
