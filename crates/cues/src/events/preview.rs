@@ -10,8 +10,6 @@
 
 use super::*;
 
-pub(super) const CUE_PREVIEW_PRIORITY: Priority = Priority(126);
-
 /// Commands for cue preview during editing
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
@@ -151,7 +149,7 @@ pub(super) fn spawn_preview_cue(
     );
 
     let mut mcue_preview = mcue;
-    mcue_preview.priority = CUE_PREVIEW_PRIORITY;
+    mcue_preview.priority = Priority::PREVIEW;
 
     let marker = ObjectRefMarker(ObjectRef::ByUid {
         object_type: ObjectType::Cue,
@@ -192,7 +190,7 @@ pub(super) fn spawn_sequence_preview(
         &parameter_query.as_readonly(),
         selection_resolver,
     );
-    msequence.priority = CUE_PREVIEW_PRIORITY;
+    msequence.priority = Priority::PREVIEW;
 
     if !msequence.mcues.is_empty() {
         let position = preview

@@ -30,6 +30,8 @@ pub struct DomainInstanceReconstructionRequest {
     pub clip_uid: Uuid,
     /// Playback clock to install on the restored playback.
     pub clock: InstanceClock,
+    /// Layer priority of the owning clip, for domains that materialize compositor layers.
+    pub priority: Priority,
 }
 
 impl DomainInstanceReconstructionRequest {
@@ -38,11 +40,13 @@ impl DomainInstanceReconstructionRequest {
         source: nightfall_playback_planner::PlannedPlaybackSource,
         clip_uid: Uuid,
         clock: InstanceClock,
+        priority: Priority,
     ) -> Self {
         Self {
             source,
             clip_uid,
             clock,
+            priority,
         }
     }
 }

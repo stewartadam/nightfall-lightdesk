@@ -276,6 +276,8 @@ pub struct FlowInstance {
     #[cfg(feature = "fx-module")]
     fx_module_runtimes: HashMap<FlowNodeId, FlowFxModuleRuntime>,
     is_running: bool,
+    /// Compositor priority of the layer this flow renders, taken from the clip that started it.
+    priority: Priority,
 }
 
 impl FlowInstance {
@@ -294,9 +296,27 @@ impl FlowInstance {
             #[cfg(feature = "fx-module")]
             fx_module_runtimes: HashMap::new(),
             is_running: true,
+            priority: Priority::default(),
         };
         instance.rebuild_nodes(registry);
         instance
+    }
+
+    /// Returns this instance configured to render its layer at `priority`.
+    pub fn with_priority(mut self, priority: Priority) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Returns the compositor priority this flow renders its layer at.
+    #[cfg(test)]
+    pub(crate) fn priority(&self) -> Priority {
+        self.priority
+    }
+
+    /// Changes the compositor priority used for this flow's layer from the next evaluation on.
+    pub(crate) fn set_priority(&mut self, priority: Priority) {
+        self.priority = priority;
     }
 
     pub(crate) fn is_running(&self) -> bool {
@@ -463,7 +483,7 @@ pub fn evaluate_flow_instances(
 
         let mut flow_layer = Layer::new(
             instance.runtime.definition.identifiers.label.clone(),
-            Priority::default(),
+            instance.priority,
         );
         let mut has_layer = false;
 
@@ -1381,6 +1401,29 @@ mod tests {
                 .expect("flow layer should expose playback-clock transition timing");
             assert_eq!(compositing_context.position, Duration::from_millis(333));
             assert_eq!(compositing_context.released_at, None);
+        });
+    }
+
+    /// Verifies the flow layer is composited at the priority the instance was started with.
+    #[test]
+    fn flow_layer_uses_instance_priority() {
+        with_test_module_data_dir("sparkle", || {
+            let mut app = setup_flow_fx_module_app();
+            let mut instance = app
+                .world_mut()
+                .query::<&mut FlowInstance>()
+                .single_mut(app.world_mut())
+                .expect("flow instance should exist");
+            instance.set_priority(Priority(9));
+
+            app.update();
+
+            let layer = app
+                .world_mut()
+                .query::<&Layer>()
+                .single(app.world())
+                .expect("flow should render a layer");
+            assert_eq!(layer.priority, Priority(9));
         });
     }
 

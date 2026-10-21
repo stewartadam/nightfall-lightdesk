@@ -18,6 +18,12 @@ use crate::command_types::SpatialSelection;
 #[typeshare::typeshare]
 /// Priority indicator, where lower priority values are first and higher priorities are last.
 pub struct Priority(pub i8);
+
+impl Priority {
+    /// Priority of every editor preview layer, just below the programmer at 127.
+    pub const PREVIEW: Self = Self(126);
+}
+
 impl Deref for Priority {
     type Target = i8;
 
