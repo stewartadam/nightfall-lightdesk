@@ -231,7 +231,7 @@ pub(super) fn init_bevy_with_transport_policy(
         Update,
         (
             // event generation based on showfile
-            systems::showfile_events::handle_events,
+            systems::showfile_events::handle_events.run_if(disk_storage_available),
             bevy::ecs::schedule::ApplyDeferred,
             systems::deleted_object_instances::release_deleted_object_instances,
             systems::quit_event::handle_events,
@@ -288,7 +288,7 @@ fn native_runtime_capabilities(
     RuntimeCapabilities {
         runtime_mode: RuntimeMode::Native,
         experimental_flows: runtime_config.experimental_flows,
-        persistence: PersistenceCapability::Native,
+        disk_storage: true,
         fixture_library: if cfg!(feature = "fixture-library") {
             LibraryCapability::Native
         } else {

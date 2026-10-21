@@ -6,15 +6,18 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
-import { onMount } from "solid-js";
+import { onMount, Show } from "solid-js";
+import { hasDiskStorage } from "../../../../lib/disk-storage";
+import { runtimeCapabilities } from "../../../../state/appStores";
 import { useAppShell } from "../../../providers/app-shell";
 import { useUiAction } from "../../../providers/command-registry";
 
-/** Makes showfile export discoverable through the command palette in desktop and browser runtimes. */
-export default function ExportShowfileCommand() {
+/** Registers the shared export dialog as a searchable command while it is mounted. */
+function ExportShowfileAction() {
   const { showShowfileExportModal } = useAppShell();
-  /** Registers the shared export dialog as a searchable command. */
+  /** Adds the export command to the palette for this component's lifetime. */
   onMount(() => {
     useUiAction({
       id: "showfile.export",
@@ -25,4 +28,14 @@ export default function ExportShowfileCommand() {
     });
   });
   return null;
+}
+
+/** Makes showfile export discoverable through the command palette when the backend can store shows on disk. */
+export default function ExportShowfileCommand() {
+  const capabilities = useStore(runtimeCapabilities);
+  return (
+    <Show when={hasDiskStorage(capabilities())}>
+      <ExportShowfileAction />
+    </Show>
+  );
 }

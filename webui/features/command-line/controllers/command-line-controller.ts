@@ -13,6 +13,7 @@ import {
   CommandSequenceRunner,
   splitCommandSequence,
 } from "../../../lib/command-sequence";
+import { hasDiskStorage } from "../../../lib/disk-storage";
 import {
   EngineRuntimeCommandDisconnectedError,
   engineRuntime,
@@ -24,7 +25,11 @@ import {
   newShowfile,
   promptForNewShowfile,
 } from "../../../lib/showfile-actions";
-import { dockApi, pushToast } from "../../../state/appStores";
+import {
+  dockApi,
+  pushToast,
+  runtimeCapabilities,
+} from "../../../state/appStores";
 import type * as types from "../../../types";
 import {
   type PendingCommandSubmission,
@@ -195,7 +200,12 @@ export function createCommandLineController(
     if (!trimmedInput || !(await analysis.validateSubmission(trimmedInput)))
       return;
 
-    if (isNewShowPromptCommand(trimmedInput)) {
+    // Without disk storage the backend rejects new shows, so skip the name prompt and let
+    // the command fail with the backend's explanation.
+    if (
+      hasDiskStorage(runtimeCapabilities.get()) &&
+      isNewShowPromptCommand(trimmedInput)
+    ) {
       const options = await promptForNewShowfile();
       if (!options) {
         queueMicrotask(() => inputElement?.focus());

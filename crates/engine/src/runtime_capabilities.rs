@@ -8,7 +8,7 @@
 
 //! Runtime-authored capability declarations shared with connected clients.
 
-use bevy_ecs::prelude::Resource;
+use bevy_ecs::prelude::{Res, Resource};
 use serde::{Deserialize, Serialize};
 
 /// Identifies the host environment running the engine world.
@@ -19,16 +19,6 @@ pub enum RuntimeMode {
     Native,
     /// Static browser demo backed by an embedded WebAssembly engine.
     EmbeddedDemo,
-}
-
-/// Describes whether showfile persistence is available.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub enum PersistenceCapability {
-    /// Native filesystem-backed showfile persistence.
-    Native,
-    /// No persistence host is attached.
-    Unavailable,
 }
 
 /// Describes access to a native content library.
@@ -71,8 +61,9 @@ pub enum TimelineAudioCapability {
 pub struct RuntimeCapabilities {
     /// Host environment running the engine.
     pub runtime_mode: RuntimeMode,
-    /// Showfile persistence support.
-    pub persistence: PersistenceCapability,
+    /// Whether the host can read and write showfiles on disk (open, save, drafts, import,
+    /// export, and the show trash).
+    pub disk_storage: bool,
     /// Fixture-library support.
     pub fixture_library: LibraryCapability,
     /// Scene-object-library support.
@@ -100,7 +91,7 @@ impl Default for RuntimeCapabilities {
     fn default() -> Self {
         Self {
             runtime_mode: RuntimeMode::Native,
-            persistence: PersistenceCapability::Unavailable,
+            disk_storage: false,
             fixture_library: LibraryCapability::Unavailable,
             object_library: LibraryCapability::Unavailable,
             fx_modules: FxModuleCapability::Unavailable,
@@ -121,7 +112,7 @@ impl RuntimeCapabilities {
     pub const fn embedded_demo() -> Self {
         Self {
             runtime_mode: RuntimeMode::EmbeddedDemo,
-            persistence: PersistenceCapability::Unavailable,
+            disk_storage: false,
             fixture_library: LibraryCapability::BuiltInOnly,
             object_library: LibraryCapability::Unavailable,
             fx_modules: FxModuleCapability::Unavailable,
@@ -134,4 +125,12 @@ impl RuntimeCapabilities {
             experimental_flows: false,
         }
     }
+}
+
+/// Run condition that reports whether the host can read and write showfiles on disk.
+///
+/// A missing capability resource counts as unavailable, so engine-only compositions reject
+/// storage commands instead of silently ignoring them.
+pub fn disk_storage_available(capabilities: Option<Res<RuntimeCapabilities>>) -> bool {
+    capabilities.is_some_and(|capabilities| capabilities.disk_storage)
 }

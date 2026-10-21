@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
@@ -14,6 +15,7 @@ import { GearIcon } from "@squidlab/phosphor-solid/gear";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { type JSX, Show } from "solid-js";
+import { hasDiskStorage } from "../../../lib/disk-storage";
 import { openFeedbackPage } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -23,6 +25,7 @@ import {
 } from "../../../lib/showfile-actions";
 import { isTauriRuntime } from "../../../lib/tauri";
 import { invokeTauriMenuAction } from "../../../lib/tauri-menu";
+import { runtimeCapabilities } from "../../../state/appStores";
 import { useAppShell } from "../../providers/app-shell";
 import {
   DropdownMenu,
@@ -63,6 +66,10 @@ export default function AppMenu(props: {
     showShowfileImportModal,
     showShowfileExportModal,
   } = useAppShell();
+  const capabilities = useStore(runtimeCapabilities);
+
+  /** Shows the new, open, import, save, and export items only when the backend can store shows on disk. */
+  const showStorageItems = () => hasDiskStorage(capabilities());
 
   /** Prompts for a show name before starting a fresh showfile. */
   const promptAndNewShowfile = () => {
@@ -90,42 +97,44 @@ export default function AppMenu(props: {
         {props.leadingItems?.()}
         <DropdownMenuSeparator />
       </Show>
-      <DropdownMenuItem
-        icon={FilePlusIcon}
-        shortcut="⌘⇧N"
-        onClick={promptAndNewShowfile}
-      >
-        New Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FolderOpenIcon}
-        shortcut="⌘O"
-        onClick={() => {
-          showOpenShowfileModal();
-        }}
-      >
-        Open Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FileArrowDownIcon}
-        onClick={showShowfileImportModal}
-      >
-        Import Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FileArrowDownIcon}
-        shortcut="⌘S"
-        onClick={saveShowfile}
-      >
-        Save Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FileArrowDownIcon}
-        onClick={showShowfileExportModal}
-      >
-        Export Showfile
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
+      <Show when={showStorageItems()}>
+        <DropdownMenuItem
+          icon={FilePlusIcon}
+          shortcut="⌘⇧N"
+          onClick={promptAndNewShowfile}
+        >
+          New Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FolderOpenIcon}
+          shortcut="⌘O"
+          onClick={() => {
+            showOpenShowfileModal();
+          }}
+        >
+          Open Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FileArrowDownIcon}
+          onClick={showShowfileImportModal}
+        >
+          Import Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FileArrowDownIcon}
+          shortcut="⌘S"
+          onClick={saveShowfile}
+        >
+          Save Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FileArrowDownIcon}
+          onClick={showShowfileExportModal}
+        >
+          Export Showfile
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+      </Show>
       <DropdownMenuItem
         icon={QuestionIcon}
         onClick={() => openFeedbackPage("feedback")}

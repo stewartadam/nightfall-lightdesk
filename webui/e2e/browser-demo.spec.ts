@@ -453,7 +453,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
     .toMatchObject({
       capabilities: {
         runtime_mode: "EmbeddedDemo",
-        persistence: "Unavailable",
+        disk_storage: false,
         fx_modules: "Unavailable",
         timeline_audio: "BundledBrowser",
         network_dmx_output: false,
@@ -833,6 +833,71 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
     path: testInfo.outputPath("demo-toolbar.png"),
     fullPage: true,
   });
+});
+
+/**
+ * Verify the demo, which has no disk storage, hides showfile storage actions and answers
+ * load and save commands with an immediate failure instead of leaving them pending.
+ */
+test("demo hides showfile storage actions and fails them fast", async ({
+  page,
+}, testInfo) => {
+  const path =
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+      ? "/demo/app/?e2e=1"
+      : "/?engine=embedded-demo&e2e=1";
+  await page.goto(path);
+  await waitForDemoShow(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.runtimeCapabilities.get()?.disk_storage,
+      ),
+    )
+    .toBe(false);
+
+  await page
+    .getByRole("region", { name: "Application status bar" })
+    .getByRole("button", { name: "Menu", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Give Feedback", exact: true }),
+  ).toBeVisible();
+  for (const name of [
+    "New Showfile",
+    "Open Showfile",
+    "Import Showfile",
+    "Save Showfile",
+    "Export Showfile",
+  ]) {
+    await expect(page.getByRole("button", { name })).toHaveCount(0);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("demo-menu-without-storage.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+
+  const results = await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    const commands = [
+      { type: "SaveShowfile" },
+      { type: "LoadNamedShowfile", data: "tour" },
+    ];
+    return Promise.all(
+      commands.map(async (command) => {
+        const result = await Promise.race([
+          stores.sendAndAwait({ module: "DeskCommand", command }),
+          new Promise((resolve) => setTimeout(() => resolve(null), 5_000)),
+        ]);
+        return result as { outcome: { type: string; data?: any } } | null;
+      }),
+    );
+  });
+  for (const result of results) {
+    expect(result?.outcome.type).toBe("Failed");
+    expect(result?.outcome.data?.code).toBe("desk.disk_storage_unavailable");
+  }
 });
 
 /** Read the smoothed engine frame rate the UI shows in the status bar. */
