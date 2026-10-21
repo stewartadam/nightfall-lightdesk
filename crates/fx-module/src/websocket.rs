@@ -67,14 +67,14 @@ pub fn send_fx_module_on_change(
     broadcaster: Res<ClientEventSink>,
 ) {
     if fx_module_provider.is_changed() {
-        send_fx_module(fx_module_provider, broadcaster);
+        send_fx_module(fx_module_provider, &broadcaster);
     }
 }
 
-/// Send the current fx module definitions to websocket clients.
+/// Send the current fx module definitions to the sink's websocket clients.
 pub fn send_fx_module(
     fx_module_provider: Res<DataProvider<StoredFxModule>>,
-    broadcaster: Res<ClientEventSink>,
+    broadcaster: &ClientEventSink,
 ) {
     let fx_module_list: Vec<StoredFxModule> = fx_module_provider
         .iter()
@@ -100,14 +100,11 @@ pub fn send_available_fx_modules(
 
 /// Resend fx module state on engine resync.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     fx_module_provider: Res<DataProvider<StoredFxModule>>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if should_resync {
-        send_fx_module(fx_module_provider, broadcaster);
+    if let Some(broadcaster) = resync.sink() {
+        send_fx_module(fx_module_provider, &broadcaster);
     }
 }
 

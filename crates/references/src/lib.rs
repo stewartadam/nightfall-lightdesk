@@ -136,8 +136,9 @@ pub struct ReferenceReportState {
     issues: Vec<ReferenceIssue>,
     /// Whether the next update audits every object.
     full_audit_requested: bool,
-    /// Whether the health message must be broadcast at the next client output.
-    health_pending: bool,
+    /// Clients that must be sent the health message at the next client output: every client
+    /// after a change, or the clients that resynced.
+    health_pending: PendingReplies,
     /// Clients that receive the full reference list.
     watchers: HashSet<Audience>,
     /// Watchers that must be sent the full list at the next client output.
@@ -185,7 +186,7 @@ impl ReferenceReportState {
             self.issues = self.book.issues();
         }
         if applied.issues || *self.book.summary() != summary_before {
-            self.health_pending = true;
+            self.health_pending.request(Audience::All);
         }
         applied
     }
@@ -323,24 +324,27 @@ pub fn update_reference_report(
     }
 }
 
-/// Queues the health message for a client that resyncs.
+/// Queues the health message for the clients that resync.
 fn queue_health_on_resync(
     mut events: MessageReader<ResyncRequested>,
     mut state: ResMut<ReferenceReportState>,
 ) {
-    if events.read().next().is_some() {
-        state.health_pending = true;
-    }
+    state
+        .health_pending
+        .request_each(events.read().map(|request| request.audience));
 }
 
 /// Publishes queued health, list and list update messages.
 fn send_reference_report(mut state: ResMut<ReferenceReportState>, sink: Res<ClientEventSink>) {
-    if !state.health_pending && state.list_pending.is_empty() && state.list_updates.is_empty() {
+    if state.health_pending.is_empty()
+        && state.list_pending.is_empty()
+        && state.list_updates.is_empty()
+    {
         return;
     }
     let state = &mut *state;
-    if std::mem::take(&mut state.health_pending) {
-        sink.publish(
+    if let Some(audience) = state.health_pending.take() {
+        sink.narrowed_to(audience.into_audiences()).publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &ReferenceWsMessage::ReferenceHealth(ReferenceHealth {
                 summary: state.book.summary(),

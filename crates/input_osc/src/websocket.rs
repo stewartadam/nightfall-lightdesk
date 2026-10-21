@@ -74,19 +74,16 @@ pub fn deserialize_osc_command(
 
 /// Send OSC state on resync.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     sources: Res<OscSources>,
     mappings: Res<OscMappings>,
     diagnostics: Res<OscMappingDiagnostics>,
     last_event: Res<LastOscEvent>,
     status: Res<OscRuntimeStatus>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_sources(&sources, &broadcaster);
     send_mappings(&mappings, &broadcaster);

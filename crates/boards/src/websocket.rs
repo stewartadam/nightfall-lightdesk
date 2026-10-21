@@ -116,14 +116,13 @@ pub fn send_board_states_on_change(
 
 /// Sends boards and button states to clients that asked for a full resync.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     boards: Res<DataProvider<Board>>,
     objects: BoardObjects,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    if events.read().next().is_none() {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
     send_boards(&boards, &broadcaster);
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,

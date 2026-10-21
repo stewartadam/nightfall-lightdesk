@@ -128,10 +128,12 @@ pub fn forward_ui_notifications(
     }
 }
 
-/// Broadcasts queued transient notifications and the retained showfile identity.
+/// Broadcasts queued transient notifications to every client, since they are drained once and no
+/// client has seen them yet, then sends the retained showfile identity to the resyncing clients.
 pub(super) fn flush_pending_ui_notifications(
     pending_ui_notifications: Option<&mut UiNotificationState>,
     broadcaster: &ClientEventSink,
+    resyncing: &ClientEventSink,
 ) {
     let Some(pending_ui_notifications) = pending_ui_notifications else {
         return;
@@ -142,7 +144,12 @@ pub(super) fn flush_pending_ui_notifications(
             ?notification,
             "Replaying pending UiNotification after resync"
         );
-        broadcaster.publish(
+        let sink = if matches!(notification, UiNotification::CurrentShowfileChanged { .. }) {
+            resyncing
+        } else {
+            broadcaster
+        };
+        sink.publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &DeskWsMessage::UiNotification(&notification),
         );

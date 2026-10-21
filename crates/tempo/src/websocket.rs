@@ -110,14 +110,10 @@ pub fn send_tempo_state(
 }
 
 /// Sends the tempo state immediately when a client asks for a full resync.
-pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
-    tempo: Res<ShowTempo>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if events.read().next().is_none() {
+pub fn handle_resync_state(mut resync: ResyncReplies, tempo: Res<ShowTempo>) {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &TempoWsMessage::TempoState(tempo.snapshot()),

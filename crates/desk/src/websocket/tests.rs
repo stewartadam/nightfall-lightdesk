@@ -197,7 +197,7 @@ fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
         message: "startup failed".to_string(),
     });
 
-    flush_pending_ui_notifications(Some(&mut pending), &broadcaster);
+    flush_pending_ui_notifications(Some(&mut pending), &broadcaster, &broadcaster);
 
     let payload = rx
         .try_recv()
@@ -217,7 +217,7 @@ fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
         "payload did not include toast message: {payload_text:?}"
     );
 
-    flush_pending_ui_notifications(Some(&mut pending), &broadcaster);
+    flush_pending_ui_notifications(Some(&mut pending), &broadcaster, &broadcaster);
     assert!(
         rx.try_recv().is_err(),
         "pending UI notifications should be drained after replay"
@@ -230,7 +230,7 @@ fn resync_replays_showfile_identity_after_earlier_delivery() {
     let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let broadcaster = ClientEventSink::new(tx);
     let mut state = UiNotificationState::default();
-    flush_pending_ui_notifications(Some(&mut state), &broadcaster);
+    flush_pending_ui_notifications(Some(&mut state), &broadcaster, &broadcaster);
     assert!(
         rx.try_recv().is_err(),
         "initial worlds have no confirmed identity"
@@ -239,10 +239,35 @@ fn resync_replays_showfile_identity_after_earlier_delivery() {
         "Sample Tour".to_string(),
     )));
     for _ in 0..2 {
-        flush_pending_ui_notifications(Some(&mut state), &broadcaster);
+        flush_pending_ui_notifications(Some(&mut state), &broadcaster, &broadcaster);
         let payload = rx.try_recv().expect("identity must survive every resync");
         assert!(String::from_utf8_lossy(&payload.bytes).contains("Sample Tour"));
     }
+}
+
+#[test]
+/// Queued toasts reach every client even when one client's resync drains them, while the
+/// showfile identity replay goes only to the resyncing client.
+fn resync_broadcasts_queued_toasts_and_replies_identity() {
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
+    let broadcaster = ClientEventSink::new(tx);
+    let requester = Audience::Client(ClientId(6));
+    let resyncing = broadcaster.narrowed_to(std::sync::Arc::from([requester]));
+    let mut state = UiNotificationState::default();
+    state.push(UiNotification::ShowToast {
+        level: crate::ui_notification::ToastLevel::Error,
+        message: "show load failed".to_string(),
+    });
+    state.push(UiNotification::current_showfile_changed(Some(
+        "Sample Tour".to_string(),
+    )));
+
+    flush_pending_ui_notifications(Some(&mut state), &broadcaster, &resyncing);
+
+    let audiences: Vec<Audience> = std::iter::from_fn(|| rx.try_recv().ok())
+        .map(|frame| frame.audience)
+        .collect();
+    assert_eq!(audiences, vec![Audience::All, requester]);
 }
 
 #[test]

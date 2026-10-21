@@ -103,16 +103,13 @@ pub fn send_flows(
 
 /// Handle ResyncState by sending flow definitions and node templates immediately.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     flow_provider: Res<DataProvider<FlowDefinition>>,
     registry: Res<FlowNodeRegistry>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     // Send flow definitions
     let flow_list: Vec<FlowDefinition> = flow_provider

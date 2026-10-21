@@ -34,7 +34,7 @@ pub(crate) struct ResyncControlParams<'w, 's> {
 
 /// Handle ResyncState by sending desk-owned lists immediately
 pub(crate) fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     group_data_provider: Res<DataProvider<Group>>,
     exec_query: Query<&Clip>,
     blueprint_data_provider: Res<DataProvider<Blueprint>>,
@@ -46,13 +46,11 @@ pub(crate) fn handle_resync_state(
     control_params: ResyncControlParams,
     undo_manager: Res<UndoManager>,
     mut pending_ui_notifications: Option<ResMut<UiNotificationState>>,
-    broadcaster: Res<ClientEventSink>,
+    every_client: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_groups(group_data_provider, &broadcaster);
     send_masters(&control_params.masters, &broadcaster);
@@ -93,7 +91,11 @@ pub(crate) fn handle_resync_state(
     // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
     layer_stack_publication.invalidate();
     send_undo_state(undo_manager, &broadcaster);
-    flush_pending_ui_notifications(pending_ui_notifications.as_deref_mut(), &broadcaster);
+    flush_pending_ui_notifications(
+        pending_ui_notifications.as_deref_mut(),
+        &every_client,
+        &broadcaster,
+    );
 }
 
 /// State the layer stack snapshot is built from and change-checked against.

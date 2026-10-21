@@ -29,6 +29,7 @@ pub mod process_shutdown;
 pub mod protocol;
 pub mod reference_index;
 pub mod render_pass;
+pub mod resync;
 pub mod runtime_capabilities;
 pub mod variables;
 
@@ -77,8 +78,9 @@ pub mod prelude {
         Audience, ClientBridgeHost, ClientBridgePlugin, ClientDisconnectReport, ClientDisconnected,
         ClientEventSink, ClientPresenceSender, CommandDeserializerRegistry, CommandJsonEnvelope,
         CommandSender, DISCRIMINATOR_DELTA, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, LastClientDisconnected, OutboundFrame, SharedClientBridge,
-        UpdateDeserializerRegistry, UpdateJsonEnvelope, encode_client_cbor,
+        EncodedClientMessage, LastClientDisconnected, OutboundFrame, PendingAudience,
+        PendingReplies, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        encode_client_cbor,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -118,6 +120,7 @@ pub mod prelude {
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
     pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
+    pub use crate::resync::{ResyncReplies, ResyncRequested, resync_audience};
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
         TimelineAudioCapability, disk_storage_available,
@@ -129,7 +132,7 @@ pub mod prelude {
         PendingCommandExpansion, PendingCommandProcessing, ResyncHandling, StartupFrameCounter,
         VdimProcessing,
     };
-    pub use crate::{EngineCommand, ResyncRequested, register_engine_operation};
+    pub use crate::{EngineCommand, register_engine_operation};
     pub use crate::{register_client_update_deserializer, register_update_deserializer};
 }
 
@@ -190,7 +193,7 @@ impl Plugin for EnginePlugin {
         app.add_systems(
             Update,
             (
-                broadcast_app_state_on_resync.before(ResyncHandling),
+                send_app_state_on_resync.before(ResyncHandling),
                 send_runtime_capabilities_on_resync.before(ResyncHandling),
                 send_attribute_metadata_on_resync.before(ResyncHandling),
                 send_resync_complete.after(ResyncHandling),
@@ -207,7 +210,7 @@ impl Plugin for EnginePlugin {
             app,
             crate::client::deserialize_engine_commands,
         );
-        app.add_systems(Update, begin_resync.in_set(InputHandling));
+        app.add_systems(Update, resync::begin_resync.in_set(InputHandling));
     }
 }
 
@@ -370,27 +373,6 @@ impl EngineIngressMeta for EngineCommand {
     const COMMAND_MODULE: &'static str = "EngineCommand";
 }
 
-/// Fact published when an external command or internal transition requests a state resync.
-#[derive(Clone, Debug, Message)]
-pub struct ResyncRequested {
-    /// User command awaiting completion after the resync, when externally requested.
-    pub command_id: Option<CommandId>,
-}
-
-/// Converts semantic resync commands into the event consumed across domain crates.
-fn begin_resync(
-    mut commands: MessageReader<CommandEnvelope<EngineCommand>>,
-    mut resync_requests: MessageWriter<ResyncRequested>,
-) {
-    for command in commands.read() {
-        if matches!(command.command, EngineCommand::ResyncState) {
-            resync_requests.write(ResyncRequested {
-                command_id: Some(command.command_id),
-            });
-        }
-    }
-}
-
 /// This parses top-level command expressions using AST-based dispatch.
 /// The AST is converted to engine commands via registered domain-specific converters.
 pub fn parse_command_string(cmd_str: &str) -> Result<Vec<DynEnginePayload>, ParseError> {
@@ -425,19 +407,13 @@ fn check_startup_complete(
     }
 }
 
-/// System that broadcasts the current backend lifecycle state during a full resync.
-fn broadcast_app_state_on_resync(
-    mut events: MessageReader<ResyncRequested>,
-    app_state: Res<State<AppState>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+/// System that sends the current backend lifecycle state to clients that resync.
+fn send_app_state_on_resync(mut resync: ResyncReplies, app_state: Res<State<AppState>>) {
+    let Some(sink) = resync.sink() else {
         return;
-    }
+    };
 
-    broadcaster.publish(
+    sink.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::AppState(app_state.get()),
     );
@@ -458,52 +434,47 @@ fn broadcast_app_state_on_change(
     );
 }
 
-/// System that sends static attribute metadata before plugin resync handlers.
-fn send_attribute_metadata_on_resync(
-    mut events: MessageReader<ResyncRequested>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+/// System that sends static attribute metadata to resyncing clients before plugin resync handlers.
+fn send_attribute_metadata_on_resync(mut resync: ResyncReplies) {
+    let Some(sink) = resync.sink() else {
         return;
-    }
+    };
 
     let attribute_metadata = nightfall_dmx::prelude::standard_attribute_metadata();
-    broadcaster.publish(
+    sink.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::AttributeMetadata(&attribute_metadata),
     );
 }
 
-/// System that sends the host-authored runtime capability snapshot on resync.
+/// System that sends the host-authored runtime capability snapshot to resyncing clients.
 fn send_runtime_capabilities_on_resync(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     capabilities: Res<RuntimeCapabilities>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    if events.read().next().is_none() {
+    let Some(sink) = resync.sink() else {
         return;
-    }
+    };
 
-    broadcaster.publish(
+    sink.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::RuntimeCapabilities(&capabilities),
     );
 }
 
-/// System that sends ResyncComplete after all plugin resync handlers have run.
+/// System that sends ResyncComplete to the resyncing clients after all plugin resync handlers
+/// have run, then completes the resync commands.
 fn send_resync_complete(
     mut events: MessageReader<ResyncRequested>,
     broadcaster: Res<ClientEventSink>,
     mut responder: CommandResponder,
 ) {
     let requests = events.read().cloned().collect::<Vec<_>>();
-    if requests.is_empty() {
+    let Some(audience) = resync_audience(&requests) else {
         return;
-    }
+    };
 
-    broadcaster.publish(
+    broadcaster.narrowed_to(audience.into_audiences()).publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::ResyncComplete,
     );
@@ -552,7 +523,8 @@ mod tests {
         );
     }
 
-    /// Verifies that resync fans out as an event and completes only at the finalizer.
+    /// Verifies that resync fans out as an event and completes only at the finalizer, with its
+    /// completion notification sent only to the client that asked.
     #[test]
     fn resync_command_completes_after_resync_event_is_processed() {
         let mut app = App::new();
@@ -565,11 +537,11 @@ mod tests {
         app.add_message::<CommandNoticeReply>();
         let (sender, receiver) = unbounded();
         app.insert_resource(ClientEventSink::new(sender));
-        app.add_systems(Update, (begin_resync, send_resync_complete).chain());
+        app.add_systems(Update, (resync::begin_resync, send_resync_complete).chain());
         let command = CommandEnvelope::new(
             EngineCommand::ResyncState,
             CommandOrigin::WebUi,
-            ReplyTarget::ClientBroadcast,
+            ReplyTarget::Client(ClientId(3)),
         );
         let command_id = command.command_id;
         app.world_mut()
@@ -596,6 +568,7 @@ mod tests {
         let notification = receiver
             .try_recv()
             .expect("resync should publish its completion notification");
+        assert_eq!(notification.audience, Audience::Client(ClientId(3)));
         let decoded: serde_json::Value =
             minicbor_serde::from_slice(&notification.bytes[1..]).unwrap();
         assert_eq!(decoded["type"], "ResyncComplete");
@@ -635,8 +608,10 @@ mod tests {
             Render,
             record_resync_complete_before_clock.in_set(ClockUpdate),
         );
-        app.world_mut()
-            .write_message(ResyncRequested { command_id: None });
+        app.world_mut().write_message(ResyncRequested {
+            command_id: None,
+            audience: Audience::All,
+        });
 
         app.update();
 

@@ -285,19 +285,16 @@ pub fn broadcast_beatgrid_detection_failed(
 
 /// Handle ResyncState by sending timelines immediately
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     timeline_data_provider: Res<DataProvider<Timeline>>,
     recording_states: Res<TimelineRecordingStates>,
     recording_sessions: Res<TimelineRecordingSessions>,
     lookahead_statuses: Res<TimelineLookaheadActionStatuses>,
     planned_cues: Res<TimelinePlannedCuesByAction>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_timelines(timeline_data_provider, broadcaster.clone());
     send_timeline_recording_states(&recording_states, &broadcaster);

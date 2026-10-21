@@ -162,6 +162,65 @@ test("parameter deltas keep the UI exact", async ({ page }, testInfo) => {
   });
 });
 
+/** Reads how many resyncs the page's engine runtime has completed. */
+async function resyncGeneration(page: Page): Promise<number> {
+  return page.evaluate(() =>
+    (window as any).__nightfallTest.runtime.resyncGeneration(),
+  );
+}
+
+/**
+ * Verifies one client's resync is answered to that client alone: it rebuilds the same parameter
+ * state as a client that stayed connected, while the other client completes no resync of its own.
+ */
+test("resync replies only to the client that asked", async ({
+  page,
+}, testInfo) => {
+  testInfo.setTimeout(60_000);
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await expect.poll(() => streamStats(page)).toBeDefined();
+  const other = await page.context().newPage();
+  try {
+    await other.goto("/?startup:draftRecovery=false&e2e=1");
+    await waitForDockviewApp(other);
+    await expect.poll(() => streamStats(other)).toBeDefined();
+
+    await submitCommand(page, "fix 601 red @ 40");
+    await expect
+      .poll(() => programmerHolds(other, "Red", 0.4), {
+        timeout: 15_000,
+      })
+      .toBe(true);
+    const generationBefore = await resyncGeneration(page);
+    const otherGeneration = await resyncGeneration(other);
+
+    // The resync drops the other page's layout, so matching state proves the layout and values
+    // reached it.
+    await other.evaluate(() =>
+      (
+        window as any
+      ).__nightfallTest.runtime.engineRuntime.requestBackendSessionState(),
+    );
+    await other.evaluate(
+      (after) => (window as any).__nightfallTest.whenResynced(after),
+      otherGeneration,
+    );
+    await expect
+      .poll(
+        async () =>
+          (await outputSnapshot(other)) === (await outputSnapshot(page)),
+      )
+      .toBe(true);
+    // Give a stray ResyncComplete time to arrive before checking that none did.
+    await page.waitForTimeout(1_000);
+    expect(await resyncGeneration(page)).toBe(generationBefore);
+    expect((await streamStats(page)).gaps).toBe(0);
+  } finally {
+    await other.close();
+  }
+});
+
 /**
  * Verifies the Network settings toggle switches the engine to sending every value in full each
  * frame, so the UI receives keyframes and no deltas while values change, and that turning it back

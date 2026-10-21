@@ -9,7 +9,7 @@
 //! Publishes the action catalog to attached clients.
 
 use bevy_ecs::prelude::*;
-use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, ResyncRequested};
+use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, ResyncReplies};
 use serde::Serialize;
 
 use crate::descriptor::ActionCatalogEntry;
@@ -46,14 +46,11 @@ pub fn send_action_catalog_on_change(
 
 /// Re-sends the catalog and mapping mode state when a client requests a full state resync.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     registry: Res<ActionRegistry>,
     mode: Res<ControllerMappingMode>,
-    sink: Option<Res<ClientEventSink>>,
 ) {
-    if events.read().next().is_some()
-        && let Some(sink) = sink
-    {
+    if let Some(sink) = resync.sink() {
         send_catalog(&registry, &sink);
         send_mapping_mode(&mode, &sink);
     }

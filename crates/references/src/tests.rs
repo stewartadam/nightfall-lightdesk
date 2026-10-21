@@ -258,7 +258,7 @@ fn master_level_changes_publish_nothing() {
     );
 }
 
-/// A resync republishes the unchanged health message.
+/// A resync republishes the unchanged health message to the client that asked only.
 #[test]
 fn resync_republishes_health() {
     let (mut app, rx) = report_app();
@@ -266,17 +266,20 @@ fn resync_republishes_health() {
     app.update();
     drain(&rx);
 
-    app.world_mut()
-        .write_message(ResyncRequested { command_id: None });
+    app.world_mut().write_message(ResyncRequested {
+        command_id: None,
+        audience: Audience::Client(ClientId(4)),
+    });
     app.update();
 
     let published = drain(&rx);
     assert!(
         matches!(
             published.as_slice(),
-            [(Audience::All, Decoded::ReferenceHealth { summary, .. })] if summary.issue_count == 2
+            [(Audience::Client(ClientId(4)), Decoded::ReferenceHealth { summary, .. })]
+                if summary.issue_count == 2
         ),
-        "expected the health message again, got {published:?}"
+        "expected the health message again for the requester, got {published:?}"
     );
 }
 

@@ -98,7 +98,8 @@ fn collect_timecode_definitions(
     timecodes
 }
 
-/// Send timecode definitions and state to websocket clients.
+/// Broadcasts timecode definitions and state to websocket clients at most once per
+/// [`DROPPABLE_INTERVAL_MS`].
 pub fn send_timecodes(
     timecode_data_provider: Res<DataProvider<Timecode>>,
     tc_generators: Query<&TimecodeGenerator>,
@@ -117,11 +118,20 @@ pub fn send_timecodes(
     }
     LAST_DROPPABLE_SEND_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
 
+    publish_timecodes(&timecode_data_provider, &tc_generators, &broadcaster);
+}
+
+/// Publishes every timecode definition with its generator state to the sink's clients.
+fn publish_timecodes(
+    timecode_data_provider: &DataProvider<Timecode>,
+    tc_generators: &Query<&TimecodeGenerator>,
+    broadcaster: &ClientEventSink,
+) {
     let generator_states: HashMap<uuid::Uuid, TimecodeState> = tc_generators
         .iter()
         .map(|generator| (generator.timecode.identifiers.uid, generator.state.clone()))
         .collect();
-    let timecodes = collect_timecode_definitions(&timecode_data_provider, &generator_states);
+    let timecodes = collect_timecode_definitions(timecode_data_provider, &generator_states);
 
     for entry in &timecodes {
         tracing::trace!(
@@ -145,18 +155,15 @@ pub fn send_timecodes(
 
 /// Handle ResyncState by sending all timecode generator state immediately
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     timecode_data_provider: Res<DataProvider<Timecode>>,
     tc_generators: Query<&TimecodeGenerator>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
-    send_timecodes(timecode_data_provider, tc_generators, broadcaster);
+    publish_timecodes(&timecode_data_provider, &tc_generators, &broadcaster);
 }
 
 #[cfg(test)]

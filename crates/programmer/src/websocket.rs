@@ -290,7 +290,7 @@ pub fn send_programmer(
     selection_resolver: &SpatialSelectionResolver,
     fixture_data_provider: &Res<FixtureDataProviderExt>,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
-    broadcaster: &Res<ClientEventSink>,
+    broadcaster: &ClientEventSink,
 ) {
     // Map of fixture_uid -> element_index (0-based) -> attributes
     let mut programmer_state: HashMap<Uuid, HashMap<usize, ElementAssertionMaps>> = HashMap::new();
@@ -370,7 +370,7 @@ pub fn send_programmer(
 pub fn send_programmer_selection(
     programmer: &Res<Programmer>,
     spatial_selection_resolver: &SpatialSelectionResolver,
-    broadcaster: &Res<ClientEventSink>,
+    broadcaster: &ClientEventSink,
 ) {
     let selection = programmer.active_spatial_selection();
     let resolved = spatial_selection_resolver.resolve(&selection).into_value();
@@ -404,18 +404,15 @@ fn programmer_selection_uids(resolved: &ResolvedSelection) -> Vec<String> {
 
 /// Handle ResyncState by sending full programmer state and selection
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     programmer: Res<crate::resources::Programmer>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
     spatial_selection_resolver: SpatialSelectionResolver,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_programmer(
         &programmer,
