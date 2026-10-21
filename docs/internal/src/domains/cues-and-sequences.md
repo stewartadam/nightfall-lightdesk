@@ -196,7 +196,7 @@ A cache entry is valid only for clock positions at or after the position where i
 
 ### Activation time of sequence layers
 
-The compositor orders layers of equal priority by their activation time. Sequence layers take `Instant::now()` as their activation time in every render, both for a newly built layer and for one returned from the cache. [Priorities and merging](../concepts/priorities-and-merging.md#layers-stack-from-lowest-to-highest-priority) describes the effect on equal-priority playbacks.
+The compositor orders layers of equal priority by their activation time. When the painter repaints a sequence layer, whether newly built or returned from the cache, it copies the activation time of the layer it replaces. Equal-priority sequences and FX therefore stack in the order they started. [Priorities and merging](../concepts/priorities-and-merging.md#layers-stack-from-lowest-to-highest-priority) describes how equal-priority layers stack.
 
 ## Release
 
