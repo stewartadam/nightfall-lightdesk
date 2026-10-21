@@ -15,6 +15,9 @@ use crate::TimelineAudioOutputEnabled;
 mod actions;
 
 /// Synchronize materialized timelines with their timecodes and apply enabled loop seeks.
+///
+/// Loops apply only to internal timecodes: an external source owns its position, so seeking it
+/// back would be undone by the next frame.
 pub fn update_timeline_system(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
     mut timecode_query: Query<(Entity, &mut TimecodeGenerator)>,
@@ -32,6 +35,7 @@ pub fn update_timeline_system(
             continue;
         };
         if timeline.is_active
+            && timecode.is_internal()
             && let Some(loop_range) = timeline
                 .timeline
                 .loop_range

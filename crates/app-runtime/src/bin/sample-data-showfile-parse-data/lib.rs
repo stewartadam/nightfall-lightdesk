@@ -818,17 +818,7 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
         scroll_mode: TimelineScrollMode::Free,
     };
 
-    world.spawn(TimecodeGenerator {
-        timecode: timecode.clone(),
-        state: TimecodeState {
-            timecode_id: timecode.identifiers.id,
-            is_active: false,
-            current_time: Duration::ZERO,
-            start_time: None,
-            end_time: None,
-        },
-        ..Default::default()
-    });
+    world.spawn(TimecodeGenerator::new(timecode.clone()));
     world.spawn(MaterializedTimeline::new(timeline.clone()));
 
     let mut system_state: SystemState<TimelineSeedParams> = SystemState::new(world);

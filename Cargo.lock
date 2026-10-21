@@ -5748,6 +5748,7 @@ dependencies = [
  "nightfall-coremidi-hotplug",
  "nightfall-engine",
  "nightfall-service-host",
+ "nightfall-timecode",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",

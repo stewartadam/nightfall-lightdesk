@@ -397,18 +397,7 @@ pub(super) fn add_tc(world: &mut World) {
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
     };
-    let tc_gen = TimecodeGenerator {
-        timecode: timecode1.clone(),
-        state: TimecodeState {
-            timecode_id: timecode1.identifiers.id,
-            is_active: false,
-            current_time: Duration::ZERO,
-            start_time: None,
-            end_time: None,
-        },
-        ..Default::default()
-    };
-    world.spawn(tc_gen);
+    world.spawn(TimecodeGenerator::new(timecode1.clone()));
     seeded_timecodes.push(timecode1.clone());
 
     let timecode2 = Timecode {
@@ -420,18 +409,7 @@ pub(super) fn add_tc(world: &mut World) {
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
     };
-    let tc_gen = TimecodeGenerator {
-        timecode: timecode2.clone(),
-        state: TimecodeState {
-            timecode_id: 2,
-            is_active: false,
-            current_time: Duration::ZERO,
-            start_time: None,
-            end_time: None,
-        },
-        ..Default::default()
-    };
-    world.spawn(tc_gen);
+    world.spawn(TimecodeGenerator::new(timecode2.clone()));
     seeded_timecodes.push(timecode2.clone());
 
     let timeline1_uid = Uuid::from_str("098145c1-934b-4ed6-b200-78df6c6da180").unwrap();

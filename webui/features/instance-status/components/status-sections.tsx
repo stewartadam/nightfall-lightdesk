@@ -33,6 +33,13 @@ import {
   type TimecodeState,
 } from "../../../types";
 import {
+  type TimecodeStatusTone,
+  timecodeRateLabel,
+  timecodeSourceLabel,
+  timecodeStatus,
+  timecodeStatusPillClass,
+} from "../../timecode";
+import {
   compactId,
   formatInstanceNext,
   formatInstancePosition,
@@ -360,7 +367,7 @@ const SORTABLE_TIMECODE_COLUMNS = TIMECODE_COLUMNS.flatMap((column) =>
 );
 
 type TimecodeCellData =
-  | { kind: "timecode-state"; running: boolean }
+  | { kind: "timecode-state"; tone: TimecodeStatusTone }
   | { kind: "timecode-controls"; id: number };
 
 /** Projects one timecode and its live state into the cell for a status column. */
@@ -385,15 +392,17 @@ function timecodeStatusCell(row: TimecodeRow, column: GridColumn): GridCell {
         true,
       );
     case "rate":
-      return instanceTextCell(String(row.timecode.rate));
+      return instanceTextCell(timecodeRateLabel(row.timecode.rate));
     case "source":
-      return instanceTextCell(String(row.timecode.source));
-    case "state":
+      return instanceTextCell(timecodeSourceLabel(row.timecode, row.state));
+    case "state": {
+      const status = timecodeStatus(row.state);
       return {
         kind: GridCellKind.Custom,
-        data: { kind: "timecode-state", running: row.state.is_active },
-        copyData: row.state.is_active ? "Running" : "Idle",
+        data: { kind: "timecode-state", tone: status.tone },
+        copyData: status.label,
       };
+    }
     default:
       return {
         kind: GridCellKind.Custom,
@@ -419,11 +428,9 @@ function timecodeStatusExtension(
       if (data.kind === "timecode-state")
         return (
           <span
-            class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${
-              data.running
-                ? "bg-emerald-500/20 text-emerald-200 ring-emerald-400/30"
-                : "bg-neutral-700/40 text-neutral-300 ring-neutral-600"
-            }`}
+            class={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${timecodeStatusPillClass(
+              data.tone,
+            )}`}
           >
             {cell.copyData}
           </span>
