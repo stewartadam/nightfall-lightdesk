@@ -166,11 +166,15 @@ fn latch_sequence_output(
     }
 }
 
-/// Bevy system that reads materialized sequences and generates rendering instructions layer
+/// Bevy system that reads materialized sequences and generates rendering instructions layer.
+///
+/// Each repainted layer keeps the activation time of the layer it replaces, so equal-priority
+/// layers stack by when their sequence started rather than by paint order.
 pub fn paint_materialized_sequences(
     mut msequence_query: Query<(
         Entity,
         &mut MaterializedSequence,
+        Option<&Layer>,
         Option<&InstanceClock>,
         Option<&InstanceOptions>,
     )>,
@@ -178,7 +182,9 @@ pub fn paint_materialized_sequences(
     mut parameter_queries: ParamSet<(Query<InstanceMut<Parameter>>, SequenceMaterializationParams)>,
     mut commands: Commands,
 ) {
-    for (entity, mut msequence, clock, instance_options) in msequence_query.iter_mut() {
+    for (entity, mut msequence, existing_layer, clock, instance_options) in
+        msequence_query.iter_mut()
+    {
         let instance_options = instance_options.copied().unwrap_or_default();
         if msequence.requires_full_materialization_for_lookahead(
             instance_options,
@@ -192,6 +198,9 @@ pub fn paint_materialized_sequences(
 
         let mut param_query = parameter_queries.p0();
         let mut new_layer = msequence.to_layer_at_clock(&mut param_query, clock);
+        if let Some(existing_layer) = existing_layer {
+            new_layer.activation_time = existing_layer.activation_time;
+        }
         let lookahead_assertions = msequence.lookahead_assertions(
             Some(&new_layer),
             &fixture_data_provider,
