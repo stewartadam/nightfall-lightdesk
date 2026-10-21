@@ -87,7 +87,8 @@ Migrations work on raw JSON rather than on Rust types, because the data they con
 
 Loading migrates in memory. The engine writes the migrated snapshot into the show's working draft right away, but the saved folder keeps the old schema until you save. An older build of Nightfall can't open the show after that save, because it rejects versions newer than its own.
 
-**Warning:** Change the shape of existing JSON only together with a new schema version and a migration step. A renamed or restructured field that deserializes with a default instead silently drops data from every older showfile.
+> [!WARNING]
+> Change the shape of existing JSON only together with a new schema version and a migration step. A renamed or restructured field that deserializes with a default instead silently drops data from every older showfile.
 
 ## Loading: how each domain applies its part
 
@@ -139,7 +140,8 @@ The engine saves the draft when the show has changed since the last load or save
 
 The draft's manifest records the hash of the saved show the draft started from. When you open the list of shows, a draft counts as recoverable unless both its own hash and that base hash match the saved show. The native backend doesn't open a show by itself at startup. Unless `NIGHTFALL_SAMPLE_DATA` asks for the sample show, it starts with an empty world, and the web UI offers to recover the last show's draft or to open a show. Both choices load the show through a world swap.
 
-**Warning:** Loading the saved version of a show replaces that show's draft folder with a copy of the saved folder, which discards any unsaved draft of that show. To keep the draft, load the draft instead.
+> [!WARNING]
+> Loading the saved version of a show replaces that show's draft folder with a copy of the saved folder, which discards any unsaved draft of that show. To keep the draft, load the draft instead.
 
 ## Saving
 
@@ -223,7 +225,7 @@ The world holds the show, but some things belong to the process, so a swap doesn
 
 - The client transport: the channels between the clients and the engine, and the websocket server. Clients stay connected, and commands sent during staging wait in the channels for the new world.
 - The IO services for Art-Net, sACN, and USB DMX output, MIDI and OSC input, and audio. They start once per process, so a load doesn't drop sockets or MIDI connections.
-- The process settings, such as the data directory, the transport permissions, and the shared tick grid that paces frames and DMX output.
+- The process settings, such as the data directory, the transport permissions, and the shared schedule of send times that paces frames and DMX output.
 
 Everything else is new: the show data, the programmer, undo history, running playbacks, and any per-client watches. HTTP routes are replaced too. Domain plugins register their routes while the new world builds, and the new world installs them in the running server during its first frame, so routes that serve files from the current show serve the new show's files.
 
@@ -235,7 +237,8 @@ A client sees the load command succeed, followed by `WorldReplaced`. The web UI 
 
 If building the new world fails, the orchestrator resumes the outgoing world, restores its app state, and fails the command with the error code `showfile.world_swap_failed`. The current show keeps running and clients stay connected. Most failures, such as an unreadable file, an unsupported version, or conflicting library versions, happen while the engine parses and validates the snapshot, before anything changes on disk.
 
-**Warning:** The draft folder and the active show folder are process-wide, not part of a world. Once the snapshot has parsed and validated, staging replaces the loaded show's draft folder and points the active show folder at it before it applies the snapshot. If a later step fails, for example the fixture library scan of the show folder, the outgoing world keeps running with its active show folder pointing at the other show's draft. Uploads and draft saves after such a failure can mix files between the two shows.
+> [!WARNING]
+> The draft folder and the active show folder are process-wide, not part of a world. Once the snapshot has parsed and validated, staging replaces the loaded show's draft folder and points the active show folder at it before it applies the snapshot. If a later step fails, for example the fixture library scan of the show folder, the outgoing world keeps running with its active show folder pointing at the other show's draft. Uploads and draft saves after such a failure can mix files between the two shows.
 
 Importing parts of another showfile is different: the engine merges the selected domains into a combined snapshot and reloads it into the running world in place, without a swap. The browser demo has no showfile handling at all. It applies its packaged demo show once at startup.
 
@@ -262,7 +265,8 @@ When a change renames, removes, or restructures existing JSON, also add a migrat
 1. Add tests for the step: one that converts the old shape and one for a file that doesn't contain it.
 1. Check real showfiles with `cargo run -p nightfall-showfile --features midi,osc --example validate -- <showfile>`, which parses and migrates through the same path the engine loads with.
 
-**Note:** Color path defaults are saved by the color paths contributor but applied by the fixtures and patch contributor, because the fixture store holds them. A field's save and load contributors don't have to belong to the same domain, but both must handle it.
+> [!NOTE]
+> Color path defaults are saved by the color paths contributor but applied by the fixtures and patch contributor, because the fixture store holds them. A field's save and load contributors don't have to belong to the same domain, but both must handle it.
 
 ## In the code
 

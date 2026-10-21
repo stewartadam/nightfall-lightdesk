@@ -137,7 +137,8 @@ The `fixture-library` crate scans the library directory for `.gdtf` and `.json` 
 
 Both importers map unknown attribute names to `Attribute::Custom` with the source name as its label, so no channel is silently dropped for having an unfamiliar name.
 
-**Warning:** OFL parameters are `Sequential`, so their addresses depend on every earlier parameter being present. The OFL importer skips mode entries it can't find in `availableChannels`, including `null` placeholders and fine channel aliases such as `Pan fine`, and every later channel then lands one slot early. Within each pixel element, channels follow the profile's template channel map, not the mode's channel order, so pixel channel addresses can differ from the profile. Matrix fixtures also pack the `Master` element before the pixels, whatever order the mode lists them in. Check the addresses of OFL modes with 16-bit or unused channels before you rely on them.
+> [!WARNING]
+> OFL parameters are `Sequential`, so their addresses depend on every earlier parameter being present. The OFL importer skips mode entries it can't find in `availableChannels`, including `null` placeholders and fine channel aliases such as `Pan fine`, and every later channel then lands one slot early. Within each pixel element, channels follow the profile's template channel map, not the mode's channel order, so pixel channel addresses can differ from the profile. Matrix fixtures also pack the `Master` element before the pixels, whatever order the mode lists them in. Check the addresses of OFL modes with 16-bit or unused channels before you rely on them.
 
 The GDTF importer resolves each mode once and records diagnostics for problems it works around:
 
@@ -147,7 +148,8 @@ The GDTF importer resolves each mode once and records diagnostics for problems i
 
 After linking, the GDTF importer decides which virtual dimmers respond to intensity masters. A virtual dimmer gives up its master response when it follows another dimmer, when it mirrors a physical dimmer whose slots it shares, or when a physical dimmer already covers every channel it masters. Otherwise a master at 50% would scale the light twice, once through the physical dimmer and once through the virtual one.
 
-**Warning:** Importer changes alter the output of every show that patches an affected fixture. Run the GDTF bench described in [GDTF regression testing](../contributing/gdtf-regression-testing.md) before you change the GDTF converter.
+> [!WARNING]
+> Importer changes alter the output of every show that patches an affected fixture. Run the GDTF bench described in [GDTF regression testing](../contributing/gdtf-regression-testing.md) before you change the GDTF converter.
 
 ## A patched fixture becomes entities
 
@@ -157,7 +159,8 @@ When the library commands `CreateFixtureFromLibrary` or `CreateFixturesFromLibra
 
 Each parameter starts at its profile default. When the profile gives no default, `VirtualIntensity` starts at full so that the element isn't dark, and every other parameter starts at a logical value of 0.
 
-**Warning:** The `StoreFixture` command only stores the fixture definition. It doesn't spawn or rebuild parameter entities, so a fixture created or reshaped through it has no parameters to control or patch. Create fixtures through the library commands.
+> [!WARNING]
+> The `StoreFixture` command only stores the fixture definition. It doesn't spawn or rebuild parameter entities, so a fixture created or reshaped through it has no parameters to control or patch. Create fixtures through the library commands.
 
 For `Practice light`, the result is one stored fixture, one element reference with index 1, and four parameter entities for intensity, red, green, and blue.
 
@@ -255,7 +258,8 @@ Every channel in both spaces records its origin: an output binding, an input tra
 
 In each render pass, the `dmx_universes` system encodes every parameter that has a console address or a direct destination, and writes its bytes to both places. It writes console channels with the output binding origin and skips any channel that a manual write owns.
 
-**Warning:** A manual `channel` write owns its console channel until you release it. On a console-patched fixture, the manual byte stays on that channel even when a higher-priority layer, such as the programmer, sets the parameter. The manual value also enters the compositor as a layer at priority -127, which is what the **Fixtures** panel shows. The wire and the parameter value can therefore disagree until you release the channel.
+> [!WARNING]
+> A manual `channel` write owns its console channel until you release it. On a console-patched fixture, the manual byte stays on that channel even when a higher-priority layer, such as the programmer, sets the parameter. The manual value also enters the compositor as a layer at priority -127, which is what the **Fixtures** panel shows. The wire and the parameter value can therefore disagree until you release the channel.
 
 ## Composing an output frame
 
