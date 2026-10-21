@@ -103,7 +103,7 @@ Rate masters are different. They change how fast the targeted playbacks run, so 
 
 Each fixture's profile converts its final attribute values into DMX channel values at the fixture's patched address. `Practice light` is patched at console universe 1, address 1, so its intensity, red, green, and blue land in channels 1 to 4 of console universe 1.
 
-Console universes are Nightfall's internal address space. Patch bindings route them to real output transports, such as Art-Net, sACN, or a USB DMX interface. Until a binding routes a console universe to a transport, nothing leaves the computer. This is why the tutorial can run without hardware.
+Console universes are Nightfall's internal address space. Patch bindings route them to output transports, which send DMX to hardware: Art-Net or sACN network gateways, or a USB DMX interface. Until a binding routes a console universe to a transport, nothing leaves the computer. This is why the tutorial can run without hardware.
 
 ```mermaid
 flowchart LR
@@ -125,4 +125,4 @@ The same frame also prepares the state the user interface shows: fixture values 
 - [Priorities and merging](priorities-and-merging.md)
 - [Concept map](concept-map.md)
 - [Control layers](../engine/control-layers.md)
-- [Cues and timing](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/src/user-guide/cues.md) in the user manual
+- [Cues and timing](../../user-guide/cues.html) in the user manual

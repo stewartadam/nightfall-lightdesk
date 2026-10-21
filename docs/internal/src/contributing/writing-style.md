@@ -61,6 +61,7 @@ Don't add pages that only link to other pages, and don't add topics with only on
 
 - Use link text that describes the target: "For more information, see [priorities and merging](../concepts/priorities-and-merging.md)." Don't use "here" or "this page."
 - Link to other pages in this book with relative paths.
+- Link to the user manual with a relative path to its built `.html` page, such as `../../user-guide/cues.html` from a page in `concepts/`. The docs site publishes the user manual at its root and this guide under `internal/`, so the path climbs out of this guide into the manual.
 - Link to source code on GitHub at a commit or tag, not at a branch, so line numbers stay correct. When the link is to a whole file that changes often, a branch link is acceptable.
 - Keep pages to about 15 links.
 - Link to existing text rather than repeating it. When a module's doc comment already explains a design, summarize it and link to the file.

@@ -6,39 +6,57 @@ Nightfall's show objects fall into three groups: the rig (what lights exist and 
 
 ## The rig: fixtures and where their output goes
 
-The rig describes the lights and their DMX addresses. The following diagram shows how a fixture's attributes reach an output transport:
+The rig describes the lights and their DMX addresses. The following entity relationship diagram shows how a fixture's attributes reach an output transport. Each line end shows how many of that object take part: a bar means exactly one, a crow's foot means many, and a circle means the relationship is optional:
 
 ```mermaid
-flowchart LR
+erDiagram
   accTitle: The rig
-  accDescr: A fixture profile defines modes and attributes. A fixture uses one mode and has elements, each with parameters. Patch bindings route the fixture's channels through console universes to output transports.
-  profile[[Fixture profile]] -- defines --> mode[Mode]
-  fixture[Fixture] -- uses --> mode
-  fixture -- has --> element[Elements]
-  element -- has --> parameter[Parameters]
-  parameter -- one per --> attribute([Attribute])
-  fixture -- patched to --> console[(Console universe)]
-  console -- patch binding --> transport([Output transport])
+  accDescr: A fixture profile defines one or more modes. Each fixture uses one mode and has one or more elements, each with one or more parameters. Each parameter controls one attribute. Fixtures patch into console universes, and patch bindings route console universes to output transports.
+  profile["Fixture profile"]
+  mode["Mode"]
+  fixture["Fixture"]
+  element["Element"]
+  parameter["Parameter"]
+  attribute["Attribute"]
+  console["Console universe"]
+  transport["Output transport"]
+  profile ||--|{ mode : defines
+  fixture }o--|| mode : uses
+  fixture ||--|{ element : has
+  element ||--|{ parameter : has
+  parameter }o--|| attribute : controls
+  fixture }o--o{ console : "patched to"
+  console }o--o{ transport : "patch binding"
 ```
 
 A fixture has one or more elements, such as the cells of an LED bar. Each element has parameters, and each parameter controls one attribute, such as intensity or red. Commands and cues address attributes, and the engine stores values per parameter.
 
 ## The programming: what lights should do
 
-Programming objects describe looks and how they change over time. The following diagram shows how they reference each other:
+Programming objects describe looks and how they change over time. The following entity relationship diagram shows how they reference each other:
 
 ```mermaid
-flowchart TB
+erDiagram
   accTitle: Programming objects
-  accDescr: Groups store fixture selections. Cues hold instructions that apply values or blueprints to a selection. Sequences order cues. Clips play a sequence, FX, Step FX, FX module, or flow.
-  group[Group] -- stores --> selection([Selection])
-  cue[Cue] -- contains --> part[Cue parts]
-  part -- contain --> instruction[Instructions]
-  instruction -- targets --> selection
-  instruction -- sets values or uses --> blueprint[Blueprint]
-  sequence[Sequence] -- orders --> cue
-  clip{{Clip}} -- plays one of --> sequence
-  clip -- plays one of --> fx[FX, Step FX, FX module, or flow]
+  accDescr: A group stores one selection. A cue holds instructions directly and in zero or more cue parts. Each instruction targets one selection and either sets values or applies a blueprint. Sequences order cues. A clip plays one sequence, FX, Step FX, FX module, or flow.
+  group["Group"]
+  selection["Selection"]
+  cue["Cue"]
+  part["Cue part"]
+  instruction["Instruction"]
+  blueprint["Blueprint"]
+  sequence["Sequence"]
+  clip["Clip"]
+  fx["FX, Step FX, FX module, or flow"]
+  group ||--|| selection : stores
+  cue ||--o{ part : contains
+  cue ||--o{ instruction : contains
+  part ||--o{ instruction : contains
+  instruction }o--|| selection : targets
+  instruction }o--o| blueprint : applies
+  sequence }o--o{ cue : orders
+  clip }o--o| sequence : plays
+  clip }o--o| fx : plays
 ```
 
 Cues play as part of a sequence, and a clip usually starts the sequence.
@@ -84,11 +102,10 @@ The following table lists the main terms. "Owning crate" is the crate under `cra
 | FX | `fx` | A procedural effect that applies a waveform to attributes across a selection. |
 | FX module | `fx`, `fx-module` | An effect written as a WebAssembly component, loaded at runtime. |
 | Group | `common` | A stored, ordered fixture selection. |
-| Highest takes precedence (HTP) | `fixture-model` | The merge rule that keeps the larger value among equal-priority layers. |
-| Latest takes precedence (LTP) | `fixture-model` | The merge rule that keeps the most recently started layer's value among equal-priority layers. |
 | Layer | `compositor` | The set of values one playback contributes in a frame, with a priority. |
+| Merge rule (HTP and LTP) | `fixture-model` | How equal-priority layers combine an attribute: highest takes precedence (HTP) keeps the larger value, and latest takes precedence (LTP) keeps the most recently started layer's value. |
 | Master | `desk` | A control that scales intensity of targeted fixtures or the rate of targeted playbacks. |
-| Output transport | `io` | A real DMX output: Art-Net, sACN, or USB. |
+| Output transport | `io` | A connection that sends DMX to hardware: an Art-Net or sACN network gateway, or a USB DMX interface. |
 | Parameter | `fixtures` | One attribute on one fixture element. The engine stores values per parameter. |
 | Patch binding | `fixtures` | A route between console channels, fixtures, and input or output transports. |
 | Playback (instance) | `instances` | A running clip or programmer, with its own clock and level. |
@@ -120,4 +137,4 @@ Some words mean different things in different crates. Check which one a piece of
 
 - [How a show becomes light](show-to-light.md)
 - [Priorities and merging](priorities-and-merging.md)
-- [Glossary](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/src/user-guide/glossary.md) in the user manual
+- [Glossary](../../user-guide/glossary.html) in the user manual

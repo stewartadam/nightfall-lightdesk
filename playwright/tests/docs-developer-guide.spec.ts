@@ -76,3 +76,30 @@ test("developer guide diagrams follow book theme changes", async ({ page }) => {
   });
   await expect.poll(() => firstNodeFill(page)).not.toBe(lightFill);
 });
+
+/**
+ * Checks that the sidebar highlights the current page when the host serves pages without their
+ * `.html` extension, as the Cloudflare preview does. A routed fake host maps each extensionless
+ * path back to the built file.
+ */
+test("developer guide sidebar highlights the current page on extensionless URLs", async ({
+  page,
+}) => {
+  await page.route("http://guide.test/**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    let file = pathname.replace(/^\/internal\//, "");
+    if (file === "" || file.endsWith("/")) file += "index.html";
+    else if (!/\.\w+$/.test(file)) file += ".html";
+    await route.fulfill({ path: resolve("docs/internal/book", file) });
+  });
+
+  await page.goto("http://guide.test/internal/concepts/priorities-and-merging");
+  const active = page.locator("#sidebar a.active");
+  await expect(active).toHaveCount(1);
+  await expect(active).toContainText("Priorities and merging");
+  await expect(active).toHaveCSS("font-weight", "600");
+
+  await page.goto("http://guide.test/internal/");
+  await expect(active).toHaveCount(1);
+  await expect(active).toContainText("Nightfall Developer Guide");
+});

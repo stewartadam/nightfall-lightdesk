@@ -2,13 +2,18 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-When several running playbacks control the same fixture attribute, Nightfall decides the output with two rules. Higher priority wins. When priorities are equal, the attribute's merge rule decides: highest takes precedence (HTP) keeps the larger value, and latest takes precedence (LTP) keeps the value from the most recent layer. This page explains both rules, where each priority comes from, and what happens when playbacks fade and release.
+When several running playbacks control the same fixture attribute, Nightfall decides the output with two rules:
+
+1. **Higher priority wins.** A layer with a higher priority overrides every lower-priority layer that sets the same attribute.
+1. **Equal priorities use the attribute's merge rule.** Highest takes precedence (HTP) keeps the larger value, and latest takes precedence (LTP) keeps the value from the most recent layer.
+
+This page explains both rules, where each priority comes from, and what happens when playbacks fade and release.
 
 It builds on [how a show becomes light](show-to-light.md), which introduces playbacks and layers.
 
 ## Layers stack from lowest to highest priority
 
-Every layer carries a priority, a whole number from -128 to 127. In each frame, Nightfall sorts the layers by priority and merges them from the bottom up. Each layer's absolute values replace the values below it, so the highest-priority layer that sets an attribute decides that attribute.
+Every layer carries a priority, a whole number from -128 to 127. In each frame, Nightfall sorts the layers from lowest to highest priority and applies them in that order, starting from the fixture default values. Each layer replaces the values of the attributes it sets and leaves the others alone. The only exception is between layers of equal priority, where the merge rule decides. Because the highest-priority layer is applied last, its values are the ones left at the end, so it decides every attribute it sets.
 
 The following diagram shows the stack for the running example, with an FX running on `Practice light` from a second clip at priority 10:
 
@@ -25,7 +30,7 @@ flowchart BT
   defaults --> input --> first --> fx --> programmer --> out
 ```
 
-Layers with the same priority stack by their activation time, so the most recently activated layer merges last.
+Layers with the same priority are applied in the order they were activated, so the most recently activated layer is applied last.
 
 **Warning:** Sequence layers currently take a new activation time in every frame, while FX and FX module layers keep the time they started. As a result, a sequence clip sits above an FX clip of the same priority whichever started first, and the order between two sequence clips of the same priority doesn't follow their start order. Don't rely on start order between equal-priority sequences until this is fixed.
 
@@ -115,4 +120,4 @@ The **Layers** panel lists the active layers and the values each one sets. The *
 
 - [How a show becomes light](show-to-light.md)
 - [Concept map](concept-map.md)
-- [Layers panel](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/src/user-guide/panels/layers.md) in the user manual
+- [Layers panel](../../user-guide/panels/layers.html) in the user manual

@@ -2,7 +2,11 @@
 
 {{#include includes/human-review-disclaimer.md}}
 
-This guide explains how Nightfall works inside, for people who want to understand, change, or extend it. The [user manual](https://github.com/stewartadam/nightfall-lightdesk/tree/develop/docs/src) covers how to operate the console. [CONTRIBUTING.md](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md) covers how to set up a development environment, run the app, and run the tests.
+This guide explains how Nightfall works inside, for people who want to understand, change, or extend it.
+
+**Note:** This guide assumes you already know how to operate Nightfall as a lighting console: patching fixtures, programming cues, and running playbacks. If you don't, work through the [user manual](../index.html) first, starting with its [Your first show](../user-guide/getting-started.html) tutorial, which builds the show this guide uses as its running example.
+
+[CONTRIBUTING.md](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md) covers how to set up a development environment, run the app, and run the tests.
 
 ## How the guide is organized
 
@@ -18,7 +22,7 @@ Several parts are still being written. The [writing style](contributing/writing-
 
 ## A running example
 
-Pages in the first parts follow one small show, built in the user manual's [Your first show](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/src/user-guide/getting-started.md) tutorial:
+Pages in the first parts follow one small show, built in the user manual's [Your first show](../user-guide/getting-started.html) tutorial:
 
 - One fixture, `Practice light`, with intensity, red, green, and blue channels, patched at console universe 1, address 1.
 - A sequence, `First sequence`, with two cues: `Red` and `Blue`.
