@@ -11,6 +11,7 @@
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
+use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
@@ -243,6 +244,7 @@ pub fn spawn_reconstructed_flow_for_clip(
         Option<&InstanceControls>,
     )>,
     instance_clock: InstanceClock,
+    priority: Priority,
 ) -> MaterializedFlowReconstructionHandle {
     for (entity, mut instance, instance_id, controls) in instances.iter_mut() {
         if instance.flow_id != flow.identifiers.id {
@@ -253,7 +255,8 @@ pub fn spawn_reconstructed_flow_for_clip(
             flow.identifiers.id,
             FlowRuntime::new(flow.clone()),
             registry,
-        );
+        )
+        .with_priority(priority);
         let instance_id = instance_id.copied().unwrap_or_else(InstanceId::new);
         commands
             .entity(entity)
@@ -281,7 +284,8 @@ pub fn spawn_reconstructed_flow_for_clip(
         flow.identifiers.id,
         FlowRuntime::new(flow.clone()),
         registry,
-    );
+    )
+    .with_priority(priority);
     let flow_entity = commands
         .spawn((
             instance,
@@ -334,6 +338,7 @@ pub fn handle_domain_playback_reconstruction_requests(
             &registry,
             &mut instances,
             event.clock.clone(),
+            event.priority,
         );
     }
 }
@@ -360,6 +365,7 @@ pub fn handle_events(
                             tracing::debug!("Flow {} already running", id);
                         } else {
                             instance.restart();
+                            instance.set_priority(Priority::default());
                             tracing::debug!("Restarted flow {}", id);
                         }
                         let instance_id = instance_id.copied().unwrap_or_else(InstanceId::new);
@@ -474,6 +480,7 @@ pub fn handle_events(
                         commands.entity(entity).remove::<ReleaseMarker>();
                         tracing::debug!("Restarted flow {}", flow.identifiers.id);
                     }
+                    instance.set_priority(context.priority);
                     let instance_id = instance_id.copied().unwrap_or_else(InstanceId::new);
                     attached_instance = Some(instance_id);
                     let instance_clock = context
@@ -505,7 +512,8 @@ pub fn handle_events(
                 if !restarted {
                     let instance_id = InstanceId::new();
                     let runtime = FlowRuntime::new(flow.clone());
-                    let instance = FlowInstance::new(flow.identifiers.id, runtime, &registry);
+                    let instance = FlowInstance::new(flow.identifiers.id, runtime, &registry)
+                        .with_priority(context.priority);
                     let instance_clock = context
                         .timing
                         .map(playback_start_timing)
@@ -1771,6 +1779,50 @@ mod tests {
             .next()
             .expect("expected one clip playback attachment");
         assert_eq!(attachment.event.clip_id, 12);
+    }
+
+    /// Verifies clip-started flows take the clip's priority, both when spawned and when a later
+    /// clip with another priority starts the already running flow.
+    #[test]
+    fn start_clip_for_flow_uses_clip_priority() {
+        let mut world = World::new();
+        world.insert_resource(DataProvider::<FlowDefinition>::default());
+        init_flow_command_messages(&mut world);
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
+        world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
+        world.insert_resource(FlowNodeRegistry::default());
+
+        let flow = FlowDefinition::new(Identifiers {
+            id: 8,
+            label: "Priority Flow".to_string(),
+            uid: Uuid::new_v4(),
+        });
+        let flow_uid = flow.identifiers.uid;
+        world
+            .resource_mut::<DataProvider<FlowDefinition>>()
+            .add(flow)
+            .expect("store flow definition");
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(handle_events);
+
+        for (clip_id, priority) in [(13, Priority(5)), (14, Priority(-3))] {
+            let mut context = test_start_context(clip_id, Uuid::new_v4(), None, true);
+            context.priority = priority;
+            world
+                .resource_mut::<Messages<EngineOperationEnvelope<FlowPlaybackOperation>>>()
+                .write(EngineOperationEnvelope::detached(
+                    FlowPlaybackOperation::Start { flow_uid, context },
+                ));
+            schedule.run(&mut world);
+
+            let instance = world
+                .query::<&FlowInstance>()
+                .single(&world)
+                .expect("expected one clip-started flow instance");
+            assert_eq!(instance.priority(), priority);
+        }
     }
 
     /// Verifies timeline reconstruction starts flow playback with a source-local clock.

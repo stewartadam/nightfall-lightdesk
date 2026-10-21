@@ -298,8 +298,12 @@ pub fn evaluate_fx_module(
                 FxModuleLayer::default()
             }
         };
-        let mut layer =
-            fx_module_layer_to_engine_layer(&definition, fx_module_layer, &fixture_data_provider);
+        let mut layer = fx_module_layer_to_engine_layer(
+            &definition,
+            fx_module_layer,
+            &fixture_data_provider,
+            FX_MODULE_PLAYBACK_PRIORITY,
+        );
         if !recreated {
             if let Some((Some(existing_layer), _)) = existing_layer {
                 layer.activation_time = existing_layer.activation_time;
@@ -413,8 +417,12 @@ pub fn evaluate_preview_fx_module(
                 FxModuleLayer::default()
             }
         };
-        let mut layer =
-            fx_module_layer_to_engine_layer(definition, fx_module_layer, &fixture_data_provider);
+        let mut layer = fx_module_layer_to_engine_layer(
+            definition,
+            fx_module_layer,
+            &fixture_data_provider,
+            Priority::PREVIEW,
+        );
         if !recreated {
             if let Some(existing_layer) = existing_layer {
                 layer.activation_time = existing_layer.activation_time;
@@ -614,15 +622,19 @@ fn teardown_preview_runtime_state(
     state.instance.teardown()
 }
 
-/// Materialize a guest FX module layer into an engine compositor layer.
+/// Compositor priority of FX module playback layers.
+pub const FX_MODULE_PLAYBACK_PRIORITY: Priority = Priority(50);
+
+/// Materialize a guest FX module layer into an engine compositor layer at `priority`.
 pub fn fx_module_layer_to_engine_layer(
     definition: &StoredFxModule,
     fx_module_layer: FxModuleLayer,
     fixture_data_provider: &FixtureDataProviderExt,
+    priority: Priority,
 ) -> Layer {
     let mut layer = Layer::new(
         format!("FxModule: {}", definition.identifiers.label),
-        Priority(50),
+        priority,
     );
 
     for instruction in fx_module_layer.absolute {
@@ -1261,6 +1273,7 @@ mod tests {
                 relative: vec![],
             },
             world.resource::<FixtureDataProviderExt>(),
+            FX_MODULE_PLAYBACK_PRIORITY,
         );
 
         assert!(
@@ -1357,6 +1370,7 @@ mod tests {
                 relative: vec![],
             },
             world.resource::<FixtureDataProviderExt>(),
+            FX_MODULE_PLAYBACK_PRIORITY,
         );
 
         assert_eq!(layer.absolute.len(), 1);
@@ -1448,6 +1462,7 @@ mod tests {
                 relative: vec![],
             },
             world.resource::<FixtureDataProviderExt>(),
+            FX_MODULE_PLAYBACK_PRIORITY,
         );
 
         assert_eq!(layer.absolute.len(), 2);
