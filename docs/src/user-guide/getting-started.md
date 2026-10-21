@@ -12,12 +12,12 @@ Open **I/O Transports** through the Command Palette and leave **Network output**
 
 ## 2. Add one fixture
 
-Download the [Practice RGBI fixture definition](assets/nightfall@practice-rgbi.json) (save the linked JSON file, preserving its filename). Open **Fixture Library**, choose **Upload fixture**, and select that file. It describes a virtual training light, not a physical product.
+Download the [Tutorial RGBI Par fixture definition](assets/nightfall@tutorial-rgbi-par.json) (save the linked JSON file, preserving its filename). Open **Fixture Library**, choose **Upload fixture**, and select that file. It describes a virtual light for this tutorial, not a physical product.
 
 In **Patch**, use the add-fixture button to open the wizard:
 
-1. Select **nightfall / Practice RGBI**, then choose its **4 channel** mode. Inspect the parameter preview: intensity, red, green, and blue each use one channel.
-2. Set **Quantity** to `1` and **Label** to `Practice light`.
+1. Select **nightfall / Tutorial RGBI Par**, then choose its **4 channel** mode. Inspect the parameter preview: intensity, red, green, and blue each use one channel.
+2. Set **Quantity** to `1` and **Label** to `Par 1`.
 3. Leave **Assign Console DMX** enabled. In **Patch**, enter universe `1` in the **Univ** box and start address `1` in the box after the dot. This only assigns console channels; nothing is sent to hardware until you route them to an output target.
 4. Review the mode and channel footprint, then choose **Finish**.
 
@@ -32,7 +32,7 @@ fixture 1 @ 100
 fixture 1 red @ 100 green @ 0 blue @ 0
 ```
 
-The first command sets intensity to 100 percent. The second sets RGB color. The Programmer should show the fixture and those values. Open **Fixtures** to see the resulting attribute values and color. The practice OFL profile supplies channel information; detailed 3D geometry is available with suitable fixture profiles, such as GDTF.
+The first command sets intensity to 100 percent. The second sets RGB color. The Programmer should show the fixture and those values. Open **Fixtures** to see the resulting attribute values and color. The tutorial OFL profile supplies channel information; detailed 3D geometry is available with suitable fixture profiles, such as GDTF.
 
 You can also edit attribute cells in Programmer directly. If the fixture stays dark, verify its mode exposes these attributes, check the [Masters](panels/masters.md) levels, and inspect [Layers](panels/layers.md) for other output affecting it. Some real fixture modes also need a shutter or other enable attribute.
 
@@ -64,6 +64,6 @@ If the look does not change, check that the clip points to the intended sequence
 
 Use **Save Showfile** from the application menu. Stop playback before closing the application. Relaunch Nightfall and use **Open Showfile** to expand `First show`. Choose its saved showfile row; if a draft is also present, the saved row is the **Revert to saved showfile** action. This checks the saved version rather than resuming unsaved work.
 
-Check that `Practice light`, the two cues, and `First playback` are still present. Start the clip once more, verify the same looks, and stop it. You now have a saved show you can expand.
+Check that `Par 1`, the two cues, and `First playback` are still present. Start the clip once more, verify the same looks, and stop it. You now have a saved show you can expand.
 
 Next, store a [Group](panels/groups.md) for repeated fixture selections, try an [FX](panels/fx-editor.md), or place clip actions on a [Timeline](panels/timeline.md). Connect hardware only after reviewing [Patch](panels/patch.md) and [I/O Transports](panels/io-transports.md).
