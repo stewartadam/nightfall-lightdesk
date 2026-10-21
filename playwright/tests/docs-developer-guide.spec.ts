@@ -16,7 +16,7 @@ const DIAGRAM_PAGES = [
   { path: "concepts/priorities-and-merging.html", diagrams: 2 },
   { path: "concepts/concept-map.html", diagrams: 3 },
   { path: "architecture/system-overview.html", diagrams: 4 },
-  { path: "architecture/client-protocol.html", diagrams: 3 },
+  { path: "architecture/client-protocol.html", diagrams: 4 },
   { path: "architecture/web-ui.html", diagrams: 5 },
   { path: "architecture/crate-map.html", diagrams: 1 },
   { path: "engine/frame-loop.html", diagrams: 4 },

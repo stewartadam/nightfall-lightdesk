@@ -6,7 +6,8 @@ The Rust side of Nightfall is a Cargo workspace of 54 crates under `crates/`, pl
 
 For how the crates combine into running programs, see [how the pieces fit together](system-overview.md).
 
-**Note:** This page is maintained by hand. When you add, remove, or repurpose a crate, update its row here.
+> [!NOTE]
+> This page is maintained by hand. When you add, remove, or repurpose a crate, update its row here.
 
 ## Roles and dependency rules
 
@@ -93,9 +94,9 @@ Infrastructure crates build the engine's runtime that every domain plugs into.
 | `clips` | Demo | Clip model, clip commands, and lookups by identifier. The `desk` crate stores clips. |
 | `compositor` | Demo | Layer compositing pipeline: builds the layer stack and merges layers by priority and merge rule. |
 | `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation, DMX input, and the composition of output DMX frames. |
-| `framepace` | Demo | Frame limiter that starts engine frames on the shared tick grid, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
+| `framepace` | Demo | Frame limiter that starts engine frames just before each DMX send time on the shared schedule, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
 | `lookahead` | Demo | Runtime lookahead contracts shared by the playback domains. |
-| `service_host` | Demo | Process-lifetime worker slots, fixed-rate worker threads, and the shared tick grid. |
+| `service_host` | Demo | Process-lifetime worker slots, fixed-rate worker threads, and the shared schedule of DMX send times. |
 | `tempo` | Demo | Show-wide live tempo: one BPM and beat phase, the `tempo` command, and mappable tempo actions. |
 | `timecode` | Demo | Timecode objects and the generators that advance them. |
 | `websocket` | No | Native websocket and HTTP server: client connections, per-client queues, origin checks, pairing, and serving the built web UI. |

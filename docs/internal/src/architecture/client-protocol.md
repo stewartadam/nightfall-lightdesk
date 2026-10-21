@@ -14,20 +14,25 @@ This page uses a few terms from this part of the guide:
 
 ## The path in one picture
 
-The following diagram shows both directions between the engine and the panels of one client:
+The following diagram shows both directions between the engine and the panels of one client. The upper box holds the parts that run in the host process, and the lower box holds the parts that run in the browser:
 
 ```mermaid
 flowchart TB
   accTitle: Engine to web UI and back
-  accDescr: Domain plugins publish encoded frames to one output channel. The websocket host copies each frame into the outbox of every client in its audience. The browser transport worker decodes and stages frames, and the main thread pulls them once per animation frame. Commands and updates travel back as JSON text, and the host stamps them with the sending client.
-  plugins[Domain plugins in the engine] -- "publish(discriminator, payload)" --> channel[(One output channel)]
-  channel --> fanout{{Fan-out by audience}}
-  fanout --> outbox[Per-client outbox]
-  outbox -- binary frames --> worker[Browser transport worker]
-  worker -- one batch per animation frame --> main([Main thread and panels])
-  main -- commands and updates --> worker
-  worker -- JSON text --> host[Websocket host stamps the sender]
-  host --> ingress[(Engine ingress channels)]
+  accDescr: The host process box holds the engine and the websocket host. Domain plugins publish encoded frames to one outbound queue. The websocket host copies each frame into the outbox of every client in its audience, and the outbox sends binary frames to the browser box. In the browser, the transport worker decodes and stages frames, and the main thread pulls them once per animation frame. Commands and updates travel back as JSON text, and the websocket host tags each one with the sending session before it puts it on the engine's command or update queue.
+  subgraph backend [Host process]
+    plugins[Domain plugins in the engine] -- "publish(discriminator, payload)" --> outq[(Outbound frame queue)]
+    outq --> fanout{{Fan-out by audience}}
+    fanout --> outbox[Per-client outbox]
+    host[Websocket host tags the sender] --> ingress[(Command and update queues)]
+    ingress --> plugins
+  end
+  subgraph browser [Browser]
+    worker[Transport worker] -- one batch per animation frame --> main([Main thread and panels])
+    main -- commands and updates --> worker
+  end
+  outbox -- binary frames --> worker
+  worker -- JSON text --> host
 ```
 
 The rest of the page follows this loop: what the UI sends, what the engine sends and to whom, how the parameter stream stays correct when frames go missing, and how a client catches up.
@@ -69,17 +74,17 @@ The UI sends text frames that contain JSON. The host recognizes three shapes by 
 
 For when to use a command and when to use an update, see [control layers](../engine/control-layers.md).
 
-### The host stamps the sender
+### The host tags the sender
 
-A message never says who sent it. When the websocket host parses a command, it sets the command's reply target to the session that sent it. When it parses an update, it sets the update's sender to that session. Both fields are skipped when the JSON is deserialized, so a client can't address replies to another session or speak for one. The host gives each session a `ClientId` that is never reused while the server runs.
+The JSON envelope a client sends has no sender field. The websocket host knows which session each text frame arrived on, and it attaches that session when it parses the envelope. For a command, it sets the envelope's reply target to the sending session. For an update, it sets the envelope's sender to that session. Both fields are marked `#[serde(skip)]`, so the host never reads them from the JSON, and a client can't address replies to another session or speak for one. The host gives each session a `ClientId` that is never reused while the server runs.
 
-The browser demo has one client. Its adapter stamps commands with `ClientId::EMBEDDED` and leaves updates addressed to every client. Commands that actions submit, such as those from MIDI, OSC, or timelines, have no client, and their feedback goes to every client.
+The browser demo has one client. Its adapter tags commands with `ClientId::EMBEDDED` and leaves updates addressed to every client. Commands that actions submit, such as those from MIDI, OSC, or timelines, have no client, and their feedback goes to every client.
 
 The host ignores binary frames from the client and logs text it can't parse.
 
 ## Messages the engine sends
 
-Every frame the engine sends has the same layout: one discriminator byte, then a CBOR map with a `type` field naming the message and a `data` field holding its payload. Each domain defines its messages as one Rust enum, such as `EngineClientMessage`, `DeskWsMessage`, or `FixtureWsMessage`, and the TypeScript types come from those enums (see [Typeshare is the source of the TypeScript types](#typeshare-is-the-source-of-the-typescript-types)).
+Every frame the engine sends has the same layout: one discriminator byte, then a CBOR map with a `type` field naming the message and a `data` field holding its payload. Each domain defines its messages as one Rust enum, such as `EngineClientMessage`, `DeskWsMessage`, or `FixtureWsMessage`, and the TypeScript types come from those enums (see [Shared message types come from Rust](#shared-message-types-come-from-rust)).
 
 The discriminator puts each frame in one of three delivery classes:
 
@@ -95,7 +100,7 @@ Choose the class by asking what a client loses when the frame disappears:
 - When the next copy of the message carries everything the client needs, the message is droppable. Snapshots that the engine republishes on a timer or on every change are in this class.
 - Use the delta class only together with a droppable snapshot of the same `type` that the engine publishes regularly. The snapshot is what lets a queue or a client throw deltas away safely.
 
-Domain plugins publish through the `ClientEventSink` resource, which encodes the payload as CBOR, prepends the discriminator, and puts the frame on one output channel. Because every frame for every client passes through that one channel, a client receives frames in the order the engine published them, whatever their class or audience.
+Domain plugins publish through the `ClientEventSink` resource, which encodes the payload as CBOR, prepends the discriminator, and puts the frame on one outbound queue. Because every frame for every client passes through that one queue, a client receives frames in the order the engine published them, whatever their class or audience.
 
 ### Audience: every client or one client
 
@@ -113,15 +118,17 @@ The browser demo has one client, so it delivers every frame whatever its audienc
 
 The visualizer, the **Fixtures** panel, and every other view of live fixture values read one stream: the output of every patched fixture parameter, published in every engine frame that renders. A large rig has many thousands of parameters, so the stream avoids names and maps entirely. It uses two messages:
 
-- `ParameterLayout` lists every patched fixture, element, and attribute in a fixed slot order, under a `layout_id`. It is non-droppable, and the engine publishes it only when the patch changes or a client resyncs.
-- `ParameterState` frames carry packed little-endian buffers indexed by slot: an `f32` output value per slot, and the absolute and relative values asserted for each slot. The worker views these buffers as typed arrays without decoding values one by one.
+- `ParameterLayout` lists every patched fixture, and for each of its elements the attribute keys, under a `layout_id`. Read in order, these attributes form one flat list, and each attribute's position in that list is its **slot** number: the first attribute of the first fixture is slot 0, and numbering continues across elements and fixtures. It is non-droppable, and the engine publishes it only when the patch changes or a client resyncs.
+- `ParameterState` frames carry values without naming fixtures or attributes. They carry packed little-endian buffers: `f32` output values, and the absolute and relative values asserted on slots. In a keyframe, the output buffer holds one value per slot in slot order, so the value for slot 5 is the sixth value. A delta adds a buffer of `u32` slot numbers that says which slot each of its values belongs to, and assertions always carry their slot numbers. The worker views these buffers as typed arrays without decoding values one by one.
 
 Each `ParameterState` frame has a sequence number, `seq`, one more than the frame before it. A frame is either a keyframe or a delta:
 
 - A **keyframe** carries every slot and replaces whatever the client held. The engine sends keyframes as droppable frames.
 - A **delta** carries only the slots whose output bits changed since the previous frame, and applies only on top of the frame numbered one before it. The engine sends deltas with the delta discriminator. A delta leaves out the assertion buffers when the assertions didn't change.
 
-The engine skips a frame entirely when nothing changed, without using a sequence number. It sends a keyframe instead of a delta in these cases:
+The engine skips a frame entirely when nothing changed, without using a sequence number.
+
+The engine sends a keyframe instead of a delta in these cases:
 
 - The layout changed, or a client resynced.
 - A client asked for one with a `ParameterKeyframeRequest` update.
@@ -147,7 +154,8 @@ For the parameter stream, this means a parameter keyframe replaces the queued de
 
 When the queued bytes would exceed 64 MiB, the host discards the whole queue and closes the connection with close code 4001. The limit is far above a full resync of a large show, so only a client that stopped reading for a long time reaches it. If the client doesn't accept the close frame within five seconds, the host tears down the socket. The client reconnects at once on code 4001 and resyncs from complete state. A second lagging disconnect within ten seconds waits the normal one-second reconnect delay instead, so a client that can't keep up doesn't reconnect in a tight loop.
 
-**Warning:** The outbox and the transport worker coalesce droppable frames by their `type` alone. Don't publish two droppable messages of the same `type` that carry different subsets of state, because a newer one replaces the older one in a slow client's queue.
+> [!WARNING]
+> The outbox and the transport worker coalesce droppable frames by their `type` alone. Don't publish two droppable messages of the same `type` that carry different subsets of state, because a newer one replaces the older one in a slow client's queue.
 
 ## Resync on connect and after gaps
 
@@ -193,7 +201,8 @@ The resync runs in these steps:
 1. The fixtures resync handler also asks the parameter projection for its layout. The layout and a keyframe go out in the engine's next render pass, so they arrive after `ResyncComplete`.
 1. When `ResyncComplete` arrives, the UI marks the resync complete and sends its `DmxUniverseWatch` and `ReferenceWatch` updates again, because watches belong to one connection and one world.
 
-**Note:** `ResyncComplete` means every domain has published its definitions and snapshots. It doesn't mean live parameter values have arrived. Those follow in the next render pass.
+> [!NOTE]
+> `ResyncComplete` means every domain has published its definitions and snapshots. It doesn't mean live parameter values have arrived. Those follow in the next render pass.
 
 Other events start a resync too:
 
@@ -201,11 +210,43 @@ Other events start a resync too:
 - A reconnect, after the connection dropped or the host closed a lagging client.
 - An overflow in the worker. If more than 10,000 non-droppable messages wait for the main thread, the worker discards everything it staged, stops staging, and asks the main thread to resync.
 
-**Warning:** Resync output goes to every client. When one client connects or reconnects, every connected client receives the full state and a `ResyncComplete` again. In the same way, one client's `ParameterKeyframeRequest` makes the next parameter frame a keyframe for every client. Keep resync handlers idempotent, and keep the UI's resync handling cheap for clients that didn't ask.
+> [!WARNING]
+> Resync output goes to every client. When one client connects or reconnects, every connected client receives the full state and a `ResyncComplete` again. In the same way, one client's `ParameterKeyframeRequest` makes the next parameter frame a keyframe for every client. Keep resync handlers idempotent, and keep the UI's resync handling cheap for clients that didn't ask.
 
 ## The browser transport worker
 
 The web UI runs the websocket in a dedicated worker. Decoding CBOR takes milliseconds per large message, and the main thread is often busy rendering, so the worker receives and decodes frames as they arrive and the main thread collects them when it is ready to draw.
+
+The following diagram shows how the main thread, the worker, and the host interact over the life of a connection:
+
+```mermaid
+sequenceDiagram
+  accTitle: Main thread, transport worker, and host
+  accDescr: The main thread starts the worker with the websocket URL. The worker opens the socket and tells the main thread it is connected. The main thread sends commands and updates to the worker, which sends them to the host as JSON text, and the host tags each one with the session and passes it to the engine. The engine's frames reach the worker as binary frames, and the worker decodes and stages them. Once per animation frame the main thread sends pullFrame, and the worker answers with one messageBatch. When a CommandResult arrives, the worker sends commandResultReady and the main thread pulls at once.
+  participant UI as Main thread
+  participant W as Transport worker
+  participant H as Websocket host
+  participant E as Engine
+  UI->>W: start with the websocket URL
+  W->>H: Open /ws
+  W->>UI: connected
+  UI->>W: submit command or update
+  W->>H: JSON text
+  H->>E: Envelope tagged with this session
+  E-->>H: Encoded frames for this session's audience
+  H-->>W: Binary frames from the outbox
+  Note over W: Decodes and stages each frame
+  loop Every animation frame
+    UI->>W: pullFrame
+    W-->>UI: messageBatch
+  end
+  E-->>W: CommandResult
+  W->>UI: commandResultReady
+  UI->>W: pullFrame without waiting
+  W-->>UI: messageBatch with the result
+```
+
+The main thread sends everything through the worker with a `submit` message, and the worker writes it to the socket as JSON text. A `submit` that arrives while the socket is still connecting waits in the worker and goes out when the socket opens. The worker also sends the heartbeat every second on its own, without the main thread.
 
 The following diagram shows how the worker stages each frame by its discriminator:
 
@@ -235,13 +276,13 @@ The main thread then dispatches each message to the handler that a domain module
 
 The browser demo uses the same worker code. Its engine runs as WebAssembly inside the worker and hands its frames to the same decoder and staging, so panels can't tell the two runtimes apart.
 
-## Typeshare is the source of the TypeScript types
+## Shared message types come from Rust
 
-The wire types are defined once, in Rust. Message enums and their payload types carry a `#[typeshare::typeshare]` attribute, and `pnpm run typeshare` generates `webui/types/index.ts` from every crate. The file is generated and not checked in, and CI generates it before it type-checks the web UI.
+The types that cross the boundary between the engine and the web UI are defined once, in Rust: the messages the engine sends, the command and update payloads the UI sends, and the types inside them. These types carry a `#[typeshare::typeshare]` attribute, and `pnpm run typeshare` generates TypeScript versions of them in `webui/types/index.ts`. Typeshare covers only these shared types. The rest of the web UI's TypeScript types are written by hand in `webui/`, including the command envelope around a payload and the messages between the main thread and the transport worker. The file is generated and not checked in, and CI generates it before it type-checks the web UI.
 
 Most message enums use serde's adjacent tagging, `#[serde(tag = "type", content = "data")]`, which typeshare turns into a TypeScript union of `{ type, data }` objects. Byte buffers, such as the parameter stream's packed values, carry a `serialized_as` annotation so they appear as `Uint8Array` in TypeScript.
 
-When you change a message or payload in Rust, run `pnpm run typeshare` and fix what `pnpm run typecheck` reports. Don't write TypeScript types for wire messages by hand. The generated types aren't checked at runtime, so a Rust change that you don't regenerate shows up as a UI bug rather than a type error.
+When you change a message or payload in Rust, run `pnpm run typeshare` and fix what `pnpm run typecheck` reports. Don't write TypeScript types by hand for messages or payloads that Rust defines. The generated types aren't checked at runtime, so a Rust change that you don't regenerate shows up as a UI bug rather than a type error.
 
 ## What the UI receives in the running example
 
@@ -283,7 +324,7 @@ The UI is served over plain HTTP, so anyone watching the network can read the PI
 | Engine-level messages such as `ServerVersion`, `ResyncComplete`, and `WorldReplaced` | `crates/engine/src/protocol/client.rs` |
 | Resync request and completion | `crates/engine/src/lib.rs` |
 | Command and update ingress dispatch | `crates/engine/src/client_ingress.rs` |
-| Socket lifecycle, sender stamping, heartbeats, fan-out, router | `crates/websocket/src/websocket.rs` |
+| Socket lifecycle, sender tagging, heartbeats, fan-out, router | `crates/websocket/src/websocket.rs` |
 | Per-client outbox and lagging disconnects | `crates/websocket/src/outbox.rs` |
 | HTTP route registration | `crates/websocket/src/routes.rs` |
 | Origin policy | `crates/websocket/src/origin.rs` |
