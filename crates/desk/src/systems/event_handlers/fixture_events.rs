@@ -113,7 +113,8 @@ pub fn crud_events(
             | FixtureCommand::SetColorPathDefaultById { .. } => {
                 color_path_defaults::handle_command(&mut context, event);
             }
-            FixtureCommand::SetDmxChannels { .. } => {}
+            FixtureCommand::SetDmxChannels { .. }
+            | FixtureCommand::SetTransportDmxChannels { .. } => {}
         }
     }
 }

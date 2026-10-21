@@ -13,6 +13,8 @@ Nightfall numbers DMX in two places:
 
 A console universe reaches the network only through an explicit console-to-transport binding in [Patch](patch.md). For example, `patch console:2 @ sacn:10` sends console universe 2's channels as sACN universe 10. A fixture can also be patched directly to a transport, such as `patch fix 12 @ artnet:1.1`, without needing a console universe. On the wire, a direct fixture binding wins over a console universe routed to the same channels, and an input passthrough wins over both, so a wire universe can differ from the console universe routed to it.
 
+To set a raw channel, `ch 2.10 @ 255` writes console universe 2, which reaches the wire only through its binding. Prefix the channel with an output name to set a wire channel directly: `ch sacn:10.10 @ 255` holds sACN universe 10 channel 10 at 255 over anything patched there, even when nothing else sends that universe. The output name is the one used in Patch, so configured outputs work too, for example `ch stage-left:1.1>1.4 @ 0`. A held channel stays until `release ch sacn:10.10` (or `release ch sacn:10.` for the whole universe) or a plain `release`.
+
 ## Transport select
 
 With **Output** selected, the **Transport** select chooses which numbering the universe tabs use:

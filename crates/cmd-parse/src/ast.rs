@@ -801,15 +801,17 @@ pub struct ReleaseAttributeTargetAst<'i> {
 
 /// Release target for direct DMX channels.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReleaseDmxTargetAst {
+pub struct ReleaseDmxTargetAst<'i> {
     pub _channel: ReleaseChannelKeyword,
+    /// Output transport whose wire universes the channels address, or `None` for console space.
+    pub transport: Option<TransportNameAst<'i>>,
     pub channels: ReleaseDmxChannelExpressionAst,
 }
 
 /// Targets accepted by the `release` command.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReleaseTargetAst<'i> {
-    Dmx(ReleaseDmxTargetAst),
+    Dmx(ReleaseDmxTargetAst<'i>),
     Fixture(ReleaseFixtureTargetAst<'i>),
     Attribute(ReleaseAttributeTargetAst<'i>),
     Selection(SelectionAst),
@@ -1246,6 +1248,8 @@ pub struct NewShowfileCommandAst;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelCommandAst<'i> {
     pub _channel: ChannelKeyword,
+    /// Output transport whose wire universes the channels address, or `None` for console space.
+    pub transport: Option<TransportNameAst<'i>>,
     pub channels: DmxChannelExpressionAst,
     pub value: ValueAst<'i>,
 }

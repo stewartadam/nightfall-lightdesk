@@ -100,6 +100,13 @@ pub enum ReleaseTarget {
         /// DMX channel expression to release.
         channels: DmxChannelExpr,
     },
+    /// Release values held on an output transport's wire universes.
+    TransportChannels {
+        /// Output transport target ID, as used by patch commands.
+        target: String,
+        /// Wire channel expression to release.
+        channels: DmxChannelExpr,
+    },
 }
 
 impl UserCommand {
@@ -332,6 +339,9 @@ impl UserCommand {
                 }
                 Some(ReleaseTarget::Channels { channels }) => {
                     Some(format!("release ch {channels}"))
+                }
+                Some(ReleaseTarget::TransportChannels { target, channels }) => {
+                    Some(format!("release ch {target}:{channels}"))
                 }
             },
         }

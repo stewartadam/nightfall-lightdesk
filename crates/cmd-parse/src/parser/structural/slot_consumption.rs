@@ -46,12 +46,13 @@ pub(in crate::parser) fn consume_slot<'i>(
     {
         return None;
     }
-    if slot_id == SlotId::ReleaseChannelExpr
-        && existing_fills == 1
-        && slot_fills
-            .first()
-            .is_some_and(|fill| token_id_for_text(fill.surface.as_str()) == Some(TokenId::Channel))
-        && token.kind != LexerTokenKind::Number
+    if let Some(channel_fills) = direct_dmx_channel_fills(slot_id, &slot_fills) {
+        if !dmx_channel_token_allowed(channel_fills, token) {
+            return None;
+        }
+    } else if slot_id == SlotId::ReleaseChannelExpr
+        && token.kind == LexerTokenKind::Word
+        && token_id.is_none_or(|token_id| !slot_accepts_token(slot_id, token_id))
     {
         return None;
     }

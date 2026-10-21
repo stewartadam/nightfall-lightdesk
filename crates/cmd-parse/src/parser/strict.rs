@@ -797,6 +797,53 @@ fn parse_u16_token(token: &LexerToken) -> Option<u16> {
         .flatten()
 }
 
+/// Reads one endpoint word such as a transport target ID, joining adjacent word, number and
+/// hyphen tokens (`my-node2`) into a single surface. Returns the consumed token count.
+fn parse_endpoint_word_from_tokens<'i>(
+    command_str: &'i str,
+    tokens: &[&LexerToken],
+) -> Option<(usize, &'i str)> {
+    let first = tokens.first()?;
+    matches!(first.kind, LexerTokenKind::Word | LexerTokenKind::Number).then_some(())?;
+    let start = first.span.start;
+    let mut end = first.span.end;
+    let mut consumed = 1;
+
+    while let Some(token) = tokens.get(consumed) {
+        if !matches!(
+            token.kind,
+            LexerTokenKind::Word | LexerTokenKind::Number | LexerTokenKind::Minus
+        ) || token.span.start != end
+        {
+            break;
+        }
+        end = token.span.end;
+        consumed += 1;
+    }
+
+    Some((consumed, &command_str[start..end]))
+}
+
+/// Splits the optional `transport:` prefix off a direct DMX channel expression.
+///
+/// `sacn:1.1>1.4` yields the `sacn` transport and the tokens of `1.1>1.4`; an expression that
+/// starts with a number or parenthesis addresses console space and is returned unchanged.
+fn split_dmx_transport_prefix<'i, 't>(
+    command_str: &'i str,
+    tokens: &'t [&'t LexerToken],
+) -> Option<(Option<TransportNameAst<'i>>, &'t [&'t LexerToken])> {
+    if tokens
+        .first()
+        .is_none_or(|token| token.kind != LexerTokenKind::Word)
+    {
+        return Some((None, tokens));
+    }
+    let (consumed, transport) = parse_endpoint_word_from_tokens(command_str, tokens)?;
+    let colon = tokens.get(consumed)?;
+    (colon.kind == LexerTokenKind::Colon).then_some(())?;
+    Some((Some(TransportNameAst(transport)), &tokens[consumed + 1..]))
+}
+
 fn parse_dmx_channel_ref_from_tokens(tokens: &[&LexerToken]) -> Option<(usize, DmxChannelRefAst)> {
     let [universe, dot, address, ..] = tokens else {
         return None;

@@ -195,10 +195,19 @@ impl AstConvert for FixtureAstConverter {
                         value_str
                     ))
                 })?;
-                Ok(vec![Box::new(FixtureCommand::SetDmxChannels {
-                    channels,
-                    value,
-                })])
+                match &channel_ast.transport {
+                    Some(transport) => {
+                        Ok(vec![Box::new(FixtureCommand::SetTransportDmxChannels {
+                            target: binding_target_from_ast(transport)?,
+                            channels,
+                            value,
+                        })])
+                    }
+                    None => Ok(vec![Box::new(FixtureCommand::SetDmxChannels {
+                        channels,
+                        value,
+                    })]),
+                }
             }
             ast::CommandAst::FixturePlacement(placement_ast) => {
                 if let Some(id) = conv::identifier_ast_to_single_id(&placement_ast.ids) {
@@ -283,7 +292,8 @@ fn binding_endpoint_from_ast(
     }
 }
 
-fn binding_target_from_ast(transport: &ast::TransportNameAst) -> Result<String, DispatchError> {
+/// Validates a transport target ID from patch or `ch` syntax and normalizes it to lowercase.
+pub fn binding_target_from_ast(transport: &ast::TransportNameAst) -> Result<String, DispatchError> {
     let target = transport.0.to_ascii_lowercase();
     if target == "udmx" || is_valid_network_dmx_target_id(&target) {
         return Ok(target);

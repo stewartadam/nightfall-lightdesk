@@ -380,6 +380,9 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
         SlotId::ChannelOverrideIdentifier => slot(
             slot_id,
             &[
+                TokenId::Sacn,
+                TokenId::Artnet,
+                TokenId::Udmx,
                 TokenId::LeftParen,
                 TokenId::RightParen,
                 TokenId::Dot,

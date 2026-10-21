@@ -213,7 +213,15 @@ impl AstConvert for ProgrammerAstConverter {
                                             "dmx channel conversion: {error}"
                                         ))
                                     })?;
-                            Some(ReleaseTarget::Channels { channels })
+                            match &dmx_target.transport {
+                                Some(transport) => Some(ReleaseTarget::TransportChannels {
+                                    target: nightfall_fixtures::ast_conv::binding_target_from_ast(
+                                        transport,
+                                    )?,
+                                    channels,
+                                }),
+                                None => Some(ReleaseTarget::Channels { channels }),
+                            }
                         }
                         Some(ast::ReleaseTargetAst::StaleInputs) => {
                             return Ok(vec![Box::new(

@@ -493,7 +493,17 @@ fn immediate_frontier_for_clause(
                 }
             }
             crate::parser::structural::SlotState::ValuePending => {
-                if matches!(clause.clause, ClauseId::Rm | ClauseId::PatchTarget)
+                if let Some(expected_tokens) =
+                    crate::parser::structural::direct_dmx_channel_fills(slot.slot, &slot_fills)
+                        .and_then(crate::parser::structural::dmx_transport_prefix_expected_tokens)
+                {
+                    frontier.push(filtered_slot_expectation(
+                        parser,
+                        clause.clone(),
+                        *slot,
+                        expected_tokens,
+                    ));
+                } else if matches!(clause.clause, ClauseId::Rm | ClauseId::PatchTarget)
                     && slot.slot == SlotId::PatchTargetEndpoint
                     && slot_fills.len() == 1
                     && slot_fills.first().is_some_and(|item| {

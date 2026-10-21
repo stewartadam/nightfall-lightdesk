@@ -28,31 +28,6 @@ fn selection_or_object_alias_context() -> AliasCanonicalizationContext {
     }
 }
 
-fn parse_endpoint_word_from_tokens<'i>(
-    command_str: &'i str,
-    tokens: &[&LexerToken],
-) -> Option<(usize, &'i str)> {
-    let first = tokens.first()?;
-    matches!(first.kind, LexerTokenKind::Word | LexerTokenKind::Number).then_some(())?;
-    let start = first.span.start;
-    let mut end = first.span.end;
-    let mut consumed = 1;
-
-    while let Some(token) = tokens.get(consumed) {
-        if !matches!(
-            token.kind,
-            LexerTokenKind::Word | LexerTokenKind::Number | LexerTokenKind::Minus
-        ) || token.span.start != end
-        {
-            break;
-        }
-        end = token.span.end;
-        consumed += 1;
-    }
-
-    Some((consumed, &command_str[start..end]))
-}
-
 pub(super) fn parse_patch_endpoint_from_tokens<'i>(
     command_str: &'i str,
     tokens: &[&LexerToken],

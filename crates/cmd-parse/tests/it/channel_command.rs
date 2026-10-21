@@ -345,3 +345,84 @@ fn test_channel_expansion() {
         address: 2
     }));
 }
+
+/// Verifies a `transport:` prefix makes `ch` address that output's wire universes.
+#[test]
+fn test_channel_command_transport_prefix() {
+    let command_ast = generate_ast("ch sacn:1.1 @ 255").expect("transport channel should parse");
+
+    let CommandAst::Channel(channel_cmd) = command_ast else {
+        panic!("Expected Channel command, got {command_ast:?}");
+    };
+    assert_eq!(channel_cmd.transport, Some(TransportNameAst("sacn")));
+    assert_eq!(channel_cmd.value.0, "255");
+    let DmxChannelTermAst::Single(single) = &channel_cmd.channels.head else {
+        panic!("Expected Single channel term");
+    };
+    assert_eq!(
+        (single.channel.universe, single.channel.address),
+        (1, 1),
+        "prefix must not change the universe and address"
+    );
+}
+
+/// Verifies the transport prefix applies to a whole expression and accepts configured
+/// target IDs that are not built-in keywords, including hyphenated ones.
+#[test]
+fn test_channel_command_transport_prefix_expression() {
+    for (input, transport) in [
+        ("ch artnet:2.1>2.4+3.7 @ 10", "artnet"),
+        ("ch stage-left:1.1 @ 10", "stage-left"),
+        ("ch node2:(1.1>1.3) @ 10", "node2"),
+    ] {
+        let command_ast = generate_ast(input).unwrap_or_else(|err| panic!("{input}: {err:?}"));
+        let CommandAst::Channel(channel_cmd) = command_ast else {
+            panic!("{input}: expected Channel command");
+        };
+        assert_eq!(
+            channel_cmd.transport,
+            Some(TransportNameAst(transport)),
+            "{input}"
+        );
+    }
+}
+
+/// Verifies console channels still parse without a transport and a dangling prefix is rejected.
+#[test]
+fn test_channel_command_console_and_invalid_prefix() {
+    let CommandAst::Channel(channel_cmd) = generate_ast("ch 1.1 @ 255").expect("console channel")
+    else {
+        panic!("Expected Channel command");
+    };
+    assert_eq!(channel_cmd.transport, None);
+
+    for input in [
+        "ch sacn 1.1 @ 255",
+        "ch sacn: @ 255",
+        "ch 1.1+sacn:1.2 @ 255",
+        "ch sacn::1.1 @ 255",
+        "ch 1.1:2 @ 255",
+        "ch 2node:1.1 @ 255",
+    ] {
+        assert!(generate_ast(input).is_err(), "{input} should not parse");
+    }
+}
+
+/// Verifies `release ch` accepts the same transport prefix, including universe shorthand.
+#[test]
+fn test_release_channel_transport_prefix() {
+    for (input, transport) in [
+        ("release ch sacn:1.1", Some("sacn")),
+        ("release ch udmx:1.", Some("udmx")),
+        ("release ch 1.1", None),
+    ] {
+        let command_ast = generate_ast(input).unwrap_or_else(|err| panic!("{input}: {err:?}"));
+        let CommandAst::General(GeneralCommandAst::Release(release)) = command_ast else {
+            panic!("{input}: expected Release command, got {command_ast:?}");
+        };
+        let Some(ReleaseTargetAst::Dmx(target)) = release.target else {
+            panic!("{input}: expected DMX release target");
+        };
+        assert_eq!(target.transport, transport.map(TransportNameAst), "{input}");
+    }
+}
