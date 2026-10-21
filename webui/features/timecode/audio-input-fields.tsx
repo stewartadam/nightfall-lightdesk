@@ -60,7 +60,10 @@ export function TimecodeAudioInputFields(props: TimecodeAudioInputFieldsProps) {
     return Array.from({ length: count }, (_, index) => index);
   });
 
-  /** Merges `patch` onto the current input and reports the result. */
+  /**
+   * Merges `patch` onto the current input and reports the result. Picking a
+   * device with fewer channels than the saved one falls back to channel 1.
+   */
   const update = (patch: Partial<types.TimecodeAudioInput>) => {
     const next: types.TimecodeAudioInput = {
       device_id: props.input?.device_id,
@@ -68,6 +71,14 @@ export function TimecodeAudioInputFields(props: TimecodeAudioInputFieldsProps) {
       ...patch,
     };
     if (!next.device_id) delete next.device_id;
+    if ("device_id" in patch) {
+      const device = next.device_id
+        ? $devices().find((d) => d.id === next.device_id)
+        : defaultDevice();
+      if (device?.channels && (next.channel ?? 0) >= device.channels) {
+        next.channel = 0;
+      }
+    }
     props.onChange(next);
   };
 

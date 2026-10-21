@@ -34,17 +34,34 @@ impl LtcCapture {
     /// between threads. When the device is missing, fails to open, or reports an error such as
     /// being unplugged, the thread logs why and exits; [`LtcCapture::has_ended`] then reports it so
     /// the caller can retry later.
-    pub fn start(input: TimecodeAudioInput, feed: ExternalTimecodeFeed) -> Self {
+    ///
+    /// `previous` is a capture this one replaces. The new thread waits for it to close its stream
+    /// first, since some devices refuse a second stream while the first is open. `retrying`
+    /// lowers a failure to open to a debug log, so a device that stays missing warns only once.
+    pub fn start(
+        input: TimecodeAudioInput,
+        feed: ExternalTimecodeFeed,
+        previous: Option<LtcCapture>,
+        retrying: bool,
+    ) -> Self {
+        let previous_thread = previous.and_then(LtcCapture::stop);
         let stop = Arc::new(AtomicBool::new(false));
         let stop_for_thread = Arc::clone(&stop);
         let thread = std::thread::Builder::new()
             .name("ltc-input".to_string())
             .spawn(move || {
+                if let Some(previous_thread) = previous_thread {
+                    let _ = previous_thread.join();
+                }
                 let failed = Arc::new(AtomicBool::new(false));
                 let stream = match open_stream(&input, feed, Arc::clone(&failed)) {
                     Ok(stream) => stream,
                     Err(error) => {
-                        tracing::warn!(?input, %error, "Could not open LTC audio input");
+                        if retrying {
+                            tracing::debug!(?input, %error, "Could not reopen LTC audio input");
+                        } else {
+                            tracing::warn!(?input, %error, "Could not open LTC audio input");
+                        }
                         return;
                     }
                 };
@@ -57,6 +74,13 @@ impl LtcCapture {
             .map_err(|error| tracing::warn!(%error, "Could not start LTC input thread"))
             .ok();
         Self { stop, thread }
+    }
+
+    /// Asks the capture thread to close its stream and returns the thread, so a replacement can
+    /// wait for it.
+    fn stop(mut self) -> Option<std::thread::JoinHandle<()>> {
+        self.stop.store(true, Ordering::Relaxed);
+        self.thread.take()
     }
 
     /// Returns whether the capture stopped on its own because its device was missing, failed to

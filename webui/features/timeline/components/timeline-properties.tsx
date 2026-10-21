@@ -14,6 +14,7 @@ import {
   Input,
   NativeSelect,
 } from "../../../components/ui/form-controls";
+import { commandSucceeded } from "../../../lib/command-result";
 import { commandClient } from "../../../lib/engine-commands";
 import { setStoreKeyAction } from "../../../lib/nanostore-action";
 import { useShallowStore } from "../../../lib/use-shallow-store";
@@ -151,13 +152,23 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
     const pending = pendingTimecodeEdit();
     const pendingPatch = pending?.uid === uid ? pending.patch : {};
     const nextPatch = { ...pendingPatch, ...patch };
-    setPendingTimecodeEdit({ uid, patch: nextPatch });
+    const edit = { uid, patch: nextPatch };
+    setPendingTimecodeEdit(edit);
     const nextTimecode = { ...reported, ...nextPatch };
     const command: types.TimecodeCommand = {
       type: "StoreTimecode",
       data: nextTimecode,
     };
-    commandClient.emit("TimecodeCommand", command);
+    /** Stops showing the edit when the engine rejects it, unless a newer edit replaced it. */
+    const dropRejectedEdit = () => {
+      if (pendingTimecodeEdit() === edit) setPendingTimecodeEdit(undefined);
+    };
+    commandClient
+      .invoke("TimecodeCommand", command)
+      .then((result) => {
+        if (!commandSucceeded(result)) dropRejectedEdit();
+      })
+      .catch(dropRejectedEdit);
   };
 
   const updateStartMs = (value: string) => {

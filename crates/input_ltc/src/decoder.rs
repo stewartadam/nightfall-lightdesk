@@ -25,6 +25,12 @@ const FRAME_BITS: u32 = 80;
 /// Sync word in bits 64-79 as received in forward playback, read with bit 64 as the lowest bit.
 const SYNC_WORD: u128 = 0xBFFC;
 
+/// Slowest frame rate the bit length estimate may settle on, a little below 24 fps.
+const MIN_FPS: f32 = 23.0;
+
+/// Fastest frame rate the bit length estimate may settle on, a little above 30 fps.
+const MAX_FPS: f32 = 31.0;
+
 /// Amplitude a sample must pass, either way, before the decoder counts a zero crossing. Keeps
 /// noise around silence from producing bits.
 const HYSTERESIS: f32 = 0.02;
@@ -115,23 +121,35 @@ impl LtcDecoder {
     /// arrived or the interval fits no bit length.
     fn classify(&mut self, interval: f32) -> Option<bool> {
         if interval > self.bit_length * 1.5 || interval < self.bit_length * 0.25 {
-            // A gap or a glitch, not a bit: wait for the next clean bit boundary.
+            // A gap or a glitch, not a bit: the window has lost its alignment, so wait for a full
+            // word of clean bits before reading another frame.
             self.half_bit_pending = false;
+            self.bits_seen = 0;
             return None;
         }
         if interval > self.bit_length * 0.75 {
             self.half_bit_pending = false;
-            self.bit_length += (interval - self.bit_length) * 0.1;
+            self.adapt_bit_length(interval, 0.1);
             return Some(false);
         }
         if self.half_bit_pending {
             self.half_bit_pending = false;
-            self.bit_length += (interval * 2.0 - self.bit_length) * 0.05;
+            self.adapt_bit_length(interval * 2.0, 0.05);
             Some(true)
         } else {
             self.half_bit_pending = true;
             None
         }
+    }
+
+    /// Moves the bit length estimate toward `measured` by `weight`, kept within the lengths LTC
+    /// has between [`MIN_FPS`] and [`MAX_FPS`], so noise on the channel can't drift it so far that
+    /// real LTC no longer classifies as bits.
+    fn adapt_bit_length(&mut self, measured: f32, weight: f32) {
+        let shortest = self.sample_rate / (MAX_FPS * FRAME_BITS as f32);
+        let longest = self.sample_rate / (MIN_FPS * FRAME_BITS as f32);
+        self.bit_length =
+            (self.bit_length + (measured - self.bit_length) * weight).clamp(shortest, longest);
     }
 
     /// Shifts `bit` into the frame window and returns the address and drop-frame flag when the
@@ -150,7 +168,13 @@ impl LtcDecoder {
             hours: field(48, 4) + field(56, 2) * 10,
         };
         let drop_frame = field(10, 1) == 1;
-        Some((time, drop_frame))
+        let digits_valid = [field(0, 4), field(16, 4), field(32, 4), field(48, 4)]
+            .into_iter()
+            .all(|units| units <= 9);
+        let in_range =
+            time.frames < 30 && time.seconds < 60 && time.minutes < 60 && time.hours < 24;
+        // A word whose sync arrived but whose digits are impossible was misaligned or corrupted.
+        (digits_valid && in_range).then_some((time, drop_frame))
     }
 
     /// Infers the frame rate from the bit length, since LTC only flags drop-frame.
@@ -258,6 +282,47 @@ mod tests {
             + frames_to_duration(1, TimecodeRate::Fps25);
         assert_eq!(last.position, expected);
         assert!(last.running);
+    }
+
+    /// A word with impossible digits is dropped even though its sync word arrived.
+    #[test]
+    fn rejects_words_with_invalid_digits() {
+        let mut decoder = LtcDecoder::new(48_000);
+        let mut word = ltc_word(SmpteTime {
+            hours: 1,
+            minutes: 0,
+            seconds: 0,
+            frames: 0,
+        });
+        // Units of seconds = 15, which BCD can't hold.
+        for offset in 0..4 {
+            word[16 + offset] = true;
+        }
+        let mut result = None;
+        for bit in word {
+            result = decoder.push_bit(bit).or(result);
+        }
+        assert_eq!(result, None);
+    }
+
+    /// Noise that measures as very short or very long bits can't drag the bit length estimate
+    /// outside the range LTC uses.
+    #[test]
+    fn bit_length_estimate_stays_in_ltc_range() {
+        let mut decoder = LtcDecoder::new(48_000);
+        for _ in 0..1000 {
+            let interval = decoder.bit_length * 1.4;
+            decoder.classify(interval);
+        }
+        let longest = 48_000.0 / (MIN_FPS * FRAME_BITS as f32);
+        assert!(decoder.bit_length <= longest + 0.001);
+        for _ in 0..1000 {
+            let interval = decoder.bit_length * 0.3;
+            decoder.classify(interval);
+            decoder.classify(interval);
+        }
+        let shortest = 48_000.0 / (MAX_FPS * FRAME_BITS as f32);
+        assert!(decoder.bit_length >= shortest - 0.001);
     }
 
     /// 30 fps LTC is recognised from its shorter bits.

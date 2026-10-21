@@ -77,8 +77,11 @@ pub(crate) fn sync_ltc_captures(
         })
         .map(|(uid, _)| *uid)
         .collect();
+    let mut replaced = HashMap::new();
     for uid in stale {
-        captures.0.remove(&uid);
+        if let Some(running) = captures.0.remove(&uid) {
+            replaced.insert(uid, running);
+        }
         feeds.unregister_timecode(uid);
     }
 
@@ -86,12 +89,21 @@ pub(crate) fn sync_ltc_captures(
         if captures.0.contains_key(&uid) {
             continue;
         }
+        let previous = replaced.remove(&uid);
+        let retrying = previous
+            .as_ref()
+            .is_some_and(|previous| previous.input == input);
         let feed = ExternalTimecodeFeed::default();
         feeds.register_timecode(uid, TimecodeSource::SmpteLtc, feed.clone());
         captures.0.insert(
             uid,
             RunningCapture {
-                capture: LtcCapture::start(input.clone(), feed),
+                capture: LtcCapture::start(
+                    input.clone(),
+                    feed,
+                    previous.map(|previous| previous.capture),
+                    retrying,
+                ),
                 input,
                 started_at: now,
             },
