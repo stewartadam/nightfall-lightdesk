@@ -7,6 +7,7 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
+import { commandClient } from "../../../lib/engine-commands";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import type * as types from "../../../types";
 
@@ -22,5 +23,5 @@ export function sendMasterUpdate(update: types.MasterUpdate): void {
 
 /** Sends one master command through the websocket command bus. */
 export function sendMasterCommand(command: types.MasterCommand): void {
-  engineRuntime.sendCommand({ module: "MasterCommand", command });
+  commandClient.emit("MasterCommand", command);
 }

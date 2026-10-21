@@ -31,7 +31,7 @@ import {
   transitionModeToDuration,
   transitionModeToSeconds,
 } from "../../../lib/duration";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { colorPaths } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -294,7 +294,7 @@ export default function CueProperties() {
             },
           };
 
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Recalls the parent cue or active cue part into the programmer. */
@@ -324,7 +324,7 @@ export default function CueProperties() {
             },
           };
 
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Updates the selected tracking categories on the parent cue or active cue part. */
@@ -370,7 +370,7 @@ export default function CueProperties() {
         color_path_id: value === "" ? undefined : Number.parseInt(value, 10),
       },
     };
-    engineRuntime.sendCommand({ module: "CueCommand", command });
+    commandClient.emit("CueCommand", command);
   };
 
   /** Initializes local timing and trigger controls from the current cue data. */

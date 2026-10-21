@@ -16,7 +16,7 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { showTempo } from "../../../state/appStores";
 import type { TempoCommand, TempoSnapshot } from "../../../types";
@@ -31,7 +31,7 @@ const log = getLogger(import.meta.url);
 /** Sends one command to the show tempo engine. */
 export function sendTempoCommand(command: TempoCommand) {
   log.debug("Sending tempo command", { command });
-  engineRuntime.sendCommand({ module: "TempoCommand", command });
+  commandClient.emit("TempoCommand", command);
 }
 
 /**

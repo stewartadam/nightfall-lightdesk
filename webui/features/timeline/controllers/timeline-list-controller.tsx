@@ -29,7 +29,7 @@ import {
   changeCrudPanelViewMode,
   loadCrudPanelViewMode,
 } from "../../../lib/crud-panel-view-mode";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import {
   useConditionalShallowStore,
@@ -223,12 +223,12 @@ export function createTimelineListController(
 
   /** Sends a timeline mutation through the shared websocket transport. */
   const sendTimelineCommand = (command: TimelineCommand) => {
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   };
 
   /** Sends a linked timecode mutation through the shared websocket transport. */
   const sendTimecodeCommand = (command: TimecodeCommand) => {
-    engineRuntime.sendCommand({ module: "TimecodeCommand", command });
+    commandClient.emit("TimecodeCommand", command);
   };
 
   /** Stores a timeline label change without changing timing content. */

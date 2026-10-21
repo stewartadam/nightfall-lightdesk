@@ -12,7 +12,8 @@ import { createEffect, createMemo, on, onCleanup, Show } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
 import { commandFailure } from "../../../lib/command-result";
-import { engineRuntime, resyncGeneration } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
+import { resyncGeneration } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -44,7 +45,8 @@ function sendMappingMode(active: boolean): void {
   log.debug(
     `${active ? "Entering" : "Leaving"} backend controller mapping mode`,
   );
-  engineRuntime.sendCommand(mappingModeCommand(active ? "enter" : "leave"));
+  const { module, command } = mappingModeCommand(active ? "enter" : "leave");
+  commandClient.emit(module, command);
 }
 
 /**
@@ -56,9 +58,8 @@ function sendMappingMode(active: boolean): void {
 async function renewMappingMode(): Promise<void> {
   let result: types.CommandResult;
   try {
-    result = await engineRuntime.sendCommandAndAwait(
-      mappingModeCommand("renew"),
-    );
+    const { module, command } = mappingModeCommand("renew");
+    result = await commandClient.invoke(module, command);
   } catch (error) {
     log.debug("Skipped controller mapping renewal while disconnected", error);
     return;

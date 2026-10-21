@@ -9,9 +9,8 @@
 import type { FixtureLibraryCommand } from "../types/index";
 import * as types from "../types/index";
 import { normalizeFixtureUid } from "./binding-utils";
-import { commandEnvelope } from "./command-envelope";
 import { fixtureWireLayout } from "./dmx";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
 
 const log = getLogger(import.meta.url);
@@ -63,9 +62,7 @@ export function sendFixturePlacementUpdates(
     },
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("FixtureCommand", command, batchId),
-  );
+  commandClient.emit("FixtureCommand", command, { undoId: batchId });
 
   log.info(`Updated placement for ${updates.length} fixtures`);
 }
@@ -84,9 +81,7 @@ export function sendFixtureColorPathDefault(
     },
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("FixtureCommand", command, batchId),
-  );
+  commandClient.emit("FixtureCommand", command, { undoId: batchId });
 
   log.info(
     colorPathId === undefined
@@ -103,9 +98,7 @@ export function sendDeleteFixture(fixtureId: number, batchId?: string) {
     data: fixtureId,
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("FixtureCommand", command, batchId),
-  );
+  commandClient.emit("FixtureCommand", command, { undoId: batchId });
 
   log.info(`Requested fixture deletion for fixture ${fixtureId}`);
 }
@@ -130,9 +123,7 @@ export function sendRemovePatchBinding(
     },
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("FixtureCommand", command, batchId),
-  );
+  commandClient.emit("FixtureCommand", command, { undoId: batchId });
 
   log.info("Requested patch binding removal");
 }
@@ -154,9 +145,7 @@ export function sendAddPatchBinding(
     },
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("FixtureCommand", command, batchId),
-  );
+  commandClient.emit("FixtureCommand", command, { undoId: batchId });
 
   log.info("Requested patch binding add");
 }
@@ -431,10 +420,7 @@ export async function createFixtureFromLibrary(
     },
   };
 
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "FixtureLibraryCommand",
-    command,
-  });
+  const result = await commandClient.invoke("FixtureLibraryCommand", command);
 
   log.info(
     `Created fixture from library: ${make} ${model} (${mode}) with ID ${id}`,
@@ -471,10 +457,7 @@ export async function createFixturesFromLibrary(
     },
   };
 
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "FixtureLibraryCommand",
-    command,
-  });
+  const result = await commandClient.invoke("FixtureLibraryCommand", command);
 
   log.info(
     `Created ${fixtures.length} fixture(s) from library: ${make} ${model} (${mode})`,
@@ -503,10 +486,7 @@ export function fetchFixtureProfile(
     },
   };
 
-  engineRuntime.sendCommand({
-    module: "FixtureLibraryCommand",
-    command,
-  });
+  commandClient.emit("FixtureLibraryCommand", command);
 
   log.info(
     `Requested fixture profile for ${make} ${model}${mode ? ` (${mode})` : ""}`,

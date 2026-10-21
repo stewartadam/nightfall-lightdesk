@@ -9,7 +9,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { flows, pushToast } from "../state/appStores";
 import type * as types from "../types/index";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import { applyFlowDeltaToDefinition } from "./flow-delta";
 import { getLogger } from "./logger";
 import { setStoreKeyAction } from "./nanostore-action";
@@ -37,7 +37,7 @@ export function storeFlow(flow: types.FlowDefinition): void {
     type: "StoreFlow",
     data: flow,
   };
-  engineRuntime.sendCommand({ module: "FlowCommand", command });
+  commandClient.emit("FlowCommand", command);
   log.info(`Stored flow ${flow.identifiers.id}:`, flow);
 }
 export function deleteFlow(id: number): void {
@@ -45,7 +45,7 @@ export function deleteFlow(id: number): void {
     type: "DeleteFlow",
     data: id,
   };
-  engineRuntime.sendCommand({ module: "FlowCommand", command });
+  commandClient.emit("FlowCommand", command);
   log.info(`Deleted flow ${id}`);
 }
 
@@ -79,5 +79,5 @@ export function applyFlowDelta(flowUid: string, delta: types.FlowDelta): void {
     type: "ApplyDelta",
     data: rebasedDelta,
   };
-  engineRuntime.sendCommand({ module: "FlowCommand", command });
+  commandClient.emit("FlowCommand", command);
 }

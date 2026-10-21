@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import type * as types from "../../../types";
 import {
   buildBoardPressInvocation,
@@ -15,7 +15,7 @@ import {
 
 /** Sends one board edit to the engine, which validates it and records it for undo. */
 export function sendBoardCommand(command: types.BoardCommand): void {
-  engineRuntime.sendCommand({ module: "BoardCommand", command });
+  commandClient.emit("BoardCommand", command);
 }
 
 /**
@@ -26,10 +26,7 @@ export async function sendBoardCommandAndAwait(
   command: types.BoardCommand,
 ): Promise<boolean> {
   try {
-    const result = await engineRuntime.sendCommandAndAwait({
-      module: "BoardCommand",
-      command,
-    });
+    const result = await commandClient.invoke("BoardCommand", command);
     return result.outcome.type === "Succeeded";
   } catch {
     return false;
@@ -42,10 +39,10 @@ export function pressBoardButton(
   elementUid: string,
   target: types.ObjectIdentity,
 ): void {
-  engineRuntime.sendCommand({
-    module: "ActionCommand",
-    command: buildBoardPressInvocation(boardUid, elementUid, target),
-  });
+  commandClient.emit(
+    "ActionCommand",
+    buildBoardPressInvocation(boardUid, elementUid, target),
+  );
 }
 
 /** Lists the board with numeric ID `boardId` in the layout switcher, or hides it from there. */

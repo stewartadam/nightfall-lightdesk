@@ -24,7 +24,7 @@ import {
   createSerializedLayout,
   type SerializedLayout,
 } from "./dockview-layout";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import { activateStoredLayout } from "./layout-activation";
 import {
   createBlankStoredLayout,
@@ -107,10 +107,7 @@ async function persistLayoutEdit(
   )
     return false;
   try {
-    const result = await engineRuntime.sendCommandAndAwait({
-      module: "SettingsCommand",
-      command: edit.command,
-    });
+    const result = await commandClient.invoke("SettingsCommand", edit.command);
     if (result.outcome.type === "Failed") {
       log.warn("Layout edit refused", result.outcome.data);
       pushToast("error", result.outcome.data.message);
@@ -272,9 +269,9 @@ export function renameNamedLayout(id: string, name: string): Promise<boolean> {
 /** Makes a layout the one devices open when they have no arrangement for this showfile. */
 export async function setDefaultLayout(id: string | null): Promise<boolean> {
   try {
-    const result = await engineRuntime.sendCommandAndAwait({
-      module: "SettingsCommand",
-      command: { type: "SetDefaultPanelLayout", data: id ?? undefined },
+    const result = await commandClient.invoke("SettingsCommand", {
+      type: "SetDefaultPanelLayout",
+      data: id ?? undefined,
     });
     if (result.outcome.type === "Failed")
       throw new Error(result.outcome.data.message);

@@ -31,7 +31,7 @@ import {
   commandFailureMessage,
   commandSucceeded,
 } from "../../../lib/command-result";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { createSceneObject } from "../../../lib/scene-object-service";
 import { useSharedStore } from "../../../lib/use-shared-store";
@@ -165,10 +165,10 @@ const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
           };
 
           try {
-            const result = await engineRuntime.sendCommandAndAwait({
-              module: "ObjectLibraryCommand",
+            const result = await commandClient.invoke(
+              "ObjectLibraryCommand",
               command,
-            });
+            );
 
             if (!commandSucceeded(result)) {
               failures.push(`ID ${id}: ${commandFailureMessage(result)}`);

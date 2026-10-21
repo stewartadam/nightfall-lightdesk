@@ -21,7 +21,7 @@ import { EmptyState } from "../../../components/ui/empty-state";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ObjectSelector from "../../../components/widgets/object-selector";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -116,7 +116,7 @@ export default function ClipProperties(props: ClipPropertiesProps) {
   });
 
   const sendClipCommand = (command: types.ClipCommand) => {
-    engineRuntime.sendCommand({ module: "ClipCommand", command });
+    commandClient.emit("ClipCommand", command);
   };
 
   const assignSource = (nextSource: types.Source) => {

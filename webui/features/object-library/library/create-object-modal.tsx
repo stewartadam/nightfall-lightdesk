@@ -30,7 +30,7 @@ import { Button } from "../../../components/ui/visual-language/button";
  */
 
 import { type Component, createSignal, Show } from "solid-js";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import type { ObjectLibraryCommand } from "../../../types";
 
@@ -163,10 +163,7 @@ const CreateObjectModal: Component<CreateObjectModalProps> = (props) => {
         },
       };
 
-      engineRuntime.sendCommand({
-        module: "ObjectLibraryCommand",
-        command,
-      });
+      commandClient.emit("ObjectLibraryCommand", command);
 
       log.info(`Created object: ${objectName}`);
       handleClose();

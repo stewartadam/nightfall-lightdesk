@@ -33,7 +33,7 @@ import {
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
-import { engineRuntime } from "../../lib/engine-runtime";
+import { commandClient } from "../../lib/engine-commands";
 import { setStoreAction } from "../../lib/nanostore-action";
 import {
   bindingValidationSettings,
@@ -211,14 +211,10 @@ export function SettingsOverlay() {
   /** Refreshes backend-provided device choices whenever settings becomes visible. */
   createEffect(() => {
     if (!isSettingsOpen()) return;
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "GetAvailableNetworkInterfaces" },
+    commandClient.emit("SettingsCommand", {
+      type: "GetAvailableNetworkInterfaces",
     });
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "GetAvailableAudioDevices" },
-    });
+    commandClient.emit("SettingsCommand", { type: "GetAvailableAudioDevices" });
   });
 
   let dmxOutputRateInput: HTMLInputElement | undefined;
@@ -242,79 +238,79 @@ export function SettingsOverlay() {
   });
 
   const setProgrammerAutoSelect = (value: boolean) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetProgrammerAutoSelect", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetProgrammerAutoSelect",
+      data: value,
     });
   };
 
   /** Chooses whether clients receive only changed parameter values or every value each frame. */
   const setParameterKeyframesOnly = (value: boolean) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetParameterKeyframesOnly", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetParameterKeyframesOnly",
+      data: value,
     });
   };
 
   const setNetworkInterface = (value: string | null) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetNetworkInterface", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetNetworkInterface",
+      data: value,
     });
   };
 
   const setAudioDevice = (value: string | null) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetAudioDevice", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetAudioDevice",
+      data: value,
     });
   };
 
   const setInputSignalLossPolicy = (value: InputSignalLossPolicy) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetInputSignalLossPolicy", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetInputSignalLossPolicy",
+      data: value,
     });
   };
 
   const setInputUniverseVisibilityMode = (
     value: InputUniverseVisibilityMode,
   ) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetInputUniverseVisibilityMode", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetInputUniverseVisibilityMode",
+      data: value,
     });
   };
 
   const setSequenceReorderRenumberPolicy = (
     value: SequenceReorderRenumberPolicy,
   ) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetSequenceReorderRenumberPolicy", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetSequenceReorderRenumberPolicy",
+      data: value,
     });
   };
 
   const setSelectionFlattenPolicy = (value: SelectionFlattenPolicy) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetSelectionFlattenPolicy", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetSelectionFlattenPolicy",
+      data: value,
     });
   };
 
   const setTimeDisplayPreference = (value: TimeDisplayPreference) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetTimeDisplayPreference", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetTimeDisplayPreference",
+      data: value,
     });
   };
 
   const setTimelinePlacementPreference = (
     value: TimelinePlacementPreference,
   ) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetTimelinePlacementPreference", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetTimelinePlacementPreference",
+      data: value,
     });
   };
 
@@ -323,16 +319,16 @@ export function SettingsOverlay() {
     const retention = Number.isFinite(value)
       ? Math.max(0, Math.trunc(value))
       : DEFAULT_SHOWFILE_BACKUP_RETENTION;
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetShowfileBackupRetention", data: retention },
+    commandClient.emit("SettingsCommand", {
+      type: "SetShowfileBackupRetention",
+      data: retention,
     });
   };
 
   const setBindingValidationMode = (value: BindingValidationMode) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetBindingValidationMode", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetBindingValidationMode",
+      data: value,
     });
   };
 
@@ -386,22 +382,16 @@ export function SettingsOverlay() {
       }
       return;
     }
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: {
-        type: "SetDmxOutputRate",
-        data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
-      },
+    commandClient.emit("SettingsCommand", {
+      type: "SetDmxOutputRate",
+      data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
     });
   };
 
   const setInputSignalLossTimeout = (value: number) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: {
-        type: "SetInputSignalLossTimeout",
-        data: msToDuration(value),
-      },
+    commandClient.emit("SettingsCommand", {
+      type: "SetInputSignalLossTimeout",
+      data: msToDuration(value),
     });
   };
 

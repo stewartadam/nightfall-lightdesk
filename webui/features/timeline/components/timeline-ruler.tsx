@@ -9,7 +9,7 @@
 // TimelineRuler component
 import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, For, Show } from "solid-js";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import {
   setStoreAction,
   setStoreKeyAction,
@@ -501,7 +501,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
                 first_marker_time: firstPreviewMarker.time,
               },
             };
-            engineRuntime.sendCommand({ module: "TimelineCommand", command });
+            commandClient.emit("TimelineCommand", command);
           }
         }
       }

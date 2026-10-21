@@ -18,7 +18,7 @@ import {
   suppressDockFallbackAfterEditableBlur,
   updateFocusedComponent,
 } from "./componentFocusContext";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import {
   isDataGridElement,
   isInputField,
@@ -548,10 +548,7 @@ export function initKeyboardShortcuts() {
     {
       key: "$mod+z",
       handler: () => {
-        engineRuntime.sendCommand({
-          module: "UndoCommand",
-          command: { type: "Undo", data: {} },
-        });
+        commandClient.emit("UndoCommand", { type: "Undo", data: {} });
       },
       description: "Undo",
     },
@@ -561,10 +558,7 @@ export function initKeyboardShortcuts() {
     {
       key: "$mod+Shift+z",
       handler: () => {
-        engineRuntime.sendCommand({
-          module: "UndoCommand",
-          command: { type: "Redo", data: {} },
-        });
+        commandClient.emit("UndoCommand", { type: "Redo", data: {} });
       },
       description: "Redo",
     },

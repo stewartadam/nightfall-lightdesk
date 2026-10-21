@@ -7,7 +7,7 @@
  */
 
 import { commandSucceeded } from "../../../lib/command-result";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { pushToast } from "../../../state/appStores";
 
@@ -21,9 +21,8 @@ export async function pruneMissingFixtureReferences(
   prunableCount: number,
 ): Promise<void> {
   try {
-    const result = await engineRuntime.sendCommandAndAwait({
-      module: "ReferenceCommand",
-      command: { type: "PruneMissingFixtureRefs" },
+    const result = await commandClient.invoke("ReferenceCommand", {
+      type: "PruneMissingFixtureRefs",
     });
     // The engine runtime already shows failures as toasts.
     if (!commandSucceeded(result)) return;

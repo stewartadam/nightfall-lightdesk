@@ -29,7 +29,7 @@ import {
   changeCrudPanelViewMode,
   loadCrudPanelViewMode,
 } from "../../../lib/crud-panel-view-mode";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { groups } from "../../../state/appStores";
@@ -203,7 +203,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       type: "StoreGroup",
       data: group,
     };
-    engineRuntime.sendCommand({ module: "GroupCommand", command });
+    commandClient.emit("GroupCommand", command);
   };
 
   /** Requests an identifier change for an existing group. */
@@ -212,7 +212,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       type: "RenameGroup",
       data: { id, new_id: newId },
     };
-    engineRuntime.sendCommand({ module: "GroupCommand", command });
+    commandClient.emit("GroupCommand", command);
   };
 
   /** Deletes a group by its numeric showfile identifier. */
@@ -221,7 +221,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       type: "DeleteGroup",
       data: id,
     };
-    engineRuntime.sendCommand({ module: "GroupCommand", command });
+    commandClient.emit("GroupCommand", command);
   };
 
   /** Stores a group label change without changing the group selection. */
@@ -258,7 +258,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       group.identifiers.id,
       modifiers,
     );
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Applies programmer selection from a grid-card pointer event. */
@@ -280,7 +280,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       ctrlKey: true,
       metaKey: false,
     });
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Ensures a context-menu target is represented in local CRUD selection. */

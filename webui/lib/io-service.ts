@@ -7,7 +7,7 @@
  */
 
 import type * as types from "../types";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
 import {
   normalizeNetworkDmxOutputs,
@@ -25,7 +25,7 @@ export function sendNetworkDmxOutputs(
     type: "SetNetworkDmxOutputs",
     data: outputs,
   };
-  engineRuntime.sendCommand({ module: "SettingsCommand", command });
+  commandClient.emit("SettingsCommand", command);
   log.info("Requested Network DMX output target update");
 }
 
@@ -36,7 +36,7 @@ export function sendUsbDmxOutputs(targets: types.UsbDmxOutputTarget[]): void {
     type: "SetUsbDmxOutputs",
     data: outputs,
   };
-  engineRuntime.sendCommand({ module: "SettingsCommand", command });
+  commandClient.emit("SettingsCommand", command);
   log.info("Requested USB DMX output target update");
 }
 
@@ -46,7 +46,7 @@ export function sendNetworkOutputEnabled(enabled: boolean): void {
     type: "SetNetworkOutputEnabled",
     data: enabled,
   };
-  engineRuntime.sendCommand({ module: "SettingsCommand", command });
+  commandClient.emit("SettingsCommand", command);
   log.info("Requested Network DMX output enabled update");
 }
 
@@ -56,7 +56,7 @@ export function sendNetworkInputEnabled(enabled: boolean): void {
     type: "SetNetworkInputEnabled",
     data: enabled,
   };
-  engineRuntime.sendCommand({ module: "SettingsCommand", command });
+  commandClient.emit("SettingsCommand", command);
   log.info("Requested Network DMX input enabled update");
 }
 
@@ -66,6 +66,6 @@ export function sendUsbOutputEnabled(enabled: boolean): void {
     type: "SetUsbOutputEnabled",
     data: enabled,
   };
-  engineRuntime.sendCommand({ module: "SettingsCommand", command });
+  commandClient.emit("SettingsCommand", command);
   log.info("Requested USB DMX output enabled update");
 }

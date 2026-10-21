@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import type * as types from "../../../types";
 
 /** Starts the clip identified by its stable numeric command ID. */
@@ -15,7 +15,7 @@ export function startClip(clipId: number): void {
     type: "StartClip",
     data: { type: "Single", data: clipId },
   };
-  engineRuntime.sendCommand({ module: "ClipCommand", command });
+  commandClient.emit("ClipCommand", command);
 }
 
 /** Stops the clip identified by its stable numeric command ID. */
@@ -24,7 +24,7 @@ export function stopClip(clipId: number): void {
     type: "StopClip",
     data: { type: "Single", data: clipId },
   };
-  engineRuntime.sendCommand({ module: "ClipCommand", command });
+  commandClient.emit("ClipCommand", command);
 }
 
 /** Stores a complete clip snapshot through the command bus. */
@@ -33,7 +33,7 @@ export function storeClip(clip: types.Clip): void {
     type: "StoreClip",
     data: clip,
   };
-  engineRuntime.sendCommand({ module: "ClipCommand", command });
+  commandClient.emit("ClipCommand", command);
 }
 
 /** Changes an clip's numeric ID without changing its UID. */
@@ -42,7 +42,7 @@ export function renameClip(id: number, newId: number): void {
     type: "RenameClip",
     data: { id, new_id: newId },
   };
-  engineRuntime.sendCommand({ module: "ClipCommand", command });
+  commandClient.emit("ClipCommand", command);
 }
 
 /** Deletes the clip identified by its numeric command ID. */
@@ -51,7 +51,7 @@ export function deleteClip(id: number): void {
     type: "DeleteClip",
     data: id,
   };
-  engineRuntime.sendCommand({ module: "ClipCommand", command });
+  commandClient.emit("ClipCommand", command);
 }
 
 /** Starts or stops an clip according to its current active state. */

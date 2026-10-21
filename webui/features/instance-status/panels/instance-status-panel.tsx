@@ -8,7 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo } from "solid-js";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   useConditionalShallowStore,
@@ -117,19 +117,19 @@ export default function StatusDisplayPanel(_props: StatusDisplayPanelProps) {
   /** Stops one active playback. */
   const stopPlayback = (instanceId: InstanceId) => {
     const command: InstanceCommand = { type: "Stop", data: instanceId };
-    engineRuntime.sendCommand({ module: "InstanceCommand", command });
+    commandClient.emit("InstanceCommand", command);
   };
 
   /** Stops every active playback. */
   const stopAllInstances = () => {
     const command: InstanceCommand = { type: "StopAll", data: undefined };
-    engineRuntime.sendCommand({ module: "InstanceCommand", command });
+    commandClient.emit("InstanceCommand", command);
   };
 
   /** Stops active instances of one display kind. */
   const stopByKind = (kind: InstanceKindType) => {
     const command: InstanceCommand = { type: "StopByKind", data: kind };
-    engineRuntime.sendCommand({ module: "InstanceCommand", command });
+    commandClient.emit("InstanceCommand", command);
   };
 
   /** Sends one timecode transport command. */
@@ -138,7 +138,7 @@ export default function StatusDisplayPanel(_props: StatusDisplayPanelProps) {
     id: number,
   ) => {
     const payload: TimecodeCommand = { type: command, data: id };
-    engineRuntime.sendCommand({ module: "TimecodeCommand", command: payload });
+    commandClient.emit("TimecodeCommand", payload);
   };
 
   return (

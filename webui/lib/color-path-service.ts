@@ -9,8 +9,7 @@
 import { v4 as uuidv4 } from "uuid";
 import type * as types from "../types";
 import { FadeCurve } from "../types";
-import { commandEnvelope } from "./command-envelope";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
 
 const log = getLogger(import.meta.url);
@@ -21,7 +20,7 @@ export function storeColorPath(colorPath: types.ColorPath): void {
     type: "StoreColorPath",
     data: colorPath,
   };
-  engineRuntime.sendCommand(commandEnvelope("CueCommand", command));
+  commandClient.emit("CueCommand", command);
   log.info(`Stored color path ${colorPath.identifiers.id}:`, colorPath);
 }
 
@@ -31,7 +30,7 @@ export function deleteColorPath(id: number): void {
     type: "DeleteColorPath",
     data: id,
   };
-  engineRuntime.sendCommand(commandEnvelope("CueCommand", command));
+  commandClient.emit("CueCommand", command);
   log.info(`Deleted color path ${id}`);
 }
 

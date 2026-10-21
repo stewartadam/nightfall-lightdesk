@@ -26,9 +26,8 @@ import {
   type TrussProperties,
   TrussType,
 } from "../types";
-import { commandEnvelope } from "./command-envelope";
 import { commandFailureMessage, commandSucceeded } from "./command-result";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
 
 const log = getLogger(import.meta.url);
@@ -111,10 +110,7 @@ export function createSceneObject(
     data: sceneObject,
   };
 
-  engineRuntime.sendCommand({
-    module: "SceneObjectCommand",
-    command,
-  });
+  commandClient.emit("SceneObjectCommand", command);
 
   log.info(`Created scene object: ${label} (${objectType}) with ID ${id}`);
 }
@@ -128,9 +124,7 @@ export function deleteSceneObject(id: number, batchId?: string): void {
     data: id,
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("SceneObjectCommand", command, batchId),
-  );
+  commandClient.emit("SceneObjectCommand", command, { undoId: batchId });
 
   log.info(`Deleted scene object with ID ${id}`);
 }
@@ -153,11 +147,7 @@ export function updateSceneObjectPlacement(
     },
   };
 
-  engineRuntime.sendCommand({
-    ...(batchId ? { undo_id: batchId } : {}),
-    module: "SceneObjectCommand",
-    command,
-  });
+  commandClient.emit("SceneObjectCommand", command, { undoId: batchId });
 
   log.info(`Updated placement for scene object ${id}`);
 }
@@ -177,10 +167,7 @@ export function updateSceneObjectProperties(
     },
   };
 
-  engineRuntime.sendCommand({
-    module: "SceneObjectCommand",
-    command,
-  });
+  commandClient.emit("SceneObjectCommand", command);
 
   log.info(`Updated properties for scene object ${id}`);
 }
@@ -198,10 +185,7 @@ export async function updateSceneObjectsFromLibrary(
     },
   };
 
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "ObjectLibraryCommand",
-    command,
-  });
+  const result = await commandClient.invoke("ObjectLibraryCommand", command);
 
   if (commandSucceeded(result)) {
     log.info(
