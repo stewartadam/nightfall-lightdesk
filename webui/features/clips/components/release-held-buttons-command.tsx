@@ -22,7 +22,7 @@ const commandClient = new CommandClient(engineRuntime);
 /** Asks the backend to let go of every held Flash and Swop, reporting failures as a toast. */
 async function releaseHeldButtons(): Promise<void> {
   try {
-    const result = await commandClient.submitCommand("ControlCommand", {
+    const result = await commandClient.invoke("ControlCommand", {
       type: "ReleaseHeldButtons",
     });
     if (!commandSucceeded(result)) {

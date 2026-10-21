@@ -57,6 +57,7 @@ import type * as types from "../types";
 import {
   abandonCommandCorrelation,
   aliasCommandResult,
+  type CommandResultWaiter,
   registerCommandResultWaiter,
   registerPendingCurrentShowfileName,
   rejectPendingCommandWaiters,
@@ -504,6 +505,18 @@ export class EngineRuntimeCommandDisconnectedError extends Error {
   }
 }
 
+/**
+ * Returns the console statement carried by a desk `Eval` command envelope, so typed
+ * statements sent from panels echo in console scrollback like ones typed at the command line.
+ */
+function evalStatementOf(data: object): string | undefined {
+  const command = (data as { command?: { type?: unknown; data?: unknown } })
+    .command;
+  return command?.type === "Eval" && typeof command.data === "string"
+    ? command.data
+    : undefined;
+}
+
 export type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 
 /** Transport-neutral facade used by UI features to communicate with the engine. */
@@ -761,71 +774,64 @@ export const engineRuntime = {
     setConnectionStatus(EngineRuntimeStatus.Disconnected);
   },
 
-  /** Sends one lifecycle-tracked command through the active adapter. */
-  sendCommand(
-    data: string | object,
-    shouldLog = true,
-    consoleCommandText?: string,
-  ): string | null {
-    if (!this.worker || !this.isRunning) {
-      log.warn("Tried to send but worker is not running");
-      if (consoleCommandText) {
-        addConsoleSendError(
-          consoleCommandText,
-          "Failed to send command: disconnected",
-        );
-      } else if (typeof data === "object" && "command" in data) {
-        const command = (
-          data as { command?: { type?: unknown; data?: unknown } }
-        ).command;
-        if (command?.type === "Eval" && typeof command.data === "string") {
-          addConsoleSendError(
-            command.data,
-            "Failed to send command: disconnected",
-          );
-        }
-      }
+  /**
+   * Sends one lifecycle-tracked command without waiting for its result. Failures still surface
+   * through the shared result handler. Returns the command id, or null when the runtime is
+   * disconnected or the payload cannot be serialized.
+   */
+  sendCommand(data: object, consoleCommandText?: string): string | null {
+    try {
+      return this.postCommand(data, consoleCommandText);
+    } catch {
       return null;
     }
+  },
 
-    let payload: string | object = data;
-    let commandId: string | null = null;
-    if (typeof data === "object") {
-      commandId = uuidv4();
-      (data as Record<string, unknown>).command_id = commandId;
-      (data as Record<string, unknown>).undo_id ??= commandId;
-      registerPendingCurrentShowfileName(commandId, data);
-      try {
-        payload = sanitizeWebsocketPayload(data);
-      } catch (error) {
-        abandonCommandCorrelation(normalizeCorrelationId(commandId));
-        log.error("Failed to sanitize payload:", error);
-        return null;
+  /**
+   * Stamps command and undo identity onto a command envelope, registers the optional result
+   * waiter, and posts the envelope to the worker. Console scrollback tracks the operator text,
+   * or the statement of a desk `Eval` command when no text is given. Throws when the runtime
+   * is disconnected or the payload cannot be serialized, after recording a console send error.
+   */
+  postCommand(
+    data: object,
+    consoleCommandText?: string,
+    waiter?: CommandResultWaiter,
+  ): string {
+    const consoleText = consoleCommandText ?? evalStatementOf(data);
+    if (!this.worker || !this.isRunning) {
+      log.warn("Tried to send but worker is not running");
+      if (consoleText) {
+        addConsoleSendError(
+          consoleText,
+          "Failed to send command: disconnected",
+        );
       }
+      throw new Error("WebSocket worker is not running");
     }
 
-    if (shouldLog) {
+    const commandId = uuidv4();
+    const commandKey = normalizeCorrelationId(commandId);
+    const envelope = data as Record<string, unknown>;
+    envelope.command_id = commandId;
+    envelope.undo_id ??= commandId;
+    registerPendingCurrentShowfileName(commandId, data);
+    if (waiter) {
+      registerCommandResultWaiter(commandKey, waiter);
+    }
+
+    try {
+      const payload = sanitizeWebsocketPayload(data);
       log.debug("Sending:", payload);
+      this.worker.postMessage({ type: "submit", data: payload });
+    } catch (error) {
+      abandonCommandCorrelation(commandKey);
+      log.error("Failed to send command:", error);
+      throw error;
     }
-    this.worker.postMessage({ type: "submit", data: payload });
-
     // Results arrive in a later task, so console rendering can follow the send.
-    if (consoleCommandText && commandId) {
-      addPendingConsoleCommand(consoleCommandText, commandId, "UI");
-    } else if (
-      typeof data === "object" &&
-      "command" in data &&
-      commandId &&
-      (data as { command?: { type?: unknown; data?: unknown } }).command
-        ?.type === "Eval" &&
-      typeof (data as { command?: { type?: unknown; data?: unknown } }).command
-        ?.data === "string"
-    ) {
-      addPendingConsoleCommand(
-        (data as { command: { data: string } }).command.data,
-        commandId,
-        "UI",
-      );
+    if (consoleText) {
+      addPendingConsoleCommand(consoleText, commandId, "UI");
     }
     return commandId;
   },
@@ -875,46 +881,11 @@ export const engineRuntime = {
     let originalCommandKey: string | undefined;
     const pendingResult = new Promise<types.CommandResult>(
       (resolve, reject) => {
-        if (!this.worker || !this.isRunning) {
-          if (consoleCommandText) {
-            addConsoleSendError(
-              consoleCommandText,
-              "Failed to send command: disconnected",
-            );
-          }
-          reject(new Error("WebSocket worker is not running"));
-          return;
-        }
-
-        const commandId = uuidv4();
-        const commandKey = normalizeCorrelationId(commandId);
-        originalCommandKey = commandKey;
-        (data as Record<string, unknown>).command_id = commandId;
-        (data as Record<string, unknown>).undo_id ??= commandId;
-        registerPendingCurrentShowfileName(commandId, data);
-
-        registerCommandResultWaiter(commandKey, {
-          resolve: (result) => {
-            resolve(result);
-          },
-          reject: (error) => {
-            reject(error);
-          },
+        const commandId = this.postCommand(data, consoleCommandText, {
+          resolve,
+          reject,
         });
-
-        // Serialize and send
-        try {
-          const payload = sanitizeWebsocketPayload(data);
-          log.debug("Sending (awaited):", payload);
-          this.worker.postMessage({ type: "submit", data: payload });
-          // Results arrive in a later task, so console rendering can follow the send.
-          if (consoleCommandText) {
-            addPendingConsoleCommand(consoleCommandText, commandId, "UI");
-          }
-        } catch (error) {
-          abandonCommandCorrelation(commandKey);
-          reject(error);
-        }
+        originalCommandKey = normalizeCorrelationId(commandId);
       },
     );
     return pendingResult.then(async (result) => {

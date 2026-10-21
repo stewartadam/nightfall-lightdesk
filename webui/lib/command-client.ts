@@ -7,9 +7,12 @@
  */
 
 import type * as types from "../types";
+import { commandEnvelope } from "./command-envelope";
 
 /** Transport behavior required by the generic command client. */
 export interface CommandTransport {
+  /** Sends one command envelope and returns its id, or null when it was not sent. */
+  sendCommand(data: object, consoleCommandText?: string): string | null;
   /** Sends one command envelope and waits for its terminal result. */
   sendCommandAndAwait(
     data: object,
@@ -18,12 +21,14 @@ export interface CommandTransport {
 }
 
 /** Per-command client behavior that is independent of the domain payload. */
-export interface SubmitCommandOptions {
+export interface CommandOptions {
   /** Operator text associated with this command in console scrollback. */
   consoleCommandText?: string;
+  /** Undo group shared with other commands; defaults to the command's own id. */
+  undoId?: string;
 }
 
-/** Awaited transport-independent entry point for typed domain commands. */
+/** Transport-independent entry point for typed domain commands. */
 export class CommandClient {
   private readonly transport: CommandTransport;
 
@@ -32,14 +37,33 @@ export class CommandClient {
     this.transport = transport;
   }
 
-  /** Submits one domain command and resolves only from its terminal result. */
-  submitCommand<TCommand extends object>(
+  /**
+   * Sends one domain command without waiting for its result. Failures still surface through the
+   * shared result handler as a toast or confirmation. Returns the command id, or null when the
+   * command could not be sent.
+   */
+  emit<TCommand extends object>(
     module: string,
     command: TCommand,
-    options: SubmitCommandOptions = {},
+    options: CommandOptions = {},
+  ): string | null {
+    return this.transport.sendCommand(
+      commandEnvelope(module, command, options.undoId),
+      options.consoleCommandText,
+    );
+  }
+
+  /**
+   * Sends one domain command and resolves with its terminal result. Rejects when the command
+   * could not be sent or the runtime stopped before the result arrived.
+   */
+  invoke<TCommand extends object>(
+    module: string,
+    command: TCommand,
+    options: CommandOptions = {},
   ): Promise<types.CommandResult> {
     return this.transport.sendCommandAndAwait(
-      { module, command },
+      commandEnvelope(module, command, options.undoId),
       options.consoleCommandText,
     );
   }

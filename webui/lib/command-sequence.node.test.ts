@@ -40,6 +40,7 @@ test("CommandSequenceRunner awaits each success before submitting the next", asy
     markFirstSubmitted = resolve;
   });
   const transport: CommandTransport = {
+    sendCommand: () => null,
     sendCommandAndAwait: async (data) => {
       const statement = (data as { command: { data: string } }).command.data;
       submissions.push(statement);
@@ -72,6 +73,7 @@ test("CommandSequenceRunner awaits each success before submitting the next", asy
 test("CommandSequenceRunner stops after the first command failure", async () => {
   const submissions: string[] = [];
   const transport: CommandTransport = {
+    sendCommand: () => null,
     sendCommandAndAwait: async (data) => {
       submissions.push((data as { command: { data: string } }).command.data);
       return result("failed", {
@@ -92,6 +94,7 @@ test("CommandSequenceRunner stops after the first command failure", async () => 
 test("CommandSequenceRunner reports each statement starting and settling", async () => {
   const events: string[] = [];
   const transport: CommandTransport = {
+    sendCommand: () => null,
     sendCommandAndAwait: async (data) => {
       events.push(
         `send ${(data as { command: { data: string } }).command.data}`,
