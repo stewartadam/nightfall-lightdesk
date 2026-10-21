@@ -4,7 +4,8 @@
 
 This guide explains how Nightfall works inside, for people who want to understand, change, or extend it.
 
-**Note:** This guide assumes you already know how to operate Nightfall as a lighting console: patching fixtures, programming cues, and running playbacks. If you don't, work through the [user manual](../index.html) first, starting with its [Your first show](../user-guide/getting-started.html) tutorial, which builds the show this guide uses as its running example.
+> [!NOTE]
+> This guide assumes you already know how to operate Nightfall as a lighting console: patching fixtures, programming cues, and running playbacks. If you don't, work through the [user manual](../index.html) first, starting with its [Your first show](../user-guide/getting-started.html) tutorial, which builds the show this guide uses as its running example.
 
 [CONTRIBUTING.md](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md) covers how to set up a development environment, run the app, and run the tests.
 

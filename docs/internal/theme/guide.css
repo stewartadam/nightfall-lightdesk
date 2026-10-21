@@ -1,0 +1,78 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Makes the current page stand out in the sidebar beyond mdBook's color change. */
+.sidebar .chapter li a.active {
+  font-weight: 600;
+  background-color: color-mix(in srgb, var(--sidebar-active) 15%, transparent);
+  border-radius: 4px;
+  box-shadow: inset 3px 0 0 var(--sidebar-active);
+  padding-inline-start: 6px;
+}
+
+/* Column headings of sortable tables: a full-width button with a sort indicator. */
+table.sortable th .sort-button {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+table.sortable th .sort-button:focus-visible {
+  outline: 2px solid var(--links);
+  outline-offset: 2px;
+}
+
+table.sortable th .sort-button::after {
+  content: "↕";
+  opacity: 0.35;
+  font-size: 0.85em;
+}
+
+table.sortable th[aria-sort="ascending"] .sort-button::after {
+  content: "↑";
+  opacity: 1;
+}
+
+table.sortable th[aria-sort="descending"] .sort-button::after {
+  content: "↓";
+  opacity: 1;
+}
+
+/* GitHub-style alerts rendered by callouts.js. */
+blockquote.callout {
+  --callout-color: var(--links);
+  border-inline-start: 4px solid var(--callout-color);
+  border-block: none;
+  background-color: color-mix(in srgb, var(--callout-color) 8%, transparent);
+  padding: 0.5em 1em;
+  border-radius: 4px;
+}
+
+blockquote.callout-tip {
+  --callout-color: #1a7f37;
+}
+
+blockquote.callout-important {
+  --callout-color: #8250df;
+}
+
+blockquote.callout-warning {
+  --callout-color: #bf8700;
+}
+
+blockquote.callout-caution {
+  --callout-color: #cf222e;
+}
+
+blockquote.callout .callout-title {
+  font-weight: 600;
+  color: var(--callout-color);
+  margin-block-end: 0.25em;
+}

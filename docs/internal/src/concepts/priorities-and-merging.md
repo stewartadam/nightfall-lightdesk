@@ -32,7 +32,8 @@ flowchart BT
 
 Layers with the same priority are applied in the order they were activated, so the most recently activated layer is applied last.
 
-**Warning:** Sequence layers currently take a new activation time in every frame, while FX and FX module layers keep the time they started. As a result, a sequence clip sits above an FX clip of the same priority whichever started first, and the order between two sequence clips of the same priority doesn't follow their start order. Don't rely on start order between equal-priority sequences until this is fixed.
+> [!WARNING]
+> Sequence layers currently take a new activation time in every frame, while FX and FX module layers keep the time they started. As a result, a sequence clip sits above an FX clip of the same priority whichever started first, and the order between two sequence clips of the same priority doesn't follow their start order. Don't rely on start order between equal-priority sequences until this is fixed.
 
 ## Where priorities come from
 
@@ -50,7 +51,8 @@ Most layers come from clips, and a clip's priority is a setting on the clip. The
 | Cue preview | 126 | Previewing a cue from the **Sequence Editor**. |
 | Programmer | 127 | Live programmer values. The programmer always wins. |
 
-**Warning:** These priorities are constants defined in several crates. When you add a new kind of layer, choose its priority deliberately and add it to this table.
+> [!WARNING]
+> These priorities are constants defined in several crates. When you add a new kind of layer, choose its priority deliberately and add it to this table.
 
 ## Equal priorities use the attribute's merge rule
 

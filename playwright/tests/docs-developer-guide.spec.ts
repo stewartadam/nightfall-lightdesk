@@ -103,3 +103,35 @@ test("developer guide sidebar highlights the current page on extensionless URLs"
   await expect(active).toHaveCount(1);
   await expect(active).toContainText("Nightfall Developer Guide");
 });
+
+/**
+ * Checks that clicking a table heading sorts the rows by that column and that a second click
+ * reverses the order, using the concept map's terms table.
+ */
+test("developer guide tables sort by a clicked column", async ({ page }) => {
+  await page.goto(guideUrl("concepts/concept-map.html"));
+  const table = page.locator("table.sortable").first();
+  const firstTerm = table.locator("tbody tr").first().locator("td").first();
+  const heading = table.locator("th").first();
+
+  await heading.getByRole("button").click();
+  await expect(heading).toHaveAttribute("aria-sort", "ascending");
+  await expect(firstTerm).toHaveText("Action");
+
+  await heading.getByRole("button").click();
+  await expect(heading).toHaveAttribute("aria-sort", "descending");
+  await expect(firstTerm).not.toHaveText("Action");
+});
+
+/**
+ * Checks that a GitHub-style `[!WARNING]` blockquote renders as a titled callout without the raw
+ * marker text.
+ */
+test("developer guide renders GitHub-style alerts as callouts", async ({
+  page,
+}) => {
+  await page.goto(guideUrl("concepts/priorities-and-merging.html"));
+  const callout = page.locator("blockquote.callout-warning").first();
+  await expect(callout.locator(".callout-title")).toHaveText("Warning");
+  await expect(callout).not.toContainText("[!WARNING]");
+});

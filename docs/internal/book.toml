@@ -7,5 +7,10 @@ title = "Nightfall Developer Guide"
 
 [output.html]
 git-repository-url = "https://github.com/stewartadam/nightfall-lightdesk"
-additional-css = ["theme/sidebar.css"]
-additional-js = ["theme/mermaid-init.js", "theme/sidebar-active.js"]
+additional-css = ["theme/guide.css"]
+additional-js = [
+  "theme/mermaid-init.js",
+  "theme/sidebar-active.js",
+  "theme/sortable-tables.js",
+  "theme/callouts.js",
+]

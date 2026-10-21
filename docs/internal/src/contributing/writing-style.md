@@ -94,10 +94,19 @@ Screenshots are PNG files no larger than 1000 by 500 pixels and about 100 KB. Na
 
 ## Callouts
 
-Use callouts sparingly, and never put two in a row. Write a callout as a paragraph that starts with a bold label:
+Use callouts sparingly, and never put two in a row. Write a callout as a GitHub-style alert, a blockquote whose first line is the alert type:
 
-- **Note:** for information that is easy to miss.
-- **Warning:** for data loss, breaking behavior, or rules that cause bugs when ignored.
+```markdown
+> [!WARNING]
+> Render systems must not read messages written outside the render pass.
+```
+
+Use these types:
+
+- `[!NOTE]` for information that is easy to miss.
+- `[!WARNING]` for data loss, breaking behavior, or rules that cause bugs when ignored.
+
+GitHub renders these alerts in the Markdown source, and the guide's `theme/callouts.js` renders them in the book. Don't use blockquotes for anything else.
 
 ## Review status
 
