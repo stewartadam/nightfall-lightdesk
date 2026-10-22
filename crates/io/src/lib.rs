@@ -124,8 +124,56 @@ pub enum NetworkDmxDelivery {
     /// Unicast output for sACN or Art-Net.
     Unicast {
         /// Target IP address.
+        #[serde(deserialize_with = "deserialize_ipv4_text_or_octets")]
         ip: Ipv4Addr,
     },
+}
+
+/// Reads an IPv4 address written either as dotted text (JSON showfiles) or as four octets
+/// (CBOR snapshots, which the web UI then hands back through the wasm bridge).
+fn deserialize_ipv4_text_or_octets<'de, D>(deserializer: D) -> Result<Ipv4Addr, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    /// Accepts the textual and octet forms of an IPv4 address.
+    struct Ipv4Visitor;
+
+    impl<'de> serde::de::Visitor<'de> for Ipv4Visitor {
+        type Value = Ipv4Addr;
+
+        /// Describes the accepted forms for deserialization errors.
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an IPv4 address as dotted text or four octets")
+        }
+
+        /// Parses dotted text such as `10.0.0.5`.
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Ipv4Addr, E> {
+            value.parse().map_err(E::custom)
+        }
+
+        /// Reads four raw bytes, as a byte array from CBOR or a `Uint8Array` from JS.
+        fn visit_bytes<E: serde::de::Error>(self, value: &[u8]) -> Result<Ipv4Addr, E> {
+            <[u8; 4]>::try_from(value)
+                .map(Ipv4Addr::from)
+                .map_err(|_| E::invalid_length(value.len(), &self))
+        }
+
+        /// Reads a sequence of exactly four octets.
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Ipv4Addr, A::Error> {
+            let mut octets = [0u8; 4];
+            for (index, octet) in octets.iter_mut().enumerate() {
+                *octet = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(index, &self))?;
+            }
+            if seq.next_element::<u8>()?.is_some() {
+                return Err(serde::de::Error::invalid_length(5, &self));
+            }
+            Ok(Ipv4Addr::from(octets))
+        }
+    }
+
+    deserializer.deserialize_any(Ipv4Visitor)
 }
 
 /// Output transport for a patched universe.
@@ -530,6 +578,27 @@ pub fn output_transport_to_target_id(
     }
 }
 
+/// Returns the IDs commands can use to name an output, built-in and custom, network first,
+/// after the same sanitizing the engine applies when it loads the targets.
+pub fn configured_output_target_ids(
+    network_outputs: &NetworkDmxOutputTargets,
+    usb_outputs: &UsbDmxOutputTargets,
+) -> Vec<String> {
+    network_outputs
+        .sanitized()
+        .targets
+        .into_iter()
+        .map(|target| target.id)
+        .chain(
+            usb_outputs
+                .sanitized()
+                .targets
+                .into_iter()
+                .map(|target| target.id),
+        )
+        .collect()
+}
+
 /// Returns whether a target ID is command-safe.
 pub fn is_valid_network_dmx_target_id(id: &str) -> bool {
     let mut chars = id.chars();
@@ -902,5 +971,73 @@ mod tests {
         );
         assert!(outputs.get("front-usb-alias").is_none());
         assert!(outputs.get("empty-usb").is_none());
+    }
+
+    /// Verifies unicast IPs load from dotted text and from the four-octet form CBOR produces.
+    #[test]
+    fn network_dmx_delivery_reads_text_and_octet_ips() {
+        let expected = NetworkDmxDelivery::Unicast {
+            ip: Ipv4Addr::new(10, 0, 0, 5),
+        };
+        for json in [
+            r#"{"type":"Unicast","data":{"ip":"10.0.0.5"}}"#,
+            r#"{"type":"Unicast","data":{"ip":[10,0,0,5]}}"#,
+        ] {
+            let delivery: NetworkDmxDelivery = serde_json::from_str(json).expect(json);
+            assert_eq!(delivery, expected, "{json}");
+        }
+        for json in [
+            r#"{"type":"Unicast","data":{"ip":[10,0,0]}}"#,
+            r#"{"type":"Unicast","data":{"ip":[10,0,0,5,6]}}"#,
+            r#"{"type":"Unicast","data":{"ip":"10.0.0"}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<NetworkDmxDelivery>(json).is_err(),
+                "{json} should be rejected"
+            );
+        }
+    }
+
+    /// Verifies the command-facing output IDs restore built-ins and drop invalid or duplicate
+    /// custom targets, listing network targets before USB ones.
+    #[test]
+    fn configured_output_target_ids_lists_sanitized_targets() {
+        let network = NetworkDmxOutputTargets {
+            targets: vec![
+                NetworkDmxOutputTarget {
+                    id: "stage-left".to_string(),
+                    protocol: NetworkDmxProtocol::Sacn,
+                    delivery: NetworkDmxDelivery::Unicast {
+                        ip: Ipv4Addr::new(10, 0, 0, 5),
+                    },
+                },
+                NetworkDmxOutputTarget {
+                    id: "Bad Id".to_string(),
+                    protocol: NetworkDmxProtocol::Sacn,
+                    delivery: NetworkDmxDelivery::Unicast {
+                        ip: Ipv4Addr::new(10, 0, 0, 6),
+                    },
+                },
+                NetworkDmxOutputTarget {
+                    id: "stage-left-alias".to_string(),
+                    protocol: NetworkDmxProtocol::Sacn,
+                    delivery: NetworkDmxDelivery::Unicast {
+                        ip: Ipv4Addr::new(10, 0, 0, 5),
+                    },
+                },
+            ],
+        };
+        let usb = UsbDmxOutputTargets {
+            targets: vec![UsbDmxOutputTarget {
+                id: "front-usb".to_string(),
+                device: "usb-serial-2".to_string(),
+                device_label: None,
+            }],
+        };
+
+        assert_eq!(
+            configured_output_target_ids(&network, &usb),
+            ["sacn", "artnet", "stage-left", "udmx", "front-usb"]
+        );
     }
 }

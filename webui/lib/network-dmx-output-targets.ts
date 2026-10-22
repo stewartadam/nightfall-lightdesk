@@ -60,16 +60,6 @@ export function usbDmxOutputsFromSettings(
   );
 }
 
-/** Returns every configured output target ID (network and USB) that commands can name. */
-export function outputTargetIdsFromSettings(
-  settings: types.IoRuntimeSettings,
-): string[] {
-  return [
-    ...networkDmxOutputsFromSettings(settings).targets,
-    ...usbDmxOutputsFromSettings(settings).targets,
-  ].map((target) => target.id);
-}
-
 /**
  * Refreshes reserved target keyword caches from the Rust WASM bridge.
  */

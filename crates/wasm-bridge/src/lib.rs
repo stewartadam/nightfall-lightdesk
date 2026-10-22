@@ -22,7 +22,10 @@ use nightfall_cmd_parse::{
     format_phase_expression_degrees, parse_phase_expression_text, parse_spatial_selection_text,
     split_command_statements as split_command_statements_impl,
 };
-use nightfall_io::{RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS};
+use nightfall_io::{
+    configured_output_target_ids, NetworkDmxOutputTargets, UsbDmxOutputTargets,
+    RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
+};
 use nightfall_lookahead_projection::{
     project_sequence_lookahead as project_sequence_lookahead_impl,
     sequence_duration_summary as sequence_duration_summary_impl, SequenceDurationSummaryRequest,
@@ -298,19 +301,50 @@ pub fn sequence_duration_summary(request: JsValue) -> Result<JsValue, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize sequence duration: {:?}", e)))
 }
 
+/// The output target lists of the I/O runtime settings snapshot; other settings are ignored.
+#[derive(Debug, Default, Deserialize)]
+struct OutputTargetSettings {
+    /// Showfile-scoped named network DMX output targets.
+    #[serde(default)]
+    network_dmx_outputs: NetworkDmxOutputTargets,
+    /// Showfile-scoped named USB DMX output targets.
+    #[serde(default)]
+    usb_dmx_outputs: UsbDmxOutputTargets,
+}
+
+/// Reads the I/O runtime settings snapshot the UI received from the engine and returns the
+/// output target IDs commands can name, sanitized exactly as the engine sanitizes them.
+fn output_target_ids_from_settings(io_settings: JsValue) -> Result<Vec<String>, JsValue> {
+    let settings: OutputTargetSettings = serde_wasm_bindgen::from_value(io_settings)
+        .map_err(|e| JsValue::from_str(&format!("Invalid I/O settings: {}", e)))?;
+    Ok(configured_output_target_ids(
+        &settings.network_dmx_outputs,
+        &settings.usb_dmx_outputs,
+    ))
+}
+
+/// Return the output target IDs commands can name for an I/O runtime settings snapshot.
+#[wasm_bindgen]
+pub fn output_target_ids(io_settings: JsValue) -> Result<Vec<String>, JsValue> {
+    output_target_ids_from_settings(io_settings)
+}
+
 /// Complete a command string at the given cursor offset.
 ///
-/// Returns grammar-derived completion metadata for UI autocomplete. `output_targets` lists the
-/// show's configured output target IDs, which completion offers wherever a command names an
-/// output (`patch ... @ <output>:1.1`, `ch <output>:1.1`).
+/// Returns grammar-derived completion metadata for UI autocomplete. The output targets
+/// configured in `io_settings` (the engine's I/O runtime settings snapshot) are offered
+/// wherever a command names an output (`patch ... @ <output>:1.1`, `ch <output>:1.1`).
 #[wasm_bindgen]
 pub fn complete_command(
     input: &str,
     cursor: usize,
-    output_targets: Vec<String>,
+    io_settings: JsValue,
 ) -> Result<JsValue, JsValue> {
     let inventory = CompletionInventory {
-        output_targets: output_targets.into_iter().map(Into::into).collect(),
+        output_targets: output_target_ids_from_settings(io_settings)?
+            .into_iter()
+            .map(Into::into)
+            .collect(),
     };
     let response: CommandCompletionResponse =
         complete_command_with_inventory_impl(input, cursor, &inventory);

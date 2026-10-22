@@ -13,7 +13,6 @@ import {
   singleIntentAutoExpandTarget,
 } from "../../../lib/command-autocomplete";
 import { validateCommandSemantics } from "../../../lib/command-semantic-validation";
-import { outputTargetIdsFromSettings } from "../../../lib/network-dmx-output-targets";
 import { completeCommand, validateCommand } from "../../../lib/wasm-bridge";
 import { blueprints } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -40,11 +39,7 @@ export async function analyzeCommandAutocomplete(
   cursor: number,
   settings: types.IoRuntimeSettings,
 ): Promise<CommandAutocompleteResult | null> {
-  const response = await completeCommand(
-    value,
-    cursor,
-    outputTargetIdsFromSettings(settings),
-  );
+  const response = await completeCommand(value, cursor, settings);
   if (!response) return null;
 
   const parserSuggestions = rankCommandAutocomplete(response, value, cursor);
