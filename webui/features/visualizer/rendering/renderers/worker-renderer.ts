@@ -77,6 +77,7 @@ import {
 } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
 import { BaseVisualizerRenderer } from "./base-renderer";
+import { observeRenderSize } from "./observe-render-size";
 import type {
   CameraState,
   FixtureDmxBatch,
@@ -118,7 +119,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
   private cameraDragEnabled = true;
   private orbitTargetIndicatorEnabled = false;
   private disposed = false;
-  private resizeObserver: ResizeObserver | undefined;
+  private stopObservingSize: (() => void) | undefined;
 
   constructor(worker: Worker, workerApi: Comlink.Remote<VisualizerWorkerApi>) {
     this.worker = worker;
@@ -210,16 +211,10 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
    * Setup resize observer for automatic resizing.
    */
   setupResizeObserver(container: HTMLDivElement): void {
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) {
-          this.resize(width, height, window.devicePixelRatio);
-        }
-      }
-    });
-    this.resizeObserver.observe(container);
+    this.stopObservingSize?.();
+    this.stopObservingSize = observeRenderSize(container, (width, height) =>
+      this.resize(width, height, window.devicePixelRatio),
+    );
   }
 
   resize(width: number, height: number, devicePixelRatio: number): void {
@@ -437,7 +432,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       cancelAnimationFrame(this.colorUpdateRafId);
       this.colorUpdateRafId = null;
     }
-    this.resizeObserver?.disconnect();
+    this.stopObservingSize?.();
     this.unsubscribeLogConfig?.();
     this.proxy?.dispose();
     // Allow pending GPU timestamp mappings to finish before terminating the worker.
