@@ -437,6 +437,9 @@ pub struct ParseBranchState<'i> {
     pub frontier: Vec<ClauseExpectation>,
     /// AST materialized from this branch when it accepts the entire input.
     pub ast: Option<CommandAst<'i>>,
+    /// Start of the text replaced by this branch's edits when it reaches back past the active
+    /// lexeme, such as the whole of a hyphenated output name; `None` replaces the active lexeme.
+    pub replace_start: Option<usize>,
 }
 
 impl<'i> ParseBranchState<'i> {
@@ -519,6 +522,14 @@ impl<'i> ParseBranchState<'i> {
         }
         paths
     }
+}
+
+/// Show-specific names that completion offers where the grammar accepts a configured name.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompletionInventory {
+    /// Configured output target IDs, such as `sacn` or `stage-left`, offered wherever a command
+    /// names an output. Empty keeps the grammar's built-in `sacn`, `artnet` and `udmx` keywords.
+    pub output_targets: Vec<SmolStr>,
 }
 
 /// Aggregate segment-level parser snapshot.
@@ -636,7 +647,9 @@ impl<'i> CommandPrefixSnapshot<'i> {
                                 && branch.cursor.furthest_pos <= self.context.active_token_start)
                         {
                             Span {
-                                start: self.context.active_token_start,
+                                start: branch
+                                    .replace_start
+                                    .unwrap_or(self.context.active_token_start),
                                 end: self.context.active_token_end,
                             }
                         } else {

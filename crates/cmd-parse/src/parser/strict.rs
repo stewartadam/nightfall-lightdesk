@@ -1628,7 +1628,7 @@ pub(crate) fn materialize_strict_ast_with_tokens<'i>(
     command_str: &'i str,
     tokens: &[LexerToken],
 ) -> Result<CommandAst<'i>, AstError> {
-    super::prefix::parse_tokenized_prefix(command_str, tokens)
+    super::prefix::parse_tokenized_prefix(command_str, tokens, &Default::default())
         .completed_ast()
         .ok_or_else(|| AstError::Strict("input does not match command grammar".to_owned()))
 }

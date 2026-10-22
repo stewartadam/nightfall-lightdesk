@@ -68,6 +68,7 @@ pub fn seed_branch_from_head<'i>(
         status: PathStatus::Live,
         frontier: Vec::new(),
         ast: None,
+        replace_start: None,
     };
     refresh_branch(&mut branch);
 
@@ -213,6 +214,7 @@ pub(in crate::parser) fn seed_active_selection_branch<'i>(
         status: PathStatus::Live,
         frontier: Vec::new(),
         ast: None,
+        replace_start: None,
     };
     if starts_with_value {
         let value_token = token_id.expect("active selection value token");

@@ -16,10 +16,10 @@ use nightfall::prelude::{
     Group, ResolvedSelection, SpatialProjectionError, SpatialSelection, TransitionMode,
 };
 use nightfall_cmd_parse::{
-    autocomplete::complete_command as complete_command_impl,
+    autocomplete::complete_command_with_inventory as complete_command_with_inventory_impl,
     autocomplete::validate_command as validate_command_impl,
-    autocomplete::CommandCompletionResponse, format_phase_expression_degrees,
-    parse_phase_expression_text, parse_spatial_selection_text,
+    autocomplete::{CommandCompletionResponse, CompletionInventory},
+    format_phase_expression_degrees, parse_phase_expression_text, parse_spatial_selection_text,
     split_command_statements as split_command_statements_impl,
 };
 use nightfall_io::{RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS};
@@ -300,10 +300,20 @@ pub fn sequence_duration_summary(request: JsValue) -> Result<JsValue, JsValue> {
 
 /// Complete a command string at the given cursor offset.
 ///
-/// Returns grammar-derived completion metadata for UI autocomplete.
+/// Returns grammar-derived completion metadata for UI autocomplete. `output_targets` lists the
+/// show's configured output target IDs, which completion offers wherever a command names an
+/// output (`patch ... @ <output>:1.1`, `ch <output>:1.1`).
 #[wasm_bindgen]
-pub fn complete_command(input: &str, cursor: usize) -> Result<JsValue, JsValue> {
-    let response: CommandCompletionResponse = complete_command_impl(input, cursor);
+pub fn complete_command(
+    input: &str,
+    cursor: usize,
+    output_targets: Vec<String>,
+) -> Result<JsValue, JsValue> {
+    let inventory = CompletionInventory {
+        output_targets: output_targets.into_iter().map(Into::into).collect(),
+    };
+    let response: CommandCompletionResponse =
+        complete_command_with_inventory_impl(input, cursor, &inventory);
     serde_wasm_bindgen::to_value(&response)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize completion: {:?}", e)))
 }

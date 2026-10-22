@@ -53,7 +53,7 @@ test("flows are disabled by default", async ({ page }, testInfo) => {
   const completions = await page.evaluate(async () => {
     const { completeCommand } = (await window.__nightfallHarness.load("app"))
       .wasmBridge;
-    return await completeCommand("store ", 6);
+    return await completeCommand("store ", 6, []);
   });
   expect(
     completions?.candidates.some(

@@ -13,8 +13,10 @@ import {
   singleIntentAutoExpandTarget,
 } from "../../../lib/command-autocomplete";
 import { validateCommandSemantics } from "../../../lib/command-semantic-validation";
+import { outputTargetIdsFromSettings } from "../../../lib/network-dmx-output-targets";
 import { completeCommand, validateCommand } from "../../../lib/wasm-bridge";
 import { blueprints } from "../../../state/appStores";
+import type * as types from "../../../types";
 import { blueprintAddressSuggestions } from "../model/blueprint-address-suggestions";
 import { frontierBreadcrumbLabel } from "../model/breadcrumbs";
 
@@ -29,12 +31,20 @@ export type CommandValidationResult =
   | { status: "valid" }
   | { status: "invalid"; message: string; severity: "warning" | "error" };
 
-/** Completes and ranks one command input using the parser's slot plan. */
+/**
+ * Completes and ranks one command input using the parser's slot plan, offering the show's
+ * configured outputs wherever the command names one.
+ */
 export async function analyzeCommandAutocomplete(
   value: string,
   cursor: number,
+  settings: types.IoRuntimeSettings,
 ): Promise<CommandAutocompleteResult | null> {
-  const response = await completeCommand(value, cursor);
+  const response = await completeCommand(
+    value,
+    cursor,
+    outputTargetIdsFromSettings(settings),
+  );
   if (!response) return null;
 
   const parserSuggestions = rankCommandAutocomplete(response, value, cursor);

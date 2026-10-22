@@ -495,7 +495,18 @@ fn immediate_frontier_for_clause(
             crate::parser::structural::SlotState::ValuePending => {
                 if let Some(expected_tokens) =
                     crate::parser::structural::direct_dmx_channel_fills(slot.slot, &slot_fills)
-                        .and_then(crate::parser::structural::dmx_transport_prefix_expected_tokens)
+                        .and_then(|channel_fills| {
+                            if channel_fills.is_empty() {
+                                Some(
+                                    crate::parser::structural::dmx_channel_expression_start_tokens(
+                                    ),
+                                )
+                            } else {
+                                crate::parser::structural::dmx_transport_prefix_expected_tokens(
+                                    channel_fills,
+                                )
+                            }
+                        })
                 {
                     frontier.push(filtered_slot_expectation(
                         parser,

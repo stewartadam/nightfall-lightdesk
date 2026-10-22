@@ -926,7 +926,7 @@
           "status": "error"
         },
         "completion_groups": ["release/channel"],
-        "candidates": ["0..9"],
+        "candidates": ["(", "0..9", "artnet", "sacn", "udmx"],
         "current_breadcrumb": "Release > Channel",
         "breadcrumb": {
           "state": "current_clause_path",
@@ -1001,7 +1001,7 @@
           "status": "error"
         },
         "completion_groups": ["release/channel"],
-        "candidates": [":"],
+        "candidates": [":", "artnet"],
         "current_breadcrumb": "Release > Channel",
         "breadcrumb": {
           "state": "current_clause_path",

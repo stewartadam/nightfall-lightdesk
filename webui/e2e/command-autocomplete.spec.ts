@@ -979,6 +979,72 @@ test("offers disabled patch targets only for transport sources", async ({
   });
 });
 
+/**
+ * Verifies output names come from the show's configured outputs: a custom output appears next
+ * to the built-in ones after `ch ` and `patch ... @`, a partly typed hyphenated name completes
+ * to the whole name, and accepting it leaves the cursor ready for `:universe`.
+ */
+test("suggests configured output names for channel and patch commands", async ({
+  page,
+}, testInfo) => {
+  const input = page.locator(inputSelector);
+  /** Locates the suggestion row that inserts one output name. */
+  const outputRow = (name: string) =>
+    page.locator(`${suggestionRowsSelector}[data-insert-text="${name}"]`);
+
+  await page.evaluate(async () => {
+    const harness = await window.__nightfallHarness.load("app");
+    harness.ioService.sendNetworkDmxOutputs([
+      ...(harness.settings.$ioSettings.get().network_dmx_outputs?.targets ??
+        []),
+      {
+        id: "stage-left",
+        protocol: harness.types.NetworkDmxProtocol.Sacn,
+        delivery: { type: "Unicast", data: { ip: "10.0.0.5" } },
+      },
+    ]);
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const harness = await window.__nightfallHarness.load("app");
+        return harness.settings.$ioSettings
+          .get()
+          .network_dmx_outputs?.targets.map((target) => target.id);
+      }),
+    )
+    .toContain("stage-left");
+
+  await openAutocomplete(page, "ch ");
+  if (!(await outputRow("stage-left").isVisible())) await input.press("Tab");
+  for (const name of ["sacn", "artnet", "udmx", "stage-left"]) {
+    await expect(outputRow(name)).toBeVisible();
+  }
+  await outputRow("stage-left").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("channel-outputs.png") });
+
+  await input.fill("");
+  await openAutocomplete(page, "ch stage-l");
+  if (!(await outputRow("stage-left").isVisible())) await input.press("Tab");
+  await expect(outputRow("stage-left")).toBeVisible();
+  await expect(outputRow("sacn")).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("channel-partial-output.png"),
+  });
+  await outputRow("stage-left").click();
+  await expect(input).toHaveValue("ch stage-left");
+
+  await input.pressSequentially(":1.1 @ 255");
+  await expect(input).toHaveValue("ch stage-left:1.1 @ 255");
+  await expect(input).not.toHaveAttribute("aria-invalid", "true");
+
+  await input.fill("");
+  await openAutocomplete(page, `patch fix ${FIXTURE_ID} @ `);
+  if (!(await outputRow("stage-left").isVisible())) await input.press("Tab");
+  await expect(outputRow("stage-left")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("patch-outputs.png") });
+});
+
 /** Verifies the sole attribute intent opens automatically and Tab inserts its selected token. */
 test("tab inserts the selected @ token from the sole attribute intent", async ({
   page,

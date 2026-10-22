@@ -477,10 +477,14 @@ export async function calculateSequenceDurationSummary(
 
 /**
  * Get command autocomplete metadata at the given cursor position.
+ *
+ * `outputTargets` lists the show's configured output target IDs; the parser offers them
+ * wherever a command names an output, in place of the built-in keywords.
  */
 export async function completeCommand(
   input: string,
   cursor: number,
+  outputTargets: string[],
 ): Promise<CommandAutocompleteResponse | null> {
   try {
     await initWasm();
@@ -496,6 +500,7 @@ export async function completeCommand(
       wasmModule.complete_command(
         input,
         byteCursor,
+        outputTargets,
       ) as CommandAutocompleteResponse,
     );
     return areExperimentalFlowsEnabled()

@@ -23,6 +23,7 @@ export * as visualizerSettings from "../../features/visualizer/state/settings";
 export * as api from "../../lib/api";
 export * as dockviewLayout from "../../lib/dockview-layout";
 export * as featureFlags from "../../lib/feature-flags";
+export * as ioService from "../../lib/io-service";
 export * as keyboardShortcuts from "../../lib/keyboardShortcuts";
 export * as layoutActivation from "../../lib/layout-activation";
 export * as layoutManagement from "../../lib/layout-management";
