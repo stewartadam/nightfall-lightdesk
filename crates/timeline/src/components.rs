@@ -19,6 +19,9 @@ use uuid::Uuid;
 
 use crate::prelude::*;
 
+/// Timeline playback between timecode reports that keep playing audio on the timecode.
+pub const AUDIO_CLOCK_REPORT_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Tracks the type of entity spawned by a timeline
 #[derive(Clone, Debug)]
 pub enum SpawnedEntityType {
@@ -94,8 +97,9 @@ pub struct MaterializedTimeline {
     pub triggered_actions: HashMap<(String, String), Duration>,
     /// The audio sink ID associated with this timeline
     pub audio_sink_id: Option<AudioSinkId>,
-    /// Playback offset last reported to browser media for this timeline while it plays.
-    pub browser_audio_reported_offset: Option<Duration>,
+    /// Timecode-derived offset last reported to this timeline's playing audio, or `None`
+    /// while its audio is not playing.
+    pub audio_clock_reported_offset: Option<Duration>,
     /// Entities spawned by this timeline's track actions, maps entity to (track_id, action_id, type)
     pub spawned_entities: HashMap<Entity, (String, String, SpawnedEntityType)>,
 }
@@ -113,7 +117,7 @@ impl MaterializedTimeline {
             parameter_values: HashMap::new(),
             triggered_actions: HashMap::new(),
             audio_sink_id: None,
-            browser_audio_reported_offset: None,
+            audio_clock_reported_offset: None,
             spawned_entities: HashMap::new(),
         }
     }
@@ -160,6 +164,31 @@ impl MaterializedTimeline {
                 self.audio_needs_sync = true;
             }
         }
+    }
+
+    /// Anchor the clock that keeps this timeline's audio on the timecode after a full audio
+    /// sync: audio that is `playing` from `offset` is due its first report one
+    /// [`AUDIO_CLOCK_REPORT_INTERVAL`] later, and audio that is not playing gets none.
+    pub fn anchor_audio_clock(&mut self, playing: bool, offset: Duration) {
+        self.audio_clock_reported_offset = playing.then_some(offset);
+    }
+
+    /// Decide whether playing audio is due a timecode report at `offset`, so the audio
+    /// output can snap back to the timecode. A report is due every
+    /// [`AUDIO_CLOCK_REPORT_INTERVAL`] of playback, or after the timecode jumps that far,
+    /// and only once a play has anchored the clock. Audio that stopped `playing` releases it.
+    pub fn take_audio_clock_report(&mut self, playing: bool, offset: Duration) -> bool {
+        if !playing {
+            self.audio_clock_reported_offset = None;
+            return false;
+        }
+        let due = self
+            .audio_clock_reported_offset
+            .is_some_and(|reported| offset.abs_diff(reported) >= AUDIO_CLOCK_REPORT_INTERVAL);
+        if due {
+            self.audio_clock_reported_offset = Some(offset);
+        }
+        due
     }
 
     /// Get the current playback position (computed from timecode and start offset)
@@ -413,6 +442,27 @@ mod tests {
                 .triggered_actions
                 .contains_key(&("track-b".to_string(), action_id))
         );
+    }
+
+    /// Verifies timecode reports for playing audio wait for a play to anchor them, fall due
+    /// once per report interval of playback or after a jump back in the timecode, and stop
+    /// once the audio is no longer playing.
+    #[test]
+    fn audio_clock_reports_follow_playback_progress() {
+        let mut materialized = MaterializedTimeline::new(Timeline::default());
+        assert!(!materialized.take_audio_clock_report(true, Duration::from_secs(5)));
+
+        materialized.anchor_audio_clock(true, Duration::from_secs(1));
+        assert!(!materialized.take_audio_clock_report(true, Duration::from_millis(1_900)));
+        assert!(materialized.take_audio_clock_report(true, Duration::from_secs(2)));
+        assert_eq!(
+            materialized.audio_clock_reported_offset,
+            Some(Duration::from_secs(2))
+        );
+        assert!(!materialized.take_audio_clock_report(true, Duration::from_millis(2_500)));
+        assert!(materialized.take_audio_clock_report(true, Duration::from_millis(500)));
+        assert!(!materialized.take_audio_clock_report(false, Duration::from_secs(9)));
+        assert_eq!(materialized.audio_clock_reported_offset, None);
     }
 
     /// Verifies cross-track track actions are emitted in timeline-position order.

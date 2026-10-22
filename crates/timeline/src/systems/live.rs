@@ -69,10 +69,10 @@ pub fn handle_timeline_audio_system(
         );
     }
 
-    // Handle each timeline that needs audio sync
+    // Handle each timeline that needs audio sync or has playing audio to keep on the timecode
     for (entity, mut timeline) in timeline_query
         .iter_mut()
-        .filter(|(_, t)| t.audio_needs_sync)
+        .filter(|(_, t)| t.audio_needs_sync || t.audio_clock_reported_offset.is_some())
     {
         let (current_time, timecode_running) = timecode_info
             .get(&timeline.timeline.timecode_uid)
@@ -81,6 +81,20 @@ pub fn handle_timeline_audio_system(
 
         let playback_position = timeline.get_playback_position(current_time);
         let audio_enabled = timeline.timeline.audio_enabled && audio_output_enabled.0;
+        let playing = timeline.is_active && timecode_running && audio_enabled;
+
+        // The timecode leads: playing audio is told where the timecode is, and the audio
+        // worker seeks it back when the audio actually played has drifted away.
+        if !timeline.audio_needs_sync {
+            if timeline.take_audio_clock_report(playing, playback_position)
+                && let Some(sink_id) = timeline.audio_sink_id
+            {
+                audio_controller.sync(sink_id, playback_position);
+            }
+            continue;
+        }
+        timeline.anchor_audio_clock(playing, playback_position);
+
         tracing::trace!(
             %entity,
             timeline_id = timeline.timeline.identifiers.id,
@@ -93,7 +107,7 @@ pub fn handle_timeline_audio_system(
             playback_position = ?playback_position,
             "Processing timeline audio sync"
         );
-        if timeline.is_active && timecode_running && audio_enabled {
+        if playing {
             // Timeline is active, audio should play, and timecode is running
             if timeline.audio_sink_id.is_none() {
                 // Create a new audio sink for this timeline if it doesn't have one
