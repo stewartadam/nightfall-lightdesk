@@ -14,10 +14,17 @@ import { durationToMs } from "./utils";
 
 const log = getLogger(import.meta.url);
 
-// Drift past this means the media fell behind (buffering) or ran ahead of the engine clock.
-const CLOCK_DRIFT_TOLERANCE_MS = 150;
-// Gives a corrective seek time to rebuffer before drift is judged again.
-const CLOCK_RESYNC_COOLDOWN_MS = 1_000;
+// Drift this small is inaudible and left alone.
+const CLOCK_DRIFT_TOLERANCE_MS = 40;
+// Drift past this is closed with a seek; smaller drift is eased out by playback speed,
+// because Safari and iOS rebuffer on every seek and would drift again while doing so.
+const CLOCK_SEEK_THRESHOLD_MS = 1_000;
+// Gives a corrective seek time to rebuffer before another seek is considered.
+const CLOCK_RESYNC_COOLDOWN_MS = 3_000;
+// Largest playback speed change used to ease out drift, well below audible pitch artefacts.
+const MAX_RATE_CORRECTION = 0.05;
+// Drift that playback speed aims to remove within this much playback.
+const RATE_CORRECTION_HORIZON_MS = 4_000;
 // `HTMLMediaElement.HAVE_FUTURE_DATA`: enough media is buffered to keep playing.
 const HAVE_FUTURE_DATA = 3;
 
@@ -148,8 +155,8 @@ export class BrowserDemoAudioHost {
   }
 
   /**
-   * Re-anchor playing media to the engine position reported at `reportedAtMs` and seek
-   * when the media has drifted from it. The engine clock can run slower than real time on
+   * Re-anchor playing media to the engine position reported at `reportedAtMs` and correct
+   * any drift from it. The engine clock can run slower than real time on
    * a busy device, so playback follows these reports rather than the local clock alone.
    */
   followEngineClock(
@@ -159,7 +166,6 @@ export class BrowserDemoAudioHost {
   ): void {
     if (!this.clockAnchor || this.timelineUid !== timelineUid) return;
     this.clockAnchor = { positionMs, atMs: reportedAtMs };
-    this.lastResyncAtMs = Number.NEGATIVE_INFINITY;
     this.syncToEngineClock();
   }
 
@@ -301,6 +307,7 @@ export class BrowserDemoAudioHost {
   /** Stop following the engine clock until the next Play directive anchors it again. */
   private releaseEngineClock(): void {
     this.clockAnchor = null;
+    this.element.playbackRate = 1;
   }
 
   /**
@@ -314,9 +321,10 @@ export class BrowserDemoAudioHost {
   }
 
   /**
-   * Seek the media back onto the engine clock when it drifts past the tolerance, e.g.
-   * because a phone was still fetching audio when the engine started or playback stalled
-   * on the network. Media that is still buffering is left alone, and corrections are rate
+   * Keep the media on the engine clock. Large drift, e.g. a phone still fetching audio when
+   * the engine started or playback that stalled on the network, is closed with a seek.
+   * Smaller drift is eased out by nudging the playback speed, so Safari and iOS never
+   * rebuffer for it. Media that is still buffering is left alone, and seeks are rate
    * limited so a rebuffering seek is not chased. Past the loop end the engine sends a fresh
    * Play from the loop start, so the projection is not trusted there.
    */
@@ -335,16 +343,26 @@ export class BrowserDemoAudioHost {
     if (this.loopRangeMs && expectedMs >= this.loopRangeMs.end) return;
     const driftMs = this.element.currentTime * 1_000 - expectedMs;
     if (
-      Math.abs(driftMs) <= CLOCK_DRIFT_TOLERANCE_MS ||
-      nowMs - this.lastResyncAtMs < CLOCK_RESYNC_COOLDOWN_MS
+      Math.abs(driftMs) >= CLOCK_SEEK_THRESHOLD_MS &&
+      nowMs - this.lastResyncAtMs >= CLOCK_RESYNC_COOLDOWN_MS
     ) {
+      this.lastResyncAtMs = nowMs;
+      this.element.playbackRate = 1;
+      log.debug(
+        `Seeking browser demo audio that drifted ${Math.round(driftMs)}ms from the engine clock`,
+      );
+      this.seek(this.timelineUid, expectedMs);
       return;
     }
-    this.lastResyncAtMs = nowMs;
-    log.debug(
-      `Resyncing browser demo audio that drifted ${Math.round(driftMs)}ms from the engine clock`,
-    );
-    this.seek(this.timelineUid, expectedMs);
+    const correction =
+      Math.abs(driftMs) <= CLOCK_DRIFT_TOLERANCE_MS
+        ? 0
+        : Math.max(
+            -MAX_RATE_CORRECTION,
+            Math.min(MAX_RATE_CORRECTION, driftMs / RATE_CORRECTION_HORIZON_MS),
+          );
+    const rate = 1 - correction;
+    if (this.element.playbackRate !== rate) this.element.playbackRate = rate;
   }
 
   /** Publish a stable diagnostic snapshot without exposing the media element. */

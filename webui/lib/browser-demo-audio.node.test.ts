@@ -80,6 +80,7 @@ test("browser audio distinguishes paused playback at zero from ready media", asy
 class BufferingAudio extends StationaryAudio {
   override duration = 60;
   seeking = false;
+  playbackRate = 1;
   readyState = 4;
   muted = false;
   private releasePlay: (() => void) | null = null;
@@ -103,9 +104,10 @@ class BufferingAudio extends StationaryAudio {
 }
 
 /**
- * Audio that starts late or stalls is pulled back onto the engine clock, follows the
- * engine's Sync reports when the engine runs slower than real time, waits for the engine
- * to restart it at the loop end, and is left alone once playback is paused.
+ * Audio that starts late or stalls far behind is seeked back onto the engine clock, while
+ * small drift and Sync reports from an engine running slower than real time are eased out
+ * through playback speed without seeking. At the loop end the media waits for the engine
+ * to restart it, and once paused it is left alone at normal speed.
  */
 test("browser audio follows the engine clock when the media starts late", async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "Audio");
@@ -139,12 +141,14 @@ test("browser audio follows the engine clock when the media starts late", async 
     element.currentTime = 6.85;
     element.dispatchEvent(new Event("timeupdate"));
     assert.equal(element.currentTime, 6.85);
+    assert.equal(element.playbackRate, 1 + 50 / 4_000);
 
     nowMs += 3_000;
     element.dispatchEvent(new Event("playing"));
     assert.equal(element.currentTime, 9.9);
+    assert.equal(element.playbackRate, 1);
 
-    // A busy engine reports less progress than real time; media follows the engine.
+    // A busy engine reports less progress than real time; media slows down to follow it.
     nowMs += 1_200;
     element.currentTime = 11.1;
     await host.applyDirective(
@@ -154,7 +158,8 @@ test("browser audio follows the engine clock when the media starts late", async 
       },
       session,
     );
-    assert.equal(element.currentTime, 10.5);
+    assert.equal(element.currentTime, 11.1);
+    assert.equal(element.playbackRate, 0.95);
 
     host.setLoop(timeline_uid, {
       start: { secs: 2, nanos: 0 },
@@ -172,6 +177,7 @@ test("browser audio follows the engine clock when the media starts late", async 
     nowMs += 5_000;
     element.dispatchEvent(new Event("timeupdate"));
     assert.equal(element.currentTime, 2);
+    assert.equal(element.playbackRate, 1);
     host.unload();
   } finally {
     if (previous) Object.defineProperty(globalThis, "Audio", previous);
