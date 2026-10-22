@@ -478,13 +478,13 @@ export async function calculateSequenceDurationSummary(
 /**
  * Get command autocomplete metadata at the given cursor position.
  *
- * `outputTargets` lists the show's configured output target IDs; the parser offers them
- * wherever a command names an output, in place of the built-in keywords.
+ * `ioSettings` is the engine's I/O settings snapshot; the bridge reads its output targets
+ * with the engine's own rules and the parser offers them wherever a command names an output.
  */
 export async function completeCommand(
   input: string,
   cursor: number,
-  outputTargets: string[],
+  ioSettings: types.IoRuntimeSettings,
 ): Promise<CommandAutocompleteResponse | null> {
   try {
     await initWasm();
@@ -500,7 +500,7 @@ export async function completeCommand(
       wasmModule.complete_command(
         input,
         byteCursor,
-        outputTargets,
+        ioSettings,
       ) as CommandAutocompleteResponse,
     );
     return areExperimentalFlowsEnabled()
@@ -564,6 +564,28 @@ export async function splitCommandStatements(
 function stringArrayFromWasmValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+/**
+ * Returns the output target IDs commands can name, read from the engine's I/O settings
+ * snapshot by the Rust WASM bridge with the engine's own sanitizing rules.
+ */
+export async function outputTargetIds(
+  ioSettings: types.IoRuntimeSettings,
+): Promise<string[] | null> {
+  try {
+    await initWasm();
+
+    if (!wasmModule) {
+      log.error("WASM module not loaded");
+      return null;
+    }
+
+    return wasmModule.output_target_ids(ioSettings);
+  } catch (error) {
+    log.error("Failed to read configured output targets:", error);
+    return null;
+  }
 }
 
 /**

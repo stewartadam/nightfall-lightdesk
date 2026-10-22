@@ -9,10 +9,9 @@
 import type * as types from "../types";
 import {
   isReservedOutputTargetKeyword,
-  outputTargetIdsFromSettings,
   reservedOutputTargetKeywordsReady,
 } from "./network-dmx-output-targets";
-import { splitCommandStatements } from "./wasm-bridge";
+import { outputTargetIds, splitCommandStatements } from "./wasm-bridge";
 
 export type CommandSemanticValidationResult =
   | { status: "ok" }
@@ -29,12 +28,14 @@ export async function validateCommandSemantics(
     return { status: "ok" };
   }
 
-  const knownTargets = outputTargetIds(settings);
-
-  const statements = await splitCommandStatements(command);
-  if (!statements) {
+  const [targetIds, statements] = await Promise.all([
+    outputTargetIds(settings),
+    splitCommandStatements(command),
+  ]);
+  if (!targetIds || !statements) {
     return { status: "ok" };
   }
+  const knownTargets = new Set(targetIds.map(normalizePatchTargetName));
 
   for (const statement of statements) {
     const targetName = patchTargetName(statement);
@@ -56,15 +57,6 @@ export async function validateCommandSemantics(
   }
 
   return { status: "ok" };
-}
-
-/**
- * Builds the set of configured output target IDs accepted by patch output commands.
- */
-function outputTargetIds(settings: types.IoRuntimeSettings): Set<string> {
-  return new Set(
-    outputTargetIdsFromSettings(settings).map(normalizePatchTargetName),
-  );
 }
 
 /**
