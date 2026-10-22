@@ -49,10 +49,7 @@ export function Controls(props: ControlsProps): JSX.Element {
   /** Sends a tracked control command and surfaces backend or transport failure. */
   const sendCommand = async (command: ControlCommand): Promise<void> => {
     try {
-      const result = await commandClient.submitCommand(
-        "ControlCommand",
-        command,
-      );
+      const result = await commandClient.invoke("ControlCommand", command);
       if (!commandSucceeded(result)) {
         pushToast("error", commandFailureMessage(result));
       }
