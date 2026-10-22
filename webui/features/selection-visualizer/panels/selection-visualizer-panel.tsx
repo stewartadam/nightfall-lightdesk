@@ -18,7 +18,7 @@ import {
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -199,7 +199,7 @@ export default function SelectionVisualizerPanel() {
       type: "SetProgrammerSpatialSelection",
       data: parsed,
     };
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   const hasResolvedSelection = createMemo(

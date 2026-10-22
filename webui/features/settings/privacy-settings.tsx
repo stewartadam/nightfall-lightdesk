@@ -28,7 +28,7 @@ import {
   $desktopUpdate,
   setDesktopUpdateChecks,
 } from "../../lib/desktop-updates";
-import { engineRuntime } from "../../lib/engine-runtime";
+import { commandClient } from "../../lib/engine-commands";
 import { setStoreAction } from "../../lib/nanostore-action";
 import { PRIVACY_POLICY_URL } from "../../lib/privacy";
 import { $telemetryState } from "../../state/settings";
@@ -62,9 +62,9 @@ export function setTelemetryConsent(patch: Partial<TelemetryConsent>): void {
     ...state,
     consent,
   });
-  engineRuntime.sendCommand({
-    module: "SettingsCommand",
-    command: { type: "SetTelemetryConsent", data: consent },
+  commandClient.emit("SettingsCommand", {
+    type: "SetTelemetryConsent",
+    data: consent,
   });
 }
 
@@ -220,10 +220,7 @@ function TelemetrySettings() {
     setResettingId(previousId);
     setUncopiedId(undefined);
     const copied = writeClipboardText(previousId);
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "ResetTelemetryInstallId" },
-    });
+    commandClient.emit("SettingsCommand", { type: "ResetTelemetryInstallId" });
     copied.then(confirmCopy, () => setUncopiedId(previousId));
   };
 

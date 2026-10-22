@@ -8,7 +8,7 @@
 
 import type * as types from "../types";
 import { requireCommandSuccess } from "./command-result";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import {
   persistCurrentShowfileName,
   showfileLoadCommandForName,
@@ -24,17 +24,14 @@ export type OpenShowfileSelection =
 
 /** Sends a DeskCommand through the websocket showfile action service. */
 function sendDeskCommand(command: types.DeskCommand): void {
-  engineRuntime.sendCommand({ module: "DeskCommand", command });
+  commandClient.emit("DeskCommand", command);
 }
 
 /** Sends a DeskCommand and waits for the backend command result. */
 async function sendDeskCommandAndAwait(
   command: types.DeskCommand,
 ): Promise<void> {
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "DeskCommand",
-    command,
-  });
+  const result = await commandClient.invoke("DeskCommand", command);
   requireCommandSuccess(result);
 }
 

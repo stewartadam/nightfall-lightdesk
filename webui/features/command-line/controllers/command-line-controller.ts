@@ -7,17 +7,14 @@
  */
 
 import { createSignal } from "solid-js";
-import { CommandClient } from "../../../lib/command-client";
 import {
   type CommandSequenceProgress,
   CommandSequenceRunner,
   splitCommandSequence,
 } from "../../../lib/command-sequence";
 import { hasDiskStorage } from "../../../lib/disk-storage";
-import {
-  EngineRuntimeCommandDisconnectedError,
-  engineRuntime,
-} from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
+import { EngineRuntimeCommandDisconnectedError } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { openOrFocusPanelDefinition } from "../../../lib/panel-open-command";
@@ -46,9 +43,7 @@ import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
 
 const log = getLogger(import.meta.url);
-const commandSequenceRunner = new CommandSequenceRunner(
-  new CommandClient(engineRuntime),
-);
+const commandSequenceRunner = new CommandSequenceRunner(commandClient);
 
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
 let commandSubmissionTail: Promise<void> = Promise.resolve();
@@ -178,7 +173,7 @@ export function createCommandLineController(
   /** Sends the global programmer-clear command. */
   const clearProgrammer = () => {
     const command: types.ProgrammerCommand = { type: "ClearProgrammer" };
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Opens or focuses the Console panel, whose scrollback lists running and queued commands. */

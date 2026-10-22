@@ -15,7 +15,7 @@ import {
   dmxUniverseSnapshot,
 } from "../../../lib/dmx-universe-data";
 import { watchDmxUniverse } from "../../../lib/dmx-universe-watch";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dmxUniverseChannels, dmxUniverseList } from "../../../state/appStores";
@@ -56,9 +56,9 @@ export function createDmxUniverseSelectionController() {
   const setInputUniverseVisibilityMode = (
     value: InputUniverseVisibilityMode,
   ) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetInputUniverseVisibilityMode", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetInputUniverseVisibilityMode",
+      data: value,
     });
   };
 

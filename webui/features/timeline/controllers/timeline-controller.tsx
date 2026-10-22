@@ -19,7 +19,7 @@ import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import {
   useConditionalShallowStore,
@@ -249,7 +249,7 @@ export const TimelineController = (props: TimelineControllerProps) => {
         target_track_id: request.targetTrackId,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   };
 
   const sendTimecodeCommand = (
@@ -269,10 +269,10 @@ export const TimelineController = (props: TimelineControllerProps) => {
       return;
     }
 
-    engineRuntime.sendCommand({
-      module: "TimecodeCommand",
-      command: commandForTimecode(timecode.identifiers.id),
-    });
+    commandClient.emit(
+      "TimecodeCommand",
+      commandForTimecode(timecode.identifiers.id),
+    );
   };
 
   const sendTimelineCommand = (
@@ -283,10 +283,10 @@ export const TimelineController = (props: TimelineControllerProps) => {
       return;
     }
 
-    engineRuntime.sendCommand({
-      module: "TimelineCommand",
-      command: commandForTimeline(timeline.identifiers.id),
-    });
+    commandClient.emit(
+      "TimelineCommand",
+      commandForTimeline(timeline.identifiers.id),
+    );
   };
 
   const isManualTriggerMode = () =>

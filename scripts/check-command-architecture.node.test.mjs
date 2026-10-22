@@ -100,3 +100,19 @@ test("direct command result writers fail", () => {
     },
   ]);
 });
+
+/** Verifies web UI features send commands through the shared command client. */
+test("direct engine runtime command sends fail outside the transport owners", () => {
+  const source =
+    'engineRuntime.sendCommand({ module: "CueCommand", command });\nengineRuntime.sendCommandAndAwait(data);';
+  const violations = findRetiredLifecycleUses([
+    { path: "webui/lib/cue-service.ts", source },
+    { path: "webui/lib/engine-runtime.ts", source },
+    { path: "webui/e2e/example.spec.ts", source },
+  ]);
+
+  assert.deepEqual(
+    violations.map(({ line, path }) => `${path}:${line}`),
+    ["webui/lib/cue-service.ts:1", "webui/lib/cue-service.ts:2"],
+  );
+});

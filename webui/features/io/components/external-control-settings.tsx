@@ -10,7 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import {
   $availableNetworkInterfaces,
   $externalControlState,
@@ -31,12 +31,9 @@ export function ExternalControlSettings() {
   });
   /** Submits complete host preferences through the settings command lifecycle. */
   const updateSettings = (patch: Partial<ControlSettings>) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: {
-        type: "SetExternalControl",
-        data: { ...state().settings, ...patch },
-      },
+    commandClient.emit("SettingsCommand", {
+      type: "SetExternalControl",
+      data: { ...state().settings, ...patch },
     });
   };
 

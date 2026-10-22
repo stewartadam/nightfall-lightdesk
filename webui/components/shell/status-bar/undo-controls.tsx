@@ -20,7 +20,8 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { commandFailure, commandSucceeded } from "../../../lib/command-result";
-import { connectionStatus, engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
+import { connectionStatus } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import { undoState } from "../../../state/appStores";
 import { DropdownMenu } from "../../ui/dropdown-menu";
@@ -51,18 +52,12 @@ export default function UndoControls(props: { placement: "above" | "below" }) {
 
   /** Asks the engine to undo the latest operation. */
   const handleUndo = () => {
-    engineRuntime.sendCommand({
-      module: "UndoCommand",
-      command: { type: "Undo", data: {} },
-    });
+    commandClient.emit("UndoCommand", { type: "Undo", data: {} });
   };
 
   /** Asks the engine to redo the latest undone operation. */
   const handleRedo = () => {
-    engineRuntime.sendCommand({
-      module: "UndoCommand",
-      command: { type: "Redo", data: {} },
-    });
+    commandClient.emit("UndoCommand", { type: "Redo", data: {} });
   };
 
   /** Sends undo or redo commands one at a time until the clicked stack entry is reached. */
@@ -75,9 +70,9 @@ export default function UndoControls(props: { placement: "above" | "below" }) {
     setIsUndoTimelineJumping(true);
     try {
       for (let step = 0; step <= item.entry.order; step += 1) {
-        const result = await engineRuntime.sendCommandAndAwait({
-          module: "UndoCommand",
-          command: { type: commandType, data: {} },
+        const result = await commandClient.invoke("UndoCommand", {
+          type: commandType,
+          data: {},
         });
         if (!commandSucceeded(result)) {
           const failure = commandFailure(result);

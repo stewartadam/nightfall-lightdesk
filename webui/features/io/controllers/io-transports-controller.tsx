@@ -10,7 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, For, onMount } from "solid-js";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import {
   sendNetworkDmxOutputs,
   sendNetworkInputEnabled,
@@ -89,9 +89,8 @@ export function IoTransportsController() {
 
   /** Requests compatible USB adapter choices when the panel is mounted. */
   createEffect(() => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "GetAvailableUsbDmxDevices" },
+    commandClient.emit("SettingsCommand", {
+      type: "GetAvailableUsbDmxDevices",
     });
   });
 

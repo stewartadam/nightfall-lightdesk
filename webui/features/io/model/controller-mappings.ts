@@ -10,7 +10,7 @@ import {
   commandOutputValue,
   commandSucceeded,
 } from "../../../lib/command-result";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -42,10 +42,7 @@ async function submitMappingCommand(
 ): Promise<unknown | null> {
   let result: types.CommandResult;
   try {
-    result = await engineRuntime.sendCommandAndAwait({
-      module,
-      command: plain(command),
-    });
+    result = await commandClient.invoke(module, plain(command));
   } catch (error) {
     log.warn("Could not send mapping command", error);
     pushToast("error", "Couldn't save the mapping: not connected to the desk.");

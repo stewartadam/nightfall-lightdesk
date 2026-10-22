@@ -19,7 +19,7 @@ import type {
   GridSelection,
   Item,
 } from "../../../lib/data-grid-types";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import * as types from "../../../types";
 import {
   type BlueprintApplicationScope,
@@ -103,7 +103,7 @@ export function createProgrammerGridCommands(
       resolution,
     );
     for (const command of commands) {
-      engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+      commandClient.emit("ProgrammerCommand", command);
     }
   };
 
@@ -164,10 +164,7 @@ export function createProgrammerGridCommands(
       },
     };
 
-    engineRuntime.sendCommand({
-      module: "ProgrammerCommand",
-      command,
-    });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Returns every attribute column covered by a header cell. */

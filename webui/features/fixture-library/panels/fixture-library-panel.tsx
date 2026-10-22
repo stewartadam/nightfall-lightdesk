@@ -54,7 +54,7 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import {
   libraryDefinitionId,
   libraryRevisionLabel,
@@ -118,10 +118,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
         },
       };
 
-      engineRuntime.sendCommand({
-        module: "FixtureLibraryCommand",
-        command,
-      });
+      commandClient.emit("FixtureLibraryCommand", command);
     } catch (error) {
       log.error("Failed to upload fixture:", error);
     }
@@ -172,10 +169,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       data: fixturesToDelete,
     };
 
-    engineRuntime.sendCommand({
-      module: "FixtureLibraryCommand",
-      command,
-    });
+    commandClient.emit("FixtureLibraryCommand", command);
   };
 
   // Register properties panel

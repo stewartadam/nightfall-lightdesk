@@ -7,7 +7,7 @@
  */
 
 import { onCleanup, onMount } from "solid-js";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -166,16 +166,10 @@ export default function TauriMenuBridge() {
       showCommandPalette: showPalette,
       showKeyboardShortcuts: showShortcutsPopup,
       undo: () => {
-        engineRuntime.sendCommand({
-          module: "UndoCommand",
-          command: { type: "Undo", data: {} },
-        });
+        commandClient.emit("UndoCommand", { type: "Undo", data: {} });
       },
       redo: () => {
-        engineRuntime.sendCommand({
-          module: "UndoCommand",
-          command: { type: "Redo", data: {} },
-        });
+        commandClient.emit("UndoCommand", { type: "Redo", data: {} });
       },
     })
       .then((handler) => {

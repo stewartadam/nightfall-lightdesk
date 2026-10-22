@@ -16,7 +16,7 @@ import ColorPicker, {
 } from "../../../components/widgets/color-picker";
 import { sortedAttributes } from "../../../lib/attribute-ordering";
 import { parseHexColor } from "../../../lib/color-utils";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getFixtureAttributeNames } from "../../../lib/fixture-attributes";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
@@ -118,7 +118,7 @@ export default function ProgrammerProperties() {
       type: "Eval",
       data: `${formatAttributeForCommand(attr)}${operator}${value}`,
     };
-    engineRuntime.sendCommand({ module: "DeskCommand", command: cmd });
+    commandClient.emit("DeskCommand", cmd);
   };
 
   /** Returns the percentage range supported by one attribute editing mode. */
@@ -151,10 +151,7 @@ export default function ProgrammerProperties() {
                   type: "Eval",
                   data: `red@${(rgb.r / 255) * 100} green@${(rgb.g / 255) * 100} blue@${(rgb.b / 255) * 100}`,
                 };
-                engineRuntime.sendCommand({
-                  module: "DeskCommand",
-                  command: cmd,
-                });
+                commandClient.emit("DeskCommand", cmd);
               }}
             />
           </div>

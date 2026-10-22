@@ -37,6 +37,17 @@ const timelineDomainCouplingRules = [
   ["timeline-owned desk action decoder", /\bclip_target_for_action\b/g],
   ["timeline-owned desk eval decoder", /\bdesk_eval_command_for_action\b/g],
 ];
+const webuiCommandClientRules = [
+  [
+    "direct engine runtime command send (use commandClient.emit/invoke)",
+    /\bengineRuntime\.sendCommand(?:AndAwait)?\s*\(/g,
+  ],
+];
+/** Web UI files that may call the runtime's command transport directly. */
+const webuiCommandTransportOwners = new Set([
+  "webui/lib/engine-runtime.ts",
+  "webui/state/appStores.ts",
+]);
 
 /** Returns source files in lifecycle-sensitive production directories. */
 function repositorySourcePaths() {
@@ -106,6 +117,22 @@ export function findRetiredLifecycleUses(sources) {
       !path.endsWith("/tests.rs")
     ) {
       for (const [name, pattern] of timelineDomainCouplingRules) {
+        pattern.lastIndex = 0;
+        for (const match of source.matchAll(pattern)) {
+          violations.push({
+            line: lineNumberAt(source, match.index),
+            name,
+            path,
+          });
+        }
+      }
+    }
+    if (
+      path.startsWith("webui/") &&
+      !path.startsWith("webui/e2e/") &&
+      !webuiCommandTransportOwners.has(path)
+    ) {
+      for (const [name, pattern] of webuiCommandClientRules) {
         pattern.lastIndex = 0;
         for (const match of source.matchAll(pattern)) {
           violations.push({

@@ -9,15 +9,12 @@
 import { HandIcon } from "@squidlab/phosphor-solid/hand";
 import { onMount } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
-import { CommandClient } from "../../../lib/command-client";
 import {
   commandFailureMessage,
   commandSucceeded,
 } from "../../../lib/command-result";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { pushToast } from "../../../state/appStores";
-
-const commandClient = new CommandClient(engineRuntime);
 
 /** Asks the backend to let go of every held Flash and Swop, reporting failures as a toast. */
 async function releaseHeldButtons(): Promise<void> {

@@ -31,6 +31,8 @@ import {
 import type { NightfallHarness } from "../e2e/harness/registry";
 import { type AppLifecyclePhase, appLifecycle } from "../state/app-lifecycle";
 import { $settings, $settingsSnapshotRevision } from "../state/settings";
+import type { DeskCommand } from "../types";
+import { commandClient } from "./engine-commands";
 import {
   backendAppState,
   connectionStatus,
@@ -257,7 +259,7 @@ function swapWorld(
 ): Promise<void> {
   markResyncPending();
   return waitForStartupWorldSwapCommand(
-    engineRuntime.sendCommandAndAwait({ module: "DeskCommand", command }),
+    commandClient.invoke("DeskCommand", command as DeskCommand),
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     expectedShowfileName,
   );

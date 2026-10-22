@@ -9,11 +9,11 @@
 import { useStore } from "@nanostores/solid";
 import { For, type JSX } from "solid-js";
 import { ScrollArea } from "../../../components/ui/scroll-area";
-import { CommandClient } from "../../../lib/command-client";
 import {
   commandFailureMessage,
   commandSucceeded,
 } from "../../../lib/command-result";
+import { commandClient } from "../../../lib/engine-commands";
 import { engineRuntime } from "../../../lib/engine-runtime";
 import { controls, masters, pushToast } from "../../../state/appStores";
 import {
@@ -29,8 +29,6 @@ import {
   controlGoControl,
 } from "../model/control-actions";
 import { Control } from "./control";
-
-const commandClient = new CommandClient(engineRuntime);
 
 export interface ControlsProps {
   /** Number of controls to display (default: 10) */

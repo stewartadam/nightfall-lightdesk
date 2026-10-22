@@ -14,7 +14,7 @@ import {
   type UiActionExecutionContext,
 } from "../../../components/providers/command-registry";
 import { bestEffortPersistentAtom } from "../../../lib/best-effort-persistent-atom";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { pushToast } from "../../../state/notifications";
 import type * as types from "../../../types";
@@ -186,14 +186,11 @@ export function invokeBoundAction(
     runBoundUiAction(action.id, context);
     return;
   }
-  engineRuntime.sendCommand({
-    module: "ActionCommand",
-    command: {
-      type: "Invoke",
-      data: {
-        action: JSON.parse(JSON.stringify(action)),
-        surface: "keyboard",
-      },
+  commandClient.emit("ActionCommand", {
+    type: "Invoke",
+    data: {
+      action: JSON.parse(JSON.stringify(action)),
+      surface: "keyboard",
     },
   });
 }

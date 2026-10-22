@@ -14,7 +14,7 @@ import {
   Input,
   NativeSelect,
 } from "../../../components/ui/form-controls";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { setStoreKeyAction } from "../../../lib/nanostore-action";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { durationToMs, msToDuration } from "../../../lib/utils";
@@ -78,7 +78,7 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
       type: "StoreTimeline",
       data: nextTimeline,
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   };
 
   const updateTimeline = (patch: Partial<types.Timeline>) => {

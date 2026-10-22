@@ -8,7 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, untrack } from "solid-js";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { timelines } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -124,11 +124,7 @@ export const TimelineEventListener = () => {
           marker,
         },
       };
-      engineRuntime.sendCommand({
-        ...(event.batchId ? { undo_id: event.batchId } : {}),
-        module: "TimelineCommand",
-        command,
-      });
+      commandClient.emit("TimelineCommand", command, { undoId: event.batchId });
     }
   });
 
@@ -147,7 +143,7 @@ export const TimelineEventListener = () => {
           marker_uid: markerUid,
         },
       };
-      engineRuntime.sendCommand({ module: "TimelineCommand", command });
+      commandClient.emit("TimelineCommand", command);
     }
   });
 
@@ -165,7 +161,7 @@ export const TimelineEventListener = () => {
         region: event.region,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   });
 
   // Send region deletion commands for regions removed from the timeline.
@@ -182,7 +178,7 @@ export const TimelineEventListener = () => {
         region_uid: event.regionUid,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   });
 
   // Send loop-range commands separately from full timeline snapshot persistence.
@@ -199,7 +195,7 @@ export const TimelineEventListener = () => {
         loop_range: event.loopRange,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   });
 
   // Send nudge-selection commands so undo groups retain the selection delta.
@@ -217,7 +213,7 @@ export const TimelineEventListener = () => {
         delta_ms: event.deltaMs,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   });
 
   // Persist explicit beat-grid setting changes initiated by timeline controls.
@@ -298,11 +294,7 @@ export const TimelineEventListener = () => {
         data: timelineData,
       };
 
-      engineRuntime.sendCommand({
-        ...(batchId ? { undo_id: batchId } : {}),
-        module: "TimelineCommand",
-        command: command,
-      });
+      commandClient.emit("TimelineCommand", command, { undoId: batchId });
     } catch (error) {
       log.error("Failed to send timeline update:", error);
     }

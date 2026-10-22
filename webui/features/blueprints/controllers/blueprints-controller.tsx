@@ -35,7 +35,7 @@ import {
   changeCrudPanelViewMode,
   loadCrudPanelViewMode,
 } from "../../../lib/crud-panel-view-mode";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
 import { openOrFocusPanel } from "../../../lib/panel-open-command";
@@ -239,7 +239,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       type: "StoreBlueprint",
       data: blueprint,
     };
-    engineRuntime.sendCommand({ module: "BlueprintCommand", command });
+    commandClient.emit("BlueprintCommand", command);
   };
 
   /** Sends a numeric blueprint ID rename command to the backend. */
@@ -248,7 +248,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       type: "RenameBlueprint",
       data: { id, new_id: newId },
     };
-    engineRuntime.sendCommand({ module: "BlueprintCommand", command });
+    commandClient.emit("BlueprintCommand", command);
   };
 
   /** Sends a blueprint deletion command to the backend. */
@@ -257,7 +257,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       type: "DeleteBlueprint",
       data: id,
     };
-    engineRuntime.sendCommand({ module: "BlueprintCommand", command });
+    commandClient.emit("BlueprintCommand", command);
   };
 
   /** Stores a blueprint label change without changing fixture contents. */
@@ -294,7 +294,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       type: "Eval",
       data: `recall blueprint ${blueprint.identifiers.id}${absolute ? " /absolute" : ""}`,
     };
-    engineRuntime.sendCommand({ module: "DeskCommand", command });
+    commandClient.emit("DeskCommand", command);
   };
 
   /** Captures current programmer values into an existing Blueprint definition. */
@@ -303,7 +303,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       type: "Eval",
       data: `store blueprint ${blueprint.identifiers.id}`,
     };
-    engineRuntime.sendCommand({ module: "DeskCommand", command });
+    commandClient.emit("DeskCommand", command);
   };
 
   /** Duplicates a Blueprint definition under a fresh ID and stable identity. */

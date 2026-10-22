@@ -34,7 +34,7 @@ import {
   type GridColumn,
   type GridSelection,
 } from "../../lib/data-grid-types";
-import { engineRuntime } from "../../lib/engine-runtime";
+import { commandClient } from "../../lib/engine-commands";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { durationToMs, formatSMPTETime } from "../../lib/time-format";
 import { useConditionalShallowStore } from "../../lib/use-shallow-store";
@@ -106,7 +106,7 @@ function normalizeUid(uid: unknown): string {
 /** Sends one transport command for a timecode to the engine. */
 function sendTimecodeCommand(command: TimecodeTransportCommand, id: number) {
   const payload: TimecodeCommand = { type: command, data: id };
-  engineRuntime.sendCommand({ module: "TimecodeCommand", command: payload });
+  commandClient.emit("TimecodeCommand", payload);
 }
 
 /**

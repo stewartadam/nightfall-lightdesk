@@ -12,6 +12,7 @@ import * as types from "../types";
 import { WaveformKind } from "../types";
 import { requireCommandSuccess } from "./command-result";
 import { durationToSeconds, secondsToDuration } from "./duration";
+import { commandClient } from "./engine-commands";
 import { engineRuntime } from "./engine-runtime";
 import { getLogger } from "./logger";
 import { createShowObjectUid } from "./sequence-factory";
@@ -47,7 +48,7 @@ export function storeFx(fx: types.Fx): void {
     type: "StoreFx",
     data: fx,
   };
-  engineRuntime.sendCommand({ module: "FxCommand", command });
+  commandClient.emit("FxCommand", command);
   log.info(`Stored fx ${fx.identifiers.id}:`, fx);
 }
 
@@ -57,7 +58,7 @@ export function storeFxModule(request: types.StoredFxModuleRequest): void {
     type: "StoreFxModule",
     data: request,
   };
-  engineRuntime.sendCommand({ module: "FxModuleCommand", command });
+  commandClient.emit("FxModuleCommand", command);
   log.info(`Stored module fx ${request.identifiers.id}:`, request);
 }
 
@@ -66,10 +67,7 @@ export async function refreshAvailableFxModules(): Promise<types.CommandResult> 
   const command: types.FxModuleCommand = {
     type: "ListAvailableFxModules",
   };
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "FxModuleCommand",
-    command,
-  });
+  const result = await commandClient.invoke("FxModuleCommand", command);
 
   requireCommandSuccess(result);
 
@@ -80,7 +78,7 @@ export function deleteFx(id: number): void {
     type: "DeleteFx",
     data: id,
   };
-  engineRuntime.sendCommand({ module: "FxCommand", command });
+  commandClient.emit("FxCommand", command);
   log.info(`Deleted fx ${id}`);
 }
 
@@ -90,7 +88,7 @@ export function deleteFxModule(id: number): void {
     type: "DeleteFxModule",
     data: id,
   };
-  engineRuntime.sendCommand({ module: "FxModuleCommand", command });
+  commandClient.emit("FxModuleCommand", command);
   log.info(`Deleted module fx ${id}`);
 }
 
@@ -174,7 +172,7 @@ export function storeStepFx(stepFx: types.StepFx): void {
     type: "Store",
     data: stepFx,
   };
-  engineRuntime.sendCommand({ module: "StepFxCommand", command });
+  commandClient.emit("StepFxCommand", command);
   log.info(`Stored step fx ${stepFx.identifiers.id}:`, stepFx);
 }
 
@@ -183,10 +181,7 @@ export async function storeStepFxAndWait(
   stepFx: types.StepFx,
 ): Promise<types.CommandResult> {
   const command: types.StepFxCommand = { type: "Store", data: stepFx };
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "StepFxCommand",
-    command,
-  });
+  const result = await commandClient.invoke("StepFxCommand", command);
   requireCommandSuccess(result);
   log.info(`Stored step fx ${stepFx.identifiers.id}:`, stepFx);
   return result;
@@ -195,7 +190,7 @@ export async function storeStepFxAndWait(
 /** Deletes a stored Step FX through its undoable command lifecycle. */
 export function deleteStepFx(id: number): void {
   const command: types.StepFxCommand = { type: "Delete", data: id };
-  engineRuntime.sendCommand({ module: "StepFxCommand", command });
+  commandClient.emit("StepFxCommand", command);
   log.info(`Deleted step fx ${id}`);
 }
 
