@@ -78,7 +78,7 @@ async function prepareEmbeddedPage(page: Page): Promise<{
     if (url.pathname.endsWith(`/${DEMO_SHOWFILE_PATH}`)) {
       showfileRequests.push(request.url());
     }
-    if (request.resourceType() === "media") {
+    if (/\.(mp3|wav|m4a|mp4)$/i.test(url.pathname)) {
       audioRequests.push(request.url());
     }
   });
@@ -667,7 +667,11 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   ).toBe("local-show");
   expect(backendRequests).toEqual([]);
   expect(showfileRequests).toHaveLength(2);
-  expect([...new Set(audioRequests)]).toEqual([expectedAudioUrl]);
+  // Waveforms fetch other timelines' audio too; every request must stay inside the show.
+  const showAudioRoot = new URL("timeline-audio/", loadedShowfileUrl).href;
+  expect(audioRequests.filter((url) => !url.startsWith(showAudioRoot))).toEqual(
+    [],
+  );
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
@@ -677,17 +681,14 @@ test("embedded demo decodes and plays timeline audio", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
-    (window as any).demoAudioSeekCount = 0;
-    const descriptor = Object.getOwnPropertyDescriptor(
-      HTMLMediaElement.prototype,
-      "currentTime",
-    )!;
-    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
-      ...descriptor,
-      /** Count explicit media seeks while preserving real browser playback. */
-      set(value: number) {
-        (window as any).demoAudioSeekCount += 1;
-        descriptor.set!.call(this, value);
+    (window as any).demoAudioStartCount = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    Object.defineProperty(AudioBufferSourceNode.prototype, "start", {
+      configurable: true,
+      /** Count audio (re)starts while preserving real browser playback. */
+      value(this: AudioBufferSourceNode, ...args: [number?, number?, number?]) {
+        (window as any).demoAudioStartCount += 1;
+        return start.apply(this, args);
       },
     });
   });
@@ -716,19 +717,19 @@ test("embedded demo decodes and plays timeline audio", async ({
     await expect
       .poll(() => timelinePositionMs(page, timelineUid))
       .toBeGreaterThan(100);
-    const seekCount = await page.evaluate(
-      () => (window as any).demoAudioSeekCount,
+    const startCount = await page.evaluate(
+      () => (window as any).demoAudioStartCount,
     );
     const playheadBeforeMs = await timelinePositionMs(page, timelineUid);
     await page.waitForTimeout(750);
     const engineAdvanceMs =
       (await timelinePositionMs(page, timelineUid)) - playheadBeforeMs;
-    // A starved engine runs slower than real time and media is then rightly pulled back
-    // onto it, so steady playback is only seek-free when the engine keeps up.
+    // A starved engine runs slower than real time and audio is then rightly pulled back
+    // onto it, so steady playback only runs without restarts when the engine keeps up.
     if (engineAdvanceMs >= 712) {
       expect(
-        await page.evaluate(() => (window as any).demoAudioSeekCount),
-      ).toBe(seekCount);
+        await page.evaluate(() => (window as any).demoAudioStartCount),
+      ).toBe(startCount);
     }
     await expect
       .poll(async () => (await readDemoAudioState(page)).positionMs)
@@ -753,10 +754,10 @@ test("embedded demo decodes and plays timeline audio", async ({
       }
     }, timelineUid);
     await expect
-      .poll(() => page.evaluate(() => (window as any).demoAudioSeekCount), {
+      .poll(() => page.evaluate(() => (window as any).demoAudioStartCount), {
         timeout: 1_000,
       })
-      .toBeGreaterThan(seekCount);
+      .toBeGreaterThan(startCount);
     await surface.screenshot({
       path: testInfo.outputPath("generated-audio-playback.png"),
     });
@@ -769,25 +770,17 @@ test("embedded demo decodes and plays timeline audio", async ({
 });
 
 /**
- * Phones fetch timeline audio only once playback starts, so sound begins seconds after the
- * engine clock. Delaying unmuted media starts reproduces that, and the audio must still
- * catch up with the playhead instead of trailing it for the rest of the song.
+ * Phones fetch timeline audio only once playback starts, so sound is ready seconds after
+ * the engine clock started. Delaying the audio download reproduces that, and the audio
+ * must join the playhead where it is instead of trailing it for the rest of the song.
  */
 test("embedded demo audio catches up with the playhead after a slow start", async ({
   page,
 }, testInfo) => {
-  await page.addInitScript(() => {
-    const play = HTMLMediaElement.prototype.play;
-    Object.defineProperty(HTMLMediaElement.prototype, "play", {
-      configurable: true,
-      /** Hold audible starts for two seconds, like a phone waiting on the network. */
-      value(this: HTMLMediaElement) {
-        if (this.muted) return play.call(this);
-        return new Promise<void>((resolve) => setTimeout(resolve, 2_000)).then(
-          () => play.call(this),
-        );
-      },
-    });
+  await page.route(/\.mp3$/, async (route) => {
+    // Hold the audio download for two seconds, like a phone waiting on the network.
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await route.fallback();
   });
   const basePath =
     process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
