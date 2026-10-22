@@ -49,6 +49,7 @@ import {
 import { setSceneDarkness } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
 import { BaseVisualizerRenderer } from "./base-renderer";
+import { observeRenderSize } from "./observe-render-size";
 import type {
   CameraState,
   Vec3,
@@ -71,7 +72,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   private readonly dmxSnapshot = new FixtureDmxSnapshot();
   private rendererState: RendererState | undefined;
   private instrumentation: Instrumentation | undefined;
-  private resizeObserver: ResizeObserver | undefined;
+  private stopObservingSize: (() => void) | undefined;
   private interactionMode: VisualizerInteractionMode = "camera";
   private cameraRotationMode: VisualizerCameraRotationMode =
     DEFAULT_CAMERA_ROTATION_MODE;
@@ -147,15 +148,9 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
       container.appendChild(this.rendererState.inspector.domElement);
     }
 
-    this.resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0 && this.rendererState) {
-          handleResize(this.rendererState, width, height);
-        }
-      }
+    this.stopObservingSize = observeRenderSize(container, (width, height) => {
+      if (this.rendererState) handleResize(this.rendererState, width, height);
     });
-    this.resizeObserver.observe(container);
   }
 
   resize(width: number, height: number, devicePixelRatio: number): void {
@@ -181,8 +176,8 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
 
   dispose(): void {
     this.disposed = true;
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = undefined;
+    this.stopObservingSize?.();
+    this.stopObservingSize = undefined;
     this.debugOverlays?.dispose();
     this.debugOverlays = undefined;
     this.sceneManager?.dispose();
