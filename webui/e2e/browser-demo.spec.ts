@@ -721,12 +721,15 @@ test("embedded demo decodes and plays timeline audio", async ({
       () => (window as any).demoAudioStartCount,
     );
     const playheadBeforeMs = await timelinePositionMs(page, timelineUid);
+    const wallBeforeMs = Date.now();
     await page.waitForTimeout(750);
     const engineAdvanceMs =
       (await timelinePositionMs(page, timelineUid)) - playheadBeforeMs;
+    const wallElapsedMs = Date.now() - wallBeforeMs;
     // A starved engine runs slower than real time and audio is then rightly pulled back
-    // onto it, so steady playback only runs without restarts when the engine keeps up.
-    if (engineAdvanceMs >= 712) {
+    // onto it once it trails by 30 ms, so steady playback only runs without restarts
+    // when the engine keeps (almost) real time.
+    if (engineAdvanceMs >= wallElapsedMs * 0.98) {
       expect(
         await page.evaluate(() => (window as any).demoAudioStartCount),
       ).toBe(startCount);

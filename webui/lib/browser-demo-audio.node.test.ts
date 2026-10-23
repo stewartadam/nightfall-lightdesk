@@ -114,9 +114,8 @@ test("browser audio distinguishes paused playback at zero from ready media", asy
   // A failed assertion must not leave the state publisher keeping the process alive.
   t.after(() => host.unload());
   const session = host.beginSession();
-  const primed = host.prime("timeline", "https://example.test/demo.wav");
+  host.prime("timeline", "https://example.test/demo.wav");
   finishDecoding();
-  await primed;
   assert.equal(state().status, "ready");
   await host.play("timeline", 0);
   assert.equal(state().status, "playing");
@@ -131,9 +130,8 @@ test("browser audio distinguishes paused playback at zero from ready media", asy
   host.beginSession();
   assert.equal(state().status, "unloaded");
   assert.equal(host.currentSession(), session + 1);
-  const other = host.prime("other", "https://example.test/other.wav");
+  host.prime("other", "https://example.test/other.wav");
   finishDecoding();
-  await other;
   assert.equal(state().status, "ready");
   host.unload();
 });
@@ -171,14 +169,13 @@ test("browser audio follows the engine clock", async (t) => {
       session,
       sentAtMs,
     );
-  const primed = host.prime(timeline_uid, "https://example.test/demo.mp3");
+  host.prime(timeline_uid, "https://example.test/demo.mp3");
   assert.equal(context.state, "running");
 
   // Decoding takes 1.5 s after the engine started at 4 s.
   const playing = directive("Play", 4_000);
   advance(1_500);
   finishDecoding();
-  await primed;
   await playing;
   assert.equal(context.sources.length, 1);
   assert.equal(context.sources[0].offset, 5.75);

@@ -26,14 +26,12 @@ import { timelinePlaybackControl } from "../model/control-actions";
 export const InstanceControls = () => {
   const ctx = useTimelineContext();
 
-  /** Serialize browser-media priming before asking the embedded runtime to play. */
-  const togglePaused = async () => {
+  /** Unlock browser demo audio from the Play gesture, then ask the runtime to play. */
+  const togglePaused = () => {
     if (ctx.paused()) {
       const audioUrl = ctx.audioPath();
       if (isEmbeddedDemoRuntime() && audioUrl) {
-        await browserDemoAudioHost
-          .prime(ctx.timelineUid, audioUrl)
-          .catch(() => undefined);
+        browserDemoAudioHost.prime(ctx.timelineUid, audioUrl);
       }
       ctx.playback.play();
     } else {
@@ -72,7 +70,7 @@ export const InstanceControls = () => {
 
   /** Defines this timeline's play/pause button and its controller binding. */
   const playPause = () =>
-    timelinePlaybackControl(ctx.timelineUid, () => void togglePaused());
+    timelinePlaybackControl(ctx.timelineUid, togglePaused);
 
   return (
     <div class="flex items-center gap-1">

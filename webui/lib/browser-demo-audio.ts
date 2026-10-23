@@ -122,12 +122,13 @@ export class BrowserDemoAudioHost {
   /**
    * Unlock audio output synchronously from the operator's Play gesture and start decoding
    * the timeline's audio. Browsers only let a gesture resume audio output, so this runs on
-   * every Play press. Decoding is not awaited: the engine clock starts right away and the
-   * audio joins it wherever it is once decoded.
+   * every Play press. Neither decoding nor the resume is awaited: the engine clock starts
+   * right away and the audio joins it once decoded. Some browsers keep the resume pending
+   * indefinitely when they refuse audio output, which must not hold back the timeline.
    */
-  prime(timelineUid: string, audioUrl: string): Promise<void> {
+  prime(timelineUid: string, audioUrl: string): void {
     this.loadUrl(timelineUid, audioUrl);
-    return this.playbackContext().resume();
+    void this.playbackContext().resume();
   }
 
   /**
