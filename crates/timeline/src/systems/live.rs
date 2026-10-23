@@ -51,6 +51,11 @@ pub fn update_timeline_system(
                 timeline.audio_needs_sync = true;
             }
         }
+        timeline.follow_timecode_transport(
+            !timecode.is_internal(),
+            timecode.state.is_active,
+            timecode.position_jumps,
+        );
         timeline.update_with_timecode(timecode.state.current_time);
     }
 }

@@ -14,7 +14,8 @@ use nightfall::prelude::*;
 use web_time::Instant;
 
 use crate::external::{
-    ExternalTimecodeFrame, FREEWHEEL_DURATION, JITTER_TOLERANCE, SIGNAL_TIMEOUT,
+    ExternalTimecodeFrame, FREEWHEEL_DURATION, JITTER_TOLERANCE, POSITION_JUMP_THRESHOLD,
+    SIGNAL_TIMEOUT,
 };
 use crate::prelude::*;
 use crate::timecode::TimecodeSignal;
@@ -31,6 +32,10 @@ pub struct TimecodeGenerator {
     /// When an external-source timecode was started, so frames received before it are ignored.
     /// `None` while it is paused or stopped, and always for internal timecodes.
     pub armed_at: Option<Instant>,
+    /// Counts the times an external source moved the position while it kept running, such as a
+    /// sender jumping to another cue mid-playback. Followers that play along on their own clock,
+    /// like timeline audio, resync when it changes.
+    pub position_jumps: u64,
 }
 
 impl Default for TimecodeGenerator {
@@ -60,6 +65,7 @@ impl TimecodeGenerator {
             state,
             accumulated_time: Duration::ZERO,
             armed_at: None,
+            position_jumps: 0,
         }
     }
 
@@ -124,7 +130,14 @@ impl TimecodeGenerator {
             self.state.source_rate = None;
             self.update(delta);
         } else {
+            let was_running = self.state.is_active;
+            let previous = self.state.current_time;
             self.follow(frame, now);
+            let expected = previous + delta;
+            let deviation = self.state.current_time.abs_diff(expected);
+            if was_running && self.state.is_active && deviation > POSITION_JUMP_THRESHOLD {
+                self.position_jumps += 1;
+            }
         }
     }
 
@@ -334,6 +347,27 @@ mod tests {
         assert_eq!(generator.state.signal, TimecodeSignal::Waiting);
         assert!(!generator.state.is_active);
         assert_eq!(generator.state.current_time, Duration::ZERO);
+    }
+
+    /// A running source moving the position by more than the engine clock explains counts as a
+    /// jump; following it continuously does not.
+    #[test]
+    fn running_jump_counts_but_continuous_play_does_not() {
+        let mut generator = external_generator();
+        generator.start();
+        let start = Instant::now();
+        let step = Duration::from_millis(40);
+        generator.advance(step, Some(running_frame(1000, start)), start);
+        generator.advance(step, Some(running_frame(1040, start + step)), start + step);
+        assert_eq!(generator.position_jumps, 0);
+
+        generator.advance(
+            step,
+            Some(running_frame(5000, start + step * 2)),
+            start + step * 2,
+        );
+        assert_eq!(generator.position_jumps, 1);
+        assert!(generator.state.is_active);
     }
 
     /// While frames arrive the position is the frame plus the time since it arrived.

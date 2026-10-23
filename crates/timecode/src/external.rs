@@ -135,6 +135,10 @@ pub const FREEWHEEL_DURATION: Duration = Duration::from_secs(1);
 /// until the source catches up keeps timelines from stepping backwards on every frame.
 pub const JITTER_TOLERANCE: Duration = Duration::from_millis(100);
 
+/// Difference between where a running external timecode moved and where the engine clock alone
+/// would have put it, above which the move counts as a jump rather than clock drift or jitter.
+pub const POSITION_JUMP_THRESHOLD: Duration = Duration::from_millis(250);
+
 #[cfg(test)]
 mod tests {
     use super::*;
