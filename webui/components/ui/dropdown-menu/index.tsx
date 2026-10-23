@@ -107,7 +107,8 @@ export function DropdownMenu(props: DropdownMenuProps) {
 }
 
 interface DropdownMenuItemProps {
-  onClick: () => void;
+  /** Receives the click so items can read modifier keys, such as Shift to force an action. */
+  onClick: (event: MouseEvent) => void;
   children: JSX.Element;
   icon?: AppIcon;
   shortcut?: string;
@@ -204,9 +205,9 @@ export function DropdownMenuItem(props: DropdownMenuItemProps) {
   const ctx = useContext(DropdownContext);
 
   /** Runs the item action and closes the containing menu. */
-  const handleClick = () => {
+  const handleClick = (event: MouseEvent) => {
     if (props.disabled) return;
-    props.onClick();
+    props.onClick(event);
     ctx?.close();
   };
 
