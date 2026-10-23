@@ -29,7 +29,9 @@ test it explicitly with its default `full,beat-detection` features.
 The source-acquisition job captures a NUL-delimited PR diff with rename detection
 disabled so deleted paths and both sides of a rename are considered. A separate
 permissionless job runs the tested policy in `scripts/ci-scope.mjs`. Repository
-scripts never execute in the credentialed acquisition job.
+scripts never execute in the credentialed acquisition job. When a PR changes
+`Cargo.lock`, the acquisition job also saves the base revision's lockfile so
+selection can tell external dependency changes from workspace rewiring.
 
 | Changes / event | Desktop check | Desktop installers | Browser distribution |
 | --- | --- | --- | --- |
@@ -39,6 +41,7 @@ scripts never execute in the credentialed acquisition job.
 | Desktop installer tooling | No (packaging compiles only) | Yes | No |
 | Browser runtime or browser packaging tooling | No | No | Yes |
 | Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
+| `Cargo.lock` changes that only rewire workspace crates, without any crate reaching a different set of external crates | No | No | No |
 | Draft PR (any changes) | No | No | No |
 | Main push | No (packaging compiles only) | Yes | Yes |
 | Develop push | No | No | No |
