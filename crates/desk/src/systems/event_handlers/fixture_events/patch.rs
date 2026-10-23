@@ -6,14 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Fixture patch and input/output binding commands.
+//! Fixture patch and input/output route commands.
 
 use super::*;
 
 /// Applies one patch command and reports its outcome.
 ///
-/// Every patch change is staged on copies of the bindings and validated before the copies
-/// replace the live bindings, so a rejected change leaves the patch untouched.
+/// Every patch change is staged on copies of the routes and validated before the copies
+/// replace the live routes, so a rejected change leaves the patch untouched.
 pub(super) fn handle_command(
     context: &mut FixtureCrudContext,
     event: &CommandEnvelope<FixtureCommand>,
@@ -34,20 +34,20 @@ pub(super) fn handle_command(
             transport.as_ref(),
         ),
 
-        FixtureCommand::PatchBinding {
+        FixtureCommand::AddDmxRoute {
             source,
             target,
             priority,
             clone,
         } => {
             let (priority, clone) = (*priority, *clone);
-            apply_staged_binding_change(
+            apply_staged_route_change(
                 context,
                 command_id,
-                "Failed to apply patch binding",
-                "fixture.binding_invalid",
+                "Failed to apply DMX route",
+                "fixture.route_invalid",
                 |preview, context| {
-                    apply_patch_binding_add(
+                    apply_dmx_route_add(
                         source,
                         target,
                         priority,
@@ -63,20 +63,20 @@ pub(super) fn handle_command(
             );
         }
 
-        FixtureCommand::RemovePatchBinding {
+        FixtureCommand::RemoveDmxRoutes {
             source,
             target,
             priority,
             clone,
         } => {
             let (priority, clone) = (*priority, *clone);
-            apply_staged_binding_change(
+            apply_staged_route_change(
                 context,
                 command_id,
-                "Failed to remove patch bindings",
-                "fixture.binding_remove_failed",
+                "Failed to remove DMX routes",
+                "fixture.route_remove_failed",
                 |preview, context| {
-                    apply_patch_binding_remove(
+                    apply_dmx_route_remove(
                         source.as_ref(),
                         target.as_ref(),
                         priority,
@@ -94,12 +94,12 @@ pub(super) fn handle_command(
     }
 }
 
-/// Re-patches a fixture's simple output binding to a universe and address.
+/// Re-patches a fixture's simple output route to a universe and address.
 ///
 /// Without an explicit transport the fixture keeps its current one; a disabled transport
-/// unpatches the fixture. Fixtures with multi-fixture, element, or console output bindings
-/// must be changed through patch binding commands instead. The result must not introduce
-/// binding issues involving the fixture.
+/// unpatches the fixture. Fixtures with multi-fixture, element, or console output routes
+/// must be changed through DMX route commands instead. The result must not introduce
+/// route issues involving the fixture.
 fn update_fixture_patch(
     context: &mut FixtureCrudContext,
     command_id: CommandId,
@@ -126,7 +126,7 @@ fn update_fixture_patch(
         return;
     };
 
-    if let Err(err) = ensure_simple_fixture_bindings(uid, &context.output_bindings) {
+    if let Err(err) = ensure_simple_fixture_routes(uid, &context.output_routes) {
         tracing::warn!("Failed to update patch for fixture {}: {}", id, err);
         fail_fixture_command(
             &mut context.responder,
@@ -141,7 +141,7 @@ fn update_fixture_patch(
         Some(trans) => (trans.clone(), None),
         None => match current_fixture_transport(
             uid,
-            &context.output_bindings,
+            &context.output_routes,
             &context.network_outputs,
             &context.usb_outputs,
         ) {
@@ -164,8 +164,8 @@ fn update_fixture_patch(
         },
     };
 
-    let mut output_preview = context.output_bindings.clone();
-    remove_simple_fixture_output_bindings(&mut output_preview, uid);
+    let mut output_preview = context.output_routes.clone();
+    remove_simple_fixture_output_routes(&mut output_preview, uid);
 
     // A disabled transport unpatches the fixture: its output is left unbound.
     if effective_transport != OutputTransport::Disabled {
@@ -189,7 +189,7 @@ fn update_fixture_patch(
             }
         };
 
-        output_preview.bindings.push(OutputBinding {
+        output_preview.routes.push(OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -205,11 +205,11 @@ fn update_fixture_patch(
         });
     }
 
-    let issues = validate_bindings(
-        context.binding_settings.as_ref(),
-        &context.input_bindings,
+    let issues = validate_routes(
+        context.route_settings.as_ref(),
+        &context.input_routes,
         &output_preview,
-        &context.disabled_bindings,
+        &context.disabled_routes,
         &context.fixture_data_provider,
     );
 
@@ -230,45 +230,45 @@ fn update_fixture_patch(
         return;
     }
 
-    *context.output_bindings = output_preview;
+    *context.output_routes = output_preview;
     succeed_fixture_command(&mut context.responder, command_id);
 }
 
-/// Staged copies of every binding set that a patch binding change mutates.
-struct BindingPreview {
-    /// Staged input bindings.
-    input: InputBindings,
-    /// Staged output bindings.
-    output: OutputBindings,
-    /// Staged disabled input bindings.
-    disabled: DisabledBindings,
+/// Staged copies of every route set that a DMX route change mutates.
+struct RoutePreview {
+    /// Staged input routes.
+    input: InputRoutes,
+    /// Staged output routes.
+    output: OutputRoutes,
+    /// Staged disabled input routes.
+    disabled: DisabledRoutes,
 }
 
-/// Applies a binding change to staged copies and commits them when no new issue appears.
+/// Applies a route change to staged copies and commits them when no new issue appears.
 ///
-/// `mutate` edits the staged bindings; its error fails the command with `mutation_error_code`.
-/// Binding issues that already existed before the change are tolerated, while any new issue
-/// fails the command with `fixture.binding_invalid`. Failures are logged as
+/// `mutate` edits the staged routes; its error fails the command with `mutation_error_code`.
+/// Route issues that already existed before the change are tolerated, while any new issue
+/// fails the command with `fixture.route_invalid`. Failures are logged as
 /// `{failure_log}: {reason}`.
-fn apply_staged_binding_change(
+fn apply_staged_route_change(
     context: &mut FixtureCrudContext,
     command_id: CommandId,
     failure_log: &str,
     mutation_error_code: &'static str,
-    mutate: impl FnOnce(&mut BindingPreview, &FixtureCrudContext) -> Result<(), String>,
+    mutate: impl FnOnce(&mut RoutePreview, &FixtureCrudContext) -> Result<(), String>,
 ) {
-    let existing_issues = validate_bindings(
-        context.binding_settings.as_ref(),
-        &context.input_bindings,
-        &context.output_bindings,
-        &context.disabled_bindings,
+    let existing_issues = validate_routes(
+        context.route_settings.as_ref(),
+        &context.input_routes,
+        &context.output_routes,
+        &context.disabled_routes,
         &context.fixture_data_provider,
     );
 
-    let mut preview = BindingPreview {
-        input: context.input_bindings.clone(),
-        output: context.output_bindings.clone(),
-        disabled: context.disabled_bindings.clone(),
+    let mut preview = RoutePreview {
+        input: context.input_routes.clone(),
+        output: context.output_routes.clone(),
+        disabled: context.disabled_routes.clone(),
     };
 
     if let Err(err) = mutate(&mut preview, context) {
@@ -277,8 +277,8 @@ fn apply_staged_binding_change(
         return;
     }
 
-    let next_issues = validate_bindings(
-        context.binding_settings.as_ref(),
+    let next_issues = validate_routes(
+        context.route_settings.as_ref(),
         &preview.input,
         &preview.output,
         &preview.disabled,
@@ -298,28 +298,28 @@ fn apply_staged_binding_change(
         fail_fixture_command(
             &mut context.responder,
             command_id,
-            "fixture.binding_invalid",
+            "fixture.route_invalid",
             message,
         );
         return;
     }
 
-    *context.input_bindings = preview.input;
-    *context.output_bindings = preview.output;
-    *context.disabled_bindings = preview.disabled;
+    *context.input_routes = preview.input;
+    *context.output_routes = preview.output;
+    *context.disabled_routes = preview.disabled;
     succeed_fixture_command(&mut context.responder, command_id);
 }
 
 /// Error for patching an output to `disabled`; an unsent output is simply left unbound.
 pub(super) const OUTPUT_DISABLE_ERROR: &str =
-    "Outputs cannot be disabled; remove the output binding with 'rm patch' instead";
+    "Outputs cannot be disabled; remove the output route with 'rm patch' instead";
 
-/// Resolves a patch target ID to its binding transport family.
-fn binding_transport_from_target_id(target: &str) -> Option<BindingTransport> {
+/// Resolves a patch target ID to its route transport family.
+fn route_transport_from_target_id(target: &str) -> Option<RouteTransport> {
     match target {
-        "sacn" => Some(BindingTransport::Sacn),
-        "artnet" => Some(BindingTransport::ArtNet),
-        "udmx" => Some(BindingTransport::Udmx),
+        "sacn" => Some(RouteTransport::Sacn),
+        "artnet" => Some(RouteTransport::ArtNet),
+        "udmx" => Some(RouteTransport::Udmx),
         _ => None,
     }
 }
@@ -365,55 +365,52 @@ fn source_contains_fixture(source: &OutputSource, uid: Uuid) -> bool {
     }
 }
 
-/// Validates that fixture patch updates can safely replace a fixture's simple output bindings.
-fn ensure_simple_fixture_bindings(
-    uid: Uuid,
-    output_bindings: &OutputBindings,
-) -> Result<(), String> {
-    for binding in &output_bindings.bindings {
-        if !source_contains_fixture(&binding.source, uid) {
+/// Validates that fixture patch updates can safely replace a fixture's simple output routes.
+fn ensure_simple_fixture_routes(uid: Uuid, output_routes: &OutputRoutes) -> Result<(), String> {
+    for route in &output_routes.routes {
+        if !source_contains_fixture(&route.source, uid) {
             continue;
         }
 
-        if !is_simple_fixture_source(&binding.source, uid) {
-            return Err("Fixture patch update cannot modify multi-fixture or element bindings; use patch binding commands instead".to_string());
+        if !is_simple_fixture_source(&route.source, uid) {
+            return Err("Fixture patch update cannot modify multi-fixture or element routes; use DMX route commands instead".to_string());
         }
 
-        if !matches!(binding.target, OutputTarget::Transport { .. }) {
-            return Err("Fixture patch update cannot modify console output bindings; use patch binding commands instead".to_string());
+        if !matches!(route.target, OutputTarget::Transport { .. }) {
+            return Err("Fixture patch update cannot modify console output routes; use DMX route commands instead".to_string());
         }
     }
 
     Ok(())
 }
 
-/// Removes existing simple output bindings for a fixture before writing replacement patch data.
-fn remove_simple_fixture_output_bindings(bindings: &mut OutputBindings, uid: Uuid) {
-    bindings
-        .bindings
-        .retain(|binding| !is_simple_fixture_source(&binding.source, uid));
+/// Removes existing simple output routes for a fixture before writing replacement patch data.
+fn remove_simple_fixture_output_routes(routes: &mut OutputRoutes, uid: Uuid) {
+    routes
+        .routes
+        .retain(|route| !is_simple_fixture_source(&route.source, uid));
 }
 
 /// Returns the fixture's current output transport together with its persisted target ID when available.
 fn current_fixture_transport(
     uid: Uuid,
-    output_bindings: &OutputBindings,
+    output_routes: &OutputRoutes,
     network_outputs: &NetworkDmxOutputTargets,
     usb_outputs: &UsbDmxOutputTargets,
 ) -> Result<Option<(OutputTransport, Option<String>)>, String> {
-    if let Some(binding) = output_bindings
-        .bindings
+    if let Some(route) = output_routes
+        .routes
         .iter()
-        .find(|binding| is_simple_fixture_source(&binding.source, uid))
+        .find(|route| is_simple_fixture_source(&route.source, uid))
     {
-        match &binding.target {
+        match &route.target {
             OutputTarget::Transport { target, .. } => {
                 return output_transport_from_target_id(target, network_outputs, usb_outputs)
                     .map(|transport| Some((transport, Some(target.clone()))));
             }
             OutputTarget::Console { .. } => {
                 return Err(
-                    "Fixture patch update cannot modify console output bindings; use patch binding commands instead"
+                    "Fixture patch update cannot modify console output routes; use DMX route commands instead"
                         .to_string(),
                 );
             }
@@ -423,7 +420,7 @@ fn current_fixture_transport(
     Ok(None)
 }
 
-/// Endpoint categories used when resolving patch binding updates.
+/// Endpoint categories used when resolving DMX route updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EndpointKind {
     Transport,
@@ -434,16 +431,16 @@ enum EndpointKind {
     Disabled,
 }
 
-/// Patch binding direction used when emitting fixture binding events.
+/// DMX route direction used when emitting fixture route events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BindingDirection {
+enum RouteDirection {
     Input,
     Output,
 }
 
-/// Concrete input or output endpoint attached to a fixture binding.
+/// Concrete input or output endpoint attached to a fixture route.
 #[derive(Debug, Clone)]
-enum ResolvedBindingEndpoint {
+enum ResolvedRouteEndpoint {
     Console {
         universe: Option<DmxRange>,
         address: Option<u16>,
@@ -465,13 +462,13 @@ enum ResolvedBindingEndpoint {
     Disabled,
 }
 
-fn endpoint_kind(endpoint: &BindingEndpoint) -> EndpointKind {
+fn endpoint_kind(endpoint: &RouteEndpoint) -> EndpointKind {
     match endpoint {
-        BindingEndpoint::Console { .. } => EndpointKind::Console,
-        BindingEndpoint::Transport { .. } => EndpointKind::Transport,
-        BindingEndpoint::Fixture { .. } => EndpointKind::Fixture,
-        BindingEndpoint::FixtureBreak { .. } => EndpointKind::FixtureBreak,
-        BindingEndpoint::Disabled => EndpointKind::Disabled,
+        RouteEndpoint::Console { .. } => EndpointKind::Console,
+        RouteEndpoint::Transport { .. } => EndpointKind::Transport,
+        RouteEndpoint::Fixture { .. } => EndpointKind::Fixture,
+        RouteEndpoint::FixtureBreak { .. } => EndpointKind::FixtureBreak,
+        RouteEndpoint::Disabled => EndpointKind::Disabled,
     }
 }
 
@@ -493,52 +490,50 @@ fn resolve_fixture_uids(
     Ok(uids)
 }
 
-fn resolve_binding_endpoint(
-    endpoint: &BindingEndpoint,
+fn resolve_route_endpoint(
+    endpoint: &RouteEndpoint,
     data_provider: &FixtureDataProviderExt,
-) -> Result<ResolvedBindingEndpoint, String> {
+) -> Result<ResolvedRouteEndpoint, String> {
     match endpoint {
-        BindingEndpoint::Console { universe, address } => Ok(ResolvedBindingEndpoint::Console {
+        RouteEndpoint::Console { universe, address } => Ok(ResolvedRouteEndpoint::Console {
             universe: *universe,
             address: *address,
         }),
-        BindingEndpoint::Transport {
+        RouteEndpoint::Transport {
             target,
             universe,
             address,
-        } => Ok(ResolvedBindingEndpoint::Transport {
+        } => Ok(ResolvedRouteEndpoint::Transport {
             target: target.clone(),
             universe: *universe,
             address: *address,
         }),
-        BindingEndpoint::Fixture {
+        RouteEndpoint::Fixture {
             ids,
             element,
             param,
-        } => Ok(ResolvedBindingEndpoint::Fixture {
+        } => Ok(ResolvedRouteEndpoint::Fixture {
             uids: resolve_fixture_uids(ids, data_provider)?,
             element: *element,
             param: param.clone(),
         }),
-        BindingEndpoint::FixtureBreak { ids, dmx_break } => {
-            Ok(ResolvedBindingEndpoint::FixtureBreak {
-                uids: resolve_fixture_uids(ids, data_provider)?,
-                dmx_break: *dmx_break,
-            })
-        }
-        BindingEndpoint::Disabled => Ok(ResolvedBindingEndpoint::Disabled),
+        RouteEndpoint::FixtureBreak { ids, dmx_break } => Ok(ResolvedRouteEndpoint::FixtureBreak {
+            uids: resolve_fixture_uids(ids, data_provider)?,
+            dmx_break: *dmx_break,
+        }),
+        RouteEndpoint::Disabled => Ok(ResolvedRouteEndpoint::Disabled),
     }
 }
 
-fn classify_binding_direction(
-    source: &BindingEndpoint,
-    target: &BindingEndpoint,
-) -> Result<BindingDirection, String> {
+fn classify_route_direction(
+    source: &RouteEndpoint,
+    target: &RouteEndpoint,
+) -> Result<RouteDirection, String> {
     let source_kind = endpoint_kind(source);
     let target_kind = endpoint_kind(target);
 
-    use BindingDirection::{Input, Output};
     use EndpointKind::{Console, Disabled, Fixture, FixtureBreak, Transport};
+    use RouteDirection::{Input, Output};
 
     match (source_kind, target_kind) {
         (_, FixtureBreak) => Err("Fixture break endpoint cannot be used as a target".to_string()),
@@ -549,19 +544,19 @@ fn classify_binding_direction(
         }
         (Transport, _) => Ok(Input),
         (_, Transport) => Ok(Output),
-        (Console, Console) => Err("Console -> console bindings are invalid".to_string()),
-        (Console, Fixture) => Err("Console -> fixture bindings are invalid".to_string()),
+        (Console, Console) => Err("Console -> console routes are invalid".to_string()),
+        (Console, Fixture) => Err("Console -> fixture routes are invalid".to_string()),
         (Fixture, Fixture) => Ok(Input),
         (Fixture, _) => Ok(Output),
         (Disabled, _) => Err("Disabled endpoint cannot be used as a source".to_string()),
     }
 }
 
-fn infer_binding_scopes(
-    source: Option<&BindingEndpoint>,
-    target: Option<&BindingEndpoint>,
+fn infer_route_scopes(
+    source: Option<&RouteEndpoint>,
+    target: Option<&RouteEndpoint>,
 ) -> Result<(bool, bool), String> {
-    if matches!(source, Some(BindingEndpoint::Disabled)) {
+    if matches!(source, Some(RouteEndpoint::Disabled)) {
         return Err("Disabled endpoint cannot be used as a source".to_string());
     }
 
@@ -570,7 +565,7 @@ fn infer_binding_scopes(
 
     use EndpointKind::{Console, Disabled, Fixture, FixtureBreak, Transport};
 
-    // Only inputs can be disabled, so a disabled filter never matches output bindings.
+    // Only inputs can be disabled, so a disabled filter never matches output routes.
     if target_kind == Some(Disabled) {
         return match source_kind {
             None | Some(Transport) => Ok((true, false)),
@@ -602,7 +597,7 @@ fn infer_binding_scopes(
 
     if source_kind == Some(Console) {
         if matches!(target_kind, Some(Console) | Some(Fixture)) {
-            return Err("Console -> console/fixture bindings are invalid".to_string());
+            return Err("Console -> console/fixture routes are invalid".to_string());
         }
         return Ok((false, true));
     }
@@ -615,7 +610,7 @@ fn infer_binding_scopes(
             return Ok((true, false));
         }
         if source_kind == Some(Console) {
-            return Err("Console -> console bindings are invalid".to_string());
+            return Err("Console -> console routes are invalid".to_string());
         }
     }
 
@@ -635,17 +630,17 @@ fn infer_binding_scopes(
         return Ok((true, true));
     }
 
-    Err("Invalid patch binding filter".to_string())
+    Err("Invalid DMX route filter".to_string())
 }
 
-fn input_source_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<InputSource, String> {
+fn input_source_from_endpoint(endpoint: &ResolvedRouteEndpoint) -> Result<InputSource, String> {
     match endpoint {
-        ResolvedBindingEndpoint::Transport {
+        ResolvedRouteEndpoint::Transport {
             target,
             universe,
             address,
         } => {
-            let transport = binding_transport_from_target_id(target).ok_or_else(|| {
+            let transport = route_transport_from_target_id(target).ok_or_else(|| {
                 format!("Network output target '{target}' cannot be used as an input source")
             })?;
             Ok(InputSource::Transport {
@@ -654,11 +649,11 @@ fn input_source_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Inpu
                 address: *address,
             })
         }
-        ResolvedBindingEndpoint::Console { universe, address } => Ok(InputSource::Console {
+        ResolvedRouteEndpoint::Console { universe, address } => Ok(InputSource::Console {
             universe: *universe,
             address: *address,
         }),
-        ResolvedBindingEndpoint::Fixture {
+        ResolvedRouteEndpoint::Fixture {
             uids,
             element,
             param,
@@ -667,22 +662,22 @@ fn input_source_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Inpu
             element: *element,
             param: param.clone(),
         }),
-        ResolvedBindingEndpoint::FixtureBreak { .. } => {
+        ResolvedRouteEndpoint::FixtureBreak { .. } => {
             Err("Fixture break endpoint cannot be used as an input source".to_string())
         }
-        ResolvedBindingEndpoint::Disabled => {
+        ResolvedRouteEndpoint::Disabled => {
             Err("Disabled endpoint cannot be used as a source".to_string())
         }
     }
 }
 
-fn input_target_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<InputTarget, String> {
+fn input_target_from_endpoint(endpoint: &ResolvedRouteEndpoint) -> Result<InputTarget, String> {
     match endpoint {
-        ResolvedBindingEndpoint::Console { universe, address } => Ok(InputTarget::Console {
+        ResolvedRouteEndpoint::Console { universe, address } => Ok(InputTarget::Console {
             universe: *universe,
             address: *address,
         }),
-        ResolvedBindingEndpoint::Transport {
+        ResolvedRouteEndpoint::Transport {
             target,
             universe,
             address,
@@ -691,7 +686,7 @@ fn input_target_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Inpu
             universe: *universe,
             address: *address,
         }),
-        ResolvedBindingEndpoint::Fixture {
+        ResolvedRouteEndpoint::Fixture {
             uids,
             element,
             param,
@@ -700,20 +695,20 @@ fn input_target_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Inpu
             element: *element,
             param: param.clone(),
         }),
-        ResolvedBindingEndpoint::Disabled => Ok(InputTarget::Disabled),
-        ResolvedBindingEndpoint::FixtureBreak { .. } => {
+        ResolvedRouteEndpoint::Disabled => Ok(InputTarget::Disabled),
+        ResolvedRouteEndpoint::FixtureBreak { .. } => {
             Err("Fixture break endpoint cannot be used as an input target".to_string())
         }
     }
 }
 
-fn output_source_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<OutputSource, String> {
+fn output_source_from_endpoint(endpoint: &ResolvedRouteEndpoint) -> Result<OutputSource, String> {
     match endpoint {
-        ResolvedBindingEndpoint::Console { universe, address } => Ok(OutputSource::Console {
+        ResolvedRouteEndpoint::Console { universe, address } => Ok(OutputSource::Console {
             universe: *universe,
             address: *address,
         }),
-        ResolvedBindingEndpoint::Fixture {
+        ResolvedRouteEndpoint::Fixture {
             uids,
             element,
             param,
@@ -722,24 +717,22 @@ fn output_source_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Out
             element: *element,
             param: param.clone(),
         }),
-        ResolvedBindingEndpoint::FixtureBreak { uids, dmx_break } => {
-            Ok(OutputSource::FixtureBreak {
-                uids: uids.clone(),
-                dmx_break: *dmx_break,
-            })
-        }
-        ResolvedBindingEndpoint::Transport { .. } => {
+        ResolvedRouteEndpoint::FixtureBreak { uids, dmx_break } => Ok(OutputSource::FixtureBreak {
+            uids: uids.clone(),
+            dmx_break: *dmx_break,
+        }),
+        ResolvedRouteEndpoint::Transport { .. } => {
             Err("Transport endpoint cannot be used as an output source".to_string())
         }
-        ResolvedBindingEndpoint::Disabled => {
+        ResolvedRouteEndpoint::Disabled => {
             Err("Disabled endpoint cannot be used as a source".to_string())
         }
     }
 }
 
-fn output_target_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<OutputTarget, String> {
+fn output_target_from_endpoint(endpoint: &ResolvedRouteEndpoint) -> Result<OutputTarget, String> {
     match endpoint {
-        ResolvedBindingEndpoint::Transport {
+        ResolvedRouteEndpoint::Transport {
             target,
             universe,
             address,
@@ -748,23 +741,23 @@ fn output_target_from_endpoint(endpoint: &ResolvedBindingEndpoint) -> Result<Out
             universe: *universe,
             address: *address,
         }),
-        ResolvedBindingEndpoint::Console { universe, address } => Ok(OutputTarget::Console {
+        ResolvedRouteEndpoint::Console { universe, address } => Ok(OutputTarget::Console {
             universe: *universe,
             address: *address,
         }),
-        ResolvedBindingEndpoint::Disabled => Err(OUTPUT_DISABLE_ERROR.to_string()),
-        ResolvedBindingEndpoint::Fixture { .. } | ResolvedBindingEndpoint::FixtureBreak { .. } => {
+        ResolvedRouteEndpoint::Disabled => Err(OUTPUT_DISABLE_ERROR.to_string()),
+        ResolvedRouteEndpoint::Fixture { .. } | ResolvedRouteEndpoint::FixtureBreak { .. } => {
             Err("Fixture endpoint cannot be used as an output target".to_string())
         }
     }
 }
 
 fn validate_network_output_target_endpoint(
-    endpoint: &ResolvedBindingEndpoint,
+    endpoint: &ResolvedRouteEndpoint,
     network_outputs: &NetworkDmxOutputTargets,
     usb_outputs: &UsbDmxOutputTargets,
 ) -> Result<(), String> {
-    let ResolvedBindingEndpoint::Transport {
+    let ResolvedRouteEndpoint::Transport {
         target, universe, ..
     } = endpoint
     else {
@@ -795,42 +788,42 @@ fn validate_network_output_target_endpoint(
     Ok(())
 }
 
-fn ranges_overlap(filter: Option<DmxRange>, binding: Option<DmxRange>) -> bool {
-    match (filter, binding) {
+fn ranges_overlap(filter: Option<DmxRange>, route: Option<DmxRange>) -> bool {
+    match (filter, route) {
         (None, _) => true,
         (Some(_), None) => true,
-        (Some(filter), Some(binding)) => filter.start <= binding.end && binding.start <= filter.end,
+        (Some(filter), Some(route)) => filter.start <= route.end && route.start <= filter.end,
     }
 }
 
-fn address_matches(filter: Option<u16>, binding: Option<u16>) -> bool {
+fn address_matches(filter: Option<u16>, route: Option<u16>) -> bool {
     match filter {
         None => true,
-        Some(addr) => binding.unwrap_or(1) == addr,
+        Some(addr) => route.unwrap_or(1) == addr,
     }
 }
 
 fn fixture_matches_filter(
-    binding_uids: &[Uuid],
-    binding_element: Option<u16>,
-    binding_param: Option<&str>,
+    route_uids: &[Uuid],
+    route_element: Option<u16>,
+    route_param: Option<&str>,
     filter_uids: &[Uuid],
     filter_element: Option<u16>,
     filter_param: Option<&str>,
 ) -> bool {
     let uids_match = filter_uids
         .iter()
-        .any(|uid| binding_uids.iter().any(|binding_uid| binding_uid == uid));
+        .any(|uid| route_uids.iter().any(|route_uid| route_uid == uid));
     let element_match =
-        filter_element.is_none_or(|filter| binding_element.is_none_or(|binding| binding == filter));
+        filter_element.is_none_or(|filter| route_element.is_none_or(|route| route == filter));
     let param_match =
-        filter_param.is_none_or(|filter| binding_param.is_none_or(|binding| binding == filter));
+        filter_param.is_none_or(|filter| route_param.is_none_or(|route| route == filter));
 
     uids_match && element_match && param_match
 }
 
-fn input_source_matches_filter(binding: &InputSource, filter: &InputSource) -> bool {
-    match (binding, filter) {
+fn input_source_matches_filter(route: &InputSource, filter: &InputSource) -> bool {
+    match (route, filter) {
         (
             InputSource::Transport {
                 transport,
@@ -880,8 +873,8 @@ fn input_source_matches_filter(binding: &InputSource, filter: &InputSource) -> b
     }
 }
 
-fn input_target_matches_filter(binding: &InputTarget, filter: &InputTarget) -> bool {
-    match (binding, filter) {
+fn input_target_matches_filter(route: &InputTarget, filter: &InputTarget) -> bool {
+    match (route, filter) {
         (
             InputTarget::Transport {
                 target,
@@ -932,8 +925,8 @@ fn input_target_matches_filter(binding: &InputTarget, filter: &InputTarget) -> b
     }
 }
 
-fn output_source_matches_filter(binding: &OutputSource, filter: &OutputSource) -> bool {
-    match (binding, filter) {
+fn output_source_matches_filter(route: &OutputSource, filter: &OutputSource) -> bool {
+    match (route, filter) {
         (
             OutputSource::Console { universe, address },
             OutputSource::Console {
@@ -985,8 +978,8 @@ fn output_source_matches_filter(binding: &OutputSource, filter: &OutputSource) -
     }
 }
 
-fn output_target_matches_filter(binding: &OutputTarget, filter: &OutputTarget) -> bool {
-    match (binding, filter) {
+fn output_target_matches_filter(route: &OutputTarget, filter: &OutputTarget) -> bool {
+    match (route, filter) {
         (
             OutputTarget::Transport {
                 target,
@@ -1017,37 +1010,37 @@ fn output_target_matches_filter(binding: &OutputTarget, filter: &OutputTarget) -
     }
 }
 
-pub(super) fn apply_patch_binding_add(
-    source: &BindingEndpoint,
-    target: &BindingEndpoint,
+pub(super) fn apply_dmx_route_add(
+    source: &RouteEndpoint,
+    target: &RouteEndpoint,
     priority: i32,
     clone: bool,
-    input_bindings: &mut InputBindings,
-    output_bindings: &mut OutputBindings,
-    disabled_bindings: &mut DisabledBindings,
+    input_routes: &mut InputRoutes,
+    output_routes: &mut OutputRoutes,
+    disabled_routes: &mut DisabledRoutes,
     data_provider: &FixtureDataProviderExt,
     network_outputs: &NetworkDmxOutputTargets,
     usb_outputs: &UsbDmxOutputTargets,
 ) -> Result<(), String> {
-    let direction = classify_binding_direction(source, target)?;
-    let resolved_source = resolve_binding_endpoint(source, data_provider)?;
-    let resolved_target = resolve_binding_endpoint(target, data_provider)?;
+    let direction = classify_route_direction(source, target)?;
+    let resolved_source = resolve_route_endpoint(source, data_provider)?;
+    let resolved_target = resolve_route_endpoint(target, data_provider)?;
     validate_network_output_target_endpoint(&resolved_target, network_outputs, usb_outputs)?;
 
-    let target_is_disabled = matches!(resolved_target, ResolvedBindingEndpoint::Disabled);
+    let target_is_disabled = matches!(resolved_target, ResolvedRouteEndpoint::Disabled);
 
     match direction {
-        BindingDirection::Input => {
+        RouteDirection::Input => {
             let input_source = input_source_from_endpoint(&resolved_source)?;
             if target_is_disabled {
-                disabled_bindings.bindings.push(DisabledBinding::Input {
+                disabled_routes.routes.push(DisabledRoute::Input {
                     source: input_source,
                     priority,
                     clone,
                 });
             } else {
                 let input_target = input_target_from_endpoint(&resolved_target)?;
-                input_bindings.bindings.push(InputBinding {
+                input_routes.routes.push(InputRoute {
                     source: input_source,
                     target: input_target,
                     priority,
@@ -1055,8 +1048,8 @@ pub(super) fn apply_patch_binding_add(
                 });
             }
         }
-        BindingDirection::Output => {
-            output_bindings.bindings.push(OutputBinding {
+        RouteDirection::Output => {
+            output_routes.routes.push(OutputRoute {
                 source: output_source_from_endpoint(&resolved_source)?,
                 target: output_target_from_endpoint(&resolved_target)?,
                 priority,
@@ -1068,26 +1061,26 @@ pub(super) fn apply_patch_binding_add(
     Ok(())
 }
 
-pub(super) fn apply_patch_binding_remove(
-    source: Option<&BindingEndpoint>,
-    target: Option<&BindingEndpoint>,
+pub(super) fn apply_dmx_route_remove(
+    source: Option<&RouteEndpoint>,
+    target: Option<&RouteEndpoint>,
     priority: Option<i32>,
     clone: Option<bool>,
-    input_bindings: &mut InputBindings,
-    output_bindings: &mut OutputBindings,
-    disabled_bindings: &mut DisabledBindings,
+    input_routes: &mut InputRoutes,
+    output_routes: &mut OutputRoutes,
+    disabled_routes: &mut DisabledRoutes,
     data_provider: &FixtureDataProviderExt,
 ) -> Result<(), String> {
-    let (apply_input, apply_output) = infer_binding_scopes(source, target)?;
+    let (apply_input, apply_output) = infer_route_scopes(source, target)?;
     let resolved_source = source
-        .map(|endpoint| resolve_binding_endpoint(endpoint, data_provider))
+        .map(|endpoint| resolve_route_endpoint(endpoint, data_provider))
         .transpose()?;
     let resolved_target = target
-        .map(|endpoint| resolve_binding_endpoint(endpoint, data_provider))
+        .map(|endpoint| resolve_route_endpoint(endpoint, data_provider))
         .transpose()?;
 
     let target_is_disabled_filter =
-        target.is_none() || matches!(target, Some(BindingEndpoint::Disabled));
+        target.is_none() || matches!(target, Some(RouteEndpoint::Disabled));
 
     if apply_input {
         let source_filter = resolved_source
@@ -1099,24 +1092,24 @@ pub(super) fn apply_patch_binding_remove(
             .map(input_target_from_endpoint)
             .transpose()?;
 
-        input_bindings.bindings.retain(|binding| {
+        input_routes.routes.retain(|route| {
             if let Some(filter) = &source_filter {
-                if !input_source_matches_filter(&binding.source, filter) {
+                if !input_source_matches_filter(&route.source, filter) {
                     return true;
                 }
             }
             if let Some(filter) = &target_filter {
-                if !input_target_matches_filter(&binding.target, filter) {
+                if !input_target_matches_filter(&route.target, filter) {
                     return true;
                 }
             }
             if let Some(filter_priority) = priority {
-                if binding.priority != filter_priority {
+                if route.priority != filter_priority {
                     return true;
                 }
             }
             if let Some(filter_clone) = clone {
-                if binding.clone != filter_clone {
+                if route.clone != filter_clone {
                     return true;
                 }
             }
@@ -1128,24 +1121,24 @@ pub(super) fn apply_patch_binding_remove(
                 .as_ref()
                 .map(input_source_from_endpoint)
                 .transpose()?;
-            disabled_bindings.bindings.retain(|binding| {
-                let DisabledBinding::Input {
+            disabled_routes.routes.retain(|route| {
+                let DisabledRoute::Input {
                     source,
-                    priority: binding_priority,
-                    clone: binding_clone,
-                } = binding;
+                    priority: route_priority,
+                    clone: route_clone,
+                } = route;
                 if let Some(filter) = &source_filter {
                     if !input_source_matches_filter(source, filter) {
                         return true;
                     }
                 }
                 if let Some(filter_priority) = priority {
-                    if *binding_priority != filter_priority {
+                    if *route_priority != filter_priority {
                         return true;
                     }
                 }
                 if let Some(filter_clone) = clone {
-                    if *binding_clone != filter_clone {
+                    if *route_clone != filter_clone {
                         return true;
                     }
                 }
@@ -1164,24 +1157,24 @@ pub(super) fn apply_patch_binding_remove(
             .map(output_target_from_endpoint)
             .transpose()?;
 
-        output_bindings.bindings.retain(|binding| {
+        output_routes.routes.retain(|route| {
             if let Some(filter) = &source_filter {
-                if !output_source_matches_filter(&binding.source, filter) {
+                if !output_source_matches_filter(&route.source, filter) {
                     return true;
                 }
             }
             if let Some(filter) = &target_filter {
-                if !output_target_matches_filter(&binding.target, filter) {
+                if !output_target_matches_filter(&route.target, filter) {
                     return true;
                 }
             }
             if let Some(filter_priority) = priority {
-                if binding.priority != filter_priority {
+                if route.priority != filter_priority {
                     return true;
                 }
             }
             if let Some(filter_clone) = clone {
-                if binding.clone != filter_clone {
+                if route.clone != filter_clone {
                     return true;
                 }
             }

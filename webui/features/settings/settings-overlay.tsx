@@ -36,7 +36,7 @@ import { durationToMs, msToDuration } from "../../lib/duration";
 import { commandClient } from "../../lib/engine-commands";
 import { setStoreAction } from "../../lib/nanostore-action";
 import {
-  bindingValidationSettings,
+  routeValidationSettings,
   runtimeCapabilities,
 } from "../../state/appStores";
 import {
@@ -48,10 +48,10 @@ import {
 } from "../../state/settings";
 import { compactViewport } from "../../state/viewport";
 import type {
-  BindingValidationMode,
   InputSignalLossPolicy,
   NetworkInterfaceInfo,
   NetworkInterfaceStatus,
+  RouteValidationMode,
 } from "../../types";
 import {
   CurrentNetworkInterfaceMode,
@@ -158,7 +158,7 @@ export function SettingsOverlay() {
   const { isSettingsOpen, closeSettings } = useAppShell();
   const settings = useStore($settings);
   const ioSettings = useStore($ioSettings);
-  const patchValidationSettings = useStore(bindingValidationSettings);
+  const patchValidationSettings = useStore(routeValidationSettings);
   const networkInterfaces = useStore($availableNetworkInterfaces);
   const networkInterfaceStatus = useStore($networkInterfaceStatus);
   const audioDevices = useStore($availableAudioDevices);
@@ -325,9 +325,9 @@ export function SettingsOverlay() {
     });
   };
 
-  const setBindingValidationMode = (value: BindingValidationMode) => {
+  const setRouteValidationMode = (value: RouteValidationMode) => {
     commandClient.emit("SettingsCommand", {
-      type: "SetBindingValidationMode",
+      type: "SetRouteValidationMode",
       data: value,
     });
   };
@@ -542,8 +542,8 @@ export function SettingsOverlay() {
                     aria-describedby={field.describedBy}
                     value={patchValidationSettings().mode}
                     onChange={(e) =>
-                      setBindingValidationMode(
-                        e.currentTarget.value as BindingValidationMode,
+                      setRouteValidationMode(
+                        e.currentTarget.value as RouteValidationMode,
                       )
                     }
                   >

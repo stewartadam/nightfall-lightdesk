@@ -17,7 +17,7 @@ use std::{
 };
 
 use nightfall_fixtures::prelude::{Fixture, InputSource};
-use nightfall_io::prelude::{ArtNetDelivery, BindingTransport, OutputTransport, SacnDelivery};
+use nightfall_io::prelude::{ArtNetDelivery, OutputTransport, RouteTransport, SacnDelivery};
 use nightfall_showfile::ShowfileSnapshot;
 use nightfall_timecode::prelude::TimecodeSource;
 use rustc_hash::FxHasher;
@@ -106,8 +106,8 @@ impl ShowSummary {
             ("timelines", snapshot.timelines.len()),
             ("clips", snapshot.clips.len()),
             ("boards", snapshot.boards.len()),
-            ("input_bindings", snapshot.bindings.input.len()),
-            ("output_bindings", snapshot.bindings.output.len()),
+            ("input_routes", snapshot.routes.input.len()),
+            ("output_routes", snapshot.routes.output.len()),
             ("console_universes", outputs.console_universes.len()),
             ("output_universes", outputs.transport_universes.len()),
         ]);
@@ -122,9 +122,9 @@ impl ShowSummary {
                 .iter()
                 .any(|(transport, _)| used(transport))
         };
-        let input_uses = |wanted: BindingTransport| {
-            snapshot.bindings.input.iter().any(|binding| {
-                matches!(&binding.source, InputSource::Transport { transport, .. } if *transport == wanted)
+        let input_uses = |wanted: RouteTransport| {
+            snapshot.routes.input.iter().any(|route| {
+                matches!(&route.source, InputSource::Transport { transport, .. } if *transport == wanted)
             })
         };
         let timecode_uses = |wanted: fn(&TimecodeSource) -> bool| {
@@ -150,9 +150,9 @@ impl ShowSummary {
                 "output_usb_dmx",
                 output_uses(|transport| matches!(transport, OutputTransport::Udmx { .. })),
             ),
-            ("input_sacn", input_uses(BindingTransport::Sacn)),
-            ("input_artnet", input_uses(BindingTransport::ArtNet)),
-            ("input_usb_dmx", input_uses(BindingTransport::Udmx)),
+            ("input_sacn", input_uses(RouteTransport::Sacn)),
+            ("input_artnet", input_uses(RouteTransport::ArtNet)),
+            ("input_usb_dmx", input_uses(RouteTransport::Udmx)),
             (
                 "timecode_midi",
                 timecode_uses(|source| matches!(source, TimecodeSource::MidiMtc)),
@@ -359,7 +359,7 @@ fn into_map(value: Value) -> Map<String, Value> {
 
 #[cfg(test)]
 mod tests {
-    use nightfall_fixtures::prelude::{InputBinding, InputTarget};
+    use nightfall_fixtures::prelude::{InputRoute, InputTarget};
     use nightfall_io::prelude::UsbDmxOutputTarget;
 
     use super::*;
@@ -385,9 +385,9 @@ mod tests {
             ],
             ..Default::default()
         };
-        snapshot.bindings.input.push(InputBinding {
+        snapshot.routes.input.push(InputRoute {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: None,
                 address: None,
             },

@@ -109,8 +109,8 @@ async function generateShowfile(
             fixtures: ids.map((id) => ({ id })),
           },
         });
-        // One binding per universe: a binding spanning a universe range places one fixture
-        // per universe, so packing several fixtures into a universe needs its own binding.
+        // One route per universe: a route spanning a universe range places one fixture
+        // per universe, so packing several fixtures into a universe needs its own route.
         for (
           let chunk = 0;
           chunk * group.fixturesPerUniverse < ids.length;
@@ -118,7 +118,7 @@ async function generateShowfile(
         ) {
           const universe = group.firstUniverse + chunk;
           await send("FixtureCommand", {
-            type: "PatchBinding",
+            type: "AddDmxRoute",
             data: {
               source: {
                 type: "Fixture",

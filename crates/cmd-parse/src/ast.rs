@@ -1359,7 +1359,7 @@ pub struct PatchAddCommandAst<'i> {
     pub clone: Option<PatchCloneAst>,
 }
 
-/// Patch command that removes bindings matching the supplied endpoint filters.
+/// Patch command that removes routes matching the supplied endpoint filters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RmPatchCommandAst<'i> {
     pub source: Option<PatchEndpointAst<'i>>,
@@ -1421,7 +1421,7 @@ pub struct FixtureParamAst<'i> {
     pub name: WordAst<'i>,
 }
 
-/// Endpoint marker for disabled bindings.
+/// Endpoint marker for disabled routes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DisabledEndpointAst;
 
@@ -1442,7 +1442,7 @@ pub struct AddressAst<'i> {
     pub value: IntegerAst<'i>,
 }
 
-/// Optional binding priority for patch commands.
+/// Optional route priority for patch commands.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatchPriorityAst<'i> {
     pub value: IntegerAst<'i>,

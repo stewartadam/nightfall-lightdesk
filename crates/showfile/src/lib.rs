@@ -25,10 +25,10 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 20;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 21;
 pub use selection_refs::stabilize_showfile_group_refs;
 pub use snapshot::{
-    BindingsSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
+    RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
     validate_showfile_asset_versions,
 };
 pub use world::{ShowfileSaveState, snapshot_from_save_state, snapshot_from_world};
@@ -186,8 +186,8 @@ mod tests {
         let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-17").unwrap();
 
         assert_eq!(parsed.metadata.showfile_version, CURRENT_SHOWFILE_VERSION);
-        assert!(parsed.bindings.output.is_empty());
-        assert!(parsed.bindings.disabled.is_empty());
+        assert!(parsed.routes.output.is_empty());
+        assert!(parsed.routes.disabled.is_empty());
     }
 
     /// Reject absent and malformed schema metadata instead of assuming a legacy version.

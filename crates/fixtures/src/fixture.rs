@@ -87,7 +87,7 @@ impl FixtureLayout {
     /// Returns the 1-based element IDs in the order the hardware consumes DMX channels,
     /// or `None` when elements are wired in declaration order.
     ///
-    /// Bindings that patch a whole fixture assign channels to elements in this order, so a
+    /// Routes that patch a whole fixture assign channels to elements in this order, so a
     /// layout whose physical wiring differs from its logical element order (left-to-right
     /// rendering) lists the wiring sequence here. The web UI mirrors this table in
     /// `webui/lib/dmx.ts`; both sides are pinned by

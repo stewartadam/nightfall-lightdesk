@@ -28,48 +28,48 @@ import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import { bestEffortPersistentAtom } from "../../../lib/best-effort-persistent-atom";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
-  bindingValidationSettings,
-  clearPatchBindingNavigationRequest,
-  patchBindingNavigationRequest,
-  requestPatchBindingNavigation,
+  clearDmxRouteNavigationRequest,
+  dmxRouteNavigationRequest,
+  requestDmxRouteNavigation,
+  routeValidationSettings,
 } from "../../../state/appStores";
-import PatchBindingsTab from "../components/bindings-tab";
 import PatchFixtureListTab from "../components/fixture-list-tab";
 import PatchFixturesTab from "../components/fixtures-tab";
+import DmxRoutesTab from "../components/routes-tab";
 import PatchUniversesTab from "../components/universes-tab";
 import { usePatchWizard } from "../wizard";
 
 export interface PatchPanelProps extends BasePanelComponentProps {}
 
-type PatchTab = "fixtures" | "bindings";
-type BindingsGroupBy = "none" | "fixture" | "universe";
+type PatchTab = "fixtures" | "routes";
+type RoutesGroupBy = "none" | "fixture" | "universe";
 
 const TABS: { key: PatchTab; label: string }[] = [
   { key: "fixtures", label: "Fixtures" },
-  { key: "bindings", label: "DMX I/O" },
+  { key: "routes", label: "DMX Routes" },
 ];
 
-const BINDINGS_GROUP_OPTIONS: { key: BindingsGroupBy; label: string }[] = [
+const ROUTES_GROUP_OPTIONS: { key: RoutesGroupBy; label: string }[] = [
   { key: "none", label: "None" },
   { key: "fixture", label: "Fixture" },
   { key: "universe", label: "Universe" },
 ];
 
 const PATCH_PANEL_ACTIVE_TAB_STORAGE_KEY = "nightfall-patch-panel:active-tab";
-const PATCH_PANEL_BINDINGS_GROUP_STORAGE_KEY =
-  "nightfall-patch-panel:bindings-group-by";
+const PATCH_PANEL_ROUTES_GROUP_STORAGE_KEY =
+  "nightfall-patch-panel:routes-group-by";
 
 /**
  * Returns whether a stored value is a supported patch panel tab.
  */
 function isPatchTab(value: string): value is PatchTab {
-  return value === "fixtures" || value === "bindings";
+  return value === "fixtures" || value === "routes";
 }
 
 /**
- * Returns whether a stored value is a supported bindings grouping mode.
+ * Returns whether a stored value is a supported routes grouping mode.
  */
-function isBindingsGroupBy(value: string): value is BindingsGroupBy {
+function isRoutesGroupBy(value: string): value is RoutesGroupBy {
   return value === "none" || value === "fixture" || value === "universe";
 }
 
@@ -82,27 +82,25 @@ const patchPanelActiveTab = bestEffortPersistentAtom<PatchTab>(
   },
 );
 
-const patchPanelBindingsGroupBy = bestEffortPersistentAtom<BindingsGroupBy>(
-  PATCH_PANEL_BINDINGS_GROUP_STORAGE_KEY,
+const patchPanelRoutesGroupBy = bestEffortPersistentAtom<RoutesGroupBy>(
+  PATCH_PANEL_ROUTES_GROUP_STORAGE_KEY,
   "none",
   {
-    decode: (value) => (isBindingsGroupBy(value) ? value : "none"),
+    decode: (value) => (isRoutesGroupBy(value) ? value : "none"),
     encode: (value) => value,
   },
 );
 
 /** Presents fixture patching and saved DMX grouping views with contextual toolbar actions. */
 export default function PatchPanel(props: PatchPanelProps) {
-  const $bindingValidationSettings = useStore(bindingValidationSettings);
-  const $patchBindingNavigationRequest = useStore(
-    patchBindingNavigationRequest,
-  );
+  const $routeValidationSettings = useStore(routeValidationSettings);
+  const $dmxRouteNavigationRequest = useStore(dmxRouteNavigationRequest);
   const activeTab = useStore(patchPanelActiveTab);
   const tabId = createUniqueId();
   const groupingId = createUniqueId();
-  const bindingsGroupBy = useStore(patchPanelBindingsGroupBy);
-  const [bindingsSelectedCount, setBindingsSelectedCount] = createSignal(0);
-  const [deleteBindingsAction, setDeleteBindingsAction] = createSignal<
+  const routesGroupBy = useStore(patchPanelRoutesGroupBy);
+  const [routesSelectedCount, setRoutesSelectedCount] = createSignal(0);
+  const [deleteRoutesAction, setDeleteRoutesAction] = createSignal<
     (() => void) | null
   >(null);
   const [fixturesSelectedCount, setFixturesSelectedCount] = createSignal(0);
@@ -117,11 +115,11 @@ export default function PatchPanel(props: PatchPanelProps) {
   const { openSettings } = useAppShell();
   const { openWizard } = usePatchWizard();
 
-  const canDeleteBindings = () =>
-    activeTab() === "bindings" &&
-    bindingsGroupBy() === "none" &&
-    bindingsSelectedCount() > 0 &&
-    deleteBindingsAction() !== null;
+  const canDeleteRoutes = () =>
+    activeTab() === "routes" &&
+    routesGroupBy() === "none" &&
+    routesSelectedCount() > 0 &&
+    deleteRoutesAction() !== null;
 
   const canDeleteFixtures = () =>
     activeTab() === "fixtures" &&
@@ -150,16 +148,16 @@ export default function PatchPanel(props: PatchPanelProps) {
     patchPanelActiveTab.set(tab);
   };
 
-  /** Stores the current bindings grouping mode. */
-  const setBindingsGroupBy = (groupBy: BindingsGroupBy) => {
-    patchPanelBindingsGroupBy.set(groupBy);
+  /** Stores the current routes grouping mode. */
+  const setRoutesGroupBy = (groupBy: RoutesGroupBy) => {
+    patchPanelRoutesGroupBy.set(groupBy);
   };
 
-  const handleDeleteBindings = () => {
-    if (!canDeleteBindings()) {
+  const handleDeleteRoutes = () => {
+    if (!canDeleteRoutes()) {
       return;
     }
-    deleteBindingsAction()?.();
+    deleteRoutesAction()?.();
   };
 
   const handleDeleteFixtures = () => {
@@ -170,7 +168,7 @@ export default function PatchPanel(props: PatchPanelProps) {
   };
 
   const handleDeleteActionChange = (action: (() => void) | null) => {
-    setDeleteBindingsAction(() => action);
+    setDeleteRoutesAction(() => action);
   };
 
   const handleDeleteFixturesActionChange = (action: (() => void) | null) => {
@@ -181,33 +179,33 @@ export default function PatchPanel(props: PatchPanelProps) {
     setColumnVisibilityControl(() => control);
   };
 
-  const handleNavigateToBinding = (bindingId: string) => {
-    requestPatchBindingNavigation(bindingId);
-    setBindingsGroupBy("none");
-    setActiveTab("bindings");
+  const handleNavigateToRoute = (routeId: string) => {
+    requestDmxRouteNavigation(routeId);
+    setRoutesGroupBy("none");
+    setActiveTab("routes");
   };
 
-  const handleBindingNavigationHandled = (requestId: number) => {
-    clearPatchBindingNavigationRequest(requestId);
+  const handleRouteNavigationHandled = (requestId: number) => {
+    clearDmxRouteNavigationRequest(requestId);
   };
 
   createEffect(() => {
-    if ($patchBindingNavigationRequest()) {
-      setBindingsGroupBy("none");
-      setActiveTab("bindings");
+    if ($dmxRouteNavigationRequest()) {
+      setRoutesGroupBy("none");
+      setActiveTab("routes");
     }
   });
 
   const isStrictOverlapValidation = () =>
-    $bindingValidationSettings().mode === "Strict";
+    $routeValidationSettings().mode === "Strict";
 
   const validationModeLabel = () =>
     isStrictOverlapValidation() ? "Strict Mode" : "Permissive Mode";
 
   const validationModeTooltip = () =>
     isStrictOverlapValidation()
-      ? "Overlapping bindings will be rejected"
-      : "Overlapping bindings are permitted and applied in priority order";
+      ? "Overlapping routes will be rejected"
+      : "Overlapping routes are permitted and applied in priority order";
 
   return (
     <div
@@ -260,25 +258,25 @@ export default function PatchPanel(props: PatchPanelProps) {
               </ToolbarButton>
             </Show>
 
-            <Show when={activeTab() === "bindings"}>
+            <Show when={activeTab() === "routes"}>
               <ToolbarButton
                 variant="danger"
-                count={bindingsSelectedCount()}
+                count={routesSelectedCount()}
                 tooltip={
-                  canDeleteBindings()
-                    ? `Delete selected bindings (${bindingsSelectedCount()})`
-                    : "Delete selected bindings"
+                  canDeleteRoutes()
+                    ? `Delete selected routes (${routesSelectedCount()})`
+                    : "Delete selected routes"
                 }
                 type="button"
-                label="Delete selected bindings"
-                disabled={!canDeleteBindings()}
-                onClick={handleDeleteBindings}
+                label="Delete selected routes"
+                disabled={!canDeleteRoutes()}
+                onClick={handleDeleteRoutes}
               >
                 <TrashIcon class="size-4" aria-hidden />
               </ToolbarButton>
             </Show>
 
-            <Show when={activeTab() === "bindings"}>
+            <Show when={activeTab() === "routes"}>
               <ToolbarSeparator />
               <div class="flex min-w-0 max-w-full items-center gap-2">
                 <span class="text-xs text-neutral-400 whitespace-nowrap">
@@ -289,9 +287,9 @@ export default function PatchPanel(props: PatchPanelProps) {
                   density="compact"
                   label="Group by"
                   contentId={`${groupingId}-content`}
-                  options={BINDINGS_GROUP_OPTIONS}
-                  value={bindingsGroupBy()}
-                  onChange={setBindingsGroupBy}
+                  options={ROUTES_GROUP_OPTIONS}
+                  value={routesGroupBy()}
+                  onChange={setRoutesGroupBy}
                 />
               </div>
               <ToolbarSeparator />
@@ -346,39 +344,39 @@ export default function PatchPanel(props: PatchPanelProps) {
               }
             />
           </Match>
-          <Match when={activeTab() === "bindings"}>
+          <Match when={activeTab() === "routes"}>
             <div
               class="h-full min-h-0"
               id={`${groupingId}-content`}
               role="tabpanel"
-              aria-labelledby={`${groupingId}-${bindingsGroupBy()}`}
+              aria-labelledby={`${groupingId}-${routesGroupBy()}`}
             >
               <Switch>
-                <Match when={bindingsGroupBy() === "none"}>
-                  <PatchBindingsTab
+                <Match when={routesGroupBy() === "none"}>
+                  <DmxRoutesTab
                     panelId={props.id}
-                    onSelectionCountChange={setBindingsSelectedCount}
+                    onSelectionCountChange={setRoutesSelectedCount}
                     onDeleteActionChange={handleDeleteActionChange}
-                    navigateToBinding={$patchBindingNavigationRequest()}
-                    onNavigateHandled={handleBindingNavigationHandled}
+                    navigateToRoute={$dmxRouteNavigationRequest()}
+                    onNavigateHandled={handleRouteNavigationHandled}
                     onColumnVisibilityControlChange={
                       handleColumnVisibilityControlChange
                     }
                   />
                 </Match>
-                <Match when={bindingsGroupBy() === "fixture"}>
+                <Match when={routesGroupBy() === "fixture"}>
                   <PatchFixturesTab
                     panelId={props.id}
-                    onNavigateToBinding={handleNavigateToBinding}
+                    onNavigateToRoute={handleNavigateToRoute}
                     onColumnVisibilityControlChange={
                       handleColumnVisibilityControlChange
                     }
                   />
                 </Match>
-                <Match when={bindingsGroupBy() === "universe"}>
+                <Match when={routesGroupBy() === "universe"}>
                   <PatchUniversesTab
                     panelId={props.id}
-                    onNavigateToBinding={handleNavigateToBinding}
+                    onNavigateToRoute={handleNavigateToRoute}
                     onColumnVisibilityControlChange={
                       handleColumnVisibilityControlChange
                     }

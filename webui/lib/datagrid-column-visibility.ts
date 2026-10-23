@@ -27,6 +27,7 @@ export type DataGridColumnVisibilityCategory =
   | "Placement"
   | "Rotation"
   | "Binding"
+  | "Route"
   | "Metadata";
 
 export type VisibilityCheckState = "empty" | "activated" | "dash";
@@ -91,6 +92,7 @@ const CATEGORY_ORDER: DataGridColumnVisibilityCategory[] = [
   "Placement",
   "Rotation",
   "Binding",
+  "Route",
   "Metadata",
   "Other",
 ];

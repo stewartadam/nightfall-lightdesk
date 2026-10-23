@@ -10,13 +10,13 @@ import {
   appendInvocationFailure,
   describeInvocationFailure,
 } from "../features/actions/model/invocation-failures";
-import { normalizeFixtureUid } from "../lib/binding-utils";
 import { markCommandFailurePresented } from "../lib/command-failure-toasts";
 import {
   replaceStoredLayoutsFromShowfile,
   type StoredPanelLayout,
 } from "../lib/layoutStorage";
 import { setStoreAction } from "../lib/nanostore-action";
+import { normalizeFixtureUid } from "../lib/route-utils";
 import type * as types from "../types";
 import {
   actionCatalog,

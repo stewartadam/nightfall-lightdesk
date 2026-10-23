@@ -59,7 +59,7 @@ impl ShowfileLoadPhase {
 pub enum ShowfileLoadDomain {
     /// Global variables and desk/runtime settings.
     DeskState,
-    /// Fixture definitions, parameters, and patch bindings.
+    /// Fixture definitions, parameters, and DMX routes.
     FixturesPatch,
     /// Visualizer scene object definitions.
     SceneObjects,
@@ -172,9 +172,9 @@ pub fn apply_showfile_snapshot(
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
     board_data_provider: &mut DataProvider<Board>,
-    input_bindings: &mut InputBindings,
-    output_bindings: &mut OutputBindings,
-    disabled_bindings: &mut DisabledBindings,
+    input_routes: &mut InputRoutes,
+    output_routes: &mut OutputRoutes,
+    disabled_routes: &mut DisabledRoutes,
     #[cfg(feature = "midi")] midi_mappings: &mut MidiMappings,
     #[cfg(feature = "osc")] osc_mappings: &mut OscMappings,
     desk_settings: &mut DeskSettings,
@@ -192,9 +192,9 @@ pub fn apply_showfile_snapshot(
         DeskStateLoadContributor::new(global_variables, desk_settings, io_settings);
     let mut fixtures_patch_contributor = FixturesPatchLoadContributor::new(
         fixture_data_provider,
-        input_bindings,
-        output_bindings,
-        disabled_bindings,
+        input_routes,
+        output_routes,
+        disabled_routes,
         #[cfg(feature = "midi")]
         midi_mappings,
         #[cfg(feature = "osc")]
@@ -265,9 +265,9 @@ pub struct ShowfileApplyState<'w> {
     timecode_data_provider: ResMut<'w, DataProvider<Timecode>>,
     timeline_data_provider: ResMut<'w, DataProvider<Timeline>>,
     board_data_provider: ResMut<'w, DataProvider<Board>>,
-    input_bindings: ResMut<'w, InputBindings>,
-    output_bindings: ResMut<'w, OutputBindings>,
-    disabled_bindings: ResMut<'w, DisabledBindings>,
+    input_routes: ResMut<'w, InputRoutes>,
+    output_routes: ResMut<'w, OutputRoutes>,
+    disabled_routes: ResMut<'w, DisabledRoutes>,
     #[cfg(feature = "midi")]
     midi_mappings: ResMut<'w, MidiMappings>,
     #[cfg(feature = "osc")]
@@ -307,9 +307,9 @@ pub fn apply_showfile_snapshot_to_world(
                     &mut state.timecode_data_provider,
                     &mut state.timeline_data_provider,
                     &mut state.board_data_provider,
-                    &mut state.input_bindings,
-                    &mut state.output_bindings,
-                    &mut state.disabled_bindings,
+                    &mut state.input_routes,
+                    &mut state.output_routes,
+                    &mut state.disabled_routes,
                     #[cfg(feature = "midi")]
                     &mut state.midi_mappings,
                     #[cfg(feature = "osc")]
@@ -340,9 +340,9 @@ pub fn initialize_showfile_resources(world: &mut World) {
     world.init_resource::<DataProvider<Timecode>>();
     world.init_resource::<DataProvider<Timeline>>();
     world.init_resource::<DataProvider<Board>>();
-    world.init_resource::<InputBindings>();
-    world.init_resource::<OutputBindings>();
-    world.init_resource::<DisabledBindings>();
+    world.init_resource::<InputRoutes>();
+    world.init_resource::<OutputRoutes>();
+    world.init_resource::<DisabledRoutes>();
     #[cfg(feature = "midi")]
     world.init_resource::<MidiMappings>();
     #[cfg(feature = "osc")]

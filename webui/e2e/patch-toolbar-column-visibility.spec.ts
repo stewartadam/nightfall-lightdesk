@@ -58,7 +58,7 @@ test("patch column visibility control is right aligned in the main toolbar", asy
     const tabButtons = [...toolbar.querySelectorAll("button")].filter(
       (candidate) => {
         const text = candidate.textContent?.trim();
-        return text === "Fixtures" || text === "DMX I/O";
+        return text === "Fixtures" || text === "DMX Routes";
       },
     );
     if (tabButtons.length !== 2) {

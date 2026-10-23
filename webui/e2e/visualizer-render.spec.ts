@@ -180,7 +180,7 @@ test.beforeEach(async ({ backendSlot, page }) => {
   await expect
     .poll(() => ownedVisualizerStoreCounts(page))
     .toEqual({
-      bindings: 0,
+      routes: 0,
       fixtureGeometries: 0,
       fixtures: 0,
       parameters: 0,
@@ -199,7 +199,7 @@ test.afterEach(async ({ backendSlot, page }) => {
   await expect
     .poll(() => ownedVisualizerStoreCounts(page))
     .toEqual({
-      bindings: 0,
+      routes: 0,
       fixtureGeometries: 0,
       fixtures: 0,
       parameters: 0,
@@ -229,7 +229,7 @@ async function waitForVisualizerStores(page: Page): Promise<void> {
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
-      Boolean((window as any).appStores?.bindings?.get) &&
+      Boolean((window as any).appStores?.routes?.get) &&
       Boolean((window as any).appStores?.fixtureGeometries?.get) &&
       Boolean((window as any).appStores?.fixtures?.get) &&
       Boolean((window as any).appStores?.parameters?.get) &&
@@ -242,12 +242,10 @@ async function waitForVisualizerStores(page: Page): Promise<void> {
 async function ownedVisualizerStoreCounts(page: Page): Promise<object> {
   return page.evaluate(() => {
     const stores = (window as any).appStores;
-    const bindings = stores.bindings.get();
+    const routes = stores.routes.get();
     return {
-      bindings:
-        bindings.input.length +
-        bindings.output.length +
-        bindings.disabled.length,
+      routes:
+        routes.input.length + routes.output.length + routes.disabled.length,
       fixtureGeometries: Object.keys(stores.fixtureGeometries.get()).length,
       fixtures: Object.keys(stores.fixtures.get()).length,
       parameters: stores.parameters.get().size,

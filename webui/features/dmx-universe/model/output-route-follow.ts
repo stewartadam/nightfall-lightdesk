@@ -6,11 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  buildFixturePatchMapFromBindings,
-  type FixturePatchEntry,
-  type FixturePatchMap,
-} from "../../../lib/binding-utils";
 import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
 import {
   defaultNetworkDmxOutputs,
@@ -18,6 +13,11 @@ import {
   outputTransportForOutputTargetId,
   outputTransportKey,
 } from "../../../lib/network-dmx-output-targets";
+import {
+  buildFixturePatchMapFromRoutes,
+  type FixturePatchEntry,
+  type FixturePatchMap,
+} from "../../../lib/route-utils";
 import type * as types from "../../../types";
 
 /**
@@ -56,7 +56,7 @@ export function outputTransportMatchesSelection(
   return transport !== null && outputTransportKey(transport) === selection.key;
 }
 
-/** Output target configuration used to resolve binding target ids to transports. */
+/** Output target configuration used to resolve route target ids to transports. */
 export type OutputTargetConfig = {
   networkDmxOutputs: types.NetworkDmxOutputTargets;
   usbDmxOutputs: types.UsbDmxOutputTargets;
@@ -111,29 +111,23 @@ function outputAddressMatchesInputMapping(
   return outputAddress >= targetAddress && outputAddress <= targetEnd;
 }
 
-/** Returns whether an input binding writes the selected output space's channel. */
-function bindingProducesOutputChannel(
-  binding: types.InputBinding,
+/** Returns whether an input route writes the selected output space's channel. */
+function routeProducesOutputChannel(
+  route: types.InputRoute,
   selection: OutputSpaceSelection,
   selectedUniverse: number,
   outputAddress: number,
   targets: OutputTargetConfig,
 ): boolean {
-  if (
-    binding.source.type !== "Transport" &&
-    binding.source.type !== "Console"
-  ) {
+  if (route.source.type !== "Transport" && route.source.type !== "Console") {
     return false;
   }
 
-  if (
-    binding.target.type !== "Console" &&
-    binding.target.type !== "Transport"
-  ) {
+  if (route.target.type !== "Console" && route.target.type !== "Transport") {
     return false;
   }
 
-  if (binding.target.type === "Console") {
+  if (route.target.type === "Console") {
     if (selection !== null && selection.kind !== "console") {
       return false;
     }
@@ -143,7 +137,7 @@ function bindingProducesOutputChannel(
     }
     if (selection !== null) {
       const transport = outputTransportForOutputTargetId(
-        binding.target.data.target,
+        route.target.data.target,
         targets.networkDmxOutputs,
         targets.usbDmxOutputs,
       );
@@ -153,8 +147,8 @@ function bindingProducesOutputChannel(
     }
   }
 
-  const sourceUniverseRange = binding.source.data.universe;
-  const targetUniverseRange = binding.target.data.universe;
+  const sourceUniverseRange = route.source.data.universe;
+  const targetUniverseRange = route.target.data.universe;
   if (targetUniverseRange) {
     if (!rangeContains(targetUniverseRange, selectedUniverse)) {
       return false;
@@ -163,8 +157,8 @@ function bindingProducesOutputChannel(
     return false;
   }
 
-  const sourceAddress = binding.source.data.address ?? 1;
-  const targetAddress = binding.target.data.address ?? 1;
+  const sourceAddress = route.source.data.address ?? 1;
+  const targetAddress = route.target.data.address ?? 1;
 
   return outputAddressMatchesInputMapping(
     sourceAddress,
@@ -174,19 +168,19 @@ function bindingProducesOutputChannel(
 }
 
 /**
- * Finds the input binding row that writes one output channel of the selected space.
+ * Finds the input route row that writes one output channel of the selected space.
  */
-export function findInputBindingIdForOutputChannel(
-  snapshot: types.BindingsSnapshot,
+export function findInputRouteIdForOutputChannel(
+  snapshot: types.RoutesSnapshot,
   selection: OutputSpaceSelection,
   selectedUniverse: number,
   outputAddress: number,
   targets: OutputTargetConfig = defaultOutputTargets(),
 ): string | null {
-  for (const [index, binding] of snapshot.input.entries()) {
+  for (const [index, route] of snapshot.input.entries()) {
     if (
-      bindingProducesOutputChannel(
-        binding,
+      routeProducesOutputChannel(
+        route,
         selection,
         selectedUniverse,
         outputAddress,
@@ -207,12 +201,11 @@ function patchWritesAddress(patch: FixturePatchEntry, address: number) {
 }
 
 /**
- * Ranks output bindings by the order the frame composer lets them win a wire channel:
+ * Ranks output routes by the order the frame composer lets them win a wire channel:
  * direct fixture→transport output overlays console→transport windows, so it ranks first.
  */
-function outputBindingPrecedenceTier(binding: types.OutputBinding): number {
-  return binding.source.type === "Fixture" &&
-    binding.target.type === "Transport"
+function outputRoutePrecedenceTier(route: types.OutputRoute): number {
+  return route.source.type === "Fixture" && route.target.type === "Transport"
     ? 0
     : 1;
 }
@@ -243,18 +236,18 @@ function patchLocationKeys(patchMap: FixturePatchMap): Set<string> {
 }
 
 /**
- * Finds the output binding row driving one output channel of the selected space.
+ * Finds the output route row driving one output channel of the selected space.
  *
  * Candidate rows are checked in the frame composer's precedence: direct fixture→transport
  * rows first (their output overlays console→transport windows on the wire), then the rest
  * from highest to lowest effective priority (later rows win ties, as in the engine). A row
  * only matches when it writes the channel itself and the location it patches is also part
- * of the effective patch map built from the full binding set, so rows overridden by a
- * Fixture→Disabled row, a disabled binding, or a higher-priority console binding are
+ * of the effective patch map built from the full route set, so rows overridden by a
+ * Fixture→Disabled row, a disabled route, or a higher-priority console route are
  * never followed.
  */
-export function findOutputBindingIdForChannel(
-  snapshot: types.BindingsSnapshot,
+export function findOutputRouteIdForChannel(
+  snapshot: types.RoutesSnapshot,
   fixtures: Record<string, types.Fixture>,
   selection: OutputSpaceSelection,
   selectedUniverse: number,
@@ -262,44 +255,44 @@ export function findOutputBindingIdForChannel(
   targets: OutputTargetConfig = defaultOutputTargets(),
 ): string | null {
   const effectiveLocations = patchLocationKeys(
-    buildFixturePatchMapFromBindings(
+    buildFixturePatchMapFromRoutes(
       snapshot,
       fixtures,
       targets.networkDmxOutputs,
       targets.usbDmxOutputs,
     ),
   );
-  const fixtureConsoleBindings = snapshot.output.filter(
-    (binding) =>
-      binding.source.type === "Fixture" && binding.target.type === "Console",
+  const fixtureConsoleRoutes = snapshot.output.filter(
+    (route) =>
+      route.source.type === "Fixture" && route.target.type === "Console",
   );
   const candidates = snapshot.output
-    .map((binding, index) => ({ binding, index }))
+    .map((route, index) => ({ route, index }))
     .sort(
       (a, b) =>
-        outputBindingPrecedenceTier(a.binding) -
-          outputBindingPrecedenceTier(b.binding) ||
-        b.binding.priority - a.binding.priority ||
+        outputRoutePrecedenceTier(a.route) -
+          outputRoutePrecedenceTier(b.route) ||
+        b.route.priority - a.route.priority ||
         b.index - a.index,
     );
 
-  for (const { binding, index } of candidates) {
+  for (const { route, index } of candidates) {
     const isConsolePassthrough =
-      binding.source.type === "Console" && binding.target.type === "Transport";
-    const isFixtureBinding =
-      (binding.source.type === "Fixture" &&
-        (binding.target.type === "Transport" ||
-          binding.target.type === "Console")) ||
-      (binding.source.type === "FixtureBreak" &&
-        binding.target.type === "Transport");
-    if (!isConsolePassthrough && !isFixtureBinding) continue;
+      route.source.type === "Console" && route.target.type === "Transport";
+    const isFixtureRoute =
+      (route.source.type === "Fixture" &&
+        (route.target.type === "Transport" ||
+          route.target.type === "Console")) ||
+      (route.source.type === "FixtureBreak" &&
+        route.target.type === "Transport");
+    if (!isConsolePassthrough && !isFixtureRoute) continue;
 
-    const patchMap = buildFixturePatchMapFromBindings(
+    const patchMap = buildFixturePatchMapFromRoutes(
       {
         input: [],
         output: isConsolePassthrough
-          ? [...fixtureConsoleBindings, binding]
-          : [binding],
+          ? [...fixtureConsoleRoutes, route]
+          : [route],
         disabled: snapshot.disabled,
       },
       fixtures,

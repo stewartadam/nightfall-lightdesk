@@ -13,7 +13,7 @@
 
 mod action_references;
 
-use nightfall_fixtures::bindings::{DmxRange, OutputSource};
+use nightfall_fixtures::routes::{DmxRange, OutputSource};
 use serde_json::Value;
 
 use crate::CURRENT_SHOWFILE_VERSION;
@@ -32,6 +32,7 @@ pub(crate) fn migrate_showfile_json(showfile: &mut Value, version: u32) -> Resul
             17 => remove_output_disabled_bindings(showfile)?,
             18 => action_references::migrate_v18_to_v19(showfile)?,
             19 => control_assignments_to_slots(showfile)?,
+            20 => bindings_to_routes(showfile)?,
             _ => return Err(format!("no migration from showfile version {version}")),
         }
         version += 1;
@@ -80,7 +81,7 @@ fn remove_output_disabled_bindings(showfile: &mut Value) -> Result<(), String> {
     }
 
     let removed_rules = filters.len();
-    let mut removed_bindings = 0;
+    let mut removed_routes = 0;
     *outputs = retained
         .into_iter()
         .zip(sources)
@@ -89,7 +90,7 @@ fn remove_output_disabled_bindings(showfile: &mut Value) -> Result<(), String> {
                 .iter()
                 .any(|filter| legacy_filter_matches(&source, filter))
             {
-                removed_bindings += 1;
+                removed_routes += 1;
                 None
             } else {
                 Some(binding)
@@ -100,7 +101,7 @@ fn remove_output_disabled_bindings(showfile: &mut Value) -> Result<(), String> {
     if removed_rules > 0 {
         tracing::info!(
             removed_rules,
-            removed_bindings,
+            removed_routes,
             "Migrated output disabled rules out of showfile"
         );
     }
@@ -128,6 +129,20 @@ fn control_assignments_to_slots(showfile: &mut Value) -> Result<(), String> {
         .map(|assignment| serde_json::json!({ "assignment": assignment, "buttonMode": "Go" }))
         .collect();
     object.insert("controlSlots".to_string(), Value::Array(slots));
+    Ok(())
+}
+
+/// Schema 20 → 21: patch bindings are saved as DMX routes under `routes`.
+///
+/// The `bindings` object moves to `routes` unchanged; its input, output and disabled lists
+/// already have the shape the current schema reads.
+fn bindings_to_routes(showfile: &mut Value) -> Result<(), String> {
+    let Some(object) = showfile.as_object_mut() else {
+        return Err("showfile root is not an object".to_string());
+    };
+    if let Some(bindings) = object.remove("bindings") {
+        object.insert("routes".to_string(), bindings);
+    }
     Ok(())
 }
 
@@ -240,8 +255,9 @@ mod tests {
         }})
     }
 
-    /// Output disabled rules are dropped together with the output bindings they silenced,
-    /// while input rules and unaffected outputs survive and the version is stamped.
+    /// Output disabled rules are dropped together with the output bindings they silenced, the
+    /// rest move to `routes`, input rules and unaffected outputs survive, and the version is
+    /// stamped.
     #[test]
     fn schema_17_disabled_rules_drop_the_outputs_they_silenced() {
         let mut showfile = json!({
@@ -260,11 +276,11 @@ mod tests {
             CURRENT_SHOWFILE_VERSION
         );
         assert_eq!(
-            showfile["bindings"]["output"],
+            showfile["routes"]["output"],
             json!([fixture_to_sacn(FIXTURE_B, 2)])
         );
         assert_eq!(
-            showfile["bindings"]["disabled"],
+            showfile["routes"]["disabled"],
             json!([disabled_sacn_input()])
         );
     }
@@ -290,7 +306,7 @@ mod tests {
         migrate_showfile_json(&mut showfile, 17).expect("migrate");
 
         assert_eq!(
-            showfile["bindings"]["output"],
+            showfile["routes"]["output"],
             json!([fixture_to_sacn(FIXTURE_B, 2)])
         );
     }
@@ -366,5 +382,16 @@ mod tests {
         control_assignments_to_slots(&mut showfile).unwrap();
 
         assert_eq!(showfile, json!({"variables": {}}));
+    }
+
+    /// Schema 20 bindings move to `routes` with their lists untouched.
+    #[test]
+    fn schema_20_bindings_become_routes() {
+        let bindings = json!({"input": [], "output": [fixture_to_sacn("a", 1)], "disabled": []});
+        let mut showfile = json!({"bindings": bindings.clone(), "variables": {}});
+
+        bindings_to_routes(&mut showfile).unwrap();
+
+        assert_eq!(showfile, json!({"routes": bindings, "variables": {}}));
     }
 }

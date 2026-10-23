@@ -126,7 +126,7 @@ fn apply_save_contribution(
         }
         ShowfileContribution::FixturesPatch(contribution) => {
             snapshot.fixtures = contribution.fixtures.into_owned();
-            snapshot.bindings = contribution.bindings.into_owned();
+            snapshot.routes = contribution.routes.into_owned();
             #[cfg(feature = "midi")]
             {
                 snapshot.midi_mappings = contribution.midi_mappings.into_owned();
@@ -190,7 +190,7 @@ fn load_contribution_for_domain(
             ShowfileContribution::FixturesPatch(fixtures_patch::FixturesPatchSnapshot {
                 fixtures: Cow::Borrowed(&snapshot.fixtures),
                 color_path_defaults: Cow::Borrowed(&snapshot.color_path_defaults),
-                bindings: Cow::Borrowed(&snapshot.bindings),
+                routes: Cow::Borrowed(&snapshot.routes),
                 #[cfg(feature = "midi")]
                 midi_mappings: Cow::Borrowed(&snapshot.midi_mappings),
                 #[cfg(feature = "midi")]

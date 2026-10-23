@@ -16,13 +16,13 @@ use moonshine_kind::prelude::*;
 use nightfall::prelude::{ColorPath, ColorPathId, FixtureRef};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::FixturePlacementUpdateEntry;
-use nightfall_fixtures::binding_validation::validate_bindings;
 use nightfall_fixtures::parameter::Parameter;
 use nightfall_fixtures::prelude::*;
+use nightfall_fixtures::route_validation::validate_routes;
 use nightfall_fixtures::websocket::{
     SuppressFixtureChangedSnapshot, broadcast_fixture_command, send_color_path_defaults,
 };
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 use nightfall_io::prelude::*;
 use uuid::Uuid;
 
@@ -35,7 +35,7 @@ use color_path_defaults::resolve_color_path_default_fixture_ref;
 #[cfg(test)]
 use definitions::collect_fixture_placement_batch_updates;
 #[cfg(test)]
-use patch::{OUTPUT_DISABLE_ERROR, apply_patch_binding_add, apply_patch_binding_remove};
+use patch::{OUTPUT_DISABLE_ERROR, apply_dmx_route_add, apply_dmx_route_remove};
 
 /// Cohesive dependencies shared by fixture definition, patch, and color path default handlers.
 #[derive(SystemParam)]
@@ -52,14 +52,14 @@ pub struct FixtureCrudContext<'w, 's> {
     responder: CommandResponder<'w>,
     /// Live fixture parameters updated by parameter offset changes.
     param_query: Query<'w, 's, InstanceMut<'static, Parameter>>,
-    /// Live input bindings.
-    input_bindings: ResMut<'w, InputBindings>,
-    /// Live output bindings.
-    output_bindings: ResMut<'w, OutputBindings>,
-    /// Live disabled input bindings.
-    disabled_bindings: ResMut<'w, DisabledBindings>,
-    /// Policy used when validating binding changes.
-    binding_settings: Res<'w, BindingValidationSettings>,
+    /// Live input routes.
+    input_routes: ResMut<'w, InputRoutes>,
+    /// Live output routes.
+    output_routes: ResMut<'w, OutputRoutes>,
+    /// Live disabled input routes.
+    disabled_routes: ResMut<'w, DisabledRoutes>,
+    /// Policy used when validating route changes.
+    route_settings: Res<'w, RouteValidationSettings>,
     /// Configured network DMX output targets.
     network_outputs: Res<'w, NetworkDmxOutputTargets>,
     /// Configured USB DMX output targets.
@@ -89,7 +89,7 @@ fn succeed_fixture_command(responder: &mut CommandResponder, command_id: Command
 
 /// Handles CRUD events for fixtures.
 ///
-/// Fixture definition, patch, and color path default commands route to their family handler,
+/// Fixture definition, patch, and color path default commands go to their family handler,
 /// which reports the command's outcome. DMX channel commands belong to the fixtures crate.
 pub fn crud_events(
     mut context: FixtureCrudContext,
@@ -105,10 +105,8 @@ pub fn crud_events(
                 definitions::handle_command(&mut context, event);
             }
             FixtureCommand::UpdateFixturePatch { .. }
-            | FixtureCommand::PatchBinding { .. }
-            | FixtureCommand::RemovePatchBinding { .. } => {
-                patch::handle_command(&mut context, event)
-            }
+            | FixtureCommand::AddDmxRoute { .. }
+            | FixtureCommand::RemoveDmxRoutes { .. } => patch::handle_command(&mut context, event),
             FixtureCommand::SetColorPathDefault { .. }
             | FixtureCommand::SetColorPathDefaultById { .. } => {
                 color_path_defaults::handle_command(&mut context, event);
@@ -156,10 +154,10 @@ mod tests {
         app.add_message::<SuppressFixtureChangedSnapshot>();
         app.init_resource::<CommandTracker>();
         app.insert_resource(FixtureDataProviderExt::default());
-        app.insert_resource(InputBindings::default());
-        app.insert_resource(OutputBindings::default());
-        app.insert_resource(DisabledBindings::default());
-        app.insert_resource(BindingValidationSettings::default());
+        app.insert_resource(InputRoutes::default());
+        app.insert_resource(OutputRoutes::default());
+        app.insert_resource(DisabledRoutes::default());
+        app.insert_resource(RouteValidationSettings::default());
         app.insert_resource(NetworkDmxOutputTargets::default());
         app.insert_resource(UsbDmxOutputTargets::default());
         let (sender, _receiver) = async_channel::unbounded();
@@ -368,48 +366,48 @@ mod tests {
     }
 
     #[test]
-    fn apply_patch_binding_add_supports_transport_to_transport() {
-        let source = BindingEndpoint::Transport {
+    fn apply_dmx_route_add_supports_transport_to_transport() {
+        let source = RouteEndpoint::Transport {
             target: "sacn".to_string(),
             universe: Some(DmxRange::single(1)),
             address: Some(10),
         };
-        let target = BindingEndpoint::Transport {
+        let target = RouteEndpoint::Transport {
             target: "artnet".to_string(),
             universe: Some(DmxRange::single(2)),
             address: Some(20),
         };
 
-        let mut input_bindings = InputBindings::default();
-        let mut output_bindings = OutputBindings::default();
-        let mut disabled_bindings = DisabledBindings::default();
+        let mut input_routes = InputRoutes::default();
+        let mut output_routes = OutputRoutes::default();
+        let mut disabled_routes = DisabledRoutes::default();
         let data_provider = FixtureDataProviderExt::default();
         let network_outputs = NetworkDmxOutputTargets::default();
         let usb_outputs = UsbDmxOutputTargets::default();
 
-        apply_patch_binding_add(
+        apply_dmx_route_add(
             &source,
             &target,
             3,
             true,
-            &mut input_bindings,
-            &mut output_bindings,
-            &mut disabled_bindings,
+            &mut input_routes,
+            &mut output_routes,
+            &mut disabled_routes,
             &data_provider,
             &network_outputs,
             &usb_outputs,
         )
         .expect("transport-to-transport add should succeed");
 
-        assert_eq!(input_bindings.bindings.len(), 1);
-        assert!(output_bindings.bindings.is_empty());
-        assert!(disabled_bindings.bindings.is_empty());
+        assert_eq!(input_routes.routes.len(), 1);
+        assert!(output_routes.routes.is_empty());
+        assert!(disabled_routes.routes.is_empty());
 
         assert_eq!(
-            input_bindings.bindings[0],
-            InputBinding {
+            input_routes.routes[0],
+            InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(1)),
                     address: Some(10),
                 },
@@ -426,40 +424,40 @@ mod tests {
 
     /// Verifies outputs cannot be patched to `disabled`, while transport inputs still can.
     #[test]
-    fn apply_patch_binding_disables_only_inputs() {
+    fn apply_dmx_route_disables_only_inputs() {
         let fixture = create_test_fixture(12);
         let mut data_provider = FixtureDataProviderExt::default();
         let _ = data_provider.inner.add(fixture);
-        let mut input_bindings = InputBindings::default();
-        let mut output_bindings = OutputBindings::default();
-        let mut disabled_bindings = DisabledBindings::default();
+        let mut input_routes = InputRoutes::default();
+        let mut output_routes = OutputRoutes::default();
+        let mut disabled_routes = DisabledRoutes::default();
         let network_outputs = NetworkDmxOutputTargets::default();
         let usb_outputs = UsbDmxOutputTargets::default();
 
         let output_sources = [
-            BindingEndpoint::Fixture {
+            RouteEndpoint::Fixture {
                 ids: vec![12],
                 element: None,
                 param: None,
             },
-            BindingEndpoint::FixtureBreak {
+            RouteEndpoint::FixtureBreak {
                 ids: vec![12],
                 dmx_break: 2,
             },
-            BindingEndpoint::Console {
+            RouteEndpoint::Console {
                 universe: Some(DmxRange::single(1)),
                 address: None,
             },
         ];
         for source in &output_sources {
-            let error = apply_patch_binding_add(
+            let error = apply_dmx_route_add(
                 source,
-                &BindingEndpoint::Disabled,
+                &RouteEndpoint::Disabled,
                 0,
                 false,
-                &mut input_bindings,
-                &mut output_bindings,
-                &mut disabled_bindings,
+                &mut input_routes,
+                &mut output_routes,
+                &mut disabled_routes,
                 &data_provider,
                 &network_outputs,
                 &usb_outputs,
@@ -467,76 +465,76 @@ mod tests {
             .expect_err("outputs cannot be disabled");
             assert_eq!(error, OUTPUT_DISABLE_ERROR);
         }
-        assert!(output_bindings.bindings.is_empty());
-        assert!(disabled_bindings.bindings.is_empty());
+        assert!(output_routes.routes.is_empty());
+        assert!(disabled_routes.routes.is_empty());
 
-        let transport = BindingEndpoint::Transport {
+        let transport = RouteEndpoint::Transport {
             target: "sacn".to_string(),
             universe: Some(DmxRange::single(1)),
             address: None,
         };
-        apply_patch_binding_add(
+        apply_dmx_route_add(
             &transport,
-            &BindingEndpoint::Disabled,
+            &RouteEndpoint::Disabled,
             0,
             false,
-            &mut input_bindings,
-            &mut output_bindings,
-            &mut disabled_bindings,
+            &mut input_routes,
+            &mut output_routes,
+            &mut disabled_routes,
             &data_provider,
             &network_outputs,
             &usb_outputs,
         )
         .expect("transport inputs can be disabled");
-        assert_eq!(disabled_bindings.bindings.len(), 1);
+        assert_eq!(disabled_routes.routes.len(), 1);
 
-        apply_patch_binding_remove(
+        apply_dmx_route_remove(
             None,
-            Some(&BindingEndpoint::Disabled),
+            Some(&RouteEndpoint::Disabled),
             None,
             None,
-            &mut input_bindings,
-            &mut output_bindings,
-            &mut disabled_bindings,
+            &mut input_routes,
+            &mut output_routes,
+            &mut disabled_routes,
             &data_provider,
         )
         .expect("removing disabled rules should succeed");
-        assert!(disabled_bindings.bindings.is_empty());
+        assert!(disabled_routes.routes.is_empty());
     }
 
     /// Verifies `rm patch` rejects output sources filtered by `disabled`, which can never match.
     #[test]
-    fn apply_patch_binding_remove_rejects_disabled_output_sources() {
+    fn apply_dmx_route_remove_rejects_disabled_output_sources() {
         let fixture = create_test_fixture(12);
         let mut data_provider = FixtureDataProviderExt::default();
         let _ = data_provider.inner.add(fixture);
-        let mut input_bindings = InputBindings::default();
-        let mut output_bindings = OutputBindings::default();
-        let mut disabled_bindings = DisabledBindings::default();
+        let mut input_routes = InputRoutes::default();
+        let mut output_routes = OutputRoutes::default();
+        let mut disabled_routes = DisabledRoutes::default();
 
         for source in [
-            BindingEndpoint::Fixture {
+            RouteEndpoint::Fixture {
                 ids: vec![12],
                 element: None,
                 param: None,
             },
-            BindingEndpoint::FixtureBreak {
+            RouteEndpoint::FixtureBreak {
                 ids: vec![12],
                 dmx_break: 2,
             },
-            BindingEndpoint::Console {
+            RouteEndpoint::Console {
                 universe: Some(DmxRange::single(1)),
                 address: None,
             },
         ] {
-            let error = apply_patch_binding_remove(
+            let error = apply_dmx_route_remove(
                 Some(&source),
-                Some(&BindingEndpoint::Disabled),
+                Some(&RouteEndpoint::Disabled),
                 None,
                 None,
-                &mut input_bindings,
-                &mut output_bindings,
-                &mut disabled_bindings,
+                &mut input_routes,
+                &mut output_routes,
+                &mut disabled_routes,
                 &data_provider,
             )
             .expect_err("output sources cannot have disabled rules");
@@ -546,39 +544,39 @@ mod tests {
 
     /// Verifies a fixture break patches only to transports and is removed by a whole-fixture unpatch.
     #[test]
-    fn apply_patch_binding_fixture_break_round_trip() {
+    fn apply_dmx_route_fixture_break_round_trip() {
         let fixture = create_test_fixture(12);
         let fixture_uid = fixture.identifiers.uid;
         let mut data_provider = FixtureDataProviderExt::default();
         let _ = data_provider.inner.add(fixture);
-        let source = BindingEndpoint::FixtureBreak {
+        let source = RouteEndpoint::FixtureBreak {
             ids: vec![12],
             dmx_break: 2,
         };
-        let transport = BindingEndpoint::Transport {
+        let transport = RouteEndpoint::Transport {
             target: "sacn".to_string(),
             universe: Some(DmxRange::single(1)),
             address: Some(200),
         };
-        let mut input_bindings = InputBindings::default();
-        let mut output_bindings = OutputBindings::default();
-        let mut disabled_bindings = DisabledBindings::default();
+        let mut input_routes = InputRoutes::default();
+        let mut output_routes = OutputRoutes::default();
+        let mut disabled_routes = DisabledRoutes::default();
         let network_outputs = NetworkDmxOutputTargets::default();
         let usb_outputs = UsbDmxOutputTargets::default();
 
-        let console = BindingEndpoint::Console {
+        let console = RouteEndpoint::Console {
             universe: None,
             address: None,
         };
         assert!(
-            apply_patch_binding_add(
+            apply_dmx_route_add(
                 &source,
                 &console,
                 0,
                 false,
-                &mut input_bindings,
-                &mut output_bindings,
-                &mut disabled_bindings,
+                &mut input_routes,
+                &mut output_routes,
+                &mut disabled_routes,
                 &data_provider,
                 &network_outputs,
                 &usb_outputs,
@@ -586,29 +584,29 @@ mod tests {
             .is_err()
         );
 
-        apply_patch_binding_add(
+        apply_dmx_route_add(
             &source,
             &transport,
             0,
             false,
-            &mut input_bindings,
-            &mut output_bindings,
-            &mut disabled_bindings,
+            &mut input_routes,
+            &mut output_routes,
+            &mut disabled_routes,
             &data_provider,
             &network_outputs,
             &usb_outputs,
         )
         .expect("fixture break patch should succeed");
         assert_eq!(
-            output_bindings.bindings[0].source,
+            output_routes.routes[0].source,
             OutputSource::FixtureBreak {
                 uids: vec![fixture_uid],
                 dmx_break: 2,
             }
         );
 
-        apply_patch_binding_remove(
-            Some(&BindingEndpoint::Fixture {
+        apply_dmx_route_remove(
+            Some(&RouteEndpoint::Fixture {
                 ids: vec![12],
                 element: None,
                 param: None,
@@ -616,21 +614,21 @@ mod tests {
             None,
             None,
             None,
-            &mut input_bindings,
-            &mut output_bindings,
-            &mut disabled_bindings,
+            &mut input_routes,
+            &mut output_routes,
+            &mut disabled_routes,
             &data_provider,
         )
         .expect("whole-fixture unpatch should succeed");
-        assert!(output_bindings.bindings.is_empty());
+        assert!(output_routes.routes.is_empty());
     }
 
     #[test]
-    fn apply_patch_binding_remove_supports_transport_to_transport() {
-        let mut input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+    fn apply_dmx_route_remove_supports_transport_to_transport() {
+        let mut input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(1)),
                     address: Some(10),
                 },
@@ -643,42 +641,42 @@ mod tests {
                 clone: false,
             }],
         };
-        let mut output_bindings = OutputBindings::default();
-        let mut disabled_bindings = DisabledBindings::default();
+        let mut output_routes = OutputRoutes::default();
+        let mut disabled_routes = DisabledRoutes::default();
         let data_provider = FixtureDataProviderExt::default();
 
-        apply_patch_binding_remove(
-            Some(&BindingEndpoint::Transport {
+        apply_dmx_route_remove(
+            Some(&RouteEndpoint::Transport {
                 target: "sacn".to_string(),
                 universe: Some(DmxRange::single(1)),
                 address: Some(10),
             }),
-            Some(&BindingEndpoint::Transport {
+            Some(&RouteEndpoint::Transport {
                 target: "artnet".to_string(),
                 universe: Some(DmxRange::single(9)),
                 address: Some(42),
             }),
             Some(4),
             Some(false),
-            &mut input_bindings,
-            &mut output_bindings,
-            &mut disabled_bindings,
+            &mut input_routes,
+            &mut output_routes,
+            &mut disabled_routes,
             &data_provider,
         )
         .expect("transport-to-transport remove should succeed");
 
-        assert!(input_bindings.bindings.is_empty());
-        assert!(output_bindings.bindings.is_empty());
-        assert!(disabled_bindings.bindings.is_empty());
+        assert!(input_routes.routes.is_empty());
+        assert!(output_routes.routes.is_empty());
+        assert!(disabled_routes.routes.is_empty());
     }
 
     #[test]
-    fn apply_patch_binding_remove_target_transport_without_source_removes_input_and_output() {
-        let mut input_bindings = InputBindings {
-            bindings: vec![
-                InputBinding {
+    fn apply_dmx_route_remove_target_transport_without_source_removes_input_and_output() {
+        let mut input_routes = InputRoutes {
+            routes: vec![
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::Sacn,
+                        transport: RouteTransport::Sacn,
                         universe: Some(DmxRange::single(1)),
                         address: Some(1),
                     },
@@ -690,9 +688,9 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                InputBinding {
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::ArtNet,
+                        transport: RouteTransport::ArtNet,
                         universe: Some(DmxRange::single(2)),
                         address: Some(1),
                     },
@@ -708,9 +706,9 @@ mod tests {
         };
 
         let fixture_uid = Uuid::new_v4();
-        let mut output_bindings = OutputBindings {
-            bindings: vec![
-                OutputBinding {
+        let mut output_routes = OutputRoutes {
+            routes: vec![
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![fixture_uid],
                         element: None,
@@ -724,7 +722,7 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                OutputBinding {
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![fixture_uid],
                         element: None,
@@ -741,37 +739,37 @@ mod tests {
             ],
         };
 
-        let mut disabled_bindings = DisabledBindings::default();
+        let mut disabled_routes = DisabledRoutes::default();
         let data_provider = FixtureDataProviderExt::default();
 
-        apply_patch_binding_remove(
+        apply_dmx_route_remove(
             None,
-            Some(&BindingEndpoint::Transport {
+            Some(&RouteEndpoint::Transport {
                 target: "artnet".to_string(),
                 universe: None,
                 address: None,
             }),
             None,
             None,
-            &mut input_bindings,
-            &mut output_bindings,
-            &mut disabled_bindings,
+            &mut input_routes,
+            &mut output_routes,
+            &mut disabled_routes,
             &data_provider,
         )
         .expect("remove with target transport filter should succeed");
 
-        assert_eq!(input_bindings.bindings.len(), 1);
+        assert_eq!(input_routes.routes.len(), 1);
         assert!(matches!(
-            input_bindings.bindings[0].target,
+            input_routes.routes[0].target,
             InputTarget::Transport {
                 ref target,
                 ..
             } if target == "sacn"
         ));
 
-        assert_eq!(output_bindings.bindings.len(), 1);
+        assert_eq!(output_routes.routes.len(), 1);
         assert!(matches!(
-            output_bindings.bindings[0].target,
+            output_routes.routes[0].target,
             OutputTarget::Transport {
                 ref target,
                 ..

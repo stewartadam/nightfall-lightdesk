@@ -11,7 +11,7 @@
 //! Profiles either declare explicit footprint slots per parameter (GDTF
 //! `Offset`) or rely on parameters being packed back to back in fixture DMX
 //! order. Every consumer that maps parameters to DMX addresses — output
-//! binding, input decoding, patch validation and console addresses — lays out
+//! route, input decoding, patch validation and console addresses — lays out
 //! slots through this module so they agree on the wire format.
 
 use nightfall_dmx::prelude::*;
@@ -103,8 +103,8 @@ impl<T> WireLayout<T> {
 
     /// Shifts slots so the lowest used slot becomes zero.
     ///
-    /// Used when a binding patches only some elements or parameters: the
-    /// selection starts at the binding's address rather than at the fixture's
+    /// Used when a route patches only some elements or parameters: the
+    /// selection starts at the route's address rather than at the fixture's
     /// full-footprint offset.
     pub fn rebased(mut self) -> Self {
         let Some(min) = self

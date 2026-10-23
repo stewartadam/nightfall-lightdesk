@@ -147,15 +147,15 @@ fn hold_composes_a_frame_for_an_unrouted_universe() {
 }
 
 /// A held channel wins over patched output on that slot and leaves neighbouring slots alone,
-/// and keeps winning after bindings are re-resolved.
+/// and keeps winning after routes are re-resolved.
 #[test]
-fn hold_overrides_routed_output_and_survives_binding_resolution() {
+fn hold_overrides_routed_output_and_survives_route_resolution() {
     let mut app = setup_app();
     app.world_mut()
         .resource_mut::<OutputRouting>()
-        .set_output_routes(HashMap::from([(
+        .set_output_feeds(HashMap::from([(
             (sacn(), UNIVERSE),
-            OutputBindingRoute {
+            OutputFrameFeed {
                 console_windows: Vec::new(),
                 direct: true,
             },
@@ -167,7 +167,7 @@ fn hold_overrides_routed_output_and_survives_binding_resolution() {
             UNIVERSE,
             1,
             &[10, 20],
-            ConsoleChannelOrigin::OutputBinding,
+            ConsoleChannelOrigin::OutputRoute,
         );
 
     run_command(&mut app, hold_command("sacn", 2, 99));
@@ -178,13 +178,13 @@ fn hold_overrides_routed_output_and_survives_binding_resolution() {
 
     {
         let mut universes = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
-        universes.clear_output_binding_values();
+        universes.clear_output_route_values();
         universes.set_output_values(
             &sacn(),
             UNIVERSE,
             1,
             &[11, 21],
-            ConsoleChannelOrigin::OutputBinding,
+            ConsoleChannelOrigin::OutputRoute,
         );
     }
     app.update();

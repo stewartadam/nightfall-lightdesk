@@ -31,7 +31,6 @@ import {
   type ParentProps,
   useContext,
 } from "solid-js";
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { formatCueEditorTitle } from "../../../lib/cue-editor-title";
 import {
   previewCue,
@@ -46,6 +45,7 @@ import {
   projectReleaseCueFromSequence,
   releaseCueProjectionSignature,
 } from "../../../lib/release-cue-scaffold";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import {
   activeInstances,
   cueDefinitionsLoaded,

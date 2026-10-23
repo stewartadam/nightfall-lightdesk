@@ -6,14 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Binding declarations and resolved caches for patch bindings.
+//! Route declarations and resolved caches for DMX routes.
 
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::{Component, Entity, Resource};
 use nightfall::prelude::SpatialSelection;
-use nightfall_io::BindingTransport;
 use nightfall_io::OutputTransport;
+use nightfall_io::RouteTransport;
 use nightfall_selection::{HeldReference, ReferenceSource};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -38,37 +38,37 @@ impl DmxRange {
     }
 }
 
-/// Binding declarations for input rules.
+/// Route declarations for input rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct InputBinding {
-    /// Binding source.
+pub struct InputRoute {
+    /// Route source.
     pub source: InputSource,
-    /// Binding target.
+    /// Route target.
     pub target: InputTarget,
-    /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
+    /// Priority; when routes conflict, the higher value wins and ties go to the earlier route.
     pub priority: i32,
     /// If true, duplicate the source address across a range destination.
     pub clone: bool,
 }
 
-/// Binding declarations for output rules.
+/// Route declarations for output rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct OutputBinding {
-    /// Binding source.
+pub struct OutputRoute {
+    /// Route source.
     pub source: OutputSource,
-    /// Binding target.
+    /// Route target.
     pub target: OutputTarget,
-    /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
+    /// Priority; when routes conflict, the higher value wins and ties go to the earlier route.
     pub priority: i32,
     /// If true, fixtures sharing a target universe all start at the target address instead of
     /// being packed one after another.
     pub clone: bool,
 }
 
-/// Reports the output transport target of a transport binding.
-impl ReferenceSource for OutputBinding {
+/// Reports the output transport target of a transport route.
+impl ReferenceSource for OutputRoute {
     fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
         if let OutputTarget::Transport { target, .. } = &self.target {
             visit("target.target", HeldReference::OutputTarget(target));
@@ -78,7 +78,7 @@ impl ReferenceSource for OutputBinding {
     fn visit_selections_mut(&mut self, _visit: &mut dyn FnMut(&mut SpatialSelection)) {}
 }
 
-/// Input binding source.
+/// Input route source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
@@ -86,7 +86,7 @@ pub enum InputSource {
     /// Transport input (sACN/Art-Net/uDMX).
     Transport {
         /// Transport identifier.
-        transport: BindingTransport,
+        transport: RouteTransport,
         /// Optional universe range.
         universe: Option<DmxRange>,
         /// Optional address.
@@ -110,7 +110,7 @@ pub enum InputSource {
     },
 }
 
-/// Input binding target.
+/// Input route target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
@@ -144,7 +144,7 @@ pub enum InputTarget {
     Disabled,
 }
 
-/// Output binding source.
+/// Output route source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
@@ -222,7 +222,7 @@ impl OutputSource {
     }
 }
 
-/// Output binding target.
+/// Output route target.
 ///
 /// A fixture source patched to a universe range puts its Nth fixture in the Nth universe of
 /// the range, each at the target address, and packs every fixture past the end of the range
@@ -249,17 +249,17 @@ pub enum OutputTarget {
     },
 }
 
-/// Disabled binding filter rule.
+/// Disabled route filter rule.
 ///
 /// Only inputs can be disabled: an output that should not be sent is simply
 /// left unbound.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
-pub enum DisabledBinding {
-    /// Disable input bindings that match the source.
+pub enum DisabledRoute {
+    /// Disable input routes that match the source.
     Input {
-        /// Binding source to disable.
+        /// Route source to disable.
         source: InputSource,
         /// Priority (lower runs first).
         priority: i32,
@@ -268,34 +268,34 @@ pub enum DisabledBinding {
     },
 }
 
-/// Resource collection for input bindings.
+/// Resource collection for input routes.
 #[derive(Debug, Default, Clone, Resource)]
-pub struct InputBindings {
-    /// Binding declarations.
-    pub bindings: Vec<InputBinding>,
+pub struct InputRoutes {
+    /// Route declarations.
+    pub routes: Vec<InputRoute>,
 }
 
-/// Resource collection for output bindings.
+/// Resource collection for output routes.
 #[derive(Debug, Default, Clone, Resource)]
-pub struct OutputBindings {
-    /// Binding declarations.
-    pub bindings: Vec<OutputBinding>,
+pub struct OutputRoutes {
+    /// Route declarations.
+    pub routes: Vec<OutputRoute>,
 }
 
-/// Resource collection for disabled binding filters.
+/// Resource collection for disabled route filters.
 #[derive(Debug, Default, Clone, Resource)]
-pub struct DisabledBindings {
-    /// Disabled binding declarations.
-    pub bindings: Vec<DisabledBinding>,
+pub struct DisabledRoutes {
+    /// Disabled route declarations.
+    pub routes: Vec<DisabledRoute>,
 }
 
-/// Resolved input binding source for per-frame processing.
+/// Resolved input route source for per-frame processing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedInputSource {
     /// Transport input resolved to a concrete universe/address.
     Transport {
         /// Transport identifier.
-        transport: BindingTransport,
+        transport: RouteTransport,
         /// Universe number.
         universe: u16,
         /// Address number.
@@ -319,7 +319,7 @@ pub enum ResolvedInputSource {
     },
 }
 
-/// Resolved target for an input binding.
+/// Resolved target for an input route.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedInputTarget {
     /// Target entity.
@@ -343,7 +343,7 @@ pub struct ResolvedTransportTarget {
     /// Output transport target identifier.
     pub target: String,
     /// Target physical protocol.
-    pub protocol: BindingTransport,
+    pub protocol: RouteTransport,
     /// Target output transport settings.
     pub transport: OutputTransport,
     /// Target universe.
@@ -352,19 +352,19 @@ pub struct ResolvedTransportTarget {
     pub address: u16,
 }
 
-/// Resolved destination for an input binding.
+/// Resolved destination for an input route.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedInputDestination {
     /// Fixture parameter targets.
     Fixture {
-        /// Resolved targets for this binding.
+        /// Resolved targets for this route.
         targets: Vec<ResolvedInputTarget>,
     },
     /// Console universe/address mapping, optionally with fixture parameter targets.
     Console {
         /// Console mapping target.
         target: ResolvedConsoleTarget,
-        /// Resolved targets for this binding.
+        /// Resolved targets for this route.
         targets: Vec<ResolvedInputTarget>,
     },
     /// Transport universe/address mapping.
@@ -374,52 +374,52 @@ pub enum ResolvedInputDestination {
     },
 }
 
-/// Resolved input binding for per-frame processing.
+/// Resolved input route for per-frame processing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedInputBinding {
+pub struct ResolvedInputRoute {
     /// Resolved source.
     pub source: ResolvedInputSource,
-    /// Priority; when bindings write the same destination, the higher value wins.
+    /// Priority; when routes write the same destination, the higher value wins.
     pub priority: i32,
     /// Resolved destination.
     pub destination: ResolvedInputDestination,
 }
 
-/// Resource cache of resolved input bindings.
+/// Resource cache of resolved input routes.
 #[derive(Debug, Default, Clone, Resource)]
-pub struct ResolvedInputBindings {
-    /// Resolved bindings in precedence order: highest priority first, with equal priorities in
+pub struct ResolvedInputRoutes {
+    /// Resolved routes in precedence order: highest priority first, with equal priorities in
     /// authoring order. Consumers that keep the first write to a destination iterate this
     /// directly; consumers that overwrite use [`Self::iter_overlay_order`].
-    pub bindings: Vec<ResolvedInputBinding>,
+    pub routes: Vec<ResolvedInputRoute>,
 }
 
-impl ResolvedInputBindings {
-    /// Iterates bindings lowest precedence first, so a consumer that copies each binding's data
-    /// over the previous one leaves the highest-priority (then earliest-authored) binding's data
+impl ResolvedInputRoutes {
+    /// Iterates routes lowest precedence first, so a consumer that copies each route's data
+    /// over the previous one leaves the highest-priority (then earliest-authored) route's data
     /// in place.
-    pub fn iter_overlay_order(&self) -> impl Iterator<Item = &ResolvedInputBinding> {
-        self.bindings.iter().rev()
+    pub fn iter_overlay_order(&self) -> impl Iterator<Item = &ResolvedInputRoute> {
+        self.routes.iter().rev()
     }
 
-    /// Returns the precedence (position in [`Self::bindings`], lower wins) of the strongest binding
-    /// fed by `transport` universe `universe` for which `drives` holds, or `None` when no binding
+    /// Returns the precedence (position in [`Self::routes`], lower wins) of the strongest route
+    /// fed by `transport` universe `universe` for which `drives` holds, or `None` when no route
     /// from that source qualifies.
     pub fn transport_source_precedence(
         &self,
-        transport: BindingTransport,
+        transport: RouteTransport,
         universe: u16,
-        drives: impl Fn(&ResolvedInputBinding) -> bool,
+        drives: impl Fn(&ResolvedInputRoute) -> bool,
     ) -> Option<usize> {
-        self.bindings.iter().position(|binding| {
+        self.routes.iter().position(|route| {
             matches!(
-                binding.source,
+                route.source,
                 ResolvedInputSource::Transport {
                     transport: source_transport,
                     universe: source_universe,
                     ..
                 } if source_transport == transport && source_universe == universe
-            ) && drives(binding)
+            ) && drives(route)
         })
     }
 }
@@ -446,7 +446,7 @@ pub struct ResolvedOutputDestinations {
 
 /// Component storing the console-space DMX address of one parameter.
 ///
-/// Mirrors [`ConsoleDmxAddresses::parameters`]. `None` when no active console binding
+/// Mirrors [`ConsoleDmxAddresses::parameters`]. `None` when no active console route
 /// covers the parameter.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Component)]
 pub struct ResolvedConsoleDestination {
@@ -480,7 +480,7 @@ pub struct ConsoleDmxAddresses {
     pub addresses: HashMap<Uuid, ConsoleDmxAddress>,
     /// Map of parameter entity to the console addresses of its bytes.
     ///
-    /// Only parameters selected by the winning console binding's element/parameter filter
+    /// Only parameters selected by the winning console route's element/parameter filter
     /// occupy console channels, placed by the selection's wire layout in DMX order.
     pub parameters: HashMap<Entity, ConsoleParameterAddress>,
 }

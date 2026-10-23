@@ -12,7 +12,7 @@ import { commandSucceeded } from "../../../lib/command-result";
 import {
   createFixtureFromLibrary,
   createFixturesFromLibrary,
-  sendAddPatchBinding,
+  sendAddDmxRoute,
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
@@ -42,7 +42,7 @@ export type PatchWizardCommandOptions = {
  * Creates or morphs fixtures and applies the wizard's patch and placement commands.
  *
  * New fixtures are created by one atomic batch command, so a failure leaves the show
- * unchanged. The follow-up patch bindings and placements share one undo group.
+ * unchanged. The follow-up DMX routes and placements share one undo group.
  */
 export async function executePatchWizardCommands(
   options: PatchWizardCommandOptions,
@@ -126,7 +126,7 @@ export async function executePatchWizardCommands(
       instances.forEach(({ id }, index) => {
         const absoluteAddress = startAddress + index * options.channelCount;
         const universe = universeId + Math.floor((absoluteAddress - 1) / 512);
-        sendAddPatchBinding(
+        sendAddDmxRoute(
           { type: "Fixture", data: { ids: [id] } },
           {
             type: "Console",

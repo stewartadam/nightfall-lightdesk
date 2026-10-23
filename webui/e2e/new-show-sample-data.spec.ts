@@ -61,13 +61,13 @@ test("new show optionally includes standalone sample data", async ({
   );
   expect(snapshot.fixtures).toHaveLength(56);
   expect(snapshot.sceneObjects).toHaveLength(3);
-  expect(snapshot.bindings.output).toHaveLength(15);
+  expect(snapshot.routes.output).toHaveLength(15);
   expect(
-    snapshot.bindings.output.every(
-      (binding: any) => binding.target.type === "Console",
+    snapshot.routes.output.every(
+      (route: any) => route.target.type === "Console",
     ),
   ).toBe(true);
-  expect(snapshot.bindings.disabled).toEqual([]);
+  expect(snapshot.routes.disabled).toEqual([]);
   expect(
     snapshot.sceneObjects.every(
       (object: any) =>

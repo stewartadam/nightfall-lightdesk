@@ -241,27 +241,27 @@ mod tests {
 
         app.update();
 
-        let remaining_bindings = app
+        let remaining_routes = app
             .world_mut()
             .query::<&MaterializedClip>()
             .iter(app.world())
             .filter(|materialized_clip| materialized_clip.attached_instance == instance_id)
             .count();
         assert_eq!(
-            remaining_bindings, 1,
+            remaining_routes, 1,
             "expected newly added MaterializedClip to survive its first cleanup frame"
         );
 
         app.update();
 
-        let remaining_bindings = app
+        let remaining_routes = app
             .world_mut()
             .query::<&MaterializedClip>()
             .iter(app.world())
             .filter(|materialized_clip| materialized_clip.attached_instance == instance_id)
             .count();
         assert_eq!(
-            remaining_bindings, 0,
+            remaining_routes, 0,
             "expected stale MaterializedClip to despawn after the added frame"
         );
     }

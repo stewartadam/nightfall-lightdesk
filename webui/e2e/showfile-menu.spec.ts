@@ -324,7 +324,7 @@ test("shows grouped showfile actions in the status bar menu", async ({
   );
   await expect(dialog.getByLabel("Cues import policy")).toHaveValue("Replace");
   await expect(dialog.getByLabel("Settings import policy")).toHaveValue("Skip");
-  await expect(dialog.getByLabel("Bindings import policy")).toHaveValue(
+  await expect(dialog.getByLabel("DMX Routes import policy")).toHaveValue(
     "Merge",
   );
   await expect(dialog.getByLabel("FX Modules import policy")).toHaveValue(
@@ -338,7 +338,7 @@ test("shows grouped showfile actions in the status bar menu", async ({
   await expect(dialog.getByLabel("Settings import policy")).toHaveValue(
     "Overwrite",
   );
-  await expect(dialog.getByLabel("Bindings import policy")).toHaveValue(
+  await expect(dialog.getByLabel("DMX Routes import policy")).toHaveValue(
     "Overwrite",
   );
   await expect(dialog.getByLabel("FX Modules import policy")).toHaveValue(

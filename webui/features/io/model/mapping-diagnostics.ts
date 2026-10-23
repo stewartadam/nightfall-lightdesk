@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { type GridCell, GridCellKind } from "../../../lib/data-grid-types";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import type { BindingDiagnostic, InvocationError } from "../../../types";
 
 /**

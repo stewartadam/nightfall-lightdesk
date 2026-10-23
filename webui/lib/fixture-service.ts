@@ -8,16 +8,16 @@
 
 import type { FixtureLibraryCommand } from "../types/index";
 import * as types from "../types/index";
-import { normalizeFixtureUid } from "./binding-utils";
 import { fixtureWireLayout } from "./dmx";
 import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
+import { normalizeFixtureUid } from "./route-utils";
 
 const log = getLogger(import.meta.url);
 
 /** Converts a physical input transport to the command endpoint target ID. */
-function bindingTransportToTargetId(transport: types.BindingTransport): string {
-  if (transport === types.BindingTransport.ArtNet) return "artnet";
+function routeTransportToTargetId(transport: types.RouteTransport): string {
+  if (transport === types.RouteTransport.ArtNet) return "artnet";
   return transport;
 }
 
@@ -104,17 +104,17 @@ export function sendDeleteFixture(fixtureId: number, batchId?: string) {
 }
 
 /**
- * Request removal of a patch binding, optionally grouped with related undo commands.
+ * Request removal of a DMX route, optionally grouped with related undo commands.
  */
-export function sendRemovePatchBinding(
-  source: types.BindingEndpoint,
-  target: types.BindingEndpoint,
+export function sendRemoveDmxRoutes(
+  source: types.RouteEndpoint,
+  target: types.RouteEndpoint,
   priority: number,
   clone: boolean,
   batchId?: string,
 ) {
   const command: types.FixtureCommand = {
-    type: "RemovePatchBinding",
+    type: "RemoveDmxRoutes",
     data: {
       source,
       target,
@@ -125,18 +125,18 @@ export function sendRemovePatchBinding(
 
   commandClient.emit("FixtureCommand", command, { undoId: batchId });
 
-  log.info("Requested patch binding removal");
+  log.info("Requested DMX route removal");
 }
 
-export function sendAddPatchBinding(
-  source: types.BindingEndpoint,
-  target: types.BindingEndpoint,
+export function sendAddDmxRoute(
+  source: types.RouteEndpoint,
+  target: types.RouteEndpoint,
   priority: number,
   clone: boolean,
   batchId?: string,
 ) {
   const command: types.FixtureCommand = {
-    type: "PatchBinding",
+    type: "AddDmxRoute",
     data: {
       source,
       target,
@@ -147,7 +147,7 @@ export function sendAddPatchBinding(
 
   commandClient.emit("FixtureCommand", command, { undoId: batchId });
 
-  log.info("Requested patch binding add");
+  log.info("Requested DMX route add");
 }
 
 /**
@@ -176,13 +176,13 @@ function toFixtureIds(
 function toInputSourceEndpoint(
   source: types.InputSource,
   fixtureMap: Record<string, types.Fixture>,
-): types.BindingEndpoint | null {
+): types.RouteEndpoint | null {
   switch (source.type) {
     case "Transport":
       return {
         type: "Transport",
         data: {
-          target: bindingTransportToTargetId(source.data.transport),
+          target: routeTransportToTargetId(source.data.transport),
           universe: source.data.universe,
           address: source.data.address,
         },
@@ -207,7 +207,7 @@ function toInputSourceEndpoint(
 function toInputTargetEndpoint(
   target: types.InputTarget,
   fixtureMap: Record<string, types.Fixture>,
-): types.BindingEndpoint | null {
+): types.RouteEndpoint | null {
   switch (target.type) {
     case "Transport":
       return { type: "Transport", data: { ...target.data } };
@@ -233,7 +233,7 @@ function toInputTargetEndpoint(
 function toOutputSourceEndpoint(
   source: types.OutputSource,
   fixtureMap: Record<string, types.Fixture>,
-): types.BindingEndpoint | null {
+): types.RouteEndpoint | null {
   switch (source.type) {
     case "Console":
       return { type: "Console", data: { ...source.data } };
@@ -262,7 +262,7 @@ function toOutputSourceEndpoint(
 
 function toOutputTargetEndpoint(
   target: types.OutputTarget,
-): types.BindingEndpoint {
+): types.RouteEndpoint {
   switch (target.type) {
     case "Transport":
       return { type: "Transport", data: { ...target.data } };
@@ -272,10 +272,10 @@ function toOutputTargetEndpoint(
 }
 
 /**
- * Checks whether a fixture binding endpoint references any selected fixture ID.
+ * Checks whether a fixture route endpoint references any selected fixture ID.
  */
 function endpointHasAnyFixtureId(
-  endpoint: types.BindingEndpoint | null,
+  endpoint: types.RouteEndpoint | null,
   fixtureIds: ReadonlySet<number>,
 ): boolean {
   if (endpoint?.type !== "Fixture") {
@@ -285,12 +285,12 @@ function endpointHasAnyFixtureId(
 }
 
 /**
- * Remove every patch binding that references any of the provided fixture IDs.
+ * Remove every DMX route that references any of the provided fixture IDs.
  * Returns the number of remove commands dispatched.
  */
-export function removePatchBindingsForFixtureIds(
+export function removeDmxRoutesForFixtureIds(
   fixtureIds: readonly number[],
-  snapshot: types.BindingsSnapshot,
+  snapshot: types.RoutesSnapshot,
   fixtureMap: Record<string, types.Fixture>,
   batchId?: string,
 ): number {
@@ -301,9 +301,9 @@ export function removePatchBindingsForFixtureIds(
   const fixtureIdSet = new Set(fixtureIds);
   let removedCount = 0;
 
-  for (const binding of snapshot.input ?? []) {
-    const sourceEndpoint = toInputSourceEndpoint(binding.source, fixtureMap);
-    const targetEndpoint = toInputTargetEndpoint(binding.target, fixtureMap);
+  for (const route of snapshot.input ?? []) {
+    const sourceEndpoint = toInputSourceEndpoint(route.source, fixtureMap);
+    const targetEndpoint = toInputTargetEndpoint(route.target, fixtureMap);
     const matches =
       endpointHasAnyFixtureId(sourceEndpoint, fixtureIdSet) ||
       endpointHasAnyFixtureId(targetEndpoint, fixtureIdSet);
@@ -311,49 +311,46 @@ export function removePatchBindingsForFixtureIds(
       continue;
     }
 
-    sendRemovePatchBinding(
+    sendRemoveDmxRoutes(
       sourceEndpoint,
       targetEndpoint,
-      binding.priority,
-      binding.clone,
+      route.priority,
+      route.clone,
       batchId,
     );
     removedCount += 1;
   }
 
-  for (const binding of snapshot.output ?? []) {
-    const sourceEndpoint = toOutputSourceEndpoint(binding.source, fixtureMap);
-    const targetEndpoint = toOutputTargetEndpoint(binding.target);
+  for (const route of snapshot.output ?? []) {
+    const sourceEndpoint = toOutputSourceEndpoint(route.source, fixtureMap);
+    const targetEndpoint = toOutputTargetEndpoint(route.target);
     const matches = endpointHasAnyFixtureId(sourceEndpoint, fixtureIdSet);
     if (!matches || !sourceEndpoint) {
       continue;
     }
 
-    sendRemovePatchBinding(
+    sendRemoveDmxRoutes(
       sourceEndpoint,
       targetEndpoint,
-      binding.priority,
-      binding.clone,
+      route.priority,
+      route.clone,
       batchId,
     );
     removedCount += 1;
   }
 
-  for (const binding of snapshot.disabled ?? []) {
-    const sourceEndpoint = toInputSourceEndpoint(
-      binding.data.source,
-      fixtureMap,
-    );
+  for (const route of snapshot.disabled ?? []) {
+    const sourceEndpoint = toInputSourceEndpoint(route.data.source, fixtureMap);
     const matches = endpointHasAnyFixtureId(sourceEndpoint, fixtureIdSet);
     if (!matches || !sourceEndpoint) {
       continue;
     }
 
-    sendRemovePatchBinding(
+    sendRemoveDmxRoutes(
       sourceEndpoint,
       { type: "Disabled" },
-      binding.data.priority,
-      binding.data.clone,
+      route.data.priority,
+      route.data.clone,
       batchId,
     );
     removedCount += 1;
@@ -361,7 +358,7 @@ export function removePatchBindingsForFixtureIds(
 
   if (removedCount > 0) {
     log.info(
-      `Requested removal of ${removedCount} patch binding(s) for fixtures ${fixtureIds.join(", ")}`,
+      `Requested removal of ${removedCount} DMX route(s) for fixtures ${fixtureIds.join(", ")}`,
     );
   }
 

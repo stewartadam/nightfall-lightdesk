@@ -22,8 +22,8 @@ mod settings;
 use std::{collections::HashSet, net::Ipv4Addr};
 
 pub use input::{
-    AcceptedDmxFrame, ArtNetRecentFramesByUniverse, BindingTransport, DmxInputSet,
-    IoRuntimeNotification, SacnOutputIdentity,
+    AcceptedDmxFrame, ArtNetRecentFramesByUniverse, DmxInputSet, IoRuntimeNotification,
+    RouteTransport, SacnOutputIdentity,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +36,7 @@ pub use crate::constants::{
 pub mod prelude {
     pub use crate::{
         AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse, AvailableUsbDmxDevices,
-        BindingTransport, CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
+        CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
         DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
         ExternalControlSettings, ExternalControlState, InputSignalLossPolicy,
         InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings,
@@ -44,10 +44,10 @@ pub mod prelude {
         NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo, NetworkInterfaceState,
         NetworkInterfaceStatus, OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS,
         RESERVED_USB_DMX_TARGET_KEYWORDS, RemotePairingAttempt, RemotePairingPin,
-        RemotePairingStatus, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy,
-        UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets,
-        dmx_output_interval, get_available_interfaces, get_default_interface,
-        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
+        RemotePairingStatus, RouteTransport, SacnDelivery, SacnOutputIdentity,
+        TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo,
+        UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval, get_available_interfaces,
+        get_default_interface, is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
         is_valid_network_dmx_target_id, output_transport_to_target_id,
         resolve_configured_network_interface, resolve_network_interface_status,
         sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
@@ -542,7 +542,7 @@ impl UsbDmxOutputTargets {
     }
 }
 
-/// Resolves a concrete output transport to the configured target ID used by patch bindings.
+/// Resolves a concrete output transport to the configured target ID used by DMX routes.
 pub fn output_transport_to_target_id(
     transport: &OutputTransport,
     network_outputs: &NetworkDmxOutputTargets,

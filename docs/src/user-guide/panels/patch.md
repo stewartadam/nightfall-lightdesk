@@ -12,12 +12,12 @@ The **Fixtures** tab lists IDs, labels, make/model, mode, channel width, and 3D 
 
 ## Route DMX
 
-The **DMX I/O** tab shows bindings. Group by fixture or universe to inspect routes, and check Source, Target, Priority, and Clone values. Resolve highlighted conflicts before outputting to hardware; overlapping addresses can make one command affect the wrong light.
+The **DMX Routes** tab lists every DMX route. Group by fixture or universe to inspect them, and check Source, Target, Priority, and Clone values. Resolve highlighted conflicts before outputting to hardware; overlapping addresses can make one command affect the wrong light.
 
-A console address alone does not select a network destination or USB device. Configure output targets in [I/O Transports](io-transports.md), then use bindings to route console channels to those targets. Use [Console DMX](console-dmx.md) to inspect console universe values, or the wire frames each transport sends.
+A console address alone does not select a network destination or USB device. Configure output targets in [I/O Transports](io-transports.md), then add DMX routes from console channels to those targets. Use [Console DMX](console-dmx.md) to inspect console universe values, or the wire frames each transport sends.
 
-Output is sent only where a binding routes it: a fixture or console range with no output binding sends nothing. To stop output, remove the binding, for example `rm patch fix 12 @ artnet:1`. Only inputs can be patched to `disabled`, which ignores incoming DMX that matches the source.
+Output is sent only where a DMX route sends it: a fixture or console range with no output route sends nothing. To stop output, remove the route, for example `rm patch fix 12 @ artnet:1`. Only inputs can be patched to `disabled`, which ignores incoming DMX that matches the source.
 
-Some GDTF modes split their channels across several DMX breaks, such as a lamp with an accessory scroller that has its own start address. Fixture bindings route break 1. Route each additional break to an output target with its own binding, for example `patch fix 12 break 2 @ artnet:2.1`. The Fixture Library's **Mode Parameters** list shows which break each channel belongs to.
+Some GDTF modes split their channels across several DMX breaks, such as a lamp with an accessory scroller that has its own start address. A fixture's route covers break 1. Give each additional break its own route to an output target, for example `patch fix 12 break 2 @ artnet:2.1`. The Fixture Library's **Mode Parameters** list shows which break each channel belongs to.
 
 Changing fixture mode changes how channels represent attributes. Review the wizard's version/mode warnings and confirm your routing after a change. Save the showfile when the patch is correct.

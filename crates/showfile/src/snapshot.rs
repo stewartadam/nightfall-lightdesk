@@ -31,15 +31,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::CURRENT_SHOWFILE_VERSION;
 
-/// Serializable snapshot of input, output, and disabled patch bindings.
+/// Serializable snapshot of input, output, and disabled DMX routes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BindingsSnapshot {
-    /// Persisted input patch bindings.
-    pub input: Vec<InputBinding>,
-    /// Persisted output patch bindings.
-    pub output: Vec<OutputBinding>,
-    /// Bindings retained in the showfile but disabled at runtime.
-    pub disabled: Vec<DisabledBinding>,
+pub struct RoutesSnapshot {
+    /// Persisted input DMX routes.
+    pub input: Vec<InputRoute>,
+    /// Persisted output DMX routes.
+    pub output: Vec<OutputRoute>,
+    /// Routes retained in the showfile but disabled at runtime.
+    pub disabled: Vec<DisabledRoute>,
 }
 
 /// Versioned, serialized representation of all data stored in a showfile.
@@ -61,8 +61,8 @@ pub struct ShowfileSnapshot {
     /// Showfile-scoped input and output transport preferences.
     #[serde(default, rename = "ioSettings")]
     pub io_settings: IoRuntimeSettings,
-    /// Input, output, and disabled patch bindings.
-    pub bindings: BindingsSnapshot,
+    /// Input, output, and disabled DMX routes.
+    pub routes: RoutesSnapshot,
     /// MIDI action mappings when compiled with MIDI support.
     #[cfg(feature = "midi")]
     #[serde(default, rename = "midiMappings")]

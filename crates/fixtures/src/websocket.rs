@@ -27,20 +27,20 @@ use uuid::Uuid;
 use web_time::Instant;
 
 use crate::FixtureCommand;
-use crate::binding_validation::BindingValidationSettings;
-use crate::bindings::{
-    DisabledBinding, DisabledBindings, InputBinding, InputBindings, OutputBinding, OutputBindings,
-    ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource,
-};
 use crate::fixture::Fixture;
 use crate::geometry::FixtureGeometry;
 use crate::parameter_state::{ParameterLayout, ParameterStateFrame, ParameterStateProjection};
 use crate::prelude::{BeamType, FixtureDataProviderExt, FixturePhysical};
+use crate::route_validation::RouteValidationSettings;
+use crate::routes::{
+    DisabledRoute, DisabledRoutes, InputRoute, InputRoutes, OutputRoute, OutputRoutes,
+    ResolvedInputDestination, ResolvedInputRoutes, ResolvedInputSource,
+};
 use crate::universe::InputDmxUniverses;
 use crate::universe::InputUniverseStaleTimeout;
 use crate::universe_stream::{
     DmxUniverseChannels, DmxUniverseStream, DmxUniverseSummary, STREAM_INTERVAL,
-    binding_transport_label,
+    route_transport_label,
 };
 
 /// Wrapper for serializing fx messages with WsOutbound-compatible format
@@ -61,12 +61,12 @@ pub(crate) enum FixtureWsMessage<'a> {
     DmxUniverseChannels(&'a [DmxUniverseChannels<'a>]),
     /// Input contribution trace data.
     InputContributionTrace(&'a [OutboundInputContribution]),
-    /// Binding definitions for fixtures and transports.
-    Bindings(&'a BindingsSnapshot),
+    /// Route definitions for fixtures and transports.
+    Routes(&'a RoutesSnapshot),
     /// Fixture and fixture element color path defaults.
     ColorPathDefaults(&'a [ColorPathDefault]),
-    /// Current binding overlap validation settings.
-    BindingValidationSettings(&'a BindingValidationSettings),
+    /// Current route overlap validation settings.
+    RouteValidationSettings(&'a RouteValidationSettings),
     /// Fixture command (for forwarding CRUD operations to UI)
     #[allow(dead_code)]
     FixtureCommand(&'a crate::FixtureCommand),
@@ -98,16 +98,16 @@ pub struct BeamSpec {
     pub beam_type: BeamType,
 }
 
-/// Binding snapshot for UI consumption.
+/// Route snapshot for UI consumption.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct BindingsSnapshot {
-    /// Input bindings.
-    pub input: Vec<InputBinding>,
-    /// Output bindings.
-    pub output: Vec<OutputBinding>,
-    /// Disabled bindings.
-    pub disabled: Vec<DisabledBinding>,
+pub struct RoutesSnapshot {
+    /// Input routes.
+    pub input: Vec<InputRoute>,
+    /// Output routes.
+    pub output: Vec<OutputRoute>,
+    /// Disabled routes.
+    pub disabled: Vec<DisabledRoute>,
 }
 
 impl Default for BeamSpec {
@@ -388,10 +388,10 @@ pub fn send_fixtures<'a, F>(
     );
 }
 
-/// Broadcasts a trace of effective input contributions from transport bindings to fixture
+/// Broadcasts a trace of effective input contributions from transport routes to fixture
 /// parameters, at most once per [`STREAM_INTERVAL`].
 pub fn send_input_contribution_trace(
-    resolved_input_bindings: Res<ResolvedInputBindings>,
+    resolved_input_routes: Res<ResolvedInputRoutes>,
     input_universes: Res<InputDmxUniverses>,
     input_stale_timeout: Res<InputUniverseStaleTimeout>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
@@ -419,12 +419,12 @@ pub fn send_input_contribution_trace(
 
     let mut trace = Vec::new();
     let mut seen = HashSet::new();
-    for binding in &resolved_input_bindings.bindings {
+    for route in &resolved_input_routes.routes {
         let ResolvedInputSource::Transport {
             transport,
             universe,
             address,
-        } = &binding.source
+        } = &route.source
         else {
             continue;
         };
@@ -433,7 +433,7 @@ pub fn send_input_contribution_trace(
             .frame_age_ms(*transport, *universe, now)
             .unwrap_or(u32::MAX);
         let is_stale = frame_age_ms >= stale_after_ms;
-        let targets = match &binding.destination {
+        let targets = match &route.destination {
             ResolvedInputDestination::Fixture { targets } => targets,
             ResolvedInputDestination::Console { targets, .. } => targets,
             ResolvedInputDestination::Transport { .. } => continue,
@@ -461,7 +461,7 @@ pub fn send_input_contribution_trace(
                 element_index,
                 attribute: parameter.metadata.attribute.clone(),
                 output_value: parameter.get_logical_value(),
-                transport: binding_transport_label(*transport).to_string(),
+                transport: route_transport_label(*transport).to_string(),
                 universe_id: *universe,
                 source_address,
                 frame_age_ms,
@@ -487,44 +487,41 @@ pub fn send_input_contribution_trace(
     );
 }
 
-/// Send binding data for fixtures and transports.
-pub fn send_bindings(
-    input_bindings: &InputBindings,
-    output_bindings: &OutputBindings,
-    disabled_bindings: &DisabledBindings,
+/// Send route data for fixtures and transports.
+pub fn send_routes(
+    input_routes: &InputRoutes,
+    output_routes: &OutputRoutes,
+    disabled_routes: &DisabledRoutes,
     broadcaster: &ClientEventSink,
 ) {
-    let snapshot = BindingsSnapshot {
-        input: input_bindings.bindings.clone(),
-        output: output_bindings.bindings.clone(),
-        disabled: disabled_bindings.bindings.clone(),
+    let snapshot = RoutesSnapshot {
+        input: input_routes.routes.clone(),
+        output: output_routes.routes.clone(),
+        disabled: disabled_routes.routes.clone(),
     };
 
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
-        &FixtureWsMessage::Bindings(&snapshot),
+        &FixtureWsMessage::Routes(&snapshot),
     );
-    tracing::trace!("Sending binding definitions to websocket clients");
+    tracing::trace!("Sending route definitions to websocket clients");
 }
 
-/// Send binding data when bindings change.
-pub fn send_bindings_on_change(
-    input_bindings: Res<InputBindings>,
-    output_bindings: Res<OutputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
+/// Send route data when routes change.
+pub fn send_routes_on_change(
+    input_routes: Res<InputRoutes>,
+    output_routes: Res<OutputRoutes>,
+    disabled_routes: Res<DisabledRoutes>,
     broadcaster: Res<ClientEventSink>,
 ) {
-    if !input_bindings.is_changed()
-        && !output_bindings.is_changed()
-        && !disabled_bindings.is_changed()
-    {
+    if !input_routes.is_changed() && !output_routes.is_changed() && !disabled_routes.is_changed() {
         return;
     }
 
-    send_bindings(
-        &input_bindings,
-        &output_bindings,
-        &disabled_bindings,
+    send_routes(
+        &input_routes,
+        &output_routes,
+        &disabled_routes,
         &broadcaster,
     );
 }
@@ -559,27 +556,27 @@ pub fn send_color_path_defaults_on_change(
     send_color_path_defaults(&fixture_data_provider, &broadcaster);
 }
 
-/// Send binding validation settings.
-pub fn send_binding_validation_settings(
-    settings: &BindingValidationSettings,
+/// Send route validation settings.
+pub fn send_route_validation_settings(
+    settings: &RouteValidationSettings,
     broadcaster: &ClientEventSink,
 ) {
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
-        &FixtureWsMessage::BindingValidationSettings(settings),
+        &FixtureWsMessage::RouteValidationSettings(settings),
     );
 }
 
-/// Send binding validation settings when they change.
-pub fn send_binding_validation_settings_on_change(
-    settings: Res<BindingValidationSettings>,
+/// Send route validation settings when they change.
+pub fn send_route_validation_settings_on_change(
+    settings: Res<RouteValidationSettings>,
     broadcaster: Res<ClientEventSink>,
 ) {
     if !settings.is_changed() {
         return;
     }
 
-    send_binding_validation_settings(&settings, &broadcaster);
+    send_route_validation_settings(&settings, &broadcaster);
 }
 
 /// Handle ResyncState by sending fixtures and patch data.
@@ -587,10 +584,10 @@ pub fn handle_resync_state(
     mut resync: ResyncReplies,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     geometry_provider: Option<Res<crate::geometry::GeometryProviderResource>>,
-    input_bindings: Res<InputBindings>,
-    output_bindings: Res<OutputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
-    binding_validation_settings: Res<BindingValidationSettings>,
+    input_routes: Res<InputRoutes>,
+    output_routes: Res<OutputRoutes>,
+    disabled_routes: Res<DisabledRoutes>,
+    route_validation_settings: Res<RouteValidationSettings>,
     mut parameter_requests: ResMut<ParameterStateRequests>,
     mut universe_stream: ResMut<DmxUniverseStream>,
 ) {
@@ -608,14 +605,14 @@ pub fn handle_resync_state(
             .as_ref()
             .and_then(|p| p.get_geometry(fixture))
     });
-    send_bindings(
-        &input_bindings,
-        &output_bindings,
-        &disabled_bindings,
+    send_routes(
+        &input_routes,
+        &output_routes,
+        &disabled_routes,
         &broadcaster,
     );
     send_color_path_defaults(&fixture_data_provider, &broadcaster);
-    send_binding_validation_settings(&binding_validation_settings, &broadcaster);
+    send_route_validation_settings(&route_validation_settings, &broadcaster);
 }
 
 #[cfg(test)]
@@ -625,29 +622,29 @@ mod tests {
     use nightfall::prelude::{FixtureRef, Identifiers};
     use nightfall_fixture_model::parameter::ParameterMetadata;
     use nightfall_io::prelude::{NetworkDmxOutputTargets, UsbDmxOutputTargets};
-    use nightfall_io::{BindingTransport, OutputTransport};
+    use nightfall_io::{OutputTransport, RouteTransport};
 
     use super::*;
-    use crate::binding_resolution::{derive_console_addresses, resolve_output_bindings};
-    use crate::bindings::{ConsoleDmxAddresses, DmxRange, OutputSource, OutputTarget};
     use crate::fixture::FixtureElement;
     use crate::output_frames::OutputDmxFrames;
     use crate::output_frames::{OutputRouting, compose_output_frames, update_input_routing};
     use crate::parameter::{Parameter, ParameterValues};
+    use crate::route_resolution::{derive_console_addresses, resolve_output_routes};
+    use crate::routes::{ConsoleDmxAddresses, DmxRange, OutputSource, OutputTarget};
     use crate::universe::ConsoleDmxUniverses;
     use crate::universe::{ConsoleChannelOrigin, dmx_universes};
     use crate::universe_stream::{DmxIoMode, collect_universes};
 
-    /// Builds an app running binding resolution and DMX universe composition.
+    /// Builds an app running route resolution and DMX universe composition.
     fn pipeline_app() -> App {
         let mut app = App::new();
         app.init_resource::<FixtureDataProviderExt>();
-        app.init_resource::<OutputBindings>();
-        app.init_resource::<DisabledBindings>();
+        app.init_resource::<OutputRoutes>();
+        app.init_resource::<DisabledRoutes>();
         app.init_resource::<ConsoleDmxAddresses>();
         app.init_resource::<NetworkDmxOutputTargets>();
         app.init_resource::<UsbDmxOutputTargets>();
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<OutputRouting>();
         app.init_resource::<OutputDmxFrames>();
@@ -656,7 +653,7 @@ mod tests {
             Update,
             (
                 derive_console_addresses,
-                resolve_output_bindings,
+                resolve_output_routes,
                 update_input_routing,
                 dmx_universes,
                 compose_output_frames,
@@ -725,9 +722,9 @@ mod tests {
         }
     }
 
-    /// Returns a fixture-sourced output binding for `uid` targeting `target`.
-    fn fixture_binding(uid: Uuid, target: OutputTarget) -> OutputBinding {
-        OutputBinding {
+    /// Returns a fixture-sourced output route for `uid` targeting `target`.
+    fn fixture_route(uid: Uuid, target: OutputTarget) -> OutputRoute {
+        OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -739,7 +736,7 @@ mod tests {
         }
     }
 
-    /// Returns a console binding target at one universe and address.
+    /// Returns a console route target at one universe and address.
     fn console_target(universe: u16, address: u16) -> OutputTarget {
         OutputTarget::Console {
             universe: Some(DmxRange::single(universe)),
@@ -747,7 +744,7 @@ mod tests {
         }
     }
 
-    /// Returns a transport binding target at one universe and address.
+    /// Returns a transport route target at one universe and address.
     fn transport_target(target: &str, universe: u16, address: u16) -> OutputTarget {
         OutputTarget::Transport {
             target: target.to_string(),
@@ -791,12 +788,12 @@ mod tests {
     /// Fixtures bound only to console addresses are reported under the Console label using
     /// console numbering, even though no transport route exists.
     #[test]
-    fn console_only_binding_reports_console_universe() {
+    fn console_only_route_reports_console_universe() {
         let mut app = pipeline_app();
         let uid = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, uid, 1, [255.0, 0.0, 128.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings =
-            vec![fixture_binding(uid, console_target(2, 121))];
+        app.world_mut().resource_mut::<OutputRoutes>().routes =
+            vec![fixture_route(uid, console_target(2, 121))];
 
         let views = output_views(&mut app);
 
@@ -811,9 +808,9 @@ mod tests {
         let mut app = pipeline_app();
         let uid = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, uid, 1, [255.0, 0.0, 128.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
-            fixture_binding(uid, console_target(2, 121)),
-            OutputBinding {
+        app.world_mut().resource_mut::<OutputRoutes>().routes = vec![
+            fixture_route(uid, console_target(2, 121)),
+            OutputRoute {
                 source: OutputSource::Console {
                     universe: Some(DmxRange::single(2)),
                     address: None,
@@ -831,15 +828,15 @@ mod tests {
         assert_eq!(views[1].2[120..123], [255, 0, 128]);
     }
 
-    /// Direct fixture-to-transport bindings only appear under their transport with wire
+    /// Direct fixture-to-transport routes only appear under their transport with wire
     /// numbering and never populate console space.
     #[test]
-    fn direct_transport_binding_reports_only_wire_universe() {
+    fn direct_transport_route_reports_only_wire_universe() {
         let mut app = pipeline_app();
         let uid = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, uid, 1, [10.0, 20.0, 30.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings =
-            vec![fixture_binding(uid, transport_target("sacn", 1, 5))];
+        app.world_mut().resource_mut::<OutputRoutes>().routes =
+            vec![fixture_route(uid, transport_target("sacn", 1, 5))];
 
         let views = output_views(&mut app);
 
@@ -854,8 +851,8 @@ mod tests {
         let mut app = pipeline_app();
         let uid = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, uid, 1, [10.0, 20.0, 30.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings =
-            vec![fixture_binding(uid, transport_target("sacn", 1, 5))];
+        app.world_mut().resource_mut::<OutputRoutes>().routes =
+            vec![fixture_route(uid, transport_target("sacn", 1, 5))];
         app.world_mut()
             .resource_mut::<ConsoleDmxUniverses>()
             .set_value(1, 1, 255, ConsoleChannelOrigin::ManualCommand);
@@ -867,9 +864,9 @@ mod tests {
         assert_eq!(views[1].2[0..7], [0, 0, 0, 0, 10, 20, 30]);
     }
 
-    /// Returns a console→transport passthrough binding for one console universe.
-    fn console_passthrough(console_universe: u16, wire_universe: u16) -> OutputBinding {
-        OutputBinding {
+    /// Returns a console→transport passthrough route for one console universe.
+    fn console_passthrough(console_universe: u16, wire_universe: u16) -> OutputRoute {
+        OutputRoute {
             source: OutputSource::Console {
                 universe: Some(DmxRange::single(console_universe)),
                 address: None,
@@ -887,36 +884,35 @@ mod tests {
         let mut app = pipeline_app();
         let uid = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, uid, 1, [11.0, 22.0, 33.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
-            fixture_binding(uid, console_target(1, 1)),
+        app.world_mut().resource_mut::<OutputRoutes>().routes = vec![
+            fixture_route(uid, console_target(1, 1)),
             console_passthrough(1, 10),
         ];
         let mut input = [0; nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE];
         input[99] = 77;
         app.world_mut()
             .resource_mut::<InputDmxUniverses>()
-            .set_universe(BindingTransport::ArtNet, 4, input, Instant::now());
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![crate::bindings::ResolvedInputBinding {
-            source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
-                universe: 4,
-                address: 100,
-            },
-            priority: 0,
-            destination: ResolvedInputDestination::Transport {
-                target: crate::bindings::ResolvedTransportTarget {
-                    target: "sacn".to_string(),
-                    protocol: BindingTransport::Sacn,
-                    transport: OutputTransport::Sacn {
-                        mode: nightfall_io::SacnDelivery::Multicast,
-                    },
-                    universe: 1,
+            .set_universe(RouteTransport::ArtNet, 4, input, Instant::now());
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes =
+            vec![crate::routes::ResolvedInputRoute {
+                source: ResolvedInputSource::Transport {
+                    transport: RouteTransport::ArtNet,
+                    universe: 4,
                     address: 100,
                 },
-            },
-        }];
+                priority: 0,
+                destination: ResolvedInputDestination::Transport {
+                    target: crate::routes::ResolvedTransportTarget {
+                        target: "sacn".to_string(),
+                        protocol: RouteTransport::Sacn,
+                        transport: OutputTransport::Sacn {
+                            mode: nightfall_io::SacnDelivery::Multicast,
+                        },
+                        universe: 1,
+                        address: 100,
+                    },
+                },
+            }];
 
         let views = output_views(&mut app);
 
@@ -932,19 +928,19 @@ mod tests {
     /// Moving, removing, and deleting console-bound fixtures leaves no ghost console values
     /// behind, and the routed wire frame follows.
     #[test]
-    fn console_values_clear_when_bindings_or_fixtures_change() {
+    fn console_values_clear_when_routes_or_fixtures_change() {
         let mut app = pipeline_app();
         let uid = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, uid, 1, [11.0, 22.0, 33.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
-            fixture_binding(uid, console_target(2, 121)),
+        app.world_mut().resource_mut::<OutputRoutes>().routes = vec![
+            fixture_route(uid, console_target(2, 121)),
             console_passthrough(2, 10),
         ];
         let views = output_views(&mut app);
         assert_eq!(views[0].2[120..123], [11, 22, 33]);
 
-        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
-            fixture_binding(uid, console_target(2, 1)),
+        app.world_mut().resource_mut::<OutputRoutes>().routes = vec![
+            fixture_route(uid, console_target(2, 1)),
             console_passthrough(2, 10),
         ];
         let views = output_views(&mut app);
@@ -953,7 +949,7 @@ mod tests {
         assert_eq!(
             views[0].2[120..123],
             [0, 0, 0],
-            "moved binding left ghost values"
+            "moved route left ghost values"
         );
         assert_eq!(
             views[1].2[120..123],
@@ -978,31 +974,31 @@ mod tests {
         );
     }
 
-    /// Rebinding a direct transport patch to another wire universe drops the old wire view.
+    /// Reroute a direct transport patch to another wire universe drops the old wire view.
     #[test]
-    fn rebinding_direct_patch_drops_stale_wire_universe() {
+    fn reroute_direct_patch_drops_stale_wire_universe() {
         let mut app = pipeline_app();
         let uid = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, uid, 1, [10.0, 20.0, 30.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings =
-            vec![fixture_binding(uid, transport_target("sacn", 5, 1))];
+        app.world_mut().resource_mut::<OutputRoutes>().routes =
+            vec![fixture_route(uid, transport_target("sacn", 5, 1))];
         assert_eq!(view_keys(&output_views(&mut app)), vec![("sACN", 5)]);
 
-        app.world_mut().resource_mut::<OutputBindings>().bindings =
-            vec![fixture_binding(uid, transport_target("sacn", 6, 1))];
+        app.world_mut().resource_mut::<OutputRoutes>().routes =
+            vec![fixture_route(uid, transport_target("sacn", 6, 1))];
         assert_eq!(view_keys(&output_views(&mut app)), vec![("sACN", 6)]);
     }
 
-    /// Parameter-scoped console bindings lay out only the selected parameters, so a second
+    /// Parameter-scoped console routes lay out only the selected parameters, so a second
     /// fixture follows the first without overlapping its channels.
     #[test]
-    fn parameter_scoped_console_binding_does_not_overlap() {
+    fn parameter_scoped_console_route_does_not_overlap() {
         let mut app = pipeline_app();
         let first = Uuid::new_v4();
         let second = Uuid::new_v4();
         spawn_rgb_fixture(&mut app, first, 1, [11.0, 22.0, 33.0]);
         spawn_rgb_fixture(&mut app, second, 2, [44.0, 55.0, 66.0]);
-        app.world_mut().resource_mut::<OutputBindings>().bindings = vec![OutputBinding {
+        app.world_mut().resource_mut::<OutputRoutes>().routes = vec![OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![first, second],
                 element: None,

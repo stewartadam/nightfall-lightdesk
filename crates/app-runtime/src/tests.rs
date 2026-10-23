@@ -52,7 +52,7 @@ use nightfall_engine::prelude::{
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     ConsoleDmxAddress, ConsoleDmxAddresses, Fixture, FixtureDataProviderExt, FixtureElement,
-    InputBindings, OutputBindings, OutputTarget, Parameter, ParameterValues,
+    InputRoutes, OutputRoutes, OutputTarget, Parameter, ParameterValues,
 };
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
@@ -989,26 +989,26 @@ async fn sample_data_build_patches_every_fixture_to_console_only() {
     app.update();
     let world = app.world();
     let fixtures = world.resource::<FixtureDataProviderExt>();
-    let output = world.resource::<OutputBindings>();
+    let output = world.resource::<OutputRoutes>();
 
     let mut patched: Vec<Uuid> = Vec::new();
-    for binding in &output.bindings {
+    for route in &output.routes {
         assert!(
-            matches!(binding.target, OutputTarget::Console { .. }),
-            "sample show must not route output to a transport: {binding:?}"
+            matches!(route.target, OutputTarget::Console { .. }),
+            "sample show must not route output to a transport: {route:?}"
         );
-        patched.extend(binding.source.fixture_uids().expect("fixture source"));
+        patched.extend(route.source.fixture_uids().expect("fixture source"));
     }
     let mut every_fixture: Vec<_> = fixtures.inner.iter().map(|f| f.identifiers.uid).collect();
     patched.sort();
     every_fixture.sort();
     assert_eq!(patched, every_fixture);
 
-    let issues = nightfall_fixtures::binding_validation::validate_bindings(
+    let issues = nightfall_fixtures::route_validation::validate_routes(
         &Default::default(),
-        world.resource::<InputBindings>(),
+        world.resource::<InputRoutes>(),
         output,
-        world.resource::<nightfall_fixtures::prelude::DisabledBindings>(),
+        world.resource::<nightfall_fixtures::prelude::DisabledRoutes>(),
         fixtures,
     );
     assert!(issues.is_empty(), "{issues:?}");
@@ -1808,15 +1808,15 @@ fn named_sample_show_is_standalone_and_recoverable() {
         )),
         "sample stage must use built-in primitives"
     );
-    assert_eq!(snapshot.bindings.output.len(), 15);
+    assert_eq!(snapshot.routes.output.len(), 15);
     assert!(
         snapshot
-            .bindings
+            .routes
             .output
             .iter()
-            .all(|binding| matches!(binding.target, OutputTarget::Console { .. }))
+            .all(|route| matches!(route.target, OutputTarget::Console { .. }))
     );
-    assert!(snapshot.bindings.disabled.is_empty());
+    assert!(snapshot.routes.disabled.is_empty());
 
     // Resolve every programmed selection against the generated inventory, including cue parts.
     let mut selections: Vec<_> = snapshot
@@ -1950,11 +1950,7 @@ fn named_sample_show_is_standalone_and_recoverable() {
         3
     );
     assert_eq!(
-        recovered
-            .world()
-            .resource::<OutputBindings>()
-            .bindings
-            .len(),
+        recovered.world().resource::<OutputRoutes>().routes.len(),
         15
     );
     for asset in crate::sample_data::SAMPLE_AUDIO {

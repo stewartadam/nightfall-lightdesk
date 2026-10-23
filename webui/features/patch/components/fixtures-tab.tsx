@@ -30,11 +30,6 @@ import DataGrid, {
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
-import { getBindingIdForAltFollow } from "../../../lib/binding-follow";
-import {
-  type BindingConflictColumn,
-  computeBindingOverlapAnalysis,
-} from "../../../lib/binding-overlap";
 import type {
   CellClickedEventArgs,
   GridCell,
@@ -56,18 +51,17 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
-import { useSharedStore } from "../../../lib/use-shared-store";
-import { bindings, dmxUniverseList, fixtures } from "../../../state/appStores";
+import { getRouteIdForAltFollow } from "../../../lib/route-follow";
 import {
-  type BindingRow,
-  toDisabledBindingRow,
-  toInputBindingRow,
-  toOutputBindingRow,
-} from "../model/bindings-model";
+  computeRouteOverlapAnalysis,
+  type RouteConflictColumn,
+} from "../../../lib/route-overlap";
+import { useSharedStore } from "../../../lib/use-shared-store";
+import { dmxUniverseList, fixtures, routes } from "../../../state/appStores";
 import {
   type ConflictTooltipState,
   DISABLED_TEXT_COLOR,
-  disabledBindingTouchesFixture,
+  disabledRouteTouchesFixture,
   type FixtureDisplayRow,
   fixtureDisplayCellHasConflict,
   fixtureOutputOccupancyKey,
@@ -75,18 +69,24 @@ import {
   fixtureUidsFromInputTarget,
   formatFixtureGroupLabel,
   formatGroupWithChevron,
-  inputBindingTouchesFixture,
-  outputBindingTouchesFixture,
+  inputRouteTouchesFixture,
+  outputRouteTouchesFixture,
 } from "../model/fixtures-model";
+import {
+  type RouteRow,
+  toDisabledRouteRow,
+  toInputRouteRow,
+  toOutputRouteRow,
+} from "../model/routes-model";
 
 export interface PatchFixturesTabProps {
   panelId: string;
-  onNavigateToBinding?: (bindingId: string) => void;
+  onNavigateToRoute?: (routeId: string) => void;
   onColumnVisibilityControlChange?: (control: JSX.Element | null) => void;
 }
 
 export default function PatchFixturesTab(props: PatchFixturesTabProps) {
-  const $bindings = useStore(bindings);
+  const $routes = useStore(routes);
   const $fixtures = useSharedStore(fixtures);
   const $dmxUniverseList = useStore(dmxUniverseList);
 
@@ -118,9 +118,9 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
             ? row.disabled
               ? "Disabled"
               : ""
-            : row.binding.kind,
+            : row.route.kind,
       },
-      ...columnVisibilityMeta("Binding", "Type"),
+      ...columnVisibilityMeta("Route", "Type"),
     },
     {
       title: "Source",
@@ -129,10 +129,10 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
       filter: {
         value: (row) =>
           row.rowKind === "fixture"
-            ? `In ${row.bindingCounts.input}`
-            : row.binding.source,
+            ? `In ${row.routeCounts.input}`
+            : row.route.source,
       },
-      ...columnVisibilityMeta("Binding", "Source"),
+      ...columnVisibilityMeta("Route", "Source"),
     },
     {
       title: "Target",
@@ -141,10 +141,10 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
       filter: {
         value: (row) =>
           row.rowKind === "fixture"
-            ? `DMX ${row.bindingCounts.output}`
-            : row.binding.target,
+            ? `DMX ${row.routeCounts.output}`
+            : row.route.target,
       },
-      ...columnVisibilityMeta("Binding", "Target"),
+      ...columnVisibilityMeta("Route", "Target"),
     },
     {
       title: "Priority",
@@ -152,10 +152,9 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
       width: 90,
       filter: {
         kind: "number",
-        value: (row) =>
-          row.rowKind === "binding" ? row.binding.priority : null,
+        value: (row) => (row.rowKind === "route" ? row.route.priority : null),
       },
-      ...columnVisibilityMeta("Binding", "Priority"),
+      ...columnVisibilityMeta("Route", "Priority"),
     },
     {
       title: "Clone",
@@ -163,9 +162,9 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
       width: 70,
       filter: {
         kind: "boolean",
-        value: (row) => row.rowKind === "binding" && row.binding.clone,
+        value: (row) => row.rowKind === "route" && row.route.clone,
       },
-      ...columnVisibilityMeta("Binding", "Clone"),
+      ...columnVisibilityMeta("Route", "Clone"),
     },
   ]);
   const displayColumns = createMemo(() => {
@@ -173,15 +172,15 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   });
 
   const rows = createMemo<FixtureDisplayRow[]>(() => {
-    const snapshot = $bindings();
+    const snapshot = $routes();
     const fixtureMap = $fixtures();
     const activeUniverses = $dmxUniverseList().map(
       (universe) => universe.universe_id,
     );
-    const conflictColumnsByBinding = computeBindingOverlapAnalysis(
+    const conflictColumnsByRoute = computeRouteOverlapAnalysis(
       snapshot,
       activeUniverses,
-    ).conflictColumnsByBinding;
+    ).conflictColumnsByRoute;
     const exp = expanded();
 
     const rows: FixtureDisplayRow[] = [];
@@ -197,60 +196,56 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
       const fixture = fixtureMap[uid];
       if (!fixture) continue;
 
-      const inputRows: BindingRow[] = [];
-      const outputRows: BindingRow[] = [];
-      const disabledRows: BindingRow[] = [];
-      let disabledByBinding = false;
+      const inputRows: RouteRow[] = [];
+      const outputRows: RouteRow[] = [];
+      const disabledRows: RouteRow[] = [];
+      let disabledByRoute = false;
       let inputOverlap = false;
       let outputOverlap = false;
       const seenInputTargets = new Set<string>();
       const seenOutputTargets = new Set<string>();
 
-      snapshot.input.forEach((binding, index) => {
-        if (!inputBindingTouchesFixture(binding, uid)) return;
+      snapshot.input.forEach((route, index) => {
+        if (!inputRouteTouchesFixture(route, uid)) return;
         if (
-          binding.source.type === "Fixture" &&
-          binding.target.type === "Disabled" &&
-          fixtureUidsFromInputSource(binding.source).has(uid)
+          route.source.type === "Fixture" &&
+          route.target.type === "Disabled" &&
+          fixtureUidsFromInputSource(route.source).has(uid)
         ) {
-          disabledByBinding = true;
+          disabledByRoute = true;
         }
         if (
-          binding.target.type === "Fixture" &&
-          fixtureUidsFromInputTarget(binding.target).has(uid)
+          route.target.type === "Fixture" &&
+          fixtureUidsFromInputTarget(route.target).has(uid)
         ) {
-          const elementKey = binding.target.data.element ?? "*";
-          const paramKey = binding.target.data.param ?? "*";
+          const elementKey = route.target.data.element ?? "*";
+          const paramKey = route.target.data.param ?? "*";
           const targetKey = `${uid}:${elementKey}:${paramKey}`;
           if (seenInputTargets.has(targetKey)) inputOverlap = true;
           seenInputTargets.add(targetKey);
         }
-        inputRows.push(
-          toInputBindingRow(binding, fixtureMap, `input-${index}`),
-        );
+        inputRows.push(toInputRouteRow(route, fixtureMap, `input-${index}`));
       });
 
-      snapshot.output.forEach((binding, index) => {
-        if (!outputBindingTouchesFixture(binding, uid)) return;
-        const key = fixtureOutputOccupancyKey(binding, uid);
+      snapshot.output.forEach((route, index) => {
+        if (!outputRouteTouchesFixture(route, uid)) return;
+        const key = fixtureOutputOccupancyKey(route, uid);
         if (key) {
           if (seenOutputTargets.has(key)) outputOverlap = true;
           seenOutputTargets.add(key);
         }
-        outputRows.push(
-          toOutputBindingRow(binding, fixtureMap, `output-${index}`),
-        );
+        outputRows.push(toOutputRouteRow(route, fixtureMap, `output-${index}`));
       });
 
-      snapshot.disabled.forEach((binding, index) => {
-        if (!disabledBindingTouchesFixture(binding, uid)) return;
-        disabledByBinding = true;
+      snapshot.disabled.forEach((route, index) => {
+        if (!disabledRouteTouchesFixture(route, uid)) return;
+        disabledByRoute = true;
         disabledRows.push(
-          toDisabledBindingRow(binding, fixtureMap, `disabled-${index}`),
+          toDisabledRouteRow(route, fixtureMap, `disabled-${index}`),
         );
       });
 
-      const bindingRows = [...inputRows, ...outputRows, ...disabledRows].sort(
+      const routeRows = [...inputRows, ...outputRows, ...disabledRows].sort(
         (a, b) => a.priority - b.priority,
       );
 
@@ -266,23 +261,23 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
         rowKind: "fixture",
         fixtureUid: uid,
         fixtureLabel: formatFixtureGroupLabel(fixture),
-        disabled: disabledByBinding,
-        bindingCounts: counts,
+        disabled: disabledByRoute,
+        routeCounts: counts,
         inputOverlap,
         outputOverlap,
-        bindingRows,
+        routeRows,
         isExpanded,
       });
 
       if (isExpanded) {
-        for (const bindingRow of bindingRows) {
+        for (const routeRow of routeRows) {
           rows.push({
-            rowKind: "binding",
+            rowKind: "route",
             fixtureUid: uid,
-            binding: bindingRow,
+            route: routeRow,
             conflictColumns:
-              conflictColumnsByBinding.get(bindingRow.id) ??
-              new Set<BindingConflictColumn>(),
+              conflictColumnsByRoute.get(routeRow.id) ??
+              new Set<RouteConflictColumn>(),
           });
         }
       }
@@ -296,7 +291,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
     filteredRows: displayRows,
     setFilters: setTableFilters,
   } = createDataGridFilterState({
-    scope: `${props.panelId}:bindings-fixture`,
+    scope: `${props.panelId}:routes-fixture`,
     rows,
     columns: filterColumns,
   });
@@ -316,27 +311,27 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
     const rowData = displayRows()[row];
     const columnId = displayColumns()[col]?.id;
     if (!rowData || typeof columnId !== "string") return undefined;
-    if (rowData.rowKind === "binding") {
+    if (rowData.rowKind === "route") {
       if (
         (columnId !== "source" && columnId !== "target") ||
         !rowData.conflictColumns.has(columnId)
       ) {
         return undefined;
       }
-      if (rowData.binding.kind.startsWith("Input")) {
-        return "This input binding overlaps another input route.";
+      if (rowData.route.kind.startsWith("Input")) {
+        return "This input route overlaps another input route.";
       }
-      if (rowData.binding.kind.startsWith("Output")) {
-        return "This output binding overlaps another output route.";
+      if (rowData.route.kind.startsWith("Output")) {
+        return "This output route overlaps another output route.";
       }
-      return "This binding overlaps another binding.";
+      return "This route overlaps another route.";
     }
 
     if (columnId === "source" && rowData.inputOverlap) {
-      return `${rowData.fixtureLabel} has overlapping input bindings.`;
+      return `${rowData.fixtureLabel} has overlapping input routes.`;
     }
     if (columnId === "target" && rowData.outputOverlap) {
-      return `${rowData.fixtureLabel} has overlapping DMX output bindings.`;
+      return `${rowData.fixtureLabel} has overlapping DMX output routes.`;
     }
     return undefined;
   };
@@ -366,7 +361,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
       rowKey: (row) =>
         row.rowKind === "fixture"
           ? `fixture:${row.fixtureUid}`
-          : `binding:${row.fixtureUid}:${row.binding.id}`,
+          : `route:${row.fixtureUid}:${row.route.id}`,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row: item, column }): GridCell => {
         const colId = column.id;
@@ -399,7 +394,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
               return {
                 kind: GridCellKind.Text,
                 data: "",
-                displayData: `In - ${item.bindingCounts.input}x`,
+                displayData: `In - ${item.routeCounts.input}x`,
                 allowOverlay: false,
                 themeOverride:
                   themeOverride ??
@@ -411,7 +406,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
               return {
                 kind: GridCellKind.Text,
                 data: "",
-                displayData: `DMX - ${item.bindingCounts.output}x`,
+                displayData: `DMX - ${item.routeCounts.output}x`,
                 allowOverlay: false,
                 themeOverride:
                   themeOverride ??
@@ -430,8 +425,8 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
           }
         }
 
-        const binding = item.binding;
-        const isChild = item.rowKind === "binding";
+        const route = item.route;
+        const isChild = item.rowKind === "route";
 
         let cell: GridCell;
         switch (colId) {
@@ -439,11 +434,11 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
             cell = makeSafeTextCell("");
             break;
           case "type":
-            cell = makeSafeTextCell(binding.kind);
+            cell = makeSafeTextCell(route.kind);
             break;
           case "source":
             cell = {
-              ...makeSafeTextCell(binding.source),
+              ...makeSafeTextCell(route.source),
               themeOverride: item.conflictColumns.has("source")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
@@ -451,7 +446,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
             break;
           case "target":
             cell = {
-              ...makeSafeTextCell(binding.target),
+              ...makeSafeTextCell(route.target),
               themeOverride: item.conflictColumns.has("target")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
@@ -460,15 +455,15 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
           case "priority":
             cell = {
               kind: GridCellKind.Number,
-              data: binding.priority,
-              displayData: String(binding.priority),
+              data: route.priority,
+              displayData: String(route.priority),
               allowOverlay: false,
             };
             break;
           case "clone":
             cell = {
               kind: GridCellKind.Boolean,
-              data: binding.clone,
+              data: route.clone,
               allowOverlay: false,
             };
             break;
@@ -502,9 +497,9 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   const conflictDecorationInvalidateKey = createMemo(() =>
     displayRows()
       .flatMap((row) => {
-        if (row.rowKind === "binding") {
+        if (row.rowKind === "route") {
           return Array.from(row.conflictColumns).map(
-            (column) => `${row.fixtureUid}:${row.binding.id}:${column}`,
+            (column) => `${row.fixtureUid}:${row.route.id}:${column}`,
           );
         }
 
@@ -516,14 +511,14 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
       .join("|"),
   );
 
-  /** Navigates from a grouped fixture row to its binding detail row. */
-  const navigateToBindingRow = (rowData: FixtureDisplayRow): boolean => {
-    const bindingId = getBindingIdForAltFollow(rowData, true);
-    if (!bindingId || !props.onNavigateToBinding) {
+  /** Navigates from a grouped fixture row to its route detail row. */
+  const navigateToRouteRow = (rowData: FixtureDisplayRow): boolean => {
+    const routeId = getRouteIdForAltFollow(rowData, true);
+    if (!routeId || !props.onNavigateToRoute) {
       return false;
     }
 
-    props.onNavigateToBinding(bindingId);
+    props.onNavigateToRoute(routeId);
     return true;
   };
 
@@ -535,7 +530,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
     const altKey = (event as CellClickedEventArgs & { altKey?: boolean })
       .altKey;
 
-    if (altKey === true && navigateToBindingRow(rowData)) {
+    if (altKey === true && navigateToRouteRow(rowData)) {
       return;
     }
 
@@ -554,23 +549,23 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
     });
   };
 
-  /** Opens right-click affordances for grouped fixture binding rows. */
+  /** Opens right-click affordances for grouped fixture route rows. */
   const handleCellContextMenu = (cell: Item, event: MouseEvent) => {
     const [, row] = cell;
     const rowData = displayRows()[row];
-    if (rowData?.rowKind !== "binding") {
+    if (rowData?.rowKind !== "route") {
       return;
     }
 
     event.preventDefault();
     const items: ContextMenuEntry[] = [
       {
-        id: "show-binding",
-        label: "Show binding",
+        id: "show-route",
+        label: "Show route",
         icon: ArrowsClockwiseIcon,
         shortcut: "Alt+Click",
-        disabled: props.onNavigateToBinding === undefined,
-        onSelect: () => navigateToBindingRow(rowData),
+        disabled: props.onNavigateToRoute === undefined,
+        onSelect: () => navigateToRouteRow(rowData),
       },
     ];
     openContextMenu({

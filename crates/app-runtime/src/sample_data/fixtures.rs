@@ -143,11 +143,11 @@ pub(super) fn add_fixtures(world: &mut World) {
 
 /// Binds every rig section of [`CONSOLE_PATCH`] to its console universes.
 fn add_console_patch(world: &mut World) {
-    let bindings: Vec<OutputBinding> = {
+    let routes: Vec<OutputRoute> = {
         let provider = world.resource::<FixtureDataProviderExt>();
         CONSOLE_PATCH
             .iter()
-            .map(|&(ids, first_universe, last_universe)| OutputBinding {
+            .map(|&(ids, first_universe, last_universe)| OutputRoute {
                 source: OutputSource::Fixture {
                     uids: ids
                         .iter()
@@ -175,10 +175,7 @@ fn add_console_patch(world: &mut World) {
             })
             .collect()
     };
-    world
-        .resource_mut::<OutputBindings>()
-        .bindings
-        .extend(bindings);
+    world.resource_mut::<OutputRoutes>().routes.extend(routes);
 }
 
 /// Persist an embedded profile and initialize its runtime parameters, unpatched.

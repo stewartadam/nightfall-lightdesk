@@ -65,7 +65,7 @@ async function seedDmxUniverseColorState(page: Page) {
       },
     });
 
-    stores.bindings.set({
+    stores.routes.set({
       input: [],
       output: [
         {
@@ -247,7 +247,7 @@ async function seedDmxUniverseJumpState(page: Page) {
         },
       });
 
-      stores.bindings.set({
+      stores.routes.set({
         input: [],
         output: [
           {
@@ -479,7 +479,7 @@ test("dmx universe panel context menu exposes channel follow actions", async ({
   const menuBox = await menu.boundingBox();
   expect(menuBox?.width ?? 0).toBeGreaterThan(250);
   await expect(
-    menu.getByRole("menuitem", { name: "Follow binding in Patch" }),
+    menu.getByRole("menuitem", { name: "Follow route in Patch" }),
   ).toBeVisible();
   await expect(
     menu.getByRole("menuitem", { name: "Show asserting layer" }),

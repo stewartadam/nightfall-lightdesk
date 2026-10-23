@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Systems for resolving patch bindings into runtime caches.
+//! Systems for resolving DMX routes into runtime caches.
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -16,7 +16,7 @@ use moonshine_kind::prelude::*;
 use nightfall::prelude::FixtureRef;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_fixture_model::prelude::*;
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 use nightfall_io::prelude::{
     NetworkDmxOutputTarget, NetworkDmxOutputTargets, OutputTransport, UsbDmxOutputTarget,
     UsbDmxOutputTargets,
@@ -24,7 +24,7 @@ use nightfall_io::prelude::{
 use uuid::Uuid;
 
 use crate::output_frames::{
-    ChannelWindow, ConsoleWindowRoute, OutputBindingRoute, OutputFrameKey, OutputRouting,
+    ChannelWindow, ConsoleWindowFeed, OutputFrameFeed, OutputFrameKey, OutputRouting,
 };
 use crate::prelude::*;
 
@@ -43,12 +43,12 @@ fn expand_range(range: Option<DmxRange>) -> Vec<u16> {
     }
 }
 
-/// Places the fixtures of one fixture→console or fixture→transport binding, in patch order.
+/// Places the fixtures of one fixture→console or fixture→transport route, in patch order.
 ///
-/// The Nth fixture lands in the Nth universe of the binding's range, and every fixture past the
-/// end of the range lands in its last universe. Each universe starts at the binding address;
-/// fixtures sharing a universe are packed one after another unless the binding clones them onto
-/// the same address. Output resolution and patch validation both walk bindings through this
+/// The Nth fixture lands in the Nth universe of the route's range, and every fixture past the
+/// end of the range lands in its last universe. Each universe starts at the route address;
+/// fixtures sharing a universe are packed one after another unless the route clones them onto
+/// the same address. Output resolution and patch validation both walk routes through this
 /// layout so a validation error always describes a real conflict on the wire.
 pub(crate) struct FixturePatchLayout {
     /// Universe the next fixture lands in.
@@ -66,7 +66,7 @@ pub(crate) struct FixturePatchLayout {
 }
 
 impl FixturePatchLayout {
-    /// Starts a layout for a binding target's universe range (universe 1 when unset or
+    /// Starts a layout for a route target's universe range (universe 1 when unset or
     /// empty), start address (1 when unset) and clone flag.
     pub(crate) fn new(universe: Option<DmxRange>, address: Option<u16>, clone: bool) -> Self {
         let (first_universe, last_universe) = match universe {
@@ -85,9 +85,9 @@ impl FixturePatchLayout {
         }
     }
 
-    /// Returns the universe and start address of the next fixture in the binding.
+    /// Returns the universe and start address of the next fixture in the route.
     ///
-    /// Call once for every fixture of the binding, in order, including fixtures that end up
+    /// Call once for every fixture of the route, in order, including fixtures that end up
     /// skipped, since each one consumes its universe slot in the range.
     pub(crate) fn place_next(&mut self) -> (u16, u16) {
         let universe = self.next_universe;
@@ -107,7 +107,7 @@ impl FixturePatchLayout {
     }
 
     /// Moves the packing position past the fixture just placed, which spans `footprint`
-    /// slots; cloned bindings keep every fixture on the binding address.
+    /// slots; cloned routes keep every fixture on the route address.
     pub(crate) fn advance(&mut self, footprint: u16) {
         if !self.clone {
             self.next_address = self.placed_address.saturating_add(footprint);
@@ -126,12 +126,12 @@ fn range_contains(range: Option<DmxRange>, value: u16) -> bool {
     }
 }
 
-/// Lays out the DMX slots of a fixture's parameters selected by a binding.
+/// Lays out the DMX slots of a fixture's parameters selected by a route.
 ///
 /// Whole-fixture selections keep the profile's footprint offsets. Element or
 /// parameter selections are rebased so the first selected byte lands on the
-/// binding's address. `VirtualIntensity` parameters are included only for
-/// input bindings that request them; they are placed as sequential bytes.
+/// route's address. `VirtualIntensity` parameters are included only for
+/// input routes that request them; they are placed as sequential bytes.
 /// Only parameters on `dmx_break` are laid out; secondary breaks keep their
 /// break-relative offsets since each break has its own start address.
 fn collect_fixture_parameters(
@@ -171,7 +171,7 @@ fn collect_fixture_parameters(
                 if !include_virtual {
                     continue;
                 }
-                // Input bindings may drive virtual intensity from a console slot.
+                // Input routes may drive virtual intensity from a console slot.
                 metadata.attribute = Attribute::Intensity;
                 metadata.dmx_slots = DmxSlots::Sequential;
             }
@@ -314,7 +314,7 @@ fn input_source_matches(source: &ResolvedInputSource, disabled: &InputSource) ->
     }
 }
 
-/// Resolves an output binding's transport target identifier to the configured network or USB
+/// Resolves an output route's transport target identifier to the configured network or USB
 /// output it names, or `None` when no configured output matches.
 pub fn output_transport_from_target_id(
     target: &str,
@@ -331,64 +331,61 @@ pub fn output_transport_from_target_id(
         })
 }
 
-fn output_protocol_for_transport(transport: &OutputTransport) -> BindingTransport {
+fn output_protocol_for_transport(transport: &OutputTransport) -> RouteTransport {
     match transport {
-        OutputTransport::Sacn { .. } => BindingTransport::Sacn,
-        OutputTransport::ArtNet { .. } => BindingTransport::ArtNet,
-        OutputTransport::Udmx { .. } | OutputTransport::Disabled => BindingTransport::Udmx,
+        OutputTransport::Sacn { .. } => RouteTransport::Sacn,
+        OutputTransport::ArtNet { .. } => RouteTransport::ArtNet,
+        OutputTransport::Udmx { .. } | OutputTransport::Disabled => RouteTransport::Udmx,
     }
 }
 
-/// Orders output bindings lowest precedence first: ascending priority, and among equal
-/// priorities the earliest-authored binding last. Consumers where a later binding replaces an
-/// earlier one therefore leave the highest-priority, earliest-authored binding in effect.
-pub(crate) fn output_bindings_in_overlay_order(
-    output_bindings: &OutputBindings,
-) -> Vec<&OutputBinding> {
-    let mut bindings_with_index: Vec<(usize, &OutputBinding)> =
-        output_bindings.bindings.iter().enumerate().collect();
-    bindings_with_index
-        .sort_by_key(|(index, binding)| (binding.priority, std::cmp::Reverse(*index)));
-    bindings_with_index
+/// Orders output routes lowest precedence first: ascending priority, and among equal
+/// priorities the earliest-authored route last. Consumers where a later route replaces an
+/// earlier one therefore leave the highest-priority, earliest-authored route in effect.
+pub(crate) fn output_routes_in_overlay_order(output_routes: &OutputRoutes) -> Vec<&OutputRoute> {
+    let mut routes_with_index: Vec<(usize, &OutputRoute)> =
+        output_routes.routes.iter().enumerate().collect();
+    routes_with_index.sort_by_key(|(index, route)| (route.priority, std::cmp::Reverse(*index)));
+    routes_with_index
         .into_iter()
-        .map(|(_, binding)| binding)
+        .map(|(_, route)| route)
         .collect()
 }
 
-/// Rebuild `ConsoleDmxAddresses` from output bindings and fixtures when inputs change.
+/// Rebuild `ConsoleDmxAddresses` from output routes and fixtures when inputs change.
 ///
-/// Fixture→console bindings apply in overlay order; a later binding replaces earlier
-/// addresses for the parameters it selects, so the highest-priority binding wins and ties go
-/// to the earliest-authored one. Each binding lays out only the parameters
+/// Fixture→console routes apply in overlay order; a later route replaces earlier
+/// addresses for the parameters it selects, so the highest-priority route wins and ties go
+/// to the earliest-authored one. Each route lays out only the parameters
 /// selected by its element/parameter filter, placed by the selection's wire layout in DMX
 /// order (explicit footprint slots and gaps included).
 pub fn derive_console_addresses(
-    output_bindings: Res<OutputBindings>,
+    output_routes: Res<OutputRoutes>,
     data_provider: Res<FixtureDataProviderExt>,
     param_query: Query<InstanceRef<Parameter>>,
     mut console_addresses: ResMut<ConsoleDmxAddresses>,
 ) {
-    let should_rebuild = output_bindings.is_changed() || data_provider.is_changed();
+    let should_rebuild = output_routes.is_changed() || data_provider.is_changed();
     if !should_rebuild {
         return;
     }
 
     console_addresses.clear();
 
-    for binding in output_bindings_in_overlay_order(&output_bindings) {
+    for route in output_routes_in_overlay_order(&output_routes) {
         let OutputSource::Fixture {
             uids,
             element,
             param,
-        } = &binding.source
+        } = &route.source
         else {
             continue;
         };
-        let OutputTarget::Console { universe, address } = &binding.target else {
+        let OutputTarget::Console { universe, address } = &route.target else {
             continue;
         };
 
-        let mut layout = FixturePatchLayout::new(*universe, *address, binding.clone);
+        let mut layout = FixturePatchLayout::new(*universe, *address, route.clone);
         for uid in uids {
             let (target_universe, fixture_address) = layout.place_next();
             let params = collect_fixture_parameters(
@@ -428,20 +425,20 @@ pub fn derive_console_addresses(
     }
 }
 
-/// Resolve input bindings into a cached list of concrete input rules.
-pub fn resolve_input_bindings(
-    input_bindings: Res<InputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
+/// Resolve input routes into a cached list of concrete input rules.
+pub fn resolve_input_routes(
+    input_routes: Res<InputRoutes>,
+    disabled_routes: Res<DisabledRoutes>,
     console_addresses: Res<ConsoleDmxAddresses>,
     data_provider: Res<FixtureDataProviderExt>,
     param_query: Query<InstanceRef<Parameter>>,
     universes: Res<ConsoleDmxUniverses>,
     network_outputs: Res<NetworkDmxOutputTargets>,
     usb_outputs: Res<UsbDmxOutputTargets>,
-    mut resolved: ResMut<ResolvedInputBindings>,
+    mut resolved: ResMut<ResolvedInputRoutes>,
 ) {
-    let should_rebuild = input_bindings.is_changed()
-        || disabled_bindings.is_changed()
+    let should_rebuild = input_routes.is_changed()
+        || disabled_routes.is_changed()
         || console_addresses.is_changed()
         || data_provider.is_changed()
         || network_outputs.is_changed()
@@ -450,35 +447,35 @@ pub fn resolve_input_bindings(
         return;
     }
 
-    let mut disabled_sources: Vec<InputSource> = disabled_bindings
-        .bindings
+    let mut disabled_sources: Vec<InputSource> = disabled_routes
+        .routes
         .iter()
-        .map(|binding| match binding {
-            DisabledBinding::Input { source, .. } => source.clone(),
+        .map(|route| match route {
+            DisabledRoute::Input { source, .. } => source.clone(),
         })
         .collect();
 
-    for binding in &input_bindings.bindings {
-        if matches!(binding.target, InputTarget::Disabled) {
-            disabled_sources.push(binding.source.clone());
+    for route in &input_routes.routes {
+        if matches!(route.target, InputTarget::Disabled) {
+            disabled_sources.push(route.source.clone());
         }
     }
 
-    let mut bindings_with_index: Vec<(usize, ResolvedInputBinding)> = Vec::new();
+    let mut routes_with_index: Vec<(usize, ResolvedInputRoute)> = Vec::new();
 
-    for (binding_index, binding) in input_bindings.bindings.iter().enumerate() {
-        if matches!(binding.target, InputTarget::Disabled) {
+    for (route_index, route) in input_routes.routes.iter().enumerate() {
+        if matches!(route.target, InputTarget::Disabled) {
             continue;
         }
 
-        match &binding.source {
+        match &route.source {
             InputSource::Transport {
                 transport,
                 universe,
                 address,
             } => {
                 let source_universes = resolve_transport_input_universes(*universe);
-                let target_universes = match &binding.target {
+                let target_universes = match &route.target {
                     InputTarget::Console { universe, .. } => expand_range(*universe),
                     InputTarget::Transport { universe, .. } => expand_range(*universe),
                     _ => Vec::new(),
@@ -487,7 +484,7 @@ pub fn resolve_input_bindings(
 
                 for (index, source_universe) in source_universes.iter().enumerate() {
                     let target_universe = if matches!(
-                        binding.target,
+                        route.target,
                         InputTarget::Console { .. } | InputTarget::Transport { .. }
                     ) {
                         map_universe_by_index(&source_universes, &target_universes, index)
@@ -509,16 +506,16 @@ pub fn resolve_input_bindings(
                     }
 
                     let targets = resolve_input_targets(
-                        &binding.target,
+                        &route.target,
                         target_universe,
-                        binding.clone,
+                        route.clone,
                         &console_addresses,
                         &data_provider,
                         &param_query,
-                        matches!(&binding.source, InputSource::Fixture { .. }),
+                        matches!(&route.source, InputSource::Fixture { .. }),
                     );
 
-                    let destination = match &binding.target {
+                    let destination = match &route.target {
                         InputTarget::Console { address, .. } => ResolvedInputDestination::Console {
                             target: ResolvedConsoleTarget {
                                 universe: target_universe,
@@ -555,11 +552,11 @@ pub fn resolve_input_bindings(
                         InputTarget::Disabled => continue,
                     };
 
-                    bindings_with_index.push((
-                        binding_index,
-                        ResolvedInputBinding {
+                    routes_with_index.push((
+                        route_index,
+                        ResolvedInputRoute {
                             source,
-                            priority: binding.priority,
+                            priority: route.priority,
                             destination,
                         },
                     ));
@@ -567,7 +564,7 @@ pub fn resolve_input_bindings(
             }
             InputSource::Console { universe, address } => {
                 let source_universes = resolve_console_input_universes(*universe, &universes);
-                let target_universes = match &binding.target {
+                let target_universes = match &route.target {
                     InputTarget::Console { universe, .. } => expand_range(*universe),
                     InputTarget::Transport { universe, .. } => expand_range(*universe),
                     _ => Vec::new(),
@@ -576,7 +573,7 @@ pub fn resolve_input_bindings(
 
                 for (index, source_universe) in source_universes.iter().enumerate() {
                     let target_universe = if matches!(
-                        binding.target,
+                        route.target,
                         InputTarget::Console { .. } | InputTarget::Transport { .. }
                     ) {
                         map_universe_by_index(&source_universes, &target_universes, index)
@@ -597,16 +594,16 @@ pub fn resolve_input_bindings(
                     }
 
                     let targets = resolve_input_targets(
-                        &binding.target,
+                        &route.target,
                         target_universe,
-                        binding.clone,
+                        route.clone,
                         &console_addresses,
                         &data_provider,
                         &param_query,
-                        matches!(&binding.source, InputSource::Fixture { .. }),
+                        matches!(&route.source, InputSource::Fixture { .. }),
                     );
 
-                    let destination = match &binding.target {
+                    let destination = match &route.target {
                         InputTarget::Console { address, .. } => ResolvedInputDestination::Console {
                             target: ResolvedConsoleTarget {
                                 universe: target_universe,
@@ -643,11 +640,11 @@ pub fn resolve_input_bindings(
                         InputTarget::Disabled => continue,
                     };
 
-                    bindings_with_index.push((
-                        binding_index,
-                        ResolvedInputBinding {
+                    routes_with_index.push((
+                        route_index,
+                        ResolvedInputRoute {
                             source,
-                            priority: binding.priority,
+                            priority: route.priority,
                             destination,
                         },
                     ));
@@ -658,7 +655,7 @@ pub fn resolve_input_bindings(
                 element,
                 param,
             } => {
-                let target = &binding.target;
+                let target = &route.target;
 
                 for uid in uids {
                     let source = ResolvedInputSource::Fixture {
@@ -677,7 +674,7 @@ pub fn resolve_input_bindings(
                     let targets = resolve_input_targets(
                         target,
                         1,
-                        binding.clone,
+                        route.clone,
                         &console_addresses,
                         &data_provider,
                         &param_query,
@@ -687,11 +684,11 @@ pub fn resolve_input_bindings(
                         continue;
                     }
 
-                    bindings_with_index.push((
-                        binding_index,
-                        ResolvedInputBinding {
+                    routes_with_index.push((
+                        route_index,
+                        ResolvedInputRoute {
                             source,
-                            priority: binding.priority,
+                            priority: route.priority,
                             destination: ResolvedInputDestination::Fixture { targets },
                         },
                     ));
@@ -700,12 +697,12 @@ pub fn resolve_input_bindings(
         }
     }
 
-    bindings_with_index
-        .sort_by_key(|(index, binding)| (std::cmp::Reverse(binding.priority), *index as i32));
+    routes_with_index
+        .sort_by_key(|(index, route)| (std::cmp::Reverse(route.priority), *index as i32));
 
-    resolved.bindings = bindings_with_index
+    resolved.routes = routes_with_index
         .into_iter()
-        .map(|(_, binding)| binding)
+        .map(|(_, route)| route)
         .collect();
 }
 
@@ -789,21 +786,21 @@ fn resolve_input_targets(
     }
 }
 
-/// Resolved per-parameter output components rewritten by [`resolve_output_bindings`].
+/// Resolved per-parameter output components rewritten by [`resolve_output_routes`].
 type ResolvedParameterOutputs<'a> = (
     Option<&'a mut ResolvedOutputDestinations>,
     Option<&'a mut ResolvedConsoleDestination>,
 );
 
-/// Resolve output bindings into per-parameter destinations and the wire output routing plan.
+/// Resolve output routes into per-parameter destinations and the wire output routing plan.
 ///
-/// Fixture→transport bindings become per-parameter [`ResolvedOutputDestinations`] feeding
-/// direct output buffers; console→transport bindings become console window routes. Each
+/// Fixture→transport routes become per-parameter [`ResolvedOutputDestinations`] feeding
+/// direct output buffers; console→transport routes become console window feeds. Each
 /// parameter's console address is mirrored into [`ResolvedConsoleDestination`]. On rebuild,
 /// fixture-owned console and output buffer values are cleared so moved or removed
-/// bindings leave no ghost values behind.
-pub fn resolve_output_bindings(
-    output_bindings: Res<OutputBindings>,
+/// routes leave no ghost values behind.
+pub fn resolve_output_routes(
+    output_routes: Res<OutputRoutes>,
     console_addresses: Res<ConsoleDmxAddresses>,
     data_provider: Res<FixtureDataProviderExt>,
     network_outputs: Res<NetworkDmxOutputTargets>,
@@ -815,7 +812,7 @@ pub fn resolve_output_bindings(
     mut universes: ResMut<ConsoleDmxUniverses>,
     mut commands: Commands,
 ) {
-    let should_rebuild = output_bindings.is_changed()
+    let should_rebuild = output_routes.is_changed()
         || console_addresses.is_changed()
         || data_provider.is_changed()
         || network_outputs.is_changed()
@@ -825,10 +822,10 @@ pub fn resolve_output_bindings(
     }
 
     let mut destinations: HashMap<Entity, Vec<OutputDestination>> = HashMap::new();
-    let mut routes: HashMap<OutputFrameKey, OutputBindingRoute> = HashMap::new();
+    let mut feeds: HashMap<OutputFrameKey, OutputFrameFeed> = HashMap::new();
 
-    for binding in output_bindings_in_overlay_order(&output_bindings) {
-        match (&binding.source, &binding.target) {
+    for route in output_routes_in_overlay_order(&output_routes) {
+        match (&route.source, &route.target) {
             (
                 source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),
                 OutputTarget::Transport {
@@ -845,7 +842,7 @@ pub fn resolve_output_bindings(
                 else {
                     continue;
                 };
-                let mut layout = FixturePatchLayout::new(*universe, *address, binding.clone);
+                let mut layout = FixturePatchLayout::new(*universe, *address, route.clone);
                 for uid in selection.uids {
                     let (target_universe, fixture_address) = layout.place_next();
                     let params = collect_fixture_parameters(
@@ -918,11 +915,11 @@ pub fn resolve_output_bindings(
                 for (source_index, source_universe) in source_universes.iter().enumerate() {
                     let wire_universe =
                         map_universe_by_index(&source_universes, &target_universes, source_index);
-                    routes
+                    feeds
                         .entry((output_transport.clone(), wire_universe))
                         .or_default()
                         .console_windows
-                        .push(ConsoleWindowRoute {
+                        .push(ConsoleWindowFeed {
                             console_universe: *source_universe,
                             window,
                         });
@@ -936,7 +933,7 @@ pub fn resolve_output_bindings(
         let entry = destinations.remove(&entity).unwrap_or_default();
         for destination in &entry {
             if !matches!(destination.transport, OutputTransport::Disabled) {
-                routes
+                feeds
                     .entry((destination.transport.clone(), destination.universe))
                     .or_default()
                     .direct = true;
@@ -968,6 +965,6 @@ pub fn resolve_output_bindings(
         }
     }
 
-    routing.set_output_routes(routes);
-    universes.clear_output_binding_values();
+    routing.set_output_feeds(feeds);
+    universes.clear_output_route_values();
 }

@@ -10,10 +10,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as types from "../../../types";
 import {
-  findInputBindingIdForOutputChannel,
-  findOutputBindingIdForChannel,
+  findInputRouteIdForOutputChannel,
+  findOutputRouteIdForChannel,
   type OutputSpaceSelection,
-} from "./output-binding-follow";
+} from "./output-route-follow";
 
 /** Console-space selection used across follow tests. */
 const CONSOLE: OutputSpaceSelection = { kind: "console" };
@@ -55,12 +55,12 @@ function makeRgbFixture(uid: string, id: number): types.Fixture {
   };
 }
 
-/** Builds a fixture→console binding at one console address with a priority. */
-function consoleBinding(
+/** Builds a fixture→console route at one console address with a priority. */
+function consoleRoute(
   universe: number,
   address: number,
   priority: number,
-): types.OutputBinding {
+): types.OutputRoute {
   return {
     source: { type: "Fixture", data: { uids: ["a"] } },
     target: {
@@ -73,51 +73,51 @@ function consoleBinding(
 }
 
 /**
- * Verifies binding follow skips a lower-priority console binding whose address is
- * replaced by a higher-priority console binding, and follows the winning row instead.
+ * Verifies route follow skips a lower-priority console route whose address is
+ * replaced by a higher-priority console route, and follows the winning row instead.
  */
-test("follows the highest-priority console binding driving a channel", () => {
+test("follows the highest-priority console route driving a channel", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
-    output: [consoleBinding(1, 1, 5), consoleBinding(1, 1, 0)],
+    output: [consoleRoute(1, 1, 5), consoleRoute(1, 1, 0)],
   };
   assert.equal(
-    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 2),
+    findOutputRouteIdForChannel(snapshot, fixtures, CONSOLE, 1, 2),
     "output-0",
   );
 
-  const moved: types.BindingsSnapshot = {
+  const moved: types.RoutesSnapshot = {
     ...snapshot,
-    output: [consoleBinding(1, 100, 5), consoleBinding(1, 1, 0)],
+    output: [consoleRoute(1, 100, 5), consoleRoute(1, 1, 0)],
   };
   assert.equal(
-    findOutputBindingIdForChannel(moved, fixtures, CONSOLE, 1, 2),
+    findOutputRouteIdForChannel(moved, fixtures, CONSOLE, 1, 2),
     null,
   );
   assert.equal(
-    findOutputBindingIdForChannel(moved, fixtures, CONSOLE, 1, 101),
+    findOutputRouteIdForChannel(moved, fixtures, CONSOLE, 1, 101),
     "output-0",
   );
 });
 
 /**
- * Verifies binding follow matches the frame composer's precedence: where a console→transport
- * route and a direct fixture→transport binding cover the same wire channel, direct output is
+ * Verifies route follow matches the frame composer's precedence: where a console→transport
+ * route and a direct fixture→transport route cover the same wire channel, direct output is
  * overlaid last and supplies the value, so follow selects it even when the console route has
- * the higher binding priority. Channels only the route writes still follow the route.
+ * the higher route priority. Channels only the route writes still follow the route.
  */
 test("follows direct fixture output over a higher-priority console route", () => {
   const fixtures = {
     a: makeRgbFixture("a", 1),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
-      consoleBinding(1, 1, 0),
+      consoleRoute(1, 1, 0),
       {
         source: { type: "Console", data: { universe: singleUniverse(1) } },
         target: {
@@ -140,57 +140,57 @@ test("follows direct fixture output over a higher-priority console route", () =>
   };
 
   assert.equal(
-    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 3),
+    findOutputRouteIdForChannel(snapshot, fixtures, SACN, 1, 3),
     "output-2",
   );
   assert.equal(
-    findOutputBindingIdForChannel(snapshot, fixtures, SACN, 1, 1),
+    findOutputRouteIdForChannel(snapshot, fixtures, SACN, 1, 1),
     "output-1",
   );
   assert.equal(
-    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 3),
+    findOutputRouteIdForChannel(snapshot, fixtures, CONSOLE, 1, 3),
     "output-0",
   );
 });
 
 /**
- * Verifies binding follow only matches the channels a parameter-filtered binding writes:
- * a Red-only console binding at 1.1 owns address 1, not the Green/Blue addresses after it.
+ * Verifies route follow only matches the channels a parameter-filtered route writes:
+ * a Red-only console route at 1.1 owns address 1, not the Green/Blue addresses after it.
  */
-test("follows only the parameters a filtered binding writes", () => {
+test("follows only the parameters a filtered route writes", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
       {
-        ...consoleBinding(1, 1, 0),
+        ...consoleRoute(1, 1, 0),
         source: { type: "Fixture", data: { uids: ["a"], param: "Red" } },
       },
     ],
   };
 
   assert.equal(
-    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 1),
+    findOutputRouteIdForChannel(snapshot, fixtures, CONSOLE, 1, 1),
     "output-0",
   );
   assert.equal(
-    findOutputBindingIdForChannel(snapshot, fixtures, CONSOLE, 1, 2),
+    findOutputRouteIdForChannel(snapshot, fixtures, CONSOLE, 1, 2),
     null,
   );
 });
 
 /**
- * Builds a one-universe DMX range for output binding follow tests.
+ * Builds a one-universe DMX range for output route follow tests.
  */
 function singleUniverse(universe: number): types.DmxRange {
   return { start: universe, end: universe };
 }
 
 /**
- * Builds a binding snapshot from input bindings for follow behavior tests.
+ * Builds a route snapshot from input routes for follow behavior tests.
  */
-function makeSnapshot(input: types.InputBinding[]): types.BindingsSnapshot {
+function makeSnapshot(input: types.InputRoute[]): types.RoutesSnapshot {
   return {
     input,
     output: [],
@@ -198,14 +198,14 @@ function makeSnapshot(input: types.InputBinding[]): types.BindingsSnapshot {
   };
 }
 
-/** Verifies a transport→console input binding is followed from a console channel. */
-test("finds transport->console binding for console output channel", () => {
+/** Verifies a transport→console input route is followed from a console channel. */
+test("finds transport->console route for console output channel", () => {
   const snapshot = makeSnapshot([
     {
       source: {
         type: "Transport",
         data: {
-          transport: types.BindingTransport.Sacn,
+          transport: types.RouteTransport.Sacn,
           universe: singleUniverse(1),
           address: 1,
         },
@@ -222,18 +222,18 @@ test("finds transport->console binding for console output channel", () => {
     },
   ]);
 
-  const id = findInputBindingIdForOutputChannel(snapshot, CONSOLE, 1, 10);
+  const id = findInputRouteIdForOutputChannel(snapshot, CONSOLE, 1, 10);
   assert.equal(id, "input-0");
 });
 
-/** Verifies a transport→transport input binding is followed from its wire channel. */
-test("finds transport->transport binding for selected transport output channel", () => {
+/** Verifies a transport→transport input route is followed from its wire channel. */
+test("finds transport->transport route for selected transport output channel", () => {
   const snapshot = makeSnapshot([
     {
       source: {
         type: "Transport",
         data: {
-          transport: types.BindingTransport.Sacn,
+          transport: types.RouteTransport.Sacn,
           universe: singleUniverse(1),
           address: 1,
         },
@@ -251,18 +251,18 @@ test("finds transport->transport binding for selected transport output channel",
     },
   ]);
 
-  const id = findInputBindingIdForOutputChannel(snapshot, SACN, 1, 10);
+  const id = findInputRouteIdForOutputChannel(snapshot, SACN, 1, 10);
   assert.equal(id, "input-0");
 });
 
-/** Verifies transport-targeted input bindings are not followed from console space. */
+/** Verifies transport-targeted input routes are not followed from console space. */
 test("does not match transport target when console is selected", () => {
   const snapshot = makeSnapshot([
     {
       source: {
         type: "Transport",
         data: {
-          transport: types.BindingTransport.Sacn,
+          transport: types.RouteTransport.Sacn,
           universe: singleUniverse(1),
           address: 1,
         },
@@ -280,7 +280,7 @@ test("does not match transport target when console is selected", () => {
     },
   ]);
 
-  const id = findInputBindingIdForOutputChannel(snapshot, CONSOLE, 1, 10);
+  const id = findInputRouteIdForOutputChannel(snapshot, CONSOLE, 1, 10);
   assert.equal(id, null);
 });
 
@@ -291,7 +291,7 @@ test("respects source/target address copy window", () => {
       source: {
         type: "Transport",
         data: {
-          transport: types.BindingTransport.Sacn,
+          transport: types.RouteTransport.Sacn,
           universe: singleUniverse(1),
           address: 500,
         },
@@ -310,8 +310,8 @@ test("respects source/target address copy window", () => {
   ]);
 
   assert.equal(
-    findInputBindingIdForOutputChannel(snapshot, SACN, 1, 12),
+    findInputRouteIdForOutputChannel(snapshot, SACN, 1, 12),
     "input-0",
   );
-  assert.equal(findInputBindingIdForOutputChannel(snapshot, SACN, 1, 14), null);
+  assert.equal(findInputRouteIdForOutputChannel(snapshot, SACN, 1, 14), null);
 });

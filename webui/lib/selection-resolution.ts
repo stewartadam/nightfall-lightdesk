@@ -7,7 +7,7 @@
  */
 
 import type * as types from "../types";
-import { normalizeFixtureUid } from "./binding-utils";
+import { normalizeFixtureUid } from "./route-utils";
 import { projectResolvedSpatialSelection } from "./wasm-bridge";
 
 /** Returns a stable key for one resolved fixture or fixture element reference. */

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Binding validation rules for patch bindings.
+//! Route validation rules for DMX routes.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -18,28 +18,28 @@ use bevy_ecs::change_detection::DetectChanges;
 use bevy_ecs::prelude::{Res, Resource};
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::prelude::*;
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::binding_resolution::{FixturePatchLayout, output_bindings_in_overlay_order};
-use crate::bindings::{
-    DmxRange, FixtureOutputSelection, InputBindings, InputSource, InputTarget, OutputBindings,
-    OutputSource, OutputTarget,
-};
 use crate::data_provider_ext::FixtureDataProviderExt;
 use crate::fixture::{Fixture, FixtureLayout};
-use crate::prelude::DisabledBindings;
+use crate::prelude::DisabledRoutes;
+use crate::route_resolution::{FixturePatchLayout, output_routes_in_overlay_order};
+use crate::routes::{
+    DmxRange, FixtureOutputSelection, InputRoutes, InputSource, InputTarget, OutputRoutes,
+    OutputSource, OutputTarget,
+};
 use crate::wire_layout::WireLayout;
 
 /// Last channel of a DMX universe, as an absolute 1-based address.
 const LAST_CHANNEL: u32 = MAX_CHANNELS_PER_UNIVERSE as u32;
 
-/// Validation mode for binding overlaps.
+/// Validation mode for route overlaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[derive(Default)]
-pub enum BindingValidationMode {
+pub enum RouteValidationMode {
     /// Enforce all overlap rules.
     #[default]
     Strict,
@@ -47,38 +47,38 @@ pub enum BindingValidationMode {
     Permissive,
 }
 
-/// Resource settings for binding validation.
+/// Resource settings for route validation.
 #[derive(Debug, Clone, Resource, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct BindingValidationSettings {
+pub struct RouteValidationSettings {
     /// Validation mode.
-    pub mode: BindingValidationMode,
+    pub mode: RouteValidationMode,
 }
 
-impl Default for BindingValidationSettings {
+impl Default for RouteValidationSettings {
     fn default() -> Self {
         Self {
-            mode: BindingValidationMode::Strict,
+            mode: RouteValidationMode::Strict,
         }
     }
 }
 
-/// Validation issue found while processing bindings.
+/// Validation issue found while processing routes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BindingValidationIssue {
+pub struct RouteValidationIssue {
     /// Human-readable message.
     pub message: String,
     /// Fixture UIDs involved in the issue (best-effort).
     pub involved_fixtures: Vec<Uuid>,
 }
 
-impl fmt::Display for BindingValidationIssue {
+impl fmt::Display for RouteValidationIssue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.message)
     }
 }
 
-impl BindingValidationIssue {
+impl RouteValidationIssue {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -102,35 +102,35 @@ impl BindingValidationIssue {
     }
 }
 
-/// Validate bindings against strict/permissive rules.
-pub fn validate_bindings(
-    settings: &BindingValidationSettings,
-    input_bindings: &InputBindings,
-    output_bindings: &OutputBindings,
-    _disabled_bindings: &DisabledBindings,
+/// Validate routes against strict/permissive rules.
+pub fn validate_routes(
+    settings: &RouteValidationSettings,
+    input_routes: &InputRoutes,
+    output_routes: &OutputRoutes,
+    _disabled_routes: &DisabledRoutes,
     data_provider: &FixtureDataProviderExt,
-) -> Vec<BindingValidationIssue> {
+) -> Vec<RouteValidationIssue> {
     let mut issues = Vec::new();
 
     issues.extend(validate_fixture_to_fixture_shapes(
-        input_bindings,
+        input_routes,
         data_provider,
     ));
-    issues.extend(validate_console_patch(output_bindings, data_provider));
+    issues.extend(validate_console_patch(output_routes, data_provider));
     issues.extend(validate_transport_universe_bounds(
-        output_bindings,
+        output_routes,
         data_provider,
     ));
 
-    if settings.mode == BindingValidationMode::Strict {
-        issues.extend(validate_input_transport_console_priorities(input_bindings));
+    if settings.mode == RouteValidationMode::Strict {
+        issues.extend(validate_input_transport_console_priorities(input_routes));
         issues.extend(validate_transport_address_uniqueness(
-            input_bindings,
-            output_bindings,
+            input_routes,
+            output_routes,
             data_provider,
         ));
         issues.extend(validate_console_transport_exclusivity(
-            output_bindings,
+            output_routes,
             data_provider,
         ));
     }
@@ -138,42 +138,42 @@ pub fn validate_bindings(
     issues
 }
 
-/// Bevy system to validate bindings when bindings change.
-pub fn validate_bindings_on_change(
-    settings: Res<BindingValidationSettings>,
-    input_bindings: Res<InputBindings>,
-    output_bindings: Res<OutputBindings>,
-    disabled_bindings: Res<DisabledBindings>,
+/// Bevy system to validate routes when routes change.
+pub fn validate_routes_on_change(
+    settings: Res<RouteValidationSettings>,
+    input_routes: Res<InputRoutes>,
+    output_routes: Res<OutputRoutes>,
+    disabled_routes: Res<DisabledRoutes>,
     data_provider: Res<FixtureDataProviderExt>,
 ) {
     if !settings.is_changed()
-        && !input_bindings.is_changed()
-        && !output_bindings.is_changed()
-        && !disabled_bindings.is_changed()
+        && !input_routes.is_changed()
+        && !output_routes.is_changed()
+        && !disabled_routes.is_changed()
     {
         return;
     }
 
-    let issues = validate_bindings(
+    let issues = validate_routes(
         &settings,
-        &input_bindings,
-        &output_bindings,
-        &disabled_bindings,
+        &input_routes,
+        &output_routes,
+        &disabled_routes,
         &data_provider,
     );
 
     for issue in issues {
-        tracing::warn!("Binding validation: {}", issue);
+        tracing::warn!("Route validation: {}", issue);
     }
 }
 
 fn validate_fixture_to_fixture_shapes(
-    input_bindings: &InputBindings,
+    input_routes: &InputRoutes,
     data_provider: &FixtureDataProviderExt,
-) -> Vec<BindingValidationIssue> {
+) -> Vec<RouteValidationIssue> {
     let mut issues = Vec::new();
 
-    for binding in &input_bindings.bindings {
+    for route in &input_routes.routes {
         let (
             InputSource::Fixture {
                 uids: source_uids,
@@ -185,22 +185,22 @@ fn validate_fixture_to_fixture_shapes(
                 element: target_element,
                 param: target_param,
             },
-        ) = (&binding.source, &binding.target)
+        ) = (&route.source, &route.target)
         else {
             continue;
         };
 
-        if binding.clone && source_uids.len() != 1 {
-            issues.push(BindingValidationIssue::new(format!(
+        if route.clone && source_uids.len() != 1 {
+            issues.push(RouteValidationIssue::new(format!(
                 "Fixture-to-fixture clone requires a single source fixture, found {}",
                 source_uids.len()
             )));
             continue;
         }
 
-        if !binding.clone && source_uids.len() != target_uids.len() {
-            issues.push(BindingValidationIssue::new(format!(
-                "Fixture-to-fixture binding requires equal selection lengths (source {}, target {})",
+        if !route.clone && source_uids.len() != target_uids.len() {
+            issues.push(RouteValidationIssue::new(format!(
+                "Fixture-to-fixture route requires equal selection lengths (source {}, target {})",
                 source_uids.len(),
                 target_uids.len()
             )));
@@ -210,7 +210,7 @@ fn validate_fixture_to_fixture_shapes(
         let source_shapes = source_uids
             .iter()
             .map(|uid| {
-                fixture_shape_for_binding(
+                fixture_shape_for_route(
                     data_provider,
                     *uid,
                     *source_element,
@@ -222,7 +222,7 @@ fn validate_fixture_to_fixture_shapes(
         let target_shapes = target_uids
             .iter()
             .map(|uid| {
-                fixture_shape_for_binding(
+                fixture_shape_for_route(
                     data_provider,
                     *uid,
                     *target_element,
@@ -242,12 +242,12 @@ fn validate_fixture_to_fixture_shapes(
             continue;
         }
 
-        if binding.clone {
+        if route.clone {
             let source_shape = source_shapes[0].as_ref().unwrap();
             for (idx, target_shape) in target_shapes.iter().enumerate() {
                 let target_shape = target_shape.as_ref().unwrap();
                 if !source_shape.matches(target_shape) {
-                    issues.push(BindingValidationIssue::for_fixtures(
+                    issues.push(RouteValidationIssue::for_fixtures(
                         format!(
                             "Fixture-to-fixture shape mismatch between source {} and target {}",
                             source_uids[0], target_uids[idx]
@@ -261,7 +261,7 @@ fn validate_fixture_to_fixture_shapes(
                 let source_shape = source_shapes[idx].as_ref().unwrap();
                 let target_shape = target_shapes[idx].as_ref().unwrap();
                 if !source_shape.matches(target_shape) {
-                    issues.push(BindingValidationIssue::for_fixtures(
+                    issues.push(RouteValidationIssue::for_fixtures(
                         format!(
                             "Fixture-to-fixture shape mismatch between source {} and target {}",
                             source_uids[idx], target_uids[idx]
@@ -280,13 +280,13 @@ fn validate_fixture_to_fixture_shapes(
 /// fixtures that run past the last channel of a console universe.
 ///
 /// Only the addresses output actually uses are checked: a fixture parameter patched to the
-/// console by several bindings keeps just the address of the winning binding, and bytes past
+/// console by several routes keeps just the address of the winning route, and bytes past
 /// the end of a universe are reported as an overrun rather than as overlaps.
 fn validate_console_patch(
-    output_bindings: &OutputBindings,
+    output_routes: &OutputRoutes,
     data_provider: &FixtureDataProviderExt,
-) -> Vec<BindingValidationIssue> {
-    let (placements, mut issues) = effective_console_placements(output_bindings, data_provider);
+) -> Vec<RouteValidationIssue> {
+    let (placements, mut issues) = effective_console_placements(output_routes, data_provider);
     let mut occupancy: HashMap<(u16, u32), &ConsoleParameterPlacement> = HashMap::new();
     let mut overruns: Vec<(Uuid, u32, u16, RangeInclusive<u32>)> = Vec::new();
     let mut overrun_index: HashMap<(Uuid, u16), usize> = HashMap::new();
@@ -317,7 +317,7 @@ fn validate_console_patch(
                 Entry::Occupied(existing) => {
                     let existing = *existing.get();
                     if existing.fixture != placement.fixture {
-                        issues.push(BindingValidationIssue::for_fixtures(
+                        issues.push(RouteValidationIssue::for_fixtures(
                             format!(
                                 "Console address overlap at universe {} address {} (fixtures {} and {})",
                                 placement.universe, addr, existing.fixture, placement.fixture
@@ -325,7 +325,7 @@ fn validate_console_patch(
                             [existing.fixture, placement.fixture],
                         ));
                     } else if existing.parameter != placement.parameter {
-                        issues.push(BindingValidationIssue::for_fixtures(
+                        issues.push(RouteValidationIssue::for_fixtures(
                             format!(
                                 "Console address overlap at universe {} address {} (two parameters of fixture {})",
                                 placement.universe, addr, placement.fixture_id
@@ -356,7 +356,7 @@ fn validate_console_patch(
     issues
 }
 
-/// Console addresses of one fixture parameter, as placed by the binding that wins it.
+/// Console addresses of one fixture parameter, as placed by the route that wins it.
 #[derive(Debug, Clone)]
 struct ConsoleParameterPlacement {
     fixture: Uuid,
@@ -366,26 +366,26 @@ struct ConsoleParameterPlacement {
     universe: u16,
     /// Absolute addresses of the parameter's bytes, which may run past the universe.
     addresses: Vec<u32>,
-    /// Channels spanned by the whole selection the winning binding placed with it.
+    /// Channels spanned by the whole selection the winning route placed with it.
     channels: RangeInclusive<u32>,
 }
 /// Resolves the console address of every fixture parameter the way output does.
 ///
-/// Fixture→console bindings apply in overlay order and a later binding replaces the address
-/// of each parameter it selects, so the highest-priority, earliest-authored binding wins.
+/// Fixture→console routes apply in overlay order and a later route replaces the address
+/// of each parameter it selects, so the highest-priority, earliest-authored route wins.
 /// Placements come back in a stable order; fixtures whose selection cannot be laid out are
 /// returned as issues.
 fn effective_console_placements(
-    output_bindings: &OutputBindings,
+    output_routes: &OutputRoutes,
     data_provider: &FixtureDataProviderExt,
-) -> (Vec<ConsoleParameterPlacement>, Vec<BindingValidationIssue>) {
+) -> (Vec<ConsoleParameterPlacement>, Vec<RouteValidationIssue>) {
     let mut placements: Vec<Option<ConsoleParameterPlacement>> = Vec::new();
     let mut winners: HashMap<(Uuid, usize, usize), usize> = HashMap::new();
     let mut issues = Vec::new();
 
-    for binding in output_bindings_in_overlay_order(output_bindings) {
+    for route in output_routes_in_overlay_order(output_routes) {
         let (source @ OutputSource::Fixture { .. }, OutputTarget::Console { universe, address }) =
-            (&binding.source, &binding.target)
+            (&route.source, &route.target)
         else {
             continue;
         };
@@ -393,13 +393,9 @@ fn effective_console_placements(
             continue;
         };
 
-        for placed in place_binding_fixtures(
-            &selection,
-            *universe,
-            *address,
-            binding.clone,
-            data_provider,
-        ) {
+        for placed in
+            place_route_fixtures(&selection, *universe, *address, route.clone, data_provider)
+        {
             let placed = match placed {
                 Ok(placed) => placed,
                 Err(issue) => {
@@ -435,35 +431,30 @@ fn effective_console_placements(
 
 /// Reports fixtures whose transport patch runs past the last channel of a universe.
 ///
-/// Output has nowhere to put those bytes, which typically happens when a binding packs more
+/// Output has nowhere to put those bytes, which typically happens when a route packs more
 /// fixtures into the last universe of its range than fit there.
 fn validate_transport_universe_bounds(
-    output_bindings: &OutputBindings,
+    output_routes: &OutputRoutes,
     data_provider: &FixtureDataProviderExt,
-) -> Vec<BindingValidationIssue> {
+) -> Vec<RouteValidationIssue> {
     let mut issues = Vec::new();
 
-    for binding in &output_bindings.bindings {
+    for route in &output_routes.routes {
         let OutputTarget::Transport {
             target,
             universe,
             address,
-        } = &binding.target
+        } = &route.target
         else {
             continue;
         };
-        let Some(selection) = binding.source.fixture_selection() else {
+        let Some(selection) = route.source.fixture_selection() else {
             continue;
         };
-        for placed in place_binding_fixtures(
-            &selection,
-            *universe,
-            *address,
-            binding.clone,
-            data_provider,
-        )
-        .into_iter()
-        .flatten()
+        for placed in
+            place_route_fixtures(&selection, *universe, *address, route.clone, data_provider)
+                .into_iter()
+                .flatten()
         {
             if placed.end() > LAST_CHANNEL {
                 issues.push(universe_overrun_issue(
@@ -485,8 +476,8 @@ fn universe_overrun_issue(
     fixture_id: u32,
     universe_label: &str,
     channels: &RangeInclusive<u32>,
-) -> BindingValidationIssue {
-    BindingValidationIssue::for_fixtures(
+) -> RouteValidationIssue {
+    RouteValidationIssue::for_fixtures(
         format!(
             "Fixture {} runs past the end of {} (needs channels {}..={}, the last channel is {})",
             fixture_id,
@@ -499,7 +490,7 @@ fn universe_overrun_issue(
     )
 }
 
-/// One fixture of a fixture→console or fixture→transport binding, placed where output puts it.
+/// One fixture of a fixture→console or fixture→transport route, placed where output puts it.
 #[derive(Debug, Clone)]
 struct PlacedFixture {
     uid: Uuid,
@@ -507,9 +498,9 @@ struct PlacedFixture {
     universe: u16,
     /// Absolute address of the selection's first slot.
     start: u32,
-    /// Parameters selected by the binding.
+    /// Parameters selected by the route.
     shape: FixtureShape,
-    /// Selected parameter bytes on the binding's DMX break, relative to `start`.
+    /// Selected parameter bytes on the route's DMX break, relative to `start`.
     layout: WireLayout<(usize, usize)>,
 }
 
@@ -520,18 +511,18 @@ impl PlacedFixture {
     }
 }
 
-/// Places every fixture a binding selects in the universe and at the address output resolution
+/// Places every fixture a route selects in the universe and at the address output resolution
 /// gives it.
 ///
 /// Fixtures whose selection has no DMX slots are skipped like output skips them; fixtures that
 /// cannot be laid out are returned as issues and still consume their universe slot.
-fn place_binding_fixtures(
+fn place_route_fixtures(
     selection: &FixtureOutputSelection<'_>,
     universe: Option<DmxRange>,
     address: Option<u16>,
     clone: bool,
     data_provider: &FixtureDataProviderExt,
-) -> Vec<Result<PlacedFixture, BindingValidationIssue>> {
+) -> Vec<Result<PlacedFixture, RouteValidationIssue>> {
     let mut layout = FixturePatchLayout::new(universe, address, clone);
     let mut placed = Vec::with_capacity(selection.uids.len());
 
@@ -540,7 +531,7 @@ fn place_binding_fixtures(
         let fixture = match data_provider.inner.get(*uid) {
             Ok(fixture) => fixture,
             Err(_) => {
-                placed.push(Err(BindingValidationIssue::for_fixtures(
+                placed.push(Err(RouteValidationIssue::for_fixtures(
                     format!("Fixture {} not found", uid),
                     [*uid],
                 )));
@@ -574,12 +565,12 @@ fn place_binding_fixtures(
 }
 
 fn validate_input_transport_console_priorities(
-    input_bindings: &InputBindings,
-) -> Vec<BindingValidationIssue> {
+    input_routes: &InputRoutes,
+) -> Vec<RouteValidationIssue> {
     let mut issues = Vec::new();
-    let mut transport_bindings = Vec::new();
+    let mut transport_routes = Vec::new();
 
-    for binding in &input_bindings.bindings {
+    for route in &input_routes.routes {
         let (
             InputSource::Transport {
                 transport,
@@ -587,28 +578,28 @@ fn validate_input_transport_console_priorities(
                 address,
             },
             InputTarget::Console { .. },
-        ) = (&binding.source, &binding.target)
+        ) = (&route.source, &route.target)
         else {
             continue;
         };
 
-        transport_bindings.push(InputTransportBinding {
+        transport_routes.push(InputTransportRoute {
             transport: *transport,
             universe: range_from_optional(*universe, 1, 512),
             address: range_from_optional_address(*address),
-            priority: binding.priority,
+            priority: route.priority,
         });
     }
 
-    for idx in 0..transport_bindings.len() {
-        for other_idx in (idx + 1)..transport_bindings.len() {
-            let a = &transport_bindings[idx];
-            let b = &transport_bindings[other_idx];
+    for idx in 0..transport_routes.len() {
+        for other_idx in (idx + 1)..transport_routes.len() {
+            let a = &transport_routes[idx];
+            let b = &transport_routes[other_idx];
             if a.transport != b.transport || a.priority != b.priority {
                 continue;
             }
             if ranges_overlap(&a.universe, &b.universe) && ranges_overlap(&a.address, &b.address) {
-                issues.push(BindingValidationIssue::new(format!(
+                issues.push(RouteValidationIssue::new(format!(
                     "Transport-to-console overlap with same priority {} on {:?}",
                     a.priority, a.transport
                 )));
@@ -620,12 +611,12 @@ fn validate_input_transport_console_priorities(
 }
 
 fn validate_transport_address_uniqueness(
-    input_bindings: &InputBindings,
-    output_bindings: &OutputBindings,
+    input_routes: &InputRoutes,
+    output_routes: &OutputRoutes,
     data_provider: &FixtureDataProviderExt,
-) -> Vec<BindingValidationIssue> {
-    let mut spans = collect_transport_spans(output_bindings, data_provider);
-    spans.extend(collect_input_transport_target_spans(input_bindings));
+) -> Vec<RouteValidationIssue> {
+    let mut spans = collect_transport_spans(output_routes, data_provider);
+    spans.extend(collect_input_transport_target_spans(input_routes));
     let mut issues = Vec::new();
 
     for idx in 0..spans.len() {
@@ -638,7 +629,7 @@ fn validate_transport_address_uniqueness(
             if ranges_overlap(&a.universe, &b.universe) && ranges_overlap(&a.address, &b.address) {
                 let overlap_universe = overlap_range(&a.universe, &b.universe);
                 let overlap_address = overlap_range(&a.address, &b.address);
-                issues.push(BindingValidationIssue::for_fixtures(
+                issues.push(RouteValidationIssue::for_fixtures(
                     format!(
                         "Transport address overlap on {:?} universe {:?} {} between {} and {}",
                         a.transport,
@@ -656,21 +647,21 @@ fn validate_transport_address_uniqueness(
     issues
 }
 
-/// Collect transport-target spans produced by input bindings.
-fn collect_input_transport_target_spans(input_bindings: &InputBindings) -> Vec<TransportSpan> {
+/// Collect transport-target spans produced by input routes.
+fn collect_input_transport_target_spans(input_routes: &InputRoutes) -> Vec<TransportSpan> {
     let mut spans = Vec::new();
 
-    for binding in &input_bindings.bindings {
+    for route in &input_routes.routes {
         let InputTarget::Transport {
             target: target_transport,
             universe: target_universe,
             address: target_address,
-        } = &binding.target
+        } = &route.target
         else {
             continue;
         };
 
-        match &binding.source {
+        match &route.source {
             InputSource::Transport {
                 transport: source_transport,
                 universe: source_universe,
@@ -707,7 +698,7 @@ fn collect_input_transport_target_spans(input_bindings: &InputBindings) -> Vec<T
     spans
 }
 
-/// Add mapped source-to-target transport spans using binding resolver universe/address rules.
+/// Add mapped source-to-target transport spans using route resolver universe/address rules.
 fn collect_mapped_transport_target_spans(
     spans: &mut Vec<TransportSpan>,
     kind: TransportSpanKind,
@@ -765,10 +756,10 @@ fn collect_mapped_transport_target_spans(
 }
 
 fn validate_console_transport_exclusivity(
-    output_bindings: &OutputBindings,
+    output_routes: &OutputRoutes,
     data_provider: &FixtureDataProviderExt,
-) -> Vec<BindingValidationIssue> {
-    let spans = collect_transport_spans(output_bindings, data_provider);
+) -> Vec<RouteValidationIssue> {
+    let spans = collect_transport_spans(output_routes, data_provider);
     let mut issues = Vec::new();
 
     let console_spans: Vec<_> = spans
@@ -786,7 +777,7 @@ fn validate_console_transport_exclusivity(
                 continue;
             }
             if ranges_overlap(&console_span.universe, &fixture_span.universe) {
-                issues.push(BindingValidationIssue::for_fixtures(
+                issues.push(RouteValidationIssue::for_fixtures(
                     format!(
                         "Console owns transport universe on {:?} between {} and {}",
                         console_span.transport, console_span.label, fixture_span.label
@@ -800,16 +791,16 @@ fn validate_console_transport_exclusivity(
     issues
 }
 
-/// Transport endpoint resolved from an input binding during overlap validation.
+/// Transport endpoint resolved from an input route during overlap validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct InputTransportBinding {
-    transport: BindingTransport,
+struct InputTransportRoute {
+    transport: RouteTransport,
     universe: RangeInclusive<u16>,
     address: RangeInclusive<u16>,
     priority: i32,
 }
 
-/// Kinds of address spans used when checking patch binding overlap.
+/// Kinds of address spans used when checking DMX route overlap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TransportSpanKind {
     Console,
@@ -828,15 +819,15 @@ struct TransportSpan {
     fixtures: Vec<Uuid>,
 }
 
-/// Collect transport-target spans produced by output bindings.
+/// Collect transport-target spans produced by output routes.
 fn collect_transport_spans(
-    output_bindings: &OutputBindings,
+    output_routes: &OutputRoutes,
     data_provider: &FixtureDataProviderExt,
 ) -> Vec<TransportSpan> {
     let mut spans = Vec::new();
 
-    for binding in &output_bindings.bindings {
-        match (&binding.source, &binding.target) {
+    for route in &output_routes.routes {
+        match (&route.source, &route.target) {
             (
                 source @ (OutputSource::Fixture { .. } | OutputSource::FixtureBreak { .. }),
                 OutputTarget::Transport {
@@ -848,11 +839,11 @@ fn collect_transport_spans(
                 let Some(selection) = source.fixture_selection() else {
                     continue;
                 };
-                for placed in place_binding_fixtures(
+                for placed in place_route_fixtures(
                     &selection,
                     *universe,
                     *address,
-                    binding.clone,
+                    route.clone,
                     data_provider,
                 )
                 .into_iter()
@@ -909,20 +900,20 @@ fn collect_transport_spans(
     spans
 }
 
-fn fixture_shape_for_binding(
+fn fixture_shape_for_route(
     data_provider: &FixtureDataProviderExt,
     uid: Uuid,
     element: Option<u16>,
     param: Option<&str>,
-) -> Result<FixtureShape, BindingValidationIssue> {
+) -> Result<FixtureShape, RouteValidationIssue> {
     let fixture = data_provider.inner.get(uid).map_err(|_| {
-        BindingValidationIssue::for_fixtures(format!("Fixture {} not found", uid), [uid])
+        RouteValidationIssue::for_fixtures(format!("Fixture {} not found", uid), [uid])
     })?;
 
     fixture_shape(fixture.value(), element, param)
 }
 
-/// Parameters selected by a binding, used to validate patch binding spans.
+/// Parameters selected by a route, used to validate DMX route spans.
 #[derive(Debug, Clone)]
 struct FixtureShape {
     /// Selected parameters of each selected element, in fixture DMX order.
@@ -930,13 +921,13 @@ struct FixtureShape {
     /// Fixture element index and parameter index of each selected parameter, parallel to
     /// `elements`.
     origins: Vec<Vec<(usize, usize)>>,
-    /// Whether the binding selects only part of the fixture and starts at its first selected byte.
+    /// Whether the route selects only part of the fixture and starts at its first selected byte.
     partial: bool,
 }
 
 impl FixtureShape {
     /// Returns the fixture element index and parameter index behind a layout key, which
-    /// identifies the same parameter across bindings that select it differently.
+    /// identifies the same parameter across routes that select it differently.
     fn origin(&self, (element, parameter): (usize, usize)) -> (usize, usize) {
         self.origins[element][parameter]
     }
@@ -950,7 +941,7 @@ impl FixtureShape {
     ///
     /// Slots are relative to that break's own start address. Partial
     /// selections are rebased so their first byte sits at slot zero,
-    /// matching how the binding patches them at its address.
+    /// matching how the route patches them at its address.
     fn layout_for_break(&self, dmx_break: u16) -> WireLayout<(usize, usize)> {
         let layout = WireLayout::for_break(
             self.elements
@@ -994,7 +985,7 @@ impl FixtureShape {
     }
 }
 
-/// Collects the parameters a binding selects from a fixture.
+/// Collects the parameters a route selects from a fixture.
 ///
 /// A whole-fixture selection walks elements in the fixture layout's wiring order, as output
 /// resolution does, so sequentially packed parameters land on the same slots.
@@ -1002,11 +993,11 @@ fn fixture_shape(
     fixture: &Fixture,
     element: Option<u16>,
     param: Option<&str>,
-) -> Result<FixtureShape, BindingValidationIssue> {
+) -> Result<FixtureShape, RouteValidationIssue> {
     let element_indices = match element {
         Some(index) => {
             if index == 0 || index as usize > fixture.elements.len() {
-                return Err(BindingValidationIssue::new(format!(
+                return Err(RouteValidationIssue::new(format!(
                     "Fixture {} element {} does not exist",
                     fixture.identifiers.uid, index
                 )));
@@ -1057,7 +1048,7 @@ fn fixture_shape(
     if let Some(param_name) = param
         && elements.iter().all(Vec::is_empty)
     {
-        return Err(BindingValidationIssue::new(format!(
+        return Err(RouteValidationIssue::new(format!(
             "Fixture {} missing parameter {:?}",
             fixture.identifiers.uid,
             attribute_from_param(param_name)
@@ -1121,7 +1112,7 @@ mod tests {
     use nightfall::prelude::Identifiers;
 
     use super::*;
-    use crate::bindings::{InputBinding, OutputBinding};
+    use crate::routes::{InputRoute, OutputRoute};
 
     fn make_fixture(uid: Uuid, id: u32, params: Vec<ParameterMetadata>) -> Fixture {
         Fixture {
@@ -1182,9 +1173,9 @@ mod tests {
             .add(make_fixture(uid_b, 2, vec![param(Attribute::Intensity)]))
             .unwrap();
 
-        let output_bindings = OutputBindings {
-            bindings: vec![
-                OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![uid_a],
                         element: None,
@@ -1197,7 +1188,7 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                OutputBinding {
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![uid_b],
                         element: None,
@@ -1213,7 +1204,7 @@ mod tests {
             ],
         };
 
-        let issues = validate_console_patch(&output_bindings, &provider);
+        let issues = validate_console_patch(&output_routes, &provider);
         assert!(!issues.is_empty());
     }
 
@@ -1240,9 +1231,9 @@ mod tests {
             .collect()
     }
 
-    /// Returns a fixture binding of `uids` onto `target`, packed from the target address.
-    fn fixture_binding(uids: Vec<Uuid>, target: OutputTarget) -> OutputBinding {
-        OutputBinding {
+    /// Returns a fixture route of `uids` onto `target`, packed from the target address.
+    fn fixture_route(uids: Vec<Uuid>, target: OutputTarget) -> OutputRoute {
+        OutputRoute {
             source: OutputSource::Fixture {
                 uids,
                 element: None,
@@ -1254,27 +1245,27 @@ mod tests {
         }
     }
 
-    /// One binding over a universe range whose fixtures add up to more than 65,535 channels
+    /// One route over a universe range whose fixtures add up to more than 65,535 channels
     /// places one fixture per universe, so neither console nor transport validation reports
     /// an overlap.
     #[test]
-    fn wide_universe_range_binding_does_not_self_overlap() {
+    fn wide_universe_range_route_does_not_self_overlap() {
         let mut provider = FixtureDataProviderExt::default();
         let uids = add_fixtures_with_footprint(&mut provider, 600, 120);
         let universe = Some(DmxRange {
             start: 101,
             end: 700,
         });
-        let output_bindings = OutputBindings {
-            bindings: vec![
-                fixture_binding(
+        let output_routes = OutputRoutes {
+            routes: vec![
+                fixture_route(
                     uids.clone(),
                     OutputTarget::Console {
                         universe,
                         address: Some(1),
                     },
                 ),
-                fixture_binding(
+                fixture_route(
                     uids,
                     OutputTarget::Transport {
                         target: "sacn".to_string(),
@@ -1285,24 +1276,24 @@ mod tests {
             ],
         };
 
-        let console_issues = validate_console_patch(&output_bindings, &provider);
+        let console_issues = validate_console_patch(&output_routes, &provider);
         assert!(console_issues.is_empty(), "{console_issues:?}");
         let transport_issues = validate_transport_address_uniqueness(
-            &InputBindings::default(),
-            &output_bindings,
+            &InputRoutes::default(),
+            &output_routes,
             &provider,
         );
         assert!(transport_issues.is_empty(), "{transport_issues:?}");
     }
 
     /// Console validation places fixtures where output does: the Nth fixture in the Nth
-    /// universe of the range, with the remainder packed into the last universe. A binding next
+    /// universe of the range, with the remainder packed into the last universe. A route next
     /// to the first fixture is clear, and one on the packed remainder overlaps.
     #[test]
     fn console_validation_follows_universe_range_layout() {
         let mut provider = FixtureDataProviderExt::default();
         let uids = add_fixtures_with_footprint(&mut provider, 5, 1);
-        let ranged = fixture_binding(
+        let ranged = fixture_route(
             uids[..3].to_vec(),
             OutputTarget::Console {
                 universe: Some(DmxRange { start: 1, end: 2 }),
@@ -1310,7 +1301,7 @@ mod tests {
             },
         );
         let at = |uid: Uuid, universe: u16, address: u16| {
-            fixture_binding(
+            fixture_route(
                 vec![uid],
                 OutputTarget::Console {
                     universe: Some(DmxRange::single(universe)),
@@ -1319,30 +1310,30 @@ mod tests {
             )
         };
 
-        let clear = OutputBindings {
-            bindings: vec![ranged.clone(), at(uids[3], 1, 2)],
+        let clear = OutputRoutes {
+            routes: vec![ranged.clone(), at(uids[3], 1, 2)],
         };
         let issues = validate_console_patch(&clear, &provider);
         assert!(issues.is_empty(), "{issues:?}");
 
-        let overlapping = OutputBindings {
-            bindings: vec![ranged, at(uids[4], 2, 2)],
+        let overlapping = OutputRoutes {
+            routes: vec![ranged, at(uids[4], 2, 2)],
         };
         let issues = validate_console_patch(&overlapping, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].involves_fixture(uids[2]) && issues[0].involves_fixture(uids[4]));
     }
 
-    /// A cloned binding over a universe range puts each fixture at the binding address of its
+    /// A cloned route over a universe range puts each fixture at the route address of its
     /// own universe, so its fixtures do not collide with each other, and a fixture patched over
     /// that address in the second universe overlaps only the fixture cloned there.
     #[test]
-    fn cloned_universe_range_binding_places_one_fixture_per_universe() {
+    fn cloned_universe_range_route_places_one_fixture_per_universe() {
         let mut provider = FixtureDataProviderExt::default();
         let uids = add_fixtures_with_footprint(&mut provider, 3, 4);
-        let cloned = OutputBinding {
+        let cloned = OutputRoute {
             clone: true,
-            ..fixture_binding(
+            ..fixture_route(
                 uids[..2].to_vec(),
                 OutputTarget::Console {
                     universe: Some(DmxRange { start: 1, end: 2 }),
@@ -1350,7 +1341,7 @@ mod tests {
                 },
             )
         };
-        let neighbour = fixture_binding(
+        let neighbour = fixture_route(
             vec![uids[2]],
             OutputTarget::Console {
                 universe: Some(DmxRange::single(2)),
@@ -1358,25 +1349,20 @@ mod tests {
             },
         );
 
-        let bindings = OutputBindings {
-            bindings: vec![cloned, neighbour],
+        let routes = OutputRoutes {
+            routes: vec![cloned, neighbour],
         };
-        let issues = validate_console_patch(&bindings, &provider);
+        let issues = validate_console_patch(&routes, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].message.contains("universe 2 address 8"));
         assert!(issues[0].involves_fixture(uids[1]) && issues[0].involves_fixture(uids[2]));
     }
 
-    /// Returns a console binding of `uids` at `universe`/`address` with `priority`.
-    fn console_binding(
-        uids: Vec<Uuid>,
-        universe: u16,
-        address: u16,
-        priority: i32,
-    ) -> OutputBinding {
-        OutputBinding {
+    /// Returns a console route of `uids` at `universe`/`address` with `priority`.
+    fn console_route(uids: Vec<Uuid>, universe: u16, address: u16, priority: i32) -> OutputRoute {
+        OutputRoute {
             priority,
-            ..fixture_binding(
+            ..fixture_route(
                 uids,
                 OutputTarget::Console {
                     universe: Some(DmxRange::single(universe)),
@@ -1394,16 +1380,16 @@ mod tests {
         let mut provider = FixtureDataProviderExt::default();
         let uids = add_fixtures_with_footprint(&mut provider, 6, 120);
         let universe = Some(DmxRange { start: 1, end: 2 });
-        let bindings = OutputBindings {
-            bindings: vec![
-                fixture_binding(
+        let routes = OutputRoutes {
+            routes: vec![
+                fixture_route(
                     uids.clone(),
                     OutputTarget::Console {
                         universe,
                         address: Some(1),
                     },
                 ),
-                fixture_binding(
+                fixture_route(
                     uids.clone(),
                     OutputTarget::Transport {
                         target: "sacn".to_string(),
@@ -1414,9 +1400,9 @@ mod tests {
             ],
         };
 
-        let issues: Vec<_> = validate_console_patch(&bindings, &provider)
+        let issues: Vec<_> = validate_console_patch(&routes, &provider)
             .into_iter()
-            .chain(validate_transport_universe_bounds(&bindings, &provider))
+            .chain(validate_transport_universe_bounds(&routes, &provider))
             .collect();
         let messages: Vec<&str> = issues.iter().map(|issue| issue.message.as_str()).collect();
         assert_eq!(
@@ -1428,7 +1414,7 @@ mod tests {
         );
         assert!(issues.iter().all(|issue| issue.involves_fixture(uids[5])));
         let transport_issues =
-            validate_transport_address_uniqueness(&InputBindings::default(), &bindings, &provider);
+            validate_transport_address_uniqueness(&InputRoutes::default(), &routes, &provider);
         assert!(transport_issues.is_empty(), "{transport_issues:?}");
     }
 
@@ -1438,11 +1424,11 @@ mod tests {
     fn overfull_universe_does_not_report_saturated_overlaps() {
         let mut provider = FixtureDataProviderExt::default();
         let uids = add_fixtures_with_footprint(&mut provider, 600, 120);
-        let bindings = OutputBindings {
-            bindings: vec![console_binding(uids, 101, 1, 0)],
+        let routes = OutputRoutes {
+            routes: vec![console_route(uids, 101, 1, 0)],
         };
 
-        let issues = validate_console_patch(&bindings, &provider);
+        let issues = validate_console_patch(&routes, &provider);
         assert_eq!(
             issues.len(),
             596,
@@ -1456,30 +1442,30 @@ mod tests {
         );
     }
 
-    /// When one fixture is patched to the console twice, only the winning binding's address
+    /// When one fixture is patched to the console twice, only the winning route's address
     /// is checked: a higher priority wins, and equal priorities go to the earliest-authored
-    /// binding, as in output resolution.
+    /// route, as in output resolution.
     #[test]
-    fn console_validation_checks_only_the_winning_binding() {
+    fn console_validation_checks_only_the_winning_route() {
         let mut provider = FixtureDataProviderExt::default();
         let uids = add_fixtures_with_footprint(&mut provider, 2, 1);
         let (moved, other) = (uids[0], uids[1]);
 
-        let higher_priority_move = OutputBindings {
-            bindings: vec![
-                console_binding(vec![moved], 1, 1, 0),
-                console_binding(vec![moved], 2, 1, 5),
-                console_binding(vec![other], 1, 1, 0),
+        let higher_priority_move = OutputRoutes {
+            routes: vec![
+                console_route(vec![moved], 1, 1, 0),
+                console_route(vec![moved], 2, 1, 5),
+                console_route(vec![other], 1, 1, 0),
             ],
         };
         let issues = validate_console_patch(&higher_priority_move, &provider);
         assert!(issues.is_empty(), "{issues:?}");
 
-        let equal_priority_move = OutputBindings {
-            bindings: vec![
-                console_binding(vec![moved], 1, 1, 0),
-                console_binding(vec![moved], 2, 1, 0),
-                console_binding(vec![other], 1, 1, 0),
+        let equal_priority_move = OutputRoutes {
+            routes: vec![
+                console_route(vec![moved], 1, 1, 0),
+                console_route(vec![moved], 2, 1, 0),
+                console_route(vec![other], 1, 1, 0),
             ],
         };
         let issues = validate_console_patch(&equal_priority_move, &provider);
@@ -1487,11 +1473,11 @@ mod tests {
         assert!(issues[0].involves_fixture(moved) && issues[0].involves_fixture(other));
     }
 
-    /// A parameter or element binding that wins only part of a fixture moves just those
+    /// A parameter or element route that wins only part of a fixture moves just those
     /// parameters: the addresses they leave behind are free, located by the fixture layout's
     /// wiring order rather than the logical element order.
     #[test]
-    fn partial_binding_frees_only_its_parameters() {
+    fn partial_route_frees_only_its_parameters() {
         let mut provider = FixtureDataProviderExt::default();
         let beam = Uuid::new_v4();
         let mut fixture = make_fixture_with_elements(
@@ -1502,19 +1488,19 @@ mod tests {
         fixture.layout = Some(FixtureLayout::RotatingWashBeam);
         provider.inner.add(fixture).unwrap();
         let other = add_fixtures_with_footprint(&mut provider, 1, 1)[0];
-        let element_two_moved = OutputBinding {
+        let element_two_moved = OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![beam],
                 element: Some(2),
                 param: None,
             },
-            ..console_binding(vec![beam], 2, 1, 5)
+            ..console_route(vec![beam], 2, 1, 5)
         };
-        let with_other_at = |address: u16| OutputBindings {
-            bindings: vec![
-                console_binding(vec![beam], 1, 1, 0),
+        let with_other_at = |address: u16| OutputRoutes {
+            routes: vec![
+                console_route(vec![beam], 1, 1, 0),
                 element_two_moved.clone(),
-                console_binding(vec![other], 1, address, 0),
+                console_route(vec![other], 1, address, 0),
             ],
         };
 
@@ -1526,10 +1512,10 @@ mod tests {
         assert!(issues[0].message.contains("universe 1 address 2"));
     }
 
-    /// A partial binding that moves one parameter onto an address another parameter of the
+    /// A partial route that moves one parameter onto an address another parameter of the
     /// same fixture still uses is reported, since both write the same channel.
     #[test]
-    fn partial_binding_onto_its_own_fixture_overlaps() {
+    fn partial_route_onto_its_own_fixture_overlaps() {
         let mut provider = FixtureDataProviderExt::default();
         let fixture = Uuid::new_v4();
         provider
@@ -1540,27 +1526,27 @@ mod tests {
                 vec![param(Attribute::Intensity), param(Attribute::Red)],
             ))
             .unwrap();
-        let red_onto_intensity = OutputBinding {
+        let red_onto_intensity = OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![fixture],
                 element: None,
                 param: Some("Red".to_string()),
             },
-            ..console_binding(vec![fixture], 1, 1, 5)
+            ..console_route(vec![fixture], 1, 1, 5)
         };
-        let bindings = OutputBindings {
-            bindings: vec![console_binding(vec![fixture], 1, 1, 0), red_onto_intensity],
+        let routes = OutputRoutes {
+            routes: vec![console_route(vec![fixture], 1, 1, 0), red_onto_intensity],
         };
 
-        let issues = validate_console_patch(&bindings, &provider);
+        let issues = validate_console_patch(&routes, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].message.contains("two parameters of fixture 100"));
     }
 
-    /// A parameter binding across a whole fixture patches the elements that have that
+    /// A parameter route across a whole fixture patches the elements that have that
     /// parameter and skips the rest, as output does, instead of rejecting the fixture.
     #[test]
-    fn parameter_binding_skips_elements_without_the_parameter() {
+    fn parameter_route_skips_elements_without_the_parameter() {
         let mut provider = FixtureDataProviderExt::default();
         let head = Uuid::new_v4();
         provider
@@ -1575,19 +1561,19 @@ mod tests {
             ))
             .unwrap();
         let other = add_fixtures_with_footprint(&mut provider, 1, 1)[0];
-        let pan = OutputBinding {
+        let pan = OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![head],
                 element: None,
                 param: Some("Pan".to_string()),
             },
-            ..console_binding(vec![head], 1, 1, 0)
+            ..console_route(vec![head], 1, 1, 0)
         };
-        let bindings = OutputBindings {
-            bindings: vec![pan, console_binding(vec![other], 1, 1, 0)],
+        let routes = OutputRoutes {
+            routes: vec![pan, console_route(vec![other], 1, 1, 0)],
         };
 
-        let issues = validate_console_patch(&bindings, &provider);
+        let issues = validate_console_patch(&routes, &provider);
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert!(issues[0].involves_fixture(head) && issues[0].involves_fixture(other));
     }
@@ -1606,9 +1592,9 @@ mod tests {
             .add(make_fixture(uid_b, 2, vec![param(Attribute::Intensity)]))
             .unwrap();
 
-        let output_bindings = OutputBindings {
-            bindings: vec![
-                OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![uid_a],
                         element: None,
@@ -1622,7 +1608,7 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                OutputBinding {
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![uid_b],
                         element: None,
@@ -1639,14 +1625,14 @@ mod tests {
             ],
         };
 
-        let settings = BindingValidationSettings {
-            mode: BindingValidationMode::Strict,
+        let settings = RouteValidationSettings {
+            mode: RouteValidationMode::Strict,
         };
-        let issues = validate_bindings(
+        let issues = validate_routes(
             &settings,
-            &InputBindings::default(),
-            &output_bindings,
-            &DisabledBindings::default(),
+            &InputRoutes::default(),
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -1670,14 +1656,14 @@ mod tests {
                 .any(|issue| issue.message.contains("channel 1"))
         );
 
-        let settings = BindingValidationSettings {
-            mode: BindingValidationMode::Permissive,
+        let settings = RouteValidationSettings {
+            mode: RouteValidationMode::Permissive,
         };
-        let issues = validate_bindings(
+        let issues = validate_routes(
             &settings,
-            &InputBindings::default(),
-            &output_bindings,
-            &DisabledBindings::default(),
+            &InputRoutes::default(),
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -1704,10 +1690,10 @@ mod tests {
             ))
             .unwrap();
 
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::ArtNet,
+                    transport: RouteTransport::ArtNet,
                     universe: Some(DmxRange::single(1)),
                     address: Some(1),
                 },
@@ -1720,8 +1706,8 @@ mod tests {
                 clone: false,
             }],
         };
-        let output_bindings = OutputBindings {
-            bindings: vec![OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -1737,13 +1723,13 @@ mod tests {
             }],
         };
 
-        let issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -1765,9 +1751,9 @@ mod tests {
             .add(make_fixture(uid, 1, vec![param(Attribute::Intensity)]))
             .unwrap();
 
-        let output_bindings = OutputBindings {
-            bindings: vec![
-                OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![
+                OutputRoute {
                     source: OutputSource::Console {
                         universe: Some(DmxRange::single(1)),
                         address: None,
@@ -1780,7 +1766,7 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                OutputBinding {
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![uid],
                         element: None,
@@ -1797,14 +1783,14 @@ mod tests {
             ],
         };
 
-        let settings = BindingValidationSettings {
-            mode: BindingValidationMode::Strict,
+        let settings = RouteValidationSettings {
+            mode: RouteValidationMode::Strict,
         };
-        let issues = validate_bindings(
+        let issues = validate_routes(
             &settings,
-            &InputBindings::default(),
-            &output_bindings,
-            &DisabledBindings::default(),
+            &InputRoutes::default(),
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -1813,14 +1799,14 @@ mod tests {
                 .any(|issue| issue.message.contains("Console owns transport"))
         );
 
-        let settings = BindingValidationSettings {
-            mode: BindingValidationMode::Permissive,
+        let settings = RouteValidationSettings {
+            mode: RouteValidationMode::Permissive,
         };
-        let issues = validate_bindings(
+        let issues = validate_routes(
             &settings,
-            &InputBindings::default(),
-            &output_bindings,
-            &DisabledBindings::default(),
+            &InputRoutes::default(),
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -1834,8 +1820,8 @@ mod tests {
     #[test]
     fn console_output_wildcard_to_single_target_does_not_self_conflict() {
         let provider = FixtureDataProviderExt::default();
-        let output_bindings = OutputBindings {
-            bindings: vec![OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Console {
                     universe: None,
                     address: None,
@@ -1850,20 +1836,20 @@ mod tests {
             }],
         };
 
-        let issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &InputBindings::default(),
-            &output_bindings,
-            &DisabledBindings::default(),
+            &InputRoutes::default(),
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
             issues
                 .iter()
                 .all(|issue| !issue.message.contains("Transport address overlap")),
-            "single wildcard console output binding should not overlap with itself, got {:?}",
+            "single wildcard console output route should not overlap with itself, got {:?}",
             issues
         );
     }
@@ -1877,10 +1863,10 @@ mod tests {
             .add(make_fixture(uid, 311, vec![param(Attribute::Intensity)]))
             .unwrap();
 
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: None,
                     address: None,
                 },
@@ -1893,8 +1879,8 @@ mod tests {
                 clone: false,
             }],
         };
-        let output_bindings = OutputBindings {
-            bindings: vec![OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -1910,13 +1896,13 @@ mod tests {
             }],
         };
 
-        let strict_issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let strict_issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -1927,13 +1913,13 @@ mod tests {
             strict_issues
         );
 
-        let permissive_issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Permissive,
+        let permissive_issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Permissive,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -1945,7 +1931,7 @@ mod tests {
         );
     }
 
-    /// Validates console input bindings use the same transport-target conflict shape as transport input bindings.
+    /// Validates console input routes use the same transport-target conflict shape as transport input routes.
     #[test]
     fn strict_mode_rejects_console_input_overlap_with_fixture_transport_output() {
         let uid = Uuid::new_v4();
@@ -1955,8 +1941,8 @@ mod tests {
             .add(make_fixture(uid, 312, vec![param(Attribute::Intensity)]))
             .unwrap();
 
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Console {
                     universe: Some(DmxRange::single(7)),
                     address: Some(10),
@@ -1970,8 +1956,8 @@ mod tests {
                 clone: false,
             }],
         };
-        let output_bindings = OutputBindings {
-            bindings: vec![OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -1987,13 +1973,13 @@ mod tests {
             }],
         };
 
-        let strict_issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let strict_issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -2009,10 +1995,10 @@ mod tests {
     fn strict_mode_rejects_console_to_transport_overlap_with_transport_input() {
         let provider = FixtureDataProviderExt::default();
 
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(40)),
                     address: None,
                 },
@@ -2025,8 +2011,8 @@ mod tests {
                 clone: false,
             }],
         };
-        let output_bindings = OutputBindings {
-            bindings: vec![OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Console {
                     universe: Some(DmxRange::single(40)),
                     address: None,
@@ -2041,13 +2027,13 @@ mod tests {
             }],
         };
 
-        let strict_issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let strict_issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -2058,13 +2044,13 @@ mod tests {
             strict_issues
         );
 
-        let permissive_issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Permissive,
+        let permissive_issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Permissive,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -2080,11 +2066,11 @@ mod tests {
     fn strict_mode_rejects_transport_input_overlap_between_two_inputs() {
         let provider = FixtureDataProviderExt::default();
 
-        let input_bindings = InputBindings {
-            bindings: vec![
-                InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::Sacn,
+                        transport: RouteTransport::Sacn,
                         universe: Some(DmxRange::single(40)),
                         address: None,
                     },
@@ -2096,9 +2082,9 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                InputBinding {
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::ArtNet,
+                        transport: RouteTransport::ArtNet,
                         universe: Some(DmxRange::single(40)),
                         address: None,
                     },
@@ -2113,13 +2099,13 @@ mod tests {
             ],
         };
 
-        let issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &input_bindings,
-            &OutputBindings::default(),
-            &DisabledBindings::default(),
+            &input_routes,
+            &OutputRoutes::default(),
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -2140,10 +2126,10 @@ mod tests {
             .add(make_fixture(uid, 311, vec![param(Attribute::Intensity)]))
             .unwrap();
 
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(1)),
                     address: None,
                 },
@@ -2156,8 +2142,8 @@ mod tests {
                 clone: false,
             }],
         };
-        let output_bindings = OutputBindings {
-            bindings: vec![OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -2173,13 +2159,13 @@ mod tests {
             }],
         };
 
-        let issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -2200,10 +2186,10 @@ mod tests {
             .add(make_fixture(uid, 311, vec![param(Attribute::Intensity)]))
             .unwrap();
 
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(1)),
                     address: None,
                 },
@@ -2216,8 +2202,8 @@ mod tests {
                 clone: false,
             }],
         };
-        let output_bindings = OutputBindings {
-            bindings: vec![OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -2233,13 +2219,13 @@ mod tests {
             }],
         };
 
-        let issues = validate_bindings(
-            &BindingValidationSettings {
-                mode: BindingValidationMode::Strict,
+        let issues = validate_routes(
+            &RouteValidationSettings {
+                mode: RouteValidationMode::Strict,
             },
-            &input_bindings,
-            &output_bindings,
-            &DisabledBindings::default(),
+            &input_routes,
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
         assert!(
@@ -2253,11 +2239,11 @@ mod tests {
 
     #[test]
     fn input_transport_console_overlap_requires_priority_difference() {
-        let input_bindings = InputBindings {
-            bindings: vec![
-                InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::Sacn,
+                        transport: RouteTransport::Sacn,
                         universe: Some(DmxRange::single(1)),
                         address: None,
                     },
@@ -2268,9 +2254,9 @@ mod tests {
                     priority: 1,
                     clone: false,
                 },
-                InputBinding {
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::Sacn,
+                        transport: RouteTransport::Sacn,
                         universe: Some(DmxRange::single(1)),
                         address: None,
                     },
@@ -2284,14 +2270,14 @@ mod tests {
             ],
         };
 
-        let issues = validate_input_transport_console_priorities(&input_bindings);
+        let issues = validate_input_transport_console_priorities(&input_routes);
         assert!(!issues.is_empty());
 
-        let input_bindings = InputBindings {
-            bindings: vec![
-                InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::Sacn,
+                        transport: RouteTransport::Sacn,
                         universe: Some(DmxRange::single(1)),
                         address: None,
                     },
@@ -2302,9 +2288,9 @@ mod tests {
                     priority: 1,
                     clone: false,
                 },
-                InputBinding {
+                InputRoute {
                     source: InputSource::Transport {
-                        transport: BindingTransport::Sacn,
+                        transport: RouteTransport::Sacn,
                         universe: Some(DmxRange::single(1)),
                         address: None,
                     },
@@ -2318,7 +2304,7 @@ mod tests {
             ],
         };
 
-        let issues = validate_input_transport_console_priorities(&input_bindings);
+        let issues = validate_input_transport_console_priorities(&input_routes);
         assert!(issues.is_empty());
     }
 
@@ -2347,9 +2333,9 @@ mod tests {
         // Fixture A at address 1: occupies 1-3 (3 DMX channels, excluding VirtualIntensity)
         // Fixture B at address 4: occupies 4-6 (3 DMX channels, excluding VirtualIntensity)
         // If VirtualIntensity was counted, A would occupy 1-4, overlapping with B at 4
-        let output_bindings = OutputBindings {
-            bindings: vec![
-                OutputBinding {
+        let output_routes = OutputRoutes {
+            routes: vec![
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![uid_a],
                         element: None,
@@ -2363,7 +2349,7 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                OutputBinding {
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![uid_b],
                         element: None,
@@ -2380,14 +2366,14 @@ mod tests {
             ],
         };
 
-        let settings = BindingValidationSettings {
-            mode: BindingValidationMode::Strict,
+        let settings = RouteValidationSettings {
+            mode: RouteValidationMode::Strict,
         };
-        let issues = validate_bindings(
+        let issues = validate_routes(
             &settings,
-            &InputBindings::default(),
-            &output_bindings,
-            &DisabledBindings::default(),
+            &InputRoutes::default(),
+            &output_routes,
+            &DisabledRoutes::default(),
             &provider,
         );
 
@@ -2415,8 +2401,8 @@ mod tests {
             .add(make_fixture(uid_b, 2, vec![param(Attribute::Pan)]))
             .unwrap();
 
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Fixture {
                     uids: vec![uid_a],
                     element: None,
@@ -2432,7 +2418,7 @@ mod tests {
             }],
         };
 
-        let issues = validate_fixture_to_fixture_shapes(&input_bindings, &provider);
+        let issues = validate_fixture_to_fixture_shapes(&input_routes, &provider);
         assert!(!issues.is_empty());
     }
 
@@ -2469,15 +2455,15 @@ mod tests {
         }
     }
 
-    /// Validates a whole-fixture binding from `source` to `target` and returns the shape issues.
-    fn fixture_to_fixture_issues(source: Fixture, target: Fixture) -> Vec<BindingValidationIssue> {
+    /// Validates a whole-fixture route from `source` to `target` and returns the shape issues.
+    fn fixture_to_fixture_issues(source: Fixture, target: Fixture) -> Vec<RouteValidationIssue> {
         let source_uid = source.identifiers.uid;
         let target_uid = target.identifiers.uid;
         let mut provider = FixtureDataProviderExt::default();
         provider.inner.add(source).unwrap();
         provider.inner.add(target).unwrap();
-        let input_bindings = InputBindings {
-            bindings: vec![InputBinding {
+        let input_routes = InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Fixture {
                     uids: vec![source_uid],
                     element: None,
@@ -2492,7 +2478,7 @@ mod tests {
                 clone: false,
             }],
         };
-        validate_fixture_to_fixture_shapes(&input_bindings, &provider)
+        validate_fixture_to_fixture_shapes(&input_routes, &provider)
     }
 
     /// Verifies one `[Pan, Tilt]` element does not match separate `[Pan]` and `[Tilt]` elements,

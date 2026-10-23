@@ -16,8 +16,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{
-    BindingValidationSettings, InputDmxUniverses, InputUniverseStaleTimeout,
-    ParameterStateProjection,
+    InputDmxUniverses, InputUniverseStaleTimeout, ParameterStateProjection, RouteValidationSettings,
 };
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, ExternalControlSettings, InputUniverseVisibilityMode,
@@ -80,7 +79,7 @@ pub struct SettingsCommandParams<'w> {
     external_control: ResMut<'w, nightfall_io::ExternalControlState>,
     telemetry: ResMut<'w, TelemetryState>,
     reported_graphics: ResMut<'w, ReportedGraphics>,
-    binding_validation_settings: ResMut<'w, BindingValidationSettings>,
+    route_validation_settings: ResMut<'w, RouteValidationSettings>,
     input_universe_stale_timeout: ResMut<'w, InputUniverseStaleTimeout>,
     input_universe_visibility_mode: ResMut<'w, InputUniverseVisibilityMode>,
     input_universes: ResMut<'w, InputDmxUniverses>,
@@ -310,7 +309,7 @@ pub fn handle_events(
                     SetNetworkInputEnabled => io_settings.network_input_enabled,
                     SetUsbOutputEnabled => io_settings.usb_output_enabled,
                     SetInputSignalLossPolicy => io_settings.input_signal_loss_policy,
-                    SetBindingValidationMode => binding_validation_settings.mode,
+                    SetRouteValidationMode => route_validation_settings.mode,
                 }
                 SettingsCommand::SetExternalControl(value) => params.set_external_control(value),
                 SettingsCommand::SetTelemetryConsent(value) => params.set_telemetry_consent(*value),
@@ -504,7 +503,7 @@ mod command_tests {
         app.init_resource::<nightfall_io::ExternalControlState>();
         app.init_resource::<TelemetryState>();
         app.init_resource::<ReportedGraphics>();
-        app.init_resource::<BindingValidationSettings>();
+        app.init_resource::<RouteValidationSettings>();
         app.init_resource::<InputUniverseStaleTimeout>();
         app.init_resource::<InputUniverseVisibilityMode>();
         app.init_resource::<InputDmxUniverses>();
@@ -675,7 +674,7 @@ mod command_tests {
     }
 
     /// Verifies table-driven field setters write their payload into the resource each row names,
-    /// whether that is desk settings, IO runtime settings, or binding validation settings.
+    /// whether that is desk settings, IO runtime settings, or route validation settings.
     #[test]
     fn field_setters_update_their_target_resources() {
         let mut app = settings_command_app();
@@ -684,8 +683,8 @@ mod command_tests {
             SettingsCommand::SetShowfileBackupRetention(3),
             SettingsCommand::SetNetworkInterface(Some("eth0".into())),
             SettingsCommand::SetUsbOutputEnabled(true),
-            SettingsCommand::SetBindingValidationMode(
-                nightfall_fixtures::prelude::BindingValidationMode::Permissive,
+            SettingsCommand::SetRouteValidationMode(
+                nightfall_fixtures::prelude::RouteValidationMode::Permissive,
             ),
         ];
         let count = commands.len();
@@ -702,8 +701,8 @@ mod command_tests {
         assert_eq!(io_settings.network_interface.as_deref(), Some("eth0"));
         assert!(io_settings.usb_output_enabled);
         assert_eq!(
-            app.world().resource::<BindingValidationSettings>().mode,
-            nightfall_fixtures::prelude::BindingValidationMode::Permissive
+            app.world().resource::<RouteValidationSettings>().mode,
+            nightfall_fixtures::prelude::RouteValidationMode::Permissive
         );
         let results = app
             .world_mut()

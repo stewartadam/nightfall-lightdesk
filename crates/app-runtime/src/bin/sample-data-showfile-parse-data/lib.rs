@@ -39,7 +39,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 use nightfall_scene_objects::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
@@ -143,7 +143,7 @@ fn generate_json() -> Result<String, String> {
 /// Populate a compact world that exercises representative showfile domains.
 fn populate_parser_test_world(world: &mut World) -> Result<(), String> {
     let fixture_ref = add_fixture(world)?;
-    add_bindings(world, fixture_ref.fixture_uid);
+    add_routes(world, fixture_ref.fixture_uid);
     add_input_mappings(world);
     add_global_variables(world);
     add_scene_object(world)?;
@@ -260,29 +260,26 @@ fn parameter_metadata(
     }
 }
 
-/// Add input, output, and disabled input binding declarations.
-fn add_bindings(world: &mut World, fixture_uid: Uuid) {
+/// Add input, output, and disabled input route declarations.
+fn add_routes(world: &mut World, fixture_uid: Uuid) {
+    world.resource_mut::<InputRoutes>().routes.push(InputRoute {
+        source: InputSource::Transport {
+            transport: RouteTransport::Sacn,
+            universe: Some(DmxRange::single(1)),
+            address: Some(1),
+        },
+        target: InputTarget::Fixture {
+            uids: vec![fixture_uid],
+            element: Some(1),
+            param: None,
+        },
+        priority: 0,
+        clone: false,
+    });
     world
-        .resource_mut::<InputBindings>()
-        .bindings
-        .push(InputBinding {
-            source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
-                universe: Some(DmxRange::single(1)),
-                address: Some(1),
-            },
-            target: InputTarget::Fixture {
-                uids: vec![fixture_uid],
-                element: Some(1),
-                param: None,
-            },
-            priority: 0,
-            clone: false,
-        });
-    world
-        .resource_mut::<OutputBindings>()
-        .bindings
-        .push(OutputBinding {
+        .resource_mut::<OutputRoutes>()
+        .routes
+        .push(OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![fixture_uid],
                 element: Some(1),
@@ -296,11 +293,11 @@ fn add_bindings(world: &mut World, fixture_uid: Uuid) {
             clone: false,
         });
     world
-        .resource_mut::<DisabledBindings>()
-        .bindings
-        .push(DisabledBinding::Input {
+        .resource_mut::<DisabledRoutes>()
+        .routes
+        .push(DisabledRoute::Input {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: Some(DmxRange::single(1)),
                 address: Some(512),
             },

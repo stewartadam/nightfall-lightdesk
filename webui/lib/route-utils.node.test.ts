@@ -11,11 +11,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import * as types from "../types/index";
-import { buildFixturePatchMapFromBindings } from "./binding-utils";
 import { fixtureElementIdsInDmxOrder } from "./dmx";
+import { buildFixturePatchMapFromRoutes } from "./route-utils";
 
 /**
- * Builds parameter metadata for binding utility tests.
+ * Builds parameter metadata for route utility tests.
  */
 function makeParam(attribute: types.Attribute): types.ParameterMetadata {
   return {
@@ -31,8 +31,8 @@ function makeParam(attribute: types.Attribute): types.ParameterMetadata {
   };
 }
 
-/** Verifies an element patched by several output bindings keeps one entry per binding. */
-test("buildFixturePatchMapFromBindings keeps multiple output bindings per element", () => {
+/** Verifies an element patched by several output routes keeps one entry per route. */
+test("buildFixturePatchMapFromRoutes keeps multiple output routes per element", () => {
   const uid = "fixtureuid";
 
   const fixture: types.Fixture = {
@@ -50,7 +50,7 @@ test("buildFixturePatchMapFromBindings keeps multiple output bindings per elemen
 
   const source: types.OutputSource = { type: "Fixture", data: { uids: [uid] } };
 
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
@@ -83,7 +83,7 @@ test("buildFixturePatchMapFromBindings keeps multiple output bindings per elemen
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, {
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, {
     [uid]: fixture,
   });
 
@@ -96,8 +96,8 @@ test("buildFixturePatchMapFromBindings keeps multiple output bindings per elemen
   ]);
 });
 
-/** Verifies bindings to custom network DMX targets resolve to their configured transport. */
-test("buildFixturePatchMapFromBindings resolves custom network dmx targets", () => {
+/** Verifies routes to custom network DMX targets resolve to their configured transport. */
+test("buildFixturePatchMapFromRoutes resolves custom network dmx targets", () => {
   const uid = "fixtureuid";
 
   const fixture: types.Fixture = {
@@ -113,7 +113,7 @@ test("buildFixturePatchMapFromBindings resolves custom network dmx targets", () 
     ],
   };
 
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
@@ -133,7 +133,7 @@ test("buildFixturePatchMapFromBindings resolves custom network dmx targets", () 
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(
+  const patchMap = buildFixturePatchMapFromRoutes(
     snapshot,
     { [uid]: fixture },
     {
@@ -175,7 +175,7 @@ function makeExplicitParam(
 }
 
 /** Verifies explicit profile slots yield per-parameter byte addresses and advance by the full footprint. */
-test("buildFixturePatchMapFromBindings places explicit profile slots", () => {
+test("buildFixturePatchMapFromRoutes places explicit profile slots", () => {
   const uid = "explicituid";
   const nextUid = "nextuid";
   const fixture: types.Fixture = {
@@ -208,7 +208,7 @@ test("buildFixturePatchMapFromBindings places explicit profile slots", () => {
     identifiers: { id: 2, uid: nextUid, label: "Next" },
     elements: [{ label: "Main", parameters: [makeParam({ type: "Red" })] }],
   };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
@@ -228,7 +228,7 @@ test("buildFixturePatchMapFromBindings places explicit profile slots", () => {
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, {
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, {
     [uid]: fixture,
     [nextUid]: next,
   });
@@ -243,8 +243,8 @@ test("buildFixturePatchMapFromBindings places explicit profile slots", () => {
   assert.equal(patchMap[nextUid]["1"][0].address, 108);
 });
 
-/** Verifies a break-2 binding places only that break's parameters from its own address. */
-test("buildFixturePatchMapFromBindings places additional dmx breaks", () => {
+/** Verifies a break-2 route places only that break's parameters from its own address. */
+test("buildFixturePatchMapFromRoutes places additional dmx breaks", () => {
   const uid = "breakuid";
   const fixture: types.Fixture = {
     identifiers: { id: 1, uid, label: "Lamp" },
@@ -271,7 +271,7 @@ test("buildFixturePatchMapFromBindings places additional dmx breaks", () => {
     type: "Transport",
     data: { target: "sacn", universe: { start: 1, end: 1 }, address },
   });
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
@@ -290,7 +290,7 @@ test("buildFixturePatchMapFromBindings places additional dmx breaks", () => {
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, {
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, {
     [uid]: fixture,
   });
 
@@ -318,12 +318,12 @@ function makeRgbFixture(uid: string, id: number): types.Fixture {
   };
 }
 
-/** Builds a fixture→console binding for consecutive fixtures at one console address. */
-function consoleBinding(
+/** Builds a fixture→console route for consecutive fixtures at one console address. */
+function consoleRoute(
   uids: string[],
   universe: number,
   address: number,
-): types.OutputBinding {
+): types.OutputRoute {
   return {
     source: { type: "Fixture", data: { uids } },
     target: {
@@ -339,18 +339,18 @@ function consoleBinding(
  * Verifies consecutive console-bound fixtures are laid out contiguously in console numbering
  * with a `null` transport.
  */
-test("buildFixturePatchMapFromBindings lays console-bound fixtures out in console space", () => {
+test("buildFixturePatchMapFromRoutes lays console-bound fixtures out in console space", () => {
   const fixtures = {
     a: makeRgbFixture("a", 1),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
-    output: [consoleBinding(["a", "b"], 2, 121)],
+    output: [consoleRoute(["a", "b"], 2, 121)],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
 
   assert.deepEqual(patchMap.a["1"], [
     {
@@ -374,13 +374,13 @@ test("buildFixturePatchMapFromBindings lays console-bound fixtures out in consol
  * Verifies a console→transport passthrough adds a wire-numbered entry for console-bound
  * fixtures while keeping the console-space entry.
  */
-test("buildFixturePatchMapFromBindings remaps console passthrough to wire numbering", () => {
+test("buildFixturePatchMapFromRoutes remaps console passthrough to wire numbering", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
-      consoleBinding(["a"], 2, 121),
+      consoleRoute(["a"], 2, 121),
       {
         source: {
           type: "Console",
@@ -396,7 +396,7 @@ test("buildFixturePatchMapFromBindings remaps console passthrough to wire number
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
 
   assert.deepEqual(patchMap.a["1"], [
     {
@@ -414,19 +414,19 @@ test("buildFixturePatchMapFromBindings remaps console passthrough to wire number
   ]);
 });
 
-/** Verifies the highest-priority console binding decides a fixture's console address. */
-test("buildFixturePatchMapFromBindings applies the highest-priority console binding", () => {
+/** Verifies the highest-priority console route decides a fixture's console address. */
+test("buildFixturePatchMapFromRoutes applies the highest-priority console route", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
-      { ...consoleBinding(["a"], 3, 1), priority: 5 },
-      consoleBinding(["a"], 2, 1),
+      { ...consoleRoute(["a"], 3, 1), priority: 5 },
+      consoleRoute(["a"], 2, 1),
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
 
   assert.deepEqual(patchMap.a["1"], [
     {
@@ -451,21 +451,21 @@ function makeTwoCellFixture(uid: string, id: number): types.Fixture {
 }
 
 /**
- * Verifies element-scoped console bindings lay out only the selected element, so the next
+ * Verifies element-scoped console routes lay out only the selected element, so the next
  * fixture follows at the filtered footprint instead of overlapping, and passthrough remaps
  * those element addresses onto the wire.
  */
-test("buildFixturePatchMapFromBindings honors element filters on console bindings", () => {
+test("buildFixturePatchMapFromRoutes honors element filters on console routes", () => {
   const fixtures = {
     a: makeTwoCellFixture("a", 1),
     b: makeTwoCellFixture("b", 2),
   };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
       {
-        ...consoleBinding(["a", "b"], 1, 1),
+        ...consoleRoute(["a", "b"], 1, 1),
         source: { type: "Fixture", data: { uids: ["a", "b"], element: 2 } },
       },
       {
@@ -483,7 +483,7 @@ test("buildFixturePatchMapFromBindings honors element filters on console binding
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
   const sacn: types.OutputTransport = {
     type: "Sacn",
     data: { mode: { type: "Multicast" } },
@@ -523,22 +523,22 @@ test("buildFixturePatchMapFromBindings honors element filters on console binding
 });
 
 /**
- * Verifies a parameter-filtered console binding patches only the selected parameter: an
+ * Verifies a parameter-filtered console route patches only the selected parameter: an
  * RGB element bound for Red at console 1.1 claims address 1 alone, so the next fixture
  * starts at 2 and addresses 2/3 are not labelled Green/Blue of the first fixture. The
  * passthrough window carries exactly those channels onto the wire.
  */
-test("buildFixturePatchMapFromBindings patches only the filtered parameter", () => {
+test("buildFixturePatchMapFromRoutes patches only the filtered parameter", () => {
   const fixtures = {
     a: makeRgbFixture("a", 1),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
       {
-        ...consoleBinding(["a", "b"], 1, 1),
+        ...consoleRoute(["a", "b"], 1, 1),
         source: { type: "Fixture", data: { uids: ["a", "b"], param: "green" } },
       },
       {
@@ -553,7 +553,7 @@ test("buildFixturePatchMapFromBindings patches only the filtered parameter", () 
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
   const sacn: types.OutputTransport = {
     type: "Sacn",
     data: { mode: { type: "Multicast" } },
@@ -591,26 +591,26 @@ test("buildFixturePatchMapFromBindings patches only the filtered parameter", () 
 });
 
 /**
- * Verifies a higher-priority parameter-filtered console binding moves only that parameter,
- * leaving the element's other parameters at the lower-priority binding's addresses, as the
+ * Verifies a higher-priority parameter-filtered console route moves only that parameter,
+ * leaving the element's other parameters at the lower-priority route's addresses, as the
  * engine's per-parameter console layout does.
  */
-test("buildFixturePatchMapFromBindings replaces console addresses per parameter", () => {
+test("buildFixturePatchMapFromRoutes replaces console addresses per parameter", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
-      consoleBinding(["a"], 1, 1),
+      consoleRoute(["a"], 1, 1),
       {
-        ...consoleBinding(["a"], 2, 50),
+        ...consoleRoute(["a"], 2, 50),
         source: { type: "Fixture", data: { uids: ["a"], param: "Red" } },
         priority: 5,
       },
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
 
   assert.deepEqual(patchMap.a["1"], [
     {
@@ -666,20 +666,20 @@ function makeInterleavedFixture(uid: string): types.Fixture {
 }
 
 /**
- * Verifies console bindings place explicit footprint slots (interleaved heads, split fine
+ * Verifies console routes place explicit footprint slots (interleaved heads, split fine
  * bytes, a gap at slot 7) at the same console channels the engine writes, advance the next
  * fixture by the full slot footprint, and that passthrough remaps every byte onto the wire.
  */
-test("buildFixturePatchMapFromBindings places explicit slots in console space", () => {
+test("buildFixturePatchMapFromRoutes places explicit slots in console space", () => {
   const fixtures = {
     a: makeInterleavedFixture("a"),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
-      consoleBinding(["a", "b"], 1, 1),
+      consoleRoute(["a", "b"], 1, 1),
       {
         source: { type: "Console", data: { universe: { start: 1, end: 1 } } },
         target: {
@@ -696,7 +696,7 @@ test("buildFixturePatchMapFromBindings places explicit slots in console space", 
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
   const sacn: types.OutputTransport = {
     type: "Sacn",
     data: { mode: { type: "Multicast" } },
@@ -735,24 +735,24 @@ test("buildFixturePatchMapFromBindings places explicit slots in console space", 
 });
 
 /**
- * Verifies an element-filtered console binding on an explicit-slot fixture rebases the
- * selected element's slots onto the binding address, keeping its internal gaps, as the
+ * Verifies an element-filtered console route on an explicit-slot fixture rebases the
+ * selected element's slots onto the route address, keeping its internal gaps, as the
  * engine's rebased `WireLayout` does.
  */
-test("buildFixturePatchMapFromBindings rebases explicit slots for element filters", () => {
+test("buildFixturePatchMapFromRoutes rebases explicit slots for element filters", () => {
   const fixtures = { a: makeInterleavedFixture("a") };
-  const snapshot: types.BindingsSnapshot = {
+  const snapshot: types.RoutesSnapshot = {
     input: [],
     disabled: [],
     output: [
       {
-        ...consoleBinding(["a"], 1, 1),
+        ...consoleRoute(["a"], 1, 1),
         source: { type: "Fixture", data: { uids: ["a"], element: 2 } },
       },
     ],
   };
 
-  const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+  const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
 
   assert.equal(patchMap.a["1"], undefined);
   assert.deepEqual(patchMap.a["2"], [
@@ -829,7 +829,7 @@ test("fixtureElementIdsInDmxOrder matches the engine's wiring-order golden file"
  * wash beam elements at the addresses of their hardware wiring order rather than their
  * logical element order.
  */
-test("buildFixturePatchMapFromBindings lays wired layouts out in DMX order", () => {
+test("buildFixturePatchMapFromRoutes lays wired layouts out in DMX order", () => {
   const golden = goldenDmxElementOrder();
   for (const layout of [
     types.FixtureLayout.RgbStrobeBar,
@@ -839,11 +839,11 @@ test("buildFixturePatchMapFromBindings lays wired layouts out in DMX order", () 
     const fixtures = {
       a: makeSegmentedFixture("a", Math.max(...order), layout),
     };
-    const snapshot: types.BindingsSnapshot = {
+    const snapshot: types.RoutesSnapshot = {
       input: [],
       disabled: [],
       output: [
-        consoleBinding(["a"], 1, 1),
+        consoleRoute(["a"], 1, 1),
         {
           source: { type: "Fixture", data: { uids: ["a"] } },
           target: {
@@ -860,7 +860,7 @@ test("buildFixturePatchMapFromBindings lays wired layouts out in DMX order", () 
       ],
     };
 
-    const patchMap = buildFixturePatchMapFromBindings(snapshot, fixtures);
+    const patchMap = buildFixturePatchMapFromRoutes(snapshot, fixtures);
 
     for (const [position, elementId] of order.entries()) {
       const entries = patchMap.a[String(elementId)];

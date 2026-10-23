@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import type {
   ClipMap,
   CueDurationProfileMap,

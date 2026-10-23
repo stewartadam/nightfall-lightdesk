@@ -12,11 +12,11 @@ use moonshine_kind::Instance;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::prelude::*;
-use nightfall_fixtures::binding_resolution::{
-    derive_console_addresses, resolve_input_bindings, resolve_output_bindings,
-};
 use nightfall_fixtures::prelude::*;
-use nightfall_io::BindingTransport;
+use nightfall_fixtures::route_resolution::{
+    derive_console_addresses, resolve_input_routes, resolve_output_routes,
+};
+use nightfall_io::RouteTransport;
 use nightfall_io::prelude::*;
 use uuid::Uuid;
 
@@ -80,7 +80,7 @@ fn spawn_fixture_with_parameter(
     parameter_entity
 }
 
-/// Entity IDs created while probing RGB strobe bar binding resolution.
+/// Entity IDs created while probing RGB strobe bar route resolution.
 struct RgbStrobeBarProbeEntities {
     top_left_red: Entity,
     bottom_left_red: Entity,
@@ -88,7 +88,7 @@ struct RgbStrobeBarProbeEntities {
     white_left: Entity,
 }
 
-/// Entity IDs created while probing Generic wash beam binding resolution.
+/// Entity IDs created while probing Generic wash beam route resolution.
 struct RotatingWashBeamProbeEntities {
     control_tilt: Entity,
     beam_left_red: Entity,
@@ -97,7 +97,7 @@ struct RotatingWashBeamProbeEntities {
     bottom_strip_right_yellow: Entity,
 }
 
-/// Entity IDs created while probing Generic moving spot binding resolution.
+/// Entity IDs created while probing Generic moving spot route resolution.
 struct MovingSpotProbeEntities {
     tilt: Entity,
     pan: Entity,
@@ -340,8 +340,8 @@ fn first_output_address(world: &World, entity: Entity) -> u16 {
 fn derive_console_addresses_respects_priority_over_insertion_order() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -350,9 +350,9 @@ fn derive_console_addresses_respects_priority_over_insertion_order() {
     spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Intensity);
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![
-            OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![
+            OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -365,7 +365,7 @@ fn derive_console_addresses_respects_priority_over_insertion_order() {
                 priority: 10,
                 clone: false,
             },
-            OutputBinding {
+            OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -395,11 +395,11 @@ fn derive_console_addresses_respects_priority_over_insertion_order() {
 }
 
 #[test]
-fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
+fn resolve_output_routes_orders_destinations_by_priority_then_insertion() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -408,9 +408,9 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
     let parameter_entity = spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Red);
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![
-            OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![
+            OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -424,7 +424,7 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
                 priority: 10,
                 clone: false,
             },
-            OutputBinding {
+            OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![uid],
                     element: None,
@@ -443,7 +443,7 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
 
     app.init_resource::<OutputRouting>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     let destinations = app
@@ -472,11 +472,11 @@ fn resolve_output_bindings_orders_destinations_by_priority_then_insertion() {
 }
 
 #[test]
-fn resolve_output_bindings_uses_generic_rgb_strobe_bar_hardware_dmx_order() {
+fn resolve_output_routes_uses_generic_rgb_strobe_bar_hardware_dmx_order() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -485,8 +485,8 @@ fn resolve_output_bindings_uses_generic_rgb_strobe_bar_hardware_dmx_order() {
     let probe = spawn_generic_rgb_strobe_bar_probe_fixture(app.world_mut(), uid);
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -504,7 +504,7 @@ fn resolve_output_bindings_uses_generic_rgb_strobe_bar_hardware_dmx_order() {
 
     app.init_resource::<OutputRouting>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     assert_eq!(first_output_address(app.world(), probe.top_left_red), 1);
@@ -515,11 +515,11 @@ fn resolve_output_bindings_uses_generic_rgb_strobe_bar_hardware_dmx_order() {
 
 #[test]
 /// Verifies the Generic wash beam profile patches control, reversed beams, and strips to hardware order.
-fn resolve_output_bindings_uses_rotating_wash_beam_hardware_dmx_order() {
+fn resolve_output_routes_uses_rotating_wash_beam_hardware_dmx_order() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -528,8 +528,8 @@ fn resolve_output_bindings_uses_rotating_wash_beam_hardware_dmx_order() {
     let probe = spawn_rotating_wash_beam_probe_fixture(app.world_mut(), uid);
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -547,7 +547,7 @@ fn resolve_output_bindings_uses_rotating_wash_beam_hardware_dmx_order() {
 
     app.init_resource::<OutputRouting>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     assert_eq!(first_output_address(app.world(), probe.control_tilt), 1);
@@ -565,11 +565,11 @@ fn resolve_output_bindings_uses_rotating_wash_beam_hardware_dmx_order() {
 
 #[test]
 /// Verifies the Generic moving spot patches all 16 channels in fixture-library hardware order.
-fn resolve_output_bindings_uses_moving_spot_hardware_dmx_order() {
+fn resolve_output_routes_uses_moving_spot_hardware_dmx_order() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -578,8 +578,8 @@ fn resolve_output_bindings_uses_moving_spot_hardware_dmx_order() {
     let probe = spawn_moving_spot_probe_fixture(app.world_mut(), uid);
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -597,7 +597,7 @@ fn resolve_output_bindings_uses_moving_spot_hardware_dmx_order() {
 
     app.init_resource::<OutputRouting>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     assert_eq!(first_output_address(app.world(), probe.pan), 1);
@@ -608,11 +608,11 @@ fn resolve_output_bindings_uses_moving_spot_hardware_dmx_order() {
 }
 
 #[test]
-fn resolve_output_bindings_supports_floating_fixtures() {
+fn resolve_output_routes_supports_floating_fixtures() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -621,8 +621,8 @@ fn resolve_output_bindings_supports_floating_fixtures() {
     let parameter_entity = spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Blue);
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -640,7 +640,7 @@ fn resolve_output_bindings_supports_floating_fixtures() {
 
     app.init_resource::<OutputRouting>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     let destinations = app
@@ -662,22 +662,22 @@ fn resolve_output_bindings_supports_floating_fixtures() {
 /// Verifies transport passthroughs resolve highest priority first regardless of authoring
 /// order, and that the overlay iterator walks them in the reverse, lowest-first order.
 #[test]
-fn resolve_input_bindings_orders_transport_passthroughs_by_priority() {
+fn resolve_input_routes_orders_transport_passthroughs_by_priority() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
-    app.world_mut().resource_mut::<InputBindings>().bindings = [(2, 1), (1, 10), (3, 1)]
+    app.world_mut().resource_mut::<InputRoutes>().routes = [(2, 1), (1, 10), (3, 1)]
         .into_iter()
-        .map(|(source_universe, priority)| InputBinding {
+        .map(|(source_universe, priority)| InputRoute {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: Some(DmxRange::single(source_universe)),
                 address: None,
             },
@@ -691,45 +691,45 @@ fn resolve_input_bindings_orders_transport_passthroughs_by_priority() {
         })
         .collect();
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    /// Returns the source universe of a resolved transport binding.
-    fn source_universe(binding: &ResolvedInputBinding) -> u16 {
-        match binding.source {
+    /// Returns the source universe of a resolved transport route.
+    fn source_universe(route: &ResolvedInputRoute) -> u16 {
+        match route.source {
             ResolvedInputSource::Transport { universe, .. } => universe,
             ref other => panic!("expected a transport source, got {other:?}"),
         }
     }
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    let precedence: Vec<u16> = resolved.bindings.iter().map(source_universe).collect();
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    let precedence: Vec<u16> = resolved.routes.iter().map(source_universe).collect();
     assert_eq!(precedence, vec![1, 2, 3]);
     let overlay: Vec<u16> = resolved.iter_overlay_order().map(source_universe).collect();
     assert_eq!(overlay, vec![3, 2, 1]);
 }
 
 #[test]
-fn resolve_input_bindings_is_stable_for_equal_priority() {
+fn resolve_input_routes_is_stable_for_equal_priority() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
     let uid = Uuid::new_v4();
     spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Intensity);
 
     {
-        let mut input_bindings = app.world_mut().resource_mut::<InputBindings>();
-        input_bindings.bindings = vec![
-            InputBinding {
+        let mut input_routes = app.world_mut().resource_mut::<InputRoutes>();
+        input_routes.routes = vec![
+            InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(1)),
                     address: None,
                 },
@@ -741,9 +741,9 @@ fn resolve_input_bindings_is_stable_for_equal_priority() {
                 priority: 5,
                 clone: false,
             },
-            InputBinding {
+            InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(2)),
                     address: None,
                 },
@@ -758,23 +758,23 @@ fn resolve_input_bindings_is_stable_for_equal_priority() {
         ];
     }
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    assert_eq!(resolved.bindings.len(), 2);
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    assert_eq!(resolved.routes.len(), 2);
     assert_eq!(
-        resolved.bindings[0].source,
+        resolved.routes[0].source,
         ResolvedInputSource::Transport {
-            transport: BindingTransport::Sacn,
+            transport: RouteTransport::Sacn,
             universe: 1,
             address: 1,
         }
     );
     assert_eq!(
-        resolved.bindings[1].source,
+        resolved.routes[1].source,
         ResolvedInputSource::Transport {
-            transport: BindingTransport::Sacn,
+            transport: RouteTransport::Sacn,
             universe: 2,
             address: 1,
         }
@@ -782,26 +782,26 @@ fn resolve_input_bindings_is_stable_for_equal_priority() {
 }
 
 #[test]
-fn resolve_input_bindings_applies_disabled_filter_from_target_disabled() {
+fn resolve_input_routes_applies_disabled_filter_from_target_disabled() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
     let uid = Uuid::new_v4();
     spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Intensity);
 
     {
-        let mut input_bindings = app.world_mut().resource_mut::<InputBindings>();
-        input_bindings.bindings = vec![
-            InputBinding {
+        let mut input_routes = app.world_mut().resource_mut::<InputRoutes>();
+        input_routes.routes = vec![
+            InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(1)),
                     address: None,
                 },
@@ -813,9 +813,9 @@ fn resolve_input_bindings_applies_disabled_filter_from_target_disabled() {
                 priority: 0,
                 clone: false,
             },
-            InputBinding {
+            InputRoute {
                 source: InputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: Some(DmxRange::single(1)),
                     address: None,
                 },
@@ -826,24 +826,24 @@ fn resolve_input_bindings_applies_disabled_filter_from_target_disabled() {
         ];
     }
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    assert!(resolved.bindings.is_empty());
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    assert!(resolved.routes.is_empty());
 }
 
 #[test]
-fn resolve_input_bindings_clone_resets_offsets() {
+fn resolve_input_routes_clone_resets_offsets() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
     let uid_a = Uuid::new_v4();
     let uid_b = Uuid::new_v4();
@@ -851,10 +851,10 @@ fn resolve_input_bindings_clone_resets_offsets() {
     let param_b = spawn_fixture_with_parameter(app.world_mut(), uid_b, 2, Attribute::Intensity);
 
     {
-        let mut input_bindings = app.world_mut().resource_mut::<InputBindings>();
-        input_bindings.bindings = vec![InputBinding {
+        let mut input_routes = app.world_mut().resource_mut::<InputRoutes>();
+        input_routes.routes = vec![InputRoute {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: Some(DmxRange::single(1)),
                 address: None,
             },
@@ -868,13 +868,13 @@ fn resolve_input_bindings_clone_resets_offsets() {
         }];
     }
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    assert_eq!(resolved.bindings.len(), 1);
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    assert_eq!(resolved.routes.len(), 1);
     assert_eq!(
-        resolved.bindings[0].destination,
+        resolved.routes[0].destination,
         ResolvedInputDestination::Fixture {
             targets: vec![
                 ResolvedInputTarget {
@@ -891,16 +891,16 @@ fn resolve_input_bindings_clone_resets_offsets() {
 }
 
 #[test]
-fn resolve_input_bindings_transport_console_mapping_by_universe() {
+fn resolve_input_routes_transport_console_mapping_by_universe() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
     let uid_a = Uuid::new_v4();
     let uid_b = Uuid::new_v4();
@@ -940,10 +940,10 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
     }
 
     {
-        let mut input_bindings = app.world_mut().resource_mut::<InputBindings>();
-        input_bindings.bindings = vec![InputBinding {
+        let mut input_routes = app.world_mut().resource_mut::<InputRoutes>();
+        input_routes.routes = vec![InputRoute {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: None,
                 address: None,
             },
@@ -956,24 +956,24 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
         }];
     }
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    assert_eq!(resolved.bindings.len(), 512);
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    assert_eq!(resolved.routes.len(), 512);
 
     let universe_1 = resolved
-        .bindings
+        .routes
         .iter()
-        .find(|binding| {
-            binding.source
+        .find(|route| {
+            route.source
                 == ResolvedInputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 1,
                     address: 1,
                 }
         })
-        .expect("expected transport binding for universe 1");
+        .expect("expected transport route for universe 1");
     assert_eq!(
         universe_1.destination,
         ResolvedInputDestination::Console {
@@ -989,17 +989,17 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
     );
 
     let universe_2 = resolved
-        .bindings
+        .routes
         .iter()
-        .find(|binding| {
-            binding.source
+        .find(|route| {
+            route.source
                 == ResolvedInputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 2,
                     address: 1,
                 }
         })
-        .expect("expected transport binding for universe 2");
+        .expect("expected transport route for universe 2");
     assert_eq!(
         universe_2.destination,
         ResolvedInputDestination::Console {
@@ -1012,17 +1012,17 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
     );
 
     let universe_3 = resolved
-        .bindings
+        .routes
         .iter()
-        .find(|binding| {
-            binding.source
+        .find(|route| {
+            route.source
                 == ResolvedInputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 3,
                     address: 1,
                 }
         })
-        .expect("expected transport binding for universe 3");
+        .expect("expected transport route for universe 3");
     assert_eq!(
         universe_3.destination,
         ResolvedInputDestination::Console {
@@ -1039,22 +1039,22 @@ fn resolve_input_bindings_transport_console_mapping_by_universe() {
 }
 
 #[test]
-fn resolve_input_bindings_transport_console_keeps_mapping_without_fixture_targets() {
+fn resolve_input_routes_transport_console_keeps_mapping_without_fixture_targets() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
     {
-        let mut input_bindings = app.world_mut().resource_mut::<InputBindings>();
-        input_bindings.bindings = vec![InputBinding {
+        let mut input_routes = app.world_mut().resource_mut::<InputRoutes>();
+        input_routes.routes = vec![InputRoute {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: Some(DmxRange::single(2)),
                 address: Some(100),
             },
@@ -1067,21 +1067,21 @@ fn resolve_input_bindings_transport_console_keeps_mapping_without_fixture_target
         }];
     }
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    assert_eq!(resolved.bindings.len(), 1);
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    assert_eq!(resolved.routes.len(), 1);
     assert_eq!(
-        resolved.bindings[0].source,
+        resolved.routes[0].source,
         ResolvedInputSource::Transport {
-            transport: BindingTransport::Sacn,
+            transport: RouteTransport::Sacn,
             universe: 2,
             address: 100,
         }
     );
     assert_eq!(
-        resolved.bindings[0].destination,
+        resolved.routes[0].destination,
         ResolvedInputDestination::Console {
             target: ResolvedConsoleTarget {
                 universe: 5,
@@ -1093,16 +1093,16 @@ fn resolve_input_bindings_transport_console_keeps_mapping_without_fixture_target
 }
 
 #[test]
-fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
+fn resolve_input_routes_clone_false_offsets_are_contiguous() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
     let uid_a = Uuid::new_v4();
     let uid_b = Uuid::new_v4();
@@ -1110,10 +1110,10 @@ fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
     let param_b = spawn_fixture_with_parameter(app.world_mut(), uid_b, 2, Attribute::Intensity);
 
     {
-        let mut input_bindings = app.world_mut().resource_mut::<InputBindings>();
-        input_bindings.bindings = vec![InputBinding {
+        let mut input_routes = app.world_mut().resource_mut::<InputRoutes>();
+        input_routes.routes = vec![InputRoute {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: Some(DmxRange::single(1)),
                 address: None,
             },
@@ -1127,13 +1127,13 @@ fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
         }];
     }
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    assert_eq!(resolved.bindings.len(), 1);
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    assert_eq!(resolved.routes.len(), 1);
     assert_eq!(
-        resolved.bindings[0].destination,
+        resolved.routes[0].destination,
         ResolvedInputDestination::Fixture {
             targets: vec![
                 ResolvedInputTarget {
@@ -1150,11 +1150,11 @@ fn resolve_input_bindings_clone_false_offsets_are_contiguous() {
 }
 
 #[test]
-fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
+fn resolve_output_routes_resets_per_fixture_address_when_cloning() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -1165,8 +1165,8 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
     let param_b = spawn_fixture_with_parameter(app.world_mut(), uid_b, 2, Attribute::Intensity);
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid_a, uid_b],
                 element: None,
@@ -1184,7 +1184,7 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
 
     app.init_resource::<OutputRouting>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     let dest_a = app
@@ -1219,11 +1219,11 @@ fn resolve_output_bindings_resets_per_fixture_address_when_cloning() {
 }
 
 #[test]
-fn resolve_output_bindings_resolves_named_usb_targets() {
+fn resolve_output_routes_resolves_named_usb_targets() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -1252,8 +1252,8 @@ fn resolve_output_bindings_resolves_named_usb_targets() {
     }
 
     {
-        let mut output_bindings = app.world_mut().resource_mut::<OutputBindings>();
-        output_bindings.bindings = vec![OutputBinding {
+        let mut output_routes = app.world_mut().resource_mut::<OutputRoutes>();
+        output_routes.routes = vec![OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -1271,7 +1271,7 @@ fn resolve_output_bindings_resolves_named_usb_targets() {
 
     app.init_resource::<OutputRouting>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     let destinations = app
@@ -1372,8 +1372,8 @@ fn spawn_interleaved_fixture(world: &mut World, uid: Uuid) -> [Entity; 4] {
 fn output_app() -> App {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
@@ -1382,9 +1382,9 @@ fn output_app() -> App {
     app
 }
 
-/// Returns an output binding patching fixtures to sACN universe 1 at `address`.
-fn sacn_binding(uids: Vec<Uuid>, address: u16) -> OutputBinding {
-    OutputBinding {
+/// Returns an output route patching fixtures to sACN universe 1 at `address`.
+fn sacn_route(uids: Vec<Uuid>, address: u16) -> OutputRoute {
+    OutputRoute {
         source: OutputSource::Fixture {
             uids,
             element: None,
@@ -1412,13 +1412,13 @@ fn output_addresses(world: &World, entity: Entity) -> Vec<u16> {
 
 /// Verifies explicit profile slots place interleaved heads and separated fine bytes exactly.
 #[test]
-fn resolve_output_bindings_uses_explicit_profile_slots() {
+fn resolve_output_routes_uses_explicit_profile_slots() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
-    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![sacn_binding(vec![uid], 101)];
+    app.world_mut().resource_mut::<OutputRoutes>().routes = vec![sacn_route(vec![uid], 101)];
 
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     assert_eq!(output_addresses(app.world(), tilt1), vec![101, 106]);
@@ -1429,45 +1429,45 @@ fn resolve_output_bindings_uses_explicit_profile_slots() {
 
 /// Verifies the next fixture in a patch run starts after the explicit footprint, gaps included.
 #[test]
-fn resolve_output_bindings_advances_by_explicit_footprint() {
+fn resolve_output_routes_advances_by_explicit_footprint() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     let next_uid = Uuid::new_v4();
     spawn_interleaved_fixture(app.world_mut(), uid);
     let next = spawn_fixture_with_parameter(app.world_mut(), next_uid, 2, Attribute::Red);
-    app.world_mut().resource_mut::<OutputBindings>().bindings =
-        vec![sacn_binding(vec![uid, next_uid], 1)];
+    app.world_mut().resource_mut::<OutputRoutes>().routes =
+        vec![sacn_route(vec![uid, next_uid], 1)];
 
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     assert_eq!(output_addresses(app.world(), next), vec![8]);
 }
 
-/// Verifies patching one element rebases its explicit slots to the binding address.
+/// Verifies patching one element rebases its explicit slots to the route address.
 #[test]
-fn resolve_output_bindings_rebases_element_selection() {
+fn resolve_output_routes_rebases_element_selection() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     let [_, _, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
-    let mut binding = sacn_binding(vec![uid], 20);
-    binding.source = OutputSource::Fixture {
+    let mut route = sacn_route(vec![uid], 20);
+    route.source = OutputSource::Fixture {
         uids: vec![uid],
         element: Some(2),
         param: None,
     };
-    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![binding];
+    app.world_mut().resource_mut::<OutputRoutes>().routes = vec![route];
 
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     assert_eq!(output_addresses(app.world(), tilt2), vec![20, 25]);
     assert_eq!(output_addresses(app.world(), dim2), vec![23]);
 }
 
-/// Verifies a break-2 binding patches only that break's parameters from its own start address.
+/// Verifies a break-2 route patches only that break's parameters from its own start address.
 #[test]
-fn resolve_output_bindings_patches_secondary_dmx_break() {
+fn resolve_output_routes_patches_secondary_dmx_break() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     let [tilt1, dim1, _, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
@@ -1479,15 +1479,15 @@ fn resolve_output_bindings_patches_secondary_dmx_break() {
         dmx_break: 2,
         offsets: vec![3],
     };
-    let mut break_binding = sacn_binding(vec![uid], 201);
-    break_binding.source = OutputSource::FixtureBreak {
+    let mut break_route = sacn_route(vec![uid], 201);
+    break_route.source = OutputSource::FixtureBreak {
         uids: vec![uid],
         dmx_break: 2,
     };
-    app.world_mut().resource_mut::<OutputBindings>().bindings =
-        vec![sacn_binding(vec![uid], 101), break_binding];
+    app.world_mut().resource_mut::<OutputRoutes>().routes =
+        vec![sacn_route(vec![uid], 101), break_route];
 
-    app.add_systems(Update, resolve_output_bindings);
+    app.add_systems(Update, resolve_output_routes);
     app.update();
 
     assert_eq!(output_addresses(app.world(), tilt1), vec![101, 106]);
@@ -1507,7 +1507,7 @@ fn dmx_universes_writes_bytes_to_explicit_slots() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     let [tilt1, dim1, _, _] = spawn_interleaved_fixture(app.world_mut(), uid);
-    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![sacn_binding(vec![uid], 1)];
+    app.world_mut().resource_mut::<OutputRoutes>().routes = vec![sacn_route(vec![uid], 1)];
     {
         let mut tilt = app.world_mut().get_mut::<Parameter>(tilt1).unwrap();
         tilt.values.current_value = 0x1234 as ParameterDmxValue;
@@ -1518,7 +1518,7 @@ fn dmx_universes_writes_bytes_to_explicit_slots() {
     app.add_systems(
         Update,
         (
-            resolve_output_bindings,
+            resolve_output_routes,
             nightfall_fixtures::universe::dmx_universes,
         )
             .chain(),
@@ -1539,24 +1539,24 @@ fn dmx_universes_writes_bytes_to_explicit_slots() {
     assert_eq!(wire[1], 0);
 }
 
-/// Verifies input bindings decode explicit slots into per-byte source offsets.
+/// Verifies input routes decode explicit slots into per-byte source offsets.
 #[test]
-fn resolve_input_bindings_uses_explicit_profile_slots() {
+fn resolve_input_routes_uses_explicit_profile_slots() {
     let mut app = App::new();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<DisabledBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
 
     let uid = Uuid::new_v4();
     let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
-    app.world_mut().resource_mut::<InputBindings>().bindings = vec![InputBinding {
+    app.world_mut().resource_mut::<InputRoutes>().routes = vec![InputRoute {
         source: InputSource::Transport {
-            transport: BindingTransport::Sacn,
+            transport: RouteTransport::Sacn,
             universe: Some(DmxRange::single(1)),
             address: None,
         },
@@ -1569,12 +1569,12 @@ fn resolve_input_bindings_uses_explicit_profile_slots() {
         clone: false,
     }];
 
-    app.add_systems(Update, resolve_input_bindings);
+    app.add_systems(Update, resolve_input_routes);
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
     assert_eq!(
-        resolved.bindings[0].destination,
+        resolved.routes[0].destination,
         ResolvedInputDestination::Fixture {
             targets: vec![
                 ResolvedInputTarget {
@@ -1598,9 +1598,9 @@ fn resolve_input_bindings_uses_explicit_profile_slots() {
     );
 }
 
-/// Returns a fixture→console binding placing `uids` in console `universe` from `address`.
-fn console_binding(uids: Vec<Uuid>, universe: u16, address: u16) -> OutputBinding {
-    OutputBinding {
+/// Returns a fixture→console route placing `uids` in console `universe` from `address`.
+fn console_route(uids: Vec<Uuid>, universe: u16, address: u16) -> OutputRoute {
+    OutputRoute {
         source: OutputSource::Fixture {
             uids,
             element: None,
@@ -1626,22 +1626,22 @@ fn console_addresses_of(world: &World, entity: Entity) -> (u16, Vec<u16>) {
     (address.universe, address.addresses)
 }
 
-/// Verifies a console binding places every byte of an explicit-slot fixture at its GDTF
+/// Verifies a console route places every byte of an explicit-slot fixture at its GDTF
 /// footprint slot in console space (interleaved heads, split fine bytes, unused slot 4) and
 /// starts the next fixture after the full slot footprint.
 #[test]
-fn console_binding_places_explicit_profile_slots() {
+fn console_route_places_explicit_profile_slots() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     let next_uid = Uuid::new_v4();
     let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
     let next = spawn_fixture_with_parameter(app.world_mut(), next_uid, 2, Attribute::Intensity);
-    app.world_mut().resource_mut::<OutputBindings>().bindings =
-        vec![console_binding(vec![uid, next_uid], 2, 101)];
+    app.world_mut().resource_mut::<OutputRoutes>().routes =
+        vec![console_route(vec![uid, next_uid], 2, 101)];
 
     app.add_systems(
         Update,
-        (derive_console_addresses, resolve_output_bindings).chain(),
+        (derive_console_addresses, resolve_output_routes).chain(),
     );
     app.update();
     app.update();
@@ -1658,28 +1658,28 @@ fn console_binding_places_explicit_profile_slots() {
             .expect("resolved destinations")
             .destinations
             .is_empty(),
-        "console-only bindings must not produce wire destinations"
+        "console-only routes must not produce wire destinations"
     );
 }
 
-/// Verifies an element-filtered console binding rebases the selected head's explicit slots
-/// onto the binding address while keeping the gap between its bytes.
+/// Verifies an element-filtered console route rebases the selected head's explicit slots
+/// onto the route address while keeping the gap between its bytes.
 #[test]
-fn console_binding_rebases_explicit_slots_for_element_filter() {
+fn console_route_rebases_explicit_slots_for_element_filter() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     let [tilt1, _, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
-    let mut binding = console_binding(vec![uid], 1, 1);
-    binding.source = OutputSource::Fixture {
+    let mut route = console_route(vec![uid], 1, 1);
+    route.source = OutputSource::Fixture {
         uids: vec![uid],
         element: Some(2),
         param: None,
     };
-    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![binding];
+    app.world_mut().resource_mut::<OutputRoutes>().routes = vec![route];
 
     app.add_systems(
         Update,
-        (derive_console_addresses, resolve_output_bindings).chain(),
+        (derive_console_addresses, resolve_output_routes).chain(),
     );
     app.update();
     app.update();
@@ -1705,9 +1705,9 @@ fn console_passthrough_composes_explicit_slots_onto_the_wire() {
     app.init_resource::<OutputDmxFrames>();
     let uid = Uuid::new_v4();
     let [tilt1, dim1, _, _] = spawn_interleaved_fixture(app.world_mut(), uid);
-    app.world_mut().resource_mut::<OutputBindings>().bindings = vec![
-        console_binding(vec![uid], 1, 1),
-        OutputBinding {
+    app.world_mut().resource_mut::<OutputRoutes>().routes = vec![
+        console_route(vec![uid], 1, 1),
+        OutputRoute {
             source: OutputSource::Console {
                 universe: Some(DmxRange::single(1)),
                 address: None,
@@ -1732,7 +1732,7 @@ fn console_passthrough_composes_explicit_slots_onto_the_wire() {
         Update,
         (
             derive_console_addresses,
-            resolve_output_bindings,
+            resolve_output_routes,
             nightfall_fixtures::universe::dmx_universes,
             nightfall_fixtures::output_frames::compose_output_frames,
         )
@@ -1767,19 +1767,18 @@ fn console_passthrough_composes_explicit_slots_onto_the_wire() {
 }
 
 /// Verifies console input targets decode each byte of an explicit-slot fixture from its
-/// console slot relative to the binding address.
+/// console slot relative to the route address.
 #[test]
 fn console_input_targets_use_explicit_profile_slots() {
     let mut app = output_app();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<ResolvedInputRoutes>();
     let uid = Uuid::new_v4();
     let [tilt1, dim1, tilt2, dim2] = spawn_interleaved_fixture(app.world_mut(), uid);
-    app.world_mut().resource_mut::<OutputBindings>().bindings =
-        vec![console_binding(vec![uid], 3, 11)];
-    app.world_mut().resource_mut::<InputBindings>().bindings = vec![InputBinding {
+    app.world_mut().resource_mut::<OutputRoutes>().routes = vec![console_route(vec![uid], 3, 11)];
+    app.world_mut().resource_mut::<InputRoutes>().routes = vec![InputRoute {
         source: InputSource::Transport {
-            transport: BindingTransport::Sacn,
+            transport: RouteTransport::Sacn,
             universe: Some(DmxRange::single(1)),
             address: None,
         },
@@ -1793,13 +1792,12 @@ fn console_input_targets_use_explicit_profile_slots() {
 
     app.add_systems(
         Update,
-        (derive_console_addresses, resolve_input_bindings).chain(),
+        (derive_console_addresses, resolve_input_routes).chain(),
     );
     app.update();
 
-    let resolved = app.world().resource::<ResolvedInputBindings>();
-    let ResolvedInputDestination::Console { targets, .. } = &resolved.bindings[0].destination
-    else {
+    let resolved = app.world().resource::<ResolvedInputRoutes>();
+    let ResolvedInputDestination::Console { targets, .. } = &resolved.routes[0].destination else {
         panic!("expected console destination");
     };
     assert_eq!(
@@ -1825,16 +1823,16 @@ fn console_input_targets_use_explicit_profile_slots() {
     );
 }
 
-/// Verifies that when two console output bindings for one fixture share a priority, the
-/// first-authored binding keeps the console address, matching the input-binding tie-break.
+/// Verifies that when two console output routes for one fixture share a priority, the
+/// first-authored route keeps the console address, matching the input-route tie-break.
 #[test]
-fn derive_console_addresses_keeps_first_binding_on_equal_priority() {
+fn derive_console_addresses_keeps_first_route_on_equal_priority() {
     let mut app = output_app();
     let uid = Uuid::new_v4();
     spawn_fixture_with_parameter(app.world_mut(), uid, 1, Attribute::Intensity);
-    app.world_mut().resource_mut::<OutputBindings>().bindings = [(2, 100), (1, 1)]
+    app.world_mut().resource_mut::<OutputRoutes>().routes = [(2, 100), (1, 1)]
         .into_iter()
-        .map(|(universe, address)| OutputBinding {
+        .map(|(universe, address)| OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![uid],
                 element: None,
@@ -1864,22 +1862,22 @@ fn derive_console_addresses_keeps_first_binding_on_equal_priority() {
     );
 }
 
-/// Verifies that when two equal-priority console→transport bindings route different console
-/// universes onto one wire window, the first-authored binding's channels reach the wire.
+/// Verifies that when two equal-priority console→transport routes send different console
+/// universes onto one wire window, the first-authored route's channels reach the wire.
 #[test]
-fn console_windows_with_equal_priority_favor_first_binding_on_the_wire() {
+fn console_windows_with_equal_priority_favor_first_route_on_the_wire() {
     let mut app = output_app();
     app.init_resource::<InputDmxUniverses>();
     app.init_resource::<OutputDmxFrames>();
     {
         let mut universes = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
-        // Manual values survive the output-binding reset that resolution performs.
+        // Manual values survive the output-route reset that resolution performs.
         universes.set_value(1, 1, 11, ConsoleChannelOrigin::ManualCommand);
         universes.set_value(2, 1, 22, ConsoleChannelOrigin::ManualCommand);
     }
-    app.world_mut().resource_mut::<OutputBindings>().bindings = [1, 2]
+    app.world_mut().resource_mut::<OutputRoutes>().routes = [1, 2]
         .into_iter()
-        .map(|console_universe| OutputBinding {
+        .map(|console_universe| OutputRoute {
             source: OutputSource::Console {
                 universe: Some(DmxRange::single(console_universe)),
                 address: None,
@@ -1897,7 +1895,7 @@ fn console_windows_with_equal_priority_favor_first_binding_on_the_wire() {
     app.add_systems(
         Update,
         (
-            resolve_output_bindings,
+            resolve_output_routes,
             nightfall_fixtures::output_frames::compose_output_frames,
         )
             .chain(),

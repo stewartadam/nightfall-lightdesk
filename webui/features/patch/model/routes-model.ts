@@ -6,31 +6,31 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { BindingConflictColumn } from "../../../lib/binding-overlap";
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import {
   alwaysVisibleColumnMeta,
   columnVisibilityMeta,
   type VisibilityGridColumn,
 } from "../../../lib/datagrid-column-visibility";
 import type { FilterableGridColumn } from "../../../lib/datagrid-filtering";
+import type { RouteConflictColumn } from "../../../lib/route-overlap";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import * as types from "../../../types";
 
-export type BindingDeleteFilter = {
-  source: types.BindingEndpoint;
-  target: types.BindingEndpoint;
+export type RouteDeleteFilter = {
+  source: types.RouteEndpoint;
+  target: types.RouteEndpoint;
   priority: number;
   clone: boolean;
 };
 
-export type BindingRow = {
+export type RouteRow = {
   id: string;
   kind: string;
   source: string;
   target: string;
   priority: number;
   clone: boolean;
-  deleteFilter: BindingDeleteFilter | null;
+  deleteFilter: RouteDeleteFilter | null;
 };
 
 export type ConflictTooltipState = {
@@ -39,14 +39,14 @@ export type ConflictTooltipState = {
   anchorRect: DOMRect;
 };
 
-export function isBindingConflictColumn(
+export function isRouteConflictColumn(
   columnId: string | undefined,
-): columnId is BindingConflictColumn {
+): columnId is RouteConflictColumn {
   return columnId === "source" || columnId === "target";
 }
 
 export const DEFAULT_COLUMNS: FilterableGridColumn<
-  BindingRow,
+  RouteRow,
   VisibilityGridColumn
 >[] = [
   {
@@ -61,28 +61,28 @@ export const DEFAULT_COLUMNS: FilterableGridColumn<
     id: "source",
     width: 280,
     filter: { value: (row) => row.source },
-    ...columnVisibilityMeta("Binding", "Source"),
+    ...columnVisibilityMeta("Route", "Source"),
   },
   {
     title: "Target",
     id: "target",
     width: 280,
     filter: { value: (row) => row.target },
-    ...columnVisibilityMeta("Binding", "Target"),
+    ...columnVisibilityMeta("Route", "Target"),
   },
   {
     title: "Priority",
     id: "priority",
     width: 90,
     filter: { kind: "number", value: (row) => row.priority },
-    ...columnVisibilityMeta("Binding", "Priority"),
+    ...columnVisibilityMeta("Route", "Priority"),
   },
   {
     title: "Clone",
     id: "clone",
     width: 70,
     filter: { kind: "boolean", value: (row) => row.clone },
-    ...columnVisibilityMeta("Binding", "Clone"),
+    ...columnVisibilityMeta("Route", "Clone"),
   },
 ];
 
@@ -104,34 +104,34 @@ export function formatUniverseAddress(
   return `${universePart}.${addressPart}`;
 }
 
-export const TRANSPORT_LABELS: Record<types.BindingTransport, string> = {
-  [types.BindingTransport.Sacn]: "sACN",
-  [types.BindingTransport.ArtNet]: "Art-Net",
-  [types.BindingTransport.Udmx]: "USB",
+export const TRANSPORT_LABELS: Record<types.RouteTransport, string> = {
+  [types.RouteTransport.Sacn]: "sACN",
+  [types.RouteTransport.ArtNet]: "Art-Net",
+  [types.RouteTransport.Udmx]: "USB",
 };
 
-export function normalizeBindingTransport(
+export function normalizeRouteTransport(
   transport: unknown,
-): types.BindingTransport | null {
+): types.RouteTransport | null {
   if (typeof transport !== "string") {
     return null;
   }
 
   const value = transport.trim().toLowerCase();
-  if (value === types.BindingTransport.Sacn) {
-    return types.BindingTransport.Sacn;
+  if (value === types.RouteTransport.Sacn) {
+    return types.RouteTransport.Sacn;
   }
-  if (value === types.BindingTransport.ArtNet) {
-    return types.BindingTransport.ArtNet;
+  if (value === types.RouteTransport.ArtNet) {
+    return types.RouteTransport.ArtNet;
   }
-  if (value === types.BindingTransport.Udmx) {
-    return types.BindingTransport.Udmx;
+  if (value === types.RouteTransport.Udmx) {
+    return types.RouteTransport.Udmx;
   }
   return null;
 }
 
-export function formatBindingTransport(transport: unknown): string {
-  const normalized = normalizeBindingTransport(transport);
+export function formatRouteTransport(transport: unknown): string {
+  const normalized = normalizeRouteTransport(transport);
   if (normalized) {
     return TRANSPORT_LABELS[normalized];
   }
@@ -139,14 +139,14 @@ export function formatBindingTransport(transport: unknown): string {
 }
 
 /** Converts a physical input transport to the command endpoint target ID. */
-export function bindingTransportToTargetId(
-  transport: types.BindingTransport,
+export function routeTransportToTargetId(
+  transport: types.RouteTransport,
 ): string {
-  if (transport === types.BindingTransport.ArtNet) return "artnet";
+  if (transport === types.RouteTransport.ArtNet) return "artnet";
   return transport;
 }
 
-/** Formats a network DMX output target identifier for binding tables. */
+/** Formats a network DMX output target identifier for route tables. */
 export function formatOutputTargetId(target: string): string {
   if (target === "sacn") return "sACN";
   if (target === "artnet") return "Art-Net";
@@ -228,13 +228,13 @@ export function toFixtureIds(
 export function toInputSourceEndpoint(
   source: types.InputSource,
   fixtureMap: Record<string, types.Fixture>,
-): types.BindingEndpoint | null {
+): types.RouteEndpoint | null {
   switch (source.type) {
     case "Transport":
       return {
         type: "Transport",
         data: {
-          target: bindingTransportToTargetId(source.data.transport),
+          target: routeTransportToTargetId(source.data.transport),
           universe: source.data.universe,
           address: source.data.address,
         },
@@ -259,7 +259,7 @@ export function toInputSourceEndpoint(
 export function toInputTargetEndpoint(
   target: types.InputTarget,
   fixtureMap: Record<string, types.Fixture>,
-): types.BindingEndpoint | null {
+): types.RouteEndpoint | null {
   switch (target.type) {
     case "Transport":
       return { type: "Transport", data: { ...target.data } };
@@ -285,7 +285,7 @@ export function toInputTargetEndpoint(
 export function toOutputSourceEndpoint(
   source: types.OutputSource,
   fixtureMap: Record<string, types.Fixture>,
-): types.BindingEndpoint | null {
+): types.RouteEndpoint | null {
   switch (source.type) {
     case "Console":
       return { type: "Console", data: { ...source.data } };
@@ -314,7 +314,7 @@ export function toOutputSourceEndpoint(
 
 export function toOutputTargetEndpoint(
   target: types.OutputTarget,
-): types.BindingEndpoint {
+): types.RouteEndpoint {
   switch (target.type) {
     case "Transport":
       return { type: "Transport", data: { ...target.data } };
@@ -323,53 +323,53 @@ export function toOutputTargetEndpoint(
   }
 }
 
-export function toInputBindingDeleteFilter(
-  binding: types.InputBinding,
+export function toInputRouteDeleteFilter(
+  route: types.InputRoute,
   fixtureMap: Record<string, types.Fixture>,
-): BindingDeleteFilter | null {
-  const source = toInputSourceEndpoint(binding.source, fixtureMap);
-  const target = toInputTargetEndpoint(binding.target, fixtureMap);
+): RouteDeleteFilter | null {
+  const source = toInputSourceEndpoint(route.source, fixtureMap);
+  const target = toInputTargetEndpoint(route.target, fixtureMap);
   if (!source || !target) {
     return null;
   }
   return {
     source,
     target,
-    priority: binding.priority,
-    clone: binding.clone,
+    priority: route.priority,
+    clone: route.clone,
   };
 }
 
-export function toOutputBindingDeleteFilter(
-  binding: types.OutputBinding,
+export function toOutputRouteDeleteFilter(
+  route: types.OutputRoute,
   fixtureMap: Record<string, types.Fixture>,
-): BindingDeleteFilter | null {
-  const source = toOutputSourceEndpoint(binding.source, fixtureMap);
-  const target = toOutputTargetEndpoint(binding.target);
+): RouteDeleteFilter | null {
+  const source = toOutputSourceEndpoint(route.source, fixtureMap);
+  const target = toOutputTargetEndpoint(route.target);
   if (!source) {
     return null;
   }
   return {
     source,
     target,
-    priority: binding.priority,
-    clone: binding.clone,
+    priority: route.priority,
+    clone: route.clone,
   };
 }
 
-export function toDisabledBindingDeleteFilter(
-  binding: types.DisabledBinding,
+export function toDisabledRouteDeleteFilter(
+  route: types.DisabledRoute,
   fixtureMap: Record<string, types.Fixture>,
-): BindingDeleteFilter | null {
-  const source = toInputSourceEndpoint(binding.data.source, fixtureMap);
+): RouteDeleteFilter | null {
+  const source = toInputSourceEndpoint(route.data.source, fixtureMap);
   if (!source) {
     return null;
   }
   return {
     source,
     target: { type: "Disabled" },
-    priority: binding.data.priority,
-    clone: binding.data.clone,
+    priority: route.data.priority,
+    clone: route.data.clone,
   };
 }
 
@@ -379,7 +379,7 @@ export function formatInputSource(
 ): string {
   switch (source.type) {
     case "Transport": {
-      const transport = formatBindingTransport(source.data.transport);
+      const transport = formatRouteTransport(source.data.transport);
       const universeAddress = formatUniverseAddress(
         source.data.universe,
         source.data.address,
@@ -479,50 +479,50 @@ export function formatOutputTarget(target: types.OutputTarget): string {
   }
 }
 
-export function toInputBindingRow(
-  binding: types.InputBinding,
+export function toInputRouteRow(
+  route: types.InputRoute,
   fixtureMap: Record<string, types.Fixture>,
   id: string,
-): BindingRow {
+): RouteRow {
   return {
     id,
     kind: "Input",
-    source: formatInputSource(binding.source, fixtureMap),
-    target: formatInputTarget(binding.target, fixtureMap),
-    priority: binding.priority,
-    clone: binding.clone,
-    deleteFilter: toInputBindingDeleteFilter(binding, fixtureMap),
+    source: formatInputSource(route.source, fixtureMap),
+    target: formatInputTarget(route.target, fixtureMap),
+    priority: route.priority,
+    clone: route.clone,
+    deleteFilter: toInputRouteDeleteFilter(route, fixtureMap),
   };
 }
 
-export function toOutputBindingRow(
-  binding: types.OutputBinding,
+export function toOutputRouteRow(
+  route: types.OutputRoute,
   fixtureMap: Record<string, types.Fixture>,
   id: string,
-): BindingRow {
+): RouteRow {
   return {
     id,
     kind: "Output",
-    source: formatOutputSource(binding.source, fixtureMap),
-    target: formatOutputTarget(binding.target),
-    priority: binding.priority,
-    clone: binding.clone,
-    deleteFilter: toOutputBindingDeleteFilter(binding, fixtureMap),
+    source: formatOutputSource(route.source, fixtureMap),
+    target: formatOutputTarget(route.target),
+    priority: route.priority,
+    clone: route.clone,
+    deleteFilter: toOutputRouteDeleteFilter(route, fixtureMap),
   };
 }
 
-export function toDisabledBindingRow(
-  binding: types.DisabledBinding,
+export function toDisabledRouteRow(
+  route: types.DisabledRoute,
   fixtureMap: Record<string, types.Fixture>,
   id: string,
-): BindingRow {
+): RouteRow {
   return {
     id,
     kind: "Input",
-    source: formatInputSource(binding.data.source, fixtureMap),
+    source: formatInputSource(route.data.source, fixtureMap),
     target: "Disabled",
-    priority: binding.data.priority,
-    clone: binding.data.clone,
-    deleteFilter: toDisabledBindingDeleteFilter(binding, fixtureMap),
+    priority: route.data.priority,
+    clone: route.data.clone,
+    deleteFilter: toDisabledRouteDeleteFilter(route, fixtureMap),
   };
 }

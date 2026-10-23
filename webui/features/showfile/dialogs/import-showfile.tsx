@@ -59,7 +59,7 @@ const IMPORT_ROWS: Array<{
   { key: "fixtures", label: "Fixtures / Patch", policies: FULL_POLICY_OPTIONS },
   { key: "variables", label: "Variables", policies: FULL_POLICY_OPTIONS },
   { key: "settings", label: "Settings", policies: REPLACE_ONLY_POLICY_OPTIONS },
-  { key: "bindings", label: "Bindings", policies: LIST_POLICY_OPTIONS },
+  { key: "routes", label: "DMX Routes", policies: LIST_POLICY_OPTIONS },
   {
     key: "midi_mappings",
     label: "MIDI Mappings",
@@ -98,7 +98,7 @@ function defaultImportOptions(): ShowfileImportOptions {
     fixtures: ShowfileImportPolicy.Merge,
     variables: ShowfileImportPolicy.Merge,
     settings: ShowfileImportPolicy.Skip,
-    bindings: ShowfileImportPolicy.Merge,
+    routes: ShowfileImportPolicy.Merge,
     midi_mappings: ShowfileImportPolicy.Merge,
     osc_mappings: ShowfileImportPolicy.Merge,
     scene_objects: ShowfileImportPolicy.Merge,
