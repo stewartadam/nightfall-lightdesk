@@ -124,13 +124,21 @@ pub(crate) struct MidiFeedbackCache {
 ///
 /// Notes show on/off LED values. Controllers and pitch bend show the target's level when it
 /// has one (for faders and LED rings), and controllers otherwise show the on/off values.
+/// When the on color has a brightness `ramp`, an active level instead picks the ramp step
+/// matching it on notes and controllers alike, so a pad mapped to a fader brightens with it.
 /// Returns `None` when the address cannot show the feedback, such as pitch bend without a
 /// level.
-fn encode(address: MidiSource, led: MidiLedValues, feedback: ActionFeedback) -> Option<Vec<u8>> {
-    let lit = match feedback.state {
-        FeedbackState::Idle => led.off_value(),
-        FeedbackState::Active => led.on_value(),
-        FeedbackState::Held => led.held_value(),
+fn encode(
+    address: MidiSource,
+    led: MidiLedValues,
+    ramp: &[u8],
+    feedback: ActionFeedback,
+) -> Option<Vec<u8>> {
+    let lit = match (feedback.state, feedback.level) {
+        (FeedbackState::Idle, _) => led.off_value(),
+        (FeedbackState::Active, Some(level)) if !ramp.is_empty() => ramp_step(ramp, level),
+        (FeedbackState::Active, _) => led.on_value(),
+        (FeedbackState::Held, _) => led.held_value(),
     };
     match address {
         MidiSource::Note { channel, note } => Some(vec![0x90 | (channel & 0x0F), note, lit]),
@@ -138,7 +146,10 @@ fn encode(address: MidiSource, led: MidiLedValues, feedback: ActionFeedback) -> 
             channel,
             controller,
         } => {
-            let value = feedback.level.map_or(lit, seven_bit);
+            let value = match feedback.level {
+                Some(level) if ramp.is_empty() => seven_bit(level),
+                _ => lit,
+            };
             Some(vec![0xB0 | (channel & 0x0F), controller, value])
         }
         MidiSource::PitchBend { channel } => {
@@ -154,17 +165,19 @@ fn encode(address: MidiSource, led: MidiLedValues, feedback: ActionFeedback) -> 
 
 /// Encodes what an address shows now, plus the message that releases it later.
 ///
-/// Addresses showing on/off state are released with the mapping's own off value. Addresses
-/// showing a level (motor faders, LED rings) are left where they are.
+/// Addresses showing on/off state or a brightness ramp are released with the mapping's own
+/// off value. Addresses showing a raw level (motor faders, LED rings) are left where they
+/// are.
 fn encode_feedback(
     address: MidiSource,
     led: MidiLedValues,
+    ramp: &[u8],
     feedback: ActionFeedback,
 ) -> Option<AddressFeedback> {
-    let message = encode(address, led, feedback)?;
+    let message = encode(address, led, ramp, feedback)?;
     let release = match feedback.level {
-        Some(_) => None,
-        None => encode(address, led, ActionFeedback::IDLE),
+        Some(_) if ramp.is_empty() => None,
+        _ => encode(address, led, ramp, ActionFeedback::IDLE),
     };
     Some(AddressFeedback { message, release })
 }
@@ -172,6 +185,14 @@ fn encode_feedback(
 /// Converts a normalized level to a 7-bit MIDI value.
 fn seven_bit(level: f32) -> u8 {
     (level.clamp(0.0, 1.0) * 127.0).round() as u8
+}
+
+/// Picks the brightness step showing a normalized level above zero: the ramp is split into
+/// equal bands, so any level lights at least the dimmest step and only full lights the last.
+fn ramp_step(ramp: &[u8], level: f32) -> u8 {
+    let steps = ramp.len();
+    let band = (level.clamp(0.0, 1.0) * steps as f32).ceil() as usize;
+    ramp[band.clamp(1, steps) - 1]
 }
 
 /// Computes the message each control address should show now, one per address.
@@ -199,17 +220,21 @@ fn desired_messages(
         let Some(feedback) = registry.feedback(world, &mapping.action) else {
             continue;
         };
-        let fallback = *profile_led.entry(device).or_insert_with(|| {
-            profile::for_device(device)
+        let (profile, fallback) = *profile_led.entry(device).or_insert_with(|| {
+            let profile = profile::for_device(device);
+            let fallback = profile
                 .map(profile::MidiProfile::default_led)
-                .unwrap_or_default()
+                .unwrap_or_default();
+            (profile, fallback)
         });
         // A mapping choosing its own on value but no held value keeps that color while held.
         let led = MidiLedValues {
             held: mapping.led.held.or(mapping.led.on),
             ..mapping.led
-        };
-        if let Some(address) = encode_feedback(mapping.source, led.or(fallback), feedback) {
+        }
+        .or(fallback);
+        let ramp = profile.map_or(&[][..], |profile| profile.ramp(led.on_value()));
+        if let Some(address) = encode_feedback(mapping.source, led, ramp, feedback) {
             desired.insert(key, address);
         }
     }
@@ -467,12 +492,12 @@ mod tests {
             controller: 7,
         };
 
-        let lit = encode_feedback(pad, led, ActionFeedback::ACTIVE).expect("pad shows state");
+        let lit = encode_feedback(pad, led, &[], ActionFeedback::ACTIVE).expect("pad shows state");
         assert_eq!(lit.message, vec![0x90, 36, 9]);
         assert_eq!(lit.release, Some(vec![0x90, 36, 2]));
 
-        let level =
-            encode_feedback(fader, led, ActionFeedback::level(0.5)).expect("fader shows its level");
+        let level = encode_feedback(fader, led, &[], ActionFeedback::level(0.5))
+            .expect("fader shows its level");
         assert_eq!(level.message, vec![0xB0, 7, 64]);
         assert_eq!(level.release, None);
     }
@@ -507,23 +532,23 @@ mod tests {
         };
 
         assert_eq!(
-            encode(note, led, ActionFeedback::ACTIVE),
+            encode(note, led, &[], ActionFeedback::ACTIVE),
             Some(vec![0x92, 60, 5])
         );
         assert_eq!(
-            encode(note, led, ActionFeedback::IDLE),
+            encode(note, led, &[], ActionFeedback::IDLE),
             Some(vec![0x92, 60, 1])
         );
         assert_eq!(
-            encode(note, led, ActionFeedback::level(0.5)),
+            encode(note, led, &[], ActionFeedback::level(0.5)),
             Some(vec![0x92, 60, 5])
         );
         assert_eq!(
-            encode(controller, led, ActionFeedback::level(0.5)),
+            encode(controller, led, &[], ActionFeedback::level(0.5)),
             Some(vec![0xB0, 7, 64])
         );
         assert_eq!(
-            encode(controller, led, ActionFeedback::IDLE),
+            encode(controller, led, &[], ActionFeedback::IDLE),
             Some(vec![0xB0, 7, 1])
         );
     }
@@ -535,10 +560,10 @@ mod tests {
         let led = MidiLedValues::default();
 
         assert_eq!(
-            encode(bend, led, ActionFeedback::level(1.0)),
+            encode(bend, led, &[], ActionFeedback::level(1.0)),
             Some(vec![0xE1, 0x7F, 0x7F])
         );
-        assert_eq!(encode(bend, led, ActionFeedback::ACTIVE), None);
+        assert_eq!(encode(bend, led, &[], ActionFeedback::ACTIVE), None);
     }
 
     /// Verifies a held flash lights the LED like an active target.
@@ -554,7 +579,7 @@ mod tests {
         };
 
         assert_eq!(
-            encode(note, MidiLedValues::default(), held),
+            encode(note, MidiLedValues::default(), &[], held),
             Some(vec![0x90, 1, 127])
         );
     }
@@ -609,6 +634,76 @@ mod tests {
             note: 1,
         };
 
-        assert_eq!(encode(note, led, held), Some(vec![0x90, 1, 59]));
+        assert_eq!(encode(note, led, &[], held), Some(vec![0x90, 1, 59]));
+    }
+
+    /// Verifies a level on a color with a ramp picks the matching brightness step on notes
+    /// and controllers, zero shows the off value, a held flash keeps its held value, and the
+    /// address is darkened on release instead of left at its level.
+    #[test]
+    fn encode_levels_step_through_the_ramp() {
+        let led = MidiLedValues {
+            on: Some(60),
+            off: Some(12),
+            held: Some(59),
+        };
+        let ramp = [28, 44, 60];
+        let note = MidiSource::Note {
+            channel: 0,
+            note: 1,
+        };
+        let controller = MidiSource::ControlChange {
+            channel: 0,
+            controller: 104,
+        };
+        let shown = |address, level| encode(address, led, &ramp, ActionFeedback::level(level));
+
+        assert_eq!(shown(note, 0.0), Some(vec![0x90, 1, 12]));
+        assert_eq!(shown(note, 0.01), Some(vec![0x90, 1, 28]));
+        assert_eq!(shown(note, 0.34), Some(vec![0x90, 1, 44]));
+        assert_eq!(shown(note, 0.67), Some(vec![0x90, 1, 60]));
+        assert_eq!(shown(note, 1.0), Some(vec![0x90, 1, 60]));
+        assert_eq!(shown(controller, 0.5), Some(vec![0xB0, 104, 44]));
+
+        let held = ActionFeedback {
+            state: FeedbackState::Held,
+            level: Some(1.0),
+        };
+        assert_eq!(encode(note, led, &ramp, held), Some(vec![0x90, 1, 59]));
+
+        let feedback = encode_feedback(note, led, &ramp, ActionFeedback::level(0.5))
+            .expect("pad shows its level");
+        assert_eq!(feedback.release, Some(vec![0x90, 1, 12]));
+    }
+
+    /// Level the test fader action reports, read by [`level_feedback_app`]'s feedback.
+    #[derive(Resource)]
+    struct TestLevel(f32);
+
+    /// Verifies a Launchpad pad mapped to a level action brightens through the profile's
+    /// ramp for the mapping's on color, the profile default green or a chosen red.
+    #[test]
+    fn profiled_pad_brightens_with_level() {
+        let (mut app, rx, _) = device_feedback_app("Launchpad", MidiLedValues::default());
+        app.world_mut()
+            .resource_mut::<ActionRegistry>()
+            .register_feedback::<serde::de::IgnoredAny, _>("test.start", |world, _| {
+                Ok(ActionFeedback::level(world.resource::<TestLevel>().0))
+            });
+        app.insert_resource(TestLevel(0.5));
+
+        assert_eq!(frame(&mut app, &rx).last(), Some(&vec![0x90, 60, 44]));
+        app.insert_resource(TestLevel(1.0));
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 60]]);
+        app.insert_resource(TestLevel(0.0));
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 12]]);
+
+        let mut mappings = app.world().resource::<MidiMappings>().mappings().to_vec();
+        mappings[0].led.on = Some(15);
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .set_mappings(mappings);
+        app.insert_resource(TestLevel(0.2));
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 13]]);
     }
 }
