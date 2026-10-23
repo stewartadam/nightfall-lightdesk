@@ -72,7 +72,8 @@ export default function Modal(props: ModalProps) {
   createModalScrollLock(visible);
   const [dialogElement, setDialogElement] = createSignal<HTMLDialogElement>();
   let opener: HTMLElement | undefined;
-  let closingOnPurpose = false;
+  /** The dialog element this Modal currently keeps open; cleared once it closes on purpose. */
+  let shownDialog: HTMLDialogElement | undefined;
   let lastFocusedInside: HTMLElement | undefined;
 
   /**
@@ -100,7 +101,6 @@ export default function Modal(props: ModalProps) {
     if (!dialog) return;
     const returnTo = opener;
     let disposed = false;
-    closingOnPurpose = false;
     let microtaskRetries = 3;
     /**
      * Shows the dialog modally once it is in the document. A portal attaches
@@ -116,6 +116,7 @@ export default function Modal(props: ModalProps) {
         return;
       }
       const focusedBeforeShow = document.activeElement;
+      shownDialog = dialog;
       dialog.showModal();
       focusDialogOnOpen(
         dialog,
@@ -129,7 +130,7 @@ export default function Modal(props: ModalProps) {
 
     onCleanup(() => {
       disposed = true;
-      closingOnPurpose = true;
+      if (shownDialog === dialog) shownDialog = undefined;
       if (dialog.open) dialog.close();
       queueMicrotask(() => {
         const active = document.activeElement;
@@ -171,8 +172,16 @@ export default function Modal(props: ModalProps) {
         }}
         onClose={(event) => {
           // Reopens a dialog the browser closed on its own while its owner still shows it.
-          if (closingOnPurpose || !visible()) return;
+          // The close event arrives a task later, so it can belong to an element that was
+          // since removed from the page or replaced by a reopened one.
           const dialog = event.currentTarget;
+          if (
+            dialog !== shownDialog ||
+            dialog.open ||
+            !dialog.isConnected ||
+            !visible()
+          )
+            return;
           dialog.showModal();
           focusDialogOnOpen(
             dialog,
