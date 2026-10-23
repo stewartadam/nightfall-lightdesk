@@ -94,6 +94,8 @@ pub struct MaterializedTimeline {
     pub triggered_actions: HashMap<(String, String), Duration>,
     /// The audio sink ID associated with this timeline
     pub audio_sink_id: Option<AudioSinkId>,
+    /// Playback offset last reported to browser media for this timeline while it plays.
+    pub browser_audio_reported_offset: Option<Duration>,
     /// Entities spawned by this timeline's track actions, maps entity to (track_id, action_id, type)
     pub spawned_entities: HashMap<Entity, (String, String, SpawnedEntityType)>,
 }
@@ -111,6 +113,7 @@ impl MaterializedTimeline {
             parameter_values: HashMap::new(),
             triggered_actions: HashMap::new(),
             audio_sink_id: None,
+            browser_audio_reported_offset: None,
             spawned_entities: HashMap::new(),
         }
     }

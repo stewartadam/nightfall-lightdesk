@@ -79,10 +79,20 @@ export function registerTimelineHandlers(
     );
   });
 
-  registry.register("TimelineAudioDirective", (message) => {
+  registry.register("TimelineAudioDirective", (message, delivery) => {
     const session = browserDemoAudioHost.currentSession();
+    // The engine clock in Play and Sync is valid when the worker posted them, not when a
+    // busy main thread got to them.
+    const sentAtMs =
+      delivery.postedAtMs === undefined
+        ? undefined
+        : delivery.postedAtMs - performance.timeOrigin;
     void browserDemoAudioHost
-      .applyDirective(message.data as types.TimelineAudioDirective, session)
+      .applyDirective(
+        message.data as types.TimelineAudioDirective,
+        session,
+        sentAtMs,
+      )
       .catch((error: unknown) => {
         log.error("Unable to apply browser demo timeline audio", error);
         pushToast(

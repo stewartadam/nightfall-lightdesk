@@ -78,6 +78,7 @@ import {
 import type { ParameterStreamStats } from "./parameter-stream";
 import { watchWorkerUncaughtErrors } from "./uncaught-error-reporter";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
+import type { WsMessageDelivery } from "./ws/message-registry";
 import type { AnyWsMessage, FixtureParameterState } from "./ws/types";
 
 /** Worker stats per message type */
@@ -358,7 +359,7 @@ function applyWorkerQueuedMessage(message: WorkerQueuedMessage): void {
         queuedWorkerMessageData(message, parameterStateDecoder),
       )
     : queuedWorkerMessageData(message, parameterStateDecoder);
-  if (data) queueWorkerMessage(data);
+  if (data) queueWorkerMessage(data, message.postedAtMs);
 }
 
 /** Applies a pulled worker batch and schedules the next frame pull. */
@@ -386,8 +387,10 @@ function applyWorkerMessageBatch(messages: unknown): void {
  * Queue a message from the worker for processing.
  * Pulled messages are dispatched synchronously on the main thread after the
  * worker has ordered non-droppable messages before coalesced snapshots.
+ * `postedAtMs` is when the worker posted it, so time-sensitive handlers can
+ * discount how long it waited for the main thread.
  */
-function queueWorkerMessage(raw: AnyWsMessage) {
+function queueWorkerMessage(raw: AnyWsMessage, postedAtMs?: unknown) {
   log.trace(`Received message from websocket worker: ${raw.type}`);
 
   // ParameterState: always update immediate output for visualizer
@@ -402,7 +405,10 @@ function queueWorkerMessage(raw: AnyWsMessage) {
   // Dispatch immediately
   measurePerformanceScope(
     `websocket-main.dispatch.${raw.type}`,
-    () => dispatchMessage(raw),
+    () =>
+      dispatchMessage(raw, {
+        postedAtMs: typeof postedAtMs === "number" ? postedAtMs : undefined,
+      }),
     { messageType: raw.type },
   );
 }
@@ -411,11 +417,11 @@ function queueWorkerMessage(raw: AnyWsMessage) {
  * Counts one processed message and routes it to the domain handler registered
  * for its type, warning about types no domain module handles.
  */
-function dispatchMessage(raw: AnyWsMessage) {
+function dispatchMessage(raw: AnyWsMessage, delivery: WsMessageDelivery) {
   // Track that main thread processed a message
   // NOTE: transport heartbeat latency is measured in the worker for timing accuracy
   processedCount++;
-  if (!mainThreadMessageHandlers.dispatch(raw)) {
+  if (!mainThreadMessageHandlers.dispatch(raw, delivery)) {
     log.warn(`Unknown WsOutbound type: ${raw.type}`, raw);
   }
 }
@@ -587,6 +593,7 @@ export const engineRuntime = {
           "",
         ),
       );
+      browserDemoAudioHost.unlockOnUserGesture(document);
     }
     browserDemoAudioHost.beginSession();
     websocketBacklogSnapshot = createInitialWebsocketBacklogSnapshot();
@@ -632,7 +639,7 @@ export const engineRuntime = {
           if (typeof msg.deliveryMessageId === "number") {
             lastSeenDeliveryMessageId = msg.deliveryMessageId;
           }
-          queueWorkerMessage(msg.data as AnyWsMessage);
+          queueWorkerMessage(msg.data as AnyWsMessage, msg.postedAtMs);
           break;
 
         case "messageBatch":
