@@ -747,26 +747,19 @@ pub fn route_clip_playback_actions(
                         continue;
                     };
                     let attached_instances = attached_instances_for_clip(id, &materialized_clips);
-                    if matches!(clip.source, Some(Source::Sequence(_)))
-                        || attached_instances_include_kind(
-                            &attached_instances,
-                            InstanceKind::Sequence,
-                            &instance_query,
-                        )
-                    {
+                    let sequence_domain_stops_clip =
+                        matches!(clip.source, Some(Source::Sequence(_)))
+                            || attached_instances_include_kind(
+                                &attached_instances,
+                                InstanceKind::Sequence,
+                                &instance_query,
+                            );
+                    if sequence_domain_stops_clip {
+                        // The cue domain stops this clip in the same frame and detaches its
+                        // clip links itself, so despawning them here would despawn each twice.
                         completion.defer_to_sequence_domain();
-                    }
-                    for (entity, mexec) in materialized_clips
-                        .iter()
-                        .filter(|(_, mexec)| mexec.clip_id == id)
-                    {
-                        if mexec.auto_release_on_stop {
-                            commands.spawn(ClipReleaseAfterInstance {
-                                clip_id: mexec.clip_id,
-                                attached_instance: mexec.attached_instance,
-                            });
-                        }
-                        commands.entity(entity).despawn();
+                    } else {
+                        detach_stopped_clip_links(&mut commands, id, &materialized_clips);
                     }
                     fx_actions.write(routed_playback_action(
                         event,
@@ -844,6 +837,27 @@ impl RoutedClipCompletion {
         if let Err(error) = result {
             tracing::error!(%command_id, %error, "clip_playback_completion_failed");
         }
+    }
+}
+
+/// Despawns a stopped clip's links to its playback instances, arming a release watcher for each
+/// link that asks for a global release once its playback finishes.
+fn detach_stopped_clip_links(
+    commands: &mut Commands,
+    clip_id: u32,
+    materialized_clips: &Query<(Entity, &MaterializedClip)>,
+) {
+    for (entity, mexec) in materialized_clips
+        .iter()
+        .filter(|(_, mexec)| mexec.clip_id == clip_id)
+    {
+        if mexec.auto_release_on_stop {
+            commands.spawn(ClipReleaseAfterInstance {
+                clip_id: mexec.clip_id,
+                attached_instance: mexec.attached_instance,
+            });
+        }
+        commands.entity(entity).despawn();
     }
 }
 
@@ -2004,6 +2018,54 @@ mod tests {
         app.update();
 
         assert!(drain_command_results(&mut app).is_empty());
+    }
+
+    /// Verifies the router leaves the clip links of clips the cue domain stops to the cue domain,
+    /// which despawns them in the same frame, so a stop never despawns a link twice. Links of
+    /// clips the router stops itself are still detached.
+    #[test]
+    fn stop_detaches_only_clip_links_not_owned_by_cue_domain() {
+        let mut app = setup_clip_playback_routing_app();
+        let mut sequence_clip = clip(1, Uuid::from_u128(1), "Sequence");
+        sequence_clip.source = Some(Source::Sequence(Uuid::from_u128(10)));
+        let mut retargeted_clip = clip(6, Uuid::from_u128(6), "Retargeted");
+        retargeted_clip.source = Some(Source::Fx(Uuid::from_u128(60)));
+        let mut fx_clip = clip(7, Uuid::from_u128(7), "FX");
+        fx_clip.source = Some(Source::Fx(Uuid::from_u128(70)));
+        app.world_mut()
+            .spawn_batch([sequence_clip, retargeted_clip, fx_clip]);
+
+        let mut spawn_link = |clip_id: u32, kind: InstanceKind| {
+            let instance_id = InstanceId::new();
+            app.world_mut()
+                .spawn((instance_id, InstanceMetadata::new(kind)));
+            app.world_mut()
+                .spawn(MaterializedClip {
+                    clip_id,
+                    attached_instance: instance_id,
+                    auto_release_on_stop: false,
+                })
+                .id()
+        };
+        let sequence_link = spawn_link(1, InstanceKind::Sequence);
+        let retargeted_link = spawn_link(6, InstanceKind::Sequence);
+        let fx_link = spawn_link(7, InstanceKind::Fx);
+
+        submit_clip_command(
+            &mut app,
+            ClipCommand::StopClip(IdExpr::Add {
+                lhs: Box::new(IdExpr::Add {
+                    lhs: Box::new(IdExpr::Single(1)),
+                    rhs: Box::new(IdExpr::Single(6)),
+                }),
+                rhs: Box::new(IdExpr::Single(7)),
+            }),
+        );
+        app.update();
+
+        assert!(app.world().entities().contains(sequence_link));
+        assert!(app.world().entities().contains(retargeted_link));
+        assert!(!app.world().entities().contains(fx_link));
     }
 
     /// Verifies starting an FX module clip fails instead of hanging when no module host is built.
