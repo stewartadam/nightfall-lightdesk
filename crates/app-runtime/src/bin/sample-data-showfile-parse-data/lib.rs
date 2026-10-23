@@ -325,6 +325,7 @@ fn add_input_mappings(world: &mut World) {
                 controller: 36,
             },
             behavior: nightfall_actions::ControlBehavior::Press,
+            led: Default::default(),
             action: control_level_action(1),
         }]);
 

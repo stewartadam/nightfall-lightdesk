@@ -23,6 +23,7 @@ use nightfall_engine::prelude::{
 use serde::de::DeserializeOwned;
 
 use crate::descriptor::{ActionDescriptor, ActionInputKind, ActionParameterKind};
+use crate::feedback::ActionFeedback;
 use crate::invocation::{ActionInput, ActionInvocation, InvocationDispatch, InvocationError};
 use crate::registry::ActionRegistry;
 use crate::targets::{ActionTargetTracking, ActionTargets, mark_action_targets_changed};
@@ -175,6 +176,16 @@ pub trait ActionAppExt {
     where
         A: DeserializeOwned + 'static,
         F: Fn(&World, A) -> Result<Option<f32>, InvocationError> + Send + Sync + 'static;
+
+    /// Registers how to read the live state of an action's target for controls bound to it.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the action is not registered yet.
+    fn register_action_feedback<A, F>(&mut self, action_id: &str, reader: F) -> &mut Self
+    where
+        A: DeserializeOwned + 'static,
+        F: Fn(&World, A) -> Result<ActionFeedback, InvocationError> + Send + Sync + 'static;
 
     /// Registers an absolute action that lowers each normalized value to an untracked update.
     ///
@@ -340,6 +351,18 @@ impl ActionAppExt for App {
         self.world_mut()
             .resource_mut::<ActionRegistry>()
             .register_flash_level::<A, F>(action_id, reader);
+        self
+    }
+
+    fn register_action_feedback<A, F>(&mut self, action_id: &str, reader: F) -> &mut Self
+    where
+        A: DeserializeOwned + 'static,
+        F: Fn(&World, A) -> Result<ActionFeedback, InvocationError> + Send + Sync + 'static,
+    {
+        self.init_resource::<ActionRegistry>();
+        self.world_mut()
+            .resource_mut::<ActionRegistry>()
+            .register_feedback::<A, F>(action_id, reader);
         self
     }
 

@@ -13,6 +13,13 @@ use std::time::{Duration, Instant};
 use nightfall_engine::prelude::FrameWaker;
 use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
 
+mod output;
+
+pub use output::MidiOutputClient;
+#[cfg(test)]
+pub(crate) use output::MidiOutputMessage;
+use output::MidiOutputWorker;
+
 /// Raw MIDI event emitted by the process-lifetime MIDI service.
 #[derive(Debug, Clone)]
 pub struct MidiInputEvent {
@@ -142,18 +149,18 @@ type MidiDeviceInfo = MidiPortDescriptor<midir::MidiInputPort>;
 /// Live MIDI connection state keyed by stable device id.
 ///
 /// The generic connection type keeps refresh logic testable without opening real MIDI ports.
-struct ConnectedMidiInput<C> {
+struct ConnectedMidiPort<C> {
     id: String,
     name: String,
-    _connection: C,
+    connection: C,
 }
 
-impl<C> ConnectedMidiInput<C> {
+impl<C> ConnectedMidiPort<C> {
     fn new(id: String, name: String, connection: C) -> Self {
         Self {
             id,
             name,
-            _connection: connection,
+            connection,
         }
     }
 }
@@ -170,9 +177,11 @@ pub(crate) struct MidiInputWorker {
     discovery_input: Option<midir::MidiInput>,
     topology_change_rx: Option<std::sync::mpsc::Receiver<()>>,
     last_discovery_error: Option<String>,
-    connections: Vec<ConnectedMidiInput<midir::MidiInputConnection<()>>>,
+    connections: Vec<ConnectedMidiPort<midir::MidiInputConnection<()>>>,
     /// Name of the only port to connect to, or `None` to connect to every discovered port.
     input_port: Option<String>,
+    /// Outputs paired with the connected inputs, for controller feedback.
+    pub(crate) output: MidiOutputWorker,
 }
 
 impl MidiInputWorker {
@@ -187,6 +196,7 @@ impl MidiInputWorker {
             last_discovery_error: None,
             connections: Vec::new(),
             input_port,
+            output: MidiOutputWorker::spawn(),
         };
         worker.refresh();
         tracing::info!("Connected to {} MIDI device(s)", worker.connections.len());
@@ -195,6 +205,7 @@ impl MidiInputWorker {
 
     pub(crate) fn shutdown(&mut self) {
         self.connections.clear();
+        self.output.close_all();
     }
 
     pub(crate) fn is_alive(&self) -> bool {
@@ -204,6 +215,7 @@ impl MidiInputWorker {
     pub(crate) fn refresh(&mut self) -> bool {
         if topology_changed(&self.topology_change_rx) {
             self.discovery_input = None;
+            self.output.reconnect_all();
         }
 
         if self.discovery_input.is_none() {
@@ -243,6 +255,7 @@ impl MidiInputWorker {
             connect_to_port(&port, name, &event_tx)
         });
         let device_names = connected_device_names(&self.connections);
+        self.output.refresh(&device_names);
         if self.device_names != device_names {
             tracing::info!(
                 previous_devices = ?self.device_names,
@@ -285,6 +298,7 @@ fn discover_ports(midi_in: &midir::MidiInput) -> Vec<MidiDeviceInfo> {
             midi_in
                 .port_name(&port)
                 .ok()
+                .filter(|name| !output::is_own_feedback_port(name))
                 .map(|name| MidiDeviceInfo { port, id, name })
         })
         .collect()
@@ -295,7 +309,7 @@ fn discover_ports(midi_in: &midir::MidiInput) -> Vec<MidiDeviceInfo> {
 /// Connections stay in a `Vec` so the worker can preserve discovery order and duplicate device
 /// names while still keying reconciliation by the stable port id.
 fn refresh_connections<P, C>(
-    connections: &mut Vec<ConnectedMidiInput<C>>,
+    connections: &mut Vec<ConnectedMidiPort<C>>,
     discovered_ports: Vec<MidiPortDescriptor<P>>,
     mut connect: impl FnMut(P, String) -> Option<C>,
 ) -> bool {
@@ -326,7 +340,7 @@ fn refresh_connections<P, C>(
         let device_id = device.id;
         let device_name = device.name;
         if let Some(connection) = connect(device.port, device_name.clone()) {
-            connections.push(ConnectedMidiInput::new(
+            connections.push(ConnectedMidiPort::new(
                 device_id.clone(),
                 device_name,
                 connection,
@@ -346,7 +360,7 @@ fn refresh_connections<P, C>(
     previous_connection_count != connections.len() || added_connection
 }
 
-fn connected_device_names<C>(connections: &[ConnectedMidiInput<C>]) -> Vec<String> {
+fn connected_device_names<C>(connections: &[ConnectedMidiPort<C>]) -> Vec<String> {
     connections
         .iter()
         .map(|connection| connection.name.clone())
@@ -413,6 +427,7 @@ fn connect_to_port(
 pub struct MidiInputService {
     slot: WorkerSlot<MidiInputWorker>,
     client: MidiInputClient,
+    output_client: MidiOutputClient,
     input_port: Mutex<Option<String>>,
 }
 
@@ -421,6 +436,7 @@ impl MidiInputService {
         Self {
             slot: WorkerSlot::new(),
             client: MidiInputClient::default(),
+            output_client: MidiOutputClient::default(),
             input_port: Mutex::new(None),
         }
     }
@@ -452,6 +468,8 @@ impl MidiInputService {
             |worker| worker.is_alive(),
         );
         let (sender, devices) = self.slot.with_worker(|worker| {
+            self.output_client
+                .set_worker(worker.as_ref().map(|worker| &worker.output));
             if let Some(worker) = worker {
                 (Some(worker.event_tx.clone()), worker.device_names.clone())
             } else {
@@ -465,6 +483,11 @@ impl MidiInputService {
     /// Cloneable MIDI input client for insertion into ECS worlds.
     pub fn client(&self) -> MidiInputClient {
         self.client.clone()
+    }
+
+    /// Cloneable client that sends feedback to the outputs paired with input devices.
+    pub fn output_client(&self) -> MidiOutputClient {
+        self.output_client.clone()
     }
 
     /// Refresh connected devices for the running worker and publish updated state.
@@ -492,6 +515,7 @@ impl MidiInputService {
     pub fn shutdown(&self) {
         self.slot.shutdown(|worker| worker.shutdown());
         self.client.set_state(None, Vec::new());
+        self.output_client.set_worker(None);
     }
 }
 
@@ -535,12 +559,12 @@ mod tests {
     #[test]
     fn refresh_connections_adds_and_removes_devices() {
         let mut connections = vec![
-            ConnectedMidiInput::new(
+            ConnectedMidiPort::new(
                 "port-a".to_string(),
                 "controller-a".to_string(),
                 TestConnection("existing"),
             ),
-            ConnectedMidiInput::new(
+            ConnectedMidiPort::new(
                 "stale-port".to_string(),
                 "stale-device".to_string(),
                 TestConnection("stale"),
@@ -569,13 +593,13 @@ mod tests {
             connected_device_names(&connections),
             vec!["controller-a", "controller-b"]
         );
-        assert_eq!(connections[0]._connection, TestConnection("existing"));
-        assert_eq!(connections[1]._connection, TestConnection("port-b"));
+        assert_eq!(connections[0].connection, TestConnection("existing"));
+        assert_eq!(connections[1].connection, TestConnection("port-b"));
     }
 
     #[test]
     fn refresh_connections_skips_reconnecting_existing_devices() {
-        let mut connections = vec![ConnectedMidiInput::new(
+        let mut connections = vec![ConnectedMidiPort::new(
             "port-a".to_string(),
             "controller-a".to_string(),
             TestConnection("existing"),
@@ -597,12 +621,12 @@ mod tests {
 
         assert!(!changed);
         assert_eq!(connection_attempts, 0);
-        assert_eq!(connections[0]._connection, TestConnection("existing"));
+        assert_eq!(connections[0].connection, TestConnection("existing"));
     }
 
     #[test]
     fn refresh_connections_keeps_distinct_ports_with_same_name() {
-        let mut connections = vec![ConnectedMidiInput::new(
+        let mut connections = vec![ConnectedMidiPort::new(
             "port-a".to_string(),
             "controller".to_string(),
             TestConnection("existing-a"),
@@ -630,13 +654,13 @@ mod tests {
             connected_device_names(&connections),
             vec!["controller", "controller"]
         );
-        assert_eq!(connections[0]._connection, TestConnection("existing-a"));
-        assert_eq!(connections[1]._connection, TestConnection("port-b"));
+        assert_eq!(connections[0].connection, TestConnection("existing-a"));
+        assert_eq!(connections[1].connection, TestConnection("port-b"));
     }
 
     #[test]
     fn refresh_connections_replaces_stale_port_when_name_is_reused() {
-        let mut connections = vec![ConnectedMidiInput::new(
+        let mut connections = vec![ConnectedMidiPort::new(
             "stale-port".to_string(),
             "controller".to_string(),
             TestConnection("stale"),
@@ -660,7 +684,7 @@ mod tests {
         assert_eq!(connection_attempts, 1);
         assert_eq!(connected_device_names(&connections), vec!["controller"]);
         assert_eq!(connections[0].id, "fresh-port");
-        assert_eq!(connections[0]._connection, TestConnection("fresh-port"));
+        assert_eq!(connections[0].connection, TestConnection("fresh-port"));
     }
 
     /// Verifies an exclusive input port admits only the port with exactly that name, and no

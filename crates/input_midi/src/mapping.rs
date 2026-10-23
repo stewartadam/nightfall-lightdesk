@@ -13,19 +13,34 @@ use nightfall_actions::{ActionInputKind, ActionReference, BindingStore};
 use uuid::Uuid;
 
 use crate::command::{MidiMapping, MidiSource};
+use crate::feedback::MidiFeedbackDevices;
 
-/// Resource storing all MIDI input mappings.
+/// Resource storing all MIDI input mappings and the devices that receive their feedback.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct MidiMappings {
     mappings: Vec<MidiMapping>,
+    feedback_devices: MidiFeedbackDevices,
 }
 
 impl MidiMappings {
     /// Create a new empty mappings collection.
     pub fn new() -> Self {
-        Self {
-            mappings: Vec::new(),
-        }
+        Self::default()
+    }
+
+    /// Returns the devices that mapped controls send LED feedback to.
+    pub fn feedback_devices(&self) -> &MidiFeedbackDevices {
+        &self.feedback_devices
+    }
+
+    /// Returns the devices that receive feedback, for turning feedback on or off.
+    pub fn feedback_devices_mut(&mut self) -> &mut MidiFeedbackDevices {
+        &mut self.feedback_devices
+    }
+
+    /// Replaces the devices that receive feedback, as when loading a showfile.
+    pub fn set_feedback_devices(&mut self, devices: MidiFeedbackDevices) {
+        self.feedback_devices = devices;
     }
 
     /// Replace all mappings with the provided list, as when loading a showfile.
@@ -127,6 +142,7 @@ mod tests {
             device_name: device.to_string(),
             source: MidiSource::Note { channel: 0, note },
             behavior: ControlBehavior::Press,
+            led: Default::default(),
             action: ActionReference::new(action, json!({})),
         }
     }

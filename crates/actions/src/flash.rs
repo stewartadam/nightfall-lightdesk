@@ -50,6 +50,11 @@ impl FlashStates {
             });
     }
 
+    /// Returns whether at least one flash binding is currently holding `action`.
+    pub(crate) fn is_held(&self, action: &ActionReference) -> bool {
+        self.active.contains_key(&flash_key(action))
+    }
+
     /// Records a release on `action` and returns the level to restore, if any.
     ///
     /// Returns `None` while other flashes still hold the target, for releases without a

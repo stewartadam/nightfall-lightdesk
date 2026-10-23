@@ -37,6 +37,22 @@ impl Undoable for MidiCommand {
                     mappings.delete(*id).then(|| vec![*id])
                 })
             }
+            Self::SetDeviceFeedback {
+                device,
+                enabled: requested,
+            } => {
+                let enabled = ctx
+                    .world
+                    .get_resource::<MidiMappings>()?
+                    .feedback_devices()
+                    .contains(device);
+                (enabled != *requested).then(|| -> Box<dyn Undoable> {
+                    Box::new(Self::SetDeviceFeedback {
+                        device: device.clone(),
+                        enabled,
+                    })
+                })
+            }
         }
     }
 
@@ -45,6 +61,12 @@ impl Undoable for MidiCommand {
         match self {
             Self::UpsertMapping(_) => "Map MIDI control".to_string(),
             Self::DeleteMapping(_) => "Delete MIDI mapping".to_string(),
+            Self::SetDeviceFeedback { enabled: true, .. } => {
+                "Turn on MIDI LED feedback".to_string()
+            }
+            Self::SetDeviceFeedback { enabled: false, .. } => {
+                "Turn off MIDI LED feedback".to_string()
+            }
         }
     }
 }
@@ -132,6 +154,7 @@ mod tests {
             device_name: "Pad".to_string(),
             source: MidiSource::Note { channel: 0, note },
             behavior: ControlBehavior::Press,
+            led: Default::default(),
             action: ActionReference::new("test.trigger", serde_json::json!({ "n": id })),
         }
     }
@@ -194,6 +217,35 @@ mod tests {
             app.world().resource::<MidiMappings>().mappings(),
             &[pad(1, 60), pad(2, 61), pad(3, 62)]
         );
+    }
+
+    /// Returns whether LED feedback is on for the "Pad" device.
+    fn pad_feedback(app: &App) -> bool {
+        app.world()
+            .resource::<MidiMappings>()
+            .feedback_devices()
+            .contains("Pad")
+    }
+
+    /// Verifies turning LED feedback on undoes and redoes, while repeating it adds no
+    /// history entry, so one undo still turns it off.
+    #[test]
+    fn device_feedback_undoes_and_skips_repeats() {
+        let mut app = seeded_app();
+        let on = MidiCommand::SetDeviceFeedback {
+            device: "Pad".to_string(),
+            enabled: true,
+        };
+
+        run(&mut app, on.clone());
+        run(&mut app, on);
+        assert!(pad_feedback(&app));
+
+        run(&mut app, UndoCommand::Undo {});
+        assert!(!pad_feedback(&app));
+
+        run(&mut app, UndoCommand::Redo {});
+        assert!(pad_feedback(&app));
     }
 
     /// Verifies undoing a delete restores the mapping at its former position.

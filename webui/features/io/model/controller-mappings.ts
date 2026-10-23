@@ -85,6 +85,20 @@ export async function deleteMidiMapping(id: string): Promise<boolean> {
 }
 
 /**
+ * Turns LED feedback to a MIDI device on or off; resolves to whether the desk accepted it.
+ */
+export async function setMidiDeviceFeedback(
+  device: string,
+  enabled: boolean,
+): Promise<boolean> {
+  const output = await submitMappingCommand("MidiCommand", {
+    type: "SetDeviceFeedback",
+    data: { device, enabled },
+  });
+  return output !== null;
+}
+
+/**
  * Creates or replaces an OSC mapping; mappings with the same criteria are removed.
  *
  * Resolves to the mappings the upsert replaced, or null when it was rejected.

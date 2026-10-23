@@ -17,6 +17,7 @@ mod command;
 mod descriptor;
 mod eval;
 mod failures;
+mod feedback;
 mod flash;
 mod invocation;
 mod lowering;
@@ -43,6 +44,7 @@ pub use descriptor::{
 };
 pub use eval::{DESK_EVAL_ACTION_ID, DeskEvalActionArguments, desk_eval_action};
 pub use failures::{FAILURE_REPEAT_WINDOW, InvocationFailureThrottle};
+pub use feedback::{ActionFeedback, FeedbackState};
 pub use invocation::{
     ActionInput, ActionInvocation, ActionInvocationFailure, ActionReference,
     ClientActionInvocation, ExternalCommandInvocation, InvocationDispatch, InvocationError,
@@ -564,6 +566,60 @@ mod tests {
         flash(&mut app, ActionInput::Press);
         flash(&mut app, ActionInput::Release);
         assert_eq!(applied(&mut app), vec![TestApplied(1.0), TestApplied(0.4)]);
+    }
+
+    /// Verifies feedback reports the domain's reading, goes idle for a missing target, shows
+    /// a flash as held while pressed, and is absent for actions without a reader.
+    #[test]
+    fn feedback_reads_target_state_and_flash_holds() {
+        let mut app = action_app();
+        app.insert_resource(TestLevel(0.4));
+        app.register_update_action::<TestArguments, TestApplied, _>(
+            ActionDescriptor::new("test.level", "Test level", "Tests")
+                .with_input(ActionInputKind::Absolute),
+            |_world, _arguments, value| Ok(TestApplied(value)),
+        )
+        .register_flash_level::<TestArguments, _>("test.level", |world, _arguments| {
+            Ok(Some(world.resource::<TestLevel>().0))
+        })
+        .register_action_feedback::<TestArguments, _>("test.level", |world, _arguments| {
+            world
+                .get_resource::<TestLevel>()
+                .map(|level| ActionFeedback::level(level.0))
+                .ok_or_else(|| InvocationError::new("test.missing", "Target is missing"))
+        });
+        register_trigger_action(&mut app);
+        let action = ActionReference::new("test.level", json!({ "value": 1 }));
+        let feedback = |app: &App, action: &ActionReference| {
+            app.world()
+                .resource::<ActionRegistry>()
+                .feedback(app.world(), action)
+        };
+
+        assert_eq!(feedback(&app, &action), Some(ActionFeedback::level(0.4)));
+
+        invoke(
+            &mut app,
+            ActionInvocation::new(action.clone(), ActionSurface::Midi, ActionInput::Press),
+        );
+        assert_eq!(
+            feedback(&app, &action).map(|feedback| feedback.state),
+            Some(FeedbackState::Held)
+        );
+        invoke(
+            &mut app,
+            ActionInvocation::new(action.clone(), ActionSurface::Midi, ActionInput::Release),
+        );
+
+        app.world_mut().remove_resource::<TestLevel>();
+        assert_eq!(feedback(&app, &action), Some(ActionFeedback::IDLE));
+        assert_eq!(
+            feedback(
+                &app,
+                &ActionReference::new("test.apply", json!({ "value": 1 }))
+            ),
+            None
+        );
     }
 
     /// Verifies triggers with a release counterpart support Hold and resolve the counterpart.
