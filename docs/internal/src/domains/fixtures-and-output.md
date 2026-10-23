@@ -114,12 +114,12 @@ Both importers set `use_grandmaster` on intensity parameters. The GDTF importer 
 
 | Attribute | Resolution | Slots | Merge rule | Masters affect it | Default |
 |-----------|------------|-------|------------|-------------------|---------|
-| Intensity | Coarse | Sequential, slot 1 | LTP | Yes | 0 |
+| Intensity | Coarse | Sequential, slot 1 | HTP | Yes | 0 |
 | Red | Coarse | Sequential, slot 2 | LTP | No | 0 |
 | Green | Coarse | Sequential, slot 3 | LTP | No | 0 |
 | Blue | Coarse | Sequential, slot 4 | LTP | No | 0 |
 
-Each parameter has a logical range of 0 to 255, no offset, no inversion, and no functions. The file declares no `precedence`, so every attribute, including intensity, merges LTP. The profile has no virtual parameters and no relations, so the virtual dimmer and relation systems leave it alone.
+Each parameter has a logical range of 0 to 255, no offset, no inversion, and no functions. The file declares no `precedence`, so intensity merges HTP and red, green, and blue merge LTP. The profile has no virtual parameters and no relations, so the virtual dimmer and relation systems leave it alone.
 
 ## Importing GDTF and OFL profiles
 
@@ -128,7 +128,7 @@ The `fixture-library` crate scans the library directory for `.gdtf` and `.json` 
 | Topic | GDTF importer | OFL importer |
 |-------|---------------|--------------|
 | Elements | One element per geometry instance that owns channels, in first-channel order. | One element named `Main`. Matrix fixtures get a `Master` element for shared channels and one element per pixel. |
-| Merge rule | `Intensity` and `VirtualIntensity` are HTP. Everything else is LTP. | Each channel's `precedence` field decides. A missing or unknown value falls back to LTP. Matrix template channels make intensity and color attributes HTP. |
+| Merge rule | `Intensity` and `VirtualIntensity` are HTP. Everything else is LTP. | Each channel's `precedence` field decides. A missing or unknown value falls back to the GDTF rule: `Intensity` and `VirtualIntensity` are HTP, everything else LTP. Matrix template channels use the same fallback. |
 | Masters | `use_grandmaster` on intensity, then cleared on virtual dimmers that would scale a light path twice. | `use_grandmaster` on intensity. |
 | DMX slots | `Explicit`, from the channel's `Offset` and DMX break. Channels without an offset become `Virtual`. | `Sequential`, in mode channel order. |
 | Resolution | From the number of offset bytes, up to 4. | From the channel's `dmxValueResolution` field, 8-bit by default. |
@@ -330,7 +330,7 @@ Relations between two real channels don't run here. The fixture applies them its
 
 The following steps trace `Par 1` at the moment `First playback` finishes fading into `Red` while the programmer holds intensity at 50%:
 
-1. The OFL importer converts mode **4 channel** into one element with four coarse, sequential, LTP parameters, as the profile table above shows.
+1. The OFL importer converts mode **4 channel** into one element with four coarse, sequential parameters, an HTP intensity and LTP red, green, and blue, as the profile table above shows.
 1. The library command spawns four parameter entities. The patch wizard's binding gives them console universe 1, addresses 1 to 4.
 1. The compositor merges the layers. The programmer at priority 127 sets intensity to 50%, which is a logical value of 127.5. `First playback` at priority 0 sets intensity to full, red to 255, and green and blue to 0. The programmer's higher priority wins intensity.
 1. No intensity master targets the fixture. It has no `VirtualIntensity` and no relations, so `VdimProcessing` changes nothing.
