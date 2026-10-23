@@ -410,7 +410,7 @@ test("LED feedback lights a mapped pad while its master is on", async ({
   virtualMidi,
 }) => {
   await openMidiApp(page, backendSlot.backendPort, virtualMidi);
-  await createToggleMaster(page);
+  await makeGlobalMasterToggle(page);
   await storeNoteToggleMapping(page, virtualMidi, 66);
   await openPanel(page, "MIDI Input");
   const device = page
