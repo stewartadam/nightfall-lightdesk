@@ -60,9 +60,9 @@ When a layer has the same priority as the layer below it, Nightfall checks each 
 The fixture profile sets the rule for each attribute, and the importers decide it differently:
 
 - GDTF profiles make intensity HTP and every other attribute LTP.
-- Open Fixture Library (OFL) profiles use each channel's `precedence` field, and fall back to LTP when the field is missing. OFL matrix template channels make intensity and color-mixing attributes HTP.
+- Open Fixture Library (OFL) profiles use each channel's `precedence` field. When it is missing, intensity merges HTP and every other attribute LTP, the same as GDTF. Matrix template channels follow the same default.
 
-`Par 1` comes from an OFL file without `precedence` fields, so all of its attributes, including intensity, merge LTP.
+`Par 1` comes from an OFL file without `precedence` fields, so its intensity merges HTP and its red, green, and blue merge LTP.
 
 Between different priorities the merge rule doesn't matter. A priority 10 clip at 20% intensity overrides a priority 0 clip at 100%, even when intensity is HTP.
 
