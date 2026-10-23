@@ -10,6 +10,7 @@ import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { createEffect, onCleanup, Show } from "solid-js";
 import type { StartupDraftRecovery } from "../../../lib/showfile-startup";
+import { Alert } from "../../ui/alert";
 import { Dialog, DialogBody, DialogFooter } from "../../ui/dialog";
 import { Button } from "../../ui/visual-language/button";
 
@@ -84,12 +85,9 @@ export function ShowfileDraftRecoveryModal(
               </p>
               <Show when={props.error}>
                 {(error) => (
-                  <p
-                    class="rounded-md border border-red-800/70 bg-red-950/50 px-3 py-2 text-xs text-red-200"
-                    role="alert"
-                  >
+                  <Alert variant="caution" density="compact" role="alert">
                     {error()}
-                  </p>
+                  </Alert>
                 )}
               </Show>
               <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs text-neutral-500">

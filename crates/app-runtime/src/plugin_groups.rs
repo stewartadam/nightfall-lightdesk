@@ -11,6 +11,7 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use nightfall_actions::ActionsPlugin;
+use nightfall_boards::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_desk::{prelude::*, resources::log_config::LogConfig};
 use nightfall_engine::{EnginePlugin, prelude::ClientBridgePlugin};
@@ -19,7 +20,9 @@ use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
 use nightfall_fx_module::prelude::*;
 use nightfall_programmer::prelude::*;
+use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::*;
+use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use nightfall_undo::prelude::*;
@@ -36,11 +39,11 @@ pub struct CorePlugins {
 impl PluginGroup for CorePlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .add(ActionsPlugin)
             .add(EnginePlugin)
             .maybe_core_audio()
             .add(UndoPlugin)
             .add(ClientBridgePlugin)
+            .add(ActionsPlugin)
             .add(FixturePlugin)
             .add(SceneObjectPlugin)
             .add(FixtureCompositorPlugin)
@@ -62,6 +65,7 @@ impl PluginGroup for DeskPlugins {
             .maybe_desk_audio()
             .add(ProgrammerPlugin)
             .add(CuePlugin)
+            .add(BoardsPlugin)
             .maybe_fixture_library()
             .maybe_object_library()
     }
@@ -73,9 +77,11 @@ pub struct FxPlugins;
 impl PluginGroup for FxPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
+            .add(TempoPlugin)
             .add(FxPlugin)
             .add(FxModulePlugin)
             .add(FlowPlugin)
+            .add(ReferencesPlugin)
     }
 }
 
@@ -102,12 +108,15 @@ pub struct InputPlugins {
     pub network_input_enabled: bool,
     /// Address used by the OSC input listener.
     pub osc_bind_addr: std::net::SocketAddr,
+    /// MIDI input port to connect to exclusively, or `None` to connect to every port.
+    pub midi_input_port: Option<String>,
 }
 
 impl PluginGroup for InputPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .maybe_midi_input()
+            .maybe_midi_input(self.midi_input_port)
+            .maybe_ltc_input()
             .maybe_osc_input(self.osc_bind_addr)
             .maybe_artnet_input(self.network_input_enabled)
             .maybe_sacn_input(self.network_input_enabled)

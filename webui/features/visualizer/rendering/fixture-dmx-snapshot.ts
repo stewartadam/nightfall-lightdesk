@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { measurePerformanceScope } from "../../../lib/performance-marks";
 import type { ParameterOutputSnapshot } from "../../../state/appStores";
 import type { FixtureElement } from "../../../types";
 import { isFixtureEvaluationLoaded } from "./channel-evaluation";
@@ -20,6 +21,8 @@ export class FixtureDmxSnapshot {
   private fixtures?: FixtureDefinitions;
   private evaluationLoaded = false;
   private readonly values = new Map<string, FixtureElementDmxMap>();
+  /** Inputs each fixture's records were converted from, so unchanged fixtures are not redone. */
+  private converted = new Map<string, ConvertedFixture>();
   private revisionCounter = 0;
 
   /**
@@ -46,6 +49,10 @@ export class FixtureDmxSnapshot {
    * are replaced, or until the fixture model finishes loading. Each fixture's
    * elements are evaluated together so mode masters and relations can name
    * other elements.
+   *
+   * A fixture whose output array and definition are the same objects as at its
+   * last conversion keeps its records, since the engine snapshot replaces only
+   * the outputs that changed. A newly loaded fixture model converts everything.
    */
   read(parameters: ParameterOutputSnapshot, fixtures: FixtureDefinitions) {
     const evaluationLoaded = this.evaluationReady();
@@ -55,19 +62,49 @@ export class FixtureDmxSnapshot {
       evaluationLoaded === this.evaluationLoaded
     )
       return this.values;
+    const reusable = evaluationLoaded === this.evaluationLoaded;
     this.revisionCounter++;
     this.parameters = parameters;
     this.fixtures = fixtures;
     this.evaluationLoaded = evaluationLoaded;
-    this.values.clear();
-    // Extraction copies out of the pool, so its transient records can be reused.
-    resetDmxPool();
-    for (const uid in fixtures) {
-      const outputs = parameters.get(uid);
-      if (!outputs) continue;
-      const elements = extractFixtureDmxData(fixtures[uid].elements, outputs);
-      if (elements.length) this.values.set(uid, new Map(elements));
-    }
+    measurePerformanceScope("visualizer.dmx-snapshot.rebuild", () => {
+      const previous = this.converted;
+      this.converted = new Map();
+      this.values.clear();
+      // Extraction copies out of the pool, so its transient records can be reused.
+      resetDmxPool();
+      for (const uid in fixtures) {
+        const outputs = parameters.get(uid);
+        if (!outputs) continue;
+        const fixture = fixtures[uid];
+        const last = previous.get(uid);
+        const converted =
+          reusable && last?.outputs === outputs && last.fixture === fixture
+            ? last
+            : {
+                outputs,
+                fixture,
+                dmx: dmxMap(extractFixtureDmxData(fixture.elements, outputs)),
+              };
+        this.converted.set(uid, converted);
+        if (converted.dmx) this.values.set(uid, converted.dmx);
+      }
+    });
     return this.values;
   }
+}
+
+/** One fixture's DMX records with the output and definition they were converted from. */
+interface ConvertedFixture {
+  outputs: readonly Record<string, number>[];
+  fixture: { elements: FixtureElement[] };
+  /** Records by element label, or `null` when no element has output. */
+  dmx: FixtureElementDmxMap | null;
+}
+
+/** Collects extracted element records into a map, or `null` when there are none. */
+function dmxMap(
+  elements: ReturnType<typeof extractFixtureDmxData>,
+): FixtureElementDmxMap | null {
+  return elements.length ? new Map(elements) : null;
 }

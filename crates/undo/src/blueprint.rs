@@ -12,13 +12,13 @@ use nightfall::prelude::Blueprint;
 use nightfall_engine::prelude::*;
 
 use crate::context::UndoContext;
-use crate::traits::UndoableOperation;
+use crate::traits::Undoable;
 
 /// Builds the inverse of storing a Blueprint: restore the prior definition, or delete a new one.
 fn inverse_for_store_blueprint(
     blueprint: &Blueprint,
     blueprints: &DataProvider<Blueprint>,
-) -> Option<Box<dyn UndoableOperation>> {
+) -> Option<Box<dyn Undoable>> {
     match blueprints.get(blueprint.identifiers.uid) {
         Ok(existing) => {
             let old_blueprint: Blueprint = (*existing).clone();
@@ -30,9 +30,9 @@ fn inverse_for_store_blueprint(
     }
 }
 
-impl UndoableOperation for BlueprintCommand {
+impl Undoable for BlueprintCommand {
     /// Captures the Blueprint state needed to reverse a store, rename, or delete.
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let blueprints = ctx.world.resource::<DataProvider<Blueprint>>();
         match self {
             BlueprintCommand::StoreBlueprint(blueprint) => {
@@ -42,8 +42,7 @@ impl UndoableOperation for BlueprintCommand {
                 // Capture full blueprint before deletion
                 blueprints.from_id(*id).ok().map(|blueprint_ref| {
                     let blueprint: Blueprint = (*blueprint_ref).clone();
-                    Box::new(BlueprintCommand::StoreBlueprint(blueprint))
-                        as Box<dyn UndoableOperation>
+                    Box::new(BlueprintCommand::StoreBlueprint(blueprint)) as Box<dyn Undoable>
                 })
             }
             BlueprintCommand::RenameBlueprint { id, new_id } => {

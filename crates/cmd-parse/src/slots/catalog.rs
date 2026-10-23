@@ -380,6 +380,9 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
         SlotId::ChannelOverrideIdentifier => slot(
             slot_id,
             &[
+                TokenId::Sacn,
+                TokenId::Artnet,
+                TokenId::Udmx,
                 TokenId::LeftParen,
                 TokenId::RightParen,
                 TokenId::Dot,
@@ -593,6 +596,21 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
             NONE_SUPPRESS,
             false,
         ),
+        SlotId::TempoAction => slot(
+            slot_id,
+            &[
+                TokenId::Tap,
+                TokenId::Resync,
+                TokenId::Snap,
+                TokenId::Half,
+                TokenId::Double,
+                TokenId::Nudge,
+                TokenId::Bar,
+            ],
+            Some(ValueKind::NumericDigit),
+            NONE_SUPPRESS,
+            false,
+        ),
     }
 }
 
@@ -716,5 +734,6 @@ fn command_heads() -> &'static [TokenId] {
         TokenId::Log,
         TokenId::Sleep,
         TokenId::Fps,
+        TokenId::Tempo,
     ]
 }

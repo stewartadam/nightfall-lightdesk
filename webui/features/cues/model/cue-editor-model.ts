@@ -62,6 +62,7 @@ import {
   type ProjectedLookaheadValue,
   projectSequenceLookahead,
 } from "../../../lib/wasm-bridge";
+import type { LayerState } from "../../../lib/ws/types";
 import type * as types from "../../../types";
 import { ObjectType } from "../../../types";
 import { selectedBlueprintValues } from "../../blueprints";
@@ -832,7 +833,7 @@ export async function authoredLookaheadValuesForCue(
 
 /** Returns whether a layer stack entry belongs to the requested sequence cue. */
 export function layerBelongsToSequenceCue(
-  layer: types.OutboundLayerState,
+  layer: LayerState,
   sequence: types.Sequence,
   targetCue: types.Cue,
 ): boolean {
@@ -874,7 +875,7 @@ export function lookaheadSourceForCue(
 export function backendLookaheadValuesForCue(
   sequence: types.Sequence | undefined,
   targetCue: types.Cue,
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
 ): LookaheadCueValues {
   const lookahead: LookaheadCueValues = new Map();
   if (!sequence) return lookahead;
@@ -916,7 +917,7 @@ export async function lookaheadValuesForCue(
   sequence: types.Sequence | undefined,
   cueMap: Record<string, types.Cue>,
   targetCue: types.Cue,
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
 ): Promise<LookaheadCueValues> {
   const backendValues = backendLookaheadValuesForCue(
     sequence,

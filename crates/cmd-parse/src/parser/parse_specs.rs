@@ -82,6 +82,7 @@ const ATTRIBUTE_RESERVED_HEADS: &[&str] = &[
     "release",
     "debug",
     "fps",
+    "tempo",
     "log",
     "undo",
     "redo",
@@ -242,10 +243,6 @@ const SLEEP_DURATION_PARSE_SPEC: DurationParseSpec = DurationParseSpec {
     can_skip: false,
 };
 
-pub fn attribute_token_ids() -> &'static [TokenId] {
-    ATTRIBUTE_TOKENS
-}
-
 pub fn attribute_parse_spec(spec_id: AttributeParseSpecId) -> &'static AttributeParseSpec {
     match spec_id {
         AttributeParseSpecId::Standard => &STANDARD_ATTRIBUTE_PARSE_SPEC,
@@ -296,10 +293,6 @@ pub fn attribute_collection_parse_spec_for_slot(
         )),
         _ => None,
     }
-}
-
-pub fn attribute_parse_spec_for_slot(slot: SlotId) -> Option<&'static AttributeParseSpec> {
-    attribute_collection_parse_spec_for_slot(slot).map(|spec| spec.attribute_spec)
 }
 
 pub fn duration_parse_spec(spec_id: DurationParseSpecId) -> &'static DurationParseSpec {

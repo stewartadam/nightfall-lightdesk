@@ -13,12 +13,11 @@ use std::io::{Read, Write as IoWrite};
 use std::path::{Path, PathBuf};
 
 use bevy_ecs::prelude::*;
-use uuid::Uuid;
 
 use crate::metadata::ObjectMetadata;
+use crate::showfile::SHOWFILE_OBJECT_SNAPSHOTS_DIR;
 use crate::{ObjectLibraryError, Result};
 
-const SHOWFILE_OBJECT_SNAPSHOTS_DIR: &str = "scene-objects";
 const OBJECT_PATH_SCOPE_LIBRARY: &str = "lib";
 const OBJECT_PATH_SCOPE_SHOWFILE: &str = "show";
 
@@ -128,17 +127,6 @@ impl ObjectLibraryManager {
     /// Get the number of objects in the library
     pub fn object_count(&self) -> usize {
         self.objects.len()
-    }
-
-    /// Extract the GLB model from an object bundle
-    pub fn extract_model(&self, name: &str) -> Result<Vec<u8>> {
-        let profile = self
-            .find_object(name)
-            .ok_or_else(|| ObjectLibraryError::NotFound {
-                name: name.to_string(),
-            })?;
-
-        extract_model_from_bundle(&profile.file_path)
     }
 
     /// Upload an object bundle to the library.
@@ -334,26 +322,6 @@ pub fn showfile_object_snapshot_dir() -> Result<PathBuf> {
     Ok(show_data_dir.join(SHOWFILE_OBJECT_SNAPSHOTS_DIR))
 }
 
-/// Copy a `.robj` bundle into show-data for showfile-stable object references.
-pub fn copy_object_bundle_to_showfile_data(source_bundle_path: &Path) -> Result<PathBuf> {
-    let destination_dir = showfile_object_snapshot_dir()?;
-    copy_object_bundle_to_directory(source_bundle_path, &destination_dir)
-}
-
-fn copy_object_bundle_to_directory(
-    source_bundle_path: &Path,
-    destination_dir: &Path,
-) -> Result<PathBuf> {
-    let source_filename = validated_bundle_filename_from_path(source_bundle_path)?;
-    std::fs::create_dir_all(destination_dir)?;
-
-    let destination_filename = format!("{}-{}", Uuid::new_v4().simple(), source_filename);
-    let destination_path = destination_dir.join(destination_filename);
-    std::fs::copy(source_bundle_path, &destination_path)?;
-
-    Ok(destination_path)
-}
-
 /// Encode a library object path for use in URLs (base64url encoding).
 pub fn encode_object_path(path: &Path) -> String {
     let bundle_filename = path
@@ -417,18 +385,6 @@ pub fn decode_object_path(encoded: &str) -> Result<ObjectModelPath> {
     })
 }
 
-fn validated_bundle_filename_from_path(path: &Path) -> Result<String> {
-    let bundle_filename = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            ObjectLibraryError::Metadata("Invalid object bundle filename".to_string())
-        })?;
-
-    validate_bundle_filename(bundle_filename)?;
-    Ok(bundle_filename.to_string())
-}
-
 fn validate_bundle_filename(bundle_filename: &str) -> Result<()> {
     use std::path::{Component, Path as StdPath};
 
@@ -466,8 +422,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        ObjectModelPath, ObjectModelPathScope, copy_object_bundle_to_directory, decode_object_path,
-        encode_object_path, encode_showfile_object_path,
+        ObjectModelPath, ObjectModelPathScope, decode_object_path, encode_object_path,
+        encode_showfile_object_path,
     };
 
     #[test]
@@ -542,47 +498,5 @@ mod tests {
         let encoded = URL_SAFE_NO_PAD.encode("other:object.robj");
         let result = decode_object_path(&encoded);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn copy_object_bundle_to_directory_creates_snapshot_copy() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let source_bundle = temp_dir.path().join("road_case.robj");
-        std::fs::write(&source_bundle, b"snapshot-bytes").expect("write source bundle");
-
-        let destination_dir = temp_dir.path().join("show-data").join("scene-objects");
-        let copied_path = copy_object_bundle_to_directory(&source_bundle, &destination_dir)
-            .expect("copy into destination directory");
-
-        assert!(copied_path.starts_with(&destination_dir));
-        assert_ne!(copied_path, source_bundle);
-
-        let copied_name = copied_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("copied bundle name");
-        assert!(copied_name.ends_with("-road_case.robj"));
-
-        let copied_contents = std::fs::read(&copied_path).expect("read copied bundle");
-        assert_eq!(copied_contents, b"snapshot-bytes");
-    }
-
-    #[test]
-    fn copy_object_bundle_to_directory_uses_unique_names() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let source_bundle = temp_dir.path().join("road_case.robj");
-        std::fs::write(&source_bundle, b"snapshot-bytes").expect("write source bundle");
-
-        let destination_dir = temp_dir.path().join("show-data").join("scene-objects");
-        let copy_a = copy_object_bundle_to_directory(&source_bundle, &destination_dir)
-            .expect("copy A should succeed");
-        let copy_b = copy_object_bundle_to_directory(&source_bundle, &destination_dir)
-            .expect("copy B should succeed");
-
-        assert_ne!(copy_a, copy_b);
-        assert_eq!(
-            std::fs::read(copy_a).expect("read copy A"),
-            std::fs::read(copy_b).expect("read copy B")
-        );
     }
 }

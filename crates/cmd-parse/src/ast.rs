@@ -72,12 +72,6 @@ pub struct IntegerAst<'i>(pub &'i str);
 #[derive(Debug, Clone, PartialEq)]
 pub struct WordAst<'i>(pub &'i str);
 
-/// Root AST node for a parsed command line.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProgramAst<'i> {
-    pub command: CommandAst<'i>,
-}
-
 /// Top-level command families recognized by the strict parser.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandAst<'i> {
@@ -88,6 +82,7 @@ pub enum CommandAst<'i> {
     Clip(ClipCommandAst),
     Timecode(TimecodeCommandAst),
     Timeline(TimelineCommandAst),
+    Tempo(TempoCommandAst<'i>),
     Channel(ChannelCommandAst<'i>),
     PatchAdd(PatchAddCommandAst<'i>),
     RmPatch(RmPatchCommandAst<'i>),
@@ -108,10 +103,6 @@ pub struct FlowKeyword;
 /// Marker node for the merge flag accepted by fx module storage commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FxModuleMergeFlagAst;
-
-/// Marker node for the select flag accepted by cue recall commands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RecallCueSelectFlagAst;
 
 /// Marker node for the `clip` command keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,10 +149,6 @@ pub enum ObjectTypeAst {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FixtureKeyword;
 
-/// Marker node for the `parameter` object keyword.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ParameterKeyword;
-
 /// Marker node for the `group` object keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroupKeyword;
@@ -169,10 +156,6 @@ pub struct GroupKeyword;
 /// Marker node for the `cue` object keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CueKeyword;
-
-/// Marker node for the `sequence` object keyword.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SequenceKeyword;
 
 /// Marker node for the `blueprint` object keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -365,26 +348,6 @@ pub enum AttributeTypeAst<'i> {
     Other(&'i str),
 }
 
-/// Marker node for the `intensity` attribute alias.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IntensityAlias;
-
-/// Marker node for the `red` attribute alias.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RedAlias;
-
-/// Marker node for the `green` attribute alias.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GreenAlias;
-
-/// Marker node for the `blue` attribute alias.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BlueAlias;
-
-/// Marker node for the `white` attribute alias.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WhiteAlias;
-
 /// Built-in shorthand names for common fixture attributes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttributeAliasAst {
@@ -394,26 +357,6 @@ pub enum AttributeAliasAst {
     Blue,
     White,
 }
-
-/// Attribute reference parsed through a built-in alias.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AliasedAttributeAst {
-    pub alias: AttributeAliasAst,
-}
-
-/// Raw text inside a quoted attribute name.
-#[derive(Debug, Clone, PartialEq)]
-pub struct QuotedAttributeInnerAst<'i>(pub &'i str);
-
-/// Attribute reference whose name was quoted in the command text.
-#[derive(Debug, Clone, PartialEq)]
-pub struct QuotedAttributeAst<'i> {
-    pub name: QuotedAttributeInnerAst<'i>,
-}
-
-/// Unquoted attribute name that is not one of the built-in aliases.
-#[derive(Debug, Clone, PartialEq)]
-pub struct OtherAttributeAst<'i>(pub &'i str);
 
 /// Attribute assignment with an explicit attribute name and value fan.
 #[derive(Debug, Clone, PartialEq)]
@@ -473,16 +416,6 @@ pub enum BlueprintResolutionAst {
     #[default]
     Reference,
     Absolute,
-}
-
-/// Marker node for setting the active selection to full intensity.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SetFullIntensityAst;
-
-/// Intensity assignment that omits the attribute name.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SetIntensityAst<'i> {
-    pub value: ValueRangeAst<'i>,
 }
 
 /// Attribute operations accepted after a selection target.
@@ -551,28 +484,6 @@ pub struct TimingsAst<'i> {
     pub delays: Option<DelaysAst<'i>>,
 }
 
-/// Marker node for the `on` playback action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OnKeyword;
-
-/// Marker node for the `off` playback action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OffKeyword;
-
-/// Marker node for the `go` playback action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GoKeyword;
-
-/// Marker node for the `back` playback action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BackKeyword;
-
-/// Playback action that jumps to a numbered position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GotoKeyword {
-    pub position: u32,
-}
-
 /// Playback actions accepted by clip commands.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlaybackActionAst {
@@ -591,18 +502,6 @@ pub struct ClipCommandAst {
     pub clip_id: SimpleIdentifierExpressionAst,
     pub action: PlaybackActionAst,
 }
-
-/// Marker node for the `start` keyword.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StartKeyword;
-
-/// Marker node for the `pause` keyword.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PauseKeyword;
-
-/// Marker node for the `stop` keyword.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StopKeyword;
 
 /// Start/stop action used by timeline-like commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -625,6 +524,33 @@ pub struct TimecodeCommandAst {
     pub _timecode: TimecodeKeyword,
     pub timecode_id: SimpleIdentifierExpressionAst,
     pub action: TimecodeActionAst,
+}
+
+/// Tempo command targeting the show-wide live tempo engine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TempoCommandAst<'i> {
+    pub action: TempoActionAst<'i>,
+}
+
+/// Operation requested by a `tempo` command.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TempoActionAst<'i> {
+    /// Sets the tempo to an unsigned decimal BPM, such as `tempo 128.5`.
+    SetBpm(ValueAst<'i>),
+    /// Registers one tap for tap-tempo detection.
+    Tap,
+    /// Eases the downbeat phase so the next beat lands on the current instant.
+    Resync,
+    /// Jumps the phase directly to the next downbeat.
+    Snap,
+    /// Halves the current BPM.
+    Half,
+    /// Doubles the current BPM.
+    Double,
+    /// Shifts the beat phase by a signed decimal number of beats.
+    Nudge(ValueAst<'i>),
+    /// Sets the number of beats in one bar.
+    BeatsPerBar(IntegerAst<'i>),
 }
 
 /// Timeline start or stop command targeting one or more timeline ids.
@@ -714,22 +640,6 @@ pub struct CreateStepFxAst<'i> {
     pub attributes: Vec<FxAttributeStepsAst<'i>>,
 }
 
-/// Marker node for the `start flow` action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StartFlowKeyword;
-
-/// Marker node for the `stop flow` action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StopFlowKeyword;
-
-/// Marker node for the `go flow` action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GoFlowKeyword;
-
-/// Marker node for the `delete flow` action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DeleteFlowKeyword;
-
 /// New id expression for a flow rename command.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenameFlowAst {
@@ -754,14 +664,6 @@ pub struct FlowCommandAst {
     pub action: FlowActionAst,
 }
 
-/// Marker node for starting an FX module.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StartFxModuleKeyword;
-
-/// Marker node for stopping an FX module.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StopFxModuleKeyword;
-
 /// Runtime actions accepted by FX module commands.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FxModuleActionAst {
@@ -776,14 +678,6 @@ pub struct FxModuleCommandAst {
     pub fx_id: SimpleIdentifierExpressionAst,
     pub action: FxModuleActionAst,
 }
-
-/// Marker node for starting an FX.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StartFxKeyword;
-
-/// Marker node for stopping an FX.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StopFxKeyword;
 
 /// Rate value for an FX speed update.
 #[derive(Debug, Clone, PartialEq)]
@@ -907,15 +801,17 @@ pub struct ReleaseAttributeTargetAst<'i> {
 
 /// Release target for direct DMX channels.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReleaseDmxTargetAst {
+pub struct ReleaseDmxTargetAst<'i> {
     pub _channel: ReleaseChannelKeyword,
+    /// Output transport whose wire universes the channels address, or `None` for console space.
+    pub transport: Option<TransportNameAst<'i>>,
     pub channels: ReleaseDmxChannelExpressionAst,
 }
 
 /// Targets accepted by the `release` command.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReleaseTargetAst<'i> {
-    Dmx(ReleaseDmxTargetAst),
+    Dmx(ReleaseDmxTargetAst<'i>),
     Fixture(ReleaseFixtureTargetAst<'i>),
     Attribute(ReleaseAttributeTargetAst<'i>),
     Selection(SelectionAst),
@@ -1352,6 +1248,8 @@ pub struct NewShowfileCommandAst;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelCommandAst<'i> {
     pub _channel: ChannelKeyword,
+    /// Output transport whose wire universes the channels address, or `None` for console space.
+    pub transport: Option<TransportNameAst<'i>>,
     pub channels: DmxChannelExpressionAst,
     pub value: ValueAst<'i>,
 }

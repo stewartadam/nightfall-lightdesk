@@ -129,8 +129,8 @@ async function openActionPropertiesFixture(
                   position: { secs: 1, nanos: 0 },
                   duration: { secs: 1, nanos: 0 },
                   action: {
-                    type: "SetClipRate",
-                    data: { uid: clipUid, rate: 1.25 },
+                    id: "clip.set-rate",
+                    arguments: { clip: clipUid, rate: 1.25 },
                   },
                 },
                 {
@@ -138,7 +138,10 @@ async function openActionPropertiesFixture(
                   label: "Eval Action",
                   position: { secs: 2, nanos: 0 },
                   duration: { secs: 1, nanos: 0 },
-                  action: { type: "DeskEval", data: "group 1 at 10" },
+                  action: {
+                    id: "desk.eval",
+                    arguments: { command: "group 1 at 10" },
+                  },
                 },
               ],
               automation_lanes: [],
@@ -181,7 +184,9 @@ async function openActionPropertiesFixture(
       title: "Action Properties",
       params: { initialTimelineUid: timelineUid },
       position: {
-        referencePanel: "panel-FixtureGrid",
+        referencePanel: api.panels.find(
+          (panel: { title?: string }) => panel.title === "3D Visualizer",
+        )?.id,
         direction: "within",
       },
     });
@@ -293,8 +298,8 @@ test("timeline action properties edit rate and eval actions", async ({
         ),
       )
       .toMatchObject({
-        type: "SetClipRate",
-        data: { rate: 1.75 },
+        id: "clip.set-rate",
+        arguments: { rate: 1.75 },
       });
 
     const evalAction = page.locator(
@@ -316,8 +321,8 @@ test("timeline action properties edit rate and eval actions", async ({
         ),
       )
       .toMatchObject({
-        type: "DeskEval",
-        data: "clip 1 go",
+        id: "desk.eval",
+        arguments: { command: "clip 1 go" },
       });
     await page.setViewportSize({ width: 900, height: 700 });
     const properties = page.locator(
@@ -332,6 +337,72 @@ test("timeline action properties edit rate and eval actions", async ({
       path: testInfo.outputPath("timeline-action-properties.png"),
     });
   } finally {
+    if (fixture) {
+      await cleanupActionPropertiesFixture(page, fixture);
+    }
+  }
+});
+
+/** Verifies the Move in Black section shows its idle and blocked states as compact alerts. */
+test("timeline action properties show Move in Black alerts", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await openOwnedActionPropertiesApp(page, backendSlot.backendPort);
+
+  let fixture: ActionPropertiesFixture | undefined;
+  try {
+    fixture = await openActionPropertiesFixture(page);
+    const surface = page.locator(
+      `[data-timeline-surface="true"][data-timeline-uid="${fixture.timelineUid}"]:visible`,
+    );
+    await expect(surface).toBeVisible();
+    await surface.getByLabel("Timeline zoom").fill("250");
+
+    const rateAction = page.locator(
+      `[data-timeline-action="true"][data-track-id="${fixture.trackId}"][data-action-id="${fixture.rateActionId}"]`,
+    );
+    await expect(rateAction).toBeVisible();
+    await rateAction.click();
+    await page.getByRole("tab", { name: "Properties", exact: true }).click();
+
+    const properties = page.locator(
+      '[data-panel-id="panel-PropertiesInspector"]',
+    );
+    const idle = properties
+      .locator(".nf-alert[data-variant='note']")
+      .filter({ hasText: "No active MIB status" });
+    await idle.scrollIntoViewIfNeeded();
+    await expect(idle).toBeVisible();
+    await properties.screenshot({
+      path: testInfo.outputPath("timeline-mib-idle.png"),
+    });
+
+    await page.evaluate(({ timelineUid, trackId, rateActionId }) => {
+      (window as any).appStores.timelineLookaheadActionStatuses.set({
+        [timelineUid]: {
+          [JSON.stringify([trackId, rateActionId])]: {
+            timeline_uid: timelineUid,
+            track_id: trackId,
+            action_id: rateActionId,
+            kind: "blocked_by_intervening_fixture_assertions",
+            blocking_actions: [],
+          },
+        },
+      });
+    }, fixture);
+    const blocked = properties
+      .locator(".nf-alert[data-variant='warning']")
+      .filter({ hasText: "Blocked by intervening actions" });
+    await blocked.scrollIntoViewIfNeeded();
+    await expect(blocked).toBeVisible();
+    await properties.screenshot({
+      path: testInfo.outputPath("timeline-mib-blocked.png"),
+    });
+  } finally {
+    await page.evaluate(() =>
+      (window as any).appStores.timelineLookaheadActionStatuses.set({}),
+    );
     if (fixture) {
       await cleanupActionPropertiesFixture(page, fixture);
     }

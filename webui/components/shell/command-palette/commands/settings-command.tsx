@@ -10,7 +10,7 @@ import { GearIcon } from "@squidlab/phosphor-solid/gear";
 import { onCleanup, onMount } from "solid-js";
 import { getLogger } from "../../../../lib/logger";
 import { useAppShell } from "../../../providers/app-shell";
-import { useCommand } from "../../../providers/command-registry";
+import { useUiAction } from "../../../providers/command-registry";
 
 const log = getLogger(import.meta.url);
 
@@ -19,7 +19,7 @@ export default function SettingsCommand() {
 
   onMount(() => {
     log.trace("mounting");
-    useCommand({
+    useUiAction({
       id: "open.settings",
       name: "Open Settings",
       description: "Open application settings",

@@ -340,7 +340,7 @@ for (const refreshDuringPress of [false, true]) {
         name: /Owned Status Instance/,
       });
       await expect(instanceRow).toBeVisible();
-      const instanceCells = instanceRow.getByRole("cell");
+      const instanceCells = instanceRow.getByRole("gridcell");
       await expect(instanceCells.nth(2)).toHaveText("Running");
       await expect(instanceCells.nth(3)).toHaveText("Owned Status Clip");
       await expect(instanceCells.nth(6)).toHaveText("1/1 Owned Status Cue");
@@ -364,7 +364,9 @@ for (const refreshDuringPress of [false, true]) {
         });
         await page.mouse.up();
       } else {
-        await stopButton.click();
+        // Keyboard activation must reach the button inside the grid cell.
+        await stopButton.focus();
+        await stopButton.press("Enter");
       }
       await expect
         .poll(() =>
@@ -394,7 +396,7 @@ for (const refreshDuringPress of [false, true]) {
   });
 }
 
-/** Verifies native timecode tables preserve selection and react to live snapshots without offering cell editors. */
+/** Verifies the read-only Timecodes grid preserves selection and react to live snapshots without offering cell editors. */
 test("shared timecode tables preserve selection across snapshot updates", async ({
   backendSlot,
   page,
@@ -413,12 +415,24 @@ test("shared timecode tables preserve selection across snapshot updates", async 
     });
   });
   await openPanel(page, "Timecodes");
-  const table = page.getByRole("table", { name: "Timecodes", exact: true });
-  await expect(table).toHaveClass(/nf-table/);
-  const row = table.getByRole("row", { name: /81/ });
-  await row.click();
+  const table = page.getByRole("grid", { name: "Timecodes", exact: true });
+  await expect(table).toHaveAttribute("data-grid-appearance", "table");
+  await expect(table).toHaveAttribute("data-grid-selection-mode", "row");
+  const panel = page.locator('[data-component="TimecodesPanel"]');
+  const start = panel.getByRole("button", { name: "Start timecode" });
+  await expect(start).toBeDisabled();
+  const row = table.locator("[data-grid-row]").filter({ hasText: "81" });
+  await row.getByRole("gridcell", { name: "Table clock" }).click();
   await expect(row).toHaveAttribute("data-selected", "true");
-  await expect(row).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  // Row selection covers every cell in the row rather than the clicked one.
+  await expect(
+    row.locator('[role="gridcell"][data-selected="false"]'),
+  ).toHaveCount(0);
+  await expect(start).toBeEnabled();
+  await expect(row.getByRole("gridcell").first()).not.toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
   await page.evaluate(() => {
     const store = (window as any).appStores.timecodes;
     const [timecode] = store.get()["table-timecode"];
@@ -439,17 +453,36 @@ test("shared timecode tables preserve selection across snapshot updates", async 
     path: test.info().outputPath("shared-timecodes.png"),
     fullPage: true,
   });
+  await panel.getByRole("radio", { name: "Grid view" }).click();
+  const card = panel.locator('[data-timecode-uid="tabletimecode"]');
+  await expect(card).toHaveAttribute("aria-pressed", "true");
+  await expect(card).toContainText("Table clock");
+  await expect(card).toContainText("00:00:02:00");
+  await page.screenshot({
+    path: test.info().outputPath("timecode-cards.png"),
+    fullPage: true,
+  });
+  await panel.getByRole("radio", { name: "List view" }).click();
   await openPanel(page, "Status Display");
-  const controls = page.getByRole("table", {
+  const controls = page.getByRole("grid", {
     name: "Timecode controls",
     exact: true,
   });
   await expect(
-    controls.getByRole("row", { name: /Table clock/ }),
+    controls.locator("[data-grid-row]").filter({ hasText: "Table clock" }),
   ).toContainText("00:00:02:00");
-  await expect(
-    controls.getByRole("button", { name: "Pause timecode" }),
-  ).toBeVisible();
+  // ID and Label stay pinned while the wider status columns scroll.
+  await expect(controls.getByRole("columnheader", { name: "Label" })).toHaveCSS(
+    "position",
+    "sticky",
+  );
+  const pause = controls.getByRole("button", { name: "Pause timecode" });
+  await expect(pause).toBeVisible();
+  await pause.hover();
+  await expect(pause).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.screenshot({
+    path: test.info().outputPath("status-timecode-button-hover.png"),
+  });
 });
 
 /** Verifies explicitly seeded owners and cue-part counts render correctly. */
@@ -567,29 +600,29 @@ test("status display renders and sorts effective instance rates", async ({
 
   const activeInstanceTable = page
     .getByRole("region", { name: "Status display content" })
-    .locator("table")
-    .first();
+    .getByRole("grid", { name: "Active instances" });
+  await expect(activeInstanceTable).toHaveAttribute(
+    "data-grid-appearance",
+    "table",
+  );
   const masteredRow = activeInstanceTable.getByRole("row", {
     name: /Master Slowed/,
   });
-  await activeInstanceTable.evaluate((table) => {
-    const scroller = table.parentElement;
-    if (!scroller) throw new Error("Expected instance table scroll container");
-    scroller.scrollLeft = scroller.scrollWidth;
-    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+  const rateHeader = activeInstanceTable.getByRole("columnheader", {
+    name: "Rate",
+    exact: true,
   });
-  await activeInstanceTable.getByRole("button", { name: "Rate" }).click();
+  await rateHeader.click();
+  await expect(rateHeader).toHaveAttribute("aria-sort", "ascending");
   await expect(masteredRow.getByText("0.50x", { exact: true })).toBeVisible();
   await expect(
     masteredRow.getByText("1.00x", { exact: true }),
   ).not.toBeVisible();
 
-  const instanceRows = activeInstanceTable.locator("tbody tr");
+  const instanceRows = activeInstanceTable.locator("[data-grid-row]");
   await expect(instanceRows.first()).toContainText("Master Slowed");
   await expect(instanceRows.nth(1)).toContainText("Authored Fast");
 
-  const originalRow = await masteredRow.elementHandle();
-  if (!originalRow) throw new Error("Expected the mastered instance row");
   await page.evaluate(() => {
     const store = (window as any).appStores.activeInstances;
     const instanceId = "22222222222242228222222222222222";
@@ -601,7 +634,7 @@ test("status display renders and sorts effective instance rates", async ({
   await expect(masteredRow.getByText("2.00x", { exact: true })).toBeVisible();
   await expect(instanceRows.first()).toContainText("Authored Fast");
   await expect(instanceRows.nth(1)).toContainText("Master Slowed");
-  expect(await originalRow.evaluate((row) => row.isConnected)).toBe(true);
+  await expect(rateHeader).toHaveAttribute("aria-sort", "ascending");
 });
 
 /** Ensures constrained panel heights scroll instead of letting sections overlap. */
@@ -629,7 +662,9 @@ test("status display scrolls without overlapping sections at constrained heights
     )
     .toBe(true);
 
-  const activeInstanceTable = scrollRegion.locator("table").first();
+  const activeInstanceTable = scrollRegion.getByRole("grid", {
+    name: "Active instances",
+  });
   const timecodesHeading = scrollRegion.getByRole("heading", {
     name: "Timecodes",
   });

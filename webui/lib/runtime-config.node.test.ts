@@ -17,6 +17,6 @@ test("browser demo showfile URL respects the deployment base", () => {
       "/demo/app/",
       "https://foo.example/current/page?engine=embedded-demo",
     ),
-    "https://foo.example/demo/app/nightfall-demo.nightfall-show/showfile.json",
+    "https://foo.example/demo/app/nightfall-demo.nightfall-show/showfile.json.gz",
   );
 });

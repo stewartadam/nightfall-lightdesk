@@ -17,26 +17,31 @@ export function normalizeTabAlignment(value: unknown): TabAlignment {
     : "justify";
 }
 
-/** Selects the placement of tabs along both horizontal and vertical group headers. */
+/**
+ * Selects the placement of tabs along both horizontal and vertical group headers. The caller
+ * labels it, through `id` or a wrapping `<label>`, so it fits a settings row or a stacked form.
+ */
 export function TabAlignmentSelect(props: {
   value: TabAlignment;
+  id?: string;
+  describedBy?: string;
+  class?: string;
   onChange: (value: TabAlignment) => void;
 }) {
   return (
-    <label class="block">
-      <span class="text-sm text-gray-300">Tab alignment</span>
-      <NativeSelect
-        class="mt-1"
-        value={props.value}
-        onChange={(event) =>
-          props.onChange(normalizeTabAlignment(event.currentTarget.value))
-        }
-      >
-        <option value="start">Start</option>
-        <option value="center">Center</option>
-        <option value="justify">Justify</option>
-        <option value="end">End</option>
-      </NativeSelect>
-    </label>
+    <NativeSelect
+      id={props.id}
+      aria-describedby={props.describedBy}
+      class={props.class}
+      value={props.value}
+      onChange={(event) =>
+        props.onChange(normalizeTabAlignment(event.currentTarget.value))
+      }
+    >
+      <option value="start">Start</option>
+      <option value="center">Center</option>
+      <option value="justify">Justify</option>
+      <option value="end">End</option>
+    </NativeSelect>
   );
 }

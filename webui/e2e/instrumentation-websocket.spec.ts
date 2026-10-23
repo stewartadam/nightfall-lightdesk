@@ -67,6 +67,15 @@ async function seedWebsocketStats(page: Page): Promise<void> {
         avgDecodeMs: 1.25,
         queueDepth: 2,
         lastStagedDeliveryMessageId: 1234,
+        parameterStream: {
+          keyframes: 41,
+          deltas: 2307,
+          gaps: 1,
+          discarded: 2,
+          verifiedKeyframes: 40,
+          driftedKeyframes: 0,
+          driftedSlots: 0,
+        },
       },
       main: {
         processedCount: 100,
@@ -118,7 +127,10 @@ test("instrumentation panel surfaces websocket backlog lag", async ({
 
   await expect(panel.getByText("Lagging")).toBeVisible();
   await expect(panel.getByText("Main delivery EMA")).toBeVisible();
-  await expect(panel.getByText("275.0 ms").last()).toHaveClass(/text-red-500/);
+  await expect(panel.getByText("275.0 ms").last()).toHaveAttribute(
+    "data-tone",
+    "danger",
+  );
   await expect(panel.getByText("Main delivery max (session)")).toBeVisible();
   await expect(panel.getByText("480.0 ms")).toBeVisible();
   await expect(panel.getByText("Pulls/s")).toBeVisible();
@@ -130,14 +142,14 @@ test("instrumentation panel surfaces websocket backlog lag", async ({
   await expect(panel.getByText("Delivery IDs", { exact: true })).toBeVisible();
   await expect(panel.getByText("1229 / 1234")).toBeVisible();
   await expect(
-    panel.getByRole("cell", { name: "ParameterState" }),
+    panel.getByRole("gridcell", { name: "ParameterState" }),
   ).toBeVisible();
-  const messages = panel.getByRole("table", { name: "Worker message totals" });
-  await expect(messages).toHaveClass(/nf-table/);
-  await expect(messages.getByRole("columnheader").nth(1)).toHaveCSS(
-    "text-align",
-    "right",
-  );
+  const messages = panel.getByRole("grid", { name: "Worker message totals" });
+  await expect(messages).toHaveAttribute("data-grid-appearance", "table");
+  const countHeader = messages.getByRole("columnheader", { name: "Count" });
+  await expect(countHeader).toHaveAttribute("data-align", "right");
+  await countHeader.click();
+  await expect(countHeader).toHaveAttribute("aria-sort", "ascending");
   await messages.scrollIntoViewIfNeeded();
   await page.screenshot({
     path: test.info().outputPath("shared-instrumentation.png"),
@@ -214,32 +226,39 @@ test("websocket delivery lag is exposed as Performance measures", async ({
     timings.getByRole("row", { name: /Worker processing/ }),
   ).toContainText("—");
   await expect(
-    panel.getByText(/ParameterState snapshots are coalesced/),
+    panel.getByText(/Snapshot messages are coalesced/),
   ).toBeVisible();
+  await expect(
+    panel.getByText("Drifted keyframes", { exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByText("2307")).toBeVisible();
+  await expect(
+    panel.getByText(/asks the backend for a keyframe/),
+  ).toBeVisible();
+  await panel
+    .getByText(/asks the backend for a keyframe/)
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.screenshot({
+    path: test.info().outputPath("parameter-stream-metrics.png"),
+  });
   await expect(panel.getByText(/not one-way delivery/)).toBeVisible();
   await expect(
-    panel.getByRole("button", { name: "Processing (EMA)" }),
+    panel.getByRole("columnheader", { name: "Processing (EMA)" }),
   ).toBeVisible();
   await page.screenshot({
     path: test.info().outputPath("websocket-timing-stages.png"),
     fullPage: true,
   });
   await panel.getByRole("button", { name: /Performance Metrics/ }).click();
-  const performanceRow = panel.getByRole("row").filter({
-    has: page.getByRole("cell", {
+  const measures = panel.getByRole("grid", { name: "Performance metrics" });
+  await expect(measures).toHaveAttribute("data-grid-appearance", "table");
+  const performanceRow = measures.locator("[data-grid-row]").filter({
+    has: page.getByRole("gridcell", {
       name: "websocket.worker-to-main",
       exact: true,
     }),
   });
   await expect(performanceRow).toContainText("99.00 ms");
-  const measures = panel.getByRole("table", { name: "Performance metrics" });
-  await expect(measures).toHaveClass(/nf-table/);
-  await expect(
-    measures.getByRole("cell", {
-      name: "websocket.worker-to-main",
-      exact: true,
-    }),
-  ).toBeVisible();
   await measures
     .getByRole("columnheader", { name: "Scope", exact: true })
     .scrollIntoViewIfNeeded();

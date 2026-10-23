@@ -15,10 +15,11 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use nightfall::data::Priority;
 use nightfall::prelude::{FadeCurve, MaterializedTransition, ObjectRef, ObjectType};
 use nightfall_compositor::prelude::{Layer, ObjectRefMarker, OutputLayer};
-use nightfall_desk::websocket::{LayerSnapshotData, send_layer_stack};
+use nightfall_desk::controls::HeldButtonEffects;
+use nightfall_desk::websocket::{LayerSnapshotData, LayerStackPublication, send_layer_stack};
 use nightfall_dmx::prelude::ParameterValue;
-use nightfall_engine::prelude::ClientEventSink;
-use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
+use nightfall_engine::prelude::{ClientEventSink, OutboundFrame};
+use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter, ParameterStateProjection};
 use nightfall_fixtures::testing::{BENCH_FIXTURE_PARAMETERS, BenchParameter, patch_bench_fixtures};
 use nightfall_io::OutputTransport;
 
@@ -66,24 +67,33 @@ fn bench_layer_stack(c: &mut Criterion) {
     group.finish();
 }
 
-/// Publishes the layer stack every update, bypassing the low-frequency rate limiter.
+/// Publishes the layer stack every update, bypassing the low-frequency rate limiter and the
+/// unchanged-snapshot check so each iteration measures a full build and encode.
 fn publish_layer_stack(
     fixture_data_provider: Res<FixtureDataProviderExt>,
+    mut projection: ResMut<ParameterStateProjection>,
     parameters_query: Query<&Parameter>,
     layers: Query<LayerSnapshotData>,
     broadcaster: Res<ClientEventSink>,
 ) {
-    send_layer_stack(
+    projection.refresh_layout(
         &fixture_data_provider,
+        &fixture_data_provider.parameter_index(),
+        false,
+    );
+    send_layer_stack(
+        &projection,
         parameters_query,
         layers,
+        &mut LayerStackPublication::default(),
+        &HeldButtonEffects::default(),
         None,
         &broadcaster,
     );
 }
 
 /// Builds an app of patched fixtures and `layer_count` fully asserting layers.
-fn layer_stack_app(fixture_count: usize, layer_count: usize) -> (App, Receiver<Vec<u8>>) {
+fn layer_stack_app(fixture_count: usize, layer_count: usize) -> (App, Receiver<OutboundFrame>) {
     let mut app = App::new();
     let parameters =
         patch_bench_fixtures(app.world_mut(), fixture_count, &OutputTransport::Disabled);
@@ -93,6 +103,7 @@ fn layer_stack_app(fixture_count: usize, layer_count: usize) -> (App, Receiver<V
 
     let (sender, receiver) = async_channel::unbounded();
     app.insert_resource(ClientEventSink::new(sender));
+    app.init_resource::<ParameterStateProjection>();
     app.add_systems(Update, publish_layer_stack);
     (app, receiver)
 }
@@ -138,9 +149,9 @@ fn fade() -> MaterializedTransition {
 }
 
 /// Drains every queued client message and returns the total encoded byte count.
-fn drain_bytes(receiver: &Receiver<Vec<u8>>) -> usize {
+fn drain_bytes(receiver: &Receiver<OutboundFrame>) -> usize {
     std::iter::from_fn(|| receiver.try_recv().ok())
-        .map(|message| message.len())
+        .map(|message| message.bytes.len())
         .sum()
 }
 

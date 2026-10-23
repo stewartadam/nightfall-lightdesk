@@ -138,7 +138,9 @@ test("patch wizard locks body scroll and keeps preview fixed while fixture list 
     .toBe("hidden");
 
   const documentPanel = dialog.getByRole("document");
-  const fixtureList = dialog.getByRole("region", { name: "Fixture library" });
+  const fixtureList = dialog
+    .getByRole("grid", { name: "Available fixtures" })
+    .locator('[data-grid-kind="tanstack"]');
   const preview = dialog.getByRole("region", { name: "Fixture preview" });
   const before = await preview.boundingBox();
   expect(before).toBeTruthy();
@@ -408,4 +410,84 @@ test("object wizard filters selects and creates with shared controls", async ({
       ),
     )
     .toBe(before + 2);
+});
+
+/** Shows a backend rejection from the object wizard as an error alert that keeps the dialog open. */
+test("object wizard reports a failed library object as an alert", async ({
+  page,
+}, testInfo) => {
+  await openApp(page);
+  await page.evaluate(() => {
+    const stores = (window as any).appStores;
+    stores.objectLibrary.set([
+      {
+        name: "E2E Missing Object",
+        category: "E2E",
+        description: "Library entry the backend cannot find",
+        scale: 1,
+        tags: [],
+        modelPath: "e2e-missing-object",
+        assetVersion: "e2e",
+      },
+    ]);
+    stores.dockApi.get().addPanel({
+      id: "shared-object-wizard-error",
+      component: "SceneObjects",
+      title: "Scene Objects",
+      params: {},
+    });
+  });
+  await page.getByRole("button", { name: "Add object", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add Object", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole("textbox", { name: "Search objects" })
+    .fill("E2E Missing");
+  await dialog.getByRole("button", { name: /E2E Missing Object/ }).click();
+  await dialog.getByRole("button", { name: "Add Object", exact: true }).click();
+  const alert = dialog.getByRole("alert");
+  await expect(alert).toContainText("Failed to add object");
+  await expect(alert).toHaveAttribute("data-variant", "caution");
+  await expect(dialog).toBeVisible();
+  await dialog.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("object-wizard-error.png"),
+  });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toBeHidden();
+});
+
+/** Shows create-object validation errors as an alert inside the dialog. */
+test("create object dialog reports validation errors as an alert", async ({
+  page,
+}, testInfo) => {
+  await openApp(page);
+  await page.evaluate(() => {
+    (window as any).appStores.dockApi.get().addPanel({
+      id: "create-object-error",
+      component: "ObjectLibrary",
+      title: "Object Library",
+      params: {},
+    });
+  });
+  await page
+    .getByRole("button", { name: "Create object", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Create Object",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Create Object", exact: true })
+    .click();
+  const alert = dialog.getByRole("alert");
+  await expect(alert).toHaveText("Please select a GLB file");
+  await expect(alert).toHaveAttribute("data-variant", "caution");
+  await dialog.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("create-object-error.png"),
+  });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toBeHidden();
 });

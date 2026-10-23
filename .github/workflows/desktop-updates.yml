@@ -1,0 +1,191 @@
+name: Desktop updates
+
+# Publishing a version release offers it to installed desktop apps. nightfall.live redirects
+# their update checks to `latest.json` on the `updater` release, which this workflow replaces.
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+# Releases published close together are handled one at a time, so the newest offer wins.
+concurrency:
+  group: desktop-updates
+  cancel-in-progress: false
+
+# These jobs treat release assets as data. Never checkout source, restore build caches, install
+# dependencies, or execute a release asset here. See docs/ci-security.md.
+jobs:
+  sign:
+    name: Sign the update packages
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    # Holds the updater signing key, so it runs only system tools and a pinned,
+    # checksum-verified minisign release, and its token can only read.
+    permissions:
+      contents: read
+    steps:
+      - name: Download the release packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          for suffix in aarch64-apple-darwin.app.tar.gz x86_64-pc-windows-msvc.exe \
+            x86_64-unknown-linux-gnu.deb x86_64-unknown-linux-gnu.AppImage; do
+            name="nightfall-$RELEASE_TAG-$suffix"
+            # Only packages the release workflow uploaded are signed, never a file attached by hand.
+            uploader=$(jq -r --arg name "$name" '[.assets[] | select(.name == $name) | .uploader.login] | if length == 1 then .[0] else "" end' "$RUNNER_TEMP/release.json")
+            if [[ "$uploader" != "github-actions[bot]" ]]; then
+              echo "::error::$name was not uploaded by the release workflow"
+              exit 1
+            fi
+            gh release download "$RELEASE_TAG" --dir incoming --pattern "$name"
+          done
+      - name: Download the pinned minisign release
+        env:
+          MINISIGN_URL: https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz
+          MINISIGN_SHA256: 9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73
+        run: |
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/minisign.tar.gz" "$MINISIGN_URL"
+          echo "$MINISIGN_SHA256  $RUNNER_TEMP/minisign.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/minisign.tar.gz" -C "$RUNNER_TEMP" minisign-linux/x86_64/minisign
+      - name: Sign the update packages and write the manifest
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == release ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD TAURI_SIGNING_PUBLIC_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Set $name before publishing a release"
+              exit 1
+            fi
+          done
+          minisign="$RUNNER_TEMP/minisign-linux/x86_64/minisign"
+          umask 077
+          key="$RUNNER_TEMP/updater.key"
+          trap 'rm -f "$key"' EXIT
+          # Tauri stores minisign keys as base64 of the minisign key file.
+          printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | base64 --decode > "$key"
+          printf '%s' "$TAURI_SIGNING_PUBLIC_KEY" | base64 --decode > "$RUNNER_TEMP/updater.pub"
+          # Manifest key ({os}-{arch}-{bundle type}, as the updater looks it up) and package suffix.
+          packages=(
+            "darwin-aarch64-app aarch64-apple-darwin.app.tar.gz"
+            "windows-x86_64-nsis x86_64-pc-windows-msvc.exe"
+            "linux-x86_64-deb x86_64-unknown-linux-gnu.deb"
+            "linux-x86_64-appimage x86_64-unknown-linux-gnu.AppImage"
+          )
+          : > "$RUNNER_TEMP/signatures.tsv"
+          for package in "${packages[@]}"; do
+            read -r target suffix <<< "$package"
+            name="nightfall-$RELEASE_TAG-$suffix"
+            file="incoming/$name"
+            [[ -f "$file" && -s "$file" && ! -L "$file" ]]
+            # Apps configured with requireSignedVersion install a package only when the version
+            # signed here matches the version the manifest announces.
+            comment=$(printf 'timestamp:%s\tfile:%s\tversion:%s' "$(date +%s)" "$name" "${RELEASE_TAG#v}")
+            printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | "$minisign" -S -s "$key" -m "$file" \
+              -x "$RUNNER_TEMP/$name.minisig" -c "signature from tauri secret key" -t "$comment"
+            "$minisign" -V -p "$RUNNER_TEMP/updater.pub" -m "$file" -x "$RUNNER_TEMP/$name.minisig"
+            # Encoded in an assignment so a failed encoder stops the step instead of writing an
+            # empty signature; stdin and tr keep it portable across GNU and BSD base64.
+            signature=$(base64 < "$RUNNER_TEMP/$name.minisig" | tr -d '\n')
+            [[ -n "$signature" ]]
+            printf '%s\t%s\t%s\n' "$target" "$name" "$signature" >> "$RUNNER_TEMP/signatures.tsv"
+          done
+          mkdir manifest
+          python3 - "$RUNNER_TEMP/signatures.tsv" manifest/latest.json <<'EOF'
+          import datetime
+          import json
+          import os
+          import sys
+
+          tag = os.environ["RELEASE_TAG"]
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}"
+          platforms = {}
+          with open(sys.argv[1]) as signatures:
+              for line in signatures:
+                  target, name, signature = line.rstrip("\n").split("\t")
+                  platforms[target] = {"url": f"{base}/{name}", "signature": signature}
+          # Apps that cannot tell how they were installed look up {os}-{arch}. macOS and Windows ship
+          # one package each. Linux has two, so an unknown Linux install reports that no package
+          # matches it instead of installing one that may not fit.
+          platforms["darwin-aarch64"] = platforms["darwin-aarch64-app"]
+          platforms["windows-x86_64"] = platforms["windows-x86_64-nsis"]
+          manifest = {
+              "version": tag[1:],
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": platforms,
+          }
+          with open(sys.argv[2], "x") as output:
+              json.dump(manifest, output, indent=2)
+          EOF
+      - name: Upload the update manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: update-manifest
+          path: manifest/latest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Offer the release to installed apps
+    needs: sign
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    # Can write releases but never sees the signing key.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: update-manifest
+          path: manifest
+      - name: Replace the manifest on the updater release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == release ]]
+          [[ -f manifest/latest.json && -s manifest/latest.json && ! -L manifest/latest.json ]]
+          # The manifest must announce this release and download only this release's assets.
+          base="https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/"
+          jq -e --arg version "${RELEASE_TAG#v}" --arg base "$base" '
+            .version == $version and (.platforms | length) > 0 and all(.platforms[];
+              (.url | startswith($base) and (ltrimstr($base) | contains("/") | not))
+              and (.signature | test("^[A-Za-z0-9+/]+=*$")))' manifest/latest.json > /dev/null
+          if gh release view updater > /dev/null 2>&1; then
+            # Publishing an older release, or republishing one, never takes back a newer offer.
+            gh release download updater --pattern latest.json --output "$RUNNER_TEMP/current.json"
+            python3 - "$(jq -r .version "$RUNNER_TEMP/current.json")" "${RELEASE_TAG#v}" <<'EOF'
+          import sys
+
+          def key(version):
+              """Orders versions by SemVer precedence; build metadata is ignored."""
+              core, _, pre = version.split("+")[0].partition("-")
+              parts = [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split(".")] if pre else []
+              return (tuple(int(n) for n in core.split(".")), not pre, parts)
+
+          current, new = sys.argv[1:]
+          if key(new) < key(current):
+              sys.exit(f"::error::Installed apps are already offered {current}; not replacing it with {new}")
+          EOF
+          else
+            gh release create updater --prerelease --latest=false --title "Desktop updates" \
+              --notes "Update information for installed Nightfall desktop apps. Download Nightfall from the versioned releases instead."
+          fi
+          gh release upload updater manifest/latest.json --clobber
+          echo "Installed apps are now offered $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

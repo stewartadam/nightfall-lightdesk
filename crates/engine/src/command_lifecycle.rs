@@ -16,8 +16,8 @@ use thiserror::Error;
 use web_time::Instant;
 
 use crate::prelude::{
-    CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin, CommandOutcome,
-    CommandOutput, CommandResult, NoticeLevel, ReplyTarget, UndoId,
+    ClientId, CommandEnvelope, CommandError, CommandId, CommandNotice, CommandOrigin,
+    CommandOutcome, CommandOutput, CommandResult, NoticeLevel, ReplyTarget, UndoId,
 };
 
 /// Context retained while one accepted command is active.
@@ -31,6 +31,9 @@ pub struct ActiveCommand {
     pub reply_target: ReplyTarget,
     /// Monotonic time at which lifecycle tracking began for diagnostics.
     pub started_at: Instant,
+    /// Whether the command is an undo or redo replaying captured inverses, which restore
+    /// earlier state as it was rather than submit new edits.
+    pub undo_replay: bool,
     /// Number of operation outcomes required before the command can finish.
     expected_completions: usize,
     /// Operation outcomes already received for this command.
@@ -62,6 +65,15 @@ pub struct CommandReply {
     /// Transport-neutral terminal command result.
     pub result: CommandResult,
     /// Adapter that should deliver the result to its initiating client.
+    pub reply_target: ReplyTarget,
+}
+
+/// Transport-routing instruction emitted for one non-terminal command notice.
+#[derive(Clone, Debug, Message)]
+pub struct CommandNoticeReply {
+    /// Transport-neutral operator feedback.
+    pub notice: CommandNotice,
+    /// Adapter that should deliver the notice to its initiating client.
     pub reply_target: ReplyTarget,
 }
 
@@ -134,6 +146,7 @@ impl CommandTracker {
                 origin,
                 reply_target,
                 started_at: Instant::now(),
+                undo_replay: false,
                 expected_completions: 1,
                 received_completions: 0,
                 successful_completions: 0,
@@ -142,6 +155,27 @@ impl CommandTracker {
             },
         );
         Ok(())
+    }
+
+    /// Wraps a typed payload in the context its ingress adapter registered for `command_id`.
+    ///
+    /// Domain deserializers run after ingress registered the command, so the tracker holds the
+    /// origin and reply target the transport assigned. An untracked command is logged and falls
+    /// back to a broadcast Web UI context.
+    pub fn admitted_envelope<T>(
+        &self,
+        command_id: CommandId,
+        undo_id: UndoId,
+        command: T,
+    ) -> CommandEnvelope<T> {
+        let (origin, reply_target) = match self.active.get(&command_id) {
+            Some(active) => (active.origin.clone(), active.reply_target.clone()),
+            None => {
+                tracing::warn!(%command_id, "untracked_command_envelope_broadcasts_feedback");
+                (CommandOrigin::WebUi, ReplyTarget::ClientBroadcast)
+            }
+        };
+        CommandEnvelope::with_context(command_id, undo_id, origin, reply_target, command)
     }
 
     /// Returns whether the supplied command is currently awaiting a terminal result.
@@ -157,6 +191,33 @@ impl CommandTracker {
     /// Returns active command context for workflow diagnostics.
     pub fn active_command(&self, command_id: CommandId) -> Option<&ActiveCommand> {
         self.active.get(&command_id)
+    }
+
+    /// Returns the client session that submitted an active command, read from the reply
+    /// target its host adapter assigned, so handlers of session-owned state can tell which
+    /// client a command came from.
+    pub fn connection(&self, command_id: CommandId) -> Option<ClientId> {
+        match self.active.get(&command_id)?.reply_target {
+            ReplyTarget::Client(client) => Some(client),
+            _ => None,
+        }
+    }
+
+    /// Marks an active command as an undo or redo replaying captured inverses.
+    pub fn mark_undo_replay(&mut self, command_id: CommandId) {
+        if let Some(command) = self.active.get_mut(&command_id) {
+            command.undo_replay = true;
+        }
+    }
+
+    /// Returns whether an active command is an undo or redo replaying captured inverses.
+    ///
+    /// Handlers that validate new edits skip that validation for replays, which restore
+    /// state that was already accepted.
+    pub fn is_undo_replay(&self, command_id: CommandId) -> bool {
+        self.active
+            .get(&command_id)
+            .is_some_and(|command| command.undo_replay)
     }
 
     /// Sets how many delegated operation outcomes complete one accepted command.
@@ -363,7 +424,7 @@ pub struct CommandResponder<'w> {
     results: MessageWriter<'w, CommandResult>,
     replies: MessageWriter<'w, CommandReply>,
     finished_commands: MessageWriter<'w, FinishedCommand>,
-    notices: MessageWriter<'w, CommandNotice>,
+    notices: MessageWriter<'w, CommandNoticeReply>,
 }
 
 impl CommandResponder<'_> {
@@ -382,6 +443,24 @@ impl CommandResponder<'_> {
     /// Returns whether a command is currently awaiting a terminal outcome.
     pub fn is_active(&self, command_id: CommandId) -> bool {
         self.tracker.is_active(command_id)
+    }
+
+    /// Returns the client session that submitted an active command, if one was identified.
+    pub fn connection(&self, command_id: CommandId) -> Option<ClientId> {
+        self.tracker.connection(command_id)
+    }
+
+    /// Returns the surface that accepted an active command, such as the web UI or a MIDI
+    /// device, so handlers can tell apart inputs that did not come from a client session.
+    pub fn origin(&self, command_id: CommandId) -> Option<&CommandOrigin> {
+        self.tracker
+            .active_command(command_id)
+            .map(|command| &command.origin)
+    }
+
+    /// Returns whether an active command is an undo or redo replaying captured inverses.
+    pub fn is_undo_replay(&self, command_id: CommandId) -> bool {
+        self.tracker.is_undo_replay(command_id)
     }
 
     /// Declares how many delegated outcomes must be joined before completion.
@@ -467,10 +546,14 @@ impl CommandResponder<'_> {
         message: impl Into<String>,
     ) -> Result<(), CommandLifecycleError> {
         self.tracker.verify_active(command_id)?;
-        self.notices.write(CommandNotice {
-            command_id,
-            level,
-            message: message.into(),
+        let reply_target = self.tracker.active[&command_id].reply_target.clone();
+        self.notices.write(CommandNoticeReply {
+            notice: CommandNotice {
+                command_id,
+                level,
+                message: message.into(),
+            },
+            reply_target,
         });
         Ok(())
     }
@@ -506,7 +589,7 @@ mod tests {
     use bevy_ecs::system::SystemState;
 
     use super::*;
-    use crate::prelude::{CommandError, CommandOrigin, ReplyTarget};
+    use crate::prelude::{ClientId, CommandError, CommandOrigin, ReplyTarget};
 
     /// Creates a representative tracked Web UI command for lifecycle tests.
     fn command() -> CommandEnvelope<&'static str> {
@@ -749,7 +832,7 @@ mod tests {
         world.init_resource::<Messages<CommandResult>>();
         world.init_resource::<Messages<CommandReply>>();
         world.init_resource::<Messages<FinishedCommand>>();
-        world.init_resource::<Messages<CommandNotice>>();
+        world.init_resource::<Messages<CommandNoticeReply>>();
         let mut state = SystemState::<CommandResponder>::new(&mut world);
         let command_id = CommandId::new();
 
@@ -766,6 +849,44 @@ mod tests {
         );
     }
 
+    /// Verifies notices carry the reply target their command was registered with, so the
+    /// bridge can deliver them to the submitting client only.
+    #[test]
+    fn responder_notice_carries_command_reply_target() {
+        let mut world = World::new();
+        world.init_resource::<CommandTracker>();
+        world.init_resource::<Messages<CommandResult>>();
+        world.init_resource::<Messages<CommandReply>>();
+        world.init_resource::<Messages<FinishedCommand>>();
+        world.init_resource::<Messages<CommandNoticeReply>>();
+        let command_id = CommandId::new();
+        world
+            .resource_mut::<CommandTracker>()
+            .register_context(
+                command_id,
+                command_id.into(),
+                CommandOrigin::WebUi,
+                ReplyTarget::Client(ClientId(5)),
+            )
+            .unwrap();
+        let mut state = SystemState::<CommandResponder>::new(&mut world);
+
+        state
+            .get_mut(&mut world)
+            .unwrap()
+            .notice(command_id, NoticeLevel::Warning, "Partial store")
+            .unwrap();
+        state.apply(&mut world);
+
+        let replies: Vec<_> = world
+            .resource_mut::<Messages<CommandNoticeReply>>()
+            .drain()
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].reply_target, ReplyTarget::Client(ClientId(5)));
+        assert_eq!(replies[0].notice.command_id, command_id);
+    }
+
     /// Verifies that responder completion updates the tracker before publishing a result.
     #[test]
     fn responder_finishes_and_publishes_atomically() {
@@ -774,7 +895,7 @@ mod tests {
         world.init_resource::<Messages<CommandResult>>();
         world.init_resource::<Messages<CommandReply>>();
         world.init_resource::<Messages<FinishedCommand>>();
-        world.init_resource::<Messages<CommandNotice>>();
+        world.init_resource::<Messages<CommandNoticeReply>>();
         let command = command();
         world
             .resource_mut::<CommandTracker>()

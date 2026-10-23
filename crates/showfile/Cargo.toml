@@ -10,7 +10,6 @@ moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-cues = { path = "../cues" }
 nightfall-desk = { path = "../desk", default-features = false }
-nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures" }
@@ -27,6 +26,13 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+flate2 = "1.1"
+
+[[example]]
+name = "validate"
+required-features = ["midi", "osc"]
 
 [features]
 default = []

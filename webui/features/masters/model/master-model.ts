@@ -190,15 +190,28 @@ export function buildSetMasterModeCommand(
   } as types.MasterCommand;
 }
 
-/** Builds a command that changes a master's level. */
-export function buildSetMasterLevelCommand(
+/** Builds the untracked update streamed while a master level slider is dragged. */
+export function buildMasterLevelUpdate(
   id: number,
+  levelPercent: number,
+): types.MasterUpdate {
+  return { type: "SetLevel", data: { id, level_percent: levelPercent } };
+}
+
+/**
+ * Builds the undoable command committing a dragged master level.
+ *
+ * `fromPercent` is the level before the drag began so undo restores the starting point.
+ */
+export function buildCommitMasterLevelCommand(
+  id: number,
+  fromPercent: number,
   levelPercent: number,
 ): types.MasterCommand {
   return {
-    type: "SetMasterLevel",
-    data: { id, level_percent: levelPercent },
-  } as types.MasterCommand;
+    type: "CommitMasterLevel",
+    data: { id, from_percent: fromPercent, level_percent: levelPercent },
+  };
 }
 
 /** Builds a command that flips a toggle master's active state. */

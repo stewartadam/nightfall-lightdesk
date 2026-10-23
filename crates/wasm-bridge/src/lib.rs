@@ -6,25 +6,26 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! WASM bridge utilities for parsing selection strings into SelectionExpr/SpatialSelection
+//! WASM bridge exposing engine command parsing, spatial selection, and projection helpers to the web UI
 #![allow(clippy::missing_errors_doc)]
 
 use std::{collections::HashMap, time::Duration};
 
 use nightfall::prelude::{
-    project_resolved_spatial_selection as project_resolved_spatial_selection_impl,
-    project_spanned_selection as project_spanned_selection_impl, FixtureRef, Group,
-    ResolvedSelection, SelectionExpr, SpannedSelection, SpatialClause, SpatialProjectionError,
-    SpatialSelection, TransitionMode,
+    project_resolved_spatial_selection as project_resolved_spatial_selection_impl, FixtureRef,
+    Group, ResolvedSelection, SpatialProjectionError, SpatialSelection, TransitionMode,
 };
 use nightfall_cmd_parse::{
-    autocomplete::complete_command as complete_command_impl,
+    autocomplete::complete_command_with_inventory as complete_command_with_inventory_impl,
     autocomplete::validate_command as validate_command_impl,
-    autocomplete::CommandCompletionResponse, format_phase_expression_degrees,
-    parse_phase_expression_text, parse_selection_expr, parse_spatial_selection_text,
+    autocomplete::{CommandCompletionResponse, CompletionInventory},
+    format_phase_expression_degrees, parse_phase_expression_text, parse_spatial_selection_text,
     split_command_statements as split_command_statements_impl,
 };
-use nightfall_io::{RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS};
+use nightfall_io::{
+    configured_output_target_ids, NetworkDmxOutputTargets, UsbDmxOutputTargets,
+    RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
+};
 use nightfall_lookahead_projection::{
     project_sequence_lookahead as project_sequence_lookahead_impl,
     sequence_duration_summary as sequence_duration_summary_impl, SequenceDurationSummaryRequest,
@@ -34,10 +35,10 @@ use nightfall_selection::{
     SelectionDataSource, SelectionFixture, SelectionGroup,
     SpatialSelectionResolver as PureSpatialSelectionResolver,
 };
-use nightfall_waveform::prelude::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+mod board_placement;
 mod fixture_evaluation;
 
 pub use fixture_evaluation::{fixture_reading_stride, FixtureChannelEvaluator};
@@ -47,13 +48,6 @@ pub use fixture_evaluation::{fixture_reading_stride, FixtureChannelEvaluator};
 struct SpatialProjectionResponse {
     resolved: ResolvedSelection,
     issues: Vec<String>,
-}
-
-/// JSON request for projecting explicitly resolved source spans.
-#[derive(Debug, Deserialize)]
-struct SpannedSpatialProjectionRequest {
-    spans: Vec<Vec<FixtureRef>>,
-    clauses: Vec<SpatialClause>,
 }
 
 /// Browser fixture metadata required by the pure Rust selection resolver.
@@ -192,21 +186,6 @@ impl From<Duration> for WasmDuration {
 // Selection expression parsing and formatting
 // ============================================================================
 
-/// Parse a selection expression string and return a JSON-serialized SelectionExpr.
-///
-/// The function uses the existing CLI parser to parse selection expressions
-/// and returns them as JSON-serialized SelectionExpr objects.
-#[wasm_bindgen]
-pub fn parse_selection(input: &str) -> Result<JsValue, JsValue> {
-    let input_str = input.trim();
-
-    let selection_expr = parse_selection_expr(input_str)
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse selection: {}", e)))?;
-
-    serde_wasm_bindgen::to_value(&selection_expr)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize: {:?}", e)))
-}
-
 /// Parse a spatial selection string and return a JSON-serialized SpatialSelection.
 #[wasm_bindgen]
 pub fn parse_spatial_selection(input: &str) -> Result<JsValue, JsValue> {
@@ -216,16 +195,6 @@ pub fn parse_spatial_selection(input: &str) -> Result<JsValue, JsValue> {
 
     serde_wasm_bindgen::to_value(&spatial_selection)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize: {:?}", e)))
-}
-
-/// Format a SelectionExpr as a CLI-style string using its Display implementation.
-///
-/// Takes a JSON-serialized SelectionExpr and returns its string representation.
-#[wasm_bindgen]
-pub fn format_selection(selection_json: &str) -> Result<String, JsValue> {
-    let selection: SelectionExpr = serde_json::from_str(selection_json)
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse SelectionExpr: {}", e)))?;
-    Ok(selection.to_string())
 }
 
 /// Format a SpatialSelection as a CLI-style string using its Display implementation.
@@ -281,24 +250,6 @@ pub fn project_resolved_spatial_selection(selection_json: &str) -> Result<JsValu
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize projection: {:?}", e)))
 }
 
-/// Project explicitly resolved source spans through Rust spatial replay semantics.
-#[wasm_bindgen]
-pub fn project_spanned_spatial_selection(request_json: &str) -> Result<JsValue, JsValue> {
-    let request: SpannedSpatialProjectionRequest =
-        serde_json::from_str(request_json).map_err(|error| {
-            JsValue::from_str(&format!("Failed to parse spanned selection: {error}"))
-        })?;
-    let source = SpannedSelection::from_spans(request.spans);
-    let projected = project_spanned_selection_impl(&source, source.flatten(), &request.clauses);
-    let response = SpatialProjectionResponse {
-        resolved: projected.value,
-        issues: projected.issues,
-    };
-
-    serde_wasm_bindgen::to_value(&response)
-        .map_err(|error| JsValue::from_str(&format!("Failed to serialize projection: {error:?}")))
-}
-
 /// Resolves a browser-authored selection against browser fixture and group snapshots.
 #[wasm_bindgen]
 pub fn resolve_spatial_selection(request_json: &str) -> Result<JsValue, JsValue> {
@@ -350,12 +301,53 @@ pub fn sequence_duration_summary(request: JsValue) -> Result<JsValue, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize sequence duration: {:?}", e)))
 }
 
+/// The output target lists of the I/O runtime settings snapshot; other settings are ignored.
+#[derive(Debug, Default, Deserialize)]
+struct OutputTargetSettings {
+    /// Showfile-scoped named network DMX output targets.
+    #[serde(default)]
+    network_dmx_outputs: NetworkDmxOutputTargets,
+    /// Showfile-scoped named USB DMX output targets.
+    #[serde(default)]
+    usb_dmx_outputs: UsbDmxOutputTargets,
+}
+
+/// Reads the I/O runtime settings snapshot the UI received from the engine and returns the
+/// output target IDs commands can name, sanitized exactly as the engine sanitizes them.
+fn output_target_ids_from_settings(io_settings: JsValue) -> Result<Vec<String>, JsValue> {
+    let settings: OutputTargetSettings = serde_wasm_bindgen::from_value(io_settings)
+        .map_err(|e| JsValue::from_str(&format!("Invalid I/O settings: {}", e)))?;
+    Ok(configured_output_target_ids(
+        &settings.network_dmx_outputs,
+        &settings.usb_dmx_outputs,
+    ))
+}
+
+/// Return the output target IDs commands can name for an I/O runtime settings snapshot.
+#[wasm_bindgen]
+pub fn output_target_ids(io_settings: JsValue) -> Result<Vec<String>, JsValue> {
+    output_target_ids_from_settings(io_settings)
+}
+
 /// Complete a command string at the given cursor offset.
 ///
-/// Returns grammar-derived completion metadata for UI autocomplete.
+/// Returns grammar-derived completion metadata for UI autocomplete. The output targets
+/// configured in `io_settings` (the engine's I/O runtime settings snapshot) are offered
+/// wherever a command names an output (`patch ... @ <output>:1.1`, `ch <output>:1.1`).
 #[wasm_bindgen]
-pub fn complete_command(input: &str, cursor: usize) -> Result<JsValue, JsValue> {
-    let response: CommandCompletionResponse = complete_command_impl(input, cursor);
+pub fn complete_command(
+    input: &str,
+    cursor: usize,
+    io_settings: JsValue,
+) -> Result<JsValue, JsValue> {
+    let inventory = CompletionInventory {
+        output_targets: output_target_ids_from_settings(io_settings)?
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    };
+    let response: CommandCompletionResponse =
+        complete_command_with_inventory_impl(input, cursor, &inventory);
     serde_wasm_bindgen::to_value(&response)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize completion: {:?}", e)))
 }
@@ -396,85 +388,4 @@ pub fn reserved_usb_dmx_target_keywords() -> Result<JsValue, JsValue> {
             e
         ))
     })
-}
-
-// ============================================================================
-// Waveform sampling functions
-// ============================================================================
-
-/// Sample a waveform at a normalized phase [0, 1].
-///
-/// # Arguments
-/// * `kind` - Waveform kind as string ("sin", "triangle", "sawtooth", "square", "pulse")
-/// * `phase_normalized` - Phase as normalized value [0, 1]
-/// * `duty_cycle` - Duty cycle [0, 1]
-///
-/// # Returns
-/// Normalized waveform value [0, 1]
-#[wasm_bindgen]
-pub fn wasm_sample_waveform_normalized(
-    kind: JsValue,
-    phase_normalized: f32,
-    duty_cycle: f32,
-) -> Result<f32, JsValue> {
-    let waveform_kind: WaveformKind = serde_wasm_bindgen::from_value(kind)
-        .map_err(|e| JsValue::from_str(&format!("Invalid waveform kind: {}", e)))?;
-    Ok(sample_waveform_normalized(
-        waveform_kind,
-        phase_normalized,
-        duty_cycle,
-    ))
-}
-
-/// Sample a waveform at a phase in radians.
-///
-/// # Arguments
-/// * `kind` - Waveform kind as string ("sin", "triangle", "sawtooth", "square", "pulse")
-/// * `phase_radians` - Phase in radians
-/// * `duty_cycle` - Duty cycle [0, 1]
-///
-/// # Returns
-/// Normalized waveform value [0, 1]
-#[wasm_bindgen]
-pub fn wasm_sample_waveform_radians(
-    kind: JsValue,
-    phase_radians: f32,
-    duty_cycle: f32,
-) -> Result<f32, JsValue> {
-    let waveform_kind: WaveformKind = serde_wasm_bindgen::from_value(kind)
-        .map_err(|e| JsValue::from_str(&format!("Invalid waveform kind: {}", e)))?;
-    Ok(sample_waveform_radians(
-        waveform_kind,
-        phase_radians,
-        duty_cycle,
-    ))
-}
-
-/// Generate multiple waveform samples for visualization.
-///
-/// # Arguments
-/// * `kind` - Waveform kind as string ("sin", "triangle", "sawtooth", "square", "pulse")
-/// * `phase_offset_radians` - Initial phase offset in radians
-/// * `duty_cycle` - Duty cycle [0, 1]
-/// * `sample_count` - Number of samples to generate
-///
-/// # Returns
-/// Array of waveform samples with values in [0, 1]
-#[wasm_bindgen]
-pub fn wasm_generate_waveform_samples(
-    kind: JsValue,
-    phase_offset_radians: f32,
-    duty_cycle: f32,
-    sample_count: usize,
-) -> Result<JsValue, JsValue> {
-    let waveform_kind: WaveformKind = serde_wasm_bindgen::from_value(kind)
-        .map_err(|e| JsValue::from_str(&format!("Invalid waveform kind: {}", e)))?;
-    let samples = generate_waveform_samples(
-        waveform_kind,
-        phase_offset_radians,
-        duty_cycle,
-        sample_count,
-    );
-    serde_wasm_bindgen::to_value(&samples)
-        .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
 }

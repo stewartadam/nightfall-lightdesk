@@ -61,12 +61,6 @@
   outline-offset: -2px;
 }
 
-.nf-button.nf-layout-slot-add,
-.nf-button.nf-layout-slot-add:hover:enabled {
-  border: 0;
-  color: var(--muted, #9ca3af);
-}
-
 @media (hover: none) {
   .nf-layout-slot-menu {
     opacity: 1;
@@ -99,4 +93,9 @@
 
 .nf-layout-slot[data-drop-side="after"]::after {
   right: -3px;
+}
+
+.nf-toolbar-button.nf-board-slot {
+  flex-shrink: 0;
+  max-width: 190px;
 }

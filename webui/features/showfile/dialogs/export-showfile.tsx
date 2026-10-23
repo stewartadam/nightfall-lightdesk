@@ -13,6 +13,7 @@ import {
   For,
   Show,
 } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -160,9 +161,9 @@ export function ExportShowfileModal(props: {
             </For>
           </fieldset>
           <Show when={error()}>
-            <p role="alert" class="text-sm text-red-400">
-              {error()}
-            </p>
+            <Alert variant="caution" density="compact" role="alert">
+              <p>{error()}</p>
+            </Alert>
           </Show>
           <Show when={result()}>
             {(completed) => (
@@ -172,14 +173,14 @@ export function ExportShowfileModal(props: {
                   {completed().path}
                 </p>
                 <Show when={completed().warnings.length > 0}>
-                  <p class="text-amber-300">
-                    The export completed with warnings:
-                  </p>
-                  <ul class="list-disc space-y-1 pl-5 text-amber-300">
-                    <For each={completed().warnings}>
-                      {(warning) => <li class="break-words">{warning}</li>}
-                    </For>
-                  </ul>
+                  <Alert variant="warning" density="compact">
+                    <p>The export completed with warnings:</p>
+                    <ul class="list-disc space-y-1 pl-5">
+                      <For each={completed().warnings}>
+                        {(warning) => <li class="break-words">{warning}</li>}
+                      </For>
+                    </ul>
+                  </Alert>
                 </Show>
               </div>
             )}

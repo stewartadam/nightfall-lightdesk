@@ -4,7 +4,6 @@
     "foundation": [
       "open-fixture-library",
       "nightfall",
-      "nightfall-actions",
       "nightfall-beat-detection",
       "nightfall-cmd-parse",
       "nightfall-config",
@@ -21,6 +20,7 @@
       "nightfall-workspace-hack"
     ],
     "infrastructure": [
+      "nightfall-actions",
       "nightfall-compositor",
       "nightfall-engine",
       "nightfall-clips",
@@ -28,6 +28,7 @@
       "nightfall-framepace",
       "nightfall-lookahead",
       "nightfall-service-host",
+      "nightfall-tempo",
       "nightfall-timecode",
       "nightfall-undo",
       "nightfall-websocket"
@@ -40,6 +41,7 @@
       "nightfall-fx",
       "nightfall-fx-module",
       "nightfall-input-artnet",
+      "nightfall-input-ltc",
       "nightfall-input-midi",
       "nightfall-input-osc",
       "nightfall-input-sacn",
@@ -52,8 +54,10 @@
       "nightfall-timeline"
     ],
     "integration": [
+      "nightfall-boards",
       "nightfall-desk",
       "nightfall-desk-audio",
+      "nightfall-references",
       "nightfall-showfile",
       "nightfall-wasm-bridge"
     ],

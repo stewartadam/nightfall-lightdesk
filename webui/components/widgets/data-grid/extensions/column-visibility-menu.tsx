@@ -19,6 +19,7 @@ import {
 import { DropdownMenu, DropdownMenuSeparator } from "../../../ui/dropdown-menu";
 import { ScrollArea } from "../../../ui/scroll-area";
 import { TOOLBAR_BUTTON_CLASS } from "../../../ui/toolbar-button";
+import { Button } from "../../../ui/visual-language/button";
 
 interface ColumnVisibilityMenuProps {
   scope: string;
@@ -176,20 +177,12 @@ export default function ColumnVisibilityMenu(props: ColumnVisibilityMenuProps) {
             Columns
           </span>
           <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="text-xs text-blue-300 hover:text-blue-200"
-              onClick={handleShowAll}
-            >
+            <Button variant="subtle" onClick={handleShowAll}>
               Show all
-            </button>
-            <button
-              type="button"
-              class="text-xs text-blue-300 hover:text-blue-200"
-              onClick={handleReset}
-            >
+            </Button>
+            <Button variant="subtle" onClick={handleReset}>
               Reset
-            </button>
+            </Button>
           </div>
         </div>
         <DropdownMenuSeparator />

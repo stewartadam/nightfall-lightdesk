@@ -9,4 +9,3 @@
 pub const APP_LOG_FILE_NAME: &str = "nightfall.log";
 
 pub static SHOW_DATA_DIR: &str = "default.nightfall-show";
-pub static ASSET_DIR: &str = "webui/assets";

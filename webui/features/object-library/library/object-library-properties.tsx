@@ -25,7 +25,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { getBackendUrl } from "../../../lib/api";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { objectProfile } from "../../../state/appStores";
 import type { AvailableObjectInfo } from "../../../types";
@@ -89,12 +89,9 @@ const ObjectLibraryProperties: Component<ObjectLibraryPropertiesProps> = (
       return;
     }
 
-    engineRuntime.sendCommand({
-      module: "ObjectLibraryCommand",
-      command: {
-        type: "GetObjectProfile",
-        data: { name: selected.name },
-      },
+    commandClient.emit("ObjectLibraryCommand", {
+      type: "GetObjectProfile",
+      data: { name: selected.name },
     });
   });
 

@@ -12,12 +12,14 @@ use std::{
 };
 
 pub mod blueprint;
+pub mod board;
 pub mod color_path;
 pub mod command_types;
 pub mod constants;
 pub mod data;
 pub mod engine;
 pub mod macros;
+pub mod object_query;
 pub mod partial_result;
 pub mod spanned_selection;
 pub mod spatial_projection;
@@ -30,6 +32,10 @@ pub mod prelude {
     pub use crate::SimpleUuid;
     pub use crate::blueprint::{
         Blueprint, BlueprintAddress, BlueprintApplication, BlueprintResolution, BlueprintSelector,
+    };
+    pub use crate::board::{
+        BOARD_TARGET_TYPES, Board, BoardCell, BoardElement, BoardElementKind, BoardPlacementError,
+        MAX_BOARD_DIMENSION,
     };
     pub use crate::color_path::{
         ColorAttributeTiming, ColorInterpolationSpace, ColorPath, ColorPathDefault, ColorPathId,
@@ -44,6 +50,7 @@ pub mod prelude {
     };
     pub use crate::data::{FixtureRef, Group, HasIdentifiers, Identifiers, Priority, References};
     pub use crate::macros::Macro;
+    pub use crate::object_query::{ObjectIdRange, ObjectQuery};
     pub use crate::partial_result::PartialResult;
     pub use crate::serde_instant;
     pub use crate::serde_uuid_simple;

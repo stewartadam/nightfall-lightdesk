@@ -9,7 +9,9 @@
 import { useStore } from "@nanostores/solid";
 import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
+import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { createMemo, createSignal, For, onCleanup } from "solid-js";
+import { boardDisplayName, sortBoardsById } from "../../../features/boards";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { activateStoredLayout } from "../../../lib/layout-activation";
 import {
@@ -25,8 +27,9 @@ import {
 } from "../../../lib/layoutStorage";
 import { currentShowfileRevision } from "../../../lib/showfile-loading";
 import { isTauriRuntime } from "../../../lib/tauri";
-import { pushToast } from "../../../state/appStores";
+import { boards, pushToast } from "../../../state/appStores";
 import {
+  activeBoardWorkspace,
   activeLayoutId,
   busyLayoutIds,
   modifiedLayoutIds,
@@ -34,8 +37,7 @@ import {
 import { useAppShell } from "../../providers/app-shell";
 import { DropdownMenu, DropdownMenuItem } from "../../ui/dropdown-menu";
 import { hasOpenDialog } from "../../ui/modal/dialog-stack";
-import { ToggleToolbarButton } from "../../ui/toolbar-button";
-import { Button } from "../../ui/visual-language/button";
+import { ToggleToolbarButton, ToolbarButton } from "../../ui/toolbar-button";
 import DeleteConfirmModal from "../../widgets/delete-confirm-dialog";
 import "./layout-switcher.css";
 
@@ -47,7 +49,21 @@ export default function LayoutSwitcher() {
   const slots = createMemo(() =>
     storage().layouts.filter((layout) => layout.shownInSwitcher),
   );
-  const activeSlot = useStore(activeLayoutId);
+  const activeLayout = useStore(activeLayoutId);
+  const $boards = useStore(boards);
+  const shownBoard = useStore(activeBoardWorkspace);
+  /** Layout whose slot reads as pressed: none while a board fills the workspace. */
+  const activeSlot = () => (shownBoard() ? null : activeLayout());
+  /**
+   * Lists boards shown in the switcher in ID order after the layouts, each opening as a full
+   * workspace. The board filling the workspace keeps its slot even if another device hides it.
+   */
+  const boardSlots = createMemo(() =>
+    sortBoardsById($boards()).filter(
+      (board) =>
+        board.shown_in_switcher || shownBoard() === board.identifiers.uid,
+    ),
+  );
   const busy = useStore(busyLayoutIds);
   const modified = useStore(modifiedLayoutIds);
   const [deleting, setDeleting] = createSignal<StoredPanelLayout | null>(null);
@@ -163,6 +179,7 @@ export default function LayoutSwitcher() {
   const recall = async (layout: { id: string }) => {
     const api = dockviewApi();
     if (!api || hasOpenDialog() || busy().includes(layout.id)) return;
+    activeBoardWorkspace.set(null);
     if (!(await activateStoredLayout(api, layout.id)))
       pushToast("error", "Could not load layout.");
   };
@@ -298,13 +315,13 @@ export default function LayoutSwitcher() {
                       Revert
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      disabled={activeSlot() === slot.id}
+                      disabled={activeLayout() === slot.id}
                       onClick={() => setLayoutShown(slot.id, false)}
                     >
                       Hide from switcher
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      disabled={activeSlot() === slot.id}
+                      disabled={activeLayout() === slot.id}
                       onClick={() => setDeleting(layout() ?? null)}
                     >
                       Delete
@@ -314,17 +331,29 @@ export default function LayoutSwitcher() {
               );
             }}
           </For>
+          <For each={boardSlots()}>
+            {(board) => (
+              <ToggleToolbarButton
+                size="labeled"
+                class="nf-board-slot"
+                pressed={shownBoard() === board.identifiers.uid}
+                label={`Board: ${boardDisplayName(board)}`}
+                tooltip={`Show board ${boardDisplayName(board)}`}
+                disabled={!dockviewApi()}
+                onClick={() => {
+                  if (!hasOpenDialog())
+                    activeBoardWorkspace.set(board.identifiers.uid);
+                }}
+              >
+                <SquaresFourIcon class="size-4 opacity-60" aria-hidden />
+                <span class="truncate">{boardDisplayName(board)}</span>
+              </ToggleToolbarButton>
+            )}
+          </For>
         </div>
-        <Button
-          size="icon"
-          variant="subtle"
-          class="nf-layout-slot-add shrink-0"
-          aria-label="Manage layouts"
-          title="Manage layouts"
-          onClick={showLayoutManager}
-        >
+        <ToolbarButton label="Manage layouts" onClick={showLayoutManager}>
           <PlusIcon class="size-4" aria-hidden />
-        </Button>
+        </ToolbarButton>
       </div>
       <DeleteConfirmModal
         isOpen={deleting() !== null}

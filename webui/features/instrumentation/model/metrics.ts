@@ -13,23 +13,38 @@ export const WEBSOCKET_DELIVERY_ONE_FRAME_MS = 22;
 export const WEBSOCKET_DELIVERY_THREE_FRAMES_MS =
   WEBSOCKET_DELIVERY_ONE_FRAME_MS * 3;
 
-/** Returns a color class based on FPS performance */
-export function getFpsColor(
+/**
+ * Semantic status of an instrumentation value. `default` is the plain value
+ * color, `muted` marks a value that has not been sampled yet, and the rest
+ * follow the shared Badge/Alert status tones.
+ */
+export type MetricTone = "default" | "muted" | "success" | "warning" | "danger";
+
+/**
+ * Grades a frame rate against its target: at least 95% of the target is
+ * healthy, at least 80% is a warning, anything lower is a problem, and a
+ * missing sample is muted.
+ */
+export function getFpsTone(
   fps: number | undefined,
   target = TARGET_FPS,
-): string {
-  if (fps === undefined) return "text-gray-400";
-  if (fps >= target * 0.95) return "text-green-500";
-  if (fps >= target * 0.8) return "text-yellow-500";
-  return "text-red-500";
+): MetricTone {
+  if (fps === undefined) return "muted";
+  if (fps >= target * 0.95) return "success";
+  if (fps >= target * 0.8) return "warning";
+  return "danger";
 }
 
-/** Returns a color class for worker-to-main websocket delivery lag. */
-export function getDeliveryLagColor(lagMs: number | undefined): string {
-  if (lagMs === undefined) return "text-gray-400";
-  if (lagMs <= WEBSOCKET_DELIVERY_ONE_FRAME_MS) return "text-green-500";
-  if (lagMs <= WEBSOCKET_DELIVERY_THREE_FRAMES_MS) return "text-yellow-500";
-  return "text-red-500";
+/**
+ * Grades worker-to-main websocket delivery lag: within one backend frame is
+ * healthy, within three frames is a warning, anything slower is a problem, and
+ * a missing sample is muted.
+ */
+export function getDeliveryLagTone(lagMs: number | undefined): MetricTone {
+  if (lagMs === undefined) return "muted";
+  if (lagMs <= WEBSOCKET_DELIVERY_ONE_FRAME_MS) return "success";
+  if (lagMs <= WEBSOCKET_DELIVERY_THREE_FRAMES_MS) return "warning";
+  return "danger";
 }
 
 /** Formats a number with fixed decimals, or returns a placeholder */

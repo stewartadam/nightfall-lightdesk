@@ -8,8 +8,6 @@
 
 //! Materialized sequence rendering pipeline and responsibility-focused rendering stages.
 
-use web_time::Instant;
-
 use super::*;
 
 mod cache;
@@ -49,8 +47,6 @@ impl MaterializedSequence {
         if let Some(cached_layer) =
             self.rendered_layer_from_full_prefix_cache(&composition_order, render_position)
         {
-            let mut cached_layer = cached_layer;
-            cached_layer.activation_time = Instant::now();
             self.last_rendered_layer = Some(cached_layer.clone());
             return cached_layer;
         }

@@ -13,21 +13,6 @@ import {
   PanelCapabilityRegistryContext,
 } from "./context-core";
 
-export {
-  createPanelCapabilityRegistry,
-  type PanelCapabilityDeclarationStatus,
-  type PanelCapabilityHandler,
-  type PanelCapabilityPayload,
-  type PanelCapabilityRegistrationOptions,
-  type PanelCapabilityRegistry,
-  type PanelCapabilityRequest,
-  panelCapabilityDeclarationStatus,
-  type ShowfileObjectRevealPayload,
-  usePanelCapability,
-  usePanelCapabilityRegistry,
-  useRevealObjectCapability,
-} from "./context-core";
-
 /** Provides typed panel-to-panel capability dispatch for panel-owned UI work. */
 export const PanelCapabilityRegistryProvider: ParentComponent = (props) => {
   const registry = createPanelCapabilityRegistry();

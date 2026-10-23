@@ -6,12 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, type JSX, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   closeContextMenu,
   contextMenuState,
 } from "../../providers/context-menu";
+import { createDismissable } from "../../ui/dismissable";
 import { overlayHost } from "../../ui/modal/dialog-stack";
 import {
   type ContextMenuEntry,
@@ -99,14 +100,14 @@ function contextMenuEntryTopOffset(
 
 /** Mounts and positions the global context-menu overlay. */
 export default function GlobalContextMenuHost() {
-  /** Closes the active menu in response to the global Escape shortcut. */
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") closeContextMenu();
-  };
+  let backdropRef: HTMLDivElement | undefined;
 
-  onMount(() => {
-    document.addEventListener("keydown", onKeyDown);
-    onCleanup(() => document.removeEventListener("keydown", onKeyDown));
+  // The full-screen backdrop catches outside presses, so only Escape goes through the shared stack.
+  createDismissable({
+    active: () => contextMenuState() !== null,
+    refs: () => [backdropRef],
+    onDismiss: closeContextMenu,
+    outsidePress: false,
   });
 
   /** Computes viewport-clamped placement for the root menu. */
@@ -199,6 +200,7 @@ export default function GlobalContextMenuHost() {
       {(state) => (
         <Portal mount={overlayHost()}>
           <div
+            ref={backdropRef}
             class="fixed inset-0 nightfall-top-layer"
             onPointerDown={closeContextMenu}
             onContextMenu={(event) => {

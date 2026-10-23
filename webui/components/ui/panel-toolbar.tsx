@@ -86,7 +86,13 @@ export default function PanelToolbar(props: PanelToolbarProps) {
   );
 }
 
-/** Visually separates related action groups without entering the keyboard focus order. */
-export function ToolbarSeparator() {
-  return <div class="nf-toolbar-separator" aria-hidden="true" />;
+/**
+ * Visually separates related action groups without entering the keyboard
+ * focus order or the accessibility tree. Extra attributes, such as `data-*`
+ * test hooks, pass through to the divider.
+ */
+export function ToolbarSeparator(
+  props: Omit<JSX.HTMLAttributes<HTMLDivElement>, "class" | "children">,
+) {
+  return <div {...props} class="nf-toolbar-separator" aria-hidden="true" />;
 }

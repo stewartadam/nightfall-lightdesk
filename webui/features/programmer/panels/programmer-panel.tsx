@@ -15,7 +15,6 @@ import DataGrid, {
   type DataGridEditCommitContext,
 } from "../../../components/widgets/data-grid";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
-import { commandEnvelope } from "../../../lib/command-envelope";
 import type {
   GridCell,
   GridColumn,
@@ -48,7 +47,7 @@ import {
   makeColorSwatchCell,
   richColorSwatchCellRenderer,
 } from "../../../lib/datagrid-rich-cells";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getFixtureAttributeNames } from "../../../lib/fixture-attributes";
 import { anyLayerHasTransitioningAttribute } from "../../../lib/layer-transition-state";
 import { getLogger } from "../../../lib/logger";
@@ -56,6 +55,7 @@ import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
+import type { LayerState } from "../../../lib/ws/types";
 import {
   activeInstances,
   blueprints,
@@ -67,7 +67,6 @@ import {
   programmerState,
   sequences,
 } from "../../../state/appStores";
-import type * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import ProgrammerProperties from "../components/programmer-properties";
 import { ProgrammerStoreDialogs } from "../components/programmer-store-dialogs";
@@ -192,10 +191,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
 
     const command = buildStoreCueCommand(cueSequenceId(), cueId(), cueLabel());
 
-    engineRuntime.sendCommand({
-      module: "ProgrammerCommand",
-      command,
-    });
+    commandClient.emit("ProgrammerCommand", command);
 
     setShowStoreCueModal(false);
   };
@@ -205,10 +201,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
 
     const command = buildStoreGroupCommand(groupId(), groupLabel());
 
-    engineRuntime.sendCommand({
-      module: "ProgrammerCommand",
-      command,
-    });
+    commandClient.emit("ProgrammerCommand", command);
 
     setShowStoreGroupModal(false);
   };
@@ -216,10 +209,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
   const handleClearProgrammer = () => {
     const command = buildClearProgrammerCommand();
 
-    engineRuntime.sendCommand({
-      module: "ProgrammerCommand",
-      command,
-    });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   const processedData = createMemo(() => {
@@ -509,7 +499,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
     const selectionUids = new Set($programmerSelection());
     const layersArg = $layerStack();
     const activeInstancesData = Object.values($activeInstances());
-    const isProgrammerLayer = (layer: types.OutboundLayerState): boolean => {
+    const isProgrammerLayer = (layer: LayerState): boolean => {
       if (
         layer.creator === "Programmer" ||
         layer.creator.startsWith("Programmer Instruction ")
@@ -657,9 +647,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
     const commands = buildProgrammerValueEditCommands(targets);
     const undoId = commands.length > 1 ? uuidv4() : undefined;
     for (const command of commands) {
-      engineRuntime.sendCommand(
-        commandEnvelope("ProgrammerCommand", command, undoId),
-      );
+      commandClient.emit("ProgrammerCommand", command, { undoId });
     }
   };
 

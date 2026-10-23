@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+.tab-menu-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.tab-menu-dock {
+  flex: 1;
+  min-height: 260px;
+}
+.tab-menu-sample {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tab-menu-sample strong {
+  color: inherit;
+  font-weight: 600;
+}

@@ -30,9 +30,6 @@ enum FxWsMessage<'a> {
     FxDefinitions(&'a [Fx]),
     /// List of all step-based fx
     StepFxDefinitions(&'a [StepFx]),
-    /// An fx command for reactive UI handling
-    #[allow(dead_code)]
-    FxCommand(&'a FxCommand),
 }
 
 /// Deserialize and dispatch FxCommand from JSON.
@@ -169,16 +166,13 @@ pub fn send_step_fx(step_fx_query: &Query<&StepFx>, broadcaster: &ClientEventSin
 
 /// Handle ResyncState by sending FX list immediately
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     fx_provider: Res<DataProvider<Fx>>,
     step_fx_query: Query<&StepFx>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_fx(&fx_provider, &broadcaster);
     send_step_fx(&step_fx_query, &broadcaster);

@@ -8,6 +8,7 @@
 
 import { createSignal, Show } from "solid-js";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
+import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
 import { networkOutputFailureSummary } from "../../../lib/network-dmx-output-health";
 import { isValidIpv4Address } from "../../../lib/network-dmx-output-targets";
@@ -129,14 +130,18 @@ export function NetworkTargetRow(props: NetworkTargetRowProps) {
             fallback={<span class="text-xs text-gray-500">OK</span>}
           >
             {(failure) => (
-              <span
-                class="inline-flex max-w-full rounded border border-amber-500/60 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200"
-                title={networkOutputFailureSummary(failure())}
-                role="status"
-                aria-label={`${props.target.id} output warning: ${networkOutputFailureSummary(failure())}`}
+              <Tooltip
+                content={() => networkOutputFailureSummary(failure())}
+                class="relative inline-block max-w-full"
               >
-                <span class="truncate">{failure().error_kind}</span>
-              </span>
+                <span
+                  class="inline-flex max-w-full rounded border border-amber-500/60 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200"
+                  role="status"
+                  aria-label={`${props.target.id} output warning: ${networkOutputFailureSummary(failure())}`}
+                >
+                  <span class="truncate">{failure().error_kind}</span>
+                </span>
+              </Tooltip>
             )}
           </Show>
         </Show>

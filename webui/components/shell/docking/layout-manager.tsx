@@ -7,33 +7,41 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
+import { StarIcon } from "@squidlab/phosphor-solid/star";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { XIcon } from "@squidlab/phosphor-solid/x";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import {
+  boardDisplayName,
+  setBoardShownInSwitcher,
+  sortBoardsById,
+} from "../../../features/boards";
 import {
   createNamedLayout,
   deleteNamedLayout,
   duplicateNamedLayout,
   renameNamedLayout,
   saveNamedLayout,
+  setDefaultLayout,
   setLayoutShown,
 } from "../../../lib/layout-management";
 import {
   layoutStorageStore,
   type StoredPanelLayout,
 } from "../../../lib/layoutStorage";
-import { pushToast } from "../../../state/appStores";
+import { boards as boardStore, pushToast } from "../../../state/appStores";
 import {
+  activeBoardWorkspace,
   activeLayoutId as activeLayoutStore,
   busyLayoutIds,
 } from "../../../state/layout-switcher";
+import { $settings } from "../../../state/settings";
 import { useAppShell } from "../../providers/app-shell";
 import { Dialog, DialogBody } from "../../ui/dialog";
 import { Checkbox, Input } from "../../ui/form-controls";
+import { InlineRenameField } from "../../ui/inline-rename-field";
 import { ScrollArea } from "../../ui/scroll-area";
 import Tooltip from "../../ui/tooltip";
 import { Button } from "../../ui/visual-language/button";
@@ -85,12 +93,16 @@ export default function LayoutManager(props: LayoutManagerProps) {
   /** Returns the currently loaded named layout id from persistent storage. */
   const activeLayoutId = useStore(activeLayoutStore);
   const busy = useStore(busyLayoutIds);
+  const settings = useStore($settings);
+  const $boards = useStore(boardStore);
+  const shownBoard = useStore(activeBoardWorkspace);
+  /** Lists every board in ID order, matching their order in the switcher. */
+  const boardList = createMemo(() => sortBoardsById($boards()));
   const [creating, setCreating] = createSignal(false);
   const [newLayoutName, setNewLayoutName] = createSignal("");
   const [editingLayoutId, setEditingLayoutId] = createSignal<string | null>(
     null,
   );
-  const [editingLayoutName, setEditingLayoutName] = createSignal("");
   const [confirmAction, setConfirmAction] = createSignal<ConfirmAction | null>(
     null,
   );
@@ -119,19 +131,6 @@ export default function LayoutManager(props: LayoutManagerProps) {
   /** Begins inline editing of a layout name. */
   const startRenameLayout = (layout: StoredPanelLayout) => {
     setEditingLayoutId(layout.id);
-    setEditingLayoutName(layout.name);
-  };
-
-  /** Discards the pending name edit. */
-  const cancelRenameLayout = () => {
-    setEditingLayoutId(null);
-    setEditingLayoutName("");
-  };
-
-  /** Persists the edited name before closing its editor. */
-  const commitRenameLayout = async (layout: StoredPanelLayout) => {
-    if (await renameNamedLayout(layout.id, editingLayoutName()))
-      cancelRenameLayout();
   };
 
   /** Applies a confirmed deletion without allowing the active layout to be removed. */
@@ -188,7 +187,9 @@ export default function LayoutManager(props: LayoutManagerProps) {
             </form>
             <p class="mt-2 text-xs text-neutral-400">
               Select layouts in the switcher to activate them. Switch to another
-              layout before hiding or deleting the active one.
+              layout before hiding or deleting the active one. Each device keeps
+              its own arrangement; a device opening this show for the first time
+              starts from the default layout.
             </p>
           </div>
 
@@ -212,6 +213,10 @@ export default function LayoutManager(props: LayoutManagerProps) {
 
                     /** Identifies the layout currently applied to the workspace. */
                     const isActive = () => activeLayoutId() === layout().id;
+
+                    /** Identifies the layout devices open when they have no arrangement of their own. */
+                    const isDefault = () =>
+                      settings().default_panel_layout_id === layout().id;
 
                     return (
                       <div
@@ -251,6 +256,11 @@ export default function LayoutManager(props: LayoutManagerProps) {
                                       Active
                                     </span>
                                   </Show>
+                                  <Show when={isDefault()}>
+                                    <span class="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-100">
+                                      Default
+                                    </span>
+                                  </Show>
                                 </div>
                                 <div class="mt-1 text-xs text-neutral-500">
                                   Updated {formatUpdatedAt(layout().updatedAt)}
@@ -258,45 +268,15 @@ export default function LayoutManager(props: LayoutManagerProps) {
                               </>
                             }
                           >
-                            <form
-                              class="flex gap-2"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                commitRenameLayout(layout());
-                              }}
-                            >
-                              <Input
-                                density="compact"
-                                class="min-w-0 flex-1"
-                                value={editingLayoutName()}
-                                onInput={(event) =>
-                                  setEditingLayoutName(
-                                    event.currentTarget.value,
-                                  )
-                                }
-                              />
-                              <Tooltip content={() => "Save layout name"}>
-                                <Button
-                                  size="icon"
-                                  type="submit"
-                                  class="items-center justify-center"
-                                  aria-label="Save layout name"
-                                >
-                                  <CheckIcon class="size-4" aria-hidden />
-                                </Button>
-                              </Tooltip>
-                              <Tooltip content={() => "Cancel rename"}>
-                                <Button
-                                  size="icon"
-                                  type="button"
-                                  class="items-center justify-center"
-                                  aria-label="Cancel rename"
-                                  onClick={cancelRenameLayout}
-                                >
-                                  <XIcon class="size-4" aria-hidden />
-                                </Button>
-                              </Tooltip>
-                            </form>
+                            <InlineRenameField
+                              ariaLabel={`Layout name for ${layout().name}`}
+                              class="text-sm font-medium"
+                              value={layout().name}
+                              onCommit={(name) =>
+                                renameNamedLayout(layout().id, name)
+                              }
+                              onClose={() => setEditingLayoutId(null)}
+                            />
                           </Show>
                         </div>
 
@@ -317,6 +297,32 @@ export default function LayoutManager(props: LayoutManagerProps) {
                             />
                             Show in switcher
                           </label>
+                          <Tooltip
+                            content={() =>
+                              isDefault()
+                                ? `Stop opening ${layout().name} by default`
+                                : `Open ${layout().name} by default`
+                            }
+                          >
+                            <Button
+                              size="icon"
+                              type="button"
+                              class="items-center justify-center"
+                              aria-label={`Open ${layout().name} by default`}
+                              aria-pressed={isDefault()}
+                              onClick={() =>
+                                setDefaultLayout(
+                                  isDefault() ? null : layout().id,
+                                )
+                              }
+                            >
+                              <StarIcon
+                                class="size-4"
+                                weight={isDefault() ? "fill" : "regular"}
+                                aria-hidden
+                              />
+                            </Button>
+                          </Tooltip>
                           <Tooltip content={() => `Save ${layout().name}`}>
                             <Button
                               size="icon"
@@ -365,6 +371,60 @@ export default function LayoutManager(props: LayoutManagerProps) {
                           </Tooltip>
                         </div>
                       </div>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+            <Show when={boardList().length > 0}>
+              <h3 class="mt-4 mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Boards
+              </h3>
+              <div class="divide-y divide-neutral-800 overflow-hidden rounded-md border border-neutral-800">
+                <For each={boardList().map((board) => board.identifiers.uid)}>
+                  {(uid) => {
+                    /** Reads the current board without remounting the row or its focused checkbox. */
+                    const board = () => $boards()[uid];
+                    return (
+                      <Show when={board()}>
+                        {(current) => (
+                          <div
+                            data-board-id={current().identifiers.uid}
+                            class="flex flex-wrap items-center justify-between gap-3 bg-neutral-950 px-3 py-3"
+                          >
+                            <div class="flex min-w-0 items-center gap-2">
+                              <span class="truncate text-sm font-medium text-neutral-100">
+                                {boardDisplayName(current())}
+                              </span>
+                              <Show
+                                when={
+                                  shownBoard() === current().identifiers.uid
+                                }
+                              >
+                                <span class="rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-100">
+                                  Active
+                                </span>
+                              </Show>
+                            </div>
+                            <label class="mr-2 flex items-center gap-2 text-xs">
+                              <Checkbox
+                                aria-label={`Show ${boardDisplayName(current())} in switcher`}
+                                checked={current().shown_in_switcher}
+                                disabled={
+                                  shownBoard() === current().identifiers.uid
+                                }
+                                onChange={(event) =>
+                                  setBoardShownInSwitcher(
+                                    current().identifiers.id,
+                                    event.currentTarget.checked,
+                                  )
+                                }
+                              />
+                              Show in switcher
+                            </label>
+                          </div>
+                        )}
+                      </Show>
                     );
                   }}
                 </For>

@@ -119,16 +119,12 @@ for (const panel of panels) {
       .getByRole("button", { name: "Toggle selection mode" })
       .click();
     await card.click();
-    await expect(card).toHaveClass(/nf-crud-card-selected/);
-    await panelRoot
-      .getByRole("button", { name: "Switch to list view" })
-      .click();
+    await expect(card).toHaveAttribute("data-selected", "true");
+    await panelRoot.getByRole("radio", { name: "List view" }).click();
     await expect(content).toHaveCSS("padding-top", "0px");
     await expect(viewport.getByRole("grid")).toBeVisible();
     await expect(bottom).toHaveCSS("opacity", "0");
-    await panelRoot
-      .getByRole("button", { name: "Switch to grid view" })
-      .click();
+    await panelRoot.getByRole("radio", { name: "Grid view" }).click();
     await expect(card).toBeVisible();
     await expect(bottom).toHaveCSS("opacity", "0");
   });

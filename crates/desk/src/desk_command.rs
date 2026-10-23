@@ -13,8 +13,6 @@ use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::settings::ActivePanelLayout;
-
 /// Conflict policy used when importing one showfile object collection into another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -83,6 +81,8 @@ pub struct ShowfileImportOptions {
     pub timelines: ShowfileImportPolicy,
     /// Import policy for clips.
     pub clips: ShowfileImportPolicy,
+    /// Import policy for boards.
+    pub boards: ShowfileImportPolicy,
 }
 
 impl Default for ShowfileImportOptions {
@@ -110,6 +110,7 @@ impl Default for ShowfileImportOptions {
             timecodes: ShowfileImportPolicy::Skip,
             timelines: ShowfileImportPolicy::Skip,
             clips: ShowfileImportPolicy::Merge,
+            boards: ShowfileImportPolicy::Merge,
         }
     }
 }
@@ -123,15 +124,6 @@ pub struct NewShowfileOptions {
     pub name: String,
     /// Populate built-in example fixtures and show objects before creating the draft.
     pub include_sample_data: bool,
-}
-
-/// Options captured at the moment a showfile save is requested.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(default, rename_all = "camelCase")]
-pub struct ShowfileSaveOptions {
-    /// Dockview active layout snapshot to write into the saved showfile.
-    pub active_panel_layout: Option<ActivePanelLayout>,
 }
 
 /// Identifies one timestamped backup revision and its owning showfile.
@@ -218,25 +210,13 @@ pub enum DeskCommand {
     /// Create a fresh showfile for a named `.nightfall-show` folder.
     NewNamedShowfile(NewShowfileOptions),
     /// Save showfile
-    SaveShowfile(ShowfileSaveOptions),
+    SaveShowfile,
     /// Save showfile to a named `.nightfall-show` folder.
-    SaveNamedShowfile {
-        /// Target showfile folder name.
-        name: String,
-        /// Save-time options captured by the caller.
-        #[serde(default)]
-        options: ShowfileSaveOptions,
-    },
+    SaveNamedShowfile(String),
     /// Save a recoverable draft for the current showfile when it is dirty.
-    SaveDraftShowfile(ShowfileSaveOptions),
+    SaveDraftShowfile,
     /// Save a recoverable draft for a named `.nightfall-show` folder.
-    SaveNamedDraftShowfile {
-        /// Target showfile folder name.
-        name: String,
-        /// Save-time options captured by the caller.
-        #[serde(default)]
-        options: ShowfileSaveOptions,
-    },
+    SaveNamedDraftShowfile(String),
     /// Load showfile
     LoadShowfile,
     /// Load a named `.nightfall-show` folder.
@@ -285,3 +265,39 @@ pub enum DeskCommand {
 }
 
 impl IngressCommand for DeskCommand {}
+
+impl DeskCommand {
+    /// Reports whether this command reads or writes showfiles on disk.
+    ///
+    /// Runtimes without the disk storage capability reject these commands up front instead of
+    /// leaving them unanswered. New showfiles count as storage commands because creating one
+    /// replaces the working show with a fresh draft folder.
+    #[must_use]
+    pub const fn requires_disk_storage(&self) -> bool {
+        match self {
+            Self::NewShowfile
+            | Self::NewNamedShowfile(_)
+            | Self::SaveShowfile
+            | Self::SaveNamedShowfile(_)
+            | Self::SaveDraftShowfile
+            | Self::SaveNamedDraftShowfile(_)
+            | Self::LoadShowfile
+            | Self::LoadNamedShowfile(_)
+            | Self::LoadDraftShowfile(_)
+            | Self::LoadShowfileRevision(_)
+            | Self::DiscardDraftShowfile(_)
+            | Self::DeleteShowfile(_)
+            | Self::RestoreDeletedShowfile(_)
+            | Self::EmptyShowfileTrash
+            | Self::ImportShowfile(_) => true,
+            Self::Quit
+            | Self::SetLogLevel(_)
+            | Self::TraceFixture { .. }
+            | Self::SetTracingFilter { .. }
+            | Self::ClearTracingFilter
+            | Self::ReleaseStaleInputs
+            | Self::Eval(_)
+            | Self::Sleep(_) => false,
+        }
+    }
+}

@@ -32,6 +32,8 @@
 //! }
 //! ```
 
+use std::sync::Arc;
+
 use async_channel::{Receiver, Sender};
 use bevy_app::{App, Plugin, PostUpdate, Update};
 use bevy_ecs::message::MessageCursor;
@@ -44,16 +46,19 @@ use crate::{
         CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver, process_json_envelopes,
         process_update_json_envelopes,
     },
+    command_lifecycle::CommandNoticeReply,
     frame_waker::FrameWaker,
-    prelude::{
-        CommandNotice, CommandReply, EngineClientMessage, PendingCommandBuffer, ReplyTarget,
-    },
+    prelude::{ClientId, CommandReply, EngineClientMessage, PendingCommandBuffer, ReplyTarget},
 };
 
 /// Message types that must be delivered in order and should not be dropped.
 pub const DISCRIMINATOR_NON_DROPPABLE: u8 = 0;
 /// Snapshot-like message types that may be coalesced or dropped under load.
 pub const DISCRIMINATOR_DROPPABLE: u8 = 1;
+/// Changes on top of the previous message of the same type. A transport delivers every delta in
+/// order and never lets one replace a queued message; a newer droppable snapshot of the same type
+/// may replace queued deltas, since it carries their changes.
+pub const DISCRIMINATOR_DELTA: u8 = 2;
 
 /// Pre-encoded client message ready for transport delivery.
 ///
@@ -66,25 +71,28 @@ pub struct EncodedClientMessage {
     pub payload: Vec<u8>,
 }
 
+/// Encodes a payload as CBOR for clients, the one encoding every client transport uses.
+///
+/// Unit values encode as CBOR `null`. The encoder's default writes them as an empty array,
+/// which would turn every JSON `null` nested in opaque values, such as action arguments or
+/// command outputs, into `[]` for clients that decode back to JSON.
+///
+/// Returns `None` if CBOR serialization fails.
+pub fn encode_client_cbor<T: Serialize + ?Sized>(payload: &T) -> Option<Vec<u8>> {
+    let mut serializer = minicbor_serde::Serializer::new(Vec::new());
+    serializer.serialize_unit_as_null(true);
+    payload.serialize(&mut serializer).ok()?;
+    Some(serializer.into_encoder().into_writer())
+}
+
 impl EncodedClientMessage {
     /// Create a new encoded message from a discriminator and serializable payload.
     ///
     /// Returns `None` if CBOR serialization fails.
     pub fn new<T: Serialize>(discriminator: u8, payload: &T) -> Option<Self> {
-        minicbor_serde::to_vec(payload).ok().map(|cbor_data| Self {
+        encode_client_cbor(payload).map(|cbor_data| Self {
             discriminator,
             payload: cbor_data,
-        })
-    }
-
-    /// Create from raw bytes (discriminator + payload already combined).
-    pub fn from_raw(data: Vec<u8>) -> Option<Self> {
-        if data.is_empty() {
-            return None;
-        }
-        Some(Self {
-            discriminator: data[0],
-            payload: data[1..].to_vec(),
         })
     }
 
@@ -99,37 +107,191 @@ impl EncodedClientMessage {
     }
 }
 
+/// Connected clients that should receive one outbound frame.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum Audience {
+    /// Every client attached to the host adapter.
+    #[default]
+    All,
+    /// Only the identified client session; dropped when that session has disconnected.
+    Client(ClientId),
+}
+
+impl Audience {
+    /// Returns whether a frame for this audience should reach the identified session.
+    pub fn includes(self, client: ClientId) -> bool {
+        match self {
+            Audience::All => true,
+            Audience::Client(target) => target == client,
+        }
+    }
+
+    /// Returns who should see messages answering a command with this reply target: the session
+    /// that submitted it, or every client when no client submitted it.
+    pub fn of_reply_target(target: &ReplyTarget) -> Self {
+        match target {
+            ReplyTarget::Client(client) => Audience::Client(*client),
+            ReplyTarget::ClientBroadcast | ReplyTarget::Cli | ReplyTarget::Detached => {
+                Audience::All
+            }
+        }
+    }
+}
+
+/// Clients waiting for a reply that a publisher sends at its next opportunity, such as a snapshot
+/// for clients that resynced.
+#[derive(Clone, Debug, Default)]
+pub struct PendingReplies {
+    /// Whether some request was for every client.
+    everyone: bool,
+    /// Distinct clients that asked, when no request was for every client.
+    clients: Vec<Audience>,
+}
+
+/// Who a batch of [`PendingReplies`] is for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PendingAudience {
+    /// Some request was for every client, which also covers every targeted request.
+    Everyone,
+    /// Only these clients asked.
+    Clients(Arc<[Audience]>),
+}
+
+impl PendingAudience {
+    /// Returns the audiences to narrow a [`ClientEventSink`] to for this reply.
+    pub fn into_audiences(self) -> Arc<[Audience]> {
+        match self {
+            PendingAudience::Everyone => Arc::new([Audience::All]),
+            PendingAudience::Clients(clients) => clients,
+        }
+    }
+}
+
+impl PendingReplies {
+    /// Records that `audience` waits for the reply.
+    pub fn request(&mut self, audience: Audience) {
+        if audience == Audience::All {
+            self.everyone = true;
+        } else if !self.clients.contains(&audience) {
+            self.clients.push(audience);
+        }
+    }
+
+    /// Records that every audience in `audiences` waits for the reply.
+    pub fn request_each(&mut self, audiences: impl IntoIterator<Item = Audience>) {
+        for audience in audiences {
+            self.request(audience);
+        }
+    }
+
+    /// Whether nobody waits for the reply.
+    pub fn is_empty(&self) -> bool {
+        !self.everyone && self.clients.is_empty()
+    }
+
+    /// Takes the recorded requests, or returns `None` when nobody asked.
+    pub fn take(&mut self) -> Option<PendingAudience> {
+        let clients = std::mem::take(&mut self.clients);
+        if std::mem::take(&mut self.everyone) {
+            Some(PendingAudience::Everyone)
+        } else if clients.is_empty() {
+            None
+        } else {
+            Some(PendingAudience::Clients(clients.into()))
+        }
+    }
+}
+
+/// One encoded client message and the clients it is addressed to.
+#[derive(Clone, Debug)]
+pub struct OutboundFrame {
+    /// Clients the host adapter delivers the frame to.
+    pub audience: Audience,
+    /// Discriminator byte followed by the CBOR payload.
+    pub bytes: Vec<u8>,
+}
+
 /// Byte-oriented client event sink for domain plugins.
 ///
 /// This resource lets plugins publish pre-serialized messages without depending
-/// on a concrete transport or browser host.
+/// on a concrete transport or browser host. The resource addresses every client; a copy made
+/// with [`Self::narrowed_to`] addresses only some, so code that sends a snapshot can serve both
+/// a broadcast and a reply to the clients that asked for it.
 #[derive(Resource, Clone)]
 pub struct ClientEventSink {
-    /// Sender for raw byte messages
-    tx: Sender<Vec<u8>>,
+    /// Sender for addressed byte frames
+    tx: Sender<OutboundFrame>,
+    /// Clients that [`Self::send`] and [`Self::publish`] address.
+    audiences: Arc<[Audience]>,
 }
 
 impl ClientEventSink {
-    /// Create a new client event sink from a bytes sender.
-    pub fn new(tx: Sender<Vec<u8>>) -> Self {
-        Self { tx }
+    /// Create a new client event sink from an outbound frame sender.
+    pub fn new(tx: Sender<OutboundFrame>) -> Self {
+        Self {
+            tx,
+            audiences: Arc::new([Audience::All]),
+        }
     }
 
-    /// Send a pre-encoded message to the attached host adapter.
+    /// Returns a copy of this sink whose [`Self::send`] and [`Self::publish`] reach only
+    /// `audiences`, each message encoded once however many clients it goes to.
+    pub fn narrowed_to(&self, audiences: Arc<[Audience]>) -> Self {
+        Self {
+            tx: self.tx.clone(),
+            audiences,
+        }
+    }
+
+    /// Clients that [`Self::send`] and [`Self::publish`] address.
+    pub fn audiences(&self) -> &[Audience] {
+        &self.audiences
+    }
+
+    /// Send a pre-encoded message to this sink's audiences, every client unless narrowed.
     pub fn send(&self, message: EncodedClientMessage) {
         let bytes = message.to_bytes();
-        if let Err(e) = self.tx.try_send(bytes) {
+        let Some((last, rest)) = self.audiences.split_last() else {
+            return;
+        };
+        for audience in rest {
+            self.send_frame(*audience, bytes.clone());
+        }
+        self.send_frame(*last, bytes);
+    }
+
+    /// Send a pre-encoded message to the given clients of the attached host adapter.
+    pub fn send_to(&self, audience: Audience, message: EncodedClientMessage) {
+        self.send_frame(audience, message.to_bytes());
+    }
+
+    /// Queues one encoded frame for `audience` on the host adapter's output channel.
+    fn send_frame(&self, audience: Audience, bytes: Vec<u8>) {
+        if let Err(e) = self.tx.try_send(OutboundFrame { audience, bytes }) {
             tracing::warn!("Failed to publish client message: {}", e);
         }
     }
 
-    /// Serialize and publish a value to the attached host adapter.
+    /// Serialize and publish a value to this sink's audiences, every client unless narrowed.
     ///
     /// This serializes the value directly to CBOR, prepends the discriminator,
-    /// and publishes it.
+    /// and publishes it. Use for anything describing shared show state.
     pub fn publish<T: Serialize>(&self, discriminator: u8, command: &T) {
         if let Some(message) = EncodedClientMessage::new(discriminator, command) {
             self.send(message);
+        } else {
+            tracing::warn!("Failed to serialize client message");
+        }
+    }
+
+    /// Serialize and publish a value to the given clients of the attached host adapter, whatever
+    /// audiences this sink was narrowed to.
+    ///
+    /// Use for messages that answer one client, such as command feedback, so other
+    /// sessions never see replies to requests they did not make.
+    pub fn publish_to<T: Serialize>(&self, audience: Audience, discriminator: u8, command: &T) {
+        if let Some(message) = EncodedClientMessage::new(discriminator, command) {
+            self.send_to(audience, message);
         } else {
             tracing::warn!("Failed to serialize client message");
         }
@@ -178,12 +340,83 @@ impl CommandSender {
     }
 }
 
+/// Written once the last connected client session closes.
+///
+/// With no client left, nobody can save the show from a UI anymore, so the
+/// backend reacts by protecting unsaved work itself.
+#[derive(Message, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LastClientDisconnected;
+
+/// Written when one client session closes, so domains can drop state they keep for it.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClientDisconnected {
+    /// Transport-assigned identity of the session that closed.
+    pub client: ClientId,
+}
+
+/// One host report that a client session closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClientDisconnectReport {
+    /// Session that closed.
+    pub client: ClientId,
+    /// Whether no other session remains connected.
+    pub last: bool,
+}
+
+/// Lets a host transport report that client sessions closed.
+///
+/// Every report also wakes the frame limiter, so the engine reacts on its next
+/// frame instead of waiting for the next tick.
+#[derive(Clone)]
+pub struct ClientPresenceSender {
+    tx: Sender<ClientDisconnectReport>,
+    waker: FrameWaker,
+}
+
+impl ClientPresenceSender {
+    /// Wraps a presence channel so every report also wakes `waker`.
+    pub fn new(tx: Sender<ClientDisconnectReport>, waker: FrameWaker) -> Self {
+        Self { tx, waker }
+    }
+
+    /// Reports that `client` closed, and whether it was the last connected session.
+    pub fn client_disconnected(&self, client: ClientId, last: bool) {
+        if let Err(error) = self.tx.try_send(ClientDisconnectReport { client, last }) {
+            tracing::warn!(%error, "client_disconnect_report_failed");
+            return;
+        }
+        self.waker.wake();
+    }
+}
+
+/// Engine-side end of the host's client presence reports.
+#[derive(Resource)]
+struct ClientPresenceReceiver(Receiver<ClientDisconnectReport>);
+
+/// Turns host presence reports into [`ClientDisconnected`] messages for this frame, plus a
+/// [`LastClientDisconnected`] when a report says no session remains.
+fn forward_client_presence(
+    receiver: Res<ClientPresenceReceiver>,
+    mut disconnected: MessageWriter<ClientDisconnected>,
+    mut last_disconnected: MessageWriter<LastClientDisconnected>,
+) {
+    while let Ok(report) = receiver.0.try_recv() {
+        disconnected.write(ClientDisconnected {
+            client: report.client,
+        });
+        if report.last {
+            last_disconnected.write(LastClientDisconnected);
+        }
+    }
+}
+
 /// Host-owned handles for submitting ingress and receiving encoded engine events.
 #[derive(Resource)]
 pub struct ClientBridgeHost {
     command_tx: CommandSender,
     update_tx: Sender<UpdateJsonEnvelope>,
-    output_rx: Option<Receiver<Vec<u8>>>,
+    presence_tx: ClientPresenceSender,
+    output_rx: Option<Receiver<OutboundFrame>>,
 }
 
 impl ClientBridgeHost {
@@ -197,8 +430,13 @@ impl ClientBridgeHost {
         self.update_tx.clone()
     }
 
+    /// Clone the sender used to report that client sessions closed.
+    pub fn presence_sender(&self) -> ClientPresenceSender {
+        self.presence_tx.clone()
+    }
+
     /// Take exclusive ownership of the encoded engine event receiver.
-    pub fn take_output_receiver(&mut self) -> Option<Receiver<Vec<u8>>> {
+    pub fn take_output_receiver(&mut self) -> Option<Receiver<OutboundFrame>> {
         self.output_rx.take()
     }
 }
@@ -217,22 +455,27 @@ pub struct SharedClientBridge {
     command_rx: Receiver<CommandJsonEnvelope>,
     update_tx: Sender<UpdateJsonEnvelope>,
     update_rx: Receiver<UpdateJsonEnvelope>,
-    output_tx: Sender<Vec<u8>>,
-    output_rx: Receiver<Vec<u8>>,
+    presence_tx: Sender<ClientDisconnectReport>,
+    presence_rx: Receiver<ClientDisconnectReport>,
+    output_tx: Sender<OutboundFrame>,
+    output_rx: Receiver<OutboundFrame>,
     frame_waker: FrameWaker,
 }
 
 impl SharedClientBridge {
-    /// Create unbounded command, update, and output channels and a fresh frame waker.
+    /// Create unbounded command, update, presence, and output channels and a fresh frame waker.
     pub fn new() -> Self {
         let (command_tx, command_rx) = async_channel::unbounded();
         let (update_tx, update_rx) = async_channel::unbounded();
+        let (presence_tx, presence_rx) = async_channel::unbounded();
         let (output_tx, output_rx) = async_channel::unbounded();
         Self {
             command_tx,
             command_rx,
             update_tx,
             update_rx,
+            presence_tx,
+            presence_rx,
             output_tx,
             output_rx,
             frame_waker: FrameWaker::default(),
@@ -266,6 +509,8 @@ impl Plugin for ClientBridgePlugin {
             command_rx,
             update_tx,
             update_rx,
+            presence_tx,
+            presence_rx,
             output_tx,
             output_rx,
             frame_waker,
@@ -278,16 +523,21 @@ impl Plugin for ClientBridgePlugin {
         app.insert_resource(ClientEventSink::new(output_tx));
         app.insert_resource(CommandJsonEnvelopeReceiver(command_rx));
         app.insert_resource(UpdateJsonEnvelopeReceiver(update_rx));
+        app.insert_resource(ClientPresenceReceiver(presence_rx));
         app.insert_resource(frame_waker.clone());
         app.insert_resource(ClientBridgeHost {
-            command_tx: CommandSender::new(command_tx, frame_waker),
+            command_tx: CommandSender::new(command_tx, frame_waker.clone()),
             update_tx,
+            presence_tx: ClientPresenceSender::new(presence_tx, frame_waker),
             output_rx: Some(output_rx),
         });
         app.init_resource::<CommandFeedbackCursors>();
+        app.add_message::<ClientDisconnected>();
+        app.add_message::<LastClientDisconnected>();
         app.add_systems(
             Update,
             (
+                forward_client_presence,
                 process_json_envelopes,
                 process_update_json_envelopes,
                 forward_command_feedback,
@@ -308,7 +558,7 @@ impl Plugin for ClientBridgePlugin {
 /// cursor lets both points drain the same messages without publishing any of them twice.
 #[derive(Resource, Default)]
 struct CommandFeedbackCursors {
-    notices: MessageCursor<CommandNotice>,
+    notices: MessageCursor<CommandNoticeReply>,
     replies: MessageCursor<CommandReply>,
 }
 
@@ -318,9 +568,14 @@ struct CommandFeedbackCursors {
 /// in [`CommandFeedbackEgress`] so results finished by this frame's handlers are published
 /// before frame pacing sleeps. Notices precede results so a command's feedback arrives before
 /// its terminal outcome.
+///
+/// Feedback for a client-submitted command goes only to that client. Results of commands no
+/// client submitted are broadcast, and results for local interfaces are not published. Notices
+/// of commands without a client stay visible to every client, since they report work an
+/// operator may still need to see.
 fn forward_command_feedback(
     mut cursors: ResMut<CommandFeedbackCursors>,
-    notices: Res<Messages<CommandNotice>>,
+    notices: Res<Messages<CommandNoticeReply>>,
     replies: Res<Messages<CommandReply>>,
     client_events: Res<ClientEventSink>,
 ) {
@@ -328,23 +583,28 @@ fn forward_command_feedback(
         notices: notice_cursor,
         replies: reply_cursor,
     } = &mut *cursors;
-    for notice in notice_cursor.read(&notices) {
-        client_events.publish(
+    for reply in notice_cursor.read(&notices) {
+        client_events.publish_to(
+            Audience::of_reply_target(&reply.reply_target),
             DISCRIMINATOR_NON_DROPPABLE,
-            &EngineClientMessage::CommandNotice(notice),
+            &EngineClientMessage::CommandNotice(&reply.notice),
         );
     }
     for reply in reply_cursor.read(&replies) {
-        if reply.reply_target != ReplyTarget::ClientBroadcast {
-            continue;
-        }
+        let audience = match reply.reply_target {
+            ReplyTarget::Client(client) => Audience::Client(client),
+            ReplyTarget::ClientBroadcast => Audience::All,
+            ReplyTarget::Cli | ReplyTarget::Detached => continue,
+        };
         let result = &reply.result;
         tracing::trace!(
             command_id = %result.command_id,
             outcome = ?result.outcome,
+            ?audience,
             "command_result_sent"
         );
-        client_events.publish(
+        client_events.publish_to(
+            audience,
             DISCRIMINATOR_NON_DROPPABLE,
             &EngineClientMessage::CommandResult(result),
         );
@@ -424,11 +684,6 @@ impl CommandDeserializerRegistry {
     pub fn contains(&self, module_name: &str) -> bool {
         self.deserializers.contains_key(module_name)
     }
-
-    /// Get the list of registered module names.
-    pub fn registered_modules(&self) -> impl Iterator<Item = &str> {
-        self.deserializers.keys().map(|s| s.as_str())
-    }
 }
 
 /// Envelope for incoming commands from the UI.
@@ -453,6 +708,13 @@ pub struct CommandJsonEnvelope {
     pub module: String,
     /// The raw command JSON to be deserialized by the plugin
     pub command: Value,
+    /// Where the command's feedback goes, assigned by the host transport after parsing.
+    ///
+    /// Never read from the wire, so a client cannot address replies to another session. The
+    /// websocket host sets the submitting session; adapters whose caller cannot receive a
+    /// reply set [`ReplyTarget::Detached`]. Defaults to a broadcast.
+    #[serde(skip)]
+    pub reply_target: ReplyTarget,
 }
 
 impl CommandJsonEnvelope {
@@ -462,8 +724,10 @@ impl CommandJsonEnvelope {
     }
 }
 
-/// Type alias for untracked update deserializer functions.
-pub type UpdateDeserializerFn = Box<dyn Fn(&mut World, Value) -> Result<(), String> + Send + Sync>;
+/// Type alias for untracked update deserializer functions, which receive the update payload and
+/// the clients that sent it.
+pub type UpdateDeserializerFn =
+    Box<dyn Fn(&mut World, Value, Audience) -> Result<(), String> + Send + Sync>;
 
 /// Registry for high-frequency update deserializers owned by domain plugins.
 #[derive(Resource, Default)]
@@ -475,7 +739,7 @@ impl UpdateDeserializerRegistry {
     /// Registers one domain-owned update deserializer under a stable module name.
     pub fn register<F>(&mut self, module_name: impl Into<String>, deserializer: F)
     where
-        F: Fn(&mut World, Value) -> Result<(), String> + Send + Sync + 'static,
+        F: Fn(&mut World, Value, Audience) -> Result<(), String> + Send + Sync + 'static,
     {
         let name = module_name.into();
         tracing::trace!(module = %name, "Registering update deserializer");
@@ -500,6 +764,12 @@ pub struct UpdateJsonEnvelope {
     pub module: String,
     /// Raw domain update payload.
     pub update: Value,
+    /// Client session that sent the update, assigned by the host transport after parsing.
+    ///
+    /// Never read from the wire, so a client cannot speak for another session. Hosts with a
+    /// single client leave the default, [`Audience::All`].
+    #[serde(skip)]
+    pub sender: Audience,
 }
 
 #[cfg(test)]
@@ -546,11 +816,12 @@ mod client_bridge_tests {
     use super::*;
     use crate::EventHandling;
     use crate::prelude::{
-        CommandId, CommandOutcome, CommandResult, CommandTracker, FinishedCommand, NoticeLevel,
+        CommandId, CommandNotice, CommandOutcome, CommandResult, CommandTracker, FinishedCommand,
+        NoticeLevel,
     };
 
     /// Creates a minimal engine app and returns its host-owned output receiver.
-    fn bridge_app() -> (App, Receiver<Vec<u8>>) {
+    fn bridge_app() -> (App, Receiver<OutboundFrame>) {
         let mut app = App::new();
         app.add_plugins(EnginePlugin);
         app.init_resource::<PendingCommandBuffer>();
@@ -565,10 +836,10 @@ mod client_bridge_tests {
         (app, output)
     }
 
-    /// Decodes one discriminator-prefixed client payload into its JSON representation.
-    fn decode_message(bytes: &[u8]) -> serde_json::Value {
-        assert_eq!(bytes[0], DISCRIMINATOR_NON_DROPPABLE);
-        minicbor_serde::from_slice(&bytes[1..]).unwrap()
+    /// Decodes one discriminator-prefixed client frame into its JSON representation.
+    fn decode_message(frame: &OutboundFrame) -> serde_json::Value {
+        assert_eq!(frame.bytes[0], DISCRIMINATOR_NON_DROPPABLE);
+        minicbor_serde::from_slice(&frame.bytes[1..]).unwrap()
     }
 
     /// Pins the legacy discriminator-plus-CBOR bytes for a resync completion event.
@@ -589,15 +860,85 @@ mod client_bridge_tests {
         );
     }
 
+    /// Verifies every disconnect report surfaces as a per-client message, and only the report
+    /// for the final session also surfaces as the last-client message.
+    #[test]
+    fn disconnect_reports_become_engine_messages() {
+        let (mut app, _output) = bridge_app();
+        let presence = app.world().resource::<ClientBridgeHost>().presence_sender();
+
+        presence.client_disconnected(ClientId(1), false);
+        presence.client_disconnected(ClientId(2), true);
+        app.update();
+
+        let clients = app
+            .world_mut()
+            .resource_mut::<Messages<ClientDisconnected>>()
+            .drain()
+            .map(|message| message.client)
+            .collect::<Vec<_>>();
+        assert_eq!(clients, vec![ClientId(1), ClientId(2)]);
+        let reports = app
+            .world_mut()
+            .resource_mut::<Messages<LastClientDisconnected>>()
+            .drain()
+            .collect::<Vec<_>>();
+        assert_eq!(reports, vec![LastClientDisconnected]);
+    }
+
+    /// Verifies a narrowed sink sends one identical frame to each of its audiences while the
+    /// shared sink keeps addressing every client.
+    #[test]
+    fn narrowed_sink_publishes_only_to_its_audiences() {
+        let (tx, rx) = async_channel::unbounded();
+        let sink = ClientEventSink::new(tx);
+        let first = Audience::Client(ClientId(1));
+        let second = Audience::Client(ClientId(2));
+
+        sink.narrowed_to(Arc::from([first, second])).publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &EngineClientMessage::ResyncComplete,
+        );
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &EngineClientMessage::ResyncComplete,
+        );
+
+        let frames: Vec<OutboundFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let audiences: Vec<Audience> = frames.iter().map(|frame| frame.audience).collect();
+        assert_eq!(audiences, vec![first, second, Audience::All]);
+        assert!(frames.iter().all(|frame| frame.bytes == frames[0].bytes));
+    }
+
+    /// Verifies JSON nulls nested in opaque values, such as action arguments, reach clients
+    /// as null rather than as empty arrays.
+    #[test]
+    fn nested_json_nulls_encode_as_null() {
+        let payload = serde_json::json!({
+            "action": { "id": "programmer.clear", "arguments": null },
+            "details": { "source": null, "values": [null, 1] },
+        });
+        let message = EncodedClientMessage::new(DISCRIMINATOR_NON_DROPPABLE, &payload)
+            .expect("payload should encode");
+
+        let bytes = message.to_bytes();
+        assert_eq!(bytes[0], DISCRIMINATOR_NON_DROPPABLE);
+        let decoded: serde_json::Value = minicbor_serde::from_slice(&bytes[1..]).unwrap();
+        assert_eq!(decoded, payload);
+    }
+
     /// Verifies notices preserve ordering ahead of same-frame terminal results.
     #[test]
     fn notice_precedes_same_frame_terminal_result() {
         let (mut app, output) = bridge_app();
         let command_id = CommandId::new();
-        app.world_mut().write_message(CommandNotice {
-            command_id,
-            level: NoticeLevel::Info,
-            message: "Storing cue".to_string(),
+        app.world_mut().write_message(CommandNoticeReply {
+            notice: CommandNotice {
+                command_id,
+                level: NoticeLevel::Info,
+                message: "Storing cue".to_string(),
+            },
+            reply_target: ReplyTarget::ClientBroadcast,
         });
         app.world_mut().write_message(CommandReply {
             result: CommandResult {
@@ -641,9 +982,9 @@ mod client_bridge_tests {
     }
 
     /// Drains every published client message and keeps only the command results.
-    fn drain_command_results(output: &Receiver<Vec<u8>>) -> Vec<serde_json::Value> {
+    fn drain_command_results(output: &Receiver<OutboundFrame>) -> Vec<serde_json::Value> {
         std::iter::from_fn(|| output.try_recv().ok())
-            .map(|bytes| decode_message(&bytes))
+            .map(|frame| decode_message(&frame))
             .filter(|message| message["type"] == "CommandResult")
             .collect()
     }
@@ -697,6 +1038,7 @@ mod client_bridge_tests {
                 undo_id: None,
                 module: "MissingCommand".to_string(),
                 command: serde_json::json!({}),
+                reply_target: ReplyTarget::ClientBroadcast,
             })
             .unwrap();
 
@@ -718,5 +1060,84 @@ mod client_bridge_tests {
                 .is_active(command_id)
         );
         assert_eq!(app.world().resource::<Messages<FinishedCommand>>().len(), 1);
+    }
+
+    /// Verifies a command submitted by one client session reports its result to that session
+    /// only, a command without a submitting client is still broadcast, and a detached command
+    /// publishes no result.
+    #[test]
+    fn client_submitted_result_is_addressed_to_its_client() {
+        let (mut app, output) = bridge_app();
+        let sender = app.world().resource::<ClientBridgeHost>().command_sender();
+        for reply_target in [
+            ReplyTarget::Client(ClientId(7)),
+            ReplyTarget::Detached,
+            ReplyTarget::ClientBroadcast,
+        ] {
+            sender
+                .try_send(CommandJsonEnvelope {
+                    command_id: CommandId::new(),
+                    undo_id: None,
+                    module: "MissingCommand".to_string(),
+                    command: serde_json::json!({}),
+                    reply_target,
+                })
+                .unwrap();
+        }
+
+        app.update();
+
+        let audiences: Vec<_> = std::iter::from_fn(|| output.try_recv().ok())
+            .map(|frame| frame.audience)
+            .collect();
+        assert_eq!(
+            audiences,
+            vec![Audience::Client(ClientId(7)), Audience::All]
+        );
+    }
+
+    /// Verifies notices follow the reply target of their command, and that notices of commands
+    /// without a submitting client stay visible to every client.
+    #[test]
+    fn notices_follow_their_command_reply_target() {
+        let (mut app, output) = bridge_app();
+        for reply_target in [
+            ReplyTarget::Client(ClientId(3)),
+            ReplyTarget::ClientBroadcast,
+            ReplyTarget::Detached,
+        ] {
+            app.world_mut().write_message(CommandNoticeReply {
+                notice: CommandNotice {
+                    command_id: CommandId::new(),
+                    level: NoticeLevel::Warning,
+                    message: "Check this".to_string(),
+                },
+                reply_target,
+            });
+        }
+
+        app.update();
+
+        let audiences: Vec<_> = std::iter::from_fn(|| output.try_recv().ok())
+            .map(|frame| frame.audience)
+            .collect();
+        assert_eq!(
+            audiences,
+            vec![Audience::Client(ClientId(3)), Audience::All, Audience::All]
+        );
+    }
+
+    /// Verifies the serialized wire envelope cannot choose where its feedback is delivered.
+    #[test]
+    fn wire_envelope_ignores_reply_target() {
+        let envelope: CommandJsonEnvelope = serde_json::from_value(serde_json::json!({
+            "command_id": CommandId::new().to_string(),
+            "module": "DeskCommand",
+            "command": {},
+            "reply_target": { "Client": 9 }
+        }))
+        .unwrap();
+
+        assert_eq!(envelope.reply_target, ReplyTarget::ClientBroadcast);
     }
 }

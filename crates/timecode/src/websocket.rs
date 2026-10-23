@@ -68,14 +68,9 @@ struct OutboundTimecodeLocal {
 static LAST_DROPPABLE_SEND_MS: AtomicU64 = AtomicU64::new(0);
 const DROPPABLE_INTERVAL_MS: u64 = (1000.0 / 10.0) as u64;
 
-fn default_timecode_state(timecode_id: u32) -> TimecodeState {
-    TimecodeState {
-        timecode_id,
-        is_active: false,
-        current_time: std::time::Duration::ZERO,
-        start_time: None,
-        end_time: None,
-    }
+/// Returns the state published for a timecode that has no generator yet.
+fn default_timecode_state(timecode: &Timecode) -> TimecodeState {
+    TimecodeGenerator::new(timecode.clone()).state
 }
 
 fn collect_timecode_definitions(
@@ -89,7 +84,7 @@ fn collect_timecode_definitions(
             let state = generator_states
                 .get(&timecode.identifiers.uid)
                 .cloned()
-                .unwrap_or_else(|| default_timecode_state(timecode.identifiers.id));
+                .unwrap_or_else(|| default_timecode_state(&timecode));
             OutboundTimecodeLocal { timecode, state }
         })
         .collect();
@@ -98,7 +93,8 @@ fn collect_timecode_definitions(
     timecodes
 }
 
-/// Send timecode definitions and state to websocket clients.
+/// Broadcasts timecode definitions and state to websocket clients at most once per
+/// [`DROPPABLE_INTERVAL_MS`].
 pub fn send_timecodes(
     timecode_data_provider: Res<DataProvider<Timecode>>,
     tc_generators: Query<&TimecodeGenerator>,
@@ -117,11 +113,20 @@ pub fn send_timecodes(
     }
     LAST_DROPPABLE_SEND_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
 
+    publish_timecodes(&timecode_data_provider, &tc_generators, &broadcaster);
+}
+
+/// Publishes every timecode definition with its generator state to the sink's clients.
+fn publish_timecodes(
+    timecode_data_provider: &DataProvider<Timecode>,
+    tc_generators: &Query<&TimecodeGenerator>,
+    broadcaster: &ClientEventSink,
+) {
     let generator_states: HashMap<uuid::Uuid, TimecodeState> = tc_generators
         .iter()
         .map(|generator| (generator.timecode.identifiers.uid, generator.state.clone()))
         .collect();
-    let timecodes = collect_timecode_definitions(&timecode_data_provider, &generator_states);
+    let timecodes = collect_timecode_definitions(timecode_data_provider, &generator_states);
 
     for entry in &timecodes {
         tracing::trace!(
@@ -145,18 +150,15 @@ pub fn send_timecodes(
 
 /// Handle ResyncState by sending all timecode generator state immediately
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     timecode_data_provider: Res<DataProvider<Timecode>>,
     tc_generators: Query<&TimecodeGenerator>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
-    send_timecodes(timecode_data_provider, tc_generators, broadcaster);
+    publish_timecodes(&timecode_data_provider, &tc_generators, &broadcaster);
 }
 
 #[cfg(test)]
@@ -237,11 +239,9 @@ mod tests {
             .expect("timecode should be added");
 
         let custom_state = TimecodeState {
-            timecode_id: 3,
             is_active: true,
             current_time: std::time::Duration::from_millis(420),
-            start_time: None,
-            end_time: None,
+            ..TimecodeState::new(3)
         };
         let mut generator_states = HashMap::new();
         generator_states.insert(uid, custom_state.clone());

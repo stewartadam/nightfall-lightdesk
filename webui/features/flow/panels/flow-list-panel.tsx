@@ -14,9 +14,15 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import CrudListDataGrid, {
   type CrudListDataGridEditRequest,
@@ -28,8 +34,6 @@ import CrudPanelSearch, {
 } from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudViewModeToggle, {
@@ -455,17 +459,17 @@ export default function FlowListPanel(props: FlowListPanelProps) {
             </ToolbarButton>
 
             <Show when={viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
+              <ToolbarSeparator />
 
-              <ToolbarButton
+              <ToggleToolbarButton
                 tooltip={`${selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={handleToggleSelectionMode}
-                ariaPressed={selectionMode()}
+                pressed={selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }
@@ -569,22 +573,17 @@ export default function FlowListPanel(props: FlowListPanelProps) {
           <Show
             when={flowList().length > 0}
             fallback={
-              <div class="text-neutral-500 text-center py-8">
-                <Show
-                  when={allFlowList().length > 0}
-                  fallback={
-                    <>
-                      <p>No flows defined</p>
-                      <p class="text-sm mt-2">
-                        Use the add button in the toolbar to create your first
-                        flow
-                      </p>
-                    </>
-                  }
-                >
-                  <p>No matching flows</p>
-                </Show>
-              </div>
+              <Show
+                when={allFlowList().length > 0}
+                fallback={
+                  <EmptyState
+                    title="No flows defined"
+                    description="Use the add button in the toolbar to create your first flow"
+                  />
+                }
+              >
+                <EmptyState title="No matching flows" />
+              </Show>
             }
           >
             <div class="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
@@ -622,27 +621,31 @@ export default function FlowListPanel(props: FlowListPanelProps) {
                         );
                       }}
                       class={CRUD_CARD_CLASS}
-                      classList={{
-                        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-                        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-                      }}
+                      data-selectable-surface
+                      data-selected={isSelected()}
                     >
                       <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
                         <span>{flowEntry.identifiers.id}:</span>
-                        <CrudInlineLabelEditor
-                          ariaLabel="Flow card label"
-                          class="truncate"
-                          editing={
+                        <Show
+                          when={
                             editingCardLabelUid() === flowEntry.identifiers.uid
                           }
-                          label={flowEntry.identifiers.label}
-                          onCancel={() => setEditingCardLabelUid(null)}
-                          onCommit={(label) =>
-                            updateFlowLabel(flowEntry, label)
+                          fallback={
+                            <span class="truncate">
+                              {flowEntry.identifiers.label}
+                            </span>
                           }
                         >
-                          {flowEntry.identifiers.label}
-                        </CrudInlineLabelEditor>
+                          <InlineRenameField
+                            ariaLabel="Flow card label"
+                            allowEmpty
+                            value={flowEntry.identifiers.label}
+                            onClose={() => setEditingCardLabelUid(null)}
+                            onCommit={(label) =>
+                              updateFlowLabel(flowEntry, label)
+                            }
+                          />
+                        </Show>
                       </div>
                       <div class="text-xs text-neutral-400 mt-1">
                         {flowEntry.nodes.length} node

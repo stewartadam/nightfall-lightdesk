@@ -8,6 +8,7 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 const SAMPLE_RATE_HZ = 8_000;
 const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/";
@@ -49,6 +50,13 @@ export function createSampleWav() {
   return new Uint8Array(buffer);
 }
 
+/** Parse one demo showfile snapshot, inflating it first when stored as `.json.gz`. */
+export function readShowfileJson(path) {
+  const bytes = readFileSync(path);
+  const json = path.endsWith(".gz") ? gunzipSync(bytes) : bytes;
+  return JSON.parse(json.toString("utf8"));
+}
+
 /** Report whether a file holds real media rather than an unfetched Git LFS pointer. */
 function isFetchedMedia(path) {
   const head = readFileSync(path).subarray(0, LFS_POINTER_PREFIX.length);
@@ -61,7 +69,7 @@ function isFetchedMedia(path) {
  * object was never fetched, is a packaging error. Returns each written path.
  */
 export function copyTimelineAudio({ showfilePath, sampleAudioDir }) {
-  const showfile = JSON.parse(readFileSync(showfilePath, "utf8"));
+  const showfile = readShowfileJson(showfilePath);
   const audioPaths = [
     ...new Set(
       (showfile.timelines ?? [])

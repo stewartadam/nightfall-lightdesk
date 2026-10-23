@@ -764,11 +764,13 @@ pub(super) fn materialize_channel_ast<'i>(
         tokens,
         branch,
     } = ctx;
-    let channels = parse_dmx_channel_expression_from_tokens(&slot_tokens(
+    let channel_tokens = slot_tokens(
         tokens,
         branch,
         crate::slots::contracts::SlotId::ChannelOverrideIdentifier,
-    ))?;
+    );
+    let (transport, channel_tokens) = split_dmx_transport_prefix(command_str, &channel_tokens)?;
+    let channels = parse_dmx_channel_expression_from_tokens(channel_tokens)?;
     let value_tokens = last_slot_span_matching(
         branch,
         crate::slots::contracts::SlotId::ChannelOverrideValue,
@@ -783,6 +785,7 @@ pub(super) fn materialize_channel_ast<'i>(
     .map(|span| tokens_in_span(tokens, span))?;
     Some(CommandAst::Channel(ChannelCommandAst {
         _channel: ChannelKeyword,
+        transport,
         channels,
         value: parse_decimal_value_from_tokens(command_str, &value_tokens)?,
     }))

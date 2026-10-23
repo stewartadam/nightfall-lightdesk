@@ -6,212 +6,101 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, For, type JSX, Match, Switch } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  type JSX,
+  Show,
+  untrack,
+} from "solid-js";
+import { getFocusedComponentId } from "../../../lib/componentFocusContext";
 import {
   allShortcuts,
   type KeyboardShortcut,
 } from "../../../lib/keyboardShortcuts";
+import {
+  findPanelDefinitionById,
+  findPanelDefinitionByName,
+} from "../../../lib/panel-definitions";
 import { useAppShell } from "../../providers/app-shell";
+import { Badge } from "../../ui/badge";
 import { Dialog, DialogBody } from "../../ui/dialog";
-
-// Detect if running on macOS
-const isMac =
-  typeof navigator !== "undefined" &&
-  /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-
-/** Base CSS classes for kbd elements following Preline styling */
-const kbdClasses =
-  "min-h-7 min-w-7 inline-flex justify-center items-center py-1 px-1.5 bg-neutral-800 border border-neutral-600 font-mono text-sm text-neutral-200 rounded-md";
-
-/** SVG icon classes */
-const iconClasses = "shrink-0 size-3";
-
-/** Command key icon (⌘) */
-function CommandIcon() {
-  return (
-    <svg
-      class={iconClasses}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
-    </svg>
-  );
-}
-
-/** Option/Alt key icon (⌥) */
-function OptionIcon() {
-  return (
-    <svg
-      class={iconClasses}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <path d="M3 3h6l6 18h6" />
-      <path d="M14 3h7" />
-    </svg>
-  );
-}
-
-/** Shift key icon (⇧) */
-function ShiftIcon() {
-  return (
-    <svg
-      class={`${iconClasses} size-4`}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <path d="M9 18v-6H5l7-7 7 7h-4v6H9z" />
-    </svg>
-  );
-}
-
-/** Control key icon (^) */
-function ControlIcon() {
-  return (
-    <svg
-      class={`${iconClasses} size-4`}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <path d="m18 15-6-6-6 6" />
-    </svg>
-  );
-}
-
-/**
- * Renders a single keyboard key with appropriate styling.
- * Modifier keys are rendered as icons, regular keys as text.
- */
-function KeyboardKey(props: { keyName: string }) {
-  return (
-    <Switch fallback={<kbd class={kbdClasses}>{props.keyName}</kbd>}>
-      <Match when={props.keyName === "$mod"}>
-        <kbd class={kbdClasses} title={isMac ? "Command" : "Ctrl"}>
-          {isMac ? <CommandIcon /> : <ControlIcon />}
-        </kbd>
-      </Match>
-      <Match when={props.keyName === "Shift"}>
-        <kbd class={kbdClasses} title="Shift">
-          <ShiftIcon />
-        </kbd>
-      </Match>
-      <Match when={props.keyName === "Alt"}>
-        <kbd class={kbdClasses} title={isMac ? "Option" : "Alt"}>
-          {isMac ? <OptionIcon /> : <span>Alt</span>}
-        </kbd>
-      </Match>
-      <Match when={props.keyName === "Control"}>
-        <kbd class={kbdClasses} title="Control">
-          <ControlIcon />
-        </kbd>
-      </Match>
-    </Switch>
-  );
-}
-
-/**
- * Parses a shortcut key string and renders it as styled kbd elements.
- * Handles modifiers like $mod, Shift, Alt, Control and displays them with icons.
- */
-export function ShortcutKeys(props: { shortcut: string }) {
-  const keys = () => props.shortcut.split("+");
-
-  return (
-    <span class="flex shrink-0 flex-nowrap items-center gap-x-1 whitespace-nowrap">
-      <For each={keys()}>{(key) => <KeyboardKey keyName={key} />}</For>
-    </span>
-  );
-}
+import { EmptyState } from "../../ui/empty-state";
+import { HighlightedText } from "../../ui/highlighted-text";
+import { Kbd, KbdShortcut } from "../../ui/kbd";
+import { SearchField } from "../../ui/search-field";
+import { searchTerms } from "../../ui/search-match";
+import { GLOBAL_GROUP, groupShortcuts } from "./shortcut-groups";
+import { matchesShortcutSearch } from "./shortcut-search";
 
 /**
  * Component that displays all registered keyboard shortcuts in a popup
- * with multiple columns
+ * with multiple columns, filtered by a search field that matches each
+ * shortcut's description, keys and group name
  */
 export default function ShortcutsPopup() {
   const { dockviewApi, isShortcutsPopupVisible, hideShortcutsPopup } =
     useAppShell();
+  const [query, setQuery] = createSignal("");
 
-  /** Memoize organized shortcuts to avoid recalculations on each render */
-  const organizedShortcuts = createMemo(() => {
-    const currentShortcuts = allShortcuts();
-    const groups: Record<string, KeyboardShortcut[]> = {};
+  const [activeComponentId, setActiveComponentId] = createSignal<string | null>(
+    null,
+  );
 
-    for (const shortcut of currentShortcuts) {
-      const groupKey = shortcut.group || shortcut.componentId || "Global";
-      if (!groups[groupKey]) {
-        groups[groupKey] = [];
-      }
-      groups[groupKey].push(shortcut);
-    }
-
-    // Sort each group by key
-    for (const key of Object.keys(groups)) {
-      groups[key].sort((a, b) =>
-        a.key.localeCompare(b.key, undefined, { numeric: true }),
+  /**
+   * Starts every opening of the dialog with the full, unfiltered list, and remembers which panel
+   * was active when it opened so that panel's shortcuts can be listed first.
+   */
+  createEffect(() => {
+    if (isShortcutsPopupVisible()) {
+      setActiveComponentId(
+        untrack(
+          () =>
+            getFocusedComponentId() ?? dockviewApi()?.activePanel?.id ?? null,
+        ),
       );
+    } else {
+      setQuery("");
     }
-
-    // Ensure Global comes first
-    const orderedGroups: [string, KeyboardShortcut[]][] = [];
-
-    if (groups.Global) {
-      orderedGroups.push(["Global", groups.Global]);
-    }
-
-    // Add other panels in alphabetical order
-    for (const entry of Object.entries(groups)
-      .filter(([key]) => key !== "Global")
-      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))) {
-      orderedGroups.push(entry);
-    }
-
-    return orderedGroups;
   });
 
-  /** Resolve a human-friendly display name for a group key (panel id or component id) */
-  const getDisplayName = (groupKey: string): string => {
-    if (groupKey === "Global") return "Global";
-
-    // Try to resolve via the dockview API (panels store titles there)
-    try {
-      const panel = dockviewApi()?.getPanel(groupKey as any);
-      if (panel?.title) return panel.title as string;
-    } catch (_e) {
-      // ignore - getPanel may throw if id is not a panel id
-    }
-
-    // Final fallback to the raw group key
-    return groupKey;
+  /**
+   * Names the group a shortcut is listed under: its explicit group, else the type of the panel
+   * that registered it (so every open Timelines panel shares "Timelines"), else Global.
+   */
+  const groupLabel = (shortcut: KeyboardShortcut): string => {
+    if (shortcut.group) return shortcut.group;
+    const componentId = shortcut.componentId;
+    if (!componentId) return GLOBAL_GROUP;
+    const definition =
+      findPanelDefinitionById(componentId) ??
+      findPanelDefinitionByName(
+        dockviewApi()?.getPanel(componentId)?.api.component ?? "",
+      );
+    return definition?.title ?? componentId;
   };
+
+  /** Lower-cased words of the search query, shared by filtering and highlighting. */
+  const terms = createMemo(() => searchTerms(query()));
+
+  /**
+   * Groups the shortcuts that match the search query by panel type, with Global first and the
+   * active panel's type next. Groups without matches are omitted.
+   */
+  const organizedShortcuts = createMemo(() => {
+    const searchTermList = terms();
+    const matching = allShortcuts().filter((shortcut) =>
+      matchesShortcutSearch(searchTermList, {
+        description: shortcut.description,
+        key: shortcut.key,
+        groupLabel: groupLabel(shortcut),
+      }),
+    );
+    return groupShortcuts(matching, groupLabel, activeComponentId());
+  });
 
   return (
     <Dialog
@@ -220,40 +109,79 @@ export default function ShortcutsPopup() {
       title="Keyboard Shortcuts"
       onDismiss={hideShortcutsPopup}
       class="max-w-4xl"
-      style={{ "max-height": "80vh" }}
+      style={{ height: "80vh" }}
       backdropProps={
         {
           "data-dialog-kind": "shortcuts",
         } as JSX.DialogHtmlAttributes<HTMLDialogElement>
       }
     >
+      <div class="shrink-0 px-4 pt-4">
+        <SearchField
+          label="Search shortcuts"
+          placeholder="Search by action, key or panel"
+          autofocus
+          value={query()}
+          onInput={setQuery}
+        />
+      </div>
       <DialogBody role="region" aria-label="Keyboard shortcuts">
+        <Show when={organizedShortcuts().length === 0}>
+          <EmptyState
+            variant="inline"
+            align="center"
+            class="py-8 justify-center"
+            role="status"
+            title={`No shortcuts match "${query().trim()}"`}
+          />
+        </Show>
         <div class="columns-1 md:columns-2 lg:columns-3 gap-8">
-          <For each={organizedShortcuts()}>
-            {([panelName, panelShortcuts]) => (
+          <Index each={organizedShortcuts()}>
+            {(group) => (
               <div class="mb-8 break-inside-avoid">
-                <h3 class="text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
-                  {getDisplayName(panelName)}
+                <h3 class="flex items-center gap-2 text-sm font-semibold text-white mb-2 pb-1 border-b border-gray-600">
+                  <HighlightedText text={group().label} terms={terms()} />
+                  <Show when={group().active}>
+                    <Badge size="xs" appearance="soft" tone="accent">
+                      Active panel
+                    </Badge>
+                  </Show>
                 </h3>
                 <div class="space-y-2">
-                  <For each={panelShortcuts}>
-                    {(shortcut) => (
+                  <Index each={group().rows}>
+                    {(row) => (
                       <div class="flex items-center text-sm gap-2">
-                        <ShortcutKeys shortcut={shortcut.key} />
-                        <span class="text-gray-300">
-                          {shortcut.description}
+                        <span class="flex shrink-0 flex-col items-start gap-1">
+                          <For each={row().keys}>
+                            {(key, index) => (
+                              <span class="flex items-center gap-1">
+                                <Show when={index() > 0}>
+                                  <span class="text-xs text-neutral-500">
+                                    or
+                                  </span>
+                                </Show>
+                                <KbdShortcut shortcut={key} />
+                              </span>
+                            )}
+                          </For>
+                        </span>
+                        <span class="min-w-0 flex-1 text-gray-300">
+                          <HighlightedText
+                            text={row().description}
+                            terms={terms()}
+                          />
                         </span>
                       </div>
                     )}
-                  </For>
+                  </Index>
                 </div>
               </div>
             )}
-          </For>
+          </Index>
         </div>
 
         <div class="mt-4 text-xs text-gray-500 text-center flex items-center justify-center gap-1">
-          Press <kbd class={kbdClasses}>Esc</kbd> to close
+          Press <Kbd keyName="Escape" /> to close
         </div>
       </DialogBody>
     </Dialog>

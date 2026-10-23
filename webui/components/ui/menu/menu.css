@@ -19,6 +19,10 @@
   letter-spacing: normal;
   text-transform: none;
 }
+/* Scroll cues blend into the menu surface they cover. */
+.nf-scroll-indicators.nf-menu-scroll {
+  --nf-scroll-surface: #202526;
+}
 .nf-menu-item {
   display: flex;
   align-items: center;
@@ -33,6 +37,10 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+/* Script-rendered lists such as Preline's select filter entries with the `hidden` utility. */
+.nf-menu-item:is([hidden], .hidden) {
+  display: none;
 }
 .nf-menu-item:is(:hover, :focus-visible) {
   background: var(--accent-soft);
@@ -71,6 +79,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.nf-menu-item[data-described] {
+  align-items: flex-start;
+}
+.nf-menu-description {
+  display: block;
+  margin-top: 2px;
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .nf-menu-hint {
   flex-shrink: 0;
   color: #9ca3af;
@@ -89,4 +109,9 @@
   line-height: 14px;
   letter-spacing: 0.025em;
   text-transform: uppercase;
+}
+.nf-menu-heading[data-literal] {
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
 }

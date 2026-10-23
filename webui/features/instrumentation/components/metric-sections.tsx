@@ -6,67 +6,72 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, type JSX, Show } from "solid-js";
-import { Button } from "../../../components/ui/visual-language/button";
-import { formatNumber } from "../model/metrics";
-
-interface CollapsibleSectionProps {
-  children: JSX.Element;
-  defaultOpen?: boolean;
-  headerContent?: JSX.Element;
-  title: string;
-}
-
-/** Renders a locally collapsible instrumentation section. */
-export function CollapsibleSection(props: CollapsibleSectionProps) {
-  const [isOpen, setIsOpen] = createSignal(props.defaultOpen ?? false);
-
-  return (
-    <section>
-      <Button
-        size="compact"
-        variant="subtle"
-        type="button"
-        class="mb-2 w-full"
-        style={{ "justify-content": "flex-start" }}
-        aria-expanded={isOpen()}
-        onClick={() => setIsOpen(!isOpen())}
-      >
-        <span class={`transition-transform ${isOpen() ? "rotate-90" : ""}`}>
-          ▶
-        </span>
-        {props.title}
-        {props.headerContent}
-      </Button>
-      <Show when={isOpen()}>{props.children}</Show>
-    </section>
-  );
-}
+import type { JSX } from "solid-js";
+import { formatNumber, type MetricTone } from "../model/metrics";
+import "./metric-sections.css";
 
 interface PipelineStepProps {
   label: string;
   value: unknown;
 }
 
+/** Type scale of a metric card value: `sm` for long text, `md` (default), `lg` and `xl` for headline numbers. */
+export type MetricCardSize = "sm" | "md" | "lg" | "xl";
+
+const METRIC_CARD_SIZE_CLASS: Record<MetricCardSize, string> = {
+  sm: "text-sm",
+  md: "text-lg",
+  lg: "text-xl font-bold",
+  xl: "text-2xl font-bold",
+};
+
 interface MetricCardProps {
   label: JSX.Element;
   value: JSX.Element;
-  valueClass?: string;
+  /** Value type scale. Defaults to `md`. */
+  size?: MetricCardSize;
+  /** Status color of the value. Defaults to `default`. */
+  tone?: MetricTone;
 }
 
-/** Renders a labeled instrumentation value in the shared metric-card treatment. */
+/**
+ * Renders a labeled instrumentation value in the shared metric-card
+ * treatment. The value color comes only from `tone`, so a status such as a
+ * slow frame rate always shows in its status color.
+ */
 export function MetricCard(props: MetricCardProps) {
   return (
-    <div class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
-      <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">
-        {props.label}
-      </div>
-      <div
-        class={`font-mono text-gray-900 dark:text-white ${props.valueClass ?? "text-lg"}`}
+    <div class="rounded-lg bg-neutral-800 p-3">
+      <div class="mb-1 text-xs text-neutral-400">{props.label}</div>
+      <MetricValue
+        tone={props.tone}
+        class={`block ${METRIC_CARD_SIZE_CLASS[props.size ?? "md"]}`}
       >
         {props.value}
-      </div>
+      </MetricValue>
     </div>
+  );
+}
+
+interface MetricValueProps {
+  tone?: MetricTone;
+  class?: string;
+  children: JSX.Element;
+}
+
+/**
+ * Renders an instrumentation value in the monospace font and its status tone.
+ * Used by metric cards and by the compact readouts in section headers so both
+ * color the same status identically.
+ */
+export function MetricValue(props: MetricValueProps) {
+  return (
+    <span
+      class={`nf-metric-value font-mono ${props.class ?? ""}`.trim()}
+      data-tone={props.tone ?? "default"}
+    >
+      {props.children}
+    </span>
   );
 }
 
@@ -79,12 +84,8 @@ interface MetricRowProps {
 export function MetricRow(props: MetricRowProps) {
   return (
     <div class="flex items-center justify-between">
-      <span class="text-sm text-gray-600 dark:text-gray-300">
-        {props.label}
-      </span>
-      <span class="font-mono text-sm text-gray-900 dark:text-white">
-        {props.value}
-      </span>
+      <span class="text-sm text-neutral-300">{props.label}</span>
+      <span class="font-mono text-sm text-white">{props.value}</span>
     </div>
   );
 }
@@ -92,10 +93,8 @@ export function MetricRow(props: MetricRowProps) {
 /** Renders one timed stage in the visualizer rendering pipeline. */
 export function PipelineStep(props: PipelineStepProps) {
   return (
-    <div class="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 dark:border-gray-700 dark:bg-gray-900">
-      <span class="text-xs text-gray-500 dark:text-gray-400">
-        {props.label}
-      </span>
+    <div class="flex items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1">
+      <span class="text-xs text-neutral-400">{props.label}</span>
       <span class="font-mono text-xs">
         {formatNumber(props.value, 2, " ms")}
       </span>

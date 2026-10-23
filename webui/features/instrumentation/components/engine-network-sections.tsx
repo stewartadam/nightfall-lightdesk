@@ -7,6 +7,7 @@
  */
 
 import { Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Sparkline } from "../../../components/ui/sparkline";
 import type {
   EngineMetrics,
@@ -14,7 +15,7 @@ import type {
   SmoothedEngineMetrics,
 } from "../../../state/appStores";
 import { formatNumber } from "../model/metrics";
-import { CollapsibleSection, MetricRow } from "./metric-sections";
+import { MetricRow } from "./metric-sections";
 
 interface EngineStatsSectionProps {
   metrics: EngineMetrics | null;
@@ -23,8 +24,8 @@ interface EngineStatsSectionProps {
 /** Presents backend entity, layer, and universe counts. */
 export function EngineStatsSection(props: EngineStatsSectionProps) {
   return (
-    <CollapsibleSection title="Engine Stats">
-      <div class="space-y-2 rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+    <Collapsible lazy title="Engine Stats" contentClass="p-3">
+      <div class="space-y-2 rounded-lg bg-neutral-800 p-3">
         <MetricRow
           label="Active Layers"
           value={props.metrics?.active_layers ?? "—"}
@@ -42,7 +43,7 @@ export function EngineStatsSection(props: EngineStatsSectionProps) {
           <MetricRow label="Entity Count" value={props.metrics?.entity_count} />
         </Show>
       </div>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }
 
@@ -56,10 +57,12 @@ interface NetworkMetricsSectionProps {
 /** Presents websocket latency and network-output timing metrics. */
 export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="Network"
-      headerContent={
-        <span class="ml-auto flex items-center gap-2">
+      contentClass="p-3"
+      actions={
+        <span class="flex items-center gap-2">
           <Sparkline
             data={props.history.latency}
             width={80}
@@ -72,7 +75,7 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
         </span>
       }
     >
-      <div class="space-y-2 rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+      <div class="space-y-2 rounded-lg bg-neutral-800 p-3">
         <MetricRow
           label="Transport RTT (last heartbeat)"
           value={formatNumber(props.latencyMs, 2, " ms")}
@@ -83,7 +86,7 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
             <>
               {formatNumber(props.smoothedMetrics.artnetSendTimeMs, 2, " ms")}
               <Show when={(props.metrics?.artnet_universe_count ?? 0) > 0}>
-                <span class="ml-1 text-gray-500 dark:text-gray-400">
+                <span class="ml-1 text-neutral-400">
                   ({props.metrics?.artnet_universe_count} univ)
                 </span>
               </Show>
@@ -96,7 +99,7 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
             <>
               {formatNumber(props.smoothedMetrics.sacnSendTimeMs, 2, " ms")}
               <Show when={(props.metrics?.sacn_universe_count ?? 0) > 0}>
-                <span class="ml-1 text-gray-500 dark:text-gray-400">
+                <span class="ml-1 text-neutral-400">
                   ({props.metrics?.sacn_universe_count} univ)
                 </span>
               </Show>
@@ -112,6 +115,6 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
           )}
         />
       </div>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

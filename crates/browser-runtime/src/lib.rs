@@ -17,22 +17,27 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_channel::{Receiver, Sender};
 use bevy_app::App;
+use bevy_diagnostic::{FrameCountPlugin, FrameTimeDiagnosticsPlugin};
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::NextState;
 use bevy_time::{TimePlugin, TimeUpdateStrategy};
 use nightfall_actions::ActionsPlugin;
+use nightfall_boards::prelude::BoardsPlugin;
 use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::EnginePlugin;
 use nightfall_engine::prelude::{
-    AppState, ClientBridgeHost, ClientBridgePlugin, CommandJsonEnvelope, CommandSender,
-    DataProvider, RuntimeCapabilities, UpdateJsonEnvelope,
+    AppState, ClientBridgeHost, ClientBridgePlugin, ClientId, CommandJsonEnvelope, CommandSender,
+    DataProvider, OutboundFrame, ReplyTarget, RuntimeCapabilities, UpdateJsonEnvelope,
 };
 use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
+use nightfall_framepace::prelude::{FramepaceSettings, Limiter};
 use nightfall_fx::prelude::{FxPlugin, StoredFxModule};
 use nightfall_programmer::prelude::ProgrammerPlugin;
+use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
+use nightfall_tempo::prelude::TempoPlugin;
 use nightfall_timecode::prelude::TimecodePlugin;
 use nightfall_timeline::prelude::TimelinePlugin;
 use nightfall_undo::prelude::UndoPlugin;
@@ -42,11 +47,17 @@ use wasm_bindgen::prelude::*;
 use crate::fixture_library::BuiltinFixtureLibraryPlugin;
 
 const MAX_TICK_DELTA_MS: f64 = 100.0;
+/// Worker tick rate until an `fps` command changes it.
+const DEFAULT_TICK_RATE_HZ: f64 = 60.0;
+/// Slowest worker tick rate, matching the frame delta clamp.
+const MIN_TICK_RATE_HZ: f64 = 1_000.0 / MAX_TICK_DELTA_MS;
+/// Fastest worker tick rate, also used when an `fps 0` command turns the limit off.
+const MAX_TICK_RATE_HZ: f64 = 120.0;
 #[cfg(test)]
 const TEST_SAMPLE_ID: &str = "nightfall-demo-v1";
 #[cfg(test)]
-const TEST_SHOWFILE_JSON: &str =
-    include_str!("../../../webui/public/nightfall-demo.nightfall-show/showfile.json");
+const TEST_SHOWFILE_GZ: &[u8] =
+    include_bytes!("../../../webui/public/nightfall-demo.nightfall-show/showfile.json.gz");
 #[cfg(target_arch = "wasm32")]
 static CONSTRUCTION_STAGE: AtomicU8 = AtomicU8::new(0);
 
@@ -72,7 +83,7 @@ pub struct BrowserEngine {
     app: App,
     command_tx: CommandSender,
     update_tx: Sender<UpdateJsonEnvelope>,
-    output_rx: Receiver<Vec<u8>>,
+    output_rx: Receiver<OutboundFrame>,
     runtime_info: RuntimeInfo,
 }
 
@@ -105,6 +116,11 @@ impl BrowserEngine {
     /// Advance the embedded engine by one frame with a clamped host delta.
     pub fn tick(&mut self, delta_ms: f64) -> f64 {
         self.tick_core(delta_ms)
+    }
+
+    /// Return the rate in hertz at which the worker should call [`Self::tick`].
+    pub fn tick_rate_hz(&self) -> f64 {
+        self.tick_rate_hz_core()
     }
 
     /// Drain all encoded CBOR publications currently waiting for the worker.
@@ -196,13 +212,25 @@ impl BrowserEngine {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(
             std::time::Duration::ZERO,
         ));
-        app.add_plugins(ActionsPlugin);
+        // Real time advances by the host tick delta, so these report the worker's engine rate.
+        app.add_plugins((FrameCountPlugin, FrameTimeDiagnosticsPlugin::default()));
+        // The worker paces ticks itself, so only the `fps` command handling is shared with the
+        // native frame limiter, whose sleeping limiter cannot run in a browser.
+        app.insert_resource(
+            FramepaceSettings::default()
+                .with_limiter(Limiter::from_framerate(DEFAULT_TICK_RATE_HZ)),
+        );
+        app.add_systems(
+            bevy_app::Update,
+            nightfall_framepace::handle_events.in_set(nightfall_engine::prelude::EventHandling),
+        );
         set_construction_stage(1);
         app.add_plugins(EnginePlugin);
         set_construction_stage(2);
         app.add_plugins(UndoPlugin);
         set_construction_stage(3);
         app.add_plugins(ClientBridgePlugin);
+        app.add_plugins(ActionsPlugin);
         set_construction_stage(4);
         app.add_plugins(FixturePlugin);
         set_construction_stage(5);
@@ -215,9 +243,12 @@ impl BrowserEngine {
         });
         app.add_plugins(ProgrammerPlugin);
         app.add_plugins(CuePlugin);
+        app.add_plugins(BoardsPlugin);
+        app.add_plugins(TempoPlugin);
         app.add_plugins(FxPlugin);
         app.init_resource::<DataProvider<StoredFxModule>>();
         app.add_plugins(FlowPlugin);
+        app.add_plugins(ReferencesPlugin);
         app.add_plugins(TimecodePlugin);
         app.add_plugins(TimelinePlugin::browser_demo());
         set_construction_stage(7);
@@ -254,7 +285,10 @@ impl BrowserEngine {
     }
 
     /// Queue one parsed command envelope without entering an async executor.
-    fn enqueue_command_core(&self, envelope: CommandJsonEnvelope) -> Result<(), String> {
+    ///
+    /// Commands are attributed to the runtime's single embedded client session.
+    fn enqueue_command_core(&self, mut envelope: CommandJsonEnvelope) -> Result<(), String> {
+        envelope.reply_target = ReplyTarget::Client(ClientId::EMBEDDED);
         self.command_tx
             .try_send(envelope)
             .map_err(|error| format!("Unable to enqueue browser command: {error}"))
@@ -286,11 +320,27 @@ impl BrowserEngine {
         applied_delta_ms
     }
 
+    /// Resolve the `fps` frame limit into the worker's tick rate.
+    ///
+    /// A disabled limit runs at the fastest supported rate, and requested rates are clamped to
+    /// what the worker timer and the frame delta clamp support.
+    fn tick_rate_hz_core(&self) -> f64 {
+        match self.app.world().resource::<FramepaceSettings>().limiter {
+            Limiter::Manual(interval) if !interval.is_zero() => {
+                (1.0 / interval.as_secs_f64()).clamp(MIN_TICK_RATE_HZ, MAX_TICK_RATE_HZ)
+            }
+            _ => MAX_TICK_RATE_HZ,
+        }
+    }
+
     /// Copy all pending encoded messages into host-owned byte buffers.
+    ///
+    /// The embedded page is the runtime's only client, so every frame is delivered
+    /// whatever its audience.
     fn drain_output_core(&self) -> Vec<Vec<u8>> {
         let mut output = Vec::new();
-        while let Ok(bytes) = self.output_rx.try_recv() {
-            output.push(bytes);
+        while let Ok(frame) = self.output_rx.try_recv() {
+            output.push(frame.bytes);
         }
         output
     }
@@ -313,14 +363,30 @@ fn settle_loaded_runtime(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+    use std::sync::OnceLock;
+
+    use flate2::read::GzDecoder;
     use serde_json::{Value, json};
     use uuid::Uuid;
 
     use super::*;
 
+    /// Inflate the packaged gzip demo show once and share its JSON text across tests.
+    pub(crate) fn test_showfile_json() -> &'static str {
+        static JSON: OnceLock<String> = OnceLock::new();
+        JSON.get_or_init(|| {
+            let mut json = String::new();
+            GzDecoder::new(TEST_SHOWFILE_GZ)
+                .read_to_string(&mut json)
+                .expect("demo showfile should be valid gzip-compressed UTF-8");
+            json
+        })
+    }
+
     /// Build the packaged demo show through the canonical JSON load boundary.
     pub(crate) fn sample_engine() -> BrowserEngine {
-        BrowserEngine::create_core(TEST_SAMPLE_ID.to_owned(), TEST_SHOWFILE_JSON)
+        BrowserEngine::create_core(TEST_SAMPLE_ID.to_owned(), test_showfile_json())
             .expect("runtime should initialize from the demo showfile")
     }
 
@@ -388,7 +454,7 @@ mod tests {
             .and_then(|message| message["data"].as_array())
             .expect("fixture snapshot should be an array");
         let showfile: Value =
-            serde_json::from_str(TEST_SHOWFILE_JSON).expect("demo showfile should be JSON");
+            serde_json::from_str(test_showfile_json()).expect("demo showfile should be JSON");
         let showfile_len = |key: &str| showfile[key].as_array().map(Vec::len);
         assert_eq!(Some(fixtures.len()), showfile_len("fixtures"));
         let timelines = messages
@@ -462,10 +528,53 @@ mod tests {
             })
             .filter_map(|bytes| decode_publication(bytes))
             .filter(|message| message["type"] == "TimelineAudioDirective")
+            .filter(|message| message["data"]["type"] != "Sync")
             .collect::<Vec<_>>();
         assert!(
             repeated_directives.is_empty(),
             "steady playback must not repeatedly seek browser media: {repeated_directives:#?}"
+        );
+    }
+
+    /// Verify playing browser media receives engine clock reports once per second of playback.
+    #[test]
+    fn timecode_playback_reports_engine_clock_to_browser_audio() {
+        let mut engine = sample_engine();
+        let envelope = serde_json::from_value(json!({
+            "command_id": Uuid::new_v4(),
+            "module": "TimecodeCommand",
+            "command": { "type": "StartTimecode", "data": 1 }
+        }))
+        .expect("timecode command should deserialize");
+        engine
+            .enqueue_command_core(envelope)
+            .expect("timecode command should enqueue");
+
+        // 2.5 seconds of engine playback, in 50 ms frames.
+        for _ in 0..50 {
+            engine.tick_core(50.0);
+        }
+        let sync_offsets = engine
+            .drain_output_core()
+            .iter()
+            .filter_map(|bytes| decode_publication(bytes))
+            .filter(|message| {
+                message["type"] == "TimelineAudioDirective" && message["data"]["type"] == "Sync"
+            })
+            .map(|message| {
+                serde_json::from_value::<std::time::Duration>(
+                    message["data"]["data"]["offset"].clone(),
+                )
+                .expect("sync offset should be a duration")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(sync_offsets.len(), 2, "sync offsets: {sync_offsets:?}");
+        assert!(
+            sync_offsets
+                .windows(2)
+                .all(|pair| pair[1] - pair[0] >= std::time::Duration::from_secs(1)),
+            "sync offsets: {sync_offsets:?}"
         );
     }
 
@@ -476,6 +585,107 @@ mod tests {
         assert_eq!(engine.tick_core(5_000.0), MAX_TICK_DELTA_MS);
         assert_eq!(engine.runtime_info.requested_delta_ms, 5_000.0);
         assert_eq!(engine.runtime_info.applied_delta_ms, MAX_TICK_DELTA_MS);
+    }
+
+    /// Verify host tick deltas feed the frame-rate diagnostics published as engine metrics.
+    #[test]
+    fn tick_delta_drives_frame_rate_diagnostics() {
+        let mut engine = sample_engine();
+        for _ in 0..10 {
+            engine.tick_core(25.0);
+        }
+        let diagnostics = engine
+            .app
+            .world()
+            .resource::<bevy_diagnostic::DiagnosticsStore>();
+        let fps = diagnostics
+            .get(&FrameTimeDiagnosticsPlugin::FPS)
+            .and_then(|diagnostic| diagnostic.smoothed())
+            .expect("ticking should record a frame rate");
+        assert!((fps - 40.0).abs() < 0.5, "fps: {fps}");
+    }
+
+    /// Verify `fps` commands complete and retarget the worker tick rate within its bounds.
+    #[test]
+    fn fps_command_completes_and_sets_tick_rate() {
+        let mut engine = sample_engine();
+        assert!((engine.tick_rate_hz_core() - DEFAULT_TICK_RATE_HZ).abs() < 1e-3);
+
+        for (fps, expected_hz) in [(44, 44.0), (0, MAX_TICK_RATE_HZ), (2, MIN_TICK_RATE_HZ)] {
+            let command_id = Uuid::new_v4();
+            let envelope = serde_json::from_value(json!({
+                "command_id": command_id,
+                "module": "EngineCommand",
+                "command": { "type": "SetFps", "data": fps }
+            }))
+            .expect("fps command should deserialize");
+            engine
+                .enqueue_command_core(envelope)
+                .expect("fps command should enqueue");
+            engine.tick_core(16.0);
+
+            let command_id_text = command_id.simple().to_string();
+            let result = engine
+                .drain_output_core()
+                .iter()
+                .filter_map(|bytes| decode_publication(bytes))
+                .find(|message| {
+                    message["type"] == "CommandResult"
+                        && message.pointer("/data/command_id").and_then(Value::as_str)
+                            == Some(command_id_text.as_str())
+                })
+                .unwrap_or_else(|| panic!("fps {fps} should complete"));
+            assert_eq!(
+                result["data"]["outcome"]["type"], "Succeeded",
+                "{result:#?}"
+            );
+            assert!(
+                (engine.tick_rate_hz_core() - expected_hz).abs() < 1e-3,
+                "fps {fps} gave {} Hz",
+                engine.tick_rate_hz_core()
+            );
+        }
+    }
+
+    /// Verify the demo answers showfile save and load commands with a disk storage failure
+    /// on the next tick instead of leaving them pending forever.
+    #[test]
+    fn showfile_storage_commands_fail_fast() {
+        let mut engine = sample_engine();
+
+        for command in [
+            json!({ "type": "SaveShowfile" }),
+            json!({ "type": "LoadNamedShowfile", "data": "tour" }),
+        ] {
+            let command_id = Uuid::new_v4();
+            let envelope = serde_json::from_value(json!({
+                "command_id": command_id,
+                "module": "DeskCommand",
+                "command": command,
+            }))
+            .expect("desk command should deserialize");
+            engine
+                .enqueue_command_core(envelope)
+                .expect("desk command should enqueue");
+            engine.tick_core(16.0);
+
+            let command_id_text = command_id.simple().to_string();
+            let result = engine
+                .drain_output_core()
+                .iter()
+                .filter_map(|bytes| decode_publication(bytes))
+                .find(|message| {
+                    message["type"] == "CommandResult"
+                        && message.pointer("/data/command_id").and_then(Value::as_str)
+                            == Some(command_id_text.as_str())
+                })
+                .unwrap_or_else(|| panic!("{command} should complete within one tick"));
+            assert_eq!(result["data"]["outcome"]["type"], "Failed", "{result:#?}");
+            assert_eq!(
+                result["data"]["outcome"]["data"]["code"], "desk.disk_storage_unavailable",
+                "{result:#?}"
+            );
+        }
     }
 
     /// Reject malformed showfile bytes before the embedded runtime becomes ready.

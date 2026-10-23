@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type * as types from "../types";
 import { normalizeAttributeName } from "./utils";
+import type { LayerElementTransitionState, LayerState } from "./ws/types";
 
 export function layerHasTransitioningAttribute(
-  rows: types.OutboundElementTransitionState[] | undefined,
+  rows: LayerElementTransitionState[] | undefined,
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,
@@ -44,11 +44,11 @@ export function layerHasTransitioningAttribute(
 }
 
 export function anyLayerHasTransitioningAttribute(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,
-  layerFilter?: (layer: types.OutboundLayerState) => boolean,
+  layerFilter?: (layer: LayerState) => boolean,
 ): boolean {
   return layers.some(
     (layer) =>

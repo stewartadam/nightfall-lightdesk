@@ -6,12 +6,28 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, type JSX, Show } from "solid-js";
+import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
+import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+} from "../../../components/ui/dropdown-menu";
 import { VerticalRangeSlider } from "../../../components/ui/vertical-range-slider";
 import { Button } from "../../../components/ui/visual-language/button";
 import { shouldShowDisparateControlValues } from "../../../lib/control-display";
 import { getLogger } from "../../../lib/logger";
-import { type Clip, type Master, MasterKind } from "../../../types";
+import {
+  type Clip,
+  ControlButtonMode,
+  type HeldButtonEffect,
+  type Master,
+  MasterKind,
+} from "../../../types";
+import type { EngineControl } from "../../actions";
+import { Mappable, type MappableChoice } from "../../io";
+import { masterLevelControl } from "../../masters";
+import { CONTROL_BUTTON_MODE_TEXT } from "../model/control-button-modes";
+import { HeldButtonBadge } from "./held-button-badge";
 
 export interface ControlProps {
   /** Control index (1-based for display) */
@@ -24,14 +40,26 @@ export interface ControlProps {
   isClipActive: boolean;
   /** Backend-authored display value */
   displayValue: number;
-  /** Backend-authored hardware value */
-  hardwareValue: number;
+  /** Position of the slot's physical fader, absent when no physical fader drives the slot */
+  hardwareValue: number | undefined;
   /** Backend-authored console value */
   consoleValue: number;
-  /** Called when the control go button is pressed */
-  onGo: () => void;
-  /** Called when control value changes */
-  onConsoleValueChange: (value: number) => void;
+  /** The slot's button: its press and release and its controller binding. */
+  button: EngineControl<{ press: () => void; release: () => void }>;
+  /** Mapping-only choice that always runs Go, whatever the button mode. */
+  goChoice: EngineControl;
+  /** Backend-authored mode deciding what the slot's button does. */
+  buttonMode: ControlButtonMode;
+  /** Backend-authored modes the slot's current assignment supports. */
+  availableButtonModes: ControlButtonMode[];
+  /** Whether a Flash or Swop is held on the slot, from this or any other surface. */
+  isFlashing: boolean;
+  /** How a held Flash or Swop changes the slot's playback, if any does. */
+  heldButton: HeldButtonEffect | undefined;
+  /** Called when a different button mode is picked. */
+  onButtonModeChange: (mode: ControlButtonMode) => void;
+  /** The slot's fader: its on-screen drag and its controller binding. */
+  fader: EngineControl<{ setConsoleValue: (value: number) => void }>;
   /** Called when a clip is dropped onto this control */
   onClipAssign: (clip: Clip) => void;
   /** Called when a master is dropped onto this control */
@@ -50,10 +78,95 @@ export function Control(props: ControlProps): JSX.Element {
   const showDisparateValues = () =>
     shouldShowDisparateControlValues(props.hardwareValue, props.consoleValue);
 
-  /** Returns whether the Go button has an assigned action. */
-  const canGo = () =>
+  /** Returns the actions this fader can be mapped to: its slot, or the assigned master. */
+  const faderChoices = (): MappableChoice[] => {
+    const master = props.assignedMaster;
+    return master
+      ? [
+          props.fader,
+          masterLevelControl(
+            master,
+            `Assigned master: ${master.identifiers.label}`,
+          ),
+        ]
+      : [props.fader];
+  };
+
+  /** Returns whether the slot's button has something to act on. */
+  const canPress = () =>
     !!props.assignedClip?.source ||
+    (!!props.assignedMaster && props.buttonMode === ControlButtonMode.Flash) ||
     props.assignedMaster?.mode?.type === "Toggle";
+
+  /** Whether this button sent a press that still needs its release. */
+  let isHeld = false;
+
+  /** Sends the press edge once, ignoring repeats while the button is already held. */
+  const pressButton = () => {
+    if (isHeld || !canPress()) return;
+    isHeld = true;
+    props.button.handlers.press();
+  };
+
+  /** Sends the release edge for a press this button sent, if any. */
+  const releaseButton = () => {
+    if (!isHeld) return;
+    isHeld = false;
+    props.button.handlers.release();
+  };
+
+  /** Presses on the primary pointer button, capturing the pointer so the release is seen. */
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    pressButton();
+  };
+
+  /** Presses on Enter or Space, ignoring key repeat. */
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (!event.repeat) pressButton();
+  };
+
+  /** Releases on Enter or Space. */
+  const handleKeyUp = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    releaseButton();
+  };
+
+  /**
+   * Presses and releases for activations that arrive only as a click, such as a screen
+   * reader's activate action. Pointer clicks report a click count and keyboard clicks are
+   * suppressed by the key handlers, so both already sent their edges.
+   */
+  const handleClick = (event: MouseEvent) => {
+    if (event.detail !== 0) return;
+    pressButton();
+    releaseButton();
+  };
+
+  onCleanup(releaseButton);
+
+  /** Returns the text for the slot's current button mode. */
+  const modeText = () => CONTROL_BUTTON_MODE_TEXT[props.buttonMode];
+
+  /** Explains what the button does now, or what it needs before it can act. */
+  const buttonTitle = () => {
+    if (props.assignedMaster) {
+      if (props.buttonMode === ControlButtonMode.Flash) {
+        return modeText().description;
+      }
+      return props.assignedMaster.mode?.type === "Toggle"
+        ? "Toggle this master"
+        : "Only toggle-mode masters respond to the button";
+    }
+    if (!props.assignedClip) return "Assign a clip to enable the button";
+    if (!props.assignedClip.source)
+      return "Assign a source to enable the button";
+    return modeText().description;
+  };
 
   /** Returns the value label for the assigned control target. */
   const valueLabel = () => {
@@ -118,6 +231,7 @@ export function Control(props: ControlProps): JSX.Element {
   return (
     <div
       data-control-index={props.index}
+      data-control-held-button={props.heldButton?.type}
       class={`control h-full min-h-0 flex flex-col items-center gap-2 p-2 rounded-lg transition-colors ${
         isDragOver() ? "bg-blue-900/50 ring-2 ring-blue-500" : "bg-neutral-800"
       }`}
@@ -126,13 +240,17 @@ export function Control(props: ControlProps): JSX.Element {
       onDrop={handleDrop}
     >
       {/* Vertical slider */}
-      <div class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1">
+      <Mappable
+        class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1"
+        label={`control ${props.index} fader`}
+        choices={faderChoices}
+      >
         <Show
           when={props.assignedClip || props.assignedMaster}
           fallback={
             <VerticalRangeSlider
               value={props.displayValue}
-              onChange={props.onConsoleValueChange}
+              onChange={props.fader.handlers.setConsoleValue}
               min={0}
               max={100}
               step={1}
@@ -147,7 +265,7 @@ export function Control(props: ControlProps): JSX.Element {
         >
           <VerticalRangeSlider
             value={props.displayValue}
-            onChange={props.onConsoleValueChange}
+            onChange={props.fader.handlers.setConsoleValue}
             min={0}
             max={100}
             step={1}
@@ -159,14 +277,19 @@ export function Control(props: ControlProps): JSX.Element {
             disabled={false}
           />
         </Show>
-      </div>
+      </Mappable>
 
       {/* Current value display */}
       <div
         data-control-value-index={props.index}
         class="w-full shrink-0 text-center"
       >
-        <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>
+        <Show
+          when={!props.heldButton}
+          fallback={<HeldButtonBadge effect={props.heldButton} />}
+        >
+          <div class="text-xs text-neutral-400 font-mono">{valueLabel()}</div>
+        </Show>
       </div>
 
       {/* Clip label / drop zone */}
@@ -195,43 +318,85 @@ export function Control(props: ControlProps): JSX.Element {
               size="icon"
               variant="subtle"
               type="button"
-              class="absolute top-0.5 right-0.5"
+              tooltipClass="absolute top-0.5 right-0.5"
               style={{ width: "20px", height: "20px" }}
               aria-label="Clear assignment"
               onClick={handleClearClick}
-              title="Clear assignment"
+              tooltip="Clear assignment"
             >
               ×
             </Button>
           </div>
         </Show>
       </div>
-      <Button
-        size="compact"
-        type="button"
-        data-control-go-index={props.index}
-        aria-label={`Go control ${props.index}`}
+      <Mappable
         class="w-full shrink-0"
-        disabled={!canGo()}
-        onClick={props.onGo}
-        title={
-          !props.assignedClip
-            ? props.assignedMaster?.mode?.type === "Toggle"
-              ? "Toggle this master"
-              : "Assign a clip to enable Go"
-            : !props.assignedClip.source
-              ? "Assign a source to enable Go"
-              : props.assignedClip.source?.type === "Sequence" &&
-                  props.isClipActive
-                ? "Advance this sequence clip"
-                : "Start this clip"
-        }
+        label={`control ${props.index} button`}
+        choices={() => [props.button, props.goChoice]}
       >
-        Go
-      </Button>
-      {/* Control number */}
-      <div class="shrink-0 text-xs text-neutral-500 font-medium">
-        {props.index}
+        <Button
+          size="compact"
+          type="button"
+          data-control-button-index={props.index}
+          data-control-button-mode={props.buttonMode}
+          data-control-button-flashing={props.isFlashing}
+          aria-label={`${modeText().label} control ${props.index}`}
+          variant={props.isFlashing ? "primary" : "secondary"}
+          class="w-full px-1!"
+          disabled={!canPress()}
+          onPointerDown={handlePointerDown}
+          onPointerUp={releaseButton}
+          onPointerCancel={releaseButton}
+          onLostPointerCapture={releaseButton}
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+          onClick={handleClick}
+          onBlur={releaseButton}
+          tooltip={buttonTitle()}
+          tooltipClass="block w-full"
+        >
+          {modeText().label}
+        </Button>
+      </Mappable>
+      {/* Control number, with the button mode menu beside it */}
+      <div class="grid w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center text-xs font-medium text-neutral-500">
+        <span />
+        <span>{props.index}</span>
+        <DropdownMenu
+          align="end"
+          triggerLabel={`Button mode of control ${props.index}`}
+          triggerTitle="Choose what the button does"
+          triggerVariant="subtle"
+          triggerSize="inline"
+          triggerClass="ml-auto"
+          contentLabel={`Button mode of control ${props.index}`}
+          trigger={<CaretDownIcon class="size-3" aria-hidden />}
+        >
+          <div class="py-0.5" data-menu-kind="control-button-mode">
+            <For each={props.availableButtonModes}>
+              {(mode) => (
+                <DropdownMenuItem
+                  checked={props.buttonMode === mode}
+                  onClick={() => {
+                    if (mode !== props.buttonMode) {
+                      props.onButtonModeChange(mode);
+                    }
+                  }}
+                >
+                  <span
+                    class="flex min-w-0 flex-col"
+                    data-control-button-mode-option={mode}
+                  >
+                    <span>{CONTROL_BUTTON_MODE_TEXT[mode].label}</span>
+                    <span class="text-[11px] text-neutral-400">
+                      {CONTROL_BUTTON_MODE_TEXT[mode].description}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              )}
+            </For>
+          </div>
+        </DropdownMenu>
       </div>
     </div>
   );

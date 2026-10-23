@@ -111,9 +111,9 @@ pub(super) fn merge_showfile_snapshots(
             options.fixtures,
         )?,
         variables: merge_variables(current.variables, incoming.variables, options.variables),
-        control_assignments: merge_single(
-            current.control_assignments,
-            incoming.control_assignments,
+        control_slots: merge_single(
+            current.control_slots,
+            incoming.control_slots,
             options.settings,
         ),
         settings: merge_single(current.settings, incoming.settings, options.settings),
@@ -124,6 +124,13 @@ pub(super) fn merge_showfile_snapshots(
             "MIDI mappings",
             current.midi_mappings,
             incoming.midi_mappings,
+            options.midi_mappings,
+        )?,
+        #[cfg(feature = "midi")]
+        midi_feedback_devices: merge_plain_vec(
+            "MIDI feedback devices",
+            current.midi_feedback_devices,
+            incoming.midi_feedback_devices,
             options.midi_mappings,
         )?,
         #[cfg(feature = "osc")]
@@ -188,6 +195,7 @@ pub(super) fn merge_showfile_snapshots(
             options.timelines,
         )?,
         clips: merge_identified_vec("clips", current.clips, incoming.clips, options.clips)?,
+        boards: merge_identified_vec("boards", current.boards, incoming.boards, options.boards)?,
     };
     for warning in stabilize_showfile_group_refs(&mut merged) {
         tracing::warn!("{}", warning);
@@ -223,6 +231,7 @@ pub(super) fn validate_showfile_import_options(
     validate_import_policy("timecodes", options.timecodes, FULL_IMPORT_POLICIES)?;
     validate_import_policy("timelines", options.timelines, FULL_IMPORT_POLICIES)?;
     validate_import_policy("clips", options.clips, FULL_IMPORT_POLICIES)?;
+    validate_import_policy("boards", options.boards, FULL_IMPORT_POLICIES)?;
     Ok(())
 }
 

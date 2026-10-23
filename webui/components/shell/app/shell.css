@@ -42,11 +42,3 @@
   border-radius: 0 calc(var(--nf-corner-radius) - 1px)
     calc(var(--nf-corner-radius) - 1px) 0;
 }
-
-.nf-browser-demo-banner .nf-button {
-  min-height: 20px;
-  height: 20px;
-  padding: 0 6px;
-  font-size: inherit;
-  line-height: 16px;
-}

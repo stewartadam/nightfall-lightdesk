@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { LayerState } from "../../../lib/ws/types";
 import * as types from "../../../types/index";
 import {
   findTopmostCuePlayback,
@@ -119,10 +120,7 @@ function playback(options: {
 }
 
 /** Builds a layer stack entry with the requested source object identity. */
-function layer(
-  objectType: types.ObjectType,
-  objectUid: string,
-): types.OutboundLayerState {
+function layer(objectType: types.ObjectType, objectUid: string): LayerState {
   return {
     creator: `${objectType}:${objectUid}`,
     object_ref: objectRef(objectType, objectUid),

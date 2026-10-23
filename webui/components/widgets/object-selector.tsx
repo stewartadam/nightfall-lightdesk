@@ -153,9 +153,9 @@ export default function ObjectSelector<T>(props: ObjectSelectorProps<T>) {
                 <button
                   type="button"
                   aria-pressed={isSelected()}
-                  class="w-full px-3 py-2 text-left border-b border-neutral-800 last:border-b-0 transition-colors"
+                  class="w-full px-3 py-2 text-left border-b border-[var(--line)] last:border-b-0 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--accent)]"
                   classList={{
-                    "bg-blue-600/25": isSelected(),
+                    "bg-[var(--accent-soft)]": isSelected(),
                     "bg-neutral-800": !isSelected() && isHighlighted(),
                     "hover:bg-neutral-800": !isSelected(),
                   }}

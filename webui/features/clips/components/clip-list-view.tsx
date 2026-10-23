@@ -9,15 +9,16 @@
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { For, Show } from "solid-js";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
+import { Badge } from "../../../components/ui/badge";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import { Button } from "../../../components/ui/visual-language/button";
 import CrudListDataGrid, {
   type CrudListDataGridEditRequest,
   type CrudListDataGridSelectionRequest,
 } from "../../../components/widgets/crud/crud-list-data-grid";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
@@ -28,6 +29,15 @@ import type { ClipMap } from "../../../state/appStores";
 import type * as types from "../../../types";
 
 type ClipEntry = [types.Clip, boolean];
+
+/** Short source-type labels that keep clip card badges compact. */
+const SOURCE_BADGE_LABELS: Record<types.Source["type"], string> = {
+  Sequence: "SEQ",
+  Fx: "FX",
+  StepFx: "FX-S",
+  FxModule: "FX-M",
+  Flow: "FLOW",
+};
 
 interface ClipListViewProps {
   panelId: string;
@@ -172,21 +182,17 @@ export function ClipListView(props: ClipListViewProps) {
         <Show
           when={props.rows.length > 0}
           fallback={
-            <div class="py-8 text-center text-neutral-500">
-              <Show
-                when={props.allRowCount > 0}
-                fallback={
-                  <>
-                    <p>No clips defined</p>
-                    <p class="mt-2 text-sm">
-                      Use the add button in the toolbar to create a clip
-                    </p>
-                  </>
-                }
-              >
-                <p>No matching clips</p>
-              </Show>
-            </div>
+            <Show
+              when={props.allRowCount > 0}
+              fallback={
+                <EmptyState
+                  title="No clips defined"
+                  description="Use the add button in the toolbar to create a clip"
+                />
+              }
+            >
+              <EmptyState title="No matching clips" />
+            </Show>
           }
         >
           <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
@@ -242,10 +248,8 @@ export function ClipListView(props: ClipListViewProps) {
                     role="button"
                     tabIndex={props.selectionMode ? -1 : 0}
                     class={CRUD_CARD_CLASS}
-                    classList={{
-                      [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-                      [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-                    }}
+                    data-selectable-surface
+                    data-selected={isSelected()}
                   >
                     <div class="flex items-start justify-between gap-2">
                       <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
@@ -254,21 +258,27 @@ export function ClipListView(props: ClipListViewProps) {
                         </span>
                         <Show when={clip()}>
                           {(currentClip) => (
-                            <CrudInlineLabelEditor
-                              ariaLabel="Clip card label"
-                              class="truncate"
-                              editing={props.editingCardLabelUid === uid}
-                              label={currentClip().identifiers.label}
-                              onCancel={props.onCancelCardLabelEdit}
-                              onCommit={(label) =>
-                                props.onUpdateLabel(
-                                  [currentClip(), isActive()],
-                                  label,
-                                )
+                            <Show
+                              when={props.editingCardLabelUid === uid}
+                              fallback={
+                                <span class="truncate">
+                                  {currentClip().identifiers.label}
+                                </span>
                               }
                             >
-                              {currentClip().identifiers.label}
-                            </CrudInlineLabelEditor>
+                              <InlineRenameField
+                                ariaLabel="Clip card label"
+                                allowEmpty
+                                value={currentClip().identifiers.label}
+                                onClose={props.onCancelCardLabelEdit}
+                                onCommit={(label) =>
+                                  props.onUpdateLabel(
+                                    [currentClip(), isActive()],
+                                    label,
+                                  )
+                                }
+                              />
+                            </Show>
                           )}
                         </Show>
                       </div>
@@ -284,9 +294,9 @@ export function ClipListView(props: ClipListViewProps) {
                             />
                           </span>
                         </Show>
-                        <button
-                          type="button"
-                          class="rounded p-1 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-neutral-100"
+                        <Button
+                          variant="subtle"
+                          size="icon-inline"
                           aria-label={`Inspect clip ${clip()?.identifiers.id}`}
                           onClick={(event) => {
                             event.preventDefault();
@@ -294,23 +304,36 @@ export function ClipListView(props: ClipListViewProps) {
                             props.onOpenProperties(uid);
                           }}
                         >
-                          <GearSixIcon class="size-4" aria-hidden />
-                        </button>
+                          <GearSixIcon class="size-3" aria-hidden />
+                        </Button>
                       </div>
                     </div>
-                    <div class="nf-tile-badges uppercase">
-                      <span class="nf-tile-badge rounded bg-neutral-800 text-neutral-300">
-                        {clip()?.source?.type ?? "None"}
-                      </span>
+                    <div class="nf-tile-badges">
+                      <Badge size="xs" appearance="soft" uppercase>
+                        {(() => {
+                          const type = clip()?.source?.type;
+                          return type ? SOURCE_BADGE_LABELS[type] : "None";
+                        })()}
+                      </Badge>
                       <Show when={clip()?.options?.auto_release}>
-                        <span class="nf-tile-badge rounded bg-blue-500/20 text-blue-100">
+                        <Badge
+                          size="xs"
+                          tone="info"
+                          appearance="soft"
+                          uppercase
+                        >
                           AR
-                        </span>
+                        </Badge>
                       </Show>
                       <Show when={clip()?.options?.deactivate_on_sequence_end}>
-                        <span class="nf-tile-badge rounded bg-amber-500/20 text-amber-100">
+                        <Badge
+                          size="xs"
+                          tone="warning"
+                          appearance="soft"
+                          uppercase
+                        >
                           END
-                        </span>
+                        </Badge>
                       </Show>
                     </div>
                   </div>

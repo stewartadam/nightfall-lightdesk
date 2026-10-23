@@ -1,0 +1,283 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Cells are BOARD_CELL_PX squares; the margin matches GRID_MARGIN in board-grid.tsx. */
+.nf-board-grid {
+  --nf-board-line: rgb(115 115 115 / 0.16);
+  position: relative;
+  display: grid;
+  grid-auto-columns: 24px;
+  grid-auto-rows: 24px;
+  width: max-content;
+  margin: 8px;
+  outline: none;
+  user-select: none;
+}
+
+.nf-board-grid.nf-board-editing,
+.nf-board-grid.nf-board-dropping {
+  background-image:
+    linear-gradient(to right, var(--nf-board-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--nf-board-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  box-shadow: inset -1px -1px 0 var(--nf-board-line);
+}
+
+.nf-board-drop {
+  z-index: 4;
+  margin: 2px;
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+.nf-board-drop[data-fits="false"] {
+  border-color: rgb(239 68 68);
+  background: rgb(239 68 68 / 0.12);
+}
+
+.nf-board-element {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  margin: 2px;
+  z-index: 1;
+}
+
+.nf-board-element[data-kind="Frame"] {
+  z-index: 0;
+  border: 1px solid var(--nf-board-color, rgb(115 115 115 / 0.6));
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--nf-board-color, rgb(64 64 64)) 8%,
+    transparent
+  );
+  padding: 2px 8px;
+  pointer-events: none;
+}
+
+.nf-board-editing .nf-board-element:not([data-kind="Frame"]),
+.nf-board-editing .nf-board-frame-handle {
+  cursor: grab;
+  pointer-events: auto;
+}
+
+/* Collections draw no box of their own, so editing outlines the area they claim. */
+.nf-board-editing .nf-board-element[data-kind="Collection"] {
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgb(115 115 115 / 0.45);
+}
+
+.nf-board-editing .nf-board-element:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.nf-board-frame-handle[data-hidden-title="true"] {
+  font-style: italic;
+  opacity: 0.45;
+}
+
+.nf-board-element-gear {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity 80ms ease;
+}
+
+.nf-board-element:hover > .nf-board-element-gear,
+.nf-board-element:focus-within > .nf-board-element-gear,
+.nf-board-element[data-selected="true"] > .nf-board-element-gear,
+.nf-board-element[data-kind="Frame"] > .nf-board-element-gear,
+.nf-board-element-gear:has([aria-expanded="true"]) {
+  opacity: 1;
+}
+
+.nf-board-gear-trigger {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgb(23 23 23 / 0.85);
+  color: rgb(212 212 212);
+}
+
+.nf-board-gear-trigger:hover {
+  background: rgb(64 64 64);
+  color: white;
+}
+
+.nf-board-area {
+  z-index: 4;
+  margin: 2px;
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+.nf-board-element[data-selected="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.nf-board-element[data-preview="true"] {
+  opacity: 0.6;
+}
+
+.nf-board-caption {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgb(163 163 163);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nf-board-element[data-kind="Frame"] > .nf-board-caption {
+  color: var(--nf-board-color, rgb(163 163 163));
+}
+
+.nf-board-label {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nf-board-color, rgb(229 229 229));
+}
+
+.nf-board-collection {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nf-board-collection-items {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.nf-board-empty-region {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgb(115 115 115 / 0.5);
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgb(115 115 115);
+}
+
+.nf-board-button {
+  --nf-board-tint: var(--nf-board-color, var(--accent));
+  display: flex;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2px;
+  border: 1px solid rgb(82 82 82);
+  border-radius: 6px;
+  background: rgb(38 38 38);
+  padding: 6px 8px;
+  text-align: left;
+  color: rgb(229 229 229);
+  transition:
+    background-color 80ms ease,
+    border-color 80ms ease;
+}
+
+.nf-board-button:hover {
+  border-color: rgb(115 115 115);
+}
+
+.nf-board-button:active {
+  transform: translateY(1px);
+}
+
+.nf-board-button[data-state="On"] {
+  border-color: var(--nf-board-tint);
+  background: color-mix(in srgb, var(--nf-board-tint) 45%, rgb(23 23 23));
+  color: white;
+}
+
+.nf-board-button[data-state="Partial"] {
+  border-color: var(--nf-board-tint);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--nf-board-tint) 45%, rgb(23 23 23)) 50%,
+    rgb(38 38 38) 50%
+  );
+}
+
+.nf-board-button[data-state="Missing"] {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.nf-board-button-label {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nf-board-button-id {
+  font-size: 11px;
+  color: rgb(163 163 163);
+}
+
+.nf-board-button[data-state="On"] .nf-board-button-id {
+  color: rgb(229 229 229);
+}
+
+.nf-board-editing .nf-board-button {
+  pointer-events: none;
+}
+
+.nf-board-resize {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--accent);
+  cursor: nwse-resize;
+  pointer-events: auto;
+}
+
+/* The tempo pad takes the element color as its outline, like a button's tint. */
+.nf-board-element .nf-board-tempo {
+  border-color: var(--nf-board-color, rgb(82 82 82));
+  background: rgb(38 38 38);
+}
+
+.nf-board-editing .nf-board-tempo {
+  pointer-events: none;
+}

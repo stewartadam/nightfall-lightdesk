@@ -7,20 +7,30 @@
  */
 
 import {
+  applyActionCatalogSnapshot,
+  applyActionInvocationFailure,
+  applyAudioInputDevicesSnapshot,
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
+  applyClientActionInvocation,
+  applyControllerMappingModeSnapshot,
   applyExternalControlStateSnapshot,
   applyIoSettingsSnapshot,
+  applyMidiControlTouched,
   applyMidiDeviceListSnapshot,
   applyMidiLastEventSnapshot,
+  applyMidiMappingDiagnosticsSnapshot,
   applyMidiMappingsSnapshot,
   applyNetworkInterfaceStatusSnapshot,
+  applyOscControlTouched,
   applyOscLastEventSnapshot,
   applyOscListenerStatusSnapshot,
+  applyOscMappingDiagnosticsSnapshot,
   applyOscMappingsSnapshot,
   applyOscSourcesSnapshot,
   applySettingsSnapshot,
+  applyTelemetryStateSnapshot,
 } from "../../state/io-snapshots";
 import type { WsMessageHandlerRegistry } from "./message-registry";
 import type { AnyWsMessage } from "./types";
@@ -35,6 +45,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("ExternalControlState", (message) => {
     applyExternalControlStateSnapshot(message.data);
+  });
+
+  registry.register("TelemetryState", (message) => {
+    applyTelemetryStateSnapshot(message.data);
   });
 
   registry.register("IoSettings", (message) => {
@@ -53,6 +67,10 @@ export function registerSettingsSnapshotHandlers(
     applyAvailableAudioDevicesSnapshot(message.data);
   });
 
+  registry.register("AudioInputDevices", (message) => {
+    applyAudioInputDevicesSnapshot(message.data);
+  });
+
   registry.register("AvailableUsbDmxDevices", (message) => {
     applyAvailableUsbDmxDevicesSnapshot(message.data);
   });
@@ -63,6 +81,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("MidiMappings", (message) => {
     applyMidiMappingsSnapshot(message.data);
+  });
+
+  registry.register("MidiMappingDiagnostics", (message) => {
+    applyMidiMappingDiagnosticsSnapshot(message.data);
   });
 
   registry.register("MidiLastEvent", (message) => {
@@ -77,11 +99,39 @@ export function registerSettingsSnapshotHandlers(
     applyOscMappingsSnapshot(message.data);
   });
 
+  registry.register("OscMappingDiagnostics", (message) => {
+    applyOscMappingDiagnosticsSnapshot(message.data);
+  });
+
   registry.register("OscLastEvent", (message) => {
     applyOscLastEventSnapshot(message.data);
   });
 
   registry.register("OscListenerStatus", (message) => {
     applyOscListenerStatusSnapshot(message.data);
+  });
+
+  registry.register("ActionCatalog", (message) => {
+    applyActionCatalogSnapshot(message.data);
+  });
+
+  registry.register("ClientActionInvocation", (message) => {
+    applyClientActionInvocation(message.data);
+  });
+
+  registry.register("MidiControlTouched", (message) => {
+    applyMidiControlTouched(message.data);
+  });
+
+  registry.register("OscControlTouched", (message) => {
+    applyOscControlTouched(message.data);
+  });
+
+  registry.register("ControllerMappingMode", (message) => {
+    applyControllerMappingModeSnapshot(message.data);
+  });
+
+  registry.register("ActionInvocationFailed", (message) => {
+    applyActionInvocationFailure(message.data);
   });
 }

@@ -18,11 +18,11 @@ pub struct TimelineSeekDispatch<'w> {
     /// Generic action invocations emitted for opted-in nondeterministic replay.
     action_invocations: Option<MessageWriter<'w, ActionInvocation>>,
     /// Clip actions emitted during reconciliation and rate restoration.
-    pub(super) ev_clip: MessageWriter<'w, EngineActionEnvelope<ClipAction>>,
+    pub(super) ev_clip: MessageWriter<'w, EngineOperationEnvelope<ClipOperation>>,
     /// Correlation state for actions emitted on behalf of a timeline.
     pub(super) timeline_command_origins: ResMut<'w, TimelineCommandOrigins>,
     /// Desk actions emitted for opted-in nondeterministic reconstruction.
-    ev_desk: MessageWriter<'w, EngineActionEnvelope<EvalAction>>,
+    ev_desk: MessageWriter<'w, EngineOperationEnvelope<EvalOperation>>,
 }
 
 /// Inputs that determine whether an active start should be replayed by the live scan.
@@ -118,10 +118,6 @@ pub(super) fn dispatch_timeline_reconstruction_actions(
             );
             continue;
         }
-
-        let action =
-            normalized_registered_action_kind(&action, dispatch.action_registry.as_deref())
-                .unwrap_or(action);
         if let ActionKind::SetClipRate { uid, .. } = action
             && state.direct_materialized_clip_uids.contains(&uid)
         {
@@ -142,7 +138,7 @@ pub(super) fn dispatch_timeline_reconstruction_actions(
                 write_timeline_clip_action(
                     &mut dispatch.ev_clip,
                     &mut dispatch.timeline_command_origins,
-                    ClipAction::SetRate {
+                    ClipOperation::SetRate {
                         clip_id: IdExpr::Single(id),
                         rate,
                     },

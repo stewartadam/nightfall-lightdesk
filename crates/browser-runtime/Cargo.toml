@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 async-channel.workspace = true
 bevy_app.workspace = true
+bevy_diagnostic.workspace = true
 bevy_ecs = { workspace = true, features = ["debug"] }
 bevy_state.workspace = true
 bevy_time.workspace = true
@@ -18,6 +19,7 @@ js-sys = "0.3"
 moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
+nightfall-boards = { path = "../boards" }
 nightfall-cues = { path = "../cues" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-desk = { path = "../desk", default-features = false }
@@ -26,11 +28,14 @@ nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-flow = { path = "../flow", default-features = false }
+nightfall-framepace = { path = "../framepace" }
 nightfall-fx = { path = "../fx" }
 nightfall-instances = { path = "../instances" }
 nightfall-programmer = { path = "../programmer" }
+nightfall-references = { path = "../references" }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-showfile = { path = "../showfile" }
+nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-timeline = { path = "../timeline", default-features = false }
 nightfall-undo = { path = "../undo" }
@@ -47,6 +52,7 @@ uuid = { workspace = true, features = ["js"] }
 web-sys = { version = "0.3", features = ["DedicatedWorkerGlobalScope"] }
 
 [dev-dependencies]
+flate2 = "1.1"
 minicbor-serde.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -24,7 +24,10 @@ import {
   Show,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { Alert } from "../../../components/ui/alert";
+import { Badge } from "../../../components/ui/badge";
 import { Dialog, DialogBody } from "../../../components/ui/dialog";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { SearchPickerOption } from "../../../components/ui/search-picker";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -298,18 +301,13 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
       >
         <DialogBody class="max-h-[60vh] overflow-y-auto">
           <Show when={isLoading()}>
-            <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
-              Loading showfiles...
-            </div>
+            <EmptyState variant="dashed" loading title="Loading showfiles..." />
           </Show>
 
           <Show when={!isLoading() && error()}>
             {(message) => (
-              <div
-                role="alert"
-                class="space-y-3 rounded border border-red-900/60 bg-red-950/30 px-4 py-4"
-              >
-                <p class="text-sm text-red-200">{message()}</p>
+              <Alert variant="caution" role="alert">
+                <p>{message()}</p>
                 <Button
                   variant="danger"
                   type="button"
@@ -317,14 +315,12 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                 >
                   Retry
                 </Button>
-              </div>
+              </Alert>
             )}
           </Show>
 
           <Show when={!isLoading() && !error() && showfiles().length === 0}>
-            <div class="rounded border border-gray-800 bg-gray-950 px-4 py-5 text-sm text-gray-400">
-              No showfiles found.
-            </div>
+            <EmptyState variant="dashed" title="No showfiles found." />
           </Show>
 
           <Show when={!isLoading() && !error() && showfiles().length > 0}>
@@ -371,9 +367,9 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                           </span>
                         </span>
                         <Show when={mostRecentShowfiles().has(showfile.name)}>
-                          <span class="shrink-0 self-center rounded border border-sky-700/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-300">
+                          <Badge tone="info" uppercase class="self-center">
                             Most recent
-                          </span>
+                          </Badge>
                         </Show>
                       </SearchPickerOption>
                       <Show when={showfileLoadError(showfile)}>
@@ -445,9 +441,9 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                                           modifiedTimeMs(draft()),
                                         )}
                                       </span>
-                                      <span class="rounded border border-amber-700/70 px-1.5 py-0.5 text-[10px] uppercase text-amber-300">
+                                      <Badge tone="warning" uppercase>
                                         Draft
-                                      </span>
+                                      </Badge>
                                     </span>
                                     <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
                                       {showfileRevisionPathLabel(
@@ -495,9 +491,9 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
                                         modifiedTimeMs(showfile),
                                       )}
                                     </span>
-                                    <span class="rounded border border-green-700/70 px-1.5 py-0.5 text-[10px] uppercase text-green-300">
+                                    <Badge tone="success" uppercase>
                                       Saved
-                                    </span>
+                                    </Badge>
                                   </span>
                                   <span class="min-w-0 basis-48 grow truncate text-right font-mono text-[11px] text-gray-400">
                                     {savedShowfileRevisionName(showfile)}

@@ -8,10 +8,20 @@
 
 import { useStore } from "@nanostores/solid";
 import { Show } from "solid-js";
+import { BoardPaletteCommands } from "../../../features/boards";
+import { ReleaseHeldButtonsCommand } from "../../../features/clips";
+import { MappingModeBanner, MappingModeController } from "../../../features/io";
+import { KeybindingController } from "../../../features/keybindings";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
-import { AboutDialog, SettingsOverlay } from "../../../features/settings";
+import {
+  AboutDialog,
+  GraphicsReporter,
+  SettingsOverlay,
+  TelemetryConsentPrompt,
+  UpdateNotice,
+} from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
@@ -36,7 +46,11 @@ function ShellRuntime() {
       <SettingsCommand />
       <ExportShowfileCommand />
       <FeedbackCommands />
+      <ReleaseHeldButtonsCommand />
       <LayoutCommands />
+      <BoardPaletteCommands />
+      <MappingModeController />
+      <KeybindingController />
       <TauriMenuBridge />
       <ConnectionOverlay />
       <ShellOverlayHosts />
@@ -45,6 +59,9 @@ function ShellRuntime() {
       <ShowfileDialogs />
       <AboutDialog />
       <SettingsOverlay />
+      <TelemetryConsentPrompt />
+      <UpdateNotice />
+      <GraphicsReporter />
       <SelectionFlattenConfirmModal />
     </>
   );
@@ -104,6 +121,7 @@ export default function AppShell() {
   return (
     <div class="nf-app-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
       <AppHeader />
+      <MappingModeBanner />
       <div class="min-h-0 flex-1 overflow-hidden">
         <ShellRuntime />
         <ShellContent />

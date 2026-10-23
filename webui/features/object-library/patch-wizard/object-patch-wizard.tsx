@@ -15,6 +15,7 @@ import {
   For,
   Show,
 } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -30,7 +31,7 @@ import {
   commandFailureMessage,
   commandSucceeded,
 } from "../../../lib/command-result";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { createSceneObject } from "../../../lib/scene-object-service";
 import { useSharedStore } from "../../../lib/use-shared-store";
@@ -164,10 +165,10 @@ const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
           };
 
           try {
-            const result = await engineRuntime.sendCommandAndAwait({
-              module: "ObjectLibraryCommand",
+            const result = await commandClient.invoke(
+              "ObjectLibraryCommand",
               command,
-            });
+            );
 
             if (!commandSucceeded(result)) {
               failures.push(`ID ${id}: ${commandFailureMessage(result)}`);
@@ -326,9 +327,9 @@ const ObjectPatchWizard: Component<ObjectPatchWizardProps> = (props) => {
             </div>
 
             <Show when={error()}>
-              <div class="text-red-400 text-sm whitespace-pre-line">
-                {error()}
-              </div>
+              <Alert variant="caution" density="compact" role="alert">
+                <p class="whitespace-pre-line">{error()}</p>
+              </Alert>
             </Show>
           </div>
 

@@ -27,7 +27,7 @@ test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== "passed") return;
   await page.setViewportSize({ width: 900, height: 1200 });
   const panel = page.getByRole("region", {
-    name: /^(Switch|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
+    name: /^(Alert|Badge|Collapsible|Switch|Segmented control|Fader|Attribute slider|Object selector|Inline rename|Sparkline|Tooltip) examples$/,
   });
   await panel.scrollIntoViewIfNeeded();
   expect(
@@ -87,6 +87,91 @@ test("transport switches expose independent and disabled states", async ({
   ).toHaveCount(1);
 });
 
+/**
+ * Verifies each switch layout places the switch where it promises: after the label, at the far
+ * edge, alone, or before the label with inset content lining up under the label text.
+ */
+test("switch layouts place the switch around its label", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Switches", "Switch examples");
+  const layouts = panel.getByTestId("switch-layouts");
+  /** Returns the bounding boxes of a layout's label text and switch track. */
+  const boxes = async (name: string) => {
+    const row = layouts.locator("label.nf-switch", {
+      has: page.getByRole("switch", { name }),
+    });
+    const track = await row.locator(".nf-switch-track").boundingBox();
+    const label = row.locator(".nf-switch-label");
+    return {
+      row: await row.boundingBox(),
+      track,
+      label: (await label.count()) ? await label.boundingBox() : null,
+    };
+  };
+
+  const right = await boxes("Switch right layout");
+  expect(right.track!.x).toBeGreaterThan(right.label!.x + right.label!.width);
+
+  const end = await boxes("Switch end layout");
+  const card = await layouts.locator(".widget-switch-stack").boundingBox();
+  expect(end.track!.x + end.track!.width).toBeCloseTo(card!.x + card!.width, 0);
+
+  const only = await boxes("Switch only layout");
+  expect(only.label).toBeNull();
+
+  const left = await boxes("Switch left layout");
+  expect(left.track!.x + left.track!.width).toBeLessThan(left.label!.x);
+  const inset = await layouts
+    .locator(".nf-switch-label-inset")
+    .evaluate(
+      (element) =>
+        element.getBoundingClientRect().left +
+        Number.parseFloat(getComputedStyle(element).paddingInlineStart),
+    );
+  expect(inset).toBeCloseTo(left.label!.x, 0);
+
+  await layouts.screenshot({ path: testInfo.outputPath("switch-layouts.png") });
+});
+
+/**
+ * Verifies settings rows put every control at the right edge, centered beside its title, with
+ * the title labelling the control and the description describing it, except for action buttons,
+ * which keep their own name.
+ */
+test("settings rows align controls to the right edge", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Switches", "Switch examples");
+  const rows = panel.getByTestId("settings-rows");
+  const right = await rows
+    .locator(".nf-settings-rows")
+    .evaluate((element) => element.getBoundingClientRect().right);
+  const controls = [
+    page.getByRole("switch", { name: "Settings row switch" }),
+    page.getByRole("combobox", { name: "Settings row select" }),
+    page.getByRole("button", { name: "Manage" }),
+  ];
+  for (const control of controls) {
+    const row = rows.locator(".nf-settings-row", { has: control });
+    await expect(row).toHaveCount(1);
+    const slot = await row.locator(".nf-settings-row-control").boundingBox();
+    const box = await row.boundingBox();
+    expect(slot!.x + slot!.width).toBeCloseTo(right, 0);
+    expect(slot!.y + slot!.height / 2).toBeCloseTo(box!.y + box!.height / 2, 0);
+  }
+  await expect(controls[0]).toHaveAccessibleDescription(
+    /Title and explanation/,
+  );
+  await expect(controls[1]).toHaveAccessibleDescription(
+    /size to their content/,
+  );
+  await expect(
+    rows.locator(".nf-settings-rows > .nf-settings-row").nth(1),
+  ).toHaveCSS("border-top-width", "1px");
+  await rows.screenshot({ path: testInfo.outputPath("settings-rows.png") });
+});
+
 /** Checks keyboard and pointer fader changes, reference markers, reset, and initial or dynamic locks. */
 test("vertical faders synchronize keyboard pointer and reset values", async ({
   page,
@@ -140,6 +225,81 @@ test("vertical faders synchronize keyboard pointer and reset values", async ({
   });
 });
 
+/**
+ * Walks the radio group keyboard pattern: one Tab stop on the checked option, arrows that
+ * move and select (wrapping and skipping disabled options), and toolbar hand-off at the
+ * group's ends.
+ */
+test("segmented controls select with the radio group keyboard pattern", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(
+    page,
+    "Segmented controls",
+    "Segmented control examples",
+  );
+  await panel.screenshot({
+    path: testInfo.outputPath("design-lab-segmented-controls.png"),
+    animations: "disabled",
+  });
+  const quality = panel.getByRole("radiogroup", { name: "Beam quality" });
+  const medium = quality.getByRole("radio", { name: "Medium" });
+  await expect(medium).toBeChecked();
+  await expect(medium).toHaveAttribute("tabindex", "0");
+  await expect(quality.getByRole("radio", { name: "Low" })).toHaveAttribute(
+    "tabindex",
+    "-1",
+  );
+  await medium.focus();
+  await page.keyboard.press("ArrowRight");
+  const high = quality.getByRole("radio", { name: "High" });
+  await expect(high).toBeChecked();
+  await expect(high).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(quality.getByRole("radio", { name: "Low" })).toBeChecked();
+  await page.keyboard.press("End");
+  await expect(high).toBeChecked();
+  await expect(panel.getByRole("status")).toContainText("Quality high");
+
+  const source = panel.getByRole("radiogroup", { name: "Timecode source" });
+  await expect(source.getByRole("radio", { name: "LTC" })).toBeDisabled();
+  await source.getByRole("radio", { name: "MIDI" }).click();
+  await page.keyboard.press("ArrowRight");
+  await expect(source.getByRole("radio", { name: "Internal" })).toBeChecked();
+
+  const toolbar = panel.getByRole("toolbar", { name: "Effect playback" });
+  const direction = toolbar.getByRole("radiogroup", {
+    name: "Effect direction",
+  });
+  const forward = direction.getByRole("radio", { name: "Forward" });
+  await expect(forward).toBeChecked();
+  await forward.focus();
+  await page.keyboard.press("ArrowLeft");
+  const bounce = direction.getByRole("radio", { name: "Bounce" });
+  await expect(bounce).toBeChecked();
+  await expect(bounce).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(forward).toBeChecked();
+  await page.keyboard.press("ArrowRight");
+  const preview = toolbar.getByRole("button", { name: "Preview" });
+  await expect(preview).toBeFocused();
+  await expect(forward).toBeChecked();
+  await page.keyboard.press("ArrowLeft");
+  await expect(forward).toBeFocused();
+  await expect(forward).toBeChecked();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(forward).toBeFocused();
+  await panel.screenshot({
+    path: testInfo.outputPath("design-lab-segmented-controls-keyboard.png"),
+    animations: "disabled",
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("segmented-controls.png"),
+    fullPage: true,
+  });
+});
+
 /** Exercises signed relative values, mode clamping, and the linked numeric and range controls. */
 test("attribute sliders support relative adjustments and numeric commits", async ({
   page,
@@ -149,13 +309,13 @@ test("attribute sliders support relative adjustments and numeric commits", async
     "Attribute sliders",
     "Attribute slider examples",
   );
-  const value = panel.getByRole("spinbutton", { name: "Dimmer value" });
-  await panel.getByRole("button", { name: "Rel", exact: true }).click();
+  const value = panel.getByRole("spinbutton", { name: "Dimmer", exact: true });
+  await panel.getByRole("radio", { name: "Rel", exact: true }).click();
   await value.fill("-42");
   await value.press("Tab");
   await expect(
     panel.getByRole("slider", { name: "Dimmer", exact: true }),
-  ).toHaveValue("-42");
+  ).toHaveAttribute("aria-valuenow", "-42.0");
   await expect(panel.getByRole("status")).toContainText(
     "Last committed value: -42",
   );
@@ -163,14 +323,14 @@ test("attribute sliders support relative adjustments and numeric commits", async
     path: testInfo.outputPath("attribute-relative.png"),
     fullPage: true,
   });
-  await panel.getByRole("button", { name: "Abs", exact: true }).click();
+  await panel.getByRole("radio", { name: "Abs", exact: true }).click();
   await expect(value).toHaveValue("0");
   await expect(
-    panel.getByRole("button", { name: "Abs", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    panel.getByRole("radio", { name: "Abs", exact: true }),
+  ).toBeChecked();
 });
 
-/** Validates secondary-text search, keyboard selection, and empty-result feedback. */
+/** Validates secondary-text search, keyboard selection, empty-result feedback, and the accent selected and focus states. */
 test("object selectors filter and select local objects", async ({
   page,
 }, testInfo) => {
@@ -190,44 +350,119 @@ test("object selectors filter and select local objects", async ({
   await search.fill("unmatched");
   await expect(panel.getByText("No matching objects.")).toBeVisible();
   await search.fill("");
-  await expect(
-    panel.getByRole("button", { name: /House lights/ }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const selected = panel.getByRole("button", { name: /House lights/ });
+  await expect(selected).toHaveAttribute("aria-pressed", "true");
+  const accent = await selected.evaluate((element) => {
+    const probe = document.createElement("div");
+    probe.style.background = "var(--accent-soft)";
+    probe.style.outlineColor = "var(--accent)";
+    element.append(probe);
+    const style = getComputedStyle(probe);
+    const colors = { soft: style.backgroundColor, accent: style.outlineColor };
+    probe.remove();
+    return colors;
+  });
+  await expect(selected).toHaveCSS("background-color", accent.soft);
+  await selected.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(selected).toBeFocused();
+  await expect(selected).toHaveCSS("outline-color", accent.accent);
+  await expect(selected).toHaveCSS("outline-style", "solid");
   await page.screenshot({
     path: testInfo.outputPath("object-selector.png"),
     fullPage: true,
   });
 });
 
-/** Verifies focus and selection on rename, committing by Enter or blur, and cancelling with Escape. */
+/** Verifies focus and selection on rename, committing by Enter or blur, cancelling with Escape, and a refused asynchronous save. */
 test("inline rename commits or cancels its draft", async ({
   page,
 }, testInfo) => {
   const panel = await openDemo(page, "Inline rename", "Inline rename examples");
-  const rename = panel.getByRole("button", { name: "Rename", exact: true });
+  const rename = panel
+    .getByRole("button", { name: "Rename", exact: true })
+    .first();
+  const savedName = panel.getByRole("status").first();
   await rename.click();
   const input = panel.getByRole("textbox", { name: "Group name" });
   await expect(input).toBeFocused();
   await input.fill("Evening wash");
   await input.press("Enter");
-  await expect(panel.getByRole("status")).toHaveText(
-    "Saved name: Evening wash",
-  );
+  await expect(savedName).toHaveText("Saved name: Evening wash");
+  await expect(rename).toBeFocused();
   await rename.click();
   await input.fill("Discard me");
   await input.press("Escape");
-  await expect(panel.getByRole("status")).toHaveText(
-    "Saved name: Evening wash",
-  );
+  await expect(savedName).toHaveText("Saved name: Evening wash");
   await rename.click();
   await input.fill("House wash");
   await panel.getByRole("heading").click();
-  await expect(panel.getByRole("status")).toHaveText("Saved name: House wash");
+  await expect(savedName).toHaveText("Saved name: House wash");
   await rename.click();
   await page.screenshot({
     path: testInfo.outputPath("inline-rename.png"),
     fullPage: true,
   });
+  await input.press("Escape");
+
+  const asyncRename = panel
+    .getByRole("button", { name: "Rename", exact: true })
+    .last();
+  await asyncRename.click();
+  const asyncInput = panel.getByRole("textbox", { name: "Backend group name" });
+  await asyncInput.fill("Side wash");
+  await asyncInput.press("Enter");
+  await expect(asyncInput).toHaveAttribute("aria-busy", "true");
+  await expect(asyncInput).toHaveAttribute("readonly", "");
+  await expect(panel.getByLabel("Backend save status")).toHaveText(
+    "“Side wash” is already used",
+  );
+  await expect(asyncInput).toHaveValue("Side wash");
+  await expect(asyncInput).toBeFocused();
+  await expect(asyncInput).not.toHaveAttribute("readonly", "");
+  await page.screenshot({
+    path: "/mnt/project-files/ui-controls-audit/screenshots/inline-rename-field/design-lab-async-refused.png",
+    fullPage: true,
+  });
+  await asyncInput.fill("Truss spots");
+  await asyncInput.press("Enter");
+  await expect(asyncInput).toHaveCount(0);
+  await expect(panel.getByText("Truss spots", { exact: true })).toBeVisible();
+});
+
+/** Checks every badge tone and appearance renders, and that count bubbles track, cap, and hide at zero. */
+test("badges show tones, appearances and corner counts", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Badges", "Badge examples");
+  for (const appearance of ["outline", "soft", "solid"]) {
+    await expect(
+      panel.locator(
+        `[data-component="Badge"][data-appearance="${appearance}"][data-uppercase="true"]`,
+      ),
+    ).toHaveCount(appearance === "soft" ? 7 : 6);
+  }
+  const counts = panel.locator('[data-component="CountBadge"]');
+  await expect(counts).toHaveText(["3", "3", "99+"]);
+  const button = panel.getByRole("button", { name: "Delete selected" });
+  const bubble = button.locator('[data-component="CountBadge"]');
+  const buttonBox = await button.boundingBox();
+  const bubbleBox = await bubble.boundingBox();
+  expect(bubbleBox!.x + bubbleBox!.width).toBeGreaterThan(
+    buttonBox!.x + buttonBox!.width,
+  );
+  expect(bubbleBox!.y).toBeLessThan(buttonBox!.y);
+  await panel.screenshot({
+    path: testInfo.outputPath("badges.png"),
+    animations: "disabled",
+  });
+  for (let index = 0; index < 3; index += 1) {
+    await panel.getByRole("button", { name: "Remove", exact: true }).click();
+  }
+  await expect(counts).toHaveCount(0);
+  await panel.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(counts).toHaveText(["1", "1", "40"]);
 });
 
 /** Confirms sparse metric histories remain blank and flat histories produce a valid visible line. */
@@ -285,5 +520,150 @@ test("tooltip catalog displays placements and interactive content", async ({
   await page.screenshot({
     path: testInfo.outputPath("tooltip-interactive.png"),
     fullPage: true,
+  });
+});
+
+/** Verifies a hovered tooltip closes when the window loses focus, as when switching to another app. */
+test("tooltip closes when the window loses focus", async ({ page }) => {
+  const panel = await openDemo(page, "Tooltips", "Tooltip examples");
+  await panel.getByRole("button", { name: "top", exact: true }).hover();
+  const tooltip = page
+    .getByRole("tooltip")
+    .filter({ hasText: "top placement" });
+  await expect(tooltip).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(tooltip).toBeHidden();
+});
+
+/** Verifies alert kinds, border placements, optional titles and icons, the exit transition and timed flashes, and captures the catalog. */
+test("alerts render every kind with a distinct accent border", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Alerts", "Alert examples");
+  const alerts = panel.locator(".nf-alert");
+  await expect(alerts).toHaveCount(12);
+  const borders = await alerts.evaluateAll((elements) =>
+    elements
+      .slice(0, 5)
+      .map((element) => getComputedStyle(element).borderInlineStartColor),
+  );
+  expect(new Set(borders).size).toBe(5);
+  await expect(panel.locator(".nf-alert-title")).toHaveText([
+    "Note",
+    "Tip",
+    "Important",
+    "Warning",
+    "Caution",
+  ]);
+  await expect(alerts.nth(7).locator(".nf-alert-icon")).toHaveCount(0);
+  await expect(
+    alerts.nth(4).getByRole("button", { name: "Delete sequence" }),
+  ).toBeVisible();
+  const borderWidths = await alerts.evaluateAll((elements) =>
+    elements.slice(8, 11).map((element) => {
+      const style = getComputedStyle(element);
+      return [style.borderInlineStartWidth, style.borderBlockStartWidth];
+    }),
+  );
+  expect(borderWidths).toEqual([
+    ["4px", "0px"],
+    ["0px", "4px"],
+    ["0px", "0px"],
+  ]);
+  await panel.screenshot({
+    path: testInfo.outputPath("alerts.png"),
+    animations: "disabled",
+  });
+
+  const warning = panel.locator(".nf-alert", { hasText: "Slides in and out" });
+  await expect(warning).toHaveCSS("animation-name", "enter");
+  await panel.getByRole("button", { name: "Hide warning" }).click();
+  await expect(warning).toHaveAttribute("data-state", "closed");
+  await expect(warning).toHaveCount(0);
+  await panel.getByRole("button", { name: "Show warning" }).click();
+  await expect(warning).toBeVisible();
+
+  const saved = panel.getByRole("alert").filter({ hasText: "Saved." });
+  await expect(saved).toHaveCount(0);
+  await panel.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(saved).toBeVisible();
+  await panel.screenshot({
+    path: testInfo.outputPath("alerts-flash.png"),
+    animations: "disabled",
+  });
+  await expect(saved).toHaveCount(0, { timeout: 4000 });
+});
+
+/** Verifies disclosure toggling by pointer and keyboard, non-toggling header actions, lazy and controlled sections, and collapsed content leaving the accessibility tree. */
+test("collapsibles toggle from their header without header actions toggling", async ({
+  page,
+}, testInfo) => {
+  const panel = await openDemo(page, "Collapsibles", "Collapsible examples");
+  const sequence = panel.getByRole("button", { name: "Sequence 1: Opening" });
+  await expect(sequence).toHaveAttribute("aria-expanded", "true");
+  await expect(panel.getByText("Chase A")).toBeVisible();
+
+  await panel.getByRole("button", { name: "Refresh" }).click();
+  await expect(panel.getByRole("status")).toHaveText("Refreshed 1 time");
+  await expect(sequence).toHaveAttribute("aria-expanded", "true");
+
+  await panel.screenshot({
+    path: testInfo.outputPath("collapsibles-open.png"),
+    animations: "disabled",
+  });
+
+  await sequence.click();
+  await expect(sequence).toHaveAttribute("aria-expanded", "false");
+  await expect(panel.getByText("Chase A")).toBeHidden();
+  const content = page.locator(
+    `#${await sequence.getAttribute("aria-controls")}`,
+  );
+  await expect(content).toHaveAttribute("hidden", /.*/);
+  await sequence.focus();
+  await page.keyboard.press("Enter");
+  await expect(sequence).toHaveAttribute("aria-expanded", "true");
+  await expect(panel.getByText("Chase A")).toBeVisible();
+
+  const lazy = panel.getByRole("button", { name: "Ungrouped cues" });
+  const lazyText = panel.getByText("Lazy content mounts only");
+  await expect(lazyText).toHaveCount(0);
+  await lazy.press("Space");
+  await expect(lazyText).toBeVisible();
+  await lazy.click();
+  await expect(lazyText).toHaveCount(0);
+
+  const stage = panel.getByRole("button", { name: "Stage fixtures" });
+  const house = panel.getByRole("button", { name: "House fixtures" });
+  await panel.getByRole("button", { name: "Collapse all" }).click();
+  await expect(stage).toHaveAttribute("aria-expanded", "false");
+  await expect(house).toHaveAttribute("aria-expanded", "false");
+  const houseContent = page.locator(
+    `#${await house.getAttribute("aria-controls")}`,
+  );
+  expect(
+    await houseContent.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    ),
+  ).toBe(0);
+  await panel.screenshot({
+    path: testInfo.outputPath("collapsibles-closed.png"),
+    animations: "disabled",
+  });
+  await panel.getByRole("button", { name: "Expand all" }).click();
+  await expect(stage).toHaveAttribute("aria-expanded", "true");
+  await expect(house).toHaveAttribute("aria-expanded", "true");
+
+  const plain = panel.getByRole("button", { name: "Advanced expression" });
+  await plain.click();
+  await expect(
+    panel.getByText("Plain sections suit optional details"),
+  ).toBeVisible();
+  await expect(plain.locator(".nf-collapsible-chevron")).toHaveCSS(
+    "transform",
+    /^matrix\([^,]+, 1, -1,/,
+  );
+  await panel.screenshot({
+    path: testInfo.outputPath("collapsibles-expanded.png"),
+    animations: "disabled",
   });
 });

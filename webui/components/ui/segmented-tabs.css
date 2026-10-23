@@ -8,12 +8,12 @@
 
 .nf-segmented-tabs {
   min-width: 0;
-  border: 1px solid #2a2d2f;
+  border: 1px solid var(--nf-segmented-track-border);
   border-radius: var(--nf-corner-radius, 7px);
-  background: #0e0f10;
+  background: var(--nf-segmented-track-surface);
 }
 .nf-segmented-tabs .nf-scroll-indicators {
-  --nf-scroll-surface: #0e0f10;
+  --nf-scroll-surface: var(--nf-segmented-track-surface);
 }
 .nf-segmented-tabs-viewport {
   position: relative;
@@ -22,6 +22,11 @@
   gap: 8px;
   scroll-padding-inline: 12px;
   padding: 8px;
+  /* The edge chevrons signal overflow, so the scrollbar would only add height. */
+  scrollbar-width: none;
+}
+.nf-segmented-tabs-viewport::-webkit-scrollbar {
+  display: none;
 }
 .nf-segmented-tabs-viewport[data-density="compact"] {
   gap: 3px;
@@ -35,9 +40,9 @@
   left: 0;
   z-index: -1;
   pointer-events: none;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--nf-segmented-selected-border);
   border-radius: var(--nf-corner-radius, 7px);
-  background: var(--accent-soft);
+  background: var(--nf-segmented-selected-surface);
   transition:
     transform 120ms ease-out,
     width 120ms ease-out;
@@ -48,11 +53,11 @@
   padding: 4px 9px;
   border-color: transparent;
   background: transparent;
-  color: var(--muted, #9ca3af);
-  font-size: 12px;
+  color: var(--nf-segmented-item-color);
+  font-size: var(--nf-segmented-font-size);
 }
 .nf-segmented-tabs-viewport > .nf-button[aria-selected="true"] {
-  color: var(--accent);
+  color: var(--nf-segmented-selected-color);
   background: transparent;
   border-color: transparent;
 }

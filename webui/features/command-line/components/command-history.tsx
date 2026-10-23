@@ -9,6 +9,7 @@
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { XIcon } from "@squidlab/phosphor-solid/x";
 import { type Accessor, For, Show } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import { Input, InputGroup } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import type { ConsoleScrollbackEntry } from "../../../lib/console-scrollback";
@@ -55,7 +56,7 @@ export const CommandHistory = (props: CommandHistoryProps) => (
             type="button"
             class="items-center justify-center"
             aria-label="Search command history"
-            title="Search command history (Mod+F)"
+            tooltip="Search command history (Mod+F)"
             onClick={() => props.onOpenSearch()}
           >
             <MagnifyingGlassIcon class="size-4" aria-hidden />
@@ -91,7 +92,7 @@ export const CommandHistory = (props: CommandHistoryProps) => (
             type="button"
             class="items-center justify-center"
             aria-label="Close history search"
-            title="Close search"
+            tooltip="Close search"
             onClick={() => props.onCloseSearch()}
           >
             <XIcon class="size-4" aria-hidden />
@@ -142,9 +143,7 @@ export const CommandHistory = (props: CommandHistoryProps) => (
                           ? "✅"
                           : "..."}
                     </span>
-                    <span class="shrink-0 rounded border border-neutral-700 px-1 py-0 text-[10px] uppercase tracking-wide text-neutral-300">
-                      {entry.source || "UI"}
-                    </span>
+                    <Badge uppercase>{entry.source || "UI"}</Badge>
                     <span class="break-all font-mono text-neutral-100">
                       {entry.command}
                     </span>
@@ -176,9 +175,9 @@ export const CommandHistory = (props: CommandHistoryProps) => (
                 data-command-queued
               >
                 <div class="flex items-start gap-2">
-                  <span class="shrink-0 rounded border border-sky-700 px-1 py-0 text-[10px] uppercase tracking-wide text-sky-300">
+                  <Badge tone="info" uppercase>
                     Queued
-                  </span>
+                  </Badge>
                   <span class="break-all font-mono text-neutral-300">
                     {queued.statement}
                   </span>

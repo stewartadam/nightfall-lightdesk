@@ -193,6 +193,101 @@ impl MaterializedFx {
     }
 }
 
+/// Context from directly materializing a reconstructed classic FX playback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaterializedFxReconstructionHandle {
+    /// Entity containing the reconstructed `MaterializedFx`.
+    pub fx_entity: Entity,
+    /// Runtime playback ID attached to the reconstructed FX.
+    pub instance_id: InstanceId,
+}
+
+/// Directly materializes classic FX playback reconstruction for an clip.
+pub fn spawn_reconstructed_fx_for_clip(
+    commands: &mut Commands,
+    clip_uid: uuid::Uuid,
+    priority: Priority,
+    fx: &Fx,
+    instance_clock: InstanceClock,
+) -> MaterializedFxReconstructionHandle {
+    let mfx = MaterializedFx::materialize(fx, priority);
+    let owner = Owner(clip_uid);
+    let marker = ObjectRefMarker(ObjectRef::ByUid {
+        object_type: ObjectType::Fx,
+        uid: fx.identifiers().uid,
+    });
+    let instance_id = InstanceId::new();
+    let instance_metadata =
+        InstanceMetadata::new(InstanceKind::Fx).with_name(fx.identifiers().label.clone());
+    let instance_controls = InstanceControls::default();
+    let fx_entity = commands
+        .spawn((
+            mfx,
+            owner,
+            marker,
+            instance_id,
+            instance_metadata,
+            instance_controls,
+            instance_clock,
+        ))
+        .id();
+
+    MaterializedFxReconstructionHandle {
+        fx_entity,
+        instance_id,
+    }
+}
+
+/// System that paints materialized fx to layers
+pub fn paint_materialized_fx(
+    mut query: Query<(
+        Entity,
+        &MaterializedFx,
+        Option<&Layer>,
+        Option<&InstanceClock>,
+    )>,
+    selection_resolver: SpatialSelectionResolver,
+    fixture_data_provider: Res<FixtureDataProviderExt>,
+    parameter_query: Query<&Parameter>,
+    mut commands: Commands,
+) {
+    query
+        .iter_mut()
+        .for_each(|(entity, mfx, existing_layer, clock)| {
+            let elapsed = clock.map(|clock| clock.position).unwrap_or_default();
+            let marker = ObjectRefMarker(ObjectRef::ByUid {
+                object_type: ObjectType::Fx,
+                uid: mfx.identifiers().uid,
+            });
+            let mut new_layer = mfx.to_layer_at_elapsed(
+                &selection_resolver,
+                &fixture_data_provider,
+                &parameter_query,
+                elapsed,
+            );
+            if let Some(existing_layer) = existing_layer {
+                new_layer.activation_time = existing_layer.activation_time;
+            }
+            let status = InstanceStatus {
+                position: InstancePosition::Time { elapsed },
+                source_activation_epoch_ms: None,
+                transition_elapsed: Some(elapsed),
+            };
+            commands.entity(entity).insert((new_layer, marker, status));
+        });
+}
+
+/// Despawns cues that are due done releasing.
+pub fn despawn_materialized_fx(
+    mut commands: Commands,
+    mut mfxs: Query<(Entity, &mut MaterializedFx, &ReleaseMarker)>,
+) {
+    for (entity, mfx, _) in mfxs.iter_mut() {
+        tracing::debug!(entity=%entity, uid=%mfx.identifiers().uid, "Despawning fx '{}'", mfx.identifiers().label);
+        commands.entity(entity).despawn();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -425,100 +520,5 @@ mod tests {
                 elapsed: Duration::from_millis(700)
             }
         );
-    }
-}
-
-/// Context from directly materializing a reconstructed classic FX playback.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct MaterializedFxReconstructionHandle {
-    /// Entity containing the reconstructed `MaterializedFx`.
-    pub fx_entity: Entity,
-    /// Runtime playback ID attached to the reconstructed FX.
-    pub instance_id: InstanceId,
-}
-
-/// Directly materializes classic FX playback reconstruction for an clip.
-pub fn spawn_reconstructed_fx_for_clip(
-    commands: &mut Commands,
-    clip_uid: uuid::Uuid,
-    priority: Priority,
-    fx: &Fx,
-    instance_clock: InstanceClock,
-) -> MaterializedFxReconstructionHandle {
-    let mfx = MaterializedFx::materialize(fx, priority);
-    let owner = Owner(clip_uid);
-    let marker = ObjectRefMarker(ObjectRef::ByUid {
-        object_type: ObjectType::Fx,
-        uid: fx.identifiers().uid,
-    });
-    let instance_id = InstanceId::new();
-    let instance_metadata =
-        InstanceMetadata::new(InstanceKind::Fx).with_name(fx.identifiers().label.clone());
-    let instance_controls = InstanceControls::default();
-    let fx_entity = commands
-        .spawn((
-            mfx,
-            owner,
-            marker,
-            instance_id,
-            instance_metadata,
-            instance_controls,
-            instance_clock,
-        ))
-        .id();
-
-    MaterializedFxReconstructionHandle {
-        fx_entity,
-        instance_id,
-    }
-}
-
-/// System that paints materialized fx to layers
-pub fn paint_materialized_fx(
-    mut query: Query<(
-        Entity,
-        &MaterializedFx,
-        Option<&Layer>,
-        Option<&InstanceClock>,
-    )>,
-    selection_resolver: SpatialSelectionResolver,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    parameter_query: Query<&Parameter>,
-    mut commands: Commands,
-) {
-    query
-        .iter_mut()
-        .for_each(|(entity, mfx, existing_layer, clock)| {
-            let elapsed = clock.map(|clock| clock.position).unwrap_or_default();
-            let marker = ObjectRefMarker(ObjectRef::ByUid {
-                object_type: ObjectType::Fx,
-                uid: mfx.identifiers().uid,
-            });
-            let mut new_layer = mfx.to_layer_at_elapsed(
-                &selection_resolver,
-                &fixture_data_provider,
-                &parameter_query,
-                elapsed,
-            );
-            if let Some(existing_layer) = existing_layer {
-                new_layer.activation_time = existing_layer.activation_time;
-            }
-            let status = InstanceStatus {
-                position: InstancePosition::Time { elapsed },
-                source_activation_epoch_ms: None,
-                transition_elapsed: Some(elapsed),
-            };
-            commands.entity(entity).insert((new_layer, marker, status));
-        });
-}
-
-/// Despawns cues that are due done releasing.
-pub fn despawn_materialized_fx(
-    mut commands: Commands,
-    mut mfxs: Query<(Entity, &mut MaterializedFx, &ReleaseMarker)>,
-) {
-    for (entity, mfx, _) in mfxs.iter_mut() {
-        tracing::debug!(entity=%entity, uid=%mfx.identifiers().uid, "Despawning fx '{}'", mfx.identifiers().label);
-        commands.entity(entity).despawn();
     }
 }

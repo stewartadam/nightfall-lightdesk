@@ -13,21 +13,27 @@ import {
   createSignal,
   createUniqueId,
   For,
+  type JSX,
   onCleanup,
   Show,
 } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { Dialog, DialogBody } from "../../components/ui/dialog";
-import {
-  Checkbox,
-  Input,
-  NativeSelect,
-} from "../../components/ui/form-controls";
+import { Input, NativeSelect } from "../../components/ui/form-controls";
+import { RangeSlider } from "../../components/ui/range-slider";
+import { SearchField } from "../../components/ui/search-field";
+import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
+import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
+import {
+  SettingsSearchGroup,
+  SettingsSearchItem,
+  SettingsSearchRoot,
+} from "../../components/ui/settings-search";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
-import { engineRuntime } from "../../lib/engine-runtime";
+import { commandClient } from "../../lib/engine-commands";
 import { setStoreAction } from "../../lib/nanostore-action";
 import {
   bindingValidationSettings,
@@ -40,6 +46,7 @@ import {
   $networkInterfaceStatus,
   $settings,
 } from "../../state/settings";
+import { compactViewport } from "../../state/viewport";
 import type {
   BindingValidationMode,
   InputSignalLossPolicy,
@@ -55,6 +62,7 @@ import {
   TimelinePlacementPreference,
 } from "../../types";
 import { createBeatModelDownload } from "../beat-detection";
+import { KeybindingsSettings } from "../keybindings";
 import {
   type QualityPreset,
   setVisualizerQuality,
@@ -66,6 +74,11 @@ import {
   visualizerShowOrbitTargetIndicator,
 } from "../visualizer";
 import { AppearanceSettings } from "./appearance-settings";
+import { PrivacySettings } from "./privacy-settings";
+import {
+  $requestedSettingsTab,
+  type SettingsTab,
+} from "./settings-tab-request";
 
 const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
 const DEFAULT_SHOWFILE_BACKUP_RETENTION = 20;
@@ -80,16 +93,9 @@ const ROTATION_MODE_OPTIONS: {
   value: VisualizerCameraRotationMode;
   label: string;
 }[] = [
-  { value: "camera-locked", label: "Camera-locked (orbit current target)" },
-  { value: "center-locked", label: "Center-locked (orbit world origin)" },
+  { value: "camera-locked", label: "Camera-locked" },
+  { value: "center-locked", label: "Center-locked" },
 ];
-
-type SettingsTab =
-  | "general"
-  | "appearance"
-  | "editors"
-  | "network"
-  | "visualizer";
 
 const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "general", label: "General" },
@@ -97,6 +103,8 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "editors", label: "Editors" },
   { key: "network", label: "Network" },
   { key: "visualizer", label: "Visualizer" },
+  { key: "keyboard", label: "Keyboard" },
+  { key: "privacy", label: "Privacy" },
 ];
 
 /** Returns the human-readable interface name, falling back to the system name. */
@@ -162,18 +170,51 @@ export function SettingsOverlay() {
   const quality = useStore(visualizerQuality);
   const darkness = useStore(visualizerDarkness);
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
+  const [query, setQuery] = createSignal("");
+  const [hasResults, setHasResults] = createSignal(true);
+  /** Whether a search is running, which lists matches from every tab instead of one tab. */
+  const searching = () => query().trim().length > 0;
+  const requestedTab = useStore($requestedSettingsTab);
   const tabId = createUniqueId();
+  /** Switches to a tab another surface asked for, ending any search, then forgets the request. */
+  createEffect(() => {
+    const tab = requestedTab();
+    if (!tab || !isSettingsOpen()) return;
+    setQuery("");
+    setActiveTab(tab);
+    $requestedSettingsTab.set(null);
+  });
+  /** Starts each visit to settings without the previous visit's search. */
+  createEffect(() => {
+    if (!isSettingsOpen()) setQuery("");
+  });
+
+  /**
+   * Renders one tab's settings: alone while its tab is selected, or, during a search, under its
+   * tab name alongside the other tabs' matches, in tab order.
+   */
+  const TabPane = (props: { tab: SettingsTab; children: JSX.Element }) => {
+    const index = SETTINGS_TABS.findIndex((tab) => tab.key === props.tab);
+    return (
+      <Show when={searching() || activeTab() === props.tab}>
+        <SettingsSearchGroup
+          title={SETTINGS_TABS[index].label}
+          showTitle={searching()}
+          class="space-y-4"
+          style={{ order: index }}
+        >
+          {props.children}
+        </SettingsSearchGroup>
+      </Show>
+    );
+  };
   /** Refreshes backend-provided device choices whenever settings becomes visible. */
   createEffect(() => {
     if (!isSettingsOpen()) return;
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "GetAvailableNetworkInterfaces" },
+    commandClient.emit("SettingsCommand", {
+      type: "GetAvailableNetworkInterfaces",
     });
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "GetAvailableAudioDevices" },
-    });
+    commandClient.emit("SettingsCommand", { type: "GetAvailableAudioDevices" });
   });
 
   let dmxOutputRateInput: HTMLInputElement | undefined;
@@ -197,71 +238,79 @@ export function SettingsOverlay() {
   });
 
   const setProgrammerAutoSelect = (value: boolean) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetProgrammerAutoSelect", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetProgrammerAutoSelect",
+      data: value,
+    });
+  };
+
+  /** Chooses whether clients receive only changed parameter values or every value each frame. */
+  const setParameterKeyframesOnly = (value: boolean) => {
+    commandClient.emit("SettingsCommand", {
+      type: "SetParameterKeyframesOnly",
+      data: value,
     });
   };
 
   const setNetworkInterface = (value: string | null) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetNetworkInterface", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetNetworkInterface",
+      data: value,
     });
   };
 
   const setAudioDevice = (value: string | null) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetAudioDevice", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetAudioDevice",
+      data: value,
     });
   };
 
   const setInputSignalLossPolicy = (value: InputSignalLossPolicy) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetInputSignalLossPolicy", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetInputSignalLossPolicy",
+      data: value,
     });
   };
 
   const setInputUniverseVisibilityMode = (
     value: InputUniverseVisibilityMode,
   ) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetInputUniverseVisibilityMode", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetInputUniverseVisibilityMode",
+      data: value,
     });
   };
 
   const setSequenceReorderRenumberPolicy = (
     value: SequenceReorderRenumberPolicy,
   ) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetSequenceReorderRenumberPolicy", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetSequenceReorderRenumberPolicy",
+      data: value,
     });
   };
 
   const setSelectionFlattenPolicy = (value: SelectionFlattenPolicy) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetSelectionFlattenPolicy", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetSelectionFlattenPolicy",
+      data: value,
     });
   };
 
   const setTimeDisplayPreference = (value: TimeDisplayPreference) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetTimeDisplayPreference", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetTimeDisplayPreference",
+      data: value,
     });
   };
 
   const setTimelinePlacementPreference = (
     value: TimelinePlacementPreference,
   ) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetTimelinePlacementPreference", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetTimelinePlacementPreference",
+      data: value,
     });
   };
 
@@ -270,16 +319,16 @@ export function SettingsOverlay() {
     const retention = Number.isFinite(value)
       ? Math.max(0, Math.trunc(value))
       : DEFAULT_SHOWFILE_BACKUP_RETENTION;
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetShowfileBackupRetention", data: retention },
+    commandClient.emit("SettingsCommand", {
+      type: "SetShowfileBackupRetention",
+      data: retention,
     });
   };
 
   const setBindingValidationMode = (value: BindingValidationMode) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: { type: "SetBindingValidationMode", data: value },
+    commandClient.emit("SettingsCommand", {
+      type: "SetBindingValidationMode",
+      data: value,
     });
   };
 
@@ -333,27 +382,21 @@ export function SettingsOverlay() {
       }
       return;
     }
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: {
-        type: "SetDmxOutputRate",
-        data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
-      },
+    commandClient.emit("SettingsCommand", {
+      type: "SetDmxOutputRate",
+      data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
     });
   };
 
   const setInputSignalLossTimeout = (value: number) => {
-    engineRuntime.sendCommand({
-      module: "SettingsCommand",
-      command: {
-        type: "SetInputSignalLossTimeout",
-        data: msToDuration(value),
-      },
+    commandClient.emit("SettingsCommand", {
+      type: "SetInputSignalLossTimeout",
+      data: msToDuration(value),
     });
   };
 
   return (
-    <>
+    <SettingsSearchRoot query={query()} onResults={setHasResults}>
       <Dialog
         kind="info"
         isOpen={isSettingsOpen()}
@@ -361,137 +404,173 @@ export function SettingsOverlay() {
         label="Settings"
         closeLabel="Close settings"
         onDismiss={closeSettings}
-        class="max-w-[500px]"
+        class="max-w-[560px]"
         style={{ "max-height": "80vh" }}
       >
-        <div class="px-4 pt-3">
-          <SegmentedTabs
-            id={tabId}
-            label="Settings categories"
-            contentId={`${tabId}-content`}
-            options={SETTINGS_TABS}
-            value={activeTab()}
-            onChange={setActiveTab}
+        <div class="space-y-3 px-4 pt-3">
+          <SearchField
+            label="Search settings"
+            // Ready for typing on open, except on phones, where focus would raise the keyboard.
+            autofocus={!compactViewport.get()}
+            value={query()}
+            onInput={setQuery}
+            data-testid="settings-search"
           />
+          <Show when={!searching()}>
+            <SegmentedTabs
+              id={tabId}
+              label="Settings categories"
+              contentId={`${tabId}-content`}
+              options={SETTINGS_TABS}
+              value={activeTab()}
+              onChange={setActiveTab}
+            />
+          </Show>
         </div>
 
         <DialogBody
-          class="space-y-6"
+          class="flex flex-col gap-4"
           id={`${tabId}-content`}
-          role="tabpanel"
-          aria-labelledby={`${tabId}-${activeTab()}`}
+          role={searching() ? "region" : "tabpanel"}
+          aria-label={searching() ? "Search results" : undefined}
+          aria-labelledby={searching() ? undefined : `${tabId}-${activeTab()}`}
         >
-          <Show when={activeTab() === "appearance"}>
-            <AppearanceSettings />
+          <Show when={searching() && !hasResults()}>
+            <p class="py-6 text-center text-sm text-gray-400" role="status">
+              No settings match “{query().trim()}”.
+            </p>
           </Show>
-          <Show when={activeTab() === "general"}>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Programmer</h3>
-              <div class="space-y-3">
-                <label class="flex items-center justify-between">
-                  <span class="text-sm text-gray-400">
-                    Auto-select on attribute set
-                  </span>
-                  <Checkbox
+          <TabPane tab="appearance">
+            <AppearanceSettings />
+          </TabPane>
+          <TabPane tab="privacy">
+            <PrivacySettings />
+          </TabPane>
+          <TabPane tab="keyboard">
+            <SettingsSearchItem keywords="Keybindings keyboard shortcuts keys hotkeys MIDI OSC">
+              <KeybindingsSettings />
+            </SettingsSearchItem>
+          </TabPane>
+          <TabPane tab="general">
+            <SettingsSection title="Programmer">
+              <SettingsRow
+                label="Auto-select on attribute set"
+                description="Setting an attribute value also updates the programmer selection."
+              >
+                {(field) => (
+                  <ToggleSwitch
+                    id={field.id}
+                    describedBy={field.describedBy}
+                    ariaLabel="Auto-select on attribute set"
+                    layout="switch-only"
                     checked={settings().programmer_auto_select}
-                    onChange={(e) =>
-                      setProgrammerAutoSelect(e.currentTarget.checked)
-                    }
+                    onChange={setProgrammerAutoSelect}
                   />
-                </label>
-                <label class="block">
-                  <span class="text-sm text-gray-400">
-                    Selection flatten behavior
-                  </span>
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label="Selection flatten behavior"
+                description="Whether to ask before an action replaces a selection expression with the fixtures it currently matches."
+              >
+                {(field) => (
                   <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
                     value={selectionFlattenPolicy()}
                     onChange={(e) =>
                       setSelectionFlattenPolicy(
                         e.currentTarget.value as SelectionFlattenPolicy,
                       )
                     }
-                    class="mt-1"
                   >
                     <option value="Silent">Silent</option>
                     <option value="Prompt">Prompt before flattening</option>
                   </NativeSelect>
-                </label>
-              </div>
-            </section>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Audio</h3>
-              <label class="block">
-                <span class="text-sm text-gray-400">Output Device</span>
-                <NativeSelect
-                  value={settings().audio_device ?? ""}
-                  onChange={(e) =>
-                    setAudioDevice(e.currentTarget.value || null)
-                  }
-                  class="mt-1"
-                >
-                  <option value="">System Default</option>
-                  <For each={Object.entries(audioDevices())} fallback={null}>
-                    {([id, name]) => <option value={id}>{name}</option>}
-                  </For>
-                </NativeSelect>
-              </label>
-            </section>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Showfile</h3>
-              <label class="block">
-                <span class="text-sm text-gray-400">Backups to keep</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={showfileBackupRetention()}
-                  onChange={(e) =>
-                    setShowfileBackupRetention(e.currentTarget.valueAsNumber)
-                  }
-                  class="mt-1"
-                />
-              </label>
-            </section>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Patch</h3>
-              <label class="block">
-                <span class="text-sm text-gray-400">
-                  Overlap validation mode
-                </span>
-                <NativeSelect
-                  value={patchValidationSettings().mode}
-                  onChange={(e) =>
-                    setBindingValidationMode(
-                      e.currentTarget.value as BindingValidationMode,
-                    )
-                  }
-                  class="mt-1"
-                >
-                  <option value="Strict">Strict Mode</option>
-                  <option value="Permissive">Permissive Mode</option>
-                </NativeSelect>
-              </label>
-            </section>
-          </Show>
-
-          <Show when={activeTab() === "editors"}>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">
-                Cue / Sequence Authoring
-              </h3>
-              <div class="space-y-3">
-                <label class="block">
-                  <span class="text-sm text-gray-400">
-                    Reorder cue renumber behavior
-                  </span>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection title="Audio">
+              <SettingsRow
+                label="Output Device"
+                description="Where timeline audio plays."
+              >
+                {(field) => (
                   <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    value={settings().audio_device ?? ""}
+                    onChange={(e) =>
+                      setAudioDevice(e.currentTarget.value || null)
+                    }
+                  >
+                    <option value="">System Default</option>
+                    <For each={Object.entries(audioDevices())} fallback={null}>
+                      {([id, name]) => <option value={id}>{name}</option>}
+                    </For>
+                  </NativeSelect>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection title="Showfile">
+              <SettingsRow
+                label="Backups to keep"
+                description="Timestamped backups kept after each save. 0 keeps every backup."
+              >
+                {(field) => (
+                  <Input
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={showfileBackupRetention()}
+                    onChange={(e) =>
+                      setShowfileBackupRetention(e.currentTarget.valueAsNumber)
+                    }
+                  />
+                )}
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection title="Patch">
+              <SettingsRow
+                label="Overlap validation mode"
+                description="Strict blocks overlapping patches. Permissive allows overlaps but still requires unique console addresses."
+              >
+                {(field) => (
+                  <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    value={patchValidationSettings().mode}
+                    onChange={(e) =>
+                      setBindingValidationMode(
+                        e.currentTarget.value as BindingValidationMode,
+                      )
+                    }
+                  >
+                    <option value="Strict">Strict Mode</option>
+                    <option value="Permissive">Permissive Mode</option>
+                  </NativeSelect>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+          </TabPane>
+
+          <TabPane tab="editors">
+            <SettingsSection title="Cue / Sequence Authoring">
+              <SettingsRow
+                label="Reorder cue renumber behavior"
+                description="What happens to cue numbers after you reorder a sequence's cues."
+              >
+                {(field) => (
+                  <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
                     value={sequenceReorderRenumberPolicy()}
                     onChange={(e) =>
                       setSequenceReorderRenumberPolicy(
                         e.currentTarget.value as SequenceReorderRenumberPolicy,
                       )
                     }
-                    class="mt-1"
                   >
                     <option value="Preserve">Preserve cue IDs</option>
                     <option value="AutoRenumber">
@@ -499,19 +578,22 @@ export function SettingsOverlay() {
                     </option>
                     <option value="Prompt">Prompt each time</option>
                   </NativeSelect>
-                </label>
-                <label class="block">
-                  <span class="text-sm text-gray-400">
-                    Timing display units
-                  </span>
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label="Timing display units"
+                description="Unit for editable times such as fades and delays. Auto picks a compact unit for each value."
+              >
+                {(field) => (
                   <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
                     value={timeDisplayPreference()}
                     onChange={(e) =>
                       setTimeDisplayPreference(
                         e.currentTarget.value as TimeDisplayPreference,
                       )
                     }
-                    class="mt-1"
                   >
                     <option value="Auto">Auto</option>
                     <option value="Seconds">Seconds</option>
@@ -519,29 +601,52 @@ export function SettingsOverlay() {
                     <option value="Bpm">BPM</option>
                     <option value="Hertz">Hz</option>
                   </NativeSelect>
-                </label>
-              </div>
-            </section>
+                )}
+              </SettingsRow>
+            </SettingsSection>
 
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Timeline</h3>
+            <SettingsSection title="Timeline">
               <Show when={capabilities()?.runtime_mode !== "EmbeddedDemo"}>
-                <div class="mb-4 space-y-2">
-                  <Show
-                    when={modelDownload.status()?.phase === "ready"}
-                    fallback={
-                      <>
-                        <p class="text-sm text-gray-400" role="status">
-                          {!modelDownload.status() ||
+                <SettingsRow
+                  label="Beat detection model"
+                  labelControl={false}
+                  description={
+                    <span role="status">
+                      <Show
+                        when={modelDownload.status()?.phase === "ready"}
+                        fallback={
+                          !modelDownload.status() ||
                           ["unchecked", "checking"].includes(
                             modelDownload.status()!.phase,
                           )
                             ? "Checking beat detection model…"
                             : modelDownload.status()?.phase === "deleting"
                               ? "Deleting beat detection model…"
-                              : "The optional Beat This model will enable offline and automatic beatgrid detection."}
-                        </p>
+                              : "The optional Beat This model will enable offline and automatic beatgrid detection."
+                        }
+                      >
+                        <span class="text-[var(--accent)]">Beat This</span> ·{" "}
+                        {(
+                          (modelDownload.status()?.total_bytes ?? 0) / 1000000
+                        ).toFixed(1)}{" "}
+                        MB · Installed and available offline
+                      </Show>
+                    </span>
+                  }
+                  details={
+                    modelDownload.error() ? (
+                      <p role="alert" class="text-xs text-red-400">
+                        {modelDownload.error()}
+                      </p>
+                    ) : undefined
+                  }
+                >
+                  {() => (
+                    <Show
+                      when={modelDownload.status()?.phase === "ready"}
+                      fallback={
                         <Button
+                          size="compact"
                           disabled={
                             modelDownload.busy() ||
                             !modelDownload.status() ||
@@ -554,151 +659,159 @@ export function SettingsOverlay() {
                           <CloudArrowDownIcon class="size-4" aria-hidden />
                           Download
                         </Button>
-                      </>
+                      }
+                    >
+                      <Button
+                        size="compact"
+                        disabled={modelDownload.busy()}
+                        onClick={() => void modelDownload.remove()}
+                      >
+                        Delete model
+                      </Button>
+                    </Show>
+                  )}
+                </SettingsRow>
+              </Show>
+              <SettingsRow
+                label="Insert and paste position"
+                description="Where new and pasted timeline items land."
+              >
+                {(field) => (
+                  <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    value={timelinePlacementPreference()}
+                    onChange={(e) =>
+                      setTimelinePlacementPreference(
+                        e.currentTarget.value as TimelinePlacementPreference,
+                      )
                     }
                   >
-                    <p class="text-sm text-gray-400" role="status">
-                      <span class="text-[var(--accent)]">Beat This</span> ·{" "}
-                      {(
-                        (modelDownload.status()?.total_bytes ?? 0) / 1000000
-                      ).toFixed(1)}{" "}
-                      MB · Installed and available offline
-                    </p>
-                    <Button
-                      disabled={modelDownload.busy()}
-                      onClick={() => void modelDownload.remove()}
-                    >
-                      Delete model
-                    </Button>
-                  </Show>
-                  <Show when={modelDownload.error()}>
-                    <p role="alert" class="text-sm text-red-400">
-                      {modelDownload.error()}
-                    </p>
-                  </Show>
-                </div>
-              </Show>
-              <label class="block">
-                <span class="text-sm text-gray-400">
-                  Insert and paste position
-                </span>
-                <NativeSelect
-                  value={timelinePlacementPreference()}
-                  onChange={(e) =>
-                    setTimelinePlacementPreference(
-                      e.currentTarget.value as TimelinePlacementPreference,
-                    )
-                  }
-                  class="mt-1"
-                >
-                  <option value="Playhead">Playhead</option>
-                  <option value="Cursor">Cursor</option>
-                </NativeSelect>
-              </label>
-            </section>
-          </Show>
+                    <option value="Playhead">Playhead</option>
+                    <option value="Cursor">Cursor</option>
+                  </NativeSelect>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+          </TabPane>
 
-          <Show when={activeTab() === "network"}>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Network</h3>
-              <label class="block">
-                <span class="text-sm text-gray-400">Interface</span>
-                <NativeSelect
-                  value={ioSettings().network_interface ?? ""}
-                  onChange={(e) =>
-                    setNetworkInterface(e.currentTarget.value || null)
-                  }
-                  class="mt-1"
-                >
-                  <option value="">
-                    {systemDefaultLabel(networkInterfaceStatus())}
-                  </option>
-                  <For each={networkInterfaces()}>
-                    {(iface) => (
-                      <option value={iface.name}>
-                        {iface.name} ({iface.addresses.join(", ")})
-                      </option>
-                    )}
-                  </For>
-                </NativeSelect>
-              </label>
-              <div class="mt-3 rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-sm text-gray-300 space-y-1">
-                <p>
-                  {configuredInterfaceDescription(
-                    networkInterfaceStatus(),
-                    ioSettings().network_interface,
-                  )}
-                </p>
-                <p class="text-gray-400">
-                  System default interface:{" "}
-                  {formatNetworkInterface(
-                    networkInterfaceStatus().default_interface,
-                  )}
-                </p>
-              </div>
-            </section>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Output</h3>
-              <label class="block">
-                <span class="text-sm text-gray-400">DMX output rate (Hz)</span>
-                <Input
-                  ref={dmxOutputRateInput}
-                  type="number"
-                  min="1"
-                  max="60"
-                  step="1"
-                  value={ioSettings().dmx_output_rate_hz}
-                  onChange={(e) =>
-                    setDmxOutputRate(e.currentTarget.valueAsNumber)
-                  }
-                  class="mt-1"
-                />
-              </label>
-              <p class="mt-1 text-xs text-gray-500">
-                Art-Net and sACN packets sent per universe each second. Wired
-                DMX512 refreshes at most 44 times per second.
-              </p>
-            </section>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Input</h3>
-              <label class="block mb-3">
-                <span class="text-sm text-gray-400">Input visibility</span>
-                <NativeSelect
-                  value={inputUniverseVisibilityMode()}
-                  onChange={(e) =>
-                    setInputUniverseVisibilityMode(
-                      e.currentTarget.value as InputUniverseVisibilityMode,
-                    )
-                  }
-                  class="mt-1"
-                >
-                  <option value="ExternalOnly">External only</option>
-                  <option value="AllDetected">All detected</option>
-                </NativeSelect>
-              </label>
-              <label class="block">
-                <span class="text-sm text-gray-400">
-                  Input signal loss policy
-                </span>
-                <NativeSelect
-                  value={inputSignalLossPolicy().type}
-                  onChange={(e) =>
-                    setInputSignalLossPolicyType(
-                      e.currentTarget.value as "Hold" | "ClearAfterTimeout",
-                    )
-                  }
-                  class="mt-1"
-                >
-                  <option value="Hold">Hold last values</option>
-                  <option value="ClearAfterTimeout">Clear after timeout</option>
-                </NativeSelect>
-              </label>
-              <div class="mt-3">
-                <label class="block">
-                  <span class="text-sm text-gray-400">
-                    Input stale timeout (ms)
-                  </span>
+          <TabPane tab="network">
+            <SettingsSection title="Network">
+              <SettingsRow
+                label="Interface"
+                description={
+                  <>
+                    <p>
+                      {configuredInterfaceDescription(
+                        networkInterfaceStatus(),
+                        ioSettings().network_interface,
+                      )}
+                    </p>
+                    <p>
+                      System default interface:{" "}
+                      {formatNetworkInterface(
+                        networkInterfaceStatus().default_interface,
+                      )}
+                    </p>
+                  </>
+                }
+              >
+                {(field) => (
+                  <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    value={ioSettings().network_interface ?? ""}
+                    onChange={(e) =>
+                      setNetworkInterface(e.currentTarget.value || null)
+                    }
+                  >
+                    <option value="">
+                      {systemDefaultLabel(networkInterfaceStatus())}
+                    </option>
+                    <For each={networkInterfaces()}>
+                      {(iface) => (
+                        <option value={iface.name}>
+                          {iface.name} ({iface.addresses.join(", ")})
+                        </option>
+                      )}
+                    </For>
+                  </NativeSelect>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection title="Output">
+              <SettingsRow
+                label="DMX output rate (Hz)"
+                description="Art-Net and sACN packets sent per universe each second. Wired DMX512 refreshes at most 44 times per second."
+              >
+                {(field) => (
                   <Input
+                    ref={dmxOutputRateInput}
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    type="number"
+                    min="1"
+                    max="60"
+                    step="1"
+                    value={ioSettings().dmx_output_rate_hz}
+                    onChange={(e) =>
+                      setDmxOutputRate(e.currentTarget.valueAsNumber)
+                    }
+                  />
+                )}
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection title="Input">
+              <SettingsRow
+                label="Input visibility"
+                description="All detected also lists local loopback frames, such as Nightfall's own output."
+              >
+                {(field) => (
+                  <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    value={inputUniverseVisibilityMode()}
+                    onChange={(e) =>
+                      setInputUniverseVisibilityMode(
+                        e.currentTarget.value as InputUniverseVisibilityMode,
+                      )
+                    }
+                  >
+                    <option value="ExternalOnly">External only</option>
+                    <option value="AllDetected">All detected</option>
+                  </NativeSelect>
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label="Input signal loss policy"
+                description="What input channels do when their source stops sending."
+              >
+                {(field) => (
+                  <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
+                    value={inputSignalLossPolicy().type}
+                    onChange={(e) =>
+                      setInputSignalLossPolicyType(
+                        e.currentTarget.value as "Hold" | "ClearAfterTimeout",
+                      )
+                    }
+                  >
+                    <option value="Hold">Hold last values</option>
+                    <option value="ClearAfterTimeout">
+                      Clear after timeout
+                    </option>
+                  </NativeSelect>
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label="Input stale timeout (ms)"
+                description="How long an input can go quiet before it counts as lost."
+              >
+                {(field) => (
+                  <Input
+                    id={field.id}
+                    aria-describedby={field.describedBy}
                     type="number"
                     min="0"
                     step="100"
@@ -706,120 +819,131 @@ export function SettingsOverlay() {
                     onChange={(e) =>
                       setInputSignalLossTimeout(e.currentTarget.valueAsNumber)
                     }
-                    class="mt-1"
                   />
-                </label>
-              </div>
-            </section>
-          </Show>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection title="UI updates">
+              <SettingsRow
+                label="Send only changed parameters (recommended)"
+                description="Sending every parameter in full each frame may be more reliable, but uses more network bandwidth and processing power."
+              >
+                {(field) => (
+                  <ToggleSwitch
+                    id={field.id}
+                    describedBy={field.describedBy}
+                    ariaLabel="Send only changed parameters (recommended)"
+                    layout="switch-only"
+                    checked={!settings().parameter_keyframes_only}
+                    onChange={(enabled) => setParameterKeyframesOnly(!enabled)}
+                  />
+                )}
+              </SettingsRow>
+            </SettingsSection>
+          </TabPane>
 
-          <Show when={activeTab() === "visualizer"}>
-            <section>
-              <h3 class="text-sm font-medium text-gray-300 mb-3">Visualizer</h3>
-              <div class="space-y-3">
-                <ToggleSwitch
-                  label="Highlight selection"
-                  ariaLabel="Highlight selection"
-                  class="w-full justify-between"
-                  checked={highlightSelection()}
-                  onChange={(enabled) =>
-                    setStoreAction(
-                      visualizerHighlightSelection,
-                      "Set Visualizer Highlight Selection",
-                      enabled,
-                    )
-                  }
-                />
-                <ToggleSwitch
-                  label="Show current orbit target"
-                  ariaLabel="Show current orbit target"
-                  class="w-full justify-between"
-                  checked={showOrbitTargetIndicator()}
-                  onChange={(enabled) =>
-                    setStoreAction(
-                      visualizerShowOrbitTargetIndicator,
-                      "Set Visualizer Orbit Target Indicator",
-                      enabled,
-                    )
-                  }
-                />
-                <label class="block">
-                  <span class="text-sm text-gray-400">Quality preset</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="1"
-                    aria-label="Quality preset"
-                    aria-valuetext={
-                      QUALITY_OPTIONS.find(
-                        (option) => option.value === quality(),
-                      )?.label
-                    }
-                    value={QUALITY_OPTIONS.findIndex(
-                      (option) => option.value === quality(),
-                    )}
-                    onInput={(e) =>
-                      setVisualizerQuality(
-                        QUALITY_OPTIONS[e.currentTarget.valueAsNumber].value,
+          <TabPane tab="visualizer">
+            <SettingsSection
+              title="Visualizer"
+              footer="Tool mode, grid, emitter debug, and snap-point toggles are available in the visualizer toolbar."
+            >
+              <SettingsRow
+                label="Highlight selection"
+                description="Outlines selected fixtures in the 3D view."
+              >
+                {(field) => (
+                  <ToggleSwitch
+                    id={field.id}
+                    describedBy={field.describedBy}
+                    ariaLabel="Highlight selection"
+                    layout="switch-only"
+                    checked={highlightSelection()}
+                    onChange={(enabled) =>
+                      setStoreAction(
+                        visualizerHighlightSelection,
+                        "Set Visualizer Highlight Selection",
+                        enabled,
                       )
                     }
-                    class="mt-2 w-full"
                   />
-                  <span
-                    class="flex justify-between text-xs text-gray-400"
-                    aria-hidden="true"
-                  >
-                    <For each={QUALITY_OPTIONS}>
-                      {(option) => (
-                        <span
-                          class={
-                            quality() === option.value
-                              ? "text-gray-100 font-medium"
-                              : ""
-                          }
-                        >
-                          {option.label}
-                        </span>
-                      )}
-                    </For>
-                  </span>
-                  <p class="mt-1 text-xs text-gray-500" aria-live="polite">
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label="Show current orbit target"
+                description="Marks the point the camera orbits around."
+              >
+                {(field) => (
+                  <ToggleSwitch
+                    id={field.id}
+                    describedBy={field.describedBy}
+                    ariaLabel="Show current orbit target"
+                    layout="switch-only"
+                    checked={showOrbitTargetIndicator()}
+                    onChange={(enabled) =>
+                      setStoreAction(
+                        visualizerShowOrbitTargetIndicator,
+                        "Set Visualizer Orbit Target Indicator",
+                        enabled,
+                      )
+                    }
+                  />
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label="Quality preset"
+                labelControl={false}
+                description={
+                  <span aria-live="polite">
                     {quality() === "low"
                       ? "Simple geometry beams without surface lighting, for maximum performance."
                       : quality() === "medium"
                         ? "Smoothly shaded beams and surface lighting, without fog or glow."
                         : "Atmospheric beams, fog, glow, and optical effects."}
-                  </p>
-                </label>
-                <label class="block">
-                  <span class="text-sm text-gray-400">
-                    Darkness ({darkness()}%)
                   </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
+                }
+              >
+                {(field) => (
+                  <SegmentedControl
+                    id={field.id}
+                    label="Quality preset"
+                    aria-describedby={field.describedBy}
+                    options={QUALITY_OPTIONS}
+                    value={quality()}
+                    onChange={setVisualizerQuality}
+                  />
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label={`Darkness (${darkness()}%)`}
+                labelControl={false}
+                description="Lower for a visible rig; higher for a dark stage. Fixture brightness is unchanged."
+              >
+                {(field) => (
+                  <RangeSlider
                     value={darkness()}
-                    class="mt-2 w-full"
-                    aria-label="Darkness"
-                    onInput={(e) =>
+                    ariaLabel="Darkness"
+                    describedBy={field.describedBy}
+                    showPips={false}
+                    showInputs={false}
+                    containerClass="w-56"
+                    onChange={(value) =>
                       setStoreAction(
                         visualizerDarkness,
                         "Set Visualizer Darkness",
-                        Number(e.currentTarget.value),
+                        value,
                       )
                     }
                   />
-                  <p class="mt-1 text-xs text-gray-500">
-                    Lower for a visible rig; higher for a dark stage. Fixture
-                    brightness is unchanged.
-                  </p>
-                </label>
-                <label class="block">
-                  <span class="text-sm text-gray-400">Rotation mode</span>
+                )}
+              </SettingsRow>
+              <SettingsRow
+                label="Rotation mode"
+                description="Camera-locked orbits the current target; Center-locked orbits the world origin."
+              >
+                {(field) => (
                   <NativeSelect
+                    id={field.id}
+                    aria-describedby={field.describedBy}
                     value={rotationMode()}
                     onInput={(e) =>
                       setStoreAction(
@@ -828,7 +952,6 @@ export function SettingsOverlay() {
                         e.currentTarget.value as VisualizerCameraRotationMode,
                       )
                     }
-                    class="mt-1"
                   >
                     <For each={ROTATION_MODE_OPTIONS}>
                       {(option) => (
@@ -836,19 +959,13 @@ export function SettingsOverlay() {
                       )}
                     </For>
                   </NativeSelect>
-                </label>
-              </div>
-            </section>
-            <section>
-              <p class="text-xs text-gray-500">
-                Tool mode, grid, emitter debug, and snap-point toggles are
-                available in the visualizer toolbar.
-              </p>
-            </section>
-          </Show>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+          </TabPane>
         </DialogBody>
       </Dialog>
       {modelDownload.dialog()}
-    </>
+    </SettingsSearchRoot>
   );
 }

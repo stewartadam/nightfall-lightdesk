@@ -18,10 +18,13 @@
 //!    (with remapping), the highest-priority binding winning where windows overlap;
 //! 2. direct fixture→transport output buffer channels;
 //! 3. transport input windows routed by input passthrough bindings, highest-priority binding
-//!    last so its window wins where windows overlap.
+//!    last so its window wins where windows overlap;
+//! 4. wire channels held by `ch <transport>:U.A` commands, which also produce a frame for a
+//!    universe nothing is routed to.
 //!
 //! Console space never reaches the wire unless a console→transport binding routes it.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
@@ -134,6 +137,11 @@ impl OutputRouting {
         self.output_routes.get(key)
     }
 
+    /// Returns whether any route feeds the frame.
+    pub fn contains(&self, key: &OutputFrameKey) -> bool {
+        self.output_routes.contains_key(key) || self.input_routes.contains_key(key)
+    }
+
     /// Returns the input passthrough windows for one frame.
     pub fn input_routes(&self, key: &OutputFrameKey) -> &[InputWindowRoute] {
         self.input_routes.get(key).map(Vec::as_slice).unwrap_or(&[])
@@ -240,18 +248,35 @@ fn compose_frame(
         }
     }
 
+    has_data |= console.overlay_held_output_values(transport, *universe, &mut channels);
+
     has_data.then_some(channels)
 }
 
-/// Composes every routed wire frame for this engine frame.
+/// Composes every routed wire frame, plus frames carrying only held channels, for this
+/// engine frame.
 pub fn compose_output_frames(
     routing: Res<OutputRouting>,
     console: Res<ConsoleDmxUniverses>,
     inputs: Res<InputDmxUniverses>,
     mut frames: ResMut<OutputDmxFrames>,
 ) {
-    let composed = routing
-        .keys()
+    let mut held_only: Vec<OutputFrameKey> = console
+        .held_output_universes()
+        .filter(|key| !routing.contains(key))
+        .cloned()
+        .collect();
+    let keys = if held_only.is_empty() {
+        Cow::Borrowed(routing.keys())
+    } else {
+        held_only.extend_from_slice(routing.keys());
+        held_only.sort_by_cached_key(|(transport, universe)| {
+            (output_transport_sort_key(transport), *universe)
+        });
+        Cow::Owned(held_only)
+    };
+
+    let composed = keys
         .iter()
         .filter_map(|key| {
             compose_frame(key, &routing, &console, &inputs).map(|channels| OutputDmxFrame {

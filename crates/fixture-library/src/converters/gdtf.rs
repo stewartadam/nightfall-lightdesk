@@ -259,10 +259,7 @@ fn convert_channel_to_parameter(
     let attribute = map_gdtf_attribute_to_nightfall(&logical_channel.attribute)?;
     let (resolution, dmx_slots) = resolved_channel_slots(resolved)?;
 
-    let merge_type = match &attribute {
-        Attribute::Intensity | Attribute::VirtualIntensity => MergeStrategy::HTP,
-        _ => MergeStrategy::LTP,
-    };
+    let merge_type = super::default_merge_strategy(&attribute);
     let use_grandmaster = matches!(
         attribute,
         Attribute::Intensity | Attribute::VirtualIntensity

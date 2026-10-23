@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use nightfall_cmd_parse::autocomplete::{ParseStatus, complete_command};
+use nightfall_cmd_parse::autocomplete::{
+    CommandCompletionResponse, CompletionInventory, ParseStatus, complete_command,
+    complete_command_with_inventory,
+};
 use nightfall_cmd_parse::completion_groups::contracts::CompletionGroupId;
 use nightfall_cmd_parse::parser::analysis::{ExpectedToken, TokenId, ValueKind};
 use nightfall_cmd_parse::slots::contracts::ClauseId;
@@ -526,6 +529,127 @@ fn complete_command_omits_console_target_for_console_sources() {
     }
 }
 
+/// Builds a completion inventory with the built-in outputs plus custom `stage-left` and `fog`.
+fn configured_outputs() -> CompletionInventory {
+    CompletionInventory {
+        output_targets: ["sacn", "artnet", "udmx", "stage-left", "fog"]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    }
+}
+
+/// Returns the apply text of the candidate inserting `insert_text`, requiring that the UI can
+/// show it, either loose or inside a completion group.
+fn offered_apply_text(response: &CommandCompletionResponse, insert_text: &str) -> Option<String> {
+    let candidate = response
+        .candidates
+        .iter()
+        .find(|candidate| candidate.insert_text == insert_text)?;
+    let visible = response
+        .slot_plan
+        .loose_candidate_ids
+        .contains(&candidate.id)
+        || response
+            .slot_plan
+            .completion_groups
+            .iter()
+            .any(|group| group.candidate_ids.contains(&candidate.id));
+    visible.then(|| candidate.apply_text.clone())
+}
+
+/// Wherever a command names an output, completion lists the show's configured outputs and
+/// inserts them without a trailing space so the `:universe` can follow directly.
+#[test]
+fn complete_command_offers_configured_output_targets() {
+    let inventory = configured_outputs();
+    for input in [
+        "ch ",
+        "release ch ",
+        "patch fixture 1 @ ",
+        "patch console:1 @ ",
+    ] {
+        let response = complete_command_with_inventory(input, input.len(), &inventory);
+        for target in ["sacn", "artnet", "udmx", "stage-left", "fog"] {
+            assert_eq!(
+                offered_apply_text(&response, target).as_deref(),
+                Some(target),
+                "'{input}' should offer output '{target}'"
+            );
+        }
+    }
+}
+
+/// Unconfigured outputs are not offered, while patch sources (inputs) keep the keywords.
+#[test]
+fn complete_command_limits_outputs_to_configured_targets() {
+    let inventory = CompletionInventory {
+        output_targets: vec!["sacn".into(), "stage-left".into()],
+    };
+    let response = complete_command_with_inventory("ch ", 3, &inventory);
+    assert!(offered_apply_text(&response, "stage-left").is_some());
+    assert!(!has_candidate_insert(&response, "artnet"));
+    assert!(!has_candidate_insert(&response, "udmx"));
+
+    let response = complete_command_with_inventory("patch ", 6, &inventory);
+    assert!(has_candidate_insert(&response, "artnet"));
+    assert!(!has_candidate_insert(&response, "stage-left"));
+}
+
+/// A partly typed output name, including one split by hyphens, completes to the whole name.
+#[test]
+fn complete_command_completes_partial_output_names() {
+    let inventory = configured_outputs();
+    for (input, replace_start) in [
+        ("ch st", 3),
+        ("ch stage-", 3),
+        ("ch stage-l", 3),
+        ("release ch stage-l", 11),
+        ("patch fixture 1 @ stage-", 18),
+    ] {
+        let response = complete_command_with_inventory(input, input.len(), &inventory);
+        let candidate = response
+            .candidates
+            .iter()
+            .find(|candidate| candidate.insert_text == "stage-left")
+            .unwrap_or_else(|| panic!("'{input}' should offer 'stage-left'"));
+        assert_eq!(
+            (candidate.replace.start, candidate.replace.end),
+            (replace_start, input.len()),
+            "'{input}' should replace the whole typed name"
+        );
+        assert!(offered_apply_text(&response, "stage-left").is_some());
+        assert!(
+            !has_candidate_insert(&response, "fog"),
+            "'{input}' should only offer names starting with the typed text"
+        );
+    }
+}
+
+/// Inside a hyphenated patch target, outputs replace the whole typed name, never only the
+/// fragment after the last hyphen (which would turn `fog-f` into `fog-fog-fx`).
+#[test]
+fn complete_command_replaces_whole_hyphenated_patch_target() {
+    let inventory = CompletionInventory {
+        output_targets: vec!["fog".into(), "fog-fx".into()],
+    };
+    let input = "patch fixture 1 @ fog-f";
+    let response = complete_command_with_inventory(input, input.len(), &inventory);
+    let outputs = response
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.insert_text.starts_with("fog"))
+        .map(|candidate| {
+            (
+                candidate.insert_text.as_str(),
+                candidate.replace.start,
+                candidate.replace.end,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(outputs, [("fog-fx", 18, input.len())]);
+}
+
 #[test]
 fn complete_command_uses_value_placeholder_for_numeric_entry() {
     let response = complete_command("channel 1.100 @", "channel 1.100 @".len());
@@ -815,6 +939,59 @@ fn complete_command_surfaces_raw_frontier_tokens_for_recall_sleep_and_fps() {
     assert!(has_candidate_insert(&fps, "0..9"));
     assert!(has_candidate_insert(&fps, "+"));
     assert!(has_candidate_insert(&fps, "-"));
+}
+
+/// Tempo offers its operation keywords and a BPM value, then each operation's own operand.
+#[test]
+fn complete_command_surfaces_tempo_operations_and_operands() {
+    let tempo = complete_command("tempo ", "tempo ".len());
+    for keyword in [
+        "tap", "resync", "snap", "half", "double", "nudge", "bar", "0..9",
+    ] {
+        assert!(has_candidate_insert(&tempo, keyword), "missing {keyword}");
+    }
+    assert!(!has_candidate_insert(&tempo, "-"));
+    let action = group_by_id(&tempo, CompletionGroupId::TempoAction);
+    assert!(
+        action
+            .candidates
+            .contains(&ExpectedToken::Token(TokenId::Nudge))
+    );
+    assert!(
+        action
+            .candidates
+            .contains(&ExpectedToken::Placeholder(ValueKind::NumericDigit))
+    );
+
+    let partial = complete_command("tempo n", "tempo n".len());
+    assert!(has_candidate_insert(&partial, "nudge"));
+    assert!(!has_candidate_insert(&partial, "tap"));
+
+    let nudge = complete_command("tempo nudge ", "tempo nudge ".len());
+    for token in ["0..9", "+", "-"] {
+        assert!(has_candidate_insert(&nudge, token), "missing {token}");
+    }
+    assert!(!has_candidate_insert(&nudge, "tap"));
+
+    let bar = complete_command("tempo bar ", "tempo bar ".len());
+    assert!(has_candidate_insert(&bar, "0..9"));
+    assert!(!has_candidate_insert(&bar, "-"));
+
+    let bpm = complete_command("tempo 128", "tempo 128".len());
+    assert!(has_candidate_insert(&bpm, "."));
+    assert!(!has_candidate_insert(&bpm, "tap"));
+
+    for input in [
+        "tempo tap ",
+        "tempo 128.5 ",
+        "tempo nudge -0.1 ",
+        "tempo bar 4 ",
+    ] {
+        assert!(
+            complete_command(input, input.len()).candidates.is_empty(),
+            "{input:?}"
+        );
+    }
 }
 
 #[test]

@@ -1244,12 +1244,6 @@ fn sequence_render_prefix_cache_returns_full_cached_layer_for_stable_sequence() 
     let mut param_query_state = world.query::<InstanceMut<Parameter>>();
     let mut param_query = param_query_state.query_mut(&mut world);
     let _ = materialized.to_layer_at_clock(&mut param_query, Some(&first_clock));
-    let cached_activation_time = materialized
-        .render_prefix_cache
-        .as_ref()
-        .expect("full stable sequence should be cached")
-        .visible_seq_layer
-        .activation_time;
     materialized
         .render_prefix_cache
         .as_mut()
@@ -1277,10 +1271,6 @@ fn sequence_render_prefix_cache_returns_full_cached_layer_for_stable_sequence() 
             .get(second_parameter)
             .map(|(value, _)| *value),
         Some(ParameterValue::Absolute { value: 100.0 })
-    );
-    assert!(
-        later_layer.activation_time > cached_activation_time,
-        "full-cache fast path should refresh the layer activation timestamp"
     );
 }
 
@@ -1637,6 +1627,34 @@ fn paint_materialized_sequences_mirrors_release_position_to_layer_compositing_co
         .expect("sequence layer compositing context should be mirrored from playback clock");
     assert_eq!(clock.position, Duration::from_millis(900));
     assert_eq!(clock.released_at, Some(Duration::from_millis(400)));
+}
+
+/// Verifies repainting a sequence keeps the activation time of its existing layer, so
+/// equal-priority layers keep stacking by start order instead of the latest paint.
+#[test]
+fn paint_materialized_sequences_preserves_existing_activation_time() {
+    let mut app = App::new();
+    app.insert_resource(FixtureDataProviderExt::default());
+    app.add_systems(Update, paint_materialized_sequences);
+
+    let mut existing_layer = Layer::new("existing".to_owned(), Priority::default());
+    let original_activation = Instant::now() - Duration::from_secs(5);
+    existing_layer.activation_time = original_activation;
+
+    let entity = app
+        .world_mut()
+        .spawn((MaterializedSequence::default(), existing_layer))
+        .id();
+
+    app.update();
+    app.update();
+
+    let layer = app
+        .world()
+        .entity(entity)
+        .get::<Layer>()
+        .expect("layer should exist after painting");
+    assert_eq!(layer.activation_time, original_activation);
 }
 
 /// Verifies sequence release captures the source-local playback position when available.

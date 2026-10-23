@@ -52,27 +52,17 @@ test("opens about dialog from the status bar menu", async ({
   await expect(dialog.getByText("Build Name")).toBeVisible();
   await expect(dialog.getByTestId("build-name")).toContainText(/.+/);
   await expect(
-    dialog
-      .locator("span")
-      .filter({ hasText: /^MPL-2\.0$/ })
-      .first(),
+    dialog.getByText(/\u00A9 .* Stewart Adam, licensed under MPL-2\.0\./),
   ).toBeVisible();
-  await expect(dialog.getByText(/\u00A9 .* Stewart Adam/)).toBeVisible();
   await expect(dialog.getByText("Third-Party Notices")).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: "Copy Data Directory Path" }),
-  ).toBeVisible();
-  await dialog
-    .getByRole("button", { name: "Copy Data Directory Path" })
-    .hover();
+  await expect(dialog.getByRole("button", { name: "Copy Path" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Copy Path" }).hover();
   await expect(page.getByText(expectedDataDirectoryPath)).toBeVisible();
   await expect(
     dialog.getByText("Copyright (c) 2026 SquidLab"),
   ).not.toBeVisible();
 
-  await dialog
-    .getByRole("button", { name: "Copy Data Directory Path" })
-    .click();
+  await dialog.getByRole("button", { name: "Copy Path" }).click();
   await expect(
     page.getByText("Copied nightfall data directory path"),
   ).toBeVisible();
@@ -86,33 +76,35 @@ test("opens about dialog from the status bar menu", async ({
   const search = licensesDialog.getByRole("searchbox");
   await search.fill("@squidlab/phosphor-solid");
   await licensesDialog
-    .locator("summary")
+    .locator(".nf-collapsible-trigger")
     .filter({ hasText: /^@squidlab\/phosphor-solid / })
     .click();
   await expect(licensesDialog.locator("pre")).toContainText(
     "Copyright (c) 2026 SquidLab",
   );
   await search.fill("original artwork");
-  await licensesDialog.locator("summary").click();
+  await licensesDialog.locator(".nf-collapsible-trigger").click();
   await expect(licensesDialog.locator("pre")).toContainText(
     "Copyright (c) 2023 Phosphor Icons",
   );
   await search.fill("Beat This");
   await licensesDialog
-    .locator("summary")
+    .locator(".nf-collapsible-trigger")
     .filter({ hasText: /^Beat This / })
     .click();
-  await expect(licensesDialog.locator("details[open] pre")).toContainText(
-    "Copyright (c) 2024 Institute of Computational Perception",
-  );
-  await expect(licensesDialog.locator("details[open] pre")).toContainText(
-    "c5c1466e08abdb03fdeb50668a06f244",
-  );
+  await expect(
+    licensesDialog.locator('.nf-collapsible[data-open="true"] pre'),
+  ).toContainText("Copyright (c) 2024 Institute of Computational Perception");
+  await expect(
+    licensesDialog.locator('.nf-collapsible[data-open="true"] pre'),
+  ).toContainText("c5c1466e08abdb03fdeb50668a06f244");
   await search.fill("preline");
-  const preline = licensesDialog
-    .locator("details")
-    .filter({ has: page.locator("summary").filter({ hasText: /^preline / }) });
-  await preline.locator("summary").click();
+  const preline = licensesDialog.locator(".nf-collapsible").filter({
+    has: page
+      .locator(".nf-collapsible-trigger")
+      .filter({ hasText: /^preline / }),
+  });
+  await preline.locator(".nf-collapsible-trigger").click();
   await expect(preline.locator("pre")).toContainText(
     "Preline UI Fair Use License",
   );

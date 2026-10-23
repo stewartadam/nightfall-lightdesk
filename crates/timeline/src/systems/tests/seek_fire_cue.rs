@@ -11,8 +11,9 @@ use super::*;
 #[test]
 fn seek_releases_timeline_spawned_cues_instead_of_despawning_immediately() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<EvalAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    crate::install_timeline_test_actions(&mut app);
+    app.add_message::<EngineOperationEnvelope<EvalOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -68,8 +69,9 @@ fn seek_releases_timeline_spawned_cues_instead_of_despawning_immediately() {
 #[test]
 fn seek_fire_cue_attaches_elapsed_instance_clock() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<EvalAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    crate::install_timeline_test_actions(&mut app);
+    app.add_message::<EngineOperationEnvelope<EvalOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -143,7 +145,7 @@ fn seek_fire_cue_attaches_elapsed_instance_clock() {
                 label: "Fire cue".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::ZERO,
-                action: ActionKind::FireCue(cue_uid),
+                action: ActionKind::FireCue(cue_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -204,8 +206,9 @@ fn seek_fire_cue_attaches_elapsed_instance_clock() {
 #[test]
 fn seek_fire_cue_with_duration_marks_release_window() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<EvalAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    crate::install_timeline_test_actions(&mut app);
+    app.add_message::<EngineOperationEnvelope<EvalOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -244,7 +247,7 @@ fn seek_fire_cue_with_duration_marks_release_window() {
                 label: "Fire cue".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::from_secs(1),
-                action: ActionKind::FireCue(cue_uid),
+                action: ActionKind::FireCue(cue_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -312,8 +315,9 @@ fn seek_fire_cue_with_duration_marks_release_window() {
 #[test]
 fn seek_fire_cue_with_duration_skips_completed_release() {
     let mut app = App::new();
-    app.add_message::<EngineActionEnvelope<EvalAction>>();
-    app.add_message::<EngineActionEnvelope<ClipAction>>();
+    crate::install_timeline_test_actions(&mut app);
+    app.add_message::<EngineOperationEnvelope<EvalOperation>>();
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
     app.add_message::<TimecodeEvent>();
 
     app.insert_resource(DataProvider::<Cue>::default());
@@ -348,7 +352,7 @@ fn seek_fire_cue_with_duration_skips_completed_release() {
                 label: "Fire cue".to_owned(),
                 position: Duration::from_secs(1),
                 duration: Duration::from_secs(1),
-                action: ActionKind::FireCue(cue_uid),
+                action: ActionKind::FireCue(cue_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],

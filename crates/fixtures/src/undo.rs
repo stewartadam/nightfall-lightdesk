@@ -8,7 +8,7 @@
 
 //! Undo/redo implementations for fixture commands.
 
-use nightfall::command_types::DmxChannelRef;
+use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{ColorPathDefault, FixtureRef};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
@@ -19,6 +19,7 @@ use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::transport_holds::snapshot_held_channels;
 
 /// Snapshot of a single parameter's data for restoration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,18 +103,18 @@ pub struct RestoreColorPathDefaultsSnapshot(pub ColorPathDefaultsSnapshot);
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreFixtureSnapshot(pub FixtureSnapshot);
 
-impl EngineAction for RestoreBindingSnapshot {}
+impl EngineOperation for RestoreBindingSnapshot {}
 
-impl EngineAction for RestorePatchBindingsSnapshot {}
+impl EngineOperation for RestorePatchBindingsSnapshot {}
 
-impl EngineAction for RestoreOffsetSnapshot {}
+impl EngineOperation for RestoreOffsetSnapshot {}
 
-impl EngineAction for RestoreColorPathDefaultsSnapshot {}
+impl EngineOperation for RestoreColorPathDefaultsSnapshot {}
 
-impl EngineAction for RestoreFixtureSnapshot {}
+impl EngineOperation for RestoreFixtureSnapshot {}
 
-impl UndoableOperation for RestoreFixtureSnapshot {
-    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for RestoreFixtureSnapshot {
+    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         // Inverse of restore is delete
         Some(Box::new(FixtureCommand::DeleteFixture(
             self.0.fixture.identifiers.id,
@@ -125,8 +126,8 @@ impl UndoableOperation for RestoreFixtureSnapshot {
     }
 }
 
-impl UndoableOperation for RestoreBindingSnapshot {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for RestoreBindingSnapshot {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         // Capture current binding state before restoring the old one
         let snapshot = snapshot_binding_state(ctx, self.0.fixture_id)?;
         Some(Box::new(RestoreBindingSnapshot(snapshot)))
@@ -137,8 +138,8 @@ impl UndoableOperation for RestoreBindingSnapshot {
     }
 }
 
-impl UndoableOperation for RestorePatchBindingsSnapshot {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for RestorePatchBindingsSnapshot {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         Some(Box::new(RestorePatchBindingsSnapshot(
             snapshot_patch_bindings(ctx),
         )))
@@ -149,8 +150,8 @@ impl UndoableOperation for RestorePatchBindingsSnapshot {
     }
 }
 
-impl UndoableOperation for RestoreOffsetSnapshot {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for RestoreOffsetSnapshot {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         // Capture current offsets for all elements before restoring
         let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
         let fixture = fixtures.inner.from_id(self.0.fixture_id).ok()?;
@@ -184,6 +185,19 @@ impl UndoableOperation for RestoreOffsetSnapshot {
     }
 }
 
+/// Captures the hold state of the wire channels an expression addresses on a target output.
+fn snapshot_transport_holds(
+    ctx: &UndoContext,
+    target: &str,
+    channels: &DmxChannelExpr,
+) -> Vec<HeldTransportDmxChannelState> {
+    snapshot_held_channels(
+        ctx.world.resource::<ConsoleDmxUniverses>(),
+        target,
+        channels.expand(),
+    )
+}
+
 /// Captures the current manual write state of each channel so undo can put it back.
 fn snapshot_manual_channels(
     ctx: &UndoContext,
@@ -202,36 +216,74 @@ fn snapshot_manual_channels(
         .collect()
 }
 
-impl UndoableOperation for DmxAction {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for DmxOperation {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         match self {
-            DmxAction::ReleaseChannels { channels } => {
+            DmxOperation::ReleaseChannels { channels } => {
                 let snapshot = snapshot_manual_channels(ctx, channels.expand());
                 // Releasing channels that carry no manual write changes nothing worth undoing.
                 snapshot
                     .iter()
                     .any(|state| state.manual_value.is_some())
                     .then(|| {
-                        Box::new(DmxAction::RestoreChannels { channels: snapshot })
-                            as Box<dyn UndoableOperation>
+                        Box::new(DmxOperation::RestoreChannels { channels: snapshot })
+                            as Box<dyn Undoable>
                     })
             }
-            DmxAction::RestoreChannels { channels } => Some(Box::new(DmxAction::RestoreChannels {
-                channels: snapshot_manual_channels(ctx, channels.iter().map(|state| state.channel)),
-            })),
+            DmxOperation::RestoreChannels { channels } => {
+                Some(Box::new(DmxOperation::RestoreChannels {
+                    channels: snapshot_manual_channels(
+                        ctx,
+                        channels.iter().map(|state| state.channel),
+                    ),
+                }))
+            }
+            DmxOperation::ReleaseTransportChannels { target, channels } => {
+                let snapshot = snapshot_transport_holds(ctx, target, channels);
+                // Releasing channels that hold nothing changes nothing worth undoing.
+                snapshot
+                    .iter()
+                    .any(|state| state.held_value.is_some())
+                    .then(|| {
+                        Box::new(DmxOperation::RestoreTransportChannels { channels: snapshot })
+                            as Box<dyn Undoable>
+                    })
+            }
+            DmxOperation::RestoreTransportChannels { channels } => {
+                let universes = ctx.world.resource::<ConsoleDmxUniverses>();
+                Some(Box::new(DmxOperation::RestoreTransportChannels {
+                    channels: channels
+                        .iter()
+                        .map(|state| HeldTransportDmxChannelState {
+                            held_value: universes.held_wire_value(
+                                &state.target,
+                                state.channel.universe,
+                                state.channel.address,
+                            ),
+                            ..state.clone()
+                        })
+                        .collect(),
+                }))
+            }
         }
     }
 
     fn description(&self) -> String {
         match self {
-            DmxAction::ReleaseChannels { channels } => format!("Release DMX {channels}"),
-            DmxAction::RestoreChannels { .. } => "Restore DMX Channels".to_string(),
+            DmxOperation::ReleaseChannels { channels } => format!("Release DMX {channels}"),
+            DmxOperation::RestoreChannels { .. } => "Restore DMX Channels".to_string(),
+            DmxOperation::ReleaseTransportChannels { target, channels } => {
+                format!("Release DMX {target}:{channels}")
+            }
+            DmxOperation::RestoreTransportChannels { .. } => {
+                "Restore Held DMX Channels".to_string()
+            }
         }
     }
 }
 
-impl UndoableOperation for RestoreColorPathDefaultsSnapshot {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for RestoreColorPathDefaultsSnapshot {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
         Some(Box::new(RestoreColorPathDefaultsSnapshot(
             ColorPathDefaultsSnapshot {
@@ -245,8 +297,8 @@ impl UndoableOperation for RestoreColorPathDefaultsSnapshot {
     }
 }
 
-impl UndoableOperation for FixtureCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for FixtureCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
         match self {
             FixtureCommand::StoreFixture(fixture) => {
@@ -269,7 +321,7 @@ impl UndoableOperation for FixtureCommand {
                 // Capture full fixture state before deletion
                 fixtures.inner.from_id(*id).ok().map(|fixture_ref| {
                     let snapshot = snapshot_fixture(ctx, &fixture_ref);
-                    Box::new(RestoreFixtureSnapshot(snapshot)) as Box<dyn UndoableOperation>
+                    Box::new(RestoreFixtureSnapshot(snapshot)) as Box<dyn Undoable>
                 })
             }
             FixtureCommand::RenameFixture { id, new_id } => {
@@ -279,10 +331,15 @@ impl UndoableOperation for FixtureCommand {
                 }))
             }
             FixtureCommand::SetDmxChannels { channels, .. } => {
-                Some(Box::new(DmxAction::RestoreChannels {
+                Some(Box::new(DmxOperation::RestoreChannels {
                     channels: snapshot_manual_channels(ctx, channels.expand()),
                 }))
             }
+            FixtureCommand::SetTransportDmxChannels {
+                target, channels, ..
+            } => Some(Box::new(DmxOperation::RestoreTransportChannels {
+                channels: snapshot_transport_holds(ctx, target, channels),
+            })),
             FixtureCommand::UpdateFixturePlacements { updates } => {
                 let mut inverse_updates = Vec::new();
                 for update in updates {
@@ -299,11 +356,8 @@ impl UndoableOperation for FixtureCommand {
                     updates: inverse_updates,
                 }))
             }
-            FixtureCommand::UpdateFixturePatch { id, .. } => {
-                snapshot_binding_state(ctx, *id).map(|snapshot| {
-                    Box::new(RestoreBindingSnapshot(snapshot)) as Box<dyn UndoableOperation>
-                })
-            }
+            FixtureCommand::UpdateFixturePatch { id, .. } => snapshot_binding_state(ctx, *id)
+                .map(|snapshot| Box::new(RestoreBindingSnapshot(snapshot)) as Box<dyn Undoable>),
             FixtureCommand::PatchBinding { .. } => Some(Box::new(RestorePatchBindingsSnapshot(
                 snapshot_patch_bindings(ctx),
             ))),
@@ -331,7 +385,7 @@ impl UndoableOperation for FixtureCommand {
                         fixture_id: *id,
                         attribute: attribute.clone(),
                         offsets,
-                    })) as Box<dyn UndoableOperation>)
+                    })) as Box<dyn Undoable>)
                 })
             }
             FixtureCommand::SetColorPathDefault { .. }
@@ -353,6 +407,11 @@ impl UndoableOperation for FixtureCommand {
             FixtureCommand::SetDmxChannels { channels, value } => {
                 format!("Set DMX {} @ {}", channels, value)
             }
+            FixtureCommand::SetTransportDmxChannels {
+                target,
+                channels,
+                value,
+            } => format!("Set DMX {target}:{channels} @ {value}"),
             FixtureCommand::UpdateFixturePlacements { updates } => {
                 format!("Update {} Fixture Placements", updates.len())
             }

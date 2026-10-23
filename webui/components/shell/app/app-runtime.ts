@@ -21,34 +21,8 @@ import { registerAllComponents } from "../../../lib/panel-registration";
 import { startPerformanceMeasureCollector } from "../../../lib/performance-measure-collector";
 import { initializePrelineRuntime } from "../../../lib/preline-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
-import { currentShowfileSaveOptions } from "../../../lib/showfile-actions";
 
 const log = getLogger(import.meta.url);
-
-/** Asks the backend to preserve or remove the current showfile draft on close. */
-function triggerCloseDraftSave(): void {
-  const url = `${getBackendUrl()}/api/showfiles/current/draft`;
-  const body = JSON.stringify(currentShowfileSaveOptions());
-  const beaconBody = new Blob([body], { type: "application/json" });
-  if (navigator.sendBeacon?.(url, beaconBody)) return;
-
-  void fetch(url, {
-    body,
-    headers: { "Content-Type": "application/json" },
-    method: "POST",
-    keepalive: true,
-  }).catch((error: unknown) => {
-    log.warn("Failed to trigger close draft save", error);
-  });
-}
-
-/** Installs browser lifecycle draft preservation for tab and window closes. */
-function installShowfileCloseDraftPreservation(): () => void {
-  /** Preserves or cleans up the active showfile draft before the page unloads. */
-  const handlePageHide = () => triggerCloseDraftSave();
-  window.addEventListener("pagehide", handlePageHide);
-  return () => window.removeEventListener("pagehide", handlePageHide);
-}
 
 /** Installs store-listener attribution for latency investigations. */
 function installPerformanceStoreInstrumentation(): void {
@@ -77,11 +51,7 @@ export function initializeApplicationRuntime(): () => void {
   installPerformanceStoreInstrumentation();
   startNanostoresLogger();
 
-  const cleanupDraftPreservation = isEmbeddedDemoRuntime()
-    ? () => undefined
-    : installShowfileCloseDraftPreservation();
   return () => {
-    cleanupDraftPreservation();
     frameMonitor.stop();
     longAnimationFrameMonitor.stop();
     metricsHistoryCollector.stop();

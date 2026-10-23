@@ -152,11 +152,11 @@ test("timeline list toolbar exposes CRUD actions", async ({
   const deleteButton = panel.getByRole("button", {
     name: "Delete selected timelines",
   });
-  const listViewButton = panel.getByRole("button", {
-    name: "Switch to list view",
+  const listViewButton = panel.getByRole("radio", {
+    name: "List view",
   });
-  const gridViewButton = panel.getByRole("button", {
-    name: "Switch to grid view",
+  const gridViewButton = panel.getByRole("radio", {
+    name: "Grid view",
   });
   const selectionModeButton = panel.getByRole("button", {
     name: "Toggle selection mode",

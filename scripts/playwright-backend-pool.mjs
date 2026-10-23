@@ -8,7 +8,14 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, openSync, readdirSync, rmSync } from "node:fs";
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { clonePlaywrightDataDir } from "./nightfall-test-data-dir.mjs";
@@ -239,19 +246,44 @@ export function sampleDataBootstrapEnvironment({
   };
 }
 
+/**
+ * Records a declined telemetry choice so the first-run prompt stays out of tests that
+ * are not about it, or removes any stored choice so the prompt appears.
+ */
+function seedTelemetryChoice(dataDir, telemetryUndecided) {
+  const path = join(dataDir, "telemetry.json");
+  if (telemetryUndecided) {
+    rmSync(path, { force: true });
+    return;
+  }
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      consent: { decided: true, share_usage: false, share_errors: false },
+      install_id: "",
+    }),
+  );
+}
+
 /** Starts a freshly seeded backend for one test on its worker's fixed port. */
 export async function startPlaywrightTestBackend({
   emptyStartupWorld = false,
   experimentalFlows = false,
+  telemetryUndecided = false,
   seedDataDir,
   testId,
   workerSlot,
 }) {
   const testKey = shortIdentifier(testId);
+  // Every backend connects only to its own test's MIDI port, which is unique across runs, so
+  // tests never see one another's (or the host's) MIDI controllers.
+  const midiInputPort = `Nightfall E2E ${shortIdentifier(`${workerSlot.runRoot}\0${testId}`)}`;
   const { runDataDir: dataDir, seedDataAvailable } = clonePlaywrightDataDir(
     seedDataDir,
     workerSlot.runRoot,
   );
+  seedTelemetryChoice(dataDir, telemetryUndecided);
   const registryPath = join(
     workerSlot.runRoot,
     `worker-${workerSlot.workerIndex}-test-${testKey}.jsonl`,
@@ -262,11 +294,15 @@ export async function startPlaywrightTestBackend({
       environment: {
         RUST_LOG: process.env.NIGHTFALL_PLAYWRIGHT_RUST_LOG ?? "error",
         NIGHTFALL_DATA_DIR: dataDir,
+        // Tests that turn reports on must never reach the project's services.
+        NIGHTFALL_ERROR_REPORTS_DSN: "",
+        NIGHTFALL_USAGE_REPORTS_URL: "",
         NIGHTFALL_INPUT_ARTNET: "false",
         NIGHTFALL_INPUT_SACN_ENABLED: "false",
         NIGHTFALL_OUTPUT_ARTNET: "false",
         NIGHTFALL_OUTPUT_SACN_ENABLED: "false",
         NIGHTFALL_OUTPUT_USB: "false",
+        NIGHTFALL_MIDI_INPUT_PORT: midiInputPort,
         NIGHTFALL_EXPERIMENTAL_FLOWS: experimentalFlows ? "1" : "0",
         NIGHTFALL_PORT: String(workerSlot.backendPort),
         NIGHTFALL_TIMELINE_AUDIO_ENABLED:
@@ -285,6 +321,7 @@ export async function startPlaywrightTestBackend({
       ...workerSlot,
       backendService,
       dataDir,
+      midiInputPort,
       testId,
     };
   } catch (error) {

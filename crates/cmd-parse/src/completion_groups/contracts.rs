@@ -88,6 +88,8 @@ completion_group_ids! {
     DebugObject => "debug/object",
     SleepDuration => "sleep/duration",
     FpsValue => "fps/value",
+    /// Completion group for live tempo operations such as `tap`, `nudge`, or a BPM value.
+    TempoAction => "tempo/action",
 }
 
 /// Declarative definition of one completion group surfaced by the planner.

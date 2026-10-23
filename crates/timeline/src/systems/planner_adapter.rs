@@ -9,14 +9,18 @@
 use super::*;
 
 pub(super) fn write_timeline_desk_action(
-    writer: &mut MessageWriter<EngineActionEnvelope<EvalAction>>,
+    writer: &mut MessageWriter<EngineOperationEnvelope<EvalOperation>>,
     origins: &mut TimelineCommandOrigins,
     command: String,
 ) {
     let operation_id = OperationId::new();
     let undo_id = UndoId::new();
-    let event =
-        EngineActionEnvelope::with_context(operation_id, None, Some(undo_id), EvalAction(command));
+    let event = EngineOperationEnvelope::with_context(
+        operation_id,
+        None,
+        Some(undo_id),
+        EvalOperation(command),
+    );
     origins.mark_clip_undo_id(undo_id.into());
     writer.write(event);
 }
@@ -381,7 +385,6 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
             },
         ],
         &planner_resolver,
-        None,
     )
     .evaluate();
 
@@ -496,7 +499,6 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
         current_position,
         instance_actions,
         &planner_resolver,
-        None,
     );
     let interval = plan
         .instances
@@ -506,18 +508,11 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
         PlannedPlaybackSource::Sequence(sequence_uid) => sequence_uid,
         _ => return None,
     };
-    let sequence_data_provider = sequence_data_provider?;
-    let sequence = sequence_data_provider.get(sequence_uid).ok()?;
-    let steps = sequence
-        .steps
-        .iter()
-        .map(|cue_uid| cue_data_provider.get(cue_uid.0).map(|cue| cue.clone()))
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    let mut sequence_playback = SequenceTimelineSeekPlayback::from_sequence_steps(
+    let mut sequence_playback = SequenceTimelineSeekPlayback::from_sequence_uid(
         clip_id,
-        &sequence,
-        &steps,
+        sequence_uid,
+        sequence_data_provider?,
+        cue_data_provider,
         fixture_data_provider,
         selection_resolver,
         origin_position,

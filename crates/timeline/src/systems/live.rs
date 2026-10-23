@@ -12,7 +12,12 @@ use super::*;
 #[cfg(feature = "audio")]
 use crate::TimelineAudioOutputEnabled;
 
+mod actions;
+
 /// Synchronize materialized timelines with their timecodes and apply enabled loop seeks.
+///
+/// Loops apply only to internal timecodes: an external source owns its position, so seeking it
+/// back would be undone by the next frame.
 pub fn update_timeline_system(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
     mut timecode_query: Query<(Entity, &mut TimecodeGenerator)>,
@@ -30,6 +35,7 @@ pub fn update_timeline_system(
             continue;
         };
         if timeline.is_active
+            && timecode.is_internal()
             && let Some(loop_range) = timeline
                 .timeline
                 .loop_range
@@ -45,75 +51,12 @@ pub fn update_timeline_system(
                 timeline.audio_needs_sync = true;
             }
         }
+        timeline.follow_timecode_transport(
+            !timecode.is_internal(),
+            timecode.state.is_active,
+            timecode.position_jumps,
+        );
         timeline.update_with_timecode(timecode.state.current_time);
-    }
-}
-
-#[cfg(test)]
-mod update_timeline_tests {
-    use bevy_app::{App, Update};
-
-    use super::*;
-    use crate::prelude::{Timeline, TimelineLoopRange};
-
-    /// Looping one timeline seeks only its UID-associated timecode generator.
-    #[test]
-    fn loop_seek_targets_associated_timecode() {
-        let mut app = App::new();
-        app.add_systems(Update, update_timeline_system);
-
-        let mut unrelated_timecode = TimecodeGenerator::default();
-        unrelated_timecode.state.current_time = Duration::from_secs(9);
-        let unrelated_entity = app.world_mut().spawn(unrelated_timecode).id();
-
-        let mut associated_timecode = TimecodeGenerator::default();
-        associated_timecode.state.current_time = Duration::from_secs(6);
-        let associated_uid = associated_timecode.timecode.identifiers.uid;
-        let associated_entity = app.world_mut().spawn(associated_timecode).id();
-
-        let mut timeline = Timeline {
-            timecode_uid: associated_uid,
-            timecode_start: Duration::from_secs(1),
-            loop_range: Some(TimelineLoopRange {
-                start: Duration::from_secs(2),
-                end: Duration::from_secs(4),
-                enabled: true,
-            }),
-            ..Default::default()
-        };
-        timeline.identifiers.id = 1;
-        let mut materialized_timeline = MaterializedTimeline::new(timeline);
-        materialized_timeline.is_active = true;
-        app.world_mut().spawn(materialized_timeline);
-
-        app.update();
-
-        let unrelated_timecode = app
-            .world()
-            .entity(unrelated_entity)
-            .get::<TimecodeGenerator>()
-            .expect("unrelated timecode should remain materialized");
-        assert_eq!(
-            unrelated_timecode.state.current_time,
-            Duration::from_secs(9)
-        );
-
-        let associated_timecode = app
-            .world()
-            .entity(associated_entity)
-            .get::<TimecodeGenerator>()
-            .expect("associated timecode should remain materialized");
-        assert_eq!(
-            associated_timecode.state.current_time,
-            Duration::from_secs(3)
-        );
-
-        let materialized_timeline = app
-            .world_mut()
-            .query::<&MaterializedTimeline>()
-            .single(app.world())
-            .expect("timeline should remain materialized");
-        assert!(materialized_timeline.audio_needs_sync);
     }
 }
 
@@ -135,10 +78,10 @@ pub fn handle_timeline_audio_system(
         );
     }
 
-    // Handle each timeline that needs audio sync
+    // Handle each timeline that needs audio sync or has playing audio to keep on the timecode
     for (entity, mut timeline) in timeline_query
         .iter_mut()
-        .filter(|(_, t)| t.audio_needs_sync)
+        .filter(|(_, t)| t.audio_needs_sync || t.audio_clock_reported_offset.is_some())
     {
         let (current_time, timecode_running) = timecode_info
             .get(&timeline.timeline.timecode_uid)
@@ -147,6 +90,20 @@ pub fn handle_timeline_audio_system(
 
         let playback_position = timeline.get_playback_position(current_time);
         let audio_enabled = timeline.timeline.audio_enabled && audio_output_enabled.0;
+        let playing = timeline.is_active && timecode_running && audio_enabled;
+
+        // The timecode leads: playing audio is told where the timecode is, and the audio
+        // worker seeks it back when the audio actually played has drifted away.
+        if !timeline.audio_needs_sync {
+            if timeline.take_audio_clock_report(playing, playback_position)
+                && let Some(sink_id) = timeline.audio_sink_id
+            {
+                audio_controller.sync(sink_id, playback_position);
+            }
+            continue;
+        }
+        timeline.anchor_audio_clock(playing, playback_position);
+
         tracing::trace!(
             %entity,
             timeline_id = timeline.timeline.identifiers.id,
@@ -159,7 +116,7 @@ pub fn handle_timeline_audio_system(
             playback_position = ?playback_position,
             "Processing timeline audio sync"
         );
-        if timeline.is_active && timecode_running && audio_enabled {
+        if playing {
             // Timeline is active, audio should play, and timecode is running
             if timeline.audio_sink_id.is_none() {
                 // Create a new audio sink for this timeline if it doesn't have one
@@ -312,34 +269,78 @@ pub struct TimelineLiveClipState<'w, 's> {
     materialized_clip_links: Query<'w, 's, (Entity, &'static MaterializedClip)>,
 }
 
-/// System that processes track actions to trigger actions when timecode passes their position
+/// Read-only sources consulted while dispatching live timeline actions.
+#[derive(SystemParam)]
+pub struct TimelineLiveActionSources<'w, 's> {
+    /// Cue, color path, Blueprint, sequence, and fixture definitions.
+    source_data: TimelineLiveSourceData<'w>,
+    /// Resolves cue selections during cue materialization and duration planning.
+    selection_resolver: SpatialSelectionResolver<'w>,
+    /// Fixture parameters addressed by materialized cues.
+    parameter_query: Query<'w, 's, InstanceRef<'static, Parameter>>,
+    /// Optional registry used to resolve registered timeline actions.
+    action_registry: Option<Res<'w, ActionRegistry>>,
+    /// Clip lookup and playback-link state.
+    clip_state: TimelineLiveClipState<'w, 's>,
+}
+
+/// Outputs written while dispatching live timeline actions.
+#[derive(SystemParam)]
+pub struct TimelineLiveActionSinks<'w, 's> {
+    /// Materialized cues released when bounded fire-cue actions end.
+    materialized_cues: Query<'w, 's, &'static mut MaterializedCue>,
+    /// Deferred ECS mutations for cue materialization and release markers.
+    commands: Commands<'w, 's>,
+    /// Desk eval operations emitted by desk eval actions.
+    ev_desk: MessageWriter<'w, EngineOperationEnvelope<EvalOperation>>,
+    /// Clip operations emitted by clip and sequence actions.
+    ev_clip: MessageWriter<'w, EngineOperationEnvelope<ClipOperation>>,
+    /// Optional invocations for registered domain actions.
+    action_invocations: Option<MessageWriter<'w, ActionInvocation>>,
+    /// Origins retained for timeline-issued operations.
+    timeline_command_origins: ResMut<'w, TimelineCommandOrigins>,
+}
+
+/// Per-timeline state accumulated while dispatching the actions triggered in one scan.
+struct TimelineActionScan<'a> {
+    /// Timeline being scanned.
+    timeline_uid: Uuid,
+    /// Numeric timeline ID used in action invocation sources.
+    timeline_id: u32,
+    /// Timeline playhead position the scan ends at.
+    current_position: Duration,
+    /// Clip lookup shared by every timeline scanned this frame.
+    clip_snapshot: &'a ClipLookupSnapshot<'a>,
+    /// Planner input for sequence navigation; empty when the scan crosses no navigation.
+    planning_actions: Vec<TimelinePlanningAction>,
+    /// Positions of every timeline action by track and action ID.
+    action_positions: HashMap<(String, String), Duration>,
+    /// Timeline-owned entities as they were before this scan.
+    existing_spawned_entities: HashMap<Entity, (String, String, SpawnedEntityType)>,
+    /// Timeline-level playback options applied to started and rendered clips.
+    instance_options: Option<InstanceOptions>,
+    /// Entities that become timeline-owned once the scan finishes.
+    entities_to_track: HashMap<Entity, (String, String, SpawnedEntityType)>,
+    /// Entities that stop being timeline-owned once the scan finishes.
+    entities_to_untrack: HashSet<Entity>,
+    /// Clip entities with live playback, updated as actions start and stop clips.
+    active_clip_entities: HashSet<Entity>,
+}
+
+/// System that processes track actions to trigger actions when timecode passes their position.
+///
+/// Each active timeline scans the actions crossed since its last scan and dispatches them in
+/// order, then commits the resulting entity ownership and releases bounded fired cues that
+/// have reached their end.
 pub fn process_actions_system(
     mut timeline_query: Query<(&mut MaterializedTimeline, &mut TimelineActionCursor)>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
-    source_data: TimelineLiveSourceData,
-    selection_resolver: SpatialSelectionResolver,
-    parameter_query: Query<InstanceRef<Parameter>>,
-    mut materialized_cues: Query<&mut MaterializedCue>,
-    mut commands: Commands,
-    mut ev_desk: MessageWriter<EngineActionEnvelope<EvalAction>>,
-    mut ev_clip: MessageWriter<EngineActionEnvelope<ClipAction>>,
-    mut action_invocations: Option<MessageWriter<ActionInvocation>>,
-    action_registry: Option<Res<ActionRegistry>>,
-    mut timeline_command_origins: ResMut<TimelineCommandOrigins>,
-    clip_state: TimelineLiveClipState,
+    sources: TimelineLiveActionSources,
+    mut sinks: TimelineLiveActionSinks,
 ) {
-    use crate::components::SpawnedEntityType;
+    let clip_snapshot = sources.clip_state.clip_lookup.snapshot();
 
-    let cue_data_provider = source_data.cue_data_provider;
-    let color_path_data_provider = source_data.color_path_data_provider;
-    let blueprint_data_provider = source_data.blueprint_data_provider;
-    let sequence_data_provider = source_data.sequence_data_provider;
-    let fixture_data_provider = source_data.fixture_data_provider;
-    let clip_snapshot = clip_state.clip_lookup.snapshot();
-
-    // Create a map of timecode UIDs to their current times for quick lookup
     let mut timecode_times = std::collections::HashMap::new();
-
     for (_, timecode) in timecode_query.iter() {
         timecode_times.insert(
             timecode.timecode.identifiers.uid,
@@ -347,20 +348,16 @@ pub fn process_actions_system(
         );
     }
 
-    // Process each timeline
     for (mut timeline, mut cursor) in timeline_query.iter_mut() {
-        // Skip inactive timelines
         if !timeline.is_active {
             continue;
         }
 
-        // Get the current timecode time for this timeline
-        let timecode_time = match timecode_times.get(&timeline.timeline.timecode_uid) {
-            Some(time) => *time,
-            None => continue, // Skip if no timecode found
+        let Some(timecode_time) = timecode_times.get(&timeline.timeline.timecode_uid).copied()
+        else {
+            continue;
         };
 
-        // Calculate the timeline position
         let current_position = timeline.get_playback_position(timecode_time);
         let timeline_uid = timeline.timeline.identifiers.uid;
         let timeline_id = timeline.timeline.identifiers.id;
@@ -372,615 +369,198 @@ pub fn process_actions_system(
             continue;
         };
 
-        // Collect tracking updates to apply after processing actions
-        let mut entities_to_track: HashMap<Entity, (String, String, SpawnedEntityType)> =
-            HashMap::new();
-        let mut entities_to_untrack: HashSet<Entity> = HashSet::new();
-        let mut active_clip_entities =
-            active_clip_entities(&clip_state.exec_query, &clip_state.materialized_clip_links);
-
-        let action_positions = timeline_action_positions(&timeline);
-        let has_navigation = timeline
-            .collect_actions_in_range(last_processed, current_position)
-            .iter()
-            .any(|(action, _)| {
-                matches!(
-                    normalized_registered_action_kind(&action.action, action_registry.as_deref())
-                        .unwrap_or_else(|| action.action.clone()),
-                    ActionKind::AdvanceSequence(_)
-                        | ActionKind::BackSequence(_)
-                        | ActionKind::JumpToCue { .. }
-                )
-            });
-        let planning_actions = if has_navigation {
-            timeline
-                .collect_actions_in_range(Duration::ZERO, current_position)
-                .into_iter()
-                .map(|(action, track)| TimelinePlanningAction {
-                    track_id: track.id.clone(),
-                    action_id: action.id.clone(),
-                    action: normalized_registered_action_kind(
-                        &action.action,
-                        action_registry.as_deref(),
-                    )
-                    .unwrap_or_else(|| action.action.clone()),
-                    position: action.position,
-                    duration: action.duration,
-                })
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
+        let mut scan = TimelineActionScan {
+            timeline_uid,
+            timeline_id,
+            current_position,
+            clip_snapshot: &clip_snapshot,
+            active_clip_entities: active_clip_entities(
+                &sources.clip_state.exec_query,
+                &sources.clip_state.materialized_clip_links,
+            ),
+            action_positions: timeline_action_positions(&timeline),
+            planning_actions: navigation_planning_actions(
+                &timeline,
+                last_processed,
+                current_position,
+                sources.action_registry.as_deref(),
+            ),
+            existing_spawned_entities: timeline.spawned_entities.clone(),
+            instance_options: instance_options_for_timeline(&timeline),
+            entities_to_track: HashMap::new(),
+            entities_to_untrack: HashSet::new(),
         };
-        let existing_spawned_entities = timeline.spawned_entities.clone();
-        let timeline_instance_options = instance_options_for_timeline(&timeline);
         let actions_to_trigger = timeline.process_actions(last_processed, current_position);
         cursor.advance_to(current_position);
 
-        // Handle each triggered action
         for (track, timeline_action) in actions_to_trigger {
-            tracing::debug!(
-                action_id = %timeline_action.id,
-                position = ?current_position,
-                "Triggering action"
-            );
-            let normalized_action = normalized_registered_action_kind(
-                &timeline_action.action,
-                action_registry.as_deref(),
-            );
-            if normalized_action.is_none()
-                && let ActionKind::RegisteredAction(registered_action) = &timeline_action.action
-            {
-                if let Some(action_invocations) = action_invocations.as_mut() {
-                    action_invocations.write(
-                        ActionInvocation::trigger(
-                            registered_action.clone(),
-                            ActionSurface::Timeline,
-                        )
-                        .with_source(format!(
-                            "Timeline {} action {}",
-                            timeline_id, timeline_action.id
-                        )),
-                    );
-                } else {
-                    tracing::warn!(
-                        action_id = registered_action.id.as_str(),
-                        "Registered action invocation is unavailable"
-                    );
-                }
-                continue;
-            }
-            let action_kind = normalized_action
-                .as_ref()
-                .unwrap_or(&timeline_action.action);
-
-            match action_kind {
-                ActionKind::FireCue(cue_uid) => {
-                    tracing::debug!("Materializing cue {} from timeline FireCue action", cue_uid);
-                    let source = PlannedPlaybackSource::Cue(*cue_uid);
-                    let planner_resolver = TimelinePlannerResolver {
-                        source_by_clip_uid: HashMap::new(),
-                        duration_by_source: HashMap::from([(
-                            source,
-                            playback_duration_profile_for_source(
-                                source,
-                                &cue_data_provider,
-                                None,
-                                &fixture_data_provider,
-                                &selection_resolver,
-                            ),
-                        )]),
-                    };
-                    let evaluated_timeline_state = plan_timeline_at(
-                        timeline_uid,
-                        current_position,
-                        [TimelinePlanningAction {
-                            track_id: track.id.clone(),
-                            action_id: timeline_action.id.clone(),
-                            action: action_kind.clone(),
-                            position: timeline_action.position,
-                            duration: timeline_action.duration,
-                        }],
-                        &planner_resolver,
-                        None,
-                    )
-                    .evaluate();
-                    let Some(playback) =
-                        evaluated_timeline_state.instances.iter().find(|playback| {
-                            playback.owner.track_id == track.id
-                                && playback.owner.action_id == timeline_action.id
-                        })
-                    else {
-                        continue;
-                    };
-                    if let Some(entity) = materialize_evaluated_fire_cue(
-                        &mut commands,
-                        playback,
-                        timeline_uid,
-                        &cue_data_provider,
-                        color_path_data_provider.as_deref(),
-                        blueprint_data_provider.as_deref(),
-                        &fixture_data_provider,
-                        &selection_resolver,
-                        &parameter_query,
-                    ) {
-                        debug_assert!(
-                            !track.id.is_empty(),
-                            "Timeline track id should not be empty when tracking spawned entities"
-                        );
-                        entities_to_track.insert(
-                            entity,
-                            (
-                                track.id.clone(),
-                                timeline_action.id.clone(),
-                                SpawnedEntityType::Cue,
-                            ),
-                        );
-                    }
-                }
-                ActionKind::StartClip(clip_uid) => {
-                    tracing::debug!("Starting clip {}", clip_uid);
-                    let Some((entity, id)) =
-                        resolve_clip_entity_and_id(&clip_snapshot, clip_uid, "start-clip")
-                    else {
-                        continue;
-                    };
-                    let timing = if let Some(source) = clip_state
-                        .exec_query
-                        .get(entity)
-                        .ok()
-                        .and_then(|(_, clip)| planned_source_for_clip(clip))
-                    {
-                        let planner_resolver = TimelinePlannerResolver {
-                            source_by_clip_uid: HashMap::from([(*clip_uid, source)]),
-                            duration_by_source: HashMap::from([(
-                                source,
-                                playback_duration_profile_for_source(
-                                    source,
-                                    &cue_data_provider,
-                                    None,
-                                    &fixture_data_provider,
-                                    &selection_resolver,
-                                ),
-                            )]),
-                        };
-                        let evaluated_timeline_state = plan_timeline_at(
-                            timeline_uid,
-                            current_position,
-                            [TimelinePlanningAction {
-                                track_id: track.id.clone(),
-                                action_id: timeline_action.id.clone(),
-                                action: action_kind.clone(),
-                                position: timeline_action.position,
-                                duration: timeline_action.duration,
-                            }],
-                            &planner_resolver,
-                            None,
-                        )
-                        .evaluate();
-                        let Some(playback) =
-                            evaluated_timeline_state.instances.iter().find(|playback| {
-                                playback.owner.track_id == track.id
-                                    && playback.owner.action_id == timeline_action.id
-                            })
-                        else {
-                            continue;
-                        };
-                        reconstruction_timing_from_evaluated_instance(playback, timeline_uid)
-                    } else {
-                        PlaybackReconstructionTiming::timeline(
-                            timeline_action.position,
-                            current_position,
-                            timeline_uid,
-                            timeline_action.position,
-                        )
-                    };
-                    write_timeline_clip_action(
-                        &mut ev_clip,
-                        &mut timeline_command_origins,
-                        ClipAction::StartAtTiming {
-                            clip_id: IdExpr::Single(id),
-                            timing,
-                            instance_options: timeline_instance_options,
-                        },
-                    );
-                    track_timeline_clip_entity(
-                        &mut entities_to_track,
-                        &mut active_clip_entities,
-                        entity,
-                        &track.id,
-                        &timeline_action.id,
-                    );
-                }
-                ActionKind::StopClip(clip_uid) => {
-                    tracing::debug!("Stopping clip {}", clip_uid);
-                    let Some((entity, id)) =
-                        resolve_clip_entity_and_id(&clip_snapshot, clip_uid, "stop-clip")
-                    else {
-                        continue;
-                    };
-                    let command = clip_state
-                        .exec_query
-                        .get(entity)
-                        .ok()
-                        .and_then(|(_, clip)| planned_source_for_clip(clip))
-                        .and_then(|source| {
-                            planned_release_reconstruction_timing_for_clip_stop(
-                                &action_positions,
-                                &existing_spawned_entities,
-                                &entities_to_untrack,
-                                &entities_to_track,
-                                entity,
-                                *clip_uid,
-                                source,
-                                timeline_uid,
-                                &track.id,
-                                &timeline_action.id,
-                                timeline_action.position,
-                                current_position,
-                                &cue_data_provider,
-                                &fixture_data_provider,
-                                &selection_resolver,
-                            )
-                        })
-                        .map(|timing| ClipAction::StopAtTiming {
-                            clip_id: IdExpr::Single(id),
-                            timing,
-                        })
-                        .unwrap_or(ClipAction::Stop(IdExpr::Single(id)));
-                    write_timeline_clip_action(
-                        &mut ev_clip,
-                        &mut timeline_command_origins,
-                        command,
-                    );
-                    active_clip_entities.remove(&entity);
-                    entities_to_track.remove(&entity);
-
-                    // Mark to remove from tracked spawned entities (apply after loop)
-                    entities_to_untrack.insert(entity);
-                }
-                ActionKind::AdvanceSequence(clip_id) => {
-                    tracing::debug!("Advancing sequence on clip {}", clip_id);
-                    let Some((entity, id)) =
-                        resolve_clip_entity_and_id(&clip_snapshot, clip_id, "advance-sequence")
-                    else {
-                        continue;
-                    };
-                    let render_command = clip_state
-                        .exec_query
-                        .get(entity)
-                        .ok()
-                        .and_then(|(_, clip)| planned_source_for_clip(clip))
-                        .and_then(|source| {
-                            planned_intervention_render_target_for_clip_action(
-                                &planning_actions,
-                                &action_positions,
-                                &existing_spawned_entities,
-                                &entities_to_untrack,
-                                &entities_to_track,
-                                entity,
-                                id,
-                                *clip_id,
-                                source,
-                                timeline_uid,
-                                &track.id,
-                                &timeline_action.id,
-                                action_kind.clone(),
-                                timeline_action.position,
-                                current_position,
-                                &cue_data_provider,
-                                sequence_data_provider.as_deref(),
-                                &fixture_data_provider,
-                                &selection_resolver,
-                                PlannedPlaybackInterventionKind::SequenceGo,
-                            )
-                        })
-                        .map(|render_target| ClipAction::RenderAt {
-                            clip_id: IdExpr::Single(id),
-                            position: render_target.position,
-                            timing: render_target.timing,
-                            instance_options: timeline_instance_options,
-                        });
-                    write_timeline_clip_action(
-                        &mut ev_clip,
-                        &mut timeline_command_origins,
-                        render_command.unwrap_or(ClipAction::Go(IdExpr::Single(id))),
-                    );
-                    track_timeline_clip_navigation_entity(
-                        &existing_spawned_entities,
-                        &entities_to_untrack,
-                        &mut entities_to_track,
-                        &mut active_clip_entities,
-                        entity,
-                        &track.id,
-                        &timeline_action.id,
-                    );
-                }
-                ActionKind::BackSequence(clip_id) => {
-                    tracing::debug!("Going back in sequence on clip {}", clip_id);
-                    let Some((entity, id)) =
-                        resolve_clip_entity_and_id(&clip_snapshot, clip_id, "back-sequence")
-                    else {
-                        continue;
-                    };
-                    let render_command = clip_state
-                        .exec_query
-                        .get(entity)
-                        .ok()
-                        .and_then(|(_, clip)| planned_source_for_clip(clip))
-                        .and_then(|source| {
-                            planned_intervention_render_target_for_clip_action(
-                                &planning_actions,
-                                &action_positions,
-                                &existing_spawned_entities,
-                                &entities_to_untrack,
-                                &entities_to_track,
-                                entity,
-                                id,
-                                *clip_id,
-                                source,
-                                timeline_uid,
-                                &track.id,
-                                &timeline_action.id,
-                                action_kind.clone(),
-                                timeline_action.position,
-                                current_position,
-                                &cue_data_provider,
-                                sequence_data_provider.as_deref(),
-                                &fixture_data_provider,
-                                &selection_resolver,
-                                PlannedPlaybackInterventionKind::SequenceBack,
-                            )
-                        })
-                        .map(|render_target| ClipAction::RenderAt {
-                            clip_id: IdExpr::Single(id),
-                            position: render_target.position,
-                            timing: render_target.timing,
-                            instance_options: timeline_instance_options,
-                        });
-                    write_timeline_clip_action(
-                        &mut ev_clip,
-                        &mut timeline_command_origins,
-                        render_command.unwrap_or(ClipAction::Back(IdExpr::Single(id))),
-                    );
-                    track_timeline_clip_navigation_entity(
-                        &existing_spawned_entities,
-                        &entities_to_untrack,
-                        &mut entities_to_track,
-                        &mut active_clip_entities,
-                        entity,
-                        &track.id,
-                        &timeline_action.id,
-                    );
-                }
-                ActionKind::SetClipRate { uid, rate } => {
-                    tracing::debug!("Setting clip {} playback rate to {}", uid, rate);
-                    let Some((entity, id)) =
-                        resolve_clip_entity_and_id(&clip_snapshot, uid, "set-clip-rate")
-                    else {
-                        continue;
-                    };
-                    write_timeline_clip_action(
-                        &mut ev_clip,
-                        &mut timeline_command_origins,
-                        ClipAction::SetRate {
-                            clip_id: IdExpr::Single(id),
-                            rate: *rate,
-                        },
-                    );
-                    track_timeline_clip_navigation_entity(
-                        &existing_spawned_entities,
-                        &entities_to_untrack,
-                        &mut entities_to_track,
-                        &mut active_clip_entities,
-                        entity,
-                        &track.id,
-                        &timeline_action.id,
-                    );
-                }
-                ActionKind::JumpToCue { uid, cue_index } => {
-                    tracing::debug!("Jumping to cue {} on clip {}", cue_index, uid);
-                    let Some((entity, id)) =
-                        resolve_clip_entity_and_id(&clip_snapshot, uid, "jump-to-cue")
-                    else {
-                        continue;
-                    };
-                    let render_command = clip_state
-                        .exec_query
-                        .get(entity)
-                        .ok()
-                        .and_then(|(_, clip)| planned_source_for_clip(clip))
-                        .and_then(|source| {
-                            planned_intervention_render_target_for_clip_action(
-                                &planning_actions,
-                                &action_positions,
-                                &existing_spawned_entities,
-                                &entities_to_untrack,
-                                &entities_to_track,
-                                entity,
-                                id,
-                                *uid,
-                                source,
-                                timeline_uid,
-                                &track.id,
-                                &timeline_action.id,
-                                action_kind.clone(),
-                                timeline_action.position,
-                                current_position,
-                                &cue_data_provider,
-                                sequence_data_provider.as_deref(),
-                                &fixture_data_provider,
-                                &selection_resolver,
-                                PlannedPlaybackInterventionKind::SequenceGotoCue(*cue_index),
-                            )
-                        })
-                        .map(|render_target| ClipAction::RenderAt {
-                            clip_id: IdExpr::Single(id),
-                            position: render_target.position,
-                            timing: render_target.timing,
-                            instance_options: timeline_instance_options,
-                        });
-
-                    write_timeline_clip_action(
-                        &mut ev_clip,
-                        &mut timeline_command_origins,
-                        render_command.unwrap_or(ClipAction::Goto {
-                            clip_id: IdExpr::Single(id),
-                            position: *cue_index,
-                            timing: None,
-                        }),
-                    );
-                    track_timeline_clip_navigation_entity(
-                        &existing_spawned_entities,
-                        &entities_to_untrack,
-                        &mut entities_to_track,
-                        &mut active_clip_entities,
-                        entity,
-                        &track.id,
-                        &timeline_action.id,
-                    );
-                }
-                ActionKind::DeskEval(command) => {
-                    tracing::debug!("Dispatching timeline desk eval action: {}", command);
-                    write_timeline_desk_action(
-                        &mut ev_desk,
-                        &mut timeline_command_origins,
-                        command.clone(),
-                    );
-                    for tracking in desk_eval_clip_tracking(command, &clip_state.exec_query) {
-                        match tracking {
-                            DeskEvalClipTracking::Track {
-                                entity,
-                                preserve_existing_origin,
-                            } => {
-                                if preserve_existing_origin {
-                                    track_timeline_clip_navigation_entity(
-                                        &existing_spawned_entities,
-                                        &entities_to_untrack,
-                                        &mut entities_to_track,
-                                        &mut active_clip_entities,
-                                        entity,
-                                        &track.id,
-                                        &timeline_action.id,
-                                    );
-                                } else {
-                                    track_timeline_clip_entity(
-                                        &mut entities_to_track,
-                                        &mut active_clip_entities,
-                                        entity,
-                                        &track.id,
-                                        &timeline_action.id,
-                                    );
-                                }
-                            }
-                            DeskEvalClipTracking::Untrack(entity) => {
-                                active_clip_entities.remove(&entity);
-                                entities_to_track.remove(&entity);
-                                entities_to_untrack.insert(entity);
-                            }
-                        }
-                    }
-                }
-                ActionKind::RegisteredAction(registered_action) => {
-                    tracing::debug!(
-                        ?registered_action,
-                        "Ignoring unsupported registered timeline action"
-                    );
-                }
-            }
-        }
-
-        // Apply tracking updates after processing all actions
-        for (entity, (track_id, action_id, spawned_type)) in &entities_to_track {
-            entities_to_untrack.remove(entity);
-            timeline.spawned_entities.insert(
-                *entity,
-                (track_id.clone(), action_id.clone(), spawned_type.clone()),
+            actions::dispatch_triggered_action(
+                &sources,
+                &mut sinks,
+                &mut scan,
+                track,
+                timeline_action,
             );
         }
 
-        let bounded_cue_lifecycle_updates: Vec<_> = timeline
-            .spawned_entities
-            .iter()
-            .filter_map(|(entity, (track_id, action_id, spawned_type))| {
-                if !matches!(spawned_type, SpawnedEntityType::Cue) {
-                    return None;
-                }
-                let action = timeline
-                    .timeline
-                    .tracks
-                    .iter()
-                    .find(|track| track.id == *track_id)
-                    .and_then(|track| {
-                        track.actions.iter().find(|action| action.id == *action_id)
-                    })?;
-                let ActionKind::FireCue(cue_uid) = &action.action else {
-                    return None;
-                };
-                if action.duration.is_zero() {
-                    return None;
-                }
-                let source = PlannedPlaybackSource::Cue(*cue_uid);
-                let planner_resolver = TimelinePlannerResolver {
-                    source_by_clip_uid: HashMap::new(),
-                    duration_by_source: HashMap::from([(
-                        source,
-                        playback_duration_profile_for_source(
-                            source,
-                            &cue_data_provider,
-                            None,
-                            &fixture_data_provider,
-                            &selection_resolver,
-                        ),
-                    )]),
-                };
-                let evaluated_timeline_state = plan_timeline_at(
-                    timeline_uid,
-                    current_position,
-                    [TimelinePlanningAction {
-                        track_id: track_id.clone(),
-                        action_id: action_id.clone(),
-                        action: action.action.clone(),
-                        position: action.position,
-                        duration: action.duration,
-                    }],
-                    &planner_resolver,
-                    None,
-                )
-                .evaluate();
-                let Some(playback) = evaluated_timeline_state.instances.iter().find(|playback| {
-                    playback.owner.track_id == *track_id && playback.owner.action_id == *action_id
-                }) else {
-                    return Some((
-                        *entity,
-                        PlaybackReleaseTiming {
-                            released_at: action.duration,
-                        },
-                        true,
-                    ));
-                };
-                let released_at = playback.release_snapshot_position?;
-                Some((*entity, PlaybackReleaseTiming { released_at }, false))
-            })
-            .collect();
+        commit_scan_ownership(&sources, &mut sinks, &mut timeline, scan);
+    }
+}
 
-        for (entity, release_timing, is_complete) in bounded_cue_lifecycle_updates {
-            if let Ok(mut mcue) = materialized_cues.get_mut(entity) {
-                mcue.release_with_ltp_hold_at_playback_position(
-                    &fixture_data_provider,
-                    &parameter_query,
-                    Some(release_timing.released_at),
-                );
-            }
-            commands
-                .entity(entity)
-                .insert((ReleaseMarker::default(), release_timing));
-            if is_complete {
-                entities_to_untrack.insert(entity);
-            }
-        }
+/// Returns planner input for every action up to the playhead when the scan crosses navigation.
+///
+/// Sequence navigation reconstructs its render target from the full action history, so the
+/// history is only collected when an advance, back, or jump-to-cue action lies between
+/// `last_processed` and `current_position`.
+fn navigation_planning_actions(
+    timeline: &MaterializedTimeline,
+    last_processed: Duration,
+    current_position: Duration,
+    action_registry: Option<&ActionRegistry>,
+) -> Vec<TimelinePlanningAction> {
+    let has_navigation = timeline
+        .collect_actions_in_range(last_processed, current_position)
+        .iter()
+        .any(|(action, _)| {
+            matches!(
+                action.kind(action_registry),
+                ActionKind::AdvanceSequence(_)
+                    | ActionKind::BackSequence(_)
+                    | ActionKind::JumpToCue { .. }
+            )
+        });
+    if !has_navigation {
+        return Vec::new();
+    }
+    timeline
+        .collect_actions_in_range(Duration::ZERO, current_position)
+        .into_iter()
+        .map(|(action, track)| TimelinePlanningAction {
+            track_id: track.id.clone(),
+            action_id: action.id.clone(),
+            action: action.kind(action_registry),
+            position: action.position,
+            duration: action.duration,
+        })
+        .collect()
+}
 
-        for entity in entities_to_untrack {
-            timeline.spawned_entities.remove(&entity);
+/// Applies a finished scan's ownership changes and releases ended bounded fired cues.
+///
+/// Newly tracked entities are recorded first so bounded-cue release sees cues fired in this
+/// scan. Cues whose playback fully ended are untracked along with the scan's untracked
+/// entities.
+fn commit_scan_ownership(
+    sources: &TimelineLiveActionSources,
+    sinks: &mut TimelineLiveActionSinks,
+    timeline: &mut Mut<MaterializedTimeline>,
+    scan: TimelineActionScan,
+) {
+    let TimelineActionScan {
+        timeline_uid,
+        current_position,
+        entities_to_track,
+        mut entities_to_untrack,
+        ..
+    } = scan;
+
+    for (entity, (track_id, action_id, spawned_type)) in &entities_to_track {
+        entities_to_untrack.remove(entity);
+        timeline.spawned_entities.insert(
+            *entity,
+            (track_id.clone(), action_id.clone(), spawned_type.clone()),
+        );
+    }
+
+    let bounded_cue_lifecycle_updates =
+        actions::bounded_cue_releases(sources, timeline, timeline_uid, current_position);
+    for (entity, release_timing, is_complete) in bounded_cue_lifecycle_updates {
+        if let Ok(mut mcue) = sinks.materialized_cues.get_mut(entity) {
+            mcue.release_with_ltp_hold_at_playback_position(
+                &sources.source_data.fixture_data_provider,
+                &sources.parameter_query,
+                Some(release_timing.released_at),
+            );
         }
+        sinks
+            .commands
+            .entity(entity)
+            .insert((ReleaseMarker::default(), release_timing));
+        if is_complete {
+            entities_to_untrack.insert(entity);
+        }
+    }
+
+    for entity in entities_to_untrack {
+        timeline.spawned_entities.remove(&entity);
+    }
+}
+
+#[cfg(test)]
+mod update_timeline_tests {
+    use bevy_app::{App, Update};
+
+    use super::*;
+    use crate::prelude::{Timeline, TimelineLoopRange};
+
+    /// Looping one timeline seeks only its UID-associated timecode generator.
+    #[test]
+    fn loop_seek_targets_associated_timecode() {
+        let mut app = App::new();
+        crate::install_timeline_test_actions(&mut app);
+        app.add_systems(Update, update_timeline_system);
+
+        let mut unrelated_timecode = TimecodeGenerator::default();
+        unrelated_timecode.state.current_time = Duration::from_secs(9);
+        let unrelated_entity = app.world_mut().spawn(unrelated_timecode).id();
+
+        let mut associated_timecode = TimecodeGenerator::default();
+        associated_timecode.state.current_time = Duration::from_secs(6);
+        let associated_uid = associated_timecode.timecode.identifiers.uid;
+        let associated_entity = app.world_mut().spawn(associated_timecode).id();
+
+        let mut timeline = Timeline {
+            timecode_uid: associated_uid,
+            timecode_start: Duration::from_secs(1),
+            loop_range: Some(TimelineLoopRange {
+                start: Duration::from_secs(2),
+                end: Duration::from_secs(4),
+                enabled: true,
+            }),
+            ..Default::default()
+        };
+        timeline.identifiers.id = 1;
+        let mut materialized_timeline = MaterializedTimeline::new(timeline);
+        materialized_timeline.is_active = true;
+        app.world_mut().spawn(materialized_timeline);
+
+        app.update();
+
+        let unrelated_timecode = app
+            .world()
+            .entity(unrelated_entity)
+            .get::<TimecodeGenerator>()
+            .expect("unrelated timecode should remain materialized");
+        assert_eq!(
+            unrelated_timecode.state.current_time,
+            Duration::from_secs(9)
+        );
+
+        let associated_timecode = app
+            .world()
+            .entity(associated_entity)
+            .get::<TimecodeGenerator>()
+            .expect("associated timecode should remain materialized");
+        assert_eq!(
+            associated_timecode.state.current_time,
+            Duration::from_secs(3)
+        );
+
+        let materialized_timeline = app
+            .world_mut()
+            .query::<&MaterializedTimeline>()
+            .single(app.world())
+            .expect("timeline should remain materialized");
+        assert!(materialized_timeline.audio_needs_sync);
     }
 }

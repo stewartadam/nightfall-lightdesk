@@ -22,6 +22,8 @@ use rodio::{DeviceTrait, cpal::traits::HostTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
 const AUDIO_WORKER_IDLE_SLEEP: Duration = Duration::from_millis(10);
+/// Drift between a sink's played position and the timecode that triggers a corrective seek.
+const CLOCK_DRIFT_TOLERANCE: Duration = Duration::from_millis(150);
 
 /// User-facing description of an audio output device exposed by the service.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +156,16 @@ impl AudioOutputClient {
         self.send_command(AudioWorkerCommand::Seek(sink_id, position))
     }
 
+    /// Report the timecode position a playing sink should be at, so the worker can seek it
+    /// back when the audio actually played has drifted away from the timecode.
+    pub fn sync(&self, sink_id: u32, position: std::time::Duration) -> bool {
+        self.send_command(AudioWorkerCommand::Sync {
+            id: sink_id,
+            position,
+            sent_at: std::time::Instant::now(),
+        })
+    }
+
     /// Rebuild the audio output stream and restore the current sinks on the new device.
     pub(crate) fn reconfigure_output(
         &self,
@@ -197,6 +209,12 @@ pub(crate) enum AudioWorkerCommand {
     SetVolume(u32, f32),
     Seek(u32, std::time::Duration),
     LoadFile(u32, String),
+    /// Timecode position a playing sink should be at as of `sent_at`.
+    Sync {
+        id: u32,
+        position: std::time::Duration,
+        sent_at: std::time::Instant,
+    },
     ReconfigureOutput {
         device_id: Option<String>,
         sinks: Vec<AudioWorkerSinkState>,
@@ -212,6 +230,43 @@ pub(crate) struct AudioWorkerSinkState {
     pub(crate) volume: f32,
     pub(crate) position: Duration,
     pub(crate) is_playing: bool,
+}
+
+/// Seek a playing sink to `expected` when the position it has actually played differs from
+/// it by more than [`CLOCK_DRIFT_TOLERANCE`], catching late or dropped audio as well as
+/// clock drift. `previous` is the played position at the sink's previous sync: when output
+/// has not advanced since then the device is stalled, and a seek would wait forever for the
+/// output to apply it, so the sink is left alone until output resumes.
+fn sync_sink_to_timecode(
+    id: u32,
+    sink: &rodio::Player,
+    previous: Option<Duration>,
+    expected: Duration,
+) {
+    if sink.is_paused() || sink.empty() {
+        return;
+    }
+    let played = sink.get_pos();
+    if previous == Some(played) {
+        tracing::debug!(
+            sink_id = id,
+            ?played,
+            "Skipping sync while output is stalled"
+        );
+        return;
+    }
+    if played.abs_diff(expected) <= CLOCK_DRIFT_TOLERANCE {
+        return;
+    }
+    tracing::debug!(
+        sink_id = id,
+        ?played,
+        ?expected,
+        "Resyncing audio sink that drifted from the timecode"
+    );
+    if let Err(error) = sink.try_seek(expected) {
+        tracing::warn!("Failed to resync sink {}: {}", id, error);
+    }
 }
 
 /// Background worker state for device selection and audio playback commands.
@@ -230,12 +285,14 @@ impl AudioWorker {
                 let mut stream_handle = match open_output_sink(None) {
                     Ok(handle) => handle,
                     Err(error) => {
-                        tracing::error!("{error}");
+                        tracing::warn!("{error}");
                         return;
                     }
                 };
 
                 let mut sinks: HashMap<u32, rodio::Player> = HashMap::new();
+                // Played position of each sink at its previous timecode sync.
+                let mut synced_positions: HashMap<u32, Duration> = HashMap::new();
                 loop {
                     maybe_trigger_debug_worker_panic(DebugPanicTarget::AudioThread);
 
@@ -259,6 +316,7 @@ impl AudioWorker {
                             tracing::debug!("Created new audio sink: {}", id);
                         }
                         AudioWorkerCommand::DestroySink(id) => {
+                            synced_positions.remove(&id);
                             if let Some(sink) = sinks.remove(&id) {
                                 tracing::debug!("Destroyed audio sink: {}", id);
                                 sink.stop();
@@ -309,8 +367,7 @@ impl AudioWorker {
                                         path,
                                         id
                                     );
-                                    let reader = std::io::BufReader::new(file);
-                                    if let Ok(source) = rodio::Decoder::new(reader) {
+                                    if let Ok(source) = rodio::Decoder::try_from(file) {
                                         sink.stop();
                                         sink.append(source);
                                         sink.pause();
@@ -344,6 +401,21 @@ impl AudioWorker {
                                 tracing::warn!("Attempted to seek on non-existent sink: {}", id);
                             }
                         }
+                        AudioWorkerCommand::Sync {
+                            id,
+                            position,
+                            sent_at,
+                        } => {
+                            if let Some(sink) = sinks.get_mut(&id) {
+                                let previous = synced_positions.insert(id, sink.get_pos());
+                                sync_sink_to_timecode(
+                                    id,
+                                    sink,
+                                    previous,
+                                    position + sent_at.elapsed(),
+                                );
+                            }
+                        }
                         AudioWorkerCommand::ReconfigureOutput {
                             device_id,
                             sinks: sink_states,
@@ -364,8 +436,7 @@ impl AudioWorker {
                                     if let Some(path) = &state.current_file {
                                         match std::fs::File::open(path) {
                                             Ok(file) => {
-                                                let reader = std::io::BufReader::new(file);
-                                                match rodio::Decoder::new(reader) {
+                                                match rodio::Decoder::try_from(file) {
                                                     Ok(source) => {
                                                         sink.stop();
                                                         sink.append(source);
@@ -415,6 +486,7 @@ impl AudioWorker {
 
                                 stream_handle = new_stream_handle;
                                 sinks = restored_sinks;
+                                synced_positions.clear();
                                 tracing::info!(
                                     "Reconfigured audio output to {}",
                                     device_id.as_deref().unwrap_or("system default")
@@ -507,4 +579,126 @@ impl Drop for AudioOutputService {
 pub fn process_audio_output_service() -> &'static AudioOutputService {
     static PROCESS_SERVICE: OnceLock<AudioOutputService> = OnceLock::new();
     process_singleton(&PROCESS_SERVICE, AudioOutputService::new)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZero;
+
+    use rodio::buffer::SamplesBuffer;
+
+    use super::*;
+
+    /// Test signal rate, low enough that playing seconds of audio stays cheap.
+    const SAMPLE_RATE: u32 = 1_000;
+
+    /// Pull `duration` of samples through a test player, as an output device would.
+    fn play_for(output: &mut impl Iterator<Item = f32>, duration: Duration) {
+        let samples = duration.as_millis() as u32 * SAMPLE_RATE / 1_000;
+        for _ in 0..samples {
+            output.next();
+        }
+    }
+
+    /// Run a timecode sync while output keeps pulling samples, since a seek waits for the
+    /// output to apply it.
+    fn sync_while_playing(
+        player: &rodio::Player,
+        output: &mut impl Iterator<Item = f32>,
+        expected: Duration,
+    ) {
+        std::thread::scope(|scope| {
+            let sync = scope.spawn(|| sync_sink_to_timecode(1, player, None, expected));
+            while !sync.is_finished() {
+                output.next();
+                std::thread::sleep(Duration::from_micros(50));
+            }
+        });
+    }
+
+    /// Assert the player reports a played position within a few samples of `expected`.
+    fn assert_played(player: &rodio::Player, expected: Duration) {
+        let played = player.get_pos();
+        assert!(
+            played.abs_diff(expected) <= Duration::from_millis(60),
+            "played {played:?}, expected {expected:?}"
+        );
+    }
+
+    /// A sink within tolerance of the timecode is left alone, while one that trails it is
+    /// seeked to the timecode position and keeps playing from there.
+    #[test]
+    fn sync_seeks_only_sinks_that_drift_from_the_timecode() {
+        let (player, mut output) = rodio::Player::new();
+        player.append(SamplesBuffer::new(
+            NonZero::new(1).unwrap(),
+            NonZero::new(SAMPLE_RATE).unwrap(),
+            vec![0.5; 10 * SAMPLE_RATE as usize],
+        ));
+        play_for(&mut output, Duration::from_secs(1));
+        assert_played(&player, Duration::from_secs(1));
+
+        sync_while_playing(&player, &mut output, Duration::from_millis(1_140));
+        play_for(&mut output, Duration::from_secs(1));
+        assert_played(&player, Duration::from_secs(2));
+
+        sync_while_playing(&player, &mut output, Duration::from_secs(5));
+        play_for(&mut output, Duration::from_secs(1));
+        assert_played(&player, Duration::from_secs(6));
+    }
+
+    /// A sink whose output has not advanced since its previous sync is stalled, so it is
+    /// left alone rather than blocking the worker on a seek the output would never apply.
+    #[test]
+    fn sync_leaves_stalled_sinks_alone() {
+        let (player, mut output) = rodio::Player::new();
+        player.append(SamplesBuffer::new(
+            NonZero::new(1).unwrap(),
+            NonZero::new(SAMPLE_RATE).unwrap(),
+            vec![0.5; 10 * SAMPLE_RATE as usize],
+        ));
+        play_for(&mut output, Duration::from_secs(1));
+
+        sync_sink_to_timecode(1, &player, Some(player.get_pos()), Duration::from_secs(5));
+        assert_played(&player, Duration::from_secs(1));
+    }
+
+    /// MP3 timeline audio, opened the way the worker opens files, can be pulled back when it
+    /// runs ahead of the timecode. Decoders built from a bare reader only seek forward.
+    #[test]
+    fn sync_seeks_mp3_audio_backward() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../app-runtime/assets/sample-audio/lofi.mp3"
+        );
+        let file = std::fs::File::open(path).expect("sample audio should exist");
+        let source = rodio::Decoder::try_from(file).expect("sample audio should decode");
+        let (player, mut output) = rodio::Player::new();
+        player.append(source);
+        // Two seconds of 44.1 kHz stereo.
+        for _ in 0..2 * 44_100 * 2 {
+            output.next();
+        }
+        assert_played(&player, Duration::from_secs(2));
+
+        sync_while_playing(&player, &mut output, Duration::from_millis(500));
+        assert_played(&player, Duration::from_millis(500));
+    }
+
+    /// A paused sink keeps its position, since the timecode is not running for it.
+    #[test]
+    fn sync_leaves_paused_sinks_alone() {
+        let (player, mut output) = rodio::Player::new();
+        player.append(SamplesBuffer::new(
+            NonZero::new(1).unwrap(),
+            NonZero::new(SAMPLE_RATE).unwrap(),
+            vec![0.5; 10 * SAMPLE_RATE as usize],
+        ));
+        play_for(&mut output, Duration::from_secs(1));
+        player.pause();
+
+        sync_while_playing(&player, &mut output, Duration::from_secs(5));
+        play_for(&mut output, Duration::from_millis(100));
+        assert_played(&player, Duration::from_secs(1));
+    }
 }

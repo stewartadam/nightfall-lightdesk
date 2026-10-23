@@ -27,6 +27,18 @@ pub mod gdtf_resolve;
 mod gdtf_wire_tests;
 pub mod ofl;
 
+/// Choose the merge rule for an attribute whose profile doesn't declare one.
+///
+/// Intensity merges HTP so that equal-priority playbacks raising the same
+/// dimmer keep the brighter level; every other attribute merges LTP so the
+/// most recently activated layer wins.
+fn default_merge_strategy(attribute: &Attribute) -> MergeStrategy {
+    match attribute {
+        Attribute::Intensity | Attribute::VirtualIntensity => MergeStrategy::HTP,
+        _ => MergeStrategy::LTP,
+    }
+}
+
 /// Apply a physical angular range to position metadata, or retain percentage semantics.
 fn apply_position_physical_range(
     metadata: &mut ParameterMetadata,

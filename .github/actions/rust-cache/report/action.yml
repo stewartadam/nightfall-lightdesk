@@ -1,0 +1,20 @@
+name: Rust cache report
+description: Summarize how much of a job's Cargo build was reused from the restored cache.
+
+inputs:
+  label:
+    description: Cache name shown in the job summary.
+    required: true
+  restored:
+    description: rust-cache's cache-hit output (true only for an exact key match).
+    required: true
+  targets:
+    description: Whether the cache includes compiled artifacts (rust-cache's cache-targets).
+    required: true
+
+runs:
+  using: node24
+  main: begin.mjs
+  # Runs before rust-cache's own post step, which prunes the target directory.
+  post: report.mjs
+  post-if: always()

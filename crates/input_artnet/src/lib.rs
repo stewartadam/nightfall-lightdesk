@@ -17,9 +17,11 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::prelude::*;
 use nightfall_io::{ArtNetRecentFramesByUniverse, BindingTransport};
+use nightfall_timecode::prelude::{ExternalTimecodeFeeds, TimecodeSource};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 mod service;
+mod timecode;
 
 use crate::service::{ArtNetInputFrame, NetworkInputBindStatus};
 
@@ -116,6 +118,9 @@ impl Plugin for InputArtnetPlugin {
         app.add_message::<AcceptedDmxFrame>();
         let artnet_service = service::process_artnet_input_service();
         let _ = artnet_service.configure_network_input_enabled(self.network_input_enabled);
+        app.world_mut()
+            .get_resource_or_init::<ExternalTimecodeFeeds>()
+            .register(TimecodeSource::ArtNet, artnet_service.timecode_feed());
         let artnet_rx = artnet_service.client().subscribe().unwrap_or_else(|| {
             let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
             rx

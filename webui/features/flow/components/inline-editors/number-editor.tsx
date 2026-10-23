@@ -7,6 +7,7 @@
  */
 
 import { Input } from "../../../../components/ui/form-controls";
+import { RangeSlider } from "../../../../components/ui/range-slider";
 /**
  * Number editor components for flow nodes.
  * Includes a standard input, a knob for BPM-style values, and a slider for normalized 0..1 values.
@@ -77,42 +78,43 @@ interface SliderProps {
   min: number;
   max: number;
   step: number;
+  /** Accessible name for the slider handle. */
+  label: string;
   disabled?: boolean;
   /** Called on every input event during drag (for optimistic UI updates) */
   onInput: (value: number) => void;
-  /** Called on change event (mouse release) for immediate commit */
+  /** Called when a drag, key press or tap settles, for immediate commit */
   onCommit: (value: number) => void;
 }
 
 /**
  * Slider control for normalized 0..1 values with inline value display.
  * Calls onInput during drag for visual feedback, onCommit on release for persistence.
- * Debouncing is handled by the parent PortValueContext provider.
+ * Debouncing is handled by the parent PortValueContext provider. The wrapper keeps
+ * pointer presses from starting a node drag or canvas pan, and slider keys from
+ * moving or deleting the selected node.
  */
 function Slider(props: SliderProps) {
-  const percentage = createMemo(
-    () => ((props.value - props.min) / (props.max - props.min)) * 100,
-  );
-
   return (
-    <div class="flex w-[140px] items-center gap-2">
-      <input
-        type="range"
+    <div
+      class="nodrag nokey flex w-[140px] items-center gap-2"
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <RangeSlider
+        value={props.value}
         min={props.min}
         max={props.max}
         step={props.step}
-        value={props.value}
-        onInput={(e) => props.onInput(Number.parseFloat(e.currentTarget.value))}
-        onChange={(e) =>
-          props.onCommit(Number.parseFloat(e.currentTarget.value))
-        }
-        onPointerDown={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
+        ariaLabel={props.label}
         disabled={props.disabled}
-        class="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-neutral-700 nodrag [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-sky-400"
-        style={{
-          background: `linear-gradient(to right, rgb(56 189 248) 0%, rgb(56 189 248) ${percentage()}%, rgb(64 64 64) ${percentage()}%, rgb(64 64 64) 100%)`,
-        }}
+        format={(value) => value.toFixed(2)}
+        showPips={false}
+        showInputs={false}
+        tooltips={false}
+        containerClass="min-w-0 flex-1"
+        onChange={props.onInput}
+        onCommit={props.onCommit}
       />
       <span class="w-8 text-right text-[10px] text-neutral-400">
         {props.value.toFixed(2)}
@@ -186,6 +188,7 @@ export function NumberEditor(props: NumberEditorProps) {
           min={0}
           max={1}
           step={0.01}
+          label={props.port.name ?? "Value"}
           disabled={props.disabled}
           onInput={hasExternalState() ? handleInput : () => {}}
           onCommit={handleCommit}

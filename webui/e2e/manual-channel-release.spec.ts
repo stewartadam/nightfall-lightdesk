@@ -18,15 +18,21 @@ type AppStoresWindow = Window & {
   appStores?: {
     bindings?: { get: () => BindingsSnapshot };
     layerStack?: { get: () => LayerState[] };
-    dmxUniverseData?: { get: () => DmxUniverseState[] };
+    dmxUniverseList: { get: () => DmxUniverseKey[] };
+    dmxUniverseChannels: {
+      get: () => (DmxUniverseKey & { channels: ArrayLike<number> })[];
+    };
+    dmxUniverseWatch: {
+      get: () => DmxUniverseKey[];
+      set: (keys: DmxUniverseKey[]) => void;
+    };
   };
 };
 
-type DmxUniverseState = {
+type DmxUniverseKey = {
   universe_id: number;
   io_mode: string;
-  transport?: string | null;
-  channels: number[];
+  transport: string;
 };
 
 type BindingsSnapshot = {
@@ -232,24 +238,36 @@ async function firstFixtureOutputChannel(page: Page) {
 type OutputSpace = "Console" | "sACN";
 
 /**
- * Reads one output universe from app stores, or `null` while the engine is not outputting it.
+ * Reads one output universe's channel values from app stores: `null` while the engine is not
+ * outputting it, and `undefined` until the values of a listed universe arrive. Reading a
+ * listed universe asks the engine for its values.
  */
 async function outputUniverse(
   page: Page,
   space: OutputSpace,
   universe: number,
-) {
+): Promise<number[] | null | undefined> {
   return page.evaluate(
     ([label, universeId]) => {
-      const data =
-        (window as AppStoresWindow).appStores?.dmxUniverseData?.get() ?? [];
-      const entry = data.find(
-        (candidate) =>
-          candidate.io_mode === "output" &&
-          candidate.transport === label &&
-          candidate.universe_id === universeId,
-      );
-      return entry ? entry.channels : null;
+      const stores = (window as AppStoresWindow).appStores;
+      if (!stores) return null;
+      const key: DmxUniverseKey = {
+        universe_id: universeId,
+        io_mode: "output",
+        transport: label,
+      };
+      /** Returns whether an entry names the requested universe. */
+      const matches = (candidate: DmxUniverseKey) =>
+        candidate.io_mode === key.io_mode &&
+        candidate.transport === key.transport &&
+        candidate.universe_id === key.universe_id;
+      if (!stores.dmxUniverseList.get().some(matches)) return null;
+      const watched = stores.dmxUniverseWatch.get();
+      if (!watched.some(matches)) {
+        stores.dmxUniverseWatch.set([...watched, key]);
+      }
+      const entry = stores.dmxUniverseChannels.get().find(matches);
+      return entry ? Array.from(entry.channels) : undefined;
     },
     [space, universe] as const,
   );
@@ -387,7 +405,11 @@ test("global release returns console and wire DMX to parameter defaults", async 
   await submitCommand(page, "patch console:3 @ sacn:30");
 
   await expect
-    .poll(async () => (await outputUniverse(page, "sACN", 30)) !== null)
+    .poll(
+      async () =>
+        Array.isArray(await outputUniverse(page, "sACN", 30)) &&
+        Array.isArray(await outputUniverse(page, "Console", 3)),
+    )
     .toBe(true);
   const consoleDefaults = await outputUniverse(page, "Console", 3);
   const wireDefaults = await outputUniverse(page, "sACN", 30);
@@ -410,4 +432,60 @@ test("global release returns console and wire DMX to parameter defaults", async 
   await expect
     .poll(() => outputUniverse(page, "sACN", 30))
     .toEqual(wireDefaults);
+});
+
+/**
+ * `ch sacn:12.5 @ 200` holds a wire slot on an sACN universe nothing is patched to, leaves
+ * console space untouched, and `release ch sacn:12.5` plus undo free and restore the hold.
+ */
+test("transport channel holds a wire slot until released and undo restores it", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await openBlankApp(page, backendSlot.backendPort);
+
+  await submitCommand(page, "ch sacn:12.5 @ 200");
+  await expectSlotValue(page, "sACN", 12, 5, 200);
+  await expect.poll(() => outputUniverse(page, "Console", 12)).toBeNull();
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const commandInput = page.getByPlaceholder("Type a command or search...");
+  await commandInput.fill("Open Console DMX");
+  await page.keyboard.press("Enter");
+  const panel = page.locator('[data-component="DmxUniverse"]:visible');
+  await panel.getByRole("combobox").selectOption("sACN");
+  await panel
+    .getByRole("tablist", { name: "DMX universes" })
+    .getByRole("tab", { name: "Univ. 12", exact: true })
+    .click();
+  await expect(
+    panel.locator('[data-dmx-channel-value="5"]').first(),
+  ).toHaveText("200");
+  await page.screenshot({
+    path: testInfo.outputPath("transport-channel-hold.png"),
+  });
+
+  await submitCommand(page, "release ch sacn:12.5");
+  await expect.poll(() => outputUniverse(page, "sACN", 12)).toBeNull();
+
+  await submitCommand(page, "undo");
+  await expectSlotValue(page, "sACN", 12, 5, 200);
+});
+
+/** A transport hold wins over the patched value on its slot; plain `release` drops it. */
+test("transport channel hold overrides patched output until global release", async ({
+  backendSlot,
+  page,
+}) => {
+  await openBlankApp(page, backendSlot.backendPort);
+  await submitCommand(page, "patch console:7 @ sacn:17");
+  await submitCommand(page, "ch 7.1 @ 50");
+  await expectSlotValue(page, "sACN", 17, 1, 50);
+
+  await submitCommand(page, "ch sacn:17.1 @ 255");
+  await expectSlotValue(page, "sACN", 17, 1, 255);
+  await expectSlotValue(page, "Console", 7, 1, 50);
+
+  await submitCommand(page, "release");
+  await expect.poll(() => outputUniverse(page, "sACN", 17)).toBeNull();
 });

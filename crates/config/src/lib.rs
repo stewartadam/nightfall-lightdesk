@@ -34,6 +34,7 @@ const SERVER_PORT_ENV: &str = "NIGHTFALL_PORT";
 const WEBSOCKET_URL_ENV: &str = "NIGHTFALL_WS_URL";
 const OSC_BIND_ENV: &str = "NIGHTFALL_OSC_BIND";
 const OSC_PORT_ENV: &str = "NIGHTFALL_OSC_PORT";
+const MIDI_INPUT_PORT_ENV: &str = "NIGHTFALL_MIDI_INPUT_PORT";
 const INPUT_SACN_ENABLED_ENV: &str = "NIGHTFALL_INPUT_SACN_ENABLED";
 const OUTPUT_SACN_ENABLED_ENV: &str = "NIGHTFALL_OUTPUT_SACN_ENABLED";
 const OUTPUT_ARTNET_ENABLED_ENV: &str = "NIGHTFALL_OUTPUT_ARTNET";
@@ -45,6 +46,8 @@ const EXPERIMENTAL_FLOWS_ENV: &str = "NIGHTFALL_EXPERIMENTAL_FLOWS";
 const TIMELINE_AUDIO_ENABLED_ENV: &str = "NIGHTFALL_TIMELINE_AUDIO_ENABLED";
 const FATAL_SHUTDOWN_GRACE_ENV: &str = "NIGHTFALL_FATAL_SHUTDOWN_GRACE_MS";
 const DISABLE_WATCHDOG_ENV: &str = "NIGHTFALL_DISABLE_FATAL_SHUTDOWN_WATCHDOG";
+const ERROR_REPORTS_DSN_ENV: &str = "NIGHTFALL_ERROR_REPORTS_DSN";
+const USAGE_REPORTS_URL_ENV: &str = "NIGHTFALL_USAGE_REPORTS_URL";
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
 /// Fully resolved startup configuration consumed by Nightfall binaries.
@@ -60,6 +63,8 @@ pub struct RuntimeConfig {
     pub websocket_url: String,
     /// Address used by the OSC input listener.
     pub osc_bind_addr: SocketAddr,
+    /// MIDI input port the backend connects to exclusively, or `None` to connect to every port.
+    pub midi_input_port: Option<String>,
     /// Startup permissions for physical and network transports.
     pub transports: TransportConfig,
     /// Options controlling the initial backend world and commands.
@@ -72,6 +77,14 @@ pub struct RuntimeConfig {
     pub shutdown: ShutdownConfig,
     /// Optional tracing filter sourced from `RUST_LOG`.
     pub log_filter: Option<String>,
+    /// Error service that replaces the one built into the binary; an empty value turns error
+    /// reporting off. `None` keeps the built-in service. Test harnesses and forks use it so
+    /// their failures never reach the project's service.
+    pub error_reports_dsn: Option<String>,
+    /// Usage report service (`https://<client id>:<client secret>@<host>/track`) that replaces
+    /// the one built into the binary; an empty value turns usage reports off. `None` keeps the
+    /// built-in service.
+    pub usage_reports_url: Option<String>,
 }
 
 impl Default for RuntimeConfig {
@@ -124,6 +137,7 @@ impl RuntimeConfig {
             server_port,
             websocket_url,
             osc_bind_addr,
+            midi_input_port: layer.midi_input_port,
             transports: TransportConfig {
                 network_input_enabled: layer.network_input_enabled.unwrap_or(true),
                 network_output_enabled: layer.network_output_enabled.unwrap_or(true),
@@ -142,6 +156,8 @@ impl RuntimeConfig {
                 watchdog_disabled: layer.watchdog_disabled.unwrap_or(false),
             },
             log_filter: normalize_optional_string(layer.log_filter),
+            error_reports_dsn: layer.error_reports_dsn,
+            usage_reports_url: layer.usage_reports_url,
         }
     }
 }
@@ -186,6 +202,8 @@ pub struct RuntimeConfigOverrides {
     pub websocket_url: Option<String>,
     /// Overrides the OSC listener address when present.
     pub osc_bind_addr: Option<SocketAddr>,
+    /// Overrides the exclusive MIDI input port when present.
+    pub midi_input_port: Option<String>,
     /// Overrides startup network input permission when present.
     pub network_input_enabled: Option<bool>,
     /// Overrides startup network output permission when present.
@@ -206,6 +224,10 @@ pub struct RuntimeConfigOverrides {
     pub watchdog_disabled: Option<bool>,
     /// Overrides the tracing filter when present.
     pub log_filter: Option<String>,
+    /// Overrides the error report service when present; empty turns reporting off.
+    pub error_reports_dsn: Option<String>,
+    /// Overrides the usage report service when present; empty turns usage reports off.
+    pub usage_reports_url: Option<String>,
 }
 
 /// Loads dotenv and inherited environment values without modifying the process environment.
@@ -303,6 +325,7 @@ struct ConfigLayer {
     websocket_url: Option<String>,
     osc_bind_addr: Option<SocketAddr>,
     osc_port: Option<u16>,
+    midi_input_port: Option<String>,
     network_input_enabled: Option<bool>,
     network_output_enabled: Option<bool>,
     usb_output_enabled: Option<bool>,
@@ -313,6 +336,8 @@ struct ConfigLayer {
     fatal_shutdown_grace: Option<Duration>,
     watchdog_disabled: Option<bool>,
     log_filter: Option<String>,
+    error_reports_dsn: Option<String>,
+    usage_reports_url: Option<String>,
 }
 
 impl ConfigLayer {
@@ -329,6 +354,7 @@ impl ConfigLayer {
             websocket_url: optional_string(values, WEBSOCKET_URL_ENV),
             osc_bind_addr: parse_optional(values, OSC_BIND_ENV, "an IP socket address")?,
             osc_port: parse_optional(values, OSC_PORT_ENV, "a port from 0 to 65535")?,
+            midi_input_port: optional_string(values, MIDI_INPUT_PORT_ENV),
             network_input_enabled: merge_transport_values(input_sacn, input_artnet),
             network_output_enabled: merge_transport_values(output_sacn, output_artnet),
             usb_output_enabled: parse_optional_bool(values, OUTPUT_USB_ENABLED_ENV)?,
@@ -344,6 +370,12 @@ impl ConfigLayer {
             .map(Duration::from_millis),
             watchdog_disabled: parse_optional_bool(values, DISABLE_WATCHDOG_ENV)?,
             log_filter: optional_string(values, RUST_LOG_ENV),
+            error_reports_dsn: values
+                .get(ERROR_REPORTS_DSN_ENV)
+                .map(|value| value.trim().to_string()),
+            usage_reports_url: values
+                .get(USAGE_REPORTS_URL_ENV)
+                .map(|value| value.trim().to_string()),
         })
     }
 
@@ -354,6 +386,7 @@ impl ConfigLayer {
         apply_override(&mut self.server_port, overrides.server_port);
         apply_override(&mut self.websocket_url, overrides.websocket_url);
         apply_override(&mut self.osc_bind_addr, overrides.osc_bind_addr);
+        apply_override(&mut self.midi_input_port, overrides.midi_input_port);
         apply_override(
             &mut self.network_input_enabled,
             overrides.network_input_enabled,
@@ -375,6 +408,8 @@ impl ConfigLayer {
         );
         apply_override(&mut self.watchdog_disabled, overrides.watchdog_disabled);
         apply_override(&mut self.log_filter, overrides.log_filter);
+        apply_override(&mut self.error_reports_dsn, overrides.error_reports_dsn);
+        apply_override(&mut self.usage_reports_url, overrides.usage_reports_url);
     }
 }
 
@@ -469,6 +504,7 @@ mod tests {
         assert_eq!(config.server_port, DEFAULT_SERVER_PORT);
         assert_eq!(config.websocket_url, "ws://localhost:3030/ws");
         assert_eq!(config.osc_bind_addr, "0.0.0.0:3032".parse().unwrap());
+        assert_eq!(config.midi_input_port, None);
         assert!(config.transports.network_input_enabled);
         assert!(config.transports.network_output_enabled);
         assert!(config.transports.usb_output_enabled);
@@ -497,6 +533,41 @@ mod tests {
         );
     }
 
+    /// An unset usage service keeps the built-in one, while an empty value is kept so it can
+    /// turn usage reports off.
+    #[test]
+    fn usage_reports_url_distinguishes_unset_from_empty() {
+        let unset =
+            RuntimeConfig::from_values(std::iter::empty::<(&str, &str)>(), Default::default())
+                .unwrap();
+        assert_eq!(unset.usage_reports_url, None);
+        let empty =
+            RuntimeConfig::from_values([(USAGE_REPORTS_URL_ENV, "")], Default::default()).unwrap();
+        assert_eq!(empty.usage_reports_url.as_deref(), Some(""));
+    }
+
+    /// An unset error service keeps the built-in one, while an empty value is kept so it can
+    /// turn reporting off.
+    #[test]
+    fn error_reports_dsn_distinguishes_unset_from_empty() {
+        let unset =
+            RuntimeConfig::from_values(std::iter::empty::<(&str, &str)>(), Default::default())
+                .unwrap();
+        assert_eq!(unset.error_reports_dsn, None);
+        let empty =
+            RuntimeConfig::from_values([(ERROR_REPORTS_DSN_ENV, " ")], Default::default()).unwrap();
+        assert_eq!(empty.error_reports_dsn.as_deref(), Some(""));
+        let custom = RuntimeConfig::from_values(
+            [(ERROR_REPORTS_DSN_ENV, "https://key@errors.example/1")],
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            custom.error_reports_dsn.as_deref(),
+            Some("https://key@errors.example/1")
+        );
+    }
+
     /// Verifies environment-shaped values parse into concrete configuration types.
     #[test]
     fn values_resolve_typed_runtime_configuration() {
@@ -504,6 +575,7 @@ mod tests {
             (DATA_DIR_ENV, "/tmp/nightfall"),
             (SERVER_PORT_ENV, "4100"),
             (OSC_PORT_ENV, "4200"),
+            (MIDI_INPUT_PORT_ENV, "  E2E Pad  "),
             (INPUT_SACN_ENABLED_ENV, "true"),
             (INPUT_ARTNET_ENABLED_ENV, "false"),
             (OUTPUT_USB_ENABLED_ENV, "off"),
@@ -521,6 +593,7 @@ mod tests {
         assert_eq!(config.server_port, 4100);
         assert_eq!(config.websocket_url, "ws://localhost:4100/ws");
         assert_eq!(config.osc_bind_addr, "0.0.0.0:4200".parse().unwrap());
+        assert_eq!(config.midi_input_port.as_deref(), Some("E2E Pad"));
         assert!(!config.transports.network_input_enabled);
         assert!(!config.transports.usb_output_enabled);
         assert!(config.startup.sample_data);

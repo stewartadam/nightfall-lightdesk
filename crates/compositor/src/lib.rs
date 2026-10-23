@@ -48,17 +48,17 @@ pub fn add_compositor_removal_observers<P: CompositorParameter>(app: &mut App) {
     }
     app.init_resource::<CompositorRemovals<P>>();
     app.add_observer(
-        |_: On<Remove, P>, mut removals: ResMut<CompositorRemovals<P>>| {
+        |_: On<Remove<P>>, mut removals: ResMut<CompositorRemovals<P>>| {
             removals.parameters = true;
         },
     );
     app.add_observer(
-        |_: On<Remove, ReleaseMarker>, mut removals: ResMut<CompositorRemovals<P>>| {
+        |_: On<Remove<ReleaseMarker>>, mut removals: ResMut<CompositorRemovals<P>>| {
             removals.layer_state = true;
         },
     );
     app.add_observer(
-        |_: On<Remove, LayerCompositingContext>, mut removals: ResMut<CompositorRemovals<P>>| {
+        |_: On<Remove<LayerCompositingContext>>, mut removals: ResMut<CompositorRemovals<P>>| {
             removals.layer_state = true;
         },
     );

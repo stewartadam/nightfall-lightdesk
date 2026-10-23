@@ -68,7 +68,7 @@ export class CommandSequenceRunner {
         type: "Eval",
         data: statement,
       };
-      const pendingResult = this.client.submitCommand("DeskCommand", command, {
+      const pendingResult = this.client.invoke("DeskCommand", command, {
         consoleCommandText: statement,
       });
       progress.onStatementStarted?.(index);

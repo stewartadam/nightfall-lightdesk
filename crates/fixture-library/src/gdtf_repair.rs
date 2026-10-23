@@ -105,7 +105,7 @@ fn repaired_archive(path: &Path, contents: RepairedContents) -> Option<(Vec<u8>,
     };
     for index in 0..copied_entries {
         let entry = source.by_index_raw(index).ok()?;
-        if entry.name() == DESCRIPTION_ENTRY {
+        if entry.name().is_ok_and(|name| name == DESCRIPTION_ENTRY) {
             continue;
         }
         output.raw_copy_file(entry).ok()?;
@@ -370,7 +370,10 @@ mod tests {
     /// Returns the entry names of an in-memory archive.
     fn entry_names(archive: Vec<u8>) -> Vec<String> {
         let archive = zip::ZipArchive::new(Cursor::new(archive)).expect("rebuilt archive");
-        archive.file_names().map(str::to_string).collect()
+        archive
+            .file_names()
+            .map(|name| name.expect("UTF-8 entry name").into_owned())
+            .collect()
     }
 
     /// Verifies an archive rejected by strict parsing opens after repair, from a rebuilt archive.

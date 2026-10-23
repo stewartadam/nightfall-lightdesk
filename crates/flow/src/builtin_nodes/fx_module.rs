@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use nightfall::prelude::{FixtureRef, ResolvedSelection};
+use nightfall::prelude::{FixtureRef, Priority, ResolvedSelection};
 use nightfall_compositor::prelude::Layer;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
@@ -262,6 +262,8 @@ pub(crate) fn build_fx_module_layer(
         &effective_definition,
         fx_module_layer,
         fixture_data_provider,
+        // The flow squashes node layers into its own layer, which carries the flow's priority.
+        Priority::default(),
     ))
 }
 

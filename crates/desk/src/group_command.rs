@@ -36,35 +36,33 @@ impl IngressCommand for GroupCommand {}
 
 /// Runtime actions for group operations derived from user command plans.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub enum GroupAction {
+pub enum GroupOperation {
     /// Store or update a group payload prepared by planner/runtime handlers.
     StoreGroup(Group),
 }
 
-impl EngineAction for GroupAction {}
+impl EngineOperation for GroupOperation {}
 
-impl crate::object_crud::ObjectCrud for Group {
-    type Command = GroupCommand;
-
+impl crate::object_crud::ObjectCrud<GroupCommand> for Group {
     fn type_name() -> &'static str {
         "group"
     }
 
-    fn extract_store(command: &Self::Command) -> Option<Self> {
+    fn extract_store(command: &GroupCommand) -> Option<Self> {
         match command {
             GroupCommand::StoreGroup(group) => Some(group.clone()),
             _ => None,
         }
     }
 
-    fn extract_rename(command: &Self::Command) -> Option<(u32, u32)> {
+    fn extract_rename(command: &GroupCommand) -> Option<(u32, u32)> {
         match command {
             GroupCommand::RenameGroup { id, new_id } => Some((*id, *new_id)),
             _ => None,
         }
     }
 
-    fn extract_delete(command: &Self::Command) -> Option<u32> {
+    fn extract_delete(command: &GroupCommand) -> Option<u32> {
         match command {
             GroupCommand::DeleteGroup(id) => Some(*id),
             _ => None,

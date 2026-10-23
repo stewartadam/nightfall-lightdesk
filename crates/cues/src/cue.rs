@@ -13,7 +13,8 @@ use std::{collections::HashMap, time::Duration};
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_selection::{
-    SelectionValidatedEntity, SpatialSelectionResolution, selection_validation_warnings,
+    HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
+    selection_validation_warnings,
 };
 use partially::Partial;
 use serde::{Deserialize, Serialize};
@@ -393,21 +394,6 @@ impl Cue {
             .any(|instruction| instruction.cue_instruction.references_blueprint(uid))
     }
 
-    /// Returns the distinct Blueprint identities referenced by this cue.
-    pub fn referenced_blueprints(&self) -> std::collections::HashSet<uuid::Uuid> {
-        self.instructions
-            .iter()
-            .chain(self.parts.iter().flat_map(|part| part.instructions.iter()))
-            .filter_map(|instruction| {
-                instruction
-                    .cue_instruction
-                    .blueprint_application
-                    .as_ref()
-                    .map(|application| application.blueprint_uid)
-            })
-            .collect()
-    }
-
     /// Returns the authored scheduling duration for this cue and its parts.
     ///
     /// This is distinct from materialized assertion duration: it describes how much
@@ -481,6 +467,68 @@ impl Cue {
     }
 }
 
+/// Reports one instruction's selection and live Blueprint application under `prefix`.
+fn visit_instruction_references(
+    prefix: &str,
+    instruction: &BoundCueInstruction,
+    visit: &mut dyn FnMut(&str, HeldReference<'_>),
+) {
+    visit(
+        &format!("{prefix}.selection"),
+        HeldReference::Selection(&instruction.selection),
+    );
+    if let Some(application) = &instruction.cue_instruction.blueprint_application {
+        visit(
+            &format!("{prefix}.cue_instruction.blueprint_application.blueprint_uid"),
+            HeldReference::Blueprint(application.blueprint_uid),
+        );
+    }
+}
+
+impl Cue {
+    /// Reports this cue's references with every path prefixed by `prefix`, so sequences can
+    /// report their built-in cues as `setup_cue.` and `release_cue.`.
+    fn visit_references_with_prefix(
+        &self,
+        prefix: &str,
+        visit: &mut dyn FnMut(&str, HeldReference<'_>),
+    ) {
+        for (index, instruction) in self.instructions.iter().enumerate() {
+            visit_instruction_references(
+                &format!("{prefix}instructions[{index}]"),
+                instruction,
+                visit,
+            );
+        }
+        for (part_index, part) in self.parts.iter().enumerate() {
+            for (index, instruction) in part.instructions.iter().enumerate() {
+                visit_instruction_references(
+                    &format!("{prefix}parts[{part_index}].instructions[{index}]"),
+                    instruction,
+                    visit,
+                );
+            }
+        }
+    }
+}
+
+/// Reports instruction selections and Blueprint applications in the cue body and its parts.
+impl ReferenceSource for Cue {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        self.visit_references_with_prefix("", visit);
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        for instruction in self.instructions.iter_mut().chain(
+            self.parts
+                .iter_mut()
+                .flat_map(|part| part.instructions.iter_mut()),
+        ) {
+            visit(&mut instruction.selection);
+        }
+    }
+}
+
 /// Definition of a sequence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -533,6 +581,21 @@ impl Default for Sequence {
 impl HasIdentifiers for Sequence {
     fn identifiers(&self) -> &Identifiers {
         &self.identifiers
+    }
+}
+
+/// Reports the references of the sequence's built-in setup and release cues.
+impl ReferenceSource for Sequence {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        self.setup_cue
+            .visit_references_with_prefix("setup_cue.", visit);
+        self.release_cue
+            .visit_references_with_prefix("release_cue.", visit);
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        self.setup_cue.visit_selections_mut(visit);
+        self.release_cue.visit_selections_mut(visit);
     }
 }
 

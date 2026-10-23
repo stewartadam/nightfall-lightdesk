@@ -7,9 +7,8 @@
  */
 
 import type * as types from "../types";
-import { commandEnvelope } from "./command-envelope";
 import { commandOutputValue } from "./command-result";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
 
 const log = getLogger(import.meta.url);
@@ -36,9 +35,7 @@ export function sendCueUpdate(updatedCue: types.Cue, batchId?: string) {
     data: updatedCue,
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("CueCommand", storeCueCommand, batchId),
-  );
+  commandClient.emit("CueCommand", storeCueCommand, { undoId: batchId });
 
   log.info(`Updated cue ${updatedCue.identifiers.id}:`, updatedCue);
 }
@@ -52,9 +49,7 @@ export function sendSequenceUpdate(
     data: updatedSequence,
   };
 
-  engineRuntime.sendCommand(
-    commandEnvelope("CueCommand", storeSequenceCommand, batchId),
-  );
+  commandClient.emit("CueCommand", storeSequenceCommand, { undoId: batchId });
 
   log.info(
     `Updated sequence ${updatedSequence.identifiers.id}:`,
@@ -71,10 +66,7 @@ export function deleteCue(sequenceId: number, cueId: number): void {
     },
   };
 
-  engineRuntime.sendCommand({
-    module: "CueCommand",
-    command,
-  });
+  commandClient.emit("CueCommand", command);
 
   log.info(`Deleted cue ${sequenceId}.${cueId}`);
 }
@@ -85,10 +77,7 @@ export function deleteSequence(sequenceId: number): void {
     data: sequenceId,
   };
 
-  engineRuntime.sendCommand({
-    module: "CueCommand",
-    command,
-  });
+  commandClient.emit("CueCommand", command);
 
   log.info(`Deleted sequence ${sequenceId}`);
 }
@@ -106,10 +95,7 @@ export async function previewCue(
       cue,
     },
   };
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "CuePreviewCommand",
-    command,
-  });
+  const result = await commandClient.invoke("CuePreviewCommand", command);
   const returnedInstanceId = instanceIdFromResult(result);
   log.info(`Updated cue preview for ${cue.identifiers.label}`);
   return returnedInstanceId;
@@ -129,10 +115,7 @@ export async function previewSequence(
       preview: payload,
     },
   };
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "CuePreviewCommand",
-    command,
-  });
+  const result = await commandClient.invoke("CuePreviewCommand", command);
   const returnedInstanceId = instanceIdFromResult(result);
   log.info(
     `Updated sequence preview for ${payload.sequence.identifiers.label}`,
@@ -158,10 +141,7 @@ export async function seekPreviewInstance(
       playing,
     },
   };
-  await engineRuntime.sendCommandAndAwait({
-    module: "CuePreviewCommand",
-    command,
-  });
+  await commandClient.invoke("CuePreviewCommand", command);
 }
 
 /** Stops the editor preview instance with the given runtime instance ID. */
@@ -172,9 +152,6 @@ export async function stopPreviewInstance(
     type: "StopPreview",
     data: { instance_id: instanceId },
   };
-  await engineRuntime.sendCommandAndAwait({
-    module: "CuePreviewCommand",
-    command,
-  });
+  await commandClient.invoke("CuePreviewCommand", command);
   log.info("Stopped editor preview");
 }

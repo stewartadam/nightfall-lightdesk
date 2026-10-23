@@ -9,6 +9,11 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
+import {
+  DEMO_SHOWFILE_PATH,
+  parseDemoShowfile,
+  readCheckedInDemoShowfile,
+} from "./demo-showfile";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -30,15 +35,7 @@ test.describe.configure({ timeout: 90_000 });
 
 /** Read the domain collection sizes the embedded runtime should load from the demo showfile. */
 async function readDemoShowfileCounts() {
-  const showfile = JSON.parse(
-    await readFile(
-      new URL(
-        "../public/nightfall-demo.nightfall-show/showfile.json",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-  );
+  const showfile = await readCheckedInDemoShowfile();
   const timeline = showfile.timelines.find(
     (entry: any) => entry.identifiers.label === DEMO_TIMELINE_LABEL,
   );
@@ -78,10 +75,10 @@ async function prepareEmbeddedPage(page: Page): Promise<{
     ) {
       backendRequests.push(request.url());
     }
-    if (url.pathname.endsWith("/nightfall-demo.nightfall-show/showfile.json")) {
+    if (url.pathname.endsWith(`/${DEMO_SHOWFILE_PATH}`)) {
       showfileRequests.push(request.url());
     }
-    if (request.resourceType() === "media") {
+    if (/\.(mp3|wav|m4a|mp4)$/i.test(url.pathname)) {
       audioRequests.push(request.url());
     }
   });
@@ -434,9 +431,11 @@ test("embedded demo edits and plays the sample without backend traffic", async (
       .getByRole("region", { name: "Application status bar" })
       .getByTestId("browser-demo-banner"),
   ).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Global" })).toContainText(
-    "nightfall demo",
-  );
+  await expect(
+    page
+      .getByRole("navigation", { name: "Global" })
+      .getByRole("img", { name: "nightfall demo" }),
+  ).toBeVisible();
   await expect(page.getByTestId("browser-demo-audio-status")).toHaveCount(0);
   await expect(page.getByTestId("status-build-name")).toHaveCount(0);
   await expect(page.getByTestId("status-showfile-name")).toHaveText(
@@ -454,7 +453,7 @@ test("embedded demo edits and plays the sample without backend traffic", async (
     .toMatchObject({
       capabilities: {
         runtime_mode: "EmbeddedDemo",
-        persistence: "Unavailable",
+        disk_storage: false,
         fx_modules: "Unavailable",
         timeline_audio: "BundledBrowser",
         network_dmx_output: false,
@@ -668,7 +667,11 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   ).toBe("local-show");
   expect(backendRequests).toEqual([]);
   expect(showfileRequests).toHaveLength(2);
-  expect([...new Set(audioRequests)]).toEqual([expectedAudioUrl]);
+  // Waveforms fetch other timelines' audio too; every request must stay inside the show.
+  const showAudioRoot = new URL("timeline-audio/", loadedShowfileUrl).href;
+  expect(audioRequests.filter((url) => !url.startsWith(showAudioRoot))).toEqual(
+    [],
+  );
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
@@ -678,17 +681,19 @@ test("embedded demo decodes and plays timeline audio", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
-    (window as any).demoAudioSeekCount = 0;
-    const descriptor = Object.getOwnPropertyDescriptor(
-      HTMLMediaElement.prototype,
-      "currentTime",
-    )!;
-    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
-      ...descriptor,
-      /** Count explicit media seeks while preserving real browser playback. */
-      set(value: number) {
-        (window as any).demoAudioSeekCount += 1;
-        descriptor.set!.call(this, value);
+    (window as any).demoAudioStartCount = 0;
+    const createGain = BaseAudioContext.prototype.createGain;
+    Object.defineProperty(BaseAudioContext.prototype, "createGain", {
+      configurable: true,
+      /**
+       * Count audio (re)starts while preserving real browser playback. Each streaming
+       * voice owns one gain stage, while its blocks share it.
+       */
+      value(this: BaseAudioContext) {
+        if (this instanceof AudioContext) {
+          (window as any).demoAudioStartCount += 1;
+        }
+        return createGain.call(this);
       },
     });
   });
@@ -717,13 +722,23 @@ test("embedded demo decodes and plays timeline audio", async ({
     await expect
       .poll(() => timelinePositionMs(page, timelineUid))
       .toBeGreaterThan(100);
-    const seekCount = await page.evaluate(
-      () => (window as any).demoAudioSeekCount,
+    const startCount = await page.evaluate(
+      () => (window as any).demoAudioStartCount,
     );
+    const playheadBeforeMs = await timelinePositionMs(page, timelineUid);
+    const wallBeforeMs = Date.now();
     await page.waitForTimeout(750);
-    expect(await page.evaluate(() => (window as any).demoAudioSeekCount)).toBe(
-      seekCount,
-    );
+    const engineAdvanceMs =
+      (await timelinePositionMs(page, timelineUid)) - playheadBeforeMs;
+    const wallElapsedMs = Date.now() - wallBeforeMs;
+    // A starved engine runs slower than real time and audio is then rightly pulled back
+    // onto it once it trails by 30 ms, so steady playback only runs without restarts
+    // when the engine keeps (almost) real time.
+    if (engineAdvanceMs >= wallElapsedMs * 0.98) {
+      expect(
+        await page.evaluate(() => (window as any).demoAudioStartCount),
+      ).toBe(startCount);
+    }
     await expect
       .poll(async () => (await readDemoAudioState(page)).positionMs)
       .toBeGreaterThan(500);
@@ -747,10 +762,10 @@ test("embedded demo decodes and plays timeline audio", async ({
       }
     }, timelineUid);
     await expect
-      .poll(() => page.evaluate(() => (window as any).demoAudioSeekCount), {
+      .poll(() => page.evaluate(() => (window as any).demoAudioStartCount), {
         timeout: 1_000,
       })
-      .toBeGreaterThan(seekCount);
+      .toBeGreaterThan(startCount);
     await surface.screenshot({
       path: testInfo.outputPath("generated-audio-playback.png"),
     });
@@ -761,6 +776,210 @@ test("embedded demo decodes and plays timeline audio", async ({
     .poll(() => readDemoAudioState(page))
     .toMatchObject({ status: "unloaded" });
 });
+
+/**
+ * Phones fetch timeline audio only once playback starts, so sound is ready seconds after
+ * the engine clock started. Delaying the first audio request reproduces that, and the
+ * audio must join the playhead where it is instead of trailing it for the rest of the
+ * song. Every later byte-range request also waits, like a slow mobile network, which
+ * the audio scheduled ahead must ride out.
+ */
+test("embedded demo audio catches up with the playhead after a slow start", async ({
+  page,
+}, testInfo) => {
+  if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview") {
+    await serveSampleMp3s(page, true);
+  }
+  let playbackRequests = 0;
+  // Registered last, so it runs before the route serving the file.
+  await page.route(/\.mp3$/, async (route) => {
+    // Waveforms download whole files; playback reads by byte range.
+    if (route.request().headers().range) {
+      // Two seconds for the first request, then mobile network latency.
+      const delayMs = playbackRequests === 0 ? 2_000 : 300;
+      playbackRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    await route.fallback();
+  });
+  const basePath =
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+      ? "/demo/app/"
+      : "/";
+  await page.goto(
+    `${basePath}?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false`,
+  );
+  await waitForDemoShow(page);
+  const { timelineUid } = await readDemoState(page);
+  await openDemoTimeline(page, timelineUid);
+  const surface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  try {
+    await surface.getByRole("button", { name: "Play timeline" }).click();
+    await expect
+      .poll(() => readDemoAudioState(page), { timeout: 10_000 })
+      .toMatchObject({ status: "playing" });
+    // Without correction the audio trails the playhead by the full two seconds.
+    await expect
+      .poll(
+        async () => {
+          const [audioMs, playheadMs] = await Promise.all([
+            readDemoAudioState(page).then((state) => state.positionMs),
+            timelinePositionMs(page, timelineUid),
+          ]);
+          return playheadMs > 500 && Math.abs(audioMs - playheadMs) < 500;
+        },
+        { timeout: 6_000 },
+      )
+      .toBe(true);
+    // Audio scheduled ahead rides out each slow request instead of stalling.
+    const heardBeforeMs = (await readDemoAudioState(page)).positionMs;
+    await page.waitForTimeout(2_000);
+    expect((await readDemoAudioState(page)).positionMs).toBeGreaterThan(
+      heardBeforeMs + 500,
+    );
+    expect(playbackRequests).toBeGreaterThan(1);
+    await surface.screenshot({
+      path: testInfo.outputPath("slow-start-audio-in-sync.png"),
+    });
+  } finally {
+    await surface.getByRole("button", { name: "Stop timeline" }).click();
+  }
+});
+
+/**
+ * Serve the bundled sample MP3s for the demo's timeline audio instead of the generated
+ * test tone. With `byteRanges`, requests carrying a `Range` header get just those bytes,
+ * like production static hosting; without, every request gets the whole file, like the
+ * Vite dev server.
+ */
+async function serveSampleMp3s(page: Page, byteRanges: boolean): Promise<void> {
+  await page.route(
+    "**/nightfall-demo.nightfall-show/timeline-audio/**",
+    async (route) => {
+      const name = new URL(route.request().url()).pathname.split("/").pop();
+      const body = await readFile(
+        new URL(
+          `../../crates/app-runtime/assets/sample-audio/${name}`,
+          import.meta.url,
+        ),
+      );
+      const range = /bytes=(\d+)-(\d*)/.exec(
+        route.request().headers().range ?? "",
+      );
+      if (!byteRanges || !range) {
+        await route.fulfill({ contentType: "audio/mpeg", body });
+        return;
+      }
+      const start = Number(range[1]);
+      const end = Math.min(
+        range[2] ? Number(range[2]) + 1 : body.length,
+        body.length,
+      );
+      await route.fulfill({
+        status: 206,
+        contentType: "audio/mpeg",
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${start}-${end - 1}/${body.length}`,
+        },
+        body: body.subarray(start, end),
+      });
+    },
+  );
+}
+
+for (const byteRanges of [true, false]) {
+  /**
+   * Streaming decodes only the frames around a position, so it must produce exactly
+   * what decoding the whole file does: same samples at every start point, same length,
+   * and no offset from encoder delay or the frames decoded before a seek. Servers that
+   * honour byte ranges and ones that send the whole file must agree.
+   */
+  test(`embedded demo streams the same samples as a full decode (${byteRanges ? "byte ranges" : "whole download"})`, async ({
+    page,
+  }) => {
+    test.skip(
+      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview",
+      "the packaged demo ships without test harnesses",
+    );
+    await serveSampleMp3s(page, byteRanges);
+    await compareStreamedSamples(page);
+  });
+}
+
+/** Stream the demo timeline's audio from several positions and compare with a full decode. */
+async function compareStreamedSamples(page: Page): Promise<void> {
+  await page.goto(
+    "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
+  );
+  await waitForDemoShow(page);
+  const results = await page.evaluate(async (timelineLabel) => {
+    const stores = (window as any).appStores;
+    const timeline = Object.values(stores.timelines.get()).find(
+      (entry: any) => entry?.identifiers?.label === timelineLabel,
+    ) as any;
+    const { streamingAudio, timelineAudio } =
+      await window.__nightfallHarness.load("app");
+    const url = timelineAudio.resolveTimelineAudioUrl(timeline.audio_path);
+    const track = await streamingAudio.openStreamingTrack(url);
+    if (!track) throw new Error("Demo audio did not open for streaming");
+    const bytes = await (await fetch(url)).arrayBuffer();
+    const full = await new OfflineAudioContext(
+      track.channelCount,
+      1,
+      track.sampleRate,
+    ).decodeAudioData(bytes);
+    const compareFrames = 16_384;
+    const starts = [0, 1_000, 123_457, 900_001, full.length - 5_000];
+    const comparisons = [];
+    for (const start of starts) {
+      const reader = track.openReader(start);
+      const streamed: Float32Array[] = [];
+      let total = 0;
+      while (total < compareFrames) {
+        const block = await reader.read();
+        if (!block) break;
+        streamed.push(block[1] ?? block[0]);
+        total += block[0].length;
+      }
+      reader.close();
+      const joined = new Float32Array(total);
+      let at = 0;
+      for (const part of streamed) {
+        joined.set(part, at);
+        at += part.length;
+      }
+      const reference = full
+        .getChannelData(track.channelCount - 1)
+        .subarray(start, start + compareFrames);
+      let maxDiff = 0;
+      for (let i = 0; i < Math.min(reference.length, joined.length); i += 1) {
+        maxDiff = Math.max(maxDiff, Math.abs(joined[i] - reference[i]));
+      }
+      comparisons.push({
+        start,
+        frames: Math.min(total, compareFrames),
+        expectedFrames: reference.length,
+        maxDiff,
+      });
+    }
+    track.close();
+    return {
+      streamedMs: track.durationMs(),
+      fullMs: full.duration * 1_000,
+      comparisons,
+    };
+  }, DEMO_TIMELINE_LABEL);
+  expect(results.streamedMs).toBeCloseTo(results.fullMs, 1);
+  for (const comparison of results.comparisons) {
+    expect(comparison.frames, `start ${comparison.start}`).toBe(
+      comparison.expectedFrames,
+    );
+    expect(comparison.maxDiff, `start ${comparison.start}`).toBeLessThan(1e-4);
+  }
+}
 
 /** Verifies demo identity, toolbar placement, and reset without changing the local showfile selection. */
 test("demo shell keeps runtime information in the bottom toolbar", async ({
@@ -780,7 +999,9 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
   const banner = bar.getByTestId("browser-demo-banner");
   const header = page.getByRole("navigation", { name: "Global" });
   await expect(banner).toHaveText("Reset demo");
-  await expect(header).toContainText("nightfall demo");
+  await expect(
+    header.getByRole("img", { name: "nightfall demo" }),
+  ).toBeVisible();
   await expect(page.getByTestId("browser-demo-audio-status")).toHaveCount(0);
   await expect(page.getByTestId("status-build-name")).toHaveCount(0);
   await expect(bar.getByTestId("status-showfile-name")).toHaveText(
@@ -830,6 +1051,142 @@ test("demo shell keeps runtime information in the bottom toolbar", async ({
   }
   await page.screenshot({
     path: testInfo.outputPath("demo-toolbar.png"),
+    fullPage: true,
+  });
+});
+
+/**
+ * Verify the demo, which has no disk storage, hides showfile storage actions and answers
+ * load and save commands with an immediate failure instead of leaving them pending.
+ */
+test("demo hides showfile storage actions and fails them fast", async ({
+  page,
+}, testInfo) => {
+  const path =
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+      ? "/demo/app/?e2e=1"
+      : "/?engine=embedded-demo&e2e=1";
+  await page.goto(path);
+  await waitForDemoShow(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores.runtimeCapabilities.get()?.disk_storage,
+      ),
+    )
+    .toBe(false);
+
+  await page
+    .getByRole("region", { name: "Application status bar" })
+    .getByRole("button", { name: "Menu", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Give Feedback", exact: true }),
+  ).toBeVisible();
+  for (const name of [
+    "New Showfile",
+    "Open Showfile",
+    "Import Showfile",
+    "Save Showfile",
+    "Export Showfile",
+  ]) {
+    await expect(page.getByRole("button", { name })).toHaveCount(0);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("demo-menu-without-storage.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+
+  const results = await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    const commands = [
+      { type: "SaveShowfile" },
+      { type: "LoadNamedShowfile", data: "tour" },
+    ];
+    return Promise.all(
+      commands.map(async (command) => {
+        const result = await Promise.race([
+          stores.sendAndAwait({ module: "DeskCommand", command }),
+          new Promise((resolve) => setTimeout(() => resolve(null), 5_000)),
+        ]);
+        return result as { outcome: { type: string; data?: any } } | null;
+      }),
+    );
+  });
+  for (const result of results) {
+    expect(result?.outcome.type).toBe("Failed");
+    expect(result?.outcome.data?.code).toBe("desk.disk_storage_unavailable");
+  }
+});
+
+/** Read the smoothed engine frame rate the UI shows in the status bar. */
+async function readEngineFps(page: Page): Promise<number> {
+  return page.evaluate(
+    () => (window as any).appStores.engineMetrics.get()?.fps ?? 0,
+  );
+}
+
+/**
+ * Verify the embedded engine publishes its tick rate as engine metrics, so the status bar
+ * and the Instrumentation panel report a live engine rate instead of 0 Hz, and that `fps`
+ * commands complete and retarget that rate.
+ */
+test("demo engine reports and adjusts its frame rate", async ({
+  page,
+}, testInfo) => {
+  const path =
+    process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview"
+      ? "/demo/app/?e2e=1"
+      : "/?engine=embedded-demo&e2e=1";
+  await page.goto(path);
+  await waitForDemoShow(page);
+  await expect.poll(() => readEngineFps(page)).toBeGreaterThan(5);
+
+  // Smoothed over the last 120 frames, so a new rate takes several seconds to settle.
+  await submitCommand(page, "fps 20");
+  await expect
+    .poll(() => readEngineFps(page), { timeout: 30_000 })
+    .toBeLessThan(25);
+  await submitCommand(page, "fps 44");
+  await expect
+    .poll(() => readEngineFps(page), { timeout: 30_000 })
+    .toBeGreaterThan(38);
+
+  const bar = page.getByRole("region", { name: "Application status bar" });
+  await bar.getByRole("button", { name: "Show metrics" }).click();
+  await expect(bar.locator("#status-metrics")).toContainText(/[1-9]\d* Hz/);
+
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const referencePanel = api.panels.find(
+      (candidate: any) => candidate.api.location.type === "grid",
+    );
+    const panel = api.addPanel({
+      id: "panel-Instrumentation-demo-fps",
+      component: "Instrumentation",
+      title: "Instrumentation",
+      params: {},
+      ...(referencePanel
+        ? {
+            position: {
+              referencePanel: referencePanel.id,
+              direction: "within",
+            },
+          }
+        : {}),
+    });
+    panel.api.setActive();
+  });
+  const backendSection = page.locator(".nf-collapsible").filter({
+    has: page.getByRole("button", { name: "Backend", exact: true }),
+  });
+  await expect(backendSection.locator(".nf-collapsible-header")).toContainText(
+    /[1-9]\d*\.\d fps/,
+  );
+  await backendSection.locator(".nf-collapsible-trigger").click();
+  await page.screenshot({
+    path: testInfo.outputPath("demo-engine-fps-44.png"),
     fullPage: true,
   });
 });
@@ -914,11 +1271,10 @@ test.describe("packaged demo show", () => {
       "/demo/app/?startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
     );
     await waitForDemoShow(page);
-    const showfileUrl = new URL(
-      "nightfall-demo.nightfall-show/showfile.json",
-      page.url(),
+    const showfileUrl = new URL(DEMO_SHOWFILE_PATH, page.url());
+    const showfile = parseDemoShowfile(
+      await (await page.request.get(showfileUrl.href)).body(),
     );
-    const showfile = await (await page.request.get(showfileUrl.href)).json();
     const audioPaths = referencedAudioPaths(showfile);
     expect(showfile.fixtures.length).toBeGreaterThan(0);
     expect(audioPaths.length).toBeGreaterThan(0);

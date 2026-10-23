@@ -17,7 +17,7 @@ import { Input } from "../../../components/ui/form-controls";
 import { NumericStepper } from "../../../components/ui/numeric-stepper";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { Button } from "../../../components/ui/visual-language/button";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -143,7 +143,7 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
         downbeat_offset: 0,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
 
     setLastAppliedDetectionRequestId(proposal.request_id);
     setPendingManualDetectionRequestId(undefined);
@@ -236,7 +236,7 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
         timeline_id: timelineValue.identifiers.id,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   };
 
   return (

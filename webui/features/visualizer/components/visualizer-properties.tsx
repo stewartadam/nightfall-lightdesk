@@ -15,6 +15,7 @@ import {
   For,
   Show,
 } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
@@ -269,9 +270,7 @@ const VisualizerProperties: Component = () => {
     <div class="flex h-full flex-col gap-4 p-4 text-neutral-200">
       <Show
         when={selectedFixtures().length > 0}
-        fallback={
-          <div class="text-sm text-neutral-500">No fixtures selected</div>
-        }
+        fallback={<EmptyState variant="inline" title="No fixtures selected" />}
       >
         <div class="text-xs uppercase tracking-wide text-neutral-400">
           Selected Fixtures: {selectedFixtures().length}

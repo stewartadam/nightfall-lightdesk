@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 nightfall = { path = "../common" }
+serde.workspace = true
+typeshare.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

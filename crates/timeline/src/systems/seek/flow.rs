@@ -12,9 +12,11 @@ use super::*;
 
 /// Flow-specific dependencies used during timeline reconstruction.
 #[derive(SystemParam)]
-pub struct TimelineFlowSeekMaterializer<'w> {
+pub struct TimelineFlowSeekMaterializer<'w, 's> {
     /// Domain requests consumed by the flow runtime materializer.
     reconstruction_requests: Option<MessageWriter<'w, DomainInstanceReconstructionRequest>>,
+    /// Clips whose priority the reconstructed playback inherits.
+    clips: Query<'w, 's, &'static Clip>,
 }
 
 /// Returns whether an evaluated instance should be routed to the flow runtime.
@@ -55,6 +57,11 @@ pub(super) fn materialize_timeline_flows(
         if state.queued_clip_cleanup_entities.contains(&clip_entity) {
             continue;
         }
+        let priority = materializer
+            .clips
+            .get(clip_entity)
+            .map(|clip| clip.priority)
+            .unwrap_or_default();
         if let Some(reconstruction_requests) = materializer.reconstruction_requests.as_mut() {
             reconstruction_requests.write(DomainInstanceReconstructionRequest::new(
                 instance.source,
@@ -72,6 +79,7 @@ pub(super) fn materialize_timeline_flows(
                         plan.timeline_plan.target_time,
                     ),
                 ),
+                priority,
             ));
         }
         track_timeline_clip_entity(

@@ -19,8 +19,8 @@ use crate::masters::{Master, MasterCommand};
 // Master Commands
 // ============================================================================
 
-impl UndoableOperation for MasterCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for MasterCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let masters = ctx.world.resource::<DataProvider<Master>>();
         match self {
             MasterCommand::StoreMaster(master) => match masters.get(master.identifiers.uid) {
@@ -28,7 +28,7 @@ impl UndoableOperation for MasterCommand {
                 Err(_) => Some(Box::new(MasterCommand::DeleteMaster(master.identifiers.id))),
             },
             MasterCommand::DeleteMaster(id) => masters.from_id(*id).ok().map(|master| {
-                Box::new(MasterCommand::StoreMaster(master.clone())) as Box<dyn UndoableOperation>
+                Box::new(MasterCommand::StoreMaster(master.clone())) as Box<dyn Undoable>
             }),
             MasterCommand::RenameMaster { id, new_id } => {
                 Some(Box::new(MasterCommand::RenameMaster {
@@ -40,14 +40,20 @@ impl UndoableOperation for MasterCommand {
                 Box::new(MasterCommand::SetMasterLevel {
                     id: *id,
                     level_percent: master.level_percent,
-                }) as Box<dyn UndoableOperation>
+                }) as Box<dyn Undoable>
             }),
+            MasterCommand::CommitMasterLevel {
+                id, from_percent, ..
+            } => Some(Box::new(MasterCommand::SetMasterLevel {
+                id: *id,
+                level_percent: *from_percent,
+            })),
             MasterCommand::SetMasterMode { id, .. } | MasterCommand::ToggleMaster { id } => {
                 masters.from_id(*id).ok().map(|master| {
                     Box::new(MasterCommand::SetMasterMode {
                         id: *id,
                         mode: master.mode.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 })
             }
         }
@@ -63,6 +69,9 @@ impl UndoableOperation for MasterCommand {
             MasterCommand::SetMasterLevel { id, level_percent } => {
                 format!("Set Master {} Level {}", id, level_percent)
             }
+            MasterCommand::CommitMasterLevel {
+                id, level_percent, ..
+            } => format!("Set Master {} Level {}", id, level_percent),
             MasterCommand::SetMasterMode { id, .. } => format!("Set Master {} Mode", id),
             MasterCommand::ToggleMaster { id } => format!("Toggle Master {}", id),
         }
@@ -76,7 +85,7 @@ impl UndoableOperation for MasterCommand {
 fn inverse_for_store_group(
     group: &Group,
     groups: &DataProvider<Group>,
-) -> Option<Box<dyn UndoableOperation>> {
+) -> Option<Box<dyn Undoable>> {
     match groups.get(group.identifiers.uid) {
         Ok(existing) => {
             let old_group: Group = (*existing).clone();
@@ -86,8 +95,8 @@ fn inverse_for_store_group(
     }
 }
 
-impl UndoableOperation for GroupCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for GroupCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let groups = ctx.world.resource::<DataProvider<Group>>();
         match self {
             GroupCommand::StoreGroup(group) => inverse_for_store_group(group, groups),
@@ -95,7 +104,7 @@ impl UndoableOperation for GroupCommand {
                 // Capture full group before deletion
                 groups.from_id(*id).ok().map(|group_ref| {
                     let group: Group = (*group_ref).clone();
-                    Box::new(GroupCommand::StoreGroup(group)) as Box<dyn UndoableOperation>
+                    Box::new(GroupCommand::StoreGroup(group)) as Box<dyn Undoable>
                 })
             }
             GroupCommand::RenameGroup { id, new_id } => Some(Box::new(GroupCommand::RenameGroup {
@@ -136,7 +145,7 @@ mod tests {
     }
 
     /// Extracts an clip command from a boxed undo command.
-    fn inverse_clip_command(command: Box<dyn UndoableOperation>) -> ClipCommand {
+    fn inverse_clip_command(command: Box<dyn Undoable>) -> ClipCommand {
         *command
             .into_any()
             .downcast::<ClipCommand>()
@@ -144,11 +153,37 @@ mod tests {
     }
 
     /// Extracts a Blueprint command from a boxed undo command.
-    fn inverse_blueprint_command(command: Box<dyn UndoableOperation>) -> BlueprintCommand {
+    fn inverse_blueprint_command(command: Box<dyn Undoable>) -> BlueprintCommand {
         *command
             .into_any()
             .downcast::<BlueprintCommand>()
             .expect("inverse should be a Blueprint command")
+    }
+
+    /// Verifies a committed drag undoes to the level from before the drag, not the live level.
+    #[test]
+    fn commit_master_level_inverse_restores_drag_start() {
+        let mut world = World::new();
+        world.insert_resource(DataProvider::<Master>::default());
+
+        let inverse = MasterCommand::CommitMasterLevel {
+            id: 3,
+            from_percent: 25.0,
+            level_percent: 90.0,
+        }
+        .inverse(&UndoContext { world: &world })
+        .expect("committed levels should be undoable");
+
+        assert!(matches!(
+            *inverse
+                .into_any()
+                .downcast::<MasterCommand>()
+                .expect("inverse should be a master command"),
+            MasterCommand::SetMasterLevel {
+                id: 3,
+                level_percent,
+            } if (level_percent - 25.0).abs() < f32::EPSILON
+        ));
     }
 
     /// Verifies Blueprint edits undo to the previous UUID-backed logical definition.

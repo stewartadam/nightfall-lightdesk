@@ -8,12 +8,15 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ParameterLayout, ParameterStateFrame } from "../types";
+import type {
+  OutboundLayerStack,
+  OutboundLayerState,
+  ParameterLayout,
+} from "../types";
 import {
   carriesParameterState,
   type PackedParameterState,
   ParameterStateDecoder,
-  packParameterStateFrame,
   parameterStateTransfers,
   queuedWorkerMessageData,
 } from "./parameter-state-transfer";
@@ -38,45 +41,26 @@ function layout(
   };
 }
 
-/** Returns the bytes of `values`, placed one byte into a larger buffer like a decoded CBOR byte string. */
-function unalignedBytes(values: ArrayBufferView): Uint8Array {
-  const bytes = new Uint8Array(
-    values.buffer,
-    values.byteOffset,
-    values.byteLength,
-  );
-  const backing = new Uint8Array(bytes.length + 1);
-  backing.set(bytes, 1);
-  return backing.subarray(1);
-}
-
-/** Encodes a values frame the way the backend does, with absolute assertions first. */
-function valuesFrame(
+/** Builds parameter state the way the worker packs it, with absolute assertions first. */
+function packedState(
   layoutId: number,
   output: number[],
   absolute: [slot: number, kind: number, value: number][],
   relative: [slot: number, kind: number, value: number][] = [],
-): ParameterStateFrame {
+): PackedParameterState {
   const assertions = [...absolute, ...relative];
   return {
-    layout_id: layoutId,
-    output: unalignedBytes(Float32Array.from(output)),
-    absolute_count: absolute.length,
-    assertion_slots: unalignedBytes(
-      Uint32Array.from(assertions.map(([slot]) => slot)),
-    ),
-    assertion_kinds: unalignedBytes(
-      Uint8Array.from(assertions.map(([, kind]) => kind)),
-    ),
-    assertion_values: unalignedBytes(
-      Float32Array.from(assertions.map(([, , value]) => value)),
-    ),
+    layoutId,
+    output: Float32Array.from(output),
+    absoluteCount: absolute.length,
+    assertionSlots: Uint32Array.from(assertions.map(([slot]) => slot)),
+    assertionKinds: Uint8Array.from(assertions.map(([, kind]) => kind)),
+    assertionValues: Float32Array.from(assertions.map(([, , value]) => value)),
   };
 }
 
-/** Packs a frame and moves its buffers through a structured clone, as the worker transfer does. */
-function transferred(values: ParameterStateFrame): PackedParameterState {
-  const packed = packParameterStateFrame(values);
+/** Moves packed state's buffers through a structured clone, as the worker transfer does. */
+function transferred(packed: PackedParameterState): PackedParameterState {
   const received = structuredClone(packed, {
     transfer: parameterStateTransfers(packed),
   });
@@ -98,7 +82,7 @@ test("decoder restores fixture state from layout slots", () => {
   );
   const states = decoder.unpack(
     transferred(
-      valuesFrame(
+      packedState(
         7,
         [65535, -0, 0.125, NaN, 128],
         [
@@ -141,25 +125,22 @@ test("decoder restores fixture state from layout slots", () => {
 /** Frames for another layout, or before any layout, cannot be resolved and are dropped. */
 test("decoder drops values that do not match its layout", () => {
   const decoder = new ParameterStateDecoder();
-  const frame = valuesFrame(2, [1], []);
-  assert.equal(decoder.unpack(packParameterStateFrame(frame)), undefined);
+  const frame = packedState(2, [1], []);
+  assert.equal(decoder.unpack(frame), undefined);
 
   decoder.setLayout(layout(1, [{ fixture_uid: "a", elements: [["Red"]] }]));
-  assert.equal(decoder.unpack(packParameterStateFrame(frame)), undefined);
+  assert.equal(decoder.unpack(frame), undefined);
   assert.equal(
-    decoder.unpack(packParameterStateFrame(valuesFrame(1, [1, 2], []))),
+    decoder.unpack(packedState(1, [1, 2], [])),
     undefined,
     "a slot count mismatch is treated as a foreign layout",
   );
-  assert.deepEqual(
-    decoder.unpack(packParameterStateFrame(valuesFrame(1, [3], []))),
-    [
-      {
-        fixture_uid: "a",
-        parameters: [{ output: { Red: 3 }, absolute: {}, relative: {} }],
-      },
-    ],
-  );
+  assert.deepEqual(decoder.unpack(packedState(1, [3], [])), [
+    {
+      fixture_uid: "a",
+      parameters: [{ output: { Red: 3 }, absolute: {}, relative: {} }],
+    },
+  ]);
 });
 
 /** Arbitrary imported attribute names cannot mutate the decoded map's prototype. */
@@ -168,8 +149,7 @@ test("decoder preserves special property names safely", () => {
   decoder.setLayout(
     layout(1, [{ fixture_uid: "f", elements: [["__proto__", "constructor"]] }]),
   );
-  const [fixture] =
-    decoder.unpack(packParameterStateFrame(valuesFrame(1, [42, 12], []))) ?? [];
+  const [fixture] = decoder.unpack(packedState(1, [42, 12], [])) ?? [];
   const output = fixture.parameters[0].output;
   assert.equal(Object.getPrototypeOf(output), Object.prototype);
   assert.deepEqual(Object.entries(output), [
@@ -191,7 +171,7 @@ test("queued worker messages route layouts and unpack values", () => {
   assert.equal(queuedWorkerMessageData(layoutMessage, decoder), undefined);
 
   const packed = {
-    packedParameters: packParameterStateFrame(valuesFrame(3, [255], [])),
+    packedParameters: packedState(3, [255], []),
   };
   assert.equal(carriesParameterState(packed), true);
   assert.deepEqual(queuedWorkerMessageData(packed, decoder), {
@@ -208,4 +188,246 @@ test("queued worker messages route layouts and unpack values", () => {
   assert.equal(carriesParameterState(other), false);
   assert.equal(queuedWorkerMessageData(other, decoder), other.data);
   assert.equal(carriesParameterState(undefined), false);
+});
+
+/** Packs numbers as little-endian bytes the way the backend writes layer stack buffers. */
+function bytes(kind: "u32" | "f32", values: number[]): Uint8Array {
+  const array =
+    kind === "u32" ? Uint32Array.from(values) : Float32Array.from(values);
+  // Offset into a larger buffer, as a CBOR decoder returns byte strings, to exercise realignment.
+  const padded = new Uint8Array(array.byteLength + 1);
+  padded.set(new Uint8Array(array.buffer), 1);
+  return padded.subarray(1);
+}
+
+/** Builds one packed wire layer with only the given assertion and computed buffers set. */
+function packedLayer(
+  absolute: [slot: number, kind: number, value: number][],
+  computed: [slot: number, value: number][],
+  transitioning: number[],
+): OutboundLayerState {
+  const empty = {
+    slots: new Uint8Array(0),
+    kinds: new Uint8Array(0),
+    values: new Uint8Array(0),
+  };
+  return {
+    creator: "Programmer",
+    object_ref: undefined,
+    priority: 10,
+    is_releasing: false,
+    runtime_position: undefined,
+    asserted_absolute: {
+      slots: bytes(
+        "u32",
+        absolute.map(([slot]) => slot),
+      ),
+      kinds: Uint8Array.from(absolute.map(([, kind]) => kind)),
+      values: bytes(
+        "f32",
+        absolute.map(([, , value]) => value),
+      ),
+    },
+    asserted_relative: empty,
+    lookahead_asserted: empty,
+    computed_slots: bytes(
+      "u32",
+      computed.map(([slot]) => slot),
+    ),
+    computed_values: bytes(
+      "f32",
+      computed.map(([, value]) => value),
+    ),
+    transitioning_slots: bytes("u32", transitioning),
+  } as OutboundLayerState;
+}
+
+/** Layer stack slots resolve to fixture element attribute maps, keeping earlier elements empty. */
+test("decoder restores layer stack values from layout slots", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(
+    layout(3, [
+      { fixture_uid: "first", elements: [["Dimmer"]] },
+      { fixture_uid: "second", elements: [["Pan"], ["Dimmer", "Red"]] },
+    ]),
+  );
+  const stack: OutboundLayerStack = {
+    layout_id: 3,
+    layers: [packedLayer([[3, 0, 200]], [[3, 180]], [3])],
+  };
+
+  const message = queuedWorkerMessageData(
+    { data: { type: "LayerStack", data: stack } as unknown as AnyWsMessage },
+    decoder,
+  );
+
+  assert.deepEqual(message, {
+    type: "LayerStack",
+    data: [
+      {
+        creator: "Programmer",
+        object_ref: undefined,
+        priority: 10,
+        is_releasing: false,
+        runtime_position: undefined,
+        asserted_absolute_values: [
+          {
+            fixture_uid: "second",
+            parameters: [
+              {},
+              { Red: { type: "Absolute", data: { value: 200 } } },
+            ],
+          },
+        ],
+        asserted_relative_values: [],
+        lookahead_asserted_values: [],
+        computed_values: [
+          { fixture_uid: "second", parameters: [{}, { Red: 180 }] },
+        ],
+        computed_transitioning: [
+          { fixture_uid: "second", parameters: [{}, { Red: true }] },
+        ],
+      },
+    ],
+  });
+});
+
+/** Snapshots for another layout or with slots outside the layout are dropped, not misapplied. */
+test("decoder drops layer stacks it cannot resolve", () => {
+  const decoder = new ParameterStateDecoder();
+  assert.equal(
+    decoder.unpackLayerStack({ layout_id: 1, layers: [] }),
+    undefined,
+  );
+  decoder.setLayout(layout(1, [{ fixture_uid: "a", elements: [["Dimmer"]] }]));
+  assert.deepEqual(decoder.unpackLayerStack({ layout_id: 1, layers: [] }), []);
+  assert.equal(
+    decoder.unpackLayerStack({ layout_id: 2, layers: [] }),
+    undefined,
+  );
+  assert.equal(
+    decoder.unpackLayerStack({
+      layout_id: 1,
+      layers: [packedLayer([], [[1, 5]], [])],
+    }),
+    undefined,
+  );
+});
+
+/** A reset decoder drops slot-indexed messages until a layout arrives again. */
+test("decoder reset forgets the layout", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(layout(1, [{ fixture_uid: "a", elements: [["Dimmer"]] }]));
+  decoder.reset();
+  assert.equal(
+    decoder.unpackLayerStack({ layout_id: 1, layers: [] }),
+    undefined,
+  );
+});
+
+/** Three fixtures with two single-attribute elements each, for reuse tests. */
+const REUSE_LAYOUT = layout(5, [
+  { fixture_uid: "a", elements: [["Red"], ["Green"]] },
+  { fixture_uid: "b", elements: [["Red"], ["Green"]] },
+  { fixture_uid: "c", elements: [["Red"], ["Green"]] },
+]);
+
+/**
+ * A frame that changes one fixture's output returns a new state for that fixture only, keeps the
+ * unchanged element and assertion records inside it, and decodes the same values a fresh decoder
+ * would.
+ */
+test("decoder reuses fixtures whose output did not change", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const absolute: [number, number, number][] = [[2, 0, 1]];
+  const first = decoder.unpack(packedState(5, [1, 2, 3, 4, 5, 6], absolute));
+  assert.ok(first);
+  const next = decoder.unpack(packedState(5, [1, 2, 3, 9, 5, 6], absolute));
+  assert.ok(next);
+
+  assert.equal(next[0], first[0]);
+  assert.equal(next[2], first[2]);
+  assert.notEqual(next[1], first[1]);
+  assert.equal(next[1].parameters[0].output, first[1].parameters[0].output);
+  assert.equal(next[1].parameters[0].absolute, first[1].parameters[0].absolute);
+  assert.notEqual(next[1].parameters[1].output, first[1].parameters[1].output);
+
+  const fresh = new ParameterStateDecoder();
+  fresh.setLayout(REUSE_LAYOUT);
+  assert.deepEqual(
+    next,
+    fresh.unpack(packedState(5, [1, 2, 3, 9, 5, 6], absolute)),
+  );
+});
+
+/**
+ * Bit-level changes the backend sends, such as a signed zero or a NaN becoming a number, count as
+ * changes, and an identical frame returns every previous fixture.
+ */
+test("decoder compares outputs by their bits", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const first = decoder.unpack(packedState(5, [0, NaN, 1, 1, 1, 1], []));
+  const next = decoder.unpack(packedState(5, [-0, 7, 1, 1, 1, 1], []));
+  assert.ok(first && next);
+  assert.notEqual(next[0], first[0]);
+  assert.deepEqual(next[0].parameters[0].output, { Red: -0 });
+  assert.deepEqual(next[0].parameters[1].output, { Green: 7 });
+
+  const same = decoder.unpack(packedState(5, [-0, 7, 1, 1, 1, 1], []));
+  assert.ok(same);
+  for (const [index, state] of same.entries()) {
+    assert.equal(state, next[index]);
+  }
+});
+
+/**
+ * When assertions change, only fixtures whose own assertions differ get new state; fixtures with
+ * the same assertions keep theirs, even if other entries moved within the assertion arrays.
+ */
+test("decoder reuses fixtures whose assertions did not change", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const output = [1, 2, 3, 4, 5, 6];
+  const first = decoder.unpack(
+    packedState(5, output, [
+      [0, 0, 10],
+      [4, 1, 0.5],
+    ]),
+  );
+  const next = decoder.unpack(
+    packedState(
+      5,
+      output,
+      [
+        [4, 1, 0.5],
+        [0, 0, 10],
+      ],
+      [[2, 2, -3]],
+    ),
+  );
+  assert.ok(first && next);
+  assert.equal(next[0], first[0]);
+  assert.equal(next[2], first[2]);
+  assert.notEqual(next[1], first[1]);
+  assert.deepEqual(next[1].parameters[0].relative, {
+    Red: { type: "Relative", data: { offset: -3 } },
+  });
+  assert.equal(next[1].parameters[0].output, first[1].parameters[0].output);
+});
+
+/** A new layout, even with the same fixtures, rebuilds every fixture rather than reusing state. */
+test("decoder rebuilds every fixture after a layout", () => {
+  const decoder = new ParameterStateDecoder();
+  decoder.setLayout(REUSE_LAYOUT);
+  const output = [1, 2, 3, 4, 5, 6];
+  const first = decoder.unpack(packedState(5, output, []));
+  decoder.setLayout(REUSE_LAYOUT);
+  const next = decoder.unpack(packedState(5, output, []));
+  assert.ok(first && next);
+  for (const [index, state] of next.entries()) {
+    assert.notEqual(state, first[index]);
+  }
+  assert.deepEqual(next, first);
 });

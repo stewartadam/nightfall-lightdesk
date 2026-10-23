@@ -18,7 +18,7 @@ use nightfall_actions::{ActionInvocation, ActionRegistry, ActionSurface};
 #[cfg(feature = "audio")]
 use nightfall_audio::prelude::*;
 use nightfall_clips::{
-    Clip, ClipAction, ClipCommand, ClipLookup, ClipLookupSnapshot, ClipReleaseAfterInstance,
+    Clip, ClipCommand, ClipLookup, ClipLookupSnapshot, ClipOperation, ClipReleaseAfterInstance,
     MaterializedClip, Source,
 };
 use nightfall_compositor::prelude::{Layer, ObjectRefMarker, ReleaseMarker};
@@ -42,7 +42,7 @@ use nightfall_playback_planner::{
     EvaluatedInstanceState, PlannedNoOpReason, PlannedPlaybackIntervention,
     PlannedPlaybackInterventionKind, PlannedPlaybackLifecycle, PlannedPlaybackSource,
     PlannedPlaybackSourceKind, PlaybackDurationProfile, PlaybackExtent,
-    PlaybackReconstructionTiming, TimelinePlaybackActionOperation, TimelinePlaybackActionPlan,
+    PlaybackReconstructionTiming,
 };
 use nightfall_selection::filter_existing_selection;
 use nightfall_timecode::prelude::*;
@@ -51,8 +51,9 @@ use uuid::Uuid;
 use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
 use crate::planner::{TimelinePlanningAction, TimelinePlaybackSourceResolver, plan_timeline_at};
 use crate::prelude::{
-    ActionKind, ParameterType, TimelineAction, TimelineCommand, TimelineLookaheadMode,
-    TimelineNondeterministicSeekBehavior, TimelineSeekBehavior, TimelineStopBehavior,
+    ActionKind, ParameterType, TimelineCommand, TimelineLookaheadMode,
+    TimelineNondeterministicSeekBehavior, TimelineOperation, TimelineSeekBehavior,
+    TimelineStopBehavior,
 };
 use crate::recording::{TimelineCommandOrigins, write_timeline_clip_action};
 
@@ -61,6 +62,7 @@ mod live;
 mod lookahead;
 mod parameters;
 mod pause_sync;
+mod planned_cues;
 mod planner_adapter;
 mod seek;
 
@@ -78,6 +80,7 @@ pub use lookahead::{
 };
 pub use parameters::process_parameters_system;
 pub use pause_sync::{TimelinePausedPlaybackRates, sync_timeline_paused_instance_controls_system};
+pub use planned_cues::update_timeline_planned_cues_system;
 #[cfg(test)]
 use planner_adapter::{
     intervention_reconstruction_timing_from_evaluated_instance,
@@ -106,72 +109,18 @@ fn lookahead_override_for_timeline(timeline: &MaterializedTimeline) -> Option<bo
     }
 }
 
-/// Converts timeline-supported registered actions into native timeline action kinds.
-fn normalized_registered_action_kind(
-    action: &ActionKind,
-    action_registry: Option<&ActionRegistry>,
-) -> Option<ActionKind> {
-    let ActionKind::RegisteredAction(action) = action else {
-        return None;
-    };
-
-    let capability = action_registry?
-        .resolve_capability::<TimelinePlaybackActionPlan>(action)
-        .ok()
-        .flatten()?;
-    match capability.operation {
-        TimelinePlaybackActionOperation::Start => Some(ActionKind::StartClip(capability.owner_uid)),
-        TimelinePlaybackActionOperation::Stop => Some(ActionKind::StopClip(capability.owner_uid)),
-        TimelinePlaybackActionOperation::Intervene(PlannedPlaybackInterventionKind::SequenceGo) => {
-            Some(ActionKind::AdvanceSequence(capability.owner_uid))
-        }
-        TimelinePlaybackActionOperation::Intervene(
-            PlannedPlaybackInterventionKind::SequenceBack,
-        ) => Some(ActionKind::BackSequence(capability.owner_uid)),
-        TimelinePlaybackActionOperation::Intervene(
-            PlannedPlaybackInterventionKind::SequenceGotoCue(cue_index),
-        ) => Some(ActionKind::JumpToCue {
-            uid: capability.owner_uid,
-            cue_index,
-        }),
-        TimelinePlaybackActionOperation::Intervene(PlannedPlaybackInterventionKind::Stop) => None,
-    }
-}
-
-/// Returns the clip UID that should start playback for this timeline action.
-fn timeline_start_clip_uid(
-    action: &ActionKind,
-    action_registry: Option<&ActionRegistry>,
-) -> Option<Uuid> {
+/// Returns the clip UID that a resolved timeline action starts.
+fn timeline_start_clip_uid(action: &ActionKind) -> Option<Uuid> {
     match action {
         ActionKind::StartClip(uid) => Some(*uid),
-        ActionKind::RegisteredAction(_) => {
-            normalized_registered_action_kind(action, action_registry).and_then(|action| {
-                match action {
-                    ActionKind::StartClip(uid) => Some(uid),
-                    _ => None,
-                }
-            })
-        }
         _ => None,
     }
 }
 
-/// Returns the clip UID that should stop playback for this timeline action.
-fn timeline_stop_clip_uid(
-    action: &ActionKind,
-    action_registry: Option<&ActionRegistry>,
-) -> Option<Uuid> {
+/// Returns the clip UID that a resolved timeline action stops.
+fn timeline_stop_clip_uid(action: &ActionKind) -> Option<Uuid> {
     match action {
         ActionKind::StopClip(uid) => Some(*uid),
-        ActionKind::RegisteredAction(_) => {
-            normalized_registered_action_kind(action, action_registry).and_then(|action| {
-                match action {
-                    ActionKind::StopClip(uid) => Some(uid),
-                    _ => None,
-                }
-            })
-        }
         _ => None,
     }
 }

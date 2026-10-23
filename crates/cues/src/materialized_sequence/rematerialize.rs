@@ -14,41 +14,6 @@ use super::materialize::cue_with_sequence_default_timing;
 use super::release::mark_materialized_cue_released_at_position;
 use super::*;
 
-/// Rebuilds persisted Blueprint dependencies after cue or sequence definitions change.
-pub fn rebuild_blueprint_reference_index(
-    cue_data_provider: Res<DataProvider<Cue>>,
-    sequence_data_provider: Res<DataProvider<Sequence>>,
-    mut reference_index: ResMut<BlueprintReferenceIndex>,
-) {
-    if !cue_data_provider.is_changed() && !sequence_data_provider.is_changed() {
-        return;
-    }
-
-    let cue_references = cue_data_provider.iter().flat_map(|entry| {
-        let cue = entry.value();
-        let description = format!("cue {} ({})", cue.identifiers.id, cue.identifiers.label);
-        cue.referenced_blueprints()
-            .into_iter()
-            .map(|uid| (uid, description.clone()))
-            .collect::<Vec<_>>()
-    });
-    let sequence_references = sequence_data_provider.iter().flat_map(|entry| {
-        let sequence = entry.value();
-        let description = format!(
-            "sequence {} ({})",
-            sequence.identifiers.id, sequence.identifiers.label
-        );
-        sequence
-            .setup_cue
-            .referenced_blueprints()
-            .into_iter()
-            .chain(sequence.release_cue.referenced_blueprints())
-            .map(|uid| (uid, description.clone()))
-            .collect::<Vec<_>>()
-    });
-    reference_index.replace_source("cues", cue_references.chain(sequence_references));
-}
-
 /// Runtime fields preserved while a sequence step is rematerialized from a new definition.
 struct PreservedStepRuntime {
     mcue: Option<MaterializedCue>,

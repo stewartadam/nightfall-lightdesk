@@ -9,8 +9,7 @@
 import { expect, test } from "./playwright-fixtures";
 
 /** Verifies settings tabs keep selects styled and editor settings isolated from General. */
-test("settings select styling stays browser-specific", async ({
-  browserName,
+test("settings selects share the custom chevron in every browser", async ({
   page,
 }) => {
   await page.goto("/?e2e=1");
@@ -50,14 +49,9 @@ test("settings select styling stays browser-specific", async ({
     };
   });
 
-  if (browserName === "webkit") {
-    expect(styles.appearance).toBe("none");
-    expect(styles.backgroundImage).not.toBe("none");
-    expect(Number.parseFloat(styles.paddingRight)).toBeGreaterThanOrEqual(32);
-    return;
-  }
-
-  expect(styles.backgroundImage).toBe("none");
+  expect(styles.appearance).toBe("none");
+  expect(styles.backgroundImage).not.toBe("none");
+  expect(Number.parseFloat(styles.paddingRight)).toBeGreaterThanOrEqual(32);
 });
 
 /** Verifies settings network controls show interface friendly names with system names and IPs. */

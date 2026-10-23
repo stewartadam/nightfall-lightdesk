@@ -24,7 +24,9 @@ use tokio::sync::broadcast::Sender as BroadcastSender;
 use crate::websocket::create_axum_task;
 
 mod external_control;
+pub mod host_preferences;
 mod origin;
+mod outbox;
 mod pairing;
 pub mod routes;
 mod web_ui;
@@ -185,6 +187,7 @@ fn start_or_attach_axum_task(
         client_event_rx,
         client_bridge.command_sender(),
         client_bridge.update_sender(),
+        client_bridge.presence_sender(),
         plugin_routes,
         stateful_plugin_routes,
         host.web_ui.clone(),

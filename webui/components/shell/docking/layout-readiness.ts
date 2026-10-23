@@ -12,18 +12,22 @@ import { atom } from "nanostores";
 export const dockviewLayoutShowfileRevision = atom<number>(-1);
 /** Settings snapshot revision represented by the restored Dockview layout. */
 export const dockviewLayoutSettingsSnapshotRevision = atom<number>(0);
-/** Active-layout key represented by the restored Dockview layout. */
-export const dockviewLayoutActiveLayoutKey = atom<string | null>(null);
+/**
+ * Whether the restored Dockview kept this device's own arrangement for the showfile,
+ * rather than starting from the showfile's default layout.
+ */
+export const dockviewLayoutKeptDeviceArrangement = atom<boolean>(false);
 
 /** Records that Dockview applied the layout for a showfile revision. */
 export function markDockviewLayoutReady(
   showfileRevision: number,
   settingsSnapshotRevision: number,
-  activeLayoutKey: string | null,
+  keptDeviceArrangement: boolean,
 ): void {
   queueMicrotask(() => {
+    // Set before the revisions, whose subscribers read it when they react.
+    dockviewLayoutKeptDeviceArrangement.set(keptDeviceArrangement);
     dockviewLayoutShowfileRevision.set(showfileRevision);
     dockviewLayoutSettingsSnapshotRevision.set(settingsSnapshotRevision);
-    dockviewLayoutActiveLayoutKey.set(activeLayoutKey);
   });
 }

@@ -28,12 +28,13 @@ import {
   loadCrudPanelViewMode,
 } from "../../../lib/crud-panel-view-mode";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { setObjectDragData } from "../../../lib/object-drag";
 import {
   serializeTimelineInsertDragPayload,
   TIMELINE_INSERT_DRAG_MIME,
 } from "../../../lib/timeline-insert-drag";
 import { clips, dockApi } from "../../../state/appStores";
-import type * as types from "../../../types";
+import * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import { ClipControlsSection } from "../components/clip-controls-section";
 import { ClipEditorDialogs } from "../components/clip-editor-dialogs";
@@ -254,6 +255,11 @@ export function ClipListController(props: ClipListControllerProps) {
     if (selectionMode()) return;
     if (event.dataTransfer) {
       event.dataTransfer.setData("application/x-clip", JSON.stringify(clip));
+      setObjectDragData(
+        event.dataTransfer,
+        types.ObjectType.Clip,
+        clip.identifiers.uid,
+      );
       event.dataTransfer.setData(
         TIMELINE_INSERT_DRAG_MIME,
         serializeTimelineInsertDragPayload({

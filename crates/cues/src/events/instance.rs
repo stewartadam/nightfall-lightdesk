@@ -101,8 +101,7 @@ pub fn spawn_released_reconstructed_sequence_for_clip(
     color_path_data_provider: Option<&DataProvider<ColorPath>>,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     fixture_data_provider: &Res<FixtureDataProviderExt>,
-    parameter_mut_query: &mut Query<InstanceMut<Parameter>>,
-    parameter_query: &Query<InstanceRef<Parameter>>,
+    parameter_query: &mut Query<InstanceMut<Parameter>>,
     selection_resolver: &SpatialSelectionResolver,
     position: u32,
     active_started_at: Duration,
@@ -120,10 +119,10 @@ pub fn spawn_released_reconstructed_sequence_for_clip(
     );
     msequence.set_priority(clip.priority);
     msequence.set_position_reconstructing_prefix_at_playback_position(position, active_started_at);
-    msequence.render_release_snapshot_at_position(parameter_mut_query, release_timing.started_at);
+    msequence.render_release_snapshot_at_position(parameter_query, release_timing.started_at);
     msequence.release_from_rendered_assertions_at_position(
         fixture_data_provider,
-        parameter_query,
+        &parameter_query.as_readonly(),
         Some(release_timing.started_at),
     );
 
@@ -206,7 +205,7 @@ pub struct SequenceInstanceMetadataContext<'w, 's> {
 /// originating undo context when delegated from an `ClipCommand`.
 pub fn handle_sequence_playback_actions(
     mut commands: Commands,
-    mut events: MessageReader<EngineActionEnvelope<SequencePlaybackAction>>,
+    mut events: MessageReader<EngineOperationEnvelope<SequencePlaybackOperation>>,
     instance_index: Res<InstanceIndex>,
     materialization: SequenceMaterializationParams,
     mut msequence_query: Query<(&mut MaterializedSequence, Option<&mut InstanceClock>)>,
@@ -217,12 +216,12 @@ pub fn handle_sequence_playback_actions(
             .command_id
             .map(uuid::Uuid::from)
             .unwrap_or_else(|| event.operation_id.into());
-        match &event.action {
-            SequencePlaybackAction::Go { instance_id } => {
+        match &event.operation {
+            SequencePlaybackOperation::Go { instance_id } => {
                 let Some(entity) = instance_index.get(instance_id) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::Go: playback not found"
+                        "SequencePlaybackOperation::Go: playback not found"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -234,7 +233,7 @@ pub fn handle_sequence_playback_actions(
                 let Ok((mut msequence, clock)) = msequence_query.get_mut(entity) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::Go: entity is not a MaterializedSequence"
+                        "SequencePlaybackOperation::Go: entity is not a MaterializedSequence"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -249,7 +248,7 @@ pub fn handle_sequence_playback_actions(
                 }
                 msequence.next_at_playback_position(clock.as_ref().map(|clock| clock.position));
                 tracing::debug!(
-                    "SequencePlaybackAction::Go: advanced sequence '{}' to position {}",
+                    "SequencePlaybackOperation::Go: advanced sequence '{}' to position {}",
                     msequence.sequence.identifiers.label,
                     msequence.position()
                 );
@@ -257,11 +256,11 @@ pub fn handle_sequence_playback_actions(
                 outbound.succeed_cue(correlation_id);
             }
 
-            SequencePlaybackAction::Back { instance_id } => {
+            SequencePlaybackOperation::Back { instance_id } => {
                 let Some(entity) = instance_index.get(instance_id) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::Back: playback not found"
+                        "SequencePlaybackOperation::Back: playback not found"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -273,7 +272,7 @@ pub fn handle_sequence_playback_actions(
                 let Ok((mut msequence, clock)) = msequence_query.get_mut(entity) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::Back: entity is not a MaterializedSequence"
+                        "SequencePlaybackOperation::Back: entity is not a MaterializedSequence"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -288,7 +287,7 @@ pub fn handle_sequence_playback_actions(
                 }
                 msequence.prev_at_playback_position(clock.as_ref().map(|clock| clock.position));
                 tracing::debug!(
-                    "SequencePlaybackAction::Back: moved sequence '{}' to position {}",
+                    "SequencePlaybackOperation::Back: moved sequence '{}' to position {}",
                     msequence.sequence.identifiers.label,
                     msequence.position()
                 );
@@ -296,7 +295,7 @@ pub fn handle_sequence_playback_actions(
                 outbound.succeed_cue(correlation_id);
             }
 
-            SequencePlaybackAction::Goto {
+            SequencePlaybackOperation::Goto {
                 instance_id,
                 position,
                 timing,
@@ -304,7 +303,7 @@ pub fn handle_sequence_playback_actions(
                 let Some(entity) = instance_index.get(instance_id) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::Goto: playback not found"
+                        "SequencePlaybackOperation::Goto: playback not found"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -316,7 +315,7 @@ pub fn handle_sequence_playback_actions(
                 let Ok((mut msequence, clock)) = msequence_query.get_mut(entity) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::Goto: entity is not a MaterializedSequence"
+                        "SequencePlaybackOperation::Goto: entity is not a MaterializedSequence"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -346,7 +345,7 @@ pub fn handle_sequence_playback_actions(
                     );
                 }
                 tracing::debug!(
-                    "SequencePlaybackAction::Goto: set sequence '{}' to position {}",
+                    "SequencePlaybackOperation::Goto: set sequence '{}' to position {}",
                     msequence.sequence.identifiers.label,
                     position
                 );
@@ -354,7 +353,7 @@ pub fn handle_sequence_playback_actions(
                 outbound.succeed_cue(correlation_id);
             }
 
-            SequencePlaybackAction::RenderAt {
+            SequencePlaybackOperation::RenderAt {
                 instance_id,
                 position,
                 timing,
@@ -362,7 +361,7 @@ pub fn handle_sequence_playback_actions(
                 let Some(entity) = instance_index.get(instance_id) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::RenderAt: playback not found"
+                        "SequencePlaybackOperation::RenderAt: playback not found"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -374,7 +373,7 @@ pub fn handle_sequence_playback_actions(
                 let Ok((mut msequence, clock)) = msequence_query.get_mut(entity) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::RenderAt: entity is not a MaterializedSequence"
+                        "SequencePlaybackOperation::RenderAt: entity is not a MaterializedSequence"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -397,7 +396,7 @@ pub fn handle_sequence_playback_actions(
                         .insert(instance_clock_from_reconstruction_timing(*timing));
                 }
                 tracing::debug!(
-                    "SequencePlaybackAction::RenderAt: rendered sequence '{}' at position {}",
+                    "SequencePlaybackOperation::RenderAt: rendered sequence '{}' at position {}",
                     msequence.sequence.identifiers.label,
                     position
                 );
@@ -405,11 +404,11 @@ pub fn handle_sequence_playback_actions(
                 outbound.succeed_cue(correlation_id);
             }
 
-            SequencePlaybackAction::Stop { instance_id } => {
+            SequencePlaybackOperation::Stop { instance_id } => {
                 let Some(entity) = instance_index.get(instance_id) else {
                     tracing::error!(
                         ?instance_id,
-                        "SequencePlaybackAction::Stop: playback not found"
+                        "SequencePlaybackOperation::Stop: playback not found"
                     );
                     outbound.fail_cue(
                         correlation_id,
@@ -422,7 +421,7 @@ pub fn handle_sequence_playback_actions(
                 commands.entity(entity).insert(ReleaseMarker::default());
                 tracing::debug!(
                     ?instance_id,
-                    "SequencePlaybackAction::Stop: marked playback for release"
+                    "SequencePlaybackOperation::Stop: marked playback for release"
                 );
 
                 outbound.succeed_cue(correlation_id);

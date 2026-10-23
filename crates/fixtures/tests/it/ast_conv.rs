@@ -1508,3 +1508,24 @@ fn test_patch_binding_fixture_element_ranges_in_ids_errors() {
         other => panic!("Expected ConversionFailed error, got {:?}", other),
     }
 }
+
+/// Verifies `ch <transport>:U.A @ V` converts to a wire hold on that output, normalizing the
+/// target ID to lowercase.
+#[test]
+fn test_set_transport_dmx_channel_conversion() {
+    let ast = generate_ast("ch Sacn:1.1>1.3 @ 255").expect("transport channel should parse");
+    let commands = FixtureAstConverter::convert(&ast).expect("transport channel should convert");
+
+    assert_eq!(commands.len(), 1);
+    let Some(FixtureCommand::SetTransportDmxChannels {
+        target,
+        channels,
+        value,
+    }) = commands[0].as_any().downcast_ref::<FixtureCommand>()
+    else {
+        panic!("Expected SetTransportDmxChannels command");
+    };
+    assert_eq!(target, "sacn");
+    assert_eq!(*value, 255);
+    assert_eq!(channels.expand().len(), 3);
+}

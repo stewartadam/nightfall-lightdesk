@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import {
   combinedDesktopNotices,
   desktopArtifactPlan,
+  desktopDebugSymbols,
   desktopReleasePolicy,
   desktopTargets,
 } from "./desktop-artifacts.mjs";
@@ -89,6 +90,26 @@ test("stages the complete matrix without filename collisions", () => {
   }
   assert.equal(names.length, 4);
   assert.equal(new Set(names).size, 4);
+});
+
+/** Every release target names the debug symbols its build leaves beside the executable. */
+test("locates each target's debug symbols in its release build", () => {
+  const symbols = desktopTargets.map(({ target }) =>
+    desktopDebugSymbols(target, "/target"),
+  );
+  assert.deepEqual(
+    symbols.map(({ symbols }) => symbols),
+    [
+      "/target/aarch64-apple-darwin/release/nightfall-app.dSYM",
+      "/target/x86_64-pc-windows-msvc/release/nightfall_app.pdb",
+      "/target/x86_64-unknown-linux-gnu/release/nightfall-app.debug",
+    ],
+  );
+  assert.deepEqual(
+    symbols.map(({ split }) => split),
+    [false, false, true],
+  );
+  assert.throws(() => desktopDebugSymbols("wasm32-unknown-unknown", "/target"));
 });
 
 /** Missing or ambiguous build outputs prevent partial installers from reaching a release. */

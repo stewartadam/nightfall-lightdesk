@@ -480,7 +480,7 @@ test("Step FX attribute search is limited to target fixtures", async ({
   const attributeSearch = editor.getByRole("searchbox", {
     name: "Search attributes",
   });
-  const attributeMenu = editor.getByRole("menu", { name: "Attributes" });
+  const attributeMenu = page.getByRole("menu", { name: "Attributes" });
   await attributeSearch.focus();
   await expect(attributeMenu).toBeVisible();
   await expect(
@@ -803,9 +803,10 @@ test("Step FX waveform geometry drag-edits authored fields", async ({
   await expect(
     startPositionTrigger.locator('[data-waveform-drag-active="true"]'),
   ).toBeVisible();
+  await expect(startPositionTrigger).toHaveClass(/ring-amber-300/);
   await expect(
     startPositionTrigger.locator('[data-waveform-drag-active="true"]'),
-  ).toHaveClass(/border-amber-300/);
+  ).toHaveClass(/text-amber-100/);
   await page.screenshot({
     path: testInfo.outputPath("step-fx-waveform-drag-highlight.png"),
     fullPage: true,
@@ -1500,7 +1501,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     laneListBox.y,
   );
   await attributeSearch.focus();
-  const attributeMenu = editor.getByRole("menu", { name: "Attributes" });
+  const attributeMenu = page.getByRole("menu", { name: "Attributes" });
   await expect(attributeMenu).toBeVisible();
   const expandedLaneListBox = await laneList.boundingBox();
   if (!expandedLaneListBox)
@@ -1593,8 +1594,8 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     startSeparatorBox.x - (speedBox.x + speedBox.width);
   const separatorToStartGap =
     startPositionBox.x - (startSeparatorBox.x + startSeparatorBox.width);
-  expect(Math.abs(directionToSpeedGap - speedToSeparatorGap)).toBeLessThan(1);
-  expect(Math.abs(directionToSpeedGap - separatorToStartGap)).toBeLessThan(1);
+  expect(Math.abs(speedToSeparatorGap - separatorToStartGap)).toBeLessThan(1);
+  expect(speedToSeparatorGap).toBeGreaterThanOrEqual(directionToSpeedGap);
   const actionToolbarBox = await actionToolbar.boundingBox();
   const actionButtons = [
     actionToolbar.getByRole("button", { name: "Add step", exact: true }),
@@ -2165,10 +2166,9 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     startPositionMenu.getByLabel("Spread amount", { exact: true }),
   ).toHaveValue("100");
   await expect(
-    startPositionMenu.getByLabel("Spread amount slider"),
-  ).toHaveValue("100");
+    startPositionMenu.getByRole("slider", { name: "Spread amount slider" }),
+  ).toHaveAttribute("aria-valuenow", "100.0");
   await expect(percentPositionUnit).toHaveAttribute("aria-checked", "true");
-  await expect(percentPositionUnit).toHaveClass(/bg-blue-600/);
   await expect(
     startPositionMenu.locator("[data-step-fx-start-position-direction]"),
   ).toHaveAttribute("data-step-fx-start-position-direction", "clockwise");
@@ -2187,8 +2187,8 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     startPositionMenu.getByLabel("Spread amount", { exact: true }),
   ).toHaveValue("-50");
   await expect(
-    startPositionMenu.getByLabel("Spread amount slider"),
-  ).toHaveValue("50");
+    startPositionMenu.getByRole("slider", { name: "Spread amount slider" }),
+  ).toHaveAttribute("aria-valuenow", "50.0");
   await expect(
     startPositionMenu.getByRole("button", { name: "-25%" }),
   ).toBeVisible();
@@ -2206,9 +2206,7 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await startPositionMenu.getByRole("button", { name: "100%" }).click();
   await degreePositionUnit.click();
   await expect(degreePositionUnit).toHaveAttribute("aria-checked", "true");
-  await expect(degreePositionUnit).toHaveClass(/bg-blue-600/);
   await expect(percentPositionUnit).toHaveAttribute("aria-checked", "false");
-  await expect(percentPositionUnit).not.toHaveClass(/bg-blue-600/);
   await expect(dividerLabels.nth(0)).toHaveText("0°");
   await expect(dividerLabels.nth(1)).toHaveText("180°");
   await expect(
@@ -2224,7 +2222,6 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   });
   await percentPositionUnit.click();
   await expect(percentPositionUnit).toHaveAttribute("aria-checked", "true");
-  await expect(percentPositionUnit).toHaveClass(/bg-blue-600/);
   await expect(dividerLabels.nth(0)).toHaveText("0%");
   await expect(dividerLabels.nth(1)).toHaveText("50%");
   await expect(
@@ -2236,8 +2233,6 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await expect(editor.locator("[data-step-fx-show-all-warning]")).toBeVisible();
   await expect(togetherMode).toHaveAttribute("aria-checked", "true");
   await expect(spreadMode).toHaveAttribute("aria-checked", "false");
-  await expect(togetherMode).toHaveClass(/bg-blue-600/);
-  await expect(spreadMode).not.toHaveClass(/bg-blue-600/);
   await startPositionMenu
     .getByLabel("Start position value", { exact: true })
     .fill("50");
@@ -2336,8 +2331,14 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await expect(previewIndexes).toHaveText(["10°", "290°", "3180°", "4270°"]);
   await startPositionTrigger.click();
   await expect(customStartMenu).toHaveCount(0);
-  await expect(previewIndexes.nth(0)).toHaveAttribute("title", /Fixture 1/);
-  await expect(previewIndexes.nth(3)).toHaveAttribute("title", /Fixture 4/);
+  await expect(previewIndexes.nth(0)).toHaveAttribute(
+    "aria-description",
+    /Fixture 1/,
+  );
+  await expect(previewIndexes.nth(3)).toHaveAttribute(
+    "aria-description",
+    /Fixture 4/,
+  );
   await expect(showAllPlayheads).not.toBeChecked();
   await showAllPlayheads.check();
   await expect(playhead).toHaveCount(4);
@@ -2420,13 +2421,19 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await previewIndexes.nth(0).click();
 
   await setEditorSelection(page, editor, "Fixture 4>1");
-  await expect(previewIndexes.nth(0)).toHaveAttribute("title", /Fixture 4/);
-  await expect(previewIndexes.nth(3)).toHaveAttribute("title", /Fixture 1/);
+  await expect(previewIndexes.nth(0)).toHaveAttribute(
+    "aria-description",
+    /Fixture 4/,
+  );
+  await expect(previewIndexes.nth(3)).toHaveAttribute(
+    "aria-description",
+    /Fixture 1/,
+  );
 
   await setEditorSelection(page, editor, "{Fixture 1>2} + Fixture 3>4");
   await expect(previewIndexes).toHaveCount(3);
   await expect(previewIndexes.nth(0)).toHaveAttribute(
-    "title",
+    "aria-description",
     /Fixture 1(?:\.1)?, Fixture 2(?:\.1)? \(2\)/,
   );
   await expect(playheadLabels).toHaveText(
@@ -2488,10 +2495,19 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await previewIndexes.nth(0).click();
 
   await setEditorSelection(page, editor, "Group 99");
-  await expect(editor.getByText("Selection warning")).toHaveAttribute(
-    "title",
+  const selectionWarning = editor.getByText("Selection warning");
+  await expect(selectionWarning).toHaveAttribute(
+    "aria-description",
     /Circular reference detected in group 99/,
   );
+  await selectionWarning.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Circular reference detected in group 99",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("step-fx-selection-warning-tooltip.png"),
+  });
+  await page.mouse.move(0, 0);
   await expect
     .poll(async () => {
       const stored = await storedStepFx(page);
@@ -2951,9 +2967,9 @@ test("Step FX editor hotkeys accelerate popover editing", async ({
     name: "Search attributes",
   });
   await expect(attributeSearch).toBeFocused();
-  await expect(editor.getByRole("menu", { name: "Attributes" })).toBeVisible();
+  await expect(page.getByRole("menu", { name: "Attributes" })).toBeVisible();
   await attributeSearch.press("Escape");
-  await expect(editor.getByRole("menu", { name: "Attributes" })).toBeHidden();
+  await expect(page.getByRole("menu", { name: "Attributes" })).toBeHidden();
 
   await shortcutAnchor.focus();
   await page.keyboard.press("s");
@@ -3440,7 +3456,7 @@ test("Step FX phase projection preserves groups through bounded expand", async (
   const previewIndexes = editor.locator("[data-step-fx-preview-index]");
   await expect(previewIndexes).toHaveCount(1);
   await expect(previewIndexes.first()).toHaveAttribute(
-    "title",
+    "aria-description",
     /Fixture 1, Fixture 2, Fixture 3, Fixture 4 \(4\)/,
   );
   await expect
@@ -3611,7 +3627,7 @@ test("Step FX restores its viewport state after page reload", async ({
     name: "Search attributes",
   });
   await attributeSearch.focus();
-  await editor
+  await page
     .getByRole("menu", { name: "Attributes" })
     .getByRole("menuitemcheckbox", { name: "Blue" })
     .click();

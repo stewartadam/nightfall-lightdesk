@@ -1,5 +1,9 @@
 {
   "build": {
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "",
+    "beforeBundleCommand": {
+      "script": "node ../scripts/package-sample-audio.mjs --check && node ../scripts/desktop-artifacts.mjs split-debug-symbols",
+      "cwd": "../../webui"
+    }
   }
 }

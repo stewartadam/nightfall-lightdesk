@@ -8,47 +8,77 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type {
-  ReferenceEntry,
-  ReferenceIssue,
-} from "../../../lib/reference-audit";
+import {
+  ReferenceDomain,
+  type ReferenceEntry,
+  type ReferenceIssue,
+  ReferenceIssueReason,
+  ReferenceStatus,
+} from "../../../types";
 import {
   filterReferenceIssues,
   filterReferences,
   matchesReferenceSearch,
+  referenceRowKey,
+  referenceTargetLabel,
 } from "./reference-panel-model";
 
-const PRESENT_REFERENCE = {
+const PRESENT_REFERENCE: ReferenceEntry = {
   source: {
-    domain: "cue",
-    kindLabel: "Cue",
+    domain: ReferenceDomain.Cue,
     id: 2,
-    uid: "cue-2",
+    uid: "cue2",
     label: "Warm look",
   },
-  path: "selection.fixtures[0]",
-  targetLabel: "Fixture 1",
-  status: "ok",
-} as ReferenceEntry;
+  path: "instructions[0].selection.source.Resolved[0]",
+  target: { type: "Fixture", data: { fixture_id: 1 } },
+  status: ReferenceStatus.Ok,
+};
 
-const MISSING_REFERENCE = {
-  ...PRESENT_REFERENCE,
+const MISSING_REFERENCE: ReferenceEntry = {
   source: {
-    ...PRESENT_REFERENCE.source,
-    domain: "group",
-    kindLabel: "Group",
+    domain: ReferenceDomain.Group,
     id: 8,
+    uid: "group8",
     label: "Back wash",
   },
-  targetLabel: "Missing fixture 9",
-  status: "missing",
-} as ReferenceEntry;
+  path: "selection.source.Resolved[1]",
+  target: { type: "FixtureUid", data: { fixture_uid: "f9" } },
+  status: ReferenceStatus.Missing,
+};
 
-/** Verifies reference search covers source identity, target, and path text. */
-test("reference search matches projected row text case-insensitively", () => {
+/** Verifies every structured target formats to the label the panel shows. */
+test("reference targets format as fixture, group, Blueprint and output labels", () => {
+  assert.equal(
+    referenceTargetLabel({
+      type: "Fixture",
+      data: { fixture_id: 3, element_index: 2 },
+    }),
+    "Fixture 3.2",
+  );
+  assert.equal(
+    referenceTargetLabel({
+      type: "Fixture",
+      data: { fixture_id: 3, element_index: null as unknown as undefined },
+    }),
+    "Fixture 3",
+  );
+  assert.equal(
+    referenceTargetLabel({ type: "GroupLabel", data: { label: "Wash" } }),
+    'Group "Wash"',
+  );
+  assert.equal(
+    referenceTargetLabel({ type: "OutputTarget", data: { target: "node" } }),
+    "Output transport target node",
+  );
+});
+
+/** Verifies reference search covers source identity, domain, target, and path text. */
+test("reference search matches displayed row text case-insensitively", () => {
   assert.equal(matchesReferenceSearch(PRESENT_REFERENCE, "warm"), true);
   assert.equal(matchesReferenceSearch(PRESENT_REFERENCE, "FIXTURE 1"), true);
-  assert.equal(matchesReferenceSearch(PRESENT_REFERENCE, "selection"), true);
+  assert.equal(matchesReferenceSearch(PRESENT_REFERENCE, "instructions"), true);
+  assert.equal(matchesReferenceSearch(PRESENT_REFERENCE, "cue"), true);
   assert.equal(matchesReferenceSearch(PRESENT_REFERENCE, "unrelated"), false);
 });
 
@@ -58,19 +88,39 @@ test("reference filters compose all toolbar controls", () => {
   assert.deepEqual(filterReferences(references, "all", "", true), [
     MISSING_REFERENCE,
   ]);
-  assert.deepEqual(filterReferences(references, "cue", "warm", false), [
-    PRESENT_REFERENCE,
-  ]);
+  assert.deepEqual(
+    filterReferences(references, ReferenceDomain.Cue, "warm", false),
+    [PRESENT_REFERENCE],
+  );
 });
 
 /** Verifies health rows use their domain and searchable projection. */
 test("health issue filters share reference matching semantics", () => {
   const { status: _status, ...referenceFields } = MISSING_REFERENCE;
-  const issue = {
+  const issue: ReferenceIssue = {
     ...referenceFields,
-    reason: "missing-fixture-uid",
+    reason: ReferenceIssueReason.MissingFixtureUid,
     prunable: true,
-  } as ReferenceIssue;
-  assert.deepEqual(filterReferenceIssues([issue], "group", "back"), [issue]);
-  assert.deepEqual(filterReferenceIssues([issue], "cue", "back"), []);
+  };
+  assert.deepEqual(
+    filterReferenceIssues([issue], ReferenceDomain.Group, "back"),
+    [issue],
+  );
+  assert.deepEqual(
+    filterReferenceIssues([issue], ReferenceDomain.Cue, "back"),
+    [],
+  );
+});
+
+/** Verifies rows at the same path stay distinct when they name different targets. */
+test("row keys distinguish targets that share an owner and path", () => {
+  const other: ReferenceEntry = {
+    ...PRESENT_REFERENCE,
+    target: { type: "Fixture", data: { fixture_id: 2 } },
+  };
+  assert.notEqual(referenceRowKey(PRESENT_REFERENCE), referenceRowKey(other));
+  assert.equal(
+    referenceRowKey(PRESENT_REFERENCE),
+    referenceRowKey({ ...PRESENT_REFERENCE }),
+  );
 });

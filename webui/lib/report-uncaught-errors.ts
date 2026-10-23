@@ -7,13 +7,16 @@
  */
 
 /**
- * Shows the page's uncaught failures to the user. Imported first by the entry
- * module so failures while later modules evaluate are reported too.
+ * Shows the page's uncaught failures to the user and forwards them to the
+ * engine's error reports. Imported first by the entry module so failures while
+ * later modules evaluate are reported too.
  */
 
+import { forwardUncaughtError } from "./error-report-forwarding";
 import {
   reportWindowUncaughtErrors,
   setFatalErrorPresenter,
+  setUncaughtErrorForwarder,
 } from "./uncaught-error-reporter";
 
 /** Loads the error dialog on first use, keeping it out of the initial bundle. */
@@ -23,5 +26,6 @@ setFatalErrorPresenter(async (failure) => {
   );
   showFatalError(failure);
 });
+setUncaughtErrorForwarder(forwardUncaughtError);
 const stopReporting = reportWindowUncaughtErrors(window);
 import.meta.hot?.dispose(stopReporting);

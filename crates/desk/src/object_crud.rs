@@ -14,25 +14,25 @@
 use nightfall::data::HasIdentifiers;
 use nightfall_engine::prelude::*;
 
-/// Trait for objects that support CRUD operations
+/// Trait for objects that support CRUD operations through the command type `C`
 ///
 /// This trait provides type-safe access to CRUD command variants
 /// and metadata about the object type for logging and error messages.
-pub trait ObjectCrud: HasIdentifiers + Clone + Default {
-    /// The command type used for CRUD operations on this object
-    type Command: EnginePayload;
-
+/// The command is a type parameter rather than an associated type so a
+/// crate owning only the command can implement it for an object type
+/// defined in a shared crate.
+pub trait ObjectCrud<C: EnginePayload>: HasIdentifiers + Clone + Default {
     /// Returns a human-readable name for this object type (e.g., "blueprint", "group", "clip")
     fn type_name() -> &'static str;
 
     /// Extracts the Store variant from a command, if present
-    fn extract_store(command: &Self::Command) -> Option<Self>;
+    fn extract_store(command: &C) -> Option<Self>;
 
     /// Extracts the Rename variant from a command, if present
-    fn extract_rename(command: &Self::Command) -> Option<(u32, u32)>;
+    fn extract_rename(command: &C) -> Option<(u32, u32)>;
 
     /// Extracts the Delete variant from a command, if present
-    fn extract_delete(command: &Self::Command) -> Option<u32>;
+    fn extract_delete(command: &C) -> Option<u32>;
 
     /// Sets the ID on this object (used during rename operations)
     fn set_id(&mut self, new_id: u32);
@@ -42,12 +42,13 @@ pub trait ObjectCrud: HasIdentifiers + Clone + Default {
 ///
 /// `None` means the payload is not a CRUD variant for the object type. A
 /// recognized command returns `Some`, including failures that made no mutation.
-pub fn apply_object_crud_command<T>(
-    command: &T::Command,
+pub fn apply_object_crud_command<T, C>(
+    command: &C,
     provider: &mut DataProvider<T>,
 ) -> Option<Result<(), CommandError>>
 where
-    T: ObjectCrud,
+    T: ObjectCrud<C>,
+    C: EnginePayload,
 {
     // Handle Store
     if let Some(object) = T::extract_store(command) {

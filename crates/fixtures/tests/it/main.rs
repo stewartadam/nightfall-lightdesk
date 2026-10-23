@@ -15,4 +15,5 @@ mod compositor_system_tests;
 mod fixture_layout_dmx_order;
 mod manual_dmx_release_system;
 mod restore_fixture_snapshot_system;
+mod transport_holds_system;
 mod transport_input;

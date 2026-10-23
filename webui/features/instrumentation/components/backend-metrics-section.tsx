@@ -6,13 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Sparkline } from "../../../components/ui/sparkline";
 import type {
   MetricsHistory,
   SmoothedEngineMetrics,
 } from "../../../state/appStores";
-import { formatNumber, getFpsColor } from "../model/metrics";
-import { CollapsibleSection, MetricCard } from "./metric-sections";
+import { formatNumber, getFpsTone } from "../model/metrics";
+import { MetricCard, MetricValue } from "./metric-sections";
 
 interface BackendMetricsSectionProps {
   history: MetricsHistory;
@@ -22,19 +23,21 @@ interface BackendMetricsSectionProps {
 /** Presents backend frame pacing and state-build timings from projected metrics. */
 export function BackendMetricsSection(props: BackendMetricsSectionProps) {
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="Backend"
-      headerContent={
-        <span class="ml-auto flex items-center gap-2">
+      contentClass="p-3"
+      actions={
+        <span class="flex items-center gap-2">
           <Sparkline
             data={props.history.fps}
             width={80}
             height={20}
             color="#4ade80"
           />
-          <span class={`font-mono text-xs ${getFpsColor(props.metrics.fps)}`}>
+          <MetricValue tone={getFpsTone(props.metrics.fps)} class="text-xs">
             {formatNumber(props.metrics.fps, 1)} fps
-          </span>
+          </MetricValue>
         </span>
       }
     >
@@ -42,7 +45,8 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
         <MetricCard
           label="FPS"
           value={formatNumber(props.metrics.fps, 1)}
-          valueClass={`text-2xl font-bold ${getFpsColor(props.metrics.fps)}`}
+          size="xl"
+          tone={getFpsTone(props.metrics.fps)}
         />
         <MetricCard
           label={
@@ -57,7 +61,7 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
             </span>
           }
           value={formatNumber(props.metrics.frameTimeMs, 2, " ms")}
-          valueClass="text-2xl font-bold"
+          size="xl"
         />
         <MetricCard
           label="Frame generation"
@@ -96,6 +100,6 @@ export function BackendMetricsSection(props: BackendMetricsSectionProps) {
           )}
         />
       </div>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

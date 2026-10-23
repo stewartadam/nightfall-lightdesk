@@ -18,10 +18,10 @@ use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_fixtures::selection::{SelectionResolver, SpatialSelectionResolver};
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 use serde::{Deserialize, Serialize};
 
-use crate::action_model::{AttributeFilter, ProgrammerAction, Scope, UserCommand};
+use crate::action_model::{AttributeFilter, ProgrammerOperation, Scope, UserCommand};
 use crate::command_planner::{ProgrammerCommandPlanner, ProgrammerPlanContext};
 use crate::resources::Programmer;
 

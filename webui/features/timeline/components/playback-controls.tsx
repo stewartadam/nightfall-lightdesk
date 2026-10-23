@@ -11,24 +11,27 @@ import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { RecordIcon } from "@squidlab/phosphor-solid/record";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { Dynamic } from "solid-js/web";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import { browserDemoAudioHost } from "../../../lib/browser-demo-audio";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
+import { Mappable } from "../../io";
 import { useTimelineContext } from "../context/timeline-context";
+import { timelinePlaybackControl } from "../model/control-actions";
 
 /** Controls timeline playback and recording with shared toolbar actions. */
 export const InstanceControls = () => {
   const ctx = useTimelineContext();
 
-  /** Serialize browser-media priming before asking the embedded runtime to play. */
-  const togglePaused = async () => {
+  /** Unlock browser demo audio from the Play gesture, then ask the runtime to play. */
+  const togglePaused = () => {
     if (ctx.paused()) {
       const audioUrl = ctx.audioPath();
       if (isEmbeddedDemoRuntime() && audioUrl) {
-        await browserDemoAudioHost
-          .prime(ctx.timelineUid, audioUrl)
-          .catch(() => undefined);
+        browserDemoAudioHost.prime(ctx.timelineUid, audioUrl);
       }
       ctx.playback.play();
     } else {
@@ -65,20 +68,30 @@ export const InstanceControls = () => {
     }
   };
 
+  /** Defines this timeline's play/pause button and its controller binding. */
+  const playPause = () =>
+    timelinePlaybackControl(ctx.timelineUid, togglePaused);
+
   return (
     <div class="flex items-center gap-1">
-      <ToolbarButton
-        ariaPressed={!ctx.paused()}
-        onClick={() => void togglePaused()}
-        disabled={connectionStatus() !== "connected"}
-        label={ctx.paused() ? "Play timeline" : "Pause timeline"}
+      <Mappable
+        class="inline-flex"
+        label="timeline play/pause"
+        choices={() => [playPause()]}
       >
-        <Dynamic
-          component={ctx.paused() ? PlayIcon : PauseIcon}
-          class="size-4"
-          aria-hidden
-        />
-      </ToolbarButton>
+        <ToggleToolbarButton
+          pressed={!ctx.paused()}
+          onClick={() => playPause().handlers.toggle()}
+          disabled={connectionStatus() !== "connected"}
+          label={ctx.paused() ? "Play timeline" : "Pause timeline"}
+        >
+          <Dynamic
+            component={ctx.paused() ? PlayIcon : PauseIcon}
+            class="size-4"
+            aria-hidden
+          />
+        </ToggleToolbarButton>
+      </Mappable>
       <ToolbarButton
         onClick={() => ctx.playback.stop()}
         disabled={connectionStatus() !== "connected"}
@@ -86,8 +99,8 @@ export const InstanceControls = () => {
       >
         <StopIcon class="size-4" aria-hidden />
       </ToolbarButton>
-      <ToolbarButton
-        ariaPressed={ctx.recordingEnabled()}
+      <ToggleToolbarButton
+        pressed={ctx.recordingEnabled()}
         variant="danger"
         onClick={toggleRecording}
         disabled={connectionStatus() !== "connected"}
@@ -98,7 +111,7 @@ export const InstanceControls = () => {
         }
       >
         <RecordIcon class="size-4" aria-hidden />
-      </ToolbarButton>
+      </ToggleToolbarButton>
     </div>
   );
 };

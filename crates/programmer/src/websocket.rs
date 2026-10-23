@@ -26,7 +26,7 @@ use serde_json::Value;
 use serde_with::DisplayFromStr;
 use uuid::Uuid;
 
-use crate::action_model::{ProgrammerAction, UserCommand};
+use crate::action_model::{ProgrammerOperation, UserCommand};
 use crate::events::ProgrammerCommand;
 use crate::prelude::Programmer;
 use crate::undo::RestoreProgrammerState;
@@ -100,9 +100,6 @@ enum ProgrammerWsMessage {
     ProgrammerSelection(Vec<String>),
     /// Current programmer spatial selection and its resolved index view.
     ProgrammerSpatialSelection(OutboundProgrammerSpatialSelection),
-    /// Programmer commands for reactive UI handling.
-    #[allow(dead_code)]
-    ProgrammerCommand,
 }
 
 /// Deserialize and dispatch ProgrammerCommand from JSON.
@@ -229,8 +226,8 @@ fn resolved_programmer_instruction_values(
 /// to connected clients for immediate UI updates.
 pub fn forward_programmer_commands(
     mut events: MessageReader<CommandEnvelope<ProgrammerCommand>>,
-    mut restore_events: MessageReader<EngineActionEnvelope<RestoreProgrammerState>>,
-    mut action_events: MessageReader<EngineActionEnvelope<ProgrammerAction>>,
+    mut restore_events: MessageReader<EngineOperationEnvelope<RestoreProgrammerState>>,
+    mut action_events: MessageReader<EngineOperationEnvelope<ProgrammerOperation>>,
     mut blueprint_changes: MessageReader<BlueprintDefinitionChange>,
     programmer: Res<Programmer>,
     blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
@@ -250,12 +247,12 @@ pub fn forward_programmer_commands(
 
     for event in action_events.read() {
         if matches!(
-            event.action,
-            ProgrammerAction::ClearSelection
-                | ProgrammerAction::ClearValues { .. }
-                | ProgrammerAction::ReleaseValues { .. }
+            event.operation,
+            ProgrammerOperation::ClearSelection
+                | ProgrammerOperation::ClearValues { .. }
+                | ProgrammerOperation::ReleaseValues { .. }
         ) {
-            tracing::debug!("forward_programmer_commands: observed ProgrammerAction");
+            tracing::debug!("forward_programmer_commands: observed ProgrammerOperation");
             should_update = true;
         }
     }
@@ -275,14 +272,6 @@ pub fn forward_programmer_commands(
 
     // Send update notification once after processing all events
     if should_update {
-        // FIXME: This is what we should be doing:
-
-        // tracing::trace!("Forwarding programmer state change to UI");
-        // broadcaster.publish(
-        //     DISCRIMINATOR_NON_DROPPABLE,
-        //     &ProgrammerWsMessage::ProgrammerCommand,
-        // );
-
         tracing::debug!("Sending programmer state due to programmer command");
         send_programmer(
             &programmer,
@@ -301,7 +290,7 @@ pub fn send_programmer(
     selection_resolver: &SpatialSelectionResolver,
     fixture_data_provider: &Res<FixtureDataProviderExt>,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
-    broadcaster: &Res<ClientEventSink>,
+    broadcaster: &ClientEventSink,
 ) {
     // Map of fixture_uid -> element_index (0-based) -> attributes
     let mut programmer_state: HashMap<Uuid, HashMap<usize, ElementAssertionMaps>> = HashMap::new();
@@ -381,7 +370,7 @@ pub fn send_programmer(
 pub fn send_programmer_selection(
     programmer: &Res<Programmer>,
     spatial_selection_resolver: &SpatialSelectionResolver,
-    broadcaster: &Res<ClientEventSink>,
+    broadcaster: &ClientEventSink,
 ) {
     let selection = programmer.active_spatial_selection();
     let resolved = spatial_selection_resolver.resolve(&selection).into_value();
@@ -415,18 +404,15 @@ fn programmer_selection_uids(resolved: &ResolvedSelection) -> Vec<String> {
 
 /// Handle ResyncState by sending full programmer state and selection
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     programmer: Res<crate::resources::Programmer>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
     spatial_selection_resolver: SpatialSelectionResolver,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_programmer(
         &programmer,

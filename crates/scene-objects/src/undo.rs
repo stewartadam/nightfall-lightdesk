@@ -12,12 +12,11 @@ use nightfall_undo::prelude::*;
 
 use crate::websocket::SceneObjectDataProvider;
 use crate::{
-    SceneObject, SceneObjectCommand, SceneObjectPlacementPositionUpdate,
-    SceneObjectPlacementRotationUpdate,
+    SceneObjectCommand, SceneObjectPlacementPositionUpdate, SceneObjectPlacementRotationUpdate,
 };
 
-impl UndoableOperation for SceneObjectCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for SceneObjectCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         let scene_objects = ctx.world.resource::<SceneObjectDataProvider>();
 
         match self {
@@ -43,7 +42,7 @@ impl UndoableOperation for SceneObjectCommand {
                 scene_objects.from_id(*id).ok().map(|scene_object_ref| {
                     Box::new(SceneObjectCommand::StoreSceneObject(
                         scene_object_ref.clone(),
-                    )) as Box<dyn UndoableOperation>
+                    )) as Box<dyn Undoable>
                 })
             }
             SceneObjectCommand::UpdateSceneObjectPlacement { id, .. } => {
@@ -58,7 +57,7 @@ impl UndoableOperation for SceneObjectCommand {
                         rotation: Some(SceneObjectPlacementRotationUpdate::All(
                             old_placement.rotation,
                         )),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 })
             }
             SceneObjectCommand::UpdateSceneObjectProperties { id, .. } => {
@@ -67,7 +66,7 @@ impl UndoableOperation for SceneObjectCommand {
                     Box::new(SceneObjectCommand::UpdateSceneObjectProperties {
                         id: *id,
                         properties: scene_object_ref.properties.clone(),
-                    }) as Box<dyn UndoableOperation>
+                    }) as Box<dyn Undoable>
                 })
             }
         }
@@ -86,19 +85,5 @@ impl UndoableOperation for SceneObjectCommand {
                 format!("Update Scene Object {} Properties", id)
             }
         }
-    }
-}
-
-/// Restore a scene object snapshot (for undo)
-pub fn restore_scene_object(
-    scene_object_provider: &mut SceneObjectDataProvider,
-    scene_object: SceneObject,
-) {
-    if let Err(e) = scene_object_provider.add(scene_object.clone()) {
-        tracing::warn!(
-            "Failed to restore scene object {}: {}",
-            scene_object.identifiers.id,
-            e
-        );
     }
 }

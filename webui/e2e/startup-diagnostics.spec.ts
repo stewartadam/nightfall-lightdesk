@@ -57,12 +57,12 @@ test("collects native diagnostics before the backend connects", async ({
   await expect(preview).toContainText("WARN engine: stored backend warning");
   const logs = dialog.getByRole("group", { name: "Logs to include" });
   const showfile = dialog.getByRole("group", { name: "Showfile to include" });
-  expect(await logs.locator("label").allTextContents()).toEqual([
+  expect(await logs.getByRole("radio").allTextContents()).toEqual([
     "None",
     "Recent warnings/errors",
     "All logs",
   ]);
-  expect(await showfile.locator("label").allTextContents()).toEqual([
+  expect(await showfile.getByRole("radio").allTextContents()).toEqual([
     "None",
     "Without references",
     "Local references",
@@ -82,17 +82,19 @@ test("collects native diagnostics before the backend connects", async ({
     );
   expect(new Set(Object.values(colors)).size).toBe(5);
   await expect(preview.locator(".italic").first()).toHaveText("state_count");
-  await dialog.getByText("System info", { exact: true }).click();
+  await dialog
+    .getByText("System information included", { exact: true })
+    .click();
   await expect
     .poll(() =>
       dialog.evaluate((element) => {
-        const body = element.querySelector("details")!.parentElement!;
+        const body = element.querySelector(".nf-collapsible")!.parentElement!;
         return body.scrollHeight - body.clientHeight;
       }),
     )
     .toBeLessThanOrEqual(1);
   const layout = await dialog.evaluate((element) => {
-    const body = element.querySelector("details")!.parentElement!;
+    const body = element.querySelector(".nf-collapsible")!.parentElement!;
     // The dialog role sits on the full-viewport backdrop; measure its surface.
     const surface = element.querySelector(".nf-dialog-surface")!;
     return {
@@ -105,16 +107,18 @@ test("collects native diagnostics before the backend connects", async ({
   });
   expect(layout.height).toBe(layout.viewport - 32);
   expect(layout.scrollHeight).toBeLessThanOrEqual(layout.clientHeight + 1);
-  expect(layout.first).toBe("DETAILS");
+  expect(layout.first).toBe("P");
   await expect(
-    dialog.getByRole("textbox", { name: "System info" }),
+    dialog.getByRole("textbox", { name: "System information included" }),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("diagnostics-system-info.png"),
   });
-  await dialog.getByText("System info", { exact: true }).click();
+  await dialog
+    .getByText("System information included", { exact: true })
+    .click();
   await dialog.getByRole("button", { name: "Copy System Info" }).click();
-  await expect(page.getByRole("tooltip")).toHaveText("System info copied.");
+  await expect(page.getByRole("tooltip")).toHaveText("✅ System info copied.");
   await expect(page.getByRole("tooltip")).toHaveCSS("opacity", "1");
   await page.screenshot({
     path: testInfo.outputPath("diagnostics-copy-tooltip.png"),

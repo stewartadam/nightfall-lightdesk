@@ -9,7 +9,7 @@
 //! Provides a logical representation of DMX universes and their channel values.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     time::Duration,
 };
 
@@ -254,13 +254,125 @@ fn write_channel_window(
 /// Neither is sent as-is: [`crate::output_frames::compose_output_frames`] combines them
 /// according to the routing plan, so console space only reaches the wire through
 /// console→transport bindings.
+///
+/// Wire channels held by `ch <transport>:U.A` commands are kept separately, by output target
+/// ID: they survive binding re-resolution and override every routed source until released.
+/// [`Self::resolve_held_wire_values`] maps them onto concrete output frames.
 #[derive(Default, Resource)]
 pub struct ConsoleDmxUniverses {
     universes: HashMap<u16, ConsoleUniverse>,
     output_universes: HashMap<(OutputTransport, u16), ConsoleUniverse>,
+    held_wire_channels: HashMap<(String, u16), BTreeMap<u16, ChannelDmxValue>>,
+    resolved_held_frames: HashMap<(OutputTransport, u16), BTreeMap<u16, ChannelDmxValue>>,
+    held_wire_channels_dirty: bool,
 }
 
 impl ConsoleDmxUniverses {
+    /// Holds a wire channel of the output named by `target` at `value` until released.
+    /// Address is 1-indexed (DMX convention).
+    pub fn hold_wire_value(
+        &mut self,
+        target: &str,
+        universe_id: u16,
+        address: u16,
+        value: ChannelDmxValue,
+    ) {
+        if !is_valid_address(address) {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+            return;
+        }
+        self.held_wire_channels
+            .entry((target.to_string(), universe_id))
+            .or_default()
+            .insert(address, value);
+        self.held_wire_channels_dirty = true;
+    }
+
+    /// Releases a held wire channel; a universe left without holds stops being composed for
+    /// them. Address is 1-indexed (DMX convention).
+    pub fn release_wire_value(&mut self, target: &str, universe_id: u16, address: u16) {
+        let key = (target.to_string(), universe_id);
+        let Some(held) = self.held_wire_channels.get_mut(&key) else {
+            return;
+        };
+        if held.remove(&address).is_none() {
+            return;
+        }
+        if held.is_empty() {
+            self.held_wire_channels.remove(&key);
+        }
+        self.held_wire_channels_dirty = true;
+    }
+
+    /// Returns the value held on a wire channel of the output named by `target`, if any.
+    pub fn held_wire_value(
+        &self,
+        target: &str,
+        universe_id: u16,
+        address: u16,
+    ) -> Option<ChannelDmxValue> {
+        self.held_wire_channels
+            .get(&(target.to_string(), universe_id))
+            .and_then(|held| held.get(&address).copied())
+    }
+
+    /// Maps held wire channels onto the output frames their target IDs name.
+    ///
+    /// Rebuilds only after holds changed or when `outputs_changed` reports that the output
+    /// configuration changed. Holds whose target names no configured output are kept but not
+    /// sent, so they reach the wire again if the output comes back.
+    pub fn resolve_held_wire_values(
+        &mut self,
+        outputs_changed: bool,
+        resolve: impl Fn(&str) -> Option<OutputTransport>,
+    ) {
+        if !self.held_wire_channels_dirty && !outputs_changed {
+            return;
+        }
+        self.held_wire_channels_dirty = false;
+        self.resolved_held_frames.clear();
+        for ((target, universe_id), held) in &self.held_wire_channels {
+            let Some(transport) = resolve(target) else {
+                continue;
+            };
+            self.resolved_held_frames
+                .entry((transport, *universe_id))
+                .or_default()
+                .extend(held);
+        }
+    }
+
+    /// Iterates the transport and wire universe of every frame carrying resolved holds.
+    pub fn held_output_universes(&self) -> impl Iterator<Item = &(OutputTransport, u16)> {
+        self.resolved_held_frames.keys()
+    }
+
+    /// Writes the resolved held channels of one transport universe onto a wire frame.
+    ///
+    /// Returns whether the universe has any held channel.
+    pub fn overlay_held_output_values(
+        &self,
+        transport: &OutputTransport,
+        universe_id: u16,
+        target: &mut [ChannelDmxValue],
+    ) -> bool {
+        if self.resolved_held_frames.is_empty() {
+            return false;
+        }
+        let Some(held) = self
+            .resolved_held_frames
+            .get(&(transport.clone(), universe_id))
+        else {
+            return false;
+        };
+        for (address, value) in held {
+            if let Some(slot) = target.get_mut(usize::from(*address) - 1) {
+                *slot = *value;
+            }
+        }
+        true
+    }
+
     /// Writes consecutive console channel values starting at a 1-indexed address.
     ///
     /// Values that would fall past the end of the universe are dropped with a warning.
@@ -464,10 +576,22 @@ impl ConsoleDmxUniverses {
         self.universes.keys()
     }
 
-    /// Clears all console universe buffers and ownership metadata.
+    /// Iterates every console universe with its channel values, without copying them.
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (u16, &[ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE])> {
+        self.universes
+            .iter()
+            .map(|(universe_id, universe)| (*universe_id, &universe.values))
+    }
+
+    /// Clears all console universe buffers, held wire channels and ownership metadata.
     pub fn clear(&mut self) {
         self.universes.clear();
         self.output_universes.clear();
+        self.held_wire_channels.clear();
+        self.resolved_held_frames.clear();
+        self.held_wire_channels_dirty = false;
     }
 
     /// Clears channels currently owned by stale input transport sources.

@@ -416,8 +416,8 @@ test("clip properties can be opened from grid cards and edited", async ({
     '[data-panel-kind="clips"][data-panel-id="panel-ClipList-e2e"]:visible',
   );
   await expect(clipPanel).toBeVisible();
-  const switchToGrid = clipPanel.getByRole("button", {
-    name: "Switch to grid view",
+  const switchToGrid = clipPanel.getByRole("radio", {
+    name: "Grid view",
   });
   if (await switchToGrid.isVisible()) {
     await switchToGrid.click();
@@ -663,7 +663,7 @@ test("clip properties can be opened from grid cards and edited", async ({
     .toBe(`Flow:${context.firstFlowUid}`);
 
   await activatePanel(page, "panel-ClipList-e2e");
-  await clipPanel.getByRole("button", { name: "Switch to list view" }).click();
+  await clipPanel.getByRole("radio", { name: "List view" }).click();
 
   const clipGrid = clipPanel.getByRole("grid");
   await expect(clipGrid).toBeVisible();
@@ -692,19 +692,19 @@ test("numeric clip source references resolve through domain registrations", asyn
   await commandInput.press("Enter");
   const panel = page.locator('[data-panel-kind="clips"]:visible');
   await expect(panel).toBeVisible();
-  const gridSwitch = panel.getByRole("button", { name: "Switch to grid view" });
+  const gridSwitch = panel.getByRole("radio", { name: "Grid view" });
   if (await gridSwitch.isVisible()) await gridSwitch.click();
   const card = panel.locator(
     `[data-crud-select-id="${context.inspectedClipUid}"]`,
   );
   await expect(card).toBeVisible();
 
-  for (const [kind, offset] of [
-    ["Sequence", 20],
-    ["Fx", 10],
-    ["StepFx", 11],
-    ["FxModule", 12],
-    ["Flow", 13],
+  for (const [kind, offset, badge] of [
+    ["Sequence", 20, "SEQ"],
+    ["Fx", 10, "FX"],
+    ["StepFx", 11, "FX-S"],
+    ["FxModule", 12, "FX-M"],
+    ["Flow", 13, "FLOW"],
   ] as const) {
     const result = await page.evaluate(
       async ({ clipId, sourceId, kind }) => {
@@ -723,7 +723,7 @@ test("numeric clip source references resolve through domain registrations", asyn
       },
     );
     expect(result.outcome.type).toBe("Succeeded");
-    await expect(card.getByText(kind, { exact: true })).toBeVisible();
+    await expect(card.getByText(badge, { exact: true })).toBeVisible();
   }
   const before = await page.evaluate(
     (uid) => (window as any).appStores.clips.get()[uid][0].source,
@@ -746,7 +746,7 @@ test("numeric clip source references resolve through domain registrations", asyn
       context.inspectedClipUid,
     ),
   ).toEqual(before);
-  await expect(card.getByText("Flow", { exact: true })).toBeVisible();
+  await expect(card.getByText("FLOW", { exact: true })).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("numeric-source-assignment.png"),
   });

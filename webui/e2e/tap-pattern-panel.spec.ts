@@ -657,11 +657,9 @@ test("tap pattern panel clusters repeated hook taps", async ({ page }) => {
   await expect(
     panel.locator(".rounded-full").filter({ hasText: "3" }),
   ).toBeVisible();
-  await panel.getByLabel("Granularity").evaluate((element) => {
-    const input = element as HTMLInputElement;
-    input.value = "100";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  const granularity = panel.getByRole("slider", { name: "Granularity" });
+  await granularity.focus();
+  await granularity.press("End");
   await expect(panel.getByText("Fine")).toBeVisible();
   await expect(panel.getByText("3 steps")).toBeVisible();
   await expect(panel.getByText("6 grouped cycles")).toBeVisible();

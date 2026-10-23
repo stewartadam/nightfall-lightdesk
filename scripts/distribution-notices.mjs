@@ -38,6 +38,7 @@ const npmLicenses = new Set([
   "BSD-3-Clause",
   "ISC",
   "0BSD",
+  "MPL-2.0",
 ]);
 
 /** Read a UTF-8 file relative to the checkout, independent of the caller's cwd. */
@@ -239,6 +240,16 @@ export function developmentNotices() {
   );
 }
 
+/**
+ * Returns where a crate's packaged source can be downloaded: the exact commit for git
+ * dependencies (such as `[patch]` forks), otherwise the crates.io archive.
+ */
+function crateSource(pkg) {
+  const git = pkg.source?.match(/^git\+([^?#]+)(?:\?[^#]*)?#([0-9a-f]+)$/);
+  if (git) return `${git[1].replace(/\.git$/, "")}/tree/${git[2]}`;
+  return `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download`;
+}
+
 /** Adapt cargo-about's selected license texts, retaining ancillary and vendored notices. */
 export function rustNotices(report) {
   const reviewed = supplements();
@@ -301,7 +312,7 @@ export function rustNotices(report) {
         ]
           .sort()
           .join(" AND "),
-        source: `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download`,
+        source: crateSource(pkg),
         text: combineTexts(files),
       };
     });
@@ -435,6 +446,11 @@ export function packageNotices(outDir, target, embeddedDemo = false) {
     target ? `Desktop — ${target}` : "Web — frontend and WebAssembly",
     entries,
   );
+  writeNotices(directory, document);
+}
+
+/** Write a notice document, its offline text rendering and Nightfall's license into `directory`. */
+function writeNotices(directory, document) {
   mkdirSync(directory, { recursive: true });
   writeFileSync(
     join(directory, noticesJson),
@@ -447,14 +463,40 @@ export function packageNotices(outDir, target, embeddedDemo = false) {
   );
 }
 
+/**
+ * Return the Rust host triple from `rustc -vV`, so local desktop notices match the
+ * machine building the installer when no target is given.
+ */
+export function hostTriple(run = execFileSync) {
+  const host = run("rustc", ["-vV"], { cwd: projectRoot, encoding: "utf8" })
+    .split("\n")
+    .find((line) => line.startsWith("host: "));
+  if (!host) throw new Error("rustc -vV did not report a host triple");
+  return host.slice("host: ".length).trim();
+}
+
+/**
+ * Write the labelled development preview into `outDir`'s notices directory so `tauri dev`
+ * finds the bundle resource without a production frontend build or a Rust license scan.
+ * Skips an existing directory so it never replaces notices from a real build.
+ */
+export function packageDevelopmentNotices(outDir) {
+  const directory = resolve(outDir, noticesDirectory);
+  if (existsSync(join(directory, noticesJson))) return;
+  writeNotices(directory, developmentNotices());
+}
+
 if (
   process.argv[1] &&
   pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 ) {
-  const target = process.argv[2] ?? process.env.TAURI_ENV_TARGET_TRIPLE;
-  if (!target)
-    throw new Error(
-      "Desktop notices require a target triple argument or TAURI_ENV_TARGET_TRIPLE",
+  const outDir = resolve(projectRoot, "webui/dist");
+  if (process.argv[2] === "--development") {
+    packageDevelopmentNotices(outDir);
+  } else {
+    packageNotices(
+      outDir,
+      process.argv[2] ?? process.env.TAURI_ENV_TARGET_TRIPLE ?? hostTriple(),
     );
-  packageNotices(resolve(projectRoot, "webui/dist"), target);
+  }
 }

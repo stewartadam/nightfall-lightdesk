@@ -12,15 +12,19 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
@@ -54,10 +58,8 @@ function SequenceCard(props: SequenceCardProps) {
       data-crud-select-id={sequenceUid}
       ref={(element) => controller.registerSequenceButton(sequenceUid, element)}
       class={CRUD_CARD_CLASS}
-      classList={{
-        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-      }}
+      data-selectable-surface
+      data-selected={isSelected()}
       onClick={(event) => {
         if (controller.gridDragSelection.consumeSuppressedClick()) {
           event.preventDefault();
@@ -78,22 +80,28 @@ function SequenceCard(props: SequenceCardProps) {
         );
       }}
     >
-      <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
+      <div class="flex h-5.5 min-w-0 items-center gap-1 font-medium text-neutral-200">
         <span>{props.sequence.identifiers.id}:</span>
-        <CrudInlineLabelEditor
-          ariaLabel="Sequence card label"
-          class="truncate"
-          editing={controller.editingCardLabelUid() === sequenceUid}
-          label={props.sequence.identifiers.label}
-          onCancel={() => controller.setEditingCardLabelUid(null)}
-          onCommit={(label) =>
-            controller.updateSequenceLabel(props.sequence, label)
+        <Show
+          when={controller.editingCardLabelUid() === sequenceUid}
+          fallback={
+            <span class="truncate">{props.sequence.identifiers.label}</span>
           }
         >
-          {props.sequence.identifiers.label}
-        </CrudInlineLabelEditor>
+          <InlineRenameField
+            ariaLabel="Sequence card label"
+            allowEmpty
+            value={props.sequence.identifiers.label}
+            onClose={() => controller.setEditingCardLabelUid(null)}
+            onCommit={(label) =>
+              controller.updateSequenceLabel(props.sequence, label)
+            }
+          />
+        </Show>
         <Show when={props.sequence.wrap}>
-          <SequenceWrapTag />
+          <span class="ml-auto pl-1">
+            <SequenceWrapTag />
+          </span>
         </Show>
       </div>
       <div class="mt-1 text-xs text-neutral-400">
@@ -216,16 +224,16 @@ export function SequenceListView(props: SequenceListViewProps) {
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <Show when={controller.viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
-              <ToolbarButton
+              <ToolbarSeparator />
+              <ToggleToolbarButton
                 tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={controller.handleToggleSelectionMode}
-                ariaPressed={controller.selectionMode()}
+                pressed={controller.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }
@@ -282,11 +290,12 @@ export function SequenceListView(props: SequenceListViewProps) {
           <Show
             when={controller.displayRows().length > 0}
             fallback={
-              <div class="text-neutral-500">
-                {controller.allDisplayRows().length > 0
-                  ? "No matching sequences"
-                  : "Loading sequences..."}
-              </div>
+              <Show
+                when={controller.allDisplayRows().length > 0}
+                fallback={<EmptyState loading title="Loading sequences..." />}
+              >
+                <EmptyState title="No matching sequences" />
+              </Show>
             }
           >
             <Show

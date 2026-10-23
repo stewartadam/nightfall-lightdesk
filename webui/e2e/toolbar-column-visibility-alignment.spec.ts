@@ -79,9 +79,7 @@ test("CRUD list column visibility control is aligned with grid header", async ({
 
   await page.getByRole("tab", { name: "FX List", exact: true }).click();
   const fxListPanel = page.locator('[data-panel-id="panel-FxList"]');
-  await fxListPanel
-    .getByRole("button", { name: "Switch to list view" })
-    .click();
+  await fxListPanel.getByRole("radio", { name: "List view" }).click();
 
   const columnButton = fxListPanel.getByRole("button", {
     name: "Column visibility",

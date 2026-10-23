@@ -13,13 +13,13 @@ use super::*;
 /// Handles remove instruction by UUID events
 pub fn handle_remove_instruction_events(
     mut events_reader: MessageReader<
-        EngineActionEnvelope<crate::undo::RemoveProgrammerInstructionByUuid>,
+        EngineOperationEnvelope<crate::undo::RemoveProgrammerInstructionByUuid>,
     >,
     mut programmer: ResMut<Programmer>,
     mut responder: CommandResponder,
 ) {
     for event in events_reader.read() {
-        let uuid = event.action.uuid;
+        let uuid = event.operation.uuid;
         tracing::debug!("Removing programmer instruction by UUID: {}", uuid);
 
         // Try to remove from live instructions first, then blind

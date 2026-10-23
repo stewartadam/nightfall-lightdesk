@@ -33,6 +33,7 @@ pub(in crate::parser) fn continuation_kind_for_slot(
         | crate::slots::contracts::SlotId::FlowAction
         | crate::slots::contracts::SlotId::TimecodeAction
         | crate::slots::contracts::SlotId::TimelineAction
+        | crate::slots::contracts::SlotId::TempoAction
         | crate::slots::contracts::SlotId::LogFilterField
         | crate::slots::contracts::SlotId::RecallBlueprintKeyword
         | crate::slots::contracts::SlotId::StoreObjectType
@@ -186,6 +187,93 @@ pub(in crate::parser) fn patch_endpoint_requires_followup(
     endpoint_ids.first() == Some(&Some(TokenId::Fixture)) && endpoint_ids.len() == 1
 }
 
+/// Returns the fills that form a direct DMX channel expression: every `ch` fill, or the
+/// `release ch` fills after the `ch` keyword. Returns `None` for other slots and for release
+/// targets that are not DMX channels.
+pub(in crate::parser) fn direct_dmx_channel_fills<'a, 'b>(
+    slot: SlotId,
+    fills: &'a [&'b ConsumedSemanticItem],
+) -> Option<&'a [&'b ConsumedSemanticItem]> {
+    match slot {
+        SlotId::ChannelOverrideIdentifier => Some(fills),
+        SlotId::ReleaseChannelExpr => fills.split_first().and_then(|(first, rest)| {
+            (token_id_for_text(first.surface.as_str()) == Some(TokenId::Channel)).then_some(rest)
+        }),
+        _ => None,
+    }
+}
+
+/// Returns whether direct DMX channel fills are still inside the optional `transport:` prefix:
+/// nothing consumed yet, or only the pieces of a target ID such as `stage-left`.
+fn dmx_transport_prefix_pending(fills: &[&ConsumedSemanticItem]) -> bool {
+    fills.first().is_none_or(|first| {
+        first
+            .surface
+            .starts_with(|ch: char| ch.is_ascii_alphabetic())
+    }) && fills.iter().all(|fill| {
+        fill.surface == "-" || fill.surface.chars().all(|ch| ch.is_ascii_alphanumeric())
+    })
+}
+
+/// Returns what may follow direct DMX channel fills that stop inside the transport prefix:
+/// the colon after a target ID (`sacn` → `:`), or the start of the channel expression after
+/// the colon. Returns `None` once the prefix is complete or absent.
+pub(in crate::parser) fn dmx_transport_prefix_expected_tokens(
+    fills: &[&ConsumedSemanticItem],
+) -> Option<Vec<ExpectedToken>> {
+    let last = fills.last()?;
+    if last.surface == ":" {
+        return Some(vec![
+            ExpectedToken::Token(TokenId::LeftParen),
+            ExpectedToken::Placeholder(ValueKind::DmxAddress),
+        ]);
+    }
+    if !dmx_transport_prefix_pending(fills) {
+        return None;
+    }
+    // A trailing hyphen continues the target ID (`stage-`), which has no fixed candidates.
+    Some(if last.surface == "-" {
+        Vec::new()
+    } else {
+        vec![ExpectedToken::Token(TokenId::Colon)]
+    })
+}
+
+/// Returns what may begin a direct DMX channel expression after `release ch`: an output
+/// prefix (`sacn:`), a parenthesized group, or a console `universe.address`.
+pub(in crate::parser) fn dmx_channel_expression_start_tokens() -> Vec<ExpectedToken> {
+    vec![
+        ExpectedToken::Token(TokenId::Sacn),
+        ExpectedToken::Token(TokenId::Artnet),
+        ExpectedToken::Token(TokenId::Udmx),
+        ExpectedToken::Token(TokenId::LeftParen),
+        ExpectedToken::Placeholder(ValueKind::NumericDigit),
+    ]
+}
+
+/// Decides whether a token may extend a direct DMX channel expression.
+///
+/// Words and the colon only form the leading transport prefix, written without spaces
+/// (`stage-left:`); after the prefix, or without one, the expression is the numeric
+/// `universe.address` syntax.
+pub(in crate::parser) fn dmx_channel_token_allowed(
+    fills: &[&ConsumedSemanticItem],
+    token: &LexerToken,
+) -> bool {
+    let Some(last) = fills.last() else {
+        return token.kind != LexerTokenKind::Colon;
+    };
+    if !dmx_transport_prefix_pending(fills) {
+        return !matches!(token.kind, LexerTokenKind::Word | LexerTokenKind::Colon);
+    }
+    let adjacent = last.source_span.end == token.span.start;
+    match token.kind {
+        LexerTokenKind::Word | LexerTokenKind::Number | LexerTokenKind::Minus => adjacent,
+        LexerTokenKind::Colon => adjacent && last.surface != "-",
+        _ => false,
+    }
+}
+
 /// Returns whether the selected flow action consumes a following identifier expression.
 pub(in crate::parser) fn flow_action_uses_identifier_expression(
     fills: &[&ConsumedSemanticItem],
@@ -213,6 +301,11 @@ pub(in crate::parser) fn slot_requires_followup_value(
         SlotId::LogFilterField | SlotId::LogFilterValue | SlotId::PathValue
     ) {
         return false;
+    }
+    if direct_dmx_channel_fills(slot, fills)
+        .is_some_and(|channel_fills| dmx_transport_prefix_expected_tokens(channel_fills).is_some())
+    {
+        return true;
     }
     if slot == SlotId::ReleaseChannelExpr {
         return fills.last().is_some_and(|item| {
@@ -342,6 +435,9 @@ pub(in crate::parser) fn slot_requires_followup_value(
     }
     if slot == SlotId::FxAction {
         return fx_rate_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value);
+    }
+    if slot == SlotId::TempoAction {
+        return tempo_action_requires_followup(fills);
     }
     if slot == SlotId::FlowAction {
         return fills.last().is_some_and(|item| {

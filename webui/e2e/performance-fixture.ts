@@ -217,7 +217,7 @@ export async function seedPerformanceTimeline(page: Page): Promise<{
             label: `Effect ${index + 1}`,
             position: duration(position),
             duration: duration(10_000),
-            action: { type: "StartClip", data: uid },
+            action: { id: "clip.start", arguments: { clip: uid } },
           })),
         })),
         markers: [],

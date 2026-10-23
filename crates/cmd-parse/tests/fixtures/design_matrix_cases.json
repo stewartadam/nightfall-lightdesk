@@ -39,6 +39,7 @@
           "set",
           "sleep",
           "store",
+          "tempo",
           "timecode",
           "timeline",
           "unblock",
@@ -925,7 +926,7 @@
           "status": "error"
         },
         "completion_groups": ["release/channel"],
-        "candidates": ["0..9"],
+        "candidates": ["(", "0..9", "artnet", "sacn", "udmx"],
         "current_breadcrumb": "Release > Channel",
         "breadcrumb": {
           "state": "current_clause_path",
@@ -941,11 +942,70 @@
           "status": "error"
         },
         "completion_groups": ["channel_override/identifier"],
-        "candidates": ["(", ")", "+", "-", ".", "0..9", ">"],
+        "candidates": [
+          "(",
+          ")",
+          "+",
+          "-",
+          ".",
+          "0..9",
+          ">",
+          "artnet",
+          "sacn",
+          "udmx"
+        ],
         "current_breadcrumb": "Channel Override",
         "breadcrumb": {
           "state": "current_clause_path",
           "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "A transport target ID must be followed by a colon.",
+      "input": "channel sacn",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["channel_override/identifier"],
+        "candidates": [":", "sacn"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "A transport prefix is followed by the channel expression.",
+      "input": "channel sacn:",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["channel_override/identifier"],
+        "candidates": ["(", "0..9", ":"],
+        "current_breadcrumb": "Channel Override",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["channel_override"]
+        }
+      }
+    },
+    {
+      "name": "Release channel accepts a transport prefix.",
+      "input": "release channel artnet",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["release/channel"],
+        "candidates": [":", "artnet"],
+        "current_breadcrumb": "Release > Channel",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["release", "release_channel"]
         }
       }
     },
@@ -1565,6 +1625,63 @@
         "breadcrumb": {
           "state": "current_clause_path",
           "path": ["fps"]
+        }
+      }
+    },
+    {
+      "name": "Tempo offers its operations alongside a BPM value.",
+      "input": "tempo ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["tempo/action"],
+        "candidates": [
+          "0..9",
+          "bar",
+          "double",
+          "half",
+          "nudge",
+          "resync",
+          "snap",
+          "tap"
+        ],
+        "current_breadcrumb": "Tempo",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["tempo"]
+        }
+      }
+    },
+    {
+      "name": "Tempo nudge expects a signed beat offset.",
+      "input": "tempo nudge ",
+      "response": {
+        "parse": {
+          "status": "error"
+        },
+        "completion_groups": ["tempo/action"],
+        "candidates": ["+", "-", "0..9"],
+        "current_breadcrumb": "Tempo",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["tempo"]
+        }
+      }
+    },
+    {
+      "name": "User can submit a whole BPM or add a fractional part.",
+      "input": "tempo 128",
+      "response": {
+        "parse": {
+          "status": "ok"
+        },
+        "completion_groups": ["tempo/action"],
+        "candidates": [".", "0..9"],
+        "current_breadcrumb": "Tempo",
+        "breadcrumb": {
+          "state": "current_clause_path",
+          "path": ["tempo"]
         }
       }
     }

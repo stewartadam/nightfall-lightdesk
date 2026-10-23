@@ -13,7 +13,7 @@ import { isE2eBuild } from "./test-mode";
 export const BROWSER_DEMO_SAMPLE_ID = "nightfall-demo-v1";
 
 const BROWSER_DEMO_SHOWFILE_PATH =
-  "nightfall-demo.nightfall-show/showfile.json";
+  "nightfall-demo.nightfall-show/showfile.json.gz";
 
 /** Resolve the immutable demo showfile beneath one deployed application base. */
 export function resolveBrowserDemoShowfileUrl(

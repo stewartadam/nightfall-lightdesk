@@ -49,11 +49,27 @@ export function panelDefinitionByName(
   return definition;
 }
 
-/** Returns the panel definition for a Dockview panel ID, when known. */
+/** Separates a multi-instance panel's definition ID from its instance suffix. */
+const PANEL_INSTANCE_SEPARATOR = ":";
+
+/** Returns a fresh Dockview panel ID for another instance of a multi-instance panel. */
+export function newPanelInstanceId(definition: PanelDefinition): string {
+  return `${definition.panelId}${PANEL_INSTANCE_SEPARATOR}${crypto.randomUUID()}`;
+}
+
+/**
+ * Returns the panel definition for a Dockview panel ID, when known. Extra instances of a
+ * multi-instance panel resolve to the definition they were opened from.
+ */
 export function findPanelDefinitionById(
   panelId: string,
 ): PanelDefinition | undefined {
-  return panelDefinitionsById.get(panelId);
+  const definition = panelDefinitionsById.get(panelId);
+  if (definition) return definition;
+  const separator = panelId.indexOf(PANEL_INSTANCE_SEPARATOR);
+  if (separator < 0) return undefined;
+  const base = panelDefinitionsById.get(panelId.slice(0, separator));
+  return base?.singleton === "multi" ? base : undefined;
 }
 
 /** Returns whether a panel definition declares support for a capability. */

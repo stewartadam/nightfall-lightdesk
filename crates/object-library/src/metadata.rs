@@ -71,13 +71,4 @@ impl ObjectMetadata {
             ..Default::default()
         }
     }
-
-    /// Create metadata with name and category
-    pub fn with_category(name: impl Into<String>, category: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            category: category.into(),
-            ..Default::default()
-        }
-    }
 }

@@ -19,7 +19,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });
-  await expect(tablist.getByRole("tab")).toHaveCount(5);
+  await expect(tablist.getByRole("tab")).toHaveCount(7);
   const general = tablist.getByRole("tab", { name: "General", exact: true });
   await expect(general).toHaveAttribute("aria-selected", "true");
   await expect(dialog.getByRole("tabpanel", { name: "General" })).toBeVisible();
@@ -60,7 +60,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await expect(dialog.getByLabel("Input signal loss policy")).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 780 });
-  await network.press("End");
+  await network.press("ArrowRight");
   const visualizer = tablist.getByRole("tab", { name: "Visualizer" });
   await expect(visualizer).toBeFocused();
   await expect(visualizer).toBeInViewport({ ratio: 1 });
@@ -74,24 +74,28 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
     await toggle.press("Space");
     await expect(toggle).toBeChecked({ checked });
   }
-  const quality = dialog.getByRole("slider", { name: "Quality preset" });
-  await quality.focus();
-  await quality.press("Home");
-  await expect(quality).toHaveAttribute("aria-valuetext", "Low (faster)");
+  const quality = dialog.getByRole("radiogroup", { name: "Quality preset" });
+  await quality.locator('[role="radio"][tabindex="0"]').focus();
+  await page.keyboard.press("Home");
+  const low = quality.getByRole("radio", { name: "Low (faster)" });
+  await expect(low).toBeChecked();
+  await expect(low).toBeFocused();
   await expect(
     dialog.getByText(
       "Simple geometry beams without surface lighting, for maximum performance.",
     ),
   ).toBeVisible();
-  await quality.press("ArrowRight");
-  await expect(quality).toHaveAttribute("aria-valuetext", "Medium");
+  await page.keyboard.press("ArrowRight");
+  await expect(quality.getByRole("radio", { name: "Medium" })).toBeChecked();
   await expect(
     dialog.getByText(
       "Smoothly shaded beams and surface lighting, without fog or glow.",
     ),
   ).toBeVisible();
-  await quality.press("End");
-  await expect(quality).toHaveAttribute("aria-valuetext", "High (slower)");
+  await page.keyboard.press("End");
+  await expect(
+    quality.getByRole("radio", { name: "High (slower)" }),
+  ).toBeChecked();
   await expect(
     dialog.getByText("Atmospheric beams, fog, glow, and optical effects."),
   ).toBeVisible();
@@ -105,12 +109,21 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await page.screenshot({
     path: testInfo.outputPath("settings-segmented-narrow.png"),
   });
-  await visualizer.press("ArrowRight");
+  await visualizer.press("End");
+  const privacy = tablist.getByRole("tab", { name: "Privacy" });
+  await expect(privacy).toBeFocused();
+  await expect(privacy).toBeInViewport({ ratio: 1 });
+  await expect(
+    dialog.getByText(
+      "Sharing data is not supported in this version of Nightfall.",
+    ),
+  ).toBeVisible();
+  await privacy.press("ArrowRight");
   await expect(general).toBeFocused();
   await expect(general).toBeInViewport({ ratio: 1 });
   await general.press("ArrowLeft");
-  await expect(visualizer).toBeFocused();
-  await visualizer.press("Home");
+  await expect(privacy).toBeFocused();
+  await privacy.press("Home");
   await expect(general).toBeFocused();
   await expect(tablist.locator('[tabindex="0"]')).toHaveCount(1);
   await expect

@@ -534,23 +534,6 @@ impl MaterializedTransition {
         }
     }
 
-    /// Materializes a release-only transition at a source-local release position.
-    pub fn release_from_timing_at_position(
-        timing: &MaterializedTransition,
-        release_position: Duration,
-    ) -> MaterializedTransition {
-        MaterializedTransition {
-            delay_in: Duration::ZERO,
-            fade_in: Duration::ZERO,
-            curve_in: FadeCurve::Linear,
-            delay_out: timing.delay_out,
-            fade_out: timing.fade_out,
-            curve_out: timing.curve_out,
-            start_position: release_position,
-            release_position: Some(release_position),
-        }
-    }
-
     /// Calculates transition-in progress for an explicit elapsed duration.
     pub fn transition_in_parameter_ratio_at_elapsed(&self, elapsed: Duration) -> f32 {
         Self::parameter_ratio_at_elapsed(elapsed, self.fade_in, self.delay_in, self.curve_in)
@@ -571,18 +554,6 @@ impl MaterializedTransition {
     /// Calculates transition-out progress for an explicit elapsed duration.
     pub fn transition_out_parameter_ratio_at_elapsed(&self, elapsed: Duration) -> f32 {
         Self::parameter_ratio_at_elapsed(elapsed, self.fade_out, self.delay_out, self.curve_out)
-    }
-
-    /// Calculates transition-out progress at a source-local playback position.
-    pub fn transition_out_parameter_ratio_at_position(
-        &self,
-        evaluation_position: Duration,
-        started_at: Duration,
-    ) -> f32 {
-        self.transition_out_parameter_ratio_at_elapsed(Self::elapsed(
-            evaluation_position,
-            started_at,
-        ))
     }
 
     /// Calculates release progress for an explicit elapsed release duration.

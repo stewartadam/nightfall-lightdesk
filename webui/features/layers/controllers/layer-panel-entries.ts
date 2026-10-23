@@ -7,18 +7,20 @@
  */
 
 import { type Accessor, createSignal, type Setter } from "solid-js";
+import type { LayerState } from "../../../lib/ws/types";
 import type * as types from "../../../types";
 
 export type LayerPanelEntrySummary = {
   creator: string;
   objectType?: types.ObjectType;
   priority: types.Priority;
+  heldButton?: types.HeldButtonEffect;
 };
 
 export type LayerPanelEntry = {
   key: string;
-  layer: Accessor<types.OutboundLayerState>;
-  setLayer: Setter<types.OutboundLayerState>;
+  layer: Accessor<LayerState>;
+  setLayer: Setter<LayerState>;
   summary: Accessor<LayerPanelEntrySummary>;
   setSummary: Setter<LayerPanelEntrySummary>;
   index: Accessor<number>;
@@ -30,7 +32,7 @@ export type LayerPanelEntry = {
 };
 
 /** Returns the stable logical identity for one layer row across stack reordering. */
-export function getLayerIdentityKey(layer: types.OutboundLayerState): string {
+export function getLayerIdentityKey(layer: LayerState): string {
   return layer.object_ref === undefined
     ? `creator:${layer.creator}`
     : `object:${JSON.stringify(layer.object_ref)}`;
@@ -45,20 +47,17 @@ export function getLayerExpansionKey(
 }
 
 /** Returns the source object type associated with a layer, when available. */
-function layerObjectType(
-  layer: types.OutboundLayerState,
-): types.ObjectType | undefined {
+function layerObjectType(layer: LayerState): types.ObjectType | undefined {
   return layer.object_ref?.data.object_type;
 }
 
 /** Returns the fields needed by a collapsed layer-row header. */
-export function summarizeLayer(
-  layer: types.OutboundLayerState,
-): LayerPanelEntrySummary {
+export function summarizeLayer(layer: LayerState): LayerPanelEntrySummary {
   return {
     creator: layer.creator,
     objectType: layerObjectType(layer),
     priority: layer.priority,
+    heldButton: layer.held_button ?? undefined,
   };
 }
 
@@ -70,7 +69,9 @@ export function layerSummariesEqual(
   return (
     left.creator === right.creator &&
     left.objectType === right.objectType &&
-    left.priority === right.priority
+    left.priority === right.priority &&
+    left.heldButton?.type === right.heldButton?.type &&
+    left.heldButton?.data.control_index === right.heldButton?.data.control_index
   );
 }
 
@@ -88,7 +89,7 @@ export function layerKeyListsEqual(
 /** Creates a stable entry whose layer snapshot can refresh without remounting its row. */
 export function createLayerPanelEntry(
   key: string,
-  layer: types.OutboundLayerState,
+  layer: LayerState,
   index: number,
 ): LayerPanelEntry {
   const [entryLayer, setEntryLayer] = createSignal(layer);

@@ -38,6 +38,12 @@ const unpack = release.jobs.sign.steps.find((step) => step.id === "app").run;
 const inventory = release.jobs.publish.steps.find(
   (step) => step.name === "Validate the release inventory",
 ).run;
+const updates = workflows["desktop-updates.yml"];
+const updatesEnvironment = {
+  GITHUB_EVENT_NAME: "release",
+  GITHUB_REPOSITORY: "owner/repo",
+  RELEASE_TAG: "v0.1.0-alpha.2",
+};
 const releaseEnvironment = {
   GITHUB_EVENT_NAME: "push",
   GITHUB_REF: "refs/tags/v0.1.0-alpha.2",
@@ -104,10 +110,23 @@ function validateApp(directory, environment = {}) {
 /** Restricts repository authority to source acquisition and the isolated release boundary. */
 test("builds and tests have no GitHub permissions or release secrets", () => {
   const exceptions = {
-    "ci.yml/scope": { contents: "read" },
+    "ci.yml/scope": { contents: "read", "pull-requests": "read" },
     "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
     "ci.yml/release": { contents: "write" },
     "ci.yml/preview": { "pull-requests": "write" },
+    "ci.yml/gate": { "pull-requests": "read" },
+    "pr-commands.yml/recheck-cla": {
+      checks: "read",
+      issues: "write",
+      "pull-requests": "write",
+      statuses: "read",
+    },
+    "pr-commands.yml/republish": {
+      actions: "write",
+      checks: "read",
+      issues: "write",
+      "pull-requests": "write",
+    },
     "playwright-full.yml/source": { contents: "read" },
     "desktop-artifacts.yml/release-note-metadata": {
       contents: "read",
@@ -118,6 +137,8 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       "pull-requests": "read",
     },
     "release.yml/publish": { contents: "write" },
+    "desktop-updates.yml/sign": { contents: "read" },
+    "desktop-updates.yml/publish": { contents: "write" },
   };
   for (const [file, workflow] of Object.entries(workflows)) {
     assert.deepEqual(workflow.permissions, {}, file);
@@ -125,7 +146,11 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       const key = `${file}/${id}`;
       assert.deepEqual(job.permissions ?? {}, exceptions[key] ?? {}, key);
       assert.notEqual(job.secrets, "inherit", key);
-      if (file !== "release.yml" && id !== "release" && id !== "preview") {
+      if (
+        file !== "release.yml" &&
+        key !== "desktop-updates.yml/sign" &&
+        !["release", "preview", "symbols"].includes(id)
+      ) {
         assert.doesNotMatch(JSON.stringify(job), /secrets\./);
         if (!exceptions[key]) {
           assert.doesNotMatch(JSON.stringify(job), /github\.token/);
@@ -176,14 +201,54 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
   assert.deepEqual(workflows["ci.yml"].jobs.release.needs, "desktop");
 });
 
-/** The preview deployer holds only the Workers preview token and treats the demo artifact as data. */
+/** Only the update signer holds the updater key, and it runs nothing but a verified minisign. */
+test("update signing holds only the updater key and verifies its tool", () => {
+  for (const [file, workflow] of Object.entries(workflows)) {
+    for (const [id, job] of Object.entries(workflow.jobs)) {
+      const secrets = JSON.stringify(job).match(/secrets\.TAURI_[A-Z_]+/g);
+      if (file === "desktop-updates.yml" && id === "sign") {
+        assert.deepEqual(secrets, [
+          "secrets.TAURI_SIGNING_PRIVATE_KEY",
+          "secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+        ]);
+        assert.doesNotMatch(JSON.stringify(job), /secrets\.APPLE_/);
+      } else {
+        assert.equal(secrets, null, `${file}/${id}`);
+      }
+    }
+  }
+  assert.deepEqual(updates.on, { release: { types: ["published"] } });
+  assert.equal(updates.jobs.publish.needs, "sign");
+  for (const job of Object.values(updates.jobs)) {
+    for (const step of job.steps) {
+      if (step.uses) {
+        assert.match(
+          step.uses,
+          /^actions\/(?:upload|download)-artifact@[a-f0-9]{40}$/,
+        );
+      }
+      assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
+    }
+  }
+  const download = updates.jobs.sign.steps.find(
+    (step) => step.env?.MINISIGN_SHA256,
+  );
+  assert.match(download.env.MINISIGN_SHA256, /^[a-f0-9]{64}$/);
+  assert.match(download.run, /sha256sum --check --strict/);
+});
+
+/** The preview deployer holds only the Workers preview token and treats the demo and book artifacts as data. */
 test("browser previews deploy same-run artifacts without source or build tools", () => {
   const preview = workflows["ci.yml"].jobs.preview;
-  assert.deepEqual(preview.needs, ["selection", "browser-demo"]);
-  assert.equal(preview.if, "needs.selection.outputs.browser_preview == 'true'");
+  assert.deepEqual(preview.needs, ["selection", "browser-demo", "docs"]);
+  assert.equal(
+    preview.if,
+    "!cancelled() && needs.selection.outputs.browser_preview == 'true' && needs.browser-demo.result == 'success' && (needs.docs.result == 'success' || needs.docs.result == 'skipped')",
+  );
   assert.deepEqual(
     preview.steps.filter((step) => step.uses).map((step) => step.uses),
     [
+      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0",
     ],
@@ -192,7 +257,7 @@ test("browser previews deploy same-run artifacts without source or build tools",
   assert.deepEqual(secrets, ["secrets.CLOUDFLARE_PREVIEW_TOKEN"]);
   assert.match(
     preview.steps.find((step) => step.id === "deploy").with.command,
-    /^preview --name=pr-\$\{\{ github\.event\.pull_request\.number \}\}$/,
+    /^preview --name=pr-\$\{\{ needs\.selection\.outputs\.preview_pr \}\}$/,
   );
   for (const step of preview.steps) {
     assert.equal(step.with?.["run-id"], undefined);
@@ -200,6 +265,32 @@ test("browser previews deploy same-run artifacts without source or build tools",
     assert.equal(step.with?.gitHubToken, undefined);
     assert.equal(step.with?.preCommands, undefined);
     assert.equal(step.with?.postCommands, undefined);
+    assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
+  }
+});
+
+/** The symbol uploader holds only the error service token, verifies its tool, and treats symbols as data. */
+test("debug symbols upload same-run artifacts with a pinned, verified tool", () => {
+  const symbols = workflows["ci.yml"].jobs.symbols;
+  assert.equal(symbols.needs, "desktop");
+  assert.equal(
+    symbols.if,
+    "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+  );
+  assert.deepEqual(symbols.permissions ?? {}, {});
+  assert.deepEqual(
+    symbols.steps.filter((step) => step.uses).map((step) => step.uses),
+    ["actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"],
+  );
+  assert.deepEqual(JSON.stringify(symbols).match(/secrets\.[A-Z_]+/g), [
+    "secrets.GLITCHTIP_AUTH_TOKEN",
+  ]);
+  const download = symbols.steps.find((step) => step.env?.CLI_SHA256);
+  assert.match(download.env.CLI_SHA256, /^[a-f0-9]{64}$/);
+  assert.match(download.run, /sha256sum --check --strict/);
+  for (const step of symbols.steps) {
+    assert.equal(step.with?.["run-id"], undefined);
+    assert.equal(step.with?.["github-token"], undefined);
     assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
   }
 });
@@ -388,13 +479,14 @@ test("signing validates the event and app version independently of build outputs
   assert.match(validateApp(directory).stderr, /differs from the release/);
 });
 
-/** Creates the installers and combined notices accepted by the publishing boundary. */
+/** Creates the installers, macOS update archive, and combined notices accepted by the publishing boundary. */
 function releaseInventory(directory) {
   mkdirSync(join(directory, "release-assets"));
   mkdirSync(join(directory, "release-notes"));
   writeFileSync(join(directory, "release-notes/release-notes.md"), "Notes");
   for (const suffix of [
     "aarch64-apple-darwin.dmg",
+    "aarch64-apple-darwin.app.tar.gz",
     "x86_64-pc-windows-msvc.exe",
     "x86_64-unknown-linux-gnu.deb",
     "x86_64-unknown-linux-gnu.AppImage",
@@ -444,6 +536,359 @@ test("publishing requires the exact nonempty installer and notices inventory", (
   rmSync(dmg);
   symlinkSync("../release-notes/release-notes.md", dmg);
   assert.notEqual(validateInventory(directory).status, 0);
+  rmSync(dmg);
+  writeFileSync(dmg, "artifact bytes");
+  assert.equal(validateInventory(directory).status, 0);
+});
+
+/**
+ * Runs the actual update signing step against a stand-in minisign that records each signature
+ * request, so the manifest and package checks are exercised without the real signing key.
+ */
+function signUpdates(directory, environment = {}) {
+  const step = updates.jobs.sign.steps.find(
+    (candidate) =>
+      candidate.name === "Sign the update packages and write the manifest",
+  ).run;
+  const tool = join(directory, "minisign-linux/x86_64");
+  mkdirSync(tool, { recursive: true });
+  writeFileSync(
+    join(tool, "minisign"),
+    [
+      "#!/usr/bin/env bash",
+      'if [ "$1" = -S ]; then',
+      '  while [ $# -gt 0 ]; do case "$1" in -x) out="$2"; shift;; -t) comment="$2"; shift;; esac; shift; done',
+      "  read -r password",
+      '  printf "signed with %s\\n%s\\n" "$password" "$comment" > "$out"',
+      "fi",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  return spawnSync("bash", ["-c", step], {
+    cwd: directory,
+    env: {
+      ...process.env,
+      ...updatesEnvironment,
+      RUNNER_TEMP: directory,
+      TAURI_SIGNING_PRIVATE_KEY: Buffer.from("secret key").toString("base64"),
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "password",
+      TAURI_SIGNING_PUBLIC_KEY: Buffer.from("public key").toString("base64"),
+      ...environment,
+    },
+    encoding: "utf8",
+  });
+}
+
+/** Each update package is signed for the tagged version and listed under the updater's lookup key. */
+test("update manifest signs each package for the release version", (t) => {
+  const directory = fixtureDirectory(t);
+  mkdirSync(join(directory, "incoming"));
+  const suffixes = {
+    "darwin-aarch64-app": "aarch64-apple-darwin.app.tar.gz",
+    "windows-x86_64-nsis": "x86_64-pc-windows-msvc.exe",
+    "linux-x86_64-deb": "x86_64-unknown-linux-gnu.deb",
+    "linux-x86_64-appimage": "x86_64-unknown-linux-gnu.AppImage",
+  };
+  for (const suffix of Object.values(suffixes)) {
+    writeFileSync(
+      join(directory, `incoming/nightfall-v0.1.0-alpha.2-${suffix}`),
+      "package bytes",
+    );
+  }
+  const result = signUpdates(directory);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(directory, "updater.key")), false);
+  const manifest = JSON.parse(
+    readFileSync(join(directory, "manifest/latest.json"), "utf8"),
+  );
+  assert.equal(manifest.version, "0.1.0-alpha.2");
+  for (const [target, suffix] of Object.entries(suffixes)) {
+    const name = `nightfall-v0.1.0-alpha.2-${suffix}`;
+    const entry = manifest.platforms[target];
+    assert.equal(
+      entry.url,
+      `https://github.com/owner/repo/releases/download/v0.1.0-alpha.2/${name}`,
+    );
+    const signature = Buffer.from(entry.signature, "base64").toString();
+    assert.match(signature, /^signed with password\n/);
+    assert.match(
+      signature,
+      new RegExp(
+        `\tfile:${name.replaceAll(".", "\\.")}\tversion:0\\.1\\.0-alpha\\.2\n$`,
+      ),
+    );
+  }
+  assert.deepEqual(
+    manifest.platforms["darwin-aarch64"],
+    manifest.platforms["darwin-aarch64-app"],
+  );
+  assert.deepEqual(
+    manifest.platforms["windows-x86_64"],
+    manifest.platforms["windows-x86_64-nsis"],
+  );
+  assert.equal(manifest.platforms["linux-x86_64"], undefined);
+});
+
+/** A missing package, missing key, or untagged run never produces a manifest. */
+test("update signing refuses incomplete releases and missing keys", (t) => {
+  const directory = fixtureDirectory(t);
+  mkdirSync(join(directory, "incoming"));
+  writeFileSync(
+    join(
+      directory,
+      "incoming/nightfall-v0.1.0-alpha.2-x86_64-pc-windows-msvc.exe",
+    ),
+    "package bytes",
+  );
+  assert.notEqual(signUpdates(directory).status, 0);
+  assert.notEqual(
+    signUpdates(directory, { TAURI_SIGNING_PUBLIC_KEY: "" }).status,
+    0,
+  );
+  assert.notEqual(
+    signUpdates(directory, { GITHUB_EVENT_NAME: "workflow_dispatch" }).status,
+    0,
+  );
+  assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
+});
+
+/** A signature that fails to encode stops the release instead of publishing an empty one. */
+test("update signing fails when a signature cannot be encoded", (t) => {
+  const directory = fixtureDirectory(t);
+  mkdirSync(join(directory, "incoming"));
+  for (const suffix of [
+    "aarch64-apple-darwin.app.tar.gz",
+    "x86_64-pc-windows-msvc.exe",
+    "x86_64-unknown-linux-gnu.deb",
+    "x86_64-unknown-linux-gnu.AppImage",
+  ]) {
+    writeFileSync(
+      join(directory, `incoming/nightfall-v0.1.0-alpha.2-${suffix}`),
+      "package bytes",
+    );
+  }
+  const realBase64 = execFileSync("bash", ["-c", "command -v base64"], {
+    encoding: "utf8",
+  }).trim();
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, "base64"),
+    [
+      "#!/usr/bin/env bash",
+      'for arg in "$@"; do case "$arg" in -d|--decode) exec "$REAL_BASE64" "$@";; esac; done',
+      "exit 1",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const result = signUpdates(directory, {
+    PATH: `${bin}:${process.env.PATH}`,
+    REAL_BASE64: realBase64,
+  });
+  assert.notEqual(result.status, 0);
+  assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
+});
+
+/**
+ * Runs the actual updater-release step with a stand-in `gh` that records its arguments, and
+ * reports whether the `updater` release already exists through `existing`.
+ */
+function offerUpdate(
+  directory,
+  manifest,
+  { existing = true, current = "0.1.0-alpha.1", ...environment } = {},
+) {
+  const step = updates.jobs.publish.steps.find(
+    (candidate) =>
+      candidate.name === "Replace the manifest on the updater release",
+  ).run;
+  mkdirSync(join(directory, "manifest"), { recursive: true });
+  writeFileSync(
+    join(directory, "manifest/latest.json"),
+    JSON.stringify(manifest),
+  );
+  const bin = join(directory, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      'printf "%s\\n" "$*" >> "$GH_LOG"',
+      `if [ "$2" = view ]; then exit ${existing ? 0 : 1}; fi`,
+      'if [ "$2" = download ]; then printf \'{"version":"%s"}\' "$CURRENT_VERSION" > "$7"; fi',
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const result = spawnSync("bash", ["-c", step], {
+    cwd: directory,
+    env: {
+      ...process.env,
+      ...updatesEnvironment,
+      PATH: `${bin}:${process.env.PATH}`,
+      GH_LOG: join(directory, "gh.log"),
+      CURRENT_VERSION: current,
+      GH_REPO: "owner/repo",
+      RUNNER_TEMP: directory,
+      GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
+      ...environment,
+    },
+    encoding: "utf8",
+  });
+  const log = join(directory, "gh.log");
+  return {
+    status: result.status,
+    calls: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [],
+  };
+}
+
+/**
+ * Runs the actual package download step against a stand-in `gh` whose release lists `assets`,
+ * returning the step's exit status and the packages it downloaded.
+ */
+function downloadPackages(directory, assets) {
+  const step = updates.jobs.sign.steps.find(
+    (candidate) => candidate.name === "Download the release packages",
+  ).run;
+  const bin = join(directory, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(directory, "assets.json"), JSON.stringify({ assets }));
+  writeFileSync(
+    join(bin, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      'if [ "$1" = api ]; then cat "$RELEASE_JSON"; exit; fi',
+      'printf "%s\\n" "$7" >> "$GH_LOG"',
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const result = spawnSync("bash", ["-c", step], {
+    cwd: directory,
+    env: {
+      ...process.env,
+      ...updatesEnvironment,
+      PATH: `${bin}:${process.env.PATH}`,
+      GH_LOG: join(directory, "gh.log"),
+      GH_REPO: "owner/repo",
+      RELEASE_JSON: join(directory, "assets.json"),
+      RUNNER_TEMP: directory,
+    },
+    encoding: "utf8",
+  });
+  const log = join(directory, "gh.log");
+  return {
+    status: result.status,
+    downloaded: existsSync(log)
+      ? readFileSync(log, "utf8").trim().split("\n")
+      : [],
+  };
+}
+
+/** Only the four update packages the release workflow uploaded are fetched for signing. */
+test("update signing only fetches packages the release workflow uploaded", (t) => {
+  const directory = fixtureDirectory(t);
+  const names = [
+    "aarch64-apple-darwin.app.tar.gz",
+    "x86_64-pc-windows-msvc.exe",
+    "x86_64-unknown-linux-gnu.deb",
+    "x86_64-unknown-linux-gnu.AppImage",
+  ].map((suffix) => `nightfall-v0.1.0-alpha.2-${suffix}`);
+  const asset = (name, login = "github-actions[bot]") => ({
+    name,
+    uploader: { login },
+  });
+  const workflowAssets = [
+    ...names.map((name) => asset(name)),
+    asset("nightfall-v0.1.0-alpha.2-aarch64-apple-darwin.dmg"),
+  ];
+  assert.deepEqual(downloadPackages(directory, workflowAssets), {
+    status: 0,
+    downloaded: names,
+  });
+  rmSync(join(directory, "gh.log"));
+  const replaced = workflowAssets.map((entry) =>
+    entry.name === names[1] ? asset(entry.name, "someone") : entry,
+  );
+  assert.notEqual(downloadPackages(directory, replaced).status, 0);
+  rmSync(join(directory, "gh.log"), { force: true });
+  const missing = workflowAssets.filter((entry) => entry.name !== names[3]);
+  assert.notEqual(downloadPackages(directory, missing).status, 0);
+});
+
+/** Builds a manifest for `version` whose one package downloads from `url`. */
+function updateManifest(
+  version = "0.1.0-alpha.2",
+  url = `https://github.com/owner/repo/releases/download/v${version}/nightfall.exe`,
+) {
+  return {
+    version,
+    platforms: { "windows-x86_64-nsis": { url, signature: "c2lnbmVk" } },
+  };
+}
+
+/** Publishing replaces the manifest on the updater release, creating that release only once. */
+test("published releases replace the manifest on the updater release", (t) => {
+  const directory = fixtureDirectory(t);
+  const replaced = offerUpdate(directory, updateManifest());
+  assert.equal(replaced.status, 0);
+  assert.deepEqual(replaced.calls, [
+    "release view updater",
+    `release download updater --pattern latest.json --output ${directory}/current.json`,
+    "release upload updater manifest/latest.json --clobber",
+  ]);
+  rmSync(join(directory, "gh.log"));
+  const created = offerUpdate(directory, updateManifest(), { existing: false });
+  assert.equal(created.status, 0);
+  assert.match(
+    created.calls[1],
+    /^release create updater --prerelease --latest=false /,
+  );
+  assert.equal(
+    created.calls[2],
+    "release upload updater manifest/latest.json --clobber",
+  );
+});
+
+/**
+ * A manifest for another version or another release's files, a run outside a release event,
+ * or an older release than the one already offered uploads nothing.
+ */
+test("the updater release only accepts the published release's manifest", (t) => {
+  const directory = fixtureDirectory(t);
+  const rejected = [
+    offerUpdate(directory, updateManifest("0.1.0-alpha.1")),
+    offerUpdate(directory, { version: "0.1.0-alpha.2", platforms: {} }),
+    offerUpdate(
+      directory,
+      updateManifest("0.1.0-alpha.2", "https://example.com/nightfall.exe"),
+    ),
+    offerUpdate(
+      directory,
+      updateManifest(
+        "0.1.0-alpha.2",
+        "https://github.com/owner/repo/releases/download/v0.1.0-alpha.2/../v0.0.1/nightfall.exe",
+      ),
+    ),
+    offerUpdate(directory, updateManifest(), {
+      GITHUB_EVENT_NAME: "workflow_dispatch",
+    }),
+  ];
+  for (const result of rejected) {
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(result.calls, []);
+  }
+  for (const current of ["0.1.0-alpha.10", "0.1.0", "0.2.0-alpha.1"]) {
+    const downgrade = offerUpdate(directory, updateManifest(), { current });
+    assert.notEqual(downgrade.status, 0, current);
+    assert.doesNotMatch(downgrade.calls.join("\n"), /upload/, current);
+    rmSync(join(directory, "gh.log"));
+  }
+  for (const current of ["0.1.0-alpha.2", "0.1.0-alpha.1", "0.1.0-1"]) {
+    assert.equal(
+      offerUpdate(directory, updateManifest(), { current }).status,
+      0,
+      current,
+    );
+  }
 });
 
 /** A build-generated metadata plan cannot turn authenticated API calls into arbitrary endpoints. */

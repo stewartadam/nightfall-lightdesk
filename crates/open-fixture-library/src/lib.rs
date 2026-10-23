@@ -50,10 +50,6 @@ pub enum OflError {
     /// Invalid fixture data
     #[error("Invalid fixture data: {0}")]
     InvalidData(String),
-
-    /// Missing required field
-    #[error("Missing required field: {0}")]
-    MissingField(String),
 }
 
 /// Result type for OFL operations

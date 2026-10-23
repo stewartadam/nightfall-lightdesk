@@ -87,8 +87,8 @@ async function openDragPreviewFixture(page: Page): Promise<DragPreviewFixture> {
                 position: { secs: 1, nanos: 250_000_000 },
                 duration: { secs: 1, nanos: 0 },
                 action: {
-                  type: "FireCue",
-                  data: "00000000000000000000000000000000",
+                  id: "timeline.fire-cue",
+                  arguments: { cue: "00000000000000000000000000000000" },
                 },
               },
               {
@@ -97,8 +97,8 @@ async function openDragPreviewFixture(page: Page): Promise<DragPreviewFixture> {
                 position: { secs: 2, nanos: 250_000_000 },
                 duration: { secs: 1, nanos: 0 },
                 action: {
-                  type: "FireCue",
-                  data: "00000000000000000000000000000000",
+                  id: "timeline.fire-cue",
+                  arguments: { cue: "00000000000000000000000000000000" },
                 },
               },
             ],

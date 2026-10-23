@@ -15,9 +15,10 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -198,7 +199,7 @@ export default function SelectionVisualizerPanel() {
       type: "SetProgrammerSpatialSelection",
       data: parsed,
     };
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   const hasResolvedSelection = createMemo(
@@ -237,18 +238,20 @@ export default function SelectionVisualizerPanel() {
         <Show
           when={$spatialSelection() && $resolvedSelection()}
           fallback={
-            <div class="rounded border border-dashed border-neutral-800 p-3 text-sm text-neutral-500">
-              No active spatial selection. Select fixtures in the programmer to
-              inspect their resolved grid positions.
-            </div>
+            <EmptyState
+              variant="dashed"
+              title="No active spatial selection."
+              description="Select fixtures in the programmer to inspect their resolved grid positions."
+            />
           }
         >
           <Show
             when={hasResolvedSelection()}
             fallback={
-              <div class="rounded border border-dashed border-neutral-800 p-3 text-sm text-neutral-500">
-                The active spatial selection resolved to no indexes.
-              </div>
+              <EmptyState
+                variant="dashed"
+                title="The active spatial selection resolved to no indexes."
+              />
             }
           >
             <div class="flex flex-wrap items-center gap-2 rounded border border-neutral-800 bg-neutral-900/70 p-2">

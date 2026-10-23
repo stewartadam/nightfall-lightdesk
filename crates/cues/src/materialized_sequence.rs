@@ -241,7 +241,7 @@ mod systems;
 mod tracking;
 
 pub use rematerialize::{
-    rebuild_blueprint_reference_index, rematerialize_after_blueprint_definition_change,
+    rematerialize_after_blueprint_definition_change,
     rematerialize_sequences_after_cue_definition_change,
     rematerialize_sequences_after_sequence_definition_change,
 };

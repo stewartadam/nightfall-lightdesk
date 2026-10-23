@@ -16,20 +16,9 @@ pub(super) fn effective_save_showfile_name(
     current_showfile: &CurrentShowfile,
 ) -> Result<Option<String>, String> {
     match command {
-        DeskCommand::SaveNamedShowfile { name, .. } => current_showfile_name(Some(name)),
-        DeskCommand::SaveShowfile(_) => Ok(current_showfile.name().map(str::to_string)),
+        DeskCommand::SaveNamedShowfile(name) => current_showfile_name(Some(name)),
+        DeskCommand::SaveShowfile => Ok(current_showfile.name().map(str::to_string)),
         _ => Ok(None),
-    }
-}
-
-/// Returns the save options carried by a showfile save command.
-fn showfile_save_options(command: &DeskCommand) -> Option<&ShowfileSaveOptions> {
-    match command {
-        DeskCommand::SaveShowfile(options) => Some(options),
-        DeskCommand::SaveNamedShowfile { options, .. } => Some(options),
-        DeskCommand::SaveDraftShowfile(options) => Some(options),
-        DeskCommand::SaveNamedDraftShowfile { options, .. } => Some(options),
-        _ => None,
     }
 }
 
@@ -70,7 +59,7 @@ pub fn handle_events(
                 );
             }
 
-            DeskCommand::SaveShowfile(_) | DeskCommand::SaveNamedShowfile { .. } => {
+            DeskCommand::SaveShowfile | DeskCommand::SaveNamedShowfile(_) => {
                 let showfile_name =
                     match effective_save_showfile_name(&event.command, &current_showfile) {
                         Ok(showfile_name) => showfile_name,
@@ -79,25 +68,19 @@ pub fn handle_events(
                             continue;
                         }
                     };
-                let save_options = showfile_save_options(&event.command)
-                    .expect("save command branch should carry save options");
                 let mut showfile_save_state = showfile_state.p0();
-                match save_showfile(
-                    &mut showfile_save_state,
-                    showfile_name.as_deref(),
-                    save_options,
-                ) {
+                match save_showfile(&mut showfile_save_state, showfile_name.as_deref()) {
                     Err(error) => {
                         tracing::error!("Failed to save showfile: {}", error);
                         fail_showfile_command(&mut responder, event.command_id, error);
                     }
                     Ok(snapshot) => {
-                        if matches!(&event.command, DeskCommand::SaveNamedShowfile { .. }) {
-                            current_showfile.name = showfile_name.clone();
-                            write_current_showfile_changed(
+                        if matches!(&event.command, DeskCommand::SaveNamedShowfile(_)) {
+                            ui_notifications.write(UiNotification::current_showfile_renamed(
                                 showfile_name.clone(),
-                                &mut ui_notifications,
-                            );
+                                current_showfile.name(),
+                            ));
+                            current_showfile.name = showfile_name.clone();
                         }
                         if let Err(error) =
                             update_clean_snapshot_hash(&mut clean_snapshot_hash, &snapshot)
@@ -109,12 +92,10 @@ pub fn handle_events(
                 }
             }
 
-            DeskCommand::SaveDraftShowfile(_) | DeskCommand::SaveNamedDraftShowfile { .. } => {
+            DeskCommand::SaveDraftShowfile | DeskCommand::SaveNamedDraftShowfile(_) => {
                 let showfile_name = match &event.command {
-                    DeskCommand::SaveNamedDraftShowfile { name, .. } => {
-                        current_showfile_name(Some(name))
-                    }
-                    DeskCommand::SaveDraftShowfile(_) => {
+                    DeskCommand::SaveNamedDraftShowfile(name) => current_showfile_name(Some(name)),
+                    DeskCommand::SaveDraftShowfile => {
                         Ok(current_showfile.name().map(str::to_string))
                     }
                     _ => Ok(None),
@@ -126,14 +107,11 @@ pub fn handle_events(
                         continue;
                     }
                 };
-                let save_options = showfile_save_options(&event.command)
-                    .expect("draft save command branch should carry save options");
                 let mut showfile_save_state = showfile_state.p0();
                 match save_draft_showfile_if_dirty(
                     &mut showfile_save_state,
                     showfile_name.as_deref(),
                     &mut clean_snapshot_hash,
-                    save_options,
                 ) {
                     Ok(_) => {
                         succeed_showfile_command(&mut responder, event.command_id);

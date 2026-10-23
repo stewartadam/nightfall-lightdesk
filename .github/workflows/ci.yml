@@ -2,7 +2,8 @@ name: CI
 
 on:
   pull_request:
-    # ready_for_review runs the desktop installers and product flows that draft PRs skip.
+    # Draft PRs only build their preview when opened (see the scope job); ready_for_review runs
+    # CI in full.
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
@@ -16,6 +17,10 @@ on:
         type: choice
         default: all
         options: [all, desktop, browser]
+      preview:
+        description: PR number to build and deploy a browser preview for, instead of running CI
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -26,14 +31,19 @@ concurrency:
 jobs:
   scope:
     name: Acquire source and select validation
-    # Run standalone PRs and the lowest unmerged/top PRs of a stack.
+    # Run standalone PRs and the lowest unmerged/top PRs of a stack. A draft runs only when it is
+    # opened, to build its preview; later draft pushes skip every job, including the gate, and
+    # `/republish` refreshes the preview through a manual run.
     if: >-
+      (github.event.pull_request.draft != true || github.event.action == 'opened') && (
       github.event.pull_request.stack == null ||
       github.event.pull_request.stack.base.ref == github.event.pull_request.base.ref ||
-      github.event.pull_request.stack.position == github.event.pull_request.stack.size
+      github.event.pull_request.stack.position == github.event.pull_request.stack.size)
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Lists a manual preview run's PR files.
+      pull-requests: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -45,9 +55,30 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           : > .ci-changed-files
+          rm -f .ci-base-Cargo.lock
           if [[ "$EVENT_NAME" == pull_request ]]; then
             git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
+            # Selection compares lockfiles to tell dependency changes from workspace rewiring.
+            if ! git diff --quiet HEAD^1 HEAD -- Cargo.lock &&
+              git cat-file -e HEAD^1:Cargo.lock 2> /dev/null; then
+              git show HEAD^1:Cargo.lock > .ci-base-Cargo.lock
+            fi
           fi
+      # A manual preview run checks out the PR's branch without its base, so the PR's file list
+      # stands in for the diff; selection only uses it to decide whether the preview gets docs.
+      - name: Capture the previewed PR's changed paths as data
+        if: inputs.preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PREVIEW_PR: ${{ inputs.preview }}
+        run: |
+          if [[ ! "$PREVIEW_PR" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Invalid preview PR number: $PREVIEW_PR"
+            exit 1
+          fi
+          gh api --paginate "repos/$GH_REPO/pulls/$PREVIEW_PR/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' | tr '\n' '\0' > .ci-changed-files
       # This job never executes repository scripts, installs dependencies, or restores caches.
       - name: Archive credential-free source and Git history
         run: |
@@ -86,7 +117,9 @@ jobs:
       desktop_package: ${{ steps.select.outputs.desktop_package }}
       browser_package: ${{ steps.select.outputs.browser_package }}
       browser_preview: ${{ steps.select.outputs.browser_preview }}
-      product_flows: ${{ steps.select.outputs.product_flows }}
+      preview_pr: ${{ steps.select.outputs.preview_pr }}
+      docs: ${{ steps.select.outputs.docs }}
+      rust: ${{ steps.select.outputs.rust }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -103,7 +136,9 @@ jobs:
         env:
           DISTRIBUTION: ${{ inputs.distribution }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PREVIEW_PR: ${{ inputs.preview }}
           # Dependabot PRs cannot read Actions secrets, so they never deploy a preview.
           PREVIEW_WORKER: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && vars.CLOUDFLARE_PREVIEW_WORKER || '' }}
         run: |
@@ -158,26 +193,71 @@ jobs:
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+  symbols:
+    name: Upload debug symbols
+    needs: desktop
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Uploads only this run's symbol files as data, with a token limited to the error service;
+    # see docs/ci-security.md.
+    steps:
+      - name: Download the debug symbols
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: debug-symbols-*-${{ github.sha }}
+          path: debug-symbols
+      - name: Download the pinned GlitchTip CLI
+        env:
+          CLI_URL: https://gitlab.com/glitchtip/glitchtip-cli/-/jobs/artifacts/v1.0.0/raw/artifacts/glitchtip-cli-linux-x86_64?job=build-linux-x86_64
+          CLI_SHA256: de1c035aa61931a6265d7b29b1614781dfee925466142a907508cb097082dfef
+        run: |
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/glitchtip-cli" "$CLI_URL"
+          echo "$CLI_SHA256  $RUNNER_TEMP/glitchtip-cli" | sha256sum --check --strict
+          chmod +x "$RUNNER_TEMP/glitchtip-cli"
+      - name: Upload the symbols to the error service
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.GLITCHTIP_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.GLITCHTIP_ORG }}
+          SENTRY_PROJECT: ${{ vars.GLITCHTIP_PROJECT }}
+          ERROR_REPORTS_DSN: ${{ vars.ERROR_REPORTS_DSN }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "::error::Set the GLITCHTIP_AUTH_TOKEN secret and the GLITCHTIP_ORG and GLITCHTIP_PROJECT variables to upload debug symbols"
+            exit 1
+          fi
+          host="${ERROR_REPORTS_DSN#*@}"
+          host="${host%%/*}"
+          if [[ ! "$host" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::Cannot read the error service host from ERROR_REPORTS_DSN"
+            exit 1
+          fi
+          "$RUNNER_TEMP/glitchtip-cli" debug-files upload --url "https://$host" --wait debug-symbols
+
   browser-demo:
     name: Browser demo
     needs: [scope, selection, wasm-bridge, browser-runtime]
     if: needs.selection.outputs.browser_package == 'true' || needs.selection.outputs.browser_preview == 'true'
     uses: ./.github/workflows/browser-demo.yml
     with:
-      # Preview-only and draft builds skip the product flows that release packaging requires.
-      product-flows: ${{ needs.selection.outputs.browser_package == 'true' && needs.selection.outputs.product_flows == 'true' }}
+      # Preview-only builds skip the product flows that release packaging requires.
+      product-flows: ${{ needs.selection.outputs.browser_package == 'true' }}
 
   preview:
     name: Browser preview
-    needs: [selection, browser-demo]
-    if: needs.selection.outputs.browser_preview == 'true'
+    needs: [selection, browser-demo, docs]
+    # Docs build only when the PR changes them, and a broken book holds back the whole preview.
+    if: >-
+      !cancelled() && needs.selection.outputs.browser_preview == 'true' &&
+      needs.browser-demo.result == 'success' &&
+      (needs.docs.result == 'success' || needs.docs.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Deploys only this run's demo artifact as data; see docs/ci-security.md.
     permissions:
       pull-requests: write
     concurrency:
-      group: preview-${{ github.event.pull_request.number }}
+      group: preview-${{ needs.selection.outputs.preview_pr }}
       cancel-in-progress: true
     steps:
       - name: Download the demo artifact
@@ -185,11 +265,21 @@ jobs:
         with:
           name: nightfall-browser-demo-${{ github.sha }}
           path: site/demo/app
+      - name: Download the documentation artifact
+        if: needs.docs.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nightfall-docs-${{ github.sha }}
+          path: site
       - name: Describe the preview Worker
         env:
           WORKER: ${{ vars.CLOUDFLARE_PREVIEW_WORKER }}
         run: |
-          printf '/ /demo/app/ 302\n/demo /demo/app/ 302\n' > site/_redirects
+          # The manual's own index serves the root when the preview includes it.
+          if [[ ! -e site/index.html ]]; then
+            printf '/ /demo/app/ 302\n' > site/_redirects
+          fi
+          printf '/demo /demo/app/ 302\n' >> site/_redirects
           jq -n --arg name "$WORKER" \
             '{name: $name, compatibility_date: "2026-10-01", assets: {directory: "./site"}, previews: {}}' \
             > wrangler.json
@@ -200,13 +290,13 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_PREVIEW_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: 4.147.0
-          command: preview --name=pr-${{ github.event.pull_request.number }}
+          command: preview --name=pr-${{ needs.selection.outputs.preview_pr }}
       - name: Link the preview on the PR
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ needs.selection.outputs.preview_pr }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PREVIEW_URL: ${{ steps.deploy.outputs.preview-url }}
         run: |
           url="$PREVIEW_URL"
@@ -214,8 +304,17 @@ jobs:
             echo "::error::Cloudflare returned an unexpected preview URL"
             exit 1
           fi
+          # Link each guide's first page, in the order the manual's table of contents lists them.
+          docs_line=""
+          for guide in "User guide:user-guide" "Developer guide:developer-reference"; do
+            page="$(grep -so "href=\"${guide#*:}/[A-Za-z0-9._/-]*\.html\"" site/toc.html | head -n 1 | cut -d '"' -f 2)" || true
+            if [[ -n "$page" ]]; then
+              docs_line+="
+          **${guide%%:*} preview:** ${url%/}/${page}"
+            fi
+          done
           body="<!-- nightfall-browser-preview -->
-          **Browser preview:** ${url%/}/demo/app/
+          **Browser preview:** ${url%/}/demo/app/${docs_line}
 
           Built from ${HEAD_SHA}. Sign in with Cloudflare Access to open it."
           comment_id="$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
@@ -229,7 +328,7 @@ jobs:
   source-checks:
     name: Prek hooks and script tests
     needs: scope
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -248,7 +347,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: rustup show
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust-cache
         with:
           key: source-tools
           cache-targets: false
@@ -260,16 +359,74 @@ jobs:
       - name: Run source pre-commit hooks
         run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 
+  docs:
+    name: Documentation
+    needs: [scope, selection]
+    if: needs.selection.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore credential-free source
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - name: Install mdBook
+        # Keep in sync with the version in CONTRIBUTING.md.
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: mdbook@0.4.49
+      - name: Build every mdBook
+        # mdBook exits successfully on broken includes, so any logged error or warning fails the job.
+        env:
+          MDBOOK_BUILD__CREATE_MISSING: 'false'
+        run: |
+          set -o pipefail
+          mapfile -t books < <(find docs -name book.toml -printf '%h\n' | sort)
+          if (( ${#books[@]} == 0 )); then
+            echo '::error::No mdBook found under docs/'
+            exit 1
+          fi
+          status=0
+          for book in "${books[@]}"; do
+            echo "::group::$book"
+            out="$RUNNER_TEMP/books/${book//\//_}"
+            if ! mdbook build --dest-dir "$out" "$book" 2>&1 | tee "$RUNNER_TEMP/mdbook.log"; then
+              status=1
+            elif grep -Eq '\[(ERROR|WARN)\]' "$RUNNER_TEMP/mdbook.log"; then
+              echo "::error::mdBook reported problems while building $book"
+              status=1
+            else
+              # Each book keeps its path under docs/, so the manual's root book is the site root.
+              mount="$RUNNER_TEMP/docs-site/${book#docs}"
+              mkdir -p "$mount"
+              cp -R "$out/." "$mount/"
+            fi
+            echo '::endgroup::'
+          done
+          exit "$status"
+      - name: Upload the books for the browser preview
+        if: needs.selection.outputs.browser_preview == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightfall-docs-${{ github.sha }}
+          path: ${{ runner.temp }}/docs-site
+          if-no-files-found: error
+          retention-days: 7
+
   native:
     name: Native
-    needs: scope
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    needs: [scope, selection]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     uses: ./.github/workflows/native-validation.yml
+    with:
+      rust-tests: ${{ needs.selection.outputs.rust == 'true' }}
 
   webui:
     name: TypeScript and WebUI Node tests
     needs: [scope, wasm-bridge, browser-runtime]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -285,7 +442,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: rustup show
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust-cache
         with:
           key: webui-tools
           cache-targets: false
@@ -313,7 +470,7 @@ jobs:
   browser-smoke:
     name: Chromium product flows
     needs: [scope, selection, native, wasm-bridge]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.product_flows == 'true' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -329,7 +486,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: rustup show
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust-cache
         with:
           key: webui-tools
           cache-targets: false
@@ -356,16 +513,37 @@ jobs:
   gate:
     # Single required check that aggregates every validation job.
     name: CI gate
-    needs: [scope, selection, source-checks, native, wasm-bridge, browser-runtime, webui, browser-smoke]
+    needs: [scope, selection, source-checks, docs, native, wasm-bridge, browser-runtime, webui, browser-smoke]
     if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Reads only the preview PR's draft state.
+    permissions:
+      pull-requests: read
     steps:
+      # A preview-only run (a draft opening, or a manual preview run) validates nothing but still
+      # reports this check on the PR head. It passes only while the PR is a draft: a draft cannot
+      # merge, and marking it ready starts a full run whose gate lands later. If the PR became
+      # ready first, failing keeps this run from standing in for that full run's result.
+      - name: Require the previewed PR to still be a draft
+        if: inputs.preview || github.event.pull_request.draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.preview || github.event.pull_request.number }}
+        run: |
+          draft="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq .draft)"
+          if [[ "$draft" != true ]]; then
+            echo "::error::PR #$PR_NUMBER is ready for review; its own CI run decides this check"
+            exit 1
+          fi
+          echo "Preview-only run for draft PR #$PR_NUMBER; CI runs when it is marked ready." >> "$GITHUB_STEP_SUMMARY"
       - name: Require all validation jobs to succeed
+        if: ${{ !inputs.preview && !github.event.pull_request.draft }}
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
-          PRODUCT_FLOWS: ${{ needs.selection.outputs.product_flows }}
-        # Draft PRs deliberately skip the product flows.
+          DOCS: ${{ needs.selection.outputs.docs }}
+        # Documentation builds only when selected.
         run: |
-          printf '%s' "$JOB_RESULTS" | jq -e --arg flows "$PRODUCT_FLOWS" \
-            'with_entries(select($flows != "false" or .key != "browser-smoke")) | all(.[]; .result == "success")'
+          printf '%s' "$JOB_RESULTS" | jq -e --arg docs "$DOCS" \
+            'with_entries(select($docs != "false" or .key != "docs")) | all(.[]; .result == "success")'

@@ -7,14 +7,15 @@
  */
 
 import { Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Sparkline } from "../../../components/ui/sparkline";
 import type {
   FrameStats,
   LongAnimationFrameStats,
   MetricsHistory,
 } from "../../../state/appStores";
-import { formatNumber, getFpsColor, UI_TARGET_FPS } from "../model/metrics";
-import { CollapsibleSection, MetricCard } from "./metric-sections";
+import { formatNumber, getFpsTone, UI_TARGET_FPS } from "../model/metrics";
+import { MetricCard, MetricValue } from "./metric-sections";
 
 interface BrowserRenderingSectionProps {
   frameStats: FrameStats | null;
@@ -25,28 +26,31 @@ interface BrowserRenderingSectionProps {
 /** Presents browser frame-rate, frame-time, and dropped-frame metrics. */
 export function BrowserRenderingSection(props: BrowserRenderingSectionProps) {
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="Browser Rendering"
-      headerContent={
-        <span class="ml-auto flex items-center gap-2">
+      contentClass="p-3"
+      actions={
+        <span class="flex items-center gap-2">
           <Sparkline
             data={props.history.uiFps}
             width={80}
             height={20}
             color="#22d3ee"
           />
-          <span
-            class={`font-mono text-xs ${getFpsColor(props.frameStats?.fps, UI_TARGET_FPS)}`}
+          <MetricValue
+            tone={getFpsTone(props.frameStats?.fps, UI_TARGET_FPS)}
+            class="text-xs"
           >
             {formatNumber(props.frameStats?.fps, 0)} fps
-          </span>
+          </MetricValue>
         </span>
       }
     >
       <Show
         when={props.frameStats}
         fallback={
-          <div class="rounded-lg bg-gray-100 p-3 text-sm text-gray-500 dark:bg-gray-800">
+          <div class="rounded-lg bg-neutral-800 p-3 text-sm text-neutral-500">
             Starting...
           </div>
         }
@@ -55,25 +59,29 @@ export function BrowserRenderingSection(props: BrowserRenderingSectionProps) {
           <MetricCard
             label="FPS"
             value={formatNumber(props.frameStats?.fps, 0)}
-            valueClass={`text-xl font-bold ${getFpsColor(props.frameStats?.fps, UI_TARGET_FPS)}`}
+            size="lg"
+            tone={getFpsTone(props.frameStats?.fps, UI_TARGET_FPS)}
           />
           <MetricCard
             label="Frame Time"
             value={formatNumber(props.frameStats?.avgFrameTimeMs, 1, " ms")}
-            valueClass="text-xl font-bold"
+            size="lg"
           />
           <MetricCard
             label="Dropped"
             value={props.frameStats?.droppedFrames ?? 0}
-            valueClass={`text-xl font-bold ${(props.frameStats?.droppedFrames ?? 0) > 0 ? "text-yellow-500" : ""}`}
+            size="lg"
+            tone={
+              (props.frameStats?.droppedFrames ?? 0) > 0 ? "warning" : "default"
+            }
           />
           <MetricCard
             label="Long frames"
             value={formatNumber(props.longFrameStats?.totalFrames, 0)}
-            valueClass="text-xl font-bold"
+            size="lg"
           />
         </div>
       </Show>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

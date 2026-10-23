@@ -9,7 +9,9 @@
 import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { For, type JSX, Show } from "solid-js";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/visual-language/button";
+import "../ui/selectable-surface.css";
 import "./object-tile.css";
 
 export interface ObjectTileProps {
@@ -28,7 +30,8 @@ export function ObjectTile(props: ObjectTileProps) {
   return (
     <Button
       class="object-tile"
-      classList={{ selected: props.selected }}
+      data-selectable-surface
+      data-selected={props.selected}
       aria-pressed={props.selected}
       title={[
         props.identity,
@@ -53,7 +56,11 @@ export function ObjectTile(props: ObjectTileProps) {
       <Show when={props.tags?.length}>
         <span class="tile-tags">
           <For each={props.tags}>
-            {(tag) => <span class="tile-tag">{tag}</span>}
+            {(tag) => (
+              <Badge size="xs" tone="accent" appearance="soft">
+                {tag}
+              </Badge>
+            )}
           </For>
         </span>
       </Show>

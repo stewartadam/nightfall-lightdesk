@@ -8,13 +8,14 @@
 
 //! Flow definition model and delta application helpers.
 
-use nightfall::prelude::{HasIdentifiers, Identifiers};
+use nightfall::prelude::{HasIdentifiers, Identifiers, SpatialSelection};
 use nightfall_selection::{
-    SelectionValidatedEntity, SpatialSelectionResolution, selection_validation_warnings,
+    HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
+    selection_validation_warnings,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{FlowDefinitionSnapshot, FlowDelta, FlowDeltaError, FlowDeltaOp};
+use crate::protocol::{FlowDelta, FlowDeltaError, FlowDeltaOp};
 use crate::types::{
     FlowEdgeDefinition, FlowId, FlowNodeDefinition, FlowNodeId, FlowPortDefinition, FlowPortId,
     FlowPortType, FlowValue, FlowVersion,
@@ -72,6 +73,33 @@ impl SelectionValidatedEntity for FlowDefinition {
     }
 }
 
+/// Reports selections stored as node port default values.
+impl ReferenceSource for FlowDefinition {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        for node in &self.nodes {
+            for port in &node.ports {
+                if let Some(FlowValue::Selection(selection)) = &port.default_value {
+                    visit(
+                        &format!(
+                            "nodes[{}].ports[{}].default_value",
+                            node.node_id, port.port_id
+                        ),
+                        HeldReference::Selection(selection),
+                    );
+                }
+            }
+        }
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        for port in self.nodes.iter_mut().flat_map(|node| node.ports.iter_mut()) {
+            if let Some(FlowValue::Selection(selection)) = &mut port.default_value {
+                visit(selection);
+            }
+        }
+    }
+}
+
 impl FlowDefinition {
     /// Create a new, empty flow definition.
     pub fn new(identifiers: Identifiers) -> Self {
@@ -86,16 +114,6 @@ impl FlowDefinition {
     /// Return the FlowId for this definition.
     pub fn flow_id(&self) -> FlowId {
         self.identifiers.id
-    }
-
-    /// Build a protocol snapshot for UI sync.
-    pub fn to_snapshot(&self) -> FlowDefinitionSnapshot {
-        FlowDefinitionSnapshot {
-            flow_id: self.flow_id(),
-            flow_version: self.flow_version,
-            nodes: self.nodes.clone(),
-            edges: self.edges.clone(),
-        }
     }
 
     /// Apply a FlowDelta, returning the updated version and any errors.

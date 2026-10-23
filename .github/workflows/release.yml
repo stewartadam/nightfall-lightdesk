@@ -127,6 +127,19 @@ jobs:
             --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID"
 
           app="$GITHUB_WORKSPACE/payload/Nightfall.app"
+          # Keep in sync with desktop/app-tauri/Entitlements.plist. The hardened runtime blocks the
+          # microphone, which LTC timecode input reads, unless the app declares it.
+          entitlements="$RUNNER_TEMP/Nightfall.entitlements"
+          cat > "$entitlements" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          	<key>com.apple.security.device.audio-input</key>
+          	<true/>
+          </dict>
+          </plist>
+          PLIST
           # Sign nested Mach-O files before the outer bundle; never run the app or its helpers.
           while IFS= read -r -d '' binary; do
             if file -b "$binary" | grep -q 'Mach-O'; then
@@ -135,7 +148,7 @@ jobs:
             fi
           done < <(find "$app" -type f -print0)
           codesign --force --timestamp --options runtime --keychain "$keychain" \
-            --sign "$APPLE_SIGNING_IDENTITY" "$app"
+            --entitlements "$entitlements" --sign "$APPLE_SIGNING_IDENTITY" "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
           ditto -c -k --keepParent "$app" "$RUNNER_TEMP/Nightfall.zip"
           xcrun notarytool submit "$RUNNER_TEMP/Nightfall.zip" --keychain "$keychain" \
@@ -145,8 +158,11 @@ jobs:
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
 
-          ln -s /Applications payload/Applications
           mkdir signed
+          # Installed apps update by replacing the whole bundle with this archive of the stapled app.
+          COPYFILE_DISABLE=1 tar -czf "$GITHUB_WORKSPACE/signed/${INSTALLER_FILENAME%.dmg}.app.tar.gz" \
+            -C payload Nightfall.app
+          ln -s /Applications payload/Applications
           dmg="$GITHUB_WORKSPACE/signed/$INSTALLER_FILENAME"
           hdiutil create -volname Nightfall -srcfolder payload -format UDZO "$dmg"
           codesign --timestamp --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
@@ -162,7 +178,14 @@ jobs:
           path: signed/*.dmg
           archive: false
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
+      - name: Upload the signed app for updates
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: signed/*.app.tar.gz
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
 
   publish:
     name: Draft version-tag release
@@ -196,6 +219,7 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
           expected=(
             aarch64-apple-darwin.dmg
+            aarch64-apple-darwin.app.tar.gz
             x86_64-pc-windows-msvc.exe
             x86_64-unknown-linux-gnu.deb
             x86_64-unknown-linux-gnu.AppImage

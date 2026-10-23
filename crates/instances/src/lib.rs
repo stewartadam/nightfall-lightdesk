@@ -13,7 +13,7 @@
 //! storage, persistence handlers, or domain materialization systems.
 
 use bevy_ecs::prelude::*;
-use nightfall::engine::{EngineAction, EngineIngressMeta, EnginePayload, IngressCommand};
+use nightfall::engine::{EngineIngressMeta, EngineOperation, EnginePayload, IngressCommand};
 use nightfall::prelude::{IdExpr, Priority};
 use nightfall_playback_planner::{PlaybackPositionSource, PlaybackReconstructionTiming};
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,8 @@ pub struct DomainInstanceReconstructionRequest {
     pub clip_uid: Uuid,
     /// Playback clock to install on the restored playback.
     pub clock: InstanceClock,
+    /// Layer priority of the owning clip, for domains that materialize compositor layers.
+    pub priority: Priority,
 }
 
 impl DomainInstanceReconstructionRequest {
@@ -38,11 +40,13 @@ impl DomainInstanceReconstructionRequest {
         source: nightfall_playback_planner::PlannedPlaybackSource,
         clip_uid: Uuid,
         clock: InstanceClock,
+        priority: Priority,
     ) -> Self {
         Self {
             source,
             clip_uid,
             clock,
+            priority,
         }
     }
 }
@@ -58,7 +62,7 @@ pub enum PlaybackScope {
 
 /// Runtime actions owned by the playback domain.
 #[derive(Debug, Clone, PartialEq)]
-pub enum PlaybackAction {
+pub enum PlaybackOperation {
     /// Release output parameters according to scope.
     ReleaseParameters {
         /// Scope to release.
@@ -66,8 +70,8 @@ pub enum PlaybackAction {
     },
 }
 
-impl EnginePayload for PlaybackAction {}
-impl EngineAction for PlaybackAction {}
+impl EnginePayload for PlaybackOperation {}
+impl EngineOperation for PlaybackOperation {}
 
 /// Marks an instance as an editor-owned preview rather than a live show playback.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -229,15 +233,6 @@ pub fn reconcile_instance_options(
     } else {
         entity_commands.remove::<InstanceOptions>();
     }
-}
-
-/// Read-only clip playback binding exported by the desk-owned resolver.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ClipInstanceBinding {
-    /// Numeric clip ID that owns the playback slot.
-    pub clip_id: u32,
-    /// Runtime playback attached to the clip.
-    pub instance_id: InstanceId,
 }
 
 /// Domain result emitted after an instance action creates or reuses playback.
@@ -599,7 +594,7 @@ impl IngressCommand for InstanceCommand {}
 
 /// Concrete internal work that releases one or more running instances.
 #[derive(Debug, Clone)]
-pub enum PlaybackReleaseAction {
+pub enum PlaybackReleaseOperation {
     /// Release one instance by runtime identity.
     One(InstanceId),
     /// Release every running instance.
@@ -610,13 +605,13 @@ pub enum PlaybackReleaseAction {
     ByTag(String),
 }
 
-impl EnginePayload for PlaybackReleaseAction {}
+impl EnginePayload for PlaybackReleaseOperation {}
 
-impl EngineIngressMeta for PlaybackReleaseAction {
-    const COMMAND_MODULE: &'static str = "PlaybackReleaseAction";
+impl EngineIngressMeta for PlaybackReleaseOperation {
+    const COMMAND_MODULE: &'static str = "PlaybackReleaseOperation";
 }
 
-impl EngineAction for PlaybackReleaseAction {}
+impl EngineOperation for PlaybackReleaseOperation {}
 
 /// High-frequency updates applied to `InstanceControls` without a user-command lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize, Message)]

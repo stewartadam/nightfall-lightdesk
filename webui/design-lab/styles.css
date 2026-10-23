@@ -14,7 +14,6 @@
 }
 .design-lab.compact {
   --panel-padding: 12px;
-  --cell-padding: 6px;
 }
 .masthead {
   flex-shrink: 0;
@@ -341,14 +340,6 @@ main {
   font-size: 11px;
   font-weight: 550;
   margin-bottom: 20px;
-}
-input[type="range"] {
-  width: 100%;
-  accent-color: var(--accent);
-  margin: 0;
-  height: 4px;
-  display: block;
-  cursor: pointer;
 }
 .button-samples {
   display: flex;

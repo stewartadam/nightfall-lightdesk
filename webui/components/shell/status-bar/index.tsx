@@ -13,6 +13,7 @@ import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
 import { CodeIcon } from "@squidlab/phosphor-solid/code";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { HardDrivesIcon } from "@squidlab/phosphor-solid/hard-drives";
+import { HourglassIcon } from "@squidlab/phosphor-solid/hourglass";
 import { ListIcon } from "@squidlab/phosphor-solid/list";
 import { WifiHighIcon } from "@squidlab/phosphor-solid/wifi-high";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -138,18 +139,30 @@ export default function StatusBar() {
               class="items-center gap-3 font-mono text-xs"
               classList={{ flex: showMetrics() }}
             >
-              <span class="inline-flex items-center gap-1">
-                <WifiHighIcon class="size-4 text-gray-500" aria-hidden />
-                {`${displayedLatencyMs().toFixed(1)}ms / ${displayedDeliveryLagMs().toFixed(1)}ms`}
-              </span>
-              <span class="inline-flex items-center gap-1">
-                <HardDrivesIcon class="size-4 text-gray-500" aria-hidden />
-                {`${displayedFps().toFixed(0)} Hz`}
-              </span>
-              <span class="inline-flex items-center gap-1">
-                <AppWindowIcon class="size-4 text-gray-500" aria-hidden />
-                {`${displayedFrontendFps().toFixed(0)} FPS`}
-              </span>
+              <Tooltip content={() => "Network latency"}>
+                <span class="inline-flex items-center gap-1">
+                  <WifiHighIcon class="size-4 text-gray-500" aria-hidden />
+                  {`${displayedLatencyMs().toFixed(1)}ms`}
+                </span>
+              </Tooltip>
+              <Tooltip content={() => "UI delivery lag"}>
+                <span class="inline-flex items-center gap-1">
+                  <HourglassIcon class="size-4 text-gray-500" aria-hidden />
+                  {`${displayedDeliveryLagMs().toFixed(1)}ms`}
+                </span>
+              </Tooltip>
+              <Tooltip content={() => "Engine frame rate"}>
+                <span class="inline-flex items-center gap-1">
+                  <HardDrivesIcon class="size-4 text-gray-500" aria-hidden />
+                  {`${displayedFps().toFixed(0)} Hz`}
+                </span>
+              </Tooltip>
+              <Tooltip content={() => "UI frame rate"}>
+                <span class="inline-flex items-center gap-1">
+                  <AppWindowIcon class="size-4 text-gray-500" aria-hidden />
+                  {`${displayedFrontendFps().toFixed(0)} FPS`}
+                </span>
+              </Tooltip>
               <span
                 aria-hidden="true"
                 class="h-4 w-px shrink-0 bg-gray-700"
@@ -200,7 +213,7 @@ export default function StatusBar() {
             />
           </div>
         </Show>
-        <div class="flex items-center" data-testid="status-clock">
+        <div class="flex items-center pl-2" data-testid="status-clock">
           {currentTime()}
         </div>
       </div>

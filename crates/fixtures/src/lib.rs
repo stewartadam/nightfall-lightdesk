@@ -30,8 +30,10 @@ pub mod placement;
 pub mod selection;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+pub mod transport_holds;
 pub mod undo;
 pub mod universe;
+pub mod universe_stream;
 pub mod websocket;
 pub mod wire_layout;
 
@@ -51,7 +53,7 @@ use crate::placement::{PlacementPosition, PlacementRotation};
 
 /// Runtime actions owned by fixture-level DMX processing.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DmxAction {
+pub enum DmxOperation {
     /// Release manual writes on DMX channels, returning each slot to whatever else feeds it.
     ReleaseChannels {
         /// Channels to release.
@@ -61,6 +63,19 @@ pub enum DmxAction {
     RestoreChannels {
         /// Per-channel manual state to restore.
         channels: Vec<ManualDmxChannelState>,
+    },
+    /// Release values held on an output transport's wire universes, so the slots carry
+    /// whatever is patched to them again.
+    ReleaseTransportChannels {
+        /// Output transport target ID, as used by patch commands.
+        target: String,
+        /// Wire channels to release.
+        channels: DmxChannelExpr,
+    },
+    /// Put wire channels back into a previously captured hold state (used by undo).
+    RestoreTransportChannels {
+        /// Per-channel hold state to restore.
+        channels: Vec<HeldTransportDmxChannelState>,
     },
 }
 
@@ -73,8 +88,19 @@ pub struct ManualDmxChannelState {
     pub manual_value: Option<ChannelDmxValue>,
 }
 
-impl EnginePayload for DmxAction {}
-impl EngineAction for DmxAction {}
+/// Hold state of one wire channel of an output transport, captured for undo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldTransportDmxChannelState {
+    /// Output transport target ID, as used by patch commands.
+    pub target: String,
+    /// Wire channel the state belongs to.
+    pub channel: DmxChannelRef,
+    /// Held value, or `None` when no hold owned the channel.
+    pub held_value: Option<ChannelDmxValue>,
+}
+
+impl EnginePayload for DmxOperation {}
+impl EngineOperation for DmxOperation {}
 
 /// Prelude for ergonomic imports
 pub mod prelude {
@@ -119,8 +145,9 @@ pub mod prelude {
     };
     pub use crate::wire_layout::{PlacedParameter, WireLayout};
     pub use crate::{
-        BindingEndpoint, DmxAction, FixtureCommand, FixturePlacementPositionUpdate,
-        FixturePlacementRotationUpdate, FixturePlugin, ManualDmxChannelState,
+        BindingEndpoint, DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
+        FixturePlacementRotationUpdate, FixturePlugin, HeldTransportDmxChannelState,
+        ManualDmxChannelState,
     };
 }
 
@@ -131,12 +158,22 @@ impl Plugin for FixturePlugin {
         tracing::debug!("Registering FixturePlugin");
         app.add_plugins(input_apply::TransportInputPlugin);
         register_ingress_command::<FixtureCommand>(app);
-        register_engine_action::<DmxAction>(app);
+        register_engine_operation::<DmxOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FixtureAstConverter>(
         );
         register_command_deserializer::<FixtureCommand>(
             app,
             websocket::deserialize_fixture_command,
+        );
+        register_client_update_deserializer(
+            app,
+            parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE,
+            websocket::deserialize_parameter_keyframe_request,
+        );
+        register_client_update_deserializer(
+            app,
+            universe_stream::DMX_UNIVERSE_WATCH_MODULE,
+            universe_stream::deserialize_dmx_universe_watch,
         );
 
         app.init_resource::<data_provider_ext::FixtureDataProviderExt>();
@@ -147,9 +184,11 @@ impl Plugin for FixturePlugin {
         app.init_resource::<bindings::ConsoleDmxAddresses>();
         app.init_resource::<binding_validation::BindingValidationSettings>();
         app.init_resource::<parameter_state::ParameterStateProjection>();
+        app.init_resource::<websocket::ParameterStateRequests>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
         app.init_resource::<universe::InputUniverseStaleTimeout>();
+        app.init_resource::<universe_stream::DmxUniverseStream>();
         app.init_resource::<output_frames::OutputRouting>();
         app.init_resource::<output_frames::OutputDmxFrames>();
         app.init_resource::<nightfall_io::NetworkDmxOutputTargets>();
@@ -162,25 +201,26 @@ impl Plugin for FixturePlugin {
         {
             let mut registry = app.world_mut().resource_mut::<UndoRegistry>();
             registry.register::<FixtureCommand>();
-            registry.register_action::<undo::RestoreFixtureSnapshot>();
-            registry.register_action::<undo::RestoreBindingSnapshot>();
-            registry.register_action::<undo::RestorePatchBindingsSnapshot>();
-            registry.register_action::<undo::RestoreOffsetSnapshot>();
-            registry.register_action::<undo::RestoreColorPathDefaultsSnapshot>();
-            registry.register_action::<DmxAction>();
+            registry.register_operation::<undo::RestoreFixtureSnapshot>();
+            registry.register_operation::<undo::RestoreBindingSnapshot>();
+            registry.register_operation::<undo::RestorePatchBindingsSnapshot>();
+            registry.register_operation::<undo::RestoreOffsetSnapshot>();
+            registry.register_operation::<undo::RestoreColorPathDefaultsSnapshot>();
+            registry.register_operation::<DmxOperation>();
         }
 
         // Register event dispatchers for undo helper commands
-        register_engine_action::<undo::RestoreFixtureSnapshot>(app);
-        register_engine_action::<undo::RestoreBindingSnapshot>(app);
-        register_engine_action::<undo::RestorePatchBindingsSnapshot>(app);
-        register_engine_action::<undo::RestoreOffsetSnapshot>(app);
-        register_engine_action::<undo::RestoreColorPathDefaultsSnapshot>(app);
+        register_engine_operation::<undo::RestoreFixtureSnapshot>(app);
+        register_engine_operation::<undo::RestoreBindingSnapshot>(app);
+        register_engine_operation::<undo::RestorePatchBindingsSnapshot>(app);
+        register_engine_operation::<undo::RestoreOffsetSnapshot>(app);
+        register_engine_operation::<undo::RestoreColorPathDefaultsSnapshot>(app);
 
         app.add_systems(
             Update,
             (
                 events::handle_set_dmx_channels,
+                transport_holds::handle_set_transport_dmx_channels,
                 events::handle_restore_fixture_snapshot
                     .after(nightfall_undo::systems::handle_undo_commands),
                 events::handle_restore_binding_snapshot,
@@ -190,6 +230,13 @@ impl Plugin for FixturePlugin {
             )
                 .chain()
                 .in_set(EventHandling),
+        );
+
+        // Runs after every event handler, like the console manual layer, so releases planned
+        // by user commands in this update apply before the next render.
+        app.add_systems(
+            Update,
+            transport_holds::handle_transport_dmx_operations.after(EventHandling),
         );
 
         app.add_systems(
@@ -210,6 +257,7 @@ impl Plugin for FixturePlugin {
                 binding_resolution::resolve_output_bindings,
                 output_frames::update_input_routing,
                 universe::dmx_universes,
+                transport_holds::resolve_transport_holds,
                 output_frames::compose_output_frames,
                 universe::dmx_universes_debug,
             )
@@ -230,7 +278,8 @@ impl Plugin for FixturePlugin {
         app.add_systems(
             Render,
             (
-                websocket::send_dmx_universes.after(DmxOutput),
+                universe_stream::send_dmx_universes.after(DmxOutput),
+                websocket::send_input_contribution_trace,
                 websocket::send_bindings_on_change,
                 websocket::send_color_path_defaults_on_change,
                 websocket::send_binding_validation_settings_on_change,
@@ -242,6 +291,11 @@ impl Plugin for FixturePlugin {
         app.add_systems(
             Update,
             websocket::handle_resync_state.in_set(ResyncHandling),
+        );
+        app.add_systems(
+            Update,
+            // After update ingress, so a watch sent just before a disconnect cannot outlive it.
+            universe_stream::forget_disconnected_watchers.in_set(EventHandling),
         );
     }
 }
@@ -357,6 +411,16 @@ pub enum FixtureCommand {
         value: ChannelDmxValue,
     },
 
+    /// Hold raw values on an output transport's wire universes, over anything patched there
+    SetTransportDmxChannels {
+        /// Output transport target ID, as used by patch commands
+        target: String,
+        /// Wire channel selection expression
+        channels: DmxChannelExpr,
+        /// Raw DMX value (0-255)
+        value: ChannelDmxValue,
+    },
+
     /// Update placement for multiple fixtures in one command.
     UpdateFixturePlacements {
         /// Per-fixture updates to apply.
@@ -383,7 +447,7 @@ pub enum FixtureCommand {
         target: BindingEndpoint,
         /// Binding priority (lower runs first)
         priority: i32,
-        /// Clone source address across target range
+        /// Give every fixture the same address instead of packing them one after another
         clone: bool,
     },
 

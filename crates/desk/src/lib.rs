@@ -10,14 +10,14 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_actions::ActionsPlugin;
-use nightfall_clips::{ClipAction, ClipCommand, InstanceIndex, RestoreClipSource};
+use nightfall_clips::{ClipCommand, ClipOperation, InstanceIndex, RestoreClipSource};
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
 #[cfg(feature = "fx-module-host")]
 use nightfall_fx_module::FxModuleRuntimeNotification;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, InstanceCommand, InstanceControlUpdate,
-    PlaybackAction, PlaybackReleaseAction,
+    PlaybackOperation, PlaybackReleaseOperation,
 };
 use nightfall_io::{AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState};
 use nightfall_undo::{UndoPlugin, prelude::*};
@@ -36,7 +36,8 @@ pub mod desk_command;
 pub mod group_command;
 pub mod instances;
 pub mod masters;
-mod object_crud;
+pub mod object_crud;
+mod panel_layouts;
 pub mod resources;
 pub mod settings;
 pub mod systems;
@@ -47,29 +48,31 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
-        CONTROL_SET_ACTION_ID, ControlActionArguments, DESK_EVAL_ACTION_ID,
-        DeskEvalActionArguments, clip_target_for_action, desk_eval_action,
-        desk_eval_command_for_action, set_control_action,
+        CONTROL_BUTTON_ACTION_ID, CONTROL_GO_ACTION_ID, CONTROL_LEVEL_ACTION_ID,
+        ControlActionArguments, MASTER_LEVEL_ACTION_ID, MASTER_OFF_ACTION_ID, MASTER_ON_ACTION_ID,
+        MASTER_TOGGLE_ACTION_ID, MasterActionArguments, control_button_action, control_go_action,
+        control_level_action, master_level_action, master_toggle_action,
     };
     pub use crate::controls::{
-        ControlAssignment, ControlCommand, ControlSnapshot, ControlUpdate, Controls,
+        ControlAssignment, ControlButtonMode, ControlCommand, ControlSlotConfig, ControlSnapshot,
+        ControlUpdate, Controls, HeldButtonEffect, HeldButtonEffects,
     };
     pub use crate::desk_command::{
         DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
-        ShowfileSaveOptions,
     };
-    pub use crate::group_command::GroupAction;
     pub use crate::group_command::GroupCommand;
+    pub use crate::group_command::GroupOperation;
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
-        MasterCommand, MasterKind, MasterMode, MasterTarget,
+        MasterCommand, MasterKind, MasterMode, MasterTarget, add_default_show_masters,
     };
     pub use crate::resources::ExclusiveResource;
     pub use crate::resources::network_stats::{NetworkOutputSendFailure, NetworkStats};
     pub use crate::settings::{
-        ActivePanelLayout, AvailableAudioDevices, DeskSettings, SelectionFlattenPolicy,
+        AvailableAudioDevices, DeskSettings, GraphicsReport, PanelLayoutArrangement,
+        PanelLayoutRename, PanelLayoutVisibility, ReportedGraphics, SelectionFlattenPolicy,
         SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
-        TimeDisplayPreference, TimelinePlacementPreference,
+        TelemetryConsent, TelemetryState, TimeDisplayPreference, TimelinePlacementPreference,
     };
     pub use crate::systems::relations::apply_virtual_relations;
     pub use crate::systems::vdim::{
@@ -103,17 +106,19 @@ impl Plugin for DeskPlugin {
         automation_actions::register_desk_actions(app);
 
         register_ingress_command::<DeskCommand>(app);
-        register_engine_action::<EvalAction>(app);
+        register_engine_operation::<EvalOperation>(app);
         register_ingress_command::<ClipCommand>(app);
-        register_engine_action::<ClipAction>(app);
+        register_engine_operation::<ClipOperation>(app);
         register_ingress_command::<GroupCommand>(app);
-        app.add_message::<EngineActionEnvelope<GroupAction>>();
+        app.add_message::<EngineOperationEnvelope<GroupOperation>>();
         register_ingress_command::<MasterCommand>(app);
         app.add_message::<masters::MasterUpdate>();
         register_ingress_command::<BlueprintCommand>(app);
-        app.add_message::<EngineActionEnvelope<BlueprintAction>>();
+        app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
         app.add_message::<BlueprintDefinitionChange>();
         app.init_resource::<BlueprintReferenceIndex>();
+        app.init_resource::<GroupReferenceIndex>();
+        app.init_resource::<websocket::LayerStackPublication>();
         app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<UiNotification>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
@@ -126,8 +131,8 @@ impl Plugin for DeskPlugin {
         register_ingress_command::<SettingsCommand>(app);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
         register_ingress_command::<InstanceCommand>(app);
-        register_engine_action::<PlaybackAction>(app);
-        register_engine_action::<PlaybackReleaseAction>(app);
+        register_engine_operation::<PlaybackOperation>(app);
+        register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
         register_ingress_command::<ControlCommand>(app);
         app.add_message::<ControlUpdate>();
@@ -157,6 +162,7 @@ impl Plugin for DeskPlugin {
             websocket::deserialize_control_command,
         );
         register_update_deserializer(app, "ControlUpdate", websocket::deserialize_control_update);
+        register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::DeskAstConverter>(
         );
@@ -170,9 +176,12 @@ impl Plugin for DeskPlugin {
         app.init_resource::<DeskSettings>();
         app.init_resource::<IoRuntimeSettings>();
         app.init_resource::<nightfall_io::ExternalControlState>();
+        app.init_resource::<crate::settings::TelemetryState>();
+        app.init_resource::<crate::settings::ReportedGraphics>();
         app.init_resource::<AvailableAudioDevices>();
         app.init_resource::<AvailableUsbDmxDevices>();
         app.init_resource::<Controls>();
+        app.init_resource::<HeldButtonEffects>();
         app.init_resource::<NetworkInterfaceState>();
         app.init_resource::<UiNotificationState>();
         app.init_resource::<FramePaceStats>();
@@ -187,26 +196,36 @@ impl Plugin for DeskPlugin {
             registry.register::<GroupCommand>();
             registry.register::<MasterCommand>();
             registry.register::<ClipCommand>();
-            registry.register_action::<RestoreClipSource>();
+            registry.register_operation::<RestoreClipSource>();
         }
 
         // Register event dispatchers for undo helper commands
-        register_engine_action::<RestoreClipSource>(app);
+        register_engine_operation::<RestoreClipSource>(app);
 
         // Process scheduled commands before the undo system processes pending commands
         // This ensures commands that have reached their scheduled time are moved to
         // PendingCommandBuffer before undo processing
         app.add_systems(
             Update,
-            systems::scheduled_commands::process_scheduled_commands
-                .after(InputHandling)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+            systems::scheduled_commands::process_scheduled_commands.in_set(PendingCommandExpansion),
         );
         app.add_systems(
             Update,
             systems::event_handlers::desk_events::expand_pending_eval_commands
                 .after(systems::scheduled_commands::process_scheduled_commands)
-                .before(nightfall_undo::dispatcher::process_pending_commands),
+                .in_set(DeskEventSet::EvalExpansion)
+                .in_set(PendingCommandExpansion),
+        );
+        app.add_message::<ClientDisconnected>();
+        app.add_systems(
+            Update,
+            (
+                controls::expand_control_button_commands,
+                controls::end_released_flashes,
+            )
+                .chain()
+                .after(systems::event_handlers::desk_events::expand_pending_eval_commands)
+                .in_set(PendingCommandExpansion),
         );
 
         // Maintain InstanceIndex on spawn/despawn, and sync clip active state
@@ -222,11 +241,6 @@ impl Plugin for DeskPlugin {
                     .after(nightfall_clips::remove_instances_from_index),
             ),
         );
-        app.add_systems(
-            Update,
-            blueprint_command::rebuild_step_fx_blueprint_reference_index,
-        );
-
         app.add_systems(
             Render,
             (
@@ -271,6 +285,12 @@ impl Plugin for DeskPlugin {
             )
                 .in_set(EventHandling),
         );
+        app.add_systems(
+            Update,
+            event_handlers::desk_events::reject_disk_storage_commands
+                .run_if(not(disk_storage_available))
+                .in_set(EventHandling),
+        );
 
         app.add_systems(
             Update,
@@ -279,6 +299,7 @@ impl Plugin for DeskPlugin {
                 event_handlers::settings_events::finish_commands,
                 event_handlers::settings_events::sync_network_dmx_outputs_from_settings,
                 event_handlers::settings_events::sync_input_stale_timeout_from_settings,
+                event_handlers::settings_events::sync_parameter_stream_from_settings,
             )
                 .chain()
                 .in_set(EventHandling),
@@ -328,7 +349,11 @@ impl Plugin for DeskPlugin {
         // Apply per-playback intensity scaling to the generated layers before compositing.
         app.add_systems(
             Render,
-            systems::instance_controls::apply_playback_intensity
+            (
+                controls::resolve_held_button_effects,
+                systems::instance_controls::apply_playback_intensity,
+            )
+                .chain()
                 .after(LayerGeneration)
                 .before(Compositing),
         );
@@ -386,7 +411,8 @@ impl Plugin for DeskPlugin {
                 websocket::send_io_settings_on_change,
                 websocket::send_available_audio_devices_on_change,
                 websocket::send_available_usb_dmx_devices_on_change,
-                websocket::handle_low_freq_updates,
+                // Layer stack slots refer to the parameter layout published before it.
+                websocket::handle_low_freq_updates.after(websocket::send_parameter_state),
             )
                 .in_set(ClientOutput),
         );

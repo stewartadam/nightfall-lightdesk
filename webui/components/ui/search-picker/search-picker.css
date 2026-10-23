@@ -21,6 +21,10 @@
   min-width: 0;
   width: 0;
 }
+/* Matches the scroll edge height so revealed rows land clear of the indicators. */
+.nf-search-picker-results > .nf-scroll-viewport {
+  scroll-padding-block: 28px;
+}
 .nf-search-picker-option {
   display: flex;
   align-items: center;

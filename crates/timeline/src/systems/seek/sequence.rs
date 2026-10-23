@@ -25,10 +25,9 @@ pub struct TimelineSequenceSeekMaterializer<'w, 's> {
     fixture_data_provider: Res<'w, FixtureDataProviderExt>,
     /// Spatial resolver used to expand cue selections.
     selection_resolver: SpatialSelectionResolver<'w>,
-    /// Read-only parameter instances used by active sequence reconstruction.
-    parameter_query: Query<'w, 's, InstanceRef<'static, Parameter>>,
-    /// Mutable parameter instances used to reconstruct released sequence output.
-    parameter_mut_query: Query<'w, 's, InstanceMut<'static, Parameter>>,
+    /// Parameter instances read by sequence reconstruction and written when rendering released
+    /// sequence output.
+    parameter_query: Query<'w, 's, InstanceMut<'static, Parameter>>,
     /// Clips that own reconstructed sequence playback.
     exec_query: Query<'w, 's, (Entity, &'static Clip)>,
 }
@@ -157,8 +156,7 @@ pub(super) fn materialize_timeline_sequences(
                     materializer.color_path_data_provider.as_deref(),
                     materializer.blueprint_data_provider.as_deref(),
                     &materializer.fixture_data_provider,
-                    &mut materializer.parameter_mut_query,
-                    &materializer.parameter_query,
+                    &mut materializer.parameter_query,
                     &materializer.selection_resolver,
                     target.position,
                     target.started_at,
@@ -215,7 +213,7 @@ pub(super) fn materialize_timeline_sequences(
                 materializer.color_path_data_provider.as_deref(),
                 materializer.blueprint_data_provider.as_deref(),
                 &materializer.fixture_data_provider,
-                &materializer.parameter_query,
+                &materializer.parameter_query.as_readonly(),
                 &materializer.selection_resolver,
                 target.position,
                 PlaybackReconstructionTiming::timeline_source_local(

@@ -8,10 +8,20 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use nightfall_engine::prelude::FrameWaker;
 use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
+use nightfall_timecode::prelude::ExternalTimecodeFeed;
+
+use crate::mtc::{MtcDecoder, is_timecode_message};
+
+mod output;
+
+pub use output::MidiOutputClient;
+#[cfg(test)]
+pub(crate) use output::MidiOutputMessage;
+use output::MidiOutputWorker;
 
 /// Raw MIDI event emitted by the process-lifetime MIDI service.
 #[derive(Debug, Clone)]
@@ -24,6 +34,10 @@ pub struct MidiInputEvent {
     pub note: u8,
     /// Velocity or control value.
     pub velocity: u8,
+    /// When the input callback received the message. Tap tempo times taps from it, and
+    /// controller mapping mode uses it so input queued before the mode began is not
+    /// mistaken for a touch.
+    pub received_at: Instant,
 }
 
 /// MIDI input client used inside ECS worlds.
@@ -138,18 +152,18 @@ type MidiDeviceInfo = MidiPortDescriptor<midir::MidiInputPort>;
 /// Live MIDI connection state keyed by stable device id.
 ///
 /// The generic connection type keeps refresh logic testable without opening real MIDI ports.
-struct ConnectedMidiInput<C> {
+struct ConnectedMidiPort<C> {
     id: String,
     name: String,
-    _connection: C,
+    connection: C,
 }
 
-impl<C> ConnectedMidiInput<C> {
+impl<C> ConnectedMidiPort<C> {
     fn new(id: String, name: String, connection: C) -> Self {
         Self {
             id,
             name,
-            _connection: connection,
+            connection,
         }
     }
 }
@@ -166,11 +180,22 @@ pub(crate) struct MidiInputWorker {
     discovery_input: Option<midir::MidiInput>,
     topology_change_rx: Option<std::sync::mpsc::Receiver<()>>,
     last_discovery_error: Option<String>,
-    connections: Vec<ConnectedMidiInput<midir::MidiInputConnection<()>>>,
+    connections: Vec<ConnectedMidiPort<midir::MidiInputConnection<()>>>,
+    /// Name of the only port to connect to, or `None` to connect to every discovered port.
+    input_port: Option<String>,
+    /// Outputs paired with the connected inputs, for controller feedback.
+    pub(crate) output: MidiOutputWorker,
+    /// Receives MIDI timecode decoded from any connected port.
+    timecode_feed: ExternalTimecodeFeed,
 }
 
 impl MidiInputWorker {
-    pub(crate) fn spawn() -> Option<Self> {
+    /// Starts a worker that connects to `input_port` only, or to every port when `None`, and
+    /// publishes MIDI timecode it receives to `timecode_feed`.
+    pub(crate) fn spawn(
+        input_port: Option<String>,
+        timecode_feed: ExternalTimecodeFeed,
+    ) -> Option<Self> {
         let (event_tx, _) = tokio::sync::broadcast::channel(1024);
         let mut worker = Self {
             event_tx,
@@ -179,6 +204,9 @@ impl MidiInputWorker {
             topology_change_rx: nightfall_coremidi_hotplug::spawn_device_update_listener(),
             last_discovery_error: None,
             connections: Vec::new(),
+            input_port,
+            output: MidiOutputWorker::spawn(),
+            timecode_feed,
         };
         worker.refresh();
         tracing::info!("Connected to {} MIDI device(s)", worker.connections.len());
@@ -187,6 +215,7 @@ impl MidiInputWorker {
 
     pub(crate) fn shutdown(&mut self) {
         self.connections.clear();
+        self.output.close_all();
     }
 
     pub(crate) fn is_alive(&self) -> bool {
@@ -196,6 +225,7 @@ impl MidiInputWorker {
     pub(crate) fn refresh(&mut self) -> bool {
         if topology_changed(&self.topology_change_rx) {
             self.discovery_input = None;
+            self.output.reconnect_all();
         }
 
         if self.discovery_input.is_none() {
@@ -208,7 +238,7 @@ impl MidiInputWorker {
                 }
                 Err(error) => {
                     if self.last_discovery_error.as_deref() != Some(error.as_str()) {
-                        tracing::error!("Failed to create MIDI input for discovery: {}", error);
+                        tracing::warn!("Failed to create MIDI input for discovery: {}", error);
                         self.last_discovery_error = Some(error);
                     }
 
@@ -226,12 +256,17 @@ impl MidiInputWorker {
             .discovery_input
             .as_ref()
             .map(discover_ports)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|port| port_allowed(self.input_port.as_deref(), &port.name))
+            .collect();
         let event_tx = self.event_tx.clone();
+        let timecode_feed = self.timecode_feed.clone();
         let changed = refresh_connections(&mut self.connections, discovered_ports, |port, name| {
-            connect_to_port(&port, name, &event_tx)
+            connect_to_port(&port, name, &event_tx, &timecode_feed)
         });
         let device_names = connected_device_names(&self.connections);
+        self.output.refresh(&device_names);
         if self.device_names != device_names {
             tracing::info!(
                 previous_devices = ?self.device_names,
@@ -260,6 +295,11 @@ fn topology_changed(topology_change_rx: &Option<std::sync::mpsc::Receiver<()>>) 
     })
 }
 
+/// Returns whether a port may be connected under an optional exclusive port name.
+fn port_allowed(input_port: Option<&str>, port_name: &str) -> bool {
+    input_port.is_none_or(|input_port| input_port == port_name)
+}
+
 fn discover_ports(midi_in: &midir::MidiInput) -> Vec<MidiDeviceInfo> {
     midi_in
         .ports()
@@ -269,6 +309,7 @@ fn discover_ports(midi_in: &midir::MidiInput) -> Vec<MidiDeviceInfo> {
             midi_in
                 .port_name(&port)
                 .ok()
+                .filter(|name| !output::is_own_feedback_port(name))
                 .map(|name| MidiDeviceInfo { port, id, name })
         })
         .collect()
@@ -279,7 +320,7 @@ fn discover_ports(midi_in: &midir::MidiInput) -> Vec<MidiDeviceInfo> {
 /// Connections stay in a `Vec` so the worker can preserve discovery order and duplicate device
 /// names while still keying reconciliation by the stable port id.
 fn refresh_connections<P, C>(
-    connections: &mut Vec<ConnectedMidiInput<C>>,
+    connections: &mut Vec<ConnectedMidiPort<C>>,
     discovered_ports: Vec<MidiPortDescriptor<P>>,
     mut connect: impl FnMut(P, String) -> Option<C>,
 ) -> bool {
@@ -310,7 +351,7 @@ fn refresh_connections<P, C>(
         let device_id = device.id;
         let device_name = device.name;
         if let Some(connection) = connect(device.port, device_name.clone()) {
-            connections.push(ConnectedMidiInput::new(
+            connections.push(ConnectedMidiPort::new(
                 device_id.clone(),
                 device_name,
                 connection,
@@ -330,7 +371,7 @@ fn refresh_connections<P, C>(
     previous_connection_count != connections.len() || added_connection
 }
 
-fn connected_device_names<C>(connections: &[ConnectedMidiInput<C>]) -> Vec<String> {
+fn connected_device_names<C>(connections: &[ConnectedMidiPort<C>]) -> Vec<String> {
     connections
         .iter()
         .map(|connection| connection.name.clone())
@@ -338,10 +379,14 @@ fn connected_device_names<C>(connections: &[ConnectedMidiInput<C>]) -> Vec<Strin
 }
 
 /// Open one MIDI input connection and forward incoming messages onto `event_tx`.
+///
+/// MIDI timecode is decoded here instead, with its own decoder per connection, and published to
+/// `timecode_feed`. It streams continuously, so it is kept out of the control event stream.
 fn connect_to_port(
     port: &midir::MidiInputPort,
     device_name: String,
     event_tx: &tokio::sync::broadcast::Sender<MidiInputEvent>,
+    timecode_feed: &ExternalTimecodeFeed,
 ) -> Option<midir::MidiInputConnection<()>> {
     let mut midi_in = match midir::MidiInput::new("nightfall") {
         Ok(midi_in) => midi_in,
@@ -354,16 +399,24 @@ fn connect_to_port(
 
     let device_name_for_callback = device_name.clone();
     let event_tx = event_tx.clone();
+    let timecode_feed = timecode_feed.clone();
+    let mut mtc_decoder = MtcDecoder::default();
     let connection = midi_in.connect(
         port,
         "nightfall-input",
         move |_timestamp, message, _| {
-            if message.len() >= 3 {
+            let received_at = Instant::now();
+            if is_timecode_message(message) {
+                if let Some(frame) = mtc_decoder.decode(message, received_at) {
+                    timecode_feed.publish(frame);
+                }
+            } else if message.len() >= 3 {
                 let _ = event_tx.send(MidiInputEvent {
                     device: device_name_for_callback.clone(),
                     channel: message[0],
                     note: message[1],
                     velocity: message[2],
+                    received_at,
                 });
             } else if message.len() >= 2 {
                 let _ = event_tx.send(MidiInputEvent {
@@ -371,6 +424,7 @@ fn connect_to_port(
                     channel: message[0],
                     note: message[1],
                     velocity: 0,
+                    received_at,
                 });
             }
         },
@@ -394,6 +448,9 @@ fn connect_to_port(
 pub struct MidiInputService {
     slot: WorkerSlot<MidiInputWorker>,
     client: MidiInputClient,
+    output_client: MidiOutputClient,
+    input_port: Mutex<Option<String>>,
+    timecode_feed: ExternalTimecodeFeed,
 }
 
 impl MidiInputService {
@@ -401,17 +458,46 @@ impl MidiInputService {
         Self {
             slot: WorkerSlot::new(),
             client: MidiInputClient::default(),
+            output_client: MidiOutputClient::default(),
+            input_port: Mutex::new(None),
+            timecode_feed: ExternalTimecodeFeed::default(),
         }
+    }
+
+    /// Feed receiving MIDI timecode from every connected port, kept across worker restarts.
+    pub fn timecode_feed(&self) -> ExternalTimecodeFeed {
+        self.timecode_feed.clone()
+    }
+
+    /// Restricts MIDI input to the named port, or to every port when `None`.
+    ///
+    /// A running worker drops connections to other ports on its next refresh.
+    pub fn set_input_port(&self, input_port: Option<String>) {
+        if let Ok(mut current) = self.input_port.lock() {
+            current.clone_from(&input_port);
+        }
+        self.slot.with_worker(|worker| {
+            if let Some(worker) = worker {
+                worker.input_port = input_port;
+            }
+        });
     }
 
     /// Ensure a process-lifetime MIDI worker is running.
     pub fn ensure_started(&self) -> bool {
+        let input_port = self
+            .input_port
+            .lock()
+            .map(|input_port| input_port.clone())
+            .unwrap_or_default();
         let has_worker = self.slot.ensure(
-            MidiInputWorker::spawn,
+            || MidiInputWorker::spawn(input_port, self.timecode_feed.clone()),
             |worker| worker.shutdown(),
             |worker| worker.is_alive(),
         );
         let (sender, devices) = self.slot.with_worker(|worker| {
+            self.output_client
+                .set_worker(worker.as_ref().map(|worker| &worker.output));
             if let Some(worker) = worker {
                 (Some(worker.event_tx.clone()), worker.device_names.clone())
             } else {
@@ -425,6 +511,11 @@ impl MidiInputService {
     /// Cloneable MIDI input client for insertion into ECS worlds.
     pub fn client(&self) -> MidiInputClient {
         self.client.clone()
+    }
+
+    /// Cloneable client that sends feedback to the outputs paired with input devices.
+    pub fn output_client(&self) -> MidiOutputClient {
+        self.output_client.clone()
     }
 
     /// Refresh connected devices for the running worker and publish updated state.
@@ -452,6 +543,7 @@ impl MidiInputService {
     pub fn shutdown(&self) {
         self.slot.shutdown(|worker| worker.shutdown());
         self.client.set_state(None, Vec::new());
+        self.output_client.set_worker(None);
     }
 }
 
@@ -495,12 +587,12 @@ mod tests {
     #[test]
     fn refresh_connections_adds_and_removes_devices() {
         let mut connections = vec![
-            ConnectedMidiInput::new(
+            ConnectedMidiPort::new(
                 "port-a".to_string(),
                 "controller-a".to_string(),
                 TestConnection("existing"),
             ),
-            ConnectedMidiInput::new(
+            ConnectedMidiPort::new(
                 "stale-port".to_string(),
                 "stale-device".to_string(),
                 TestConnection("stale"),
@@ -529,13 +621,13 @@ mod tests {
             connected_device_names(&connections),
             vec!["controller-a", "controller-b"]
         );
-        assert_eq!(connections[0]._connection, TestConnection("existing"));
-        assert_eq!(connections[1]._connection, TestConnection("port-b"));
+        assert_eq!(connections[0].connection, TestConnection("existing"));
+        assert_eq!(connections[1].connection, TestConnection("port-b"));
     }
 
     #[test]
     fn refresh_connections_skips_reconnecting_existing_devices() {
-        let mut connections = vec![ConnectedMidiInput::new(
+        let mut connections = vec![ConnectedMidiPort::new(
             "port-a".to_string(),
             "controller-a".to_string(),
             TestConnection("existing"),
@@ -557,12 +649,12 @@ mod tests {
 
         assert!(!changed);
         assert_eq!(connection_attempts, 0);
-        assert_eq!(connections[0]._connection, TestConnection("existing"));
+        assert_eq!(connections[0].connection, TestConnection("existing"));
     }
 
     #[test]
     fn refresh_connections_keeps_distinct_ports_with_same_name() {
-        let mut connections = vec![ConnectedMidiInput::new(
+        let mut connections = vec![ConnectedMidiPort::new(
             "port-a".to_string(),
             "controller".to_string(),
             TestConnection("existing-a"),
@@ -590,13 +682,13 @@ mod tests {
             connected_device_names(&connections),
             vec!["controller", "controller"]
         );
-        assert_eq!(connections[0]._connection, TestConnection("existing-a"));
-        assert_eq!(connections[1]._connection, TestConnection("port-b"));
+        assert_eq!(connections[0].connection, TestConnection("existing-a"));
+        assert_eq!(connections[1].connection, TestConnection("port-b"));
     }
 
     #[test]
     fn refresh_connections_replaces_stale_port_when_name_is_reused() {
-        let mut connections = vec![ConnectedMidiInput::new(
+        let mut connections = vec![ConnectedMidiPort::new(
             "stale-port".to_string(),
             "controller".to_string(),
             TestConnection("stale"),
@@ -620,6 +712,16 @@ mod tests {
         assert_eq!(connection_attempts, 1);
         assert_eq!(connected_device_names(&connections), vec!["controller"]);
         assert_eq!(connections[0].id, "fresh-port");
-        assert_eq!(connections[0]._connection, TestConnection("fresh-port"));
+        assert_eq!(connections[0].connection, TestConnection("fresh-port"));
+    }
+
+    /// Verifies an exclusive input port admits only the port with exactly that name, and no
+    /// exclusive port admits every port.
+    #[test]
+    fn port_allowed_matches_only_the_exclusive_port_name() {
+        assert!(port_allowed(None, "Any Controller"));
+        assert!(port_allowed(Some("E2E Pad"), "E2E Pad"));
+        assert!(!port_allowed(Some("E2E Pad"), "E2E Pad 2"));
+        assert!(!port_allowed(Some("E2E Pad"), "Other Controller"));
     }
 }

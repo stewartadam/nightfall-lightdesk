@@ -108,7 +108,7 @@ export function TransitionScrubber(props: {
   return (
     <Show when={props.enabled && props.playback && duration() > 0}>
       <div
-        class="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 text-xs dark:border-gray-700"
+        class="flex shrink-0 items-center gap-2 border-b border-neutral-700 px-3 py-2 text-xs"
         data-testid="transition-scrubber"
       >
         <ToolbarButton

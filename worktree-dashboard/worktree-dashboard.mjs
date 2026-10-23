@@ -17,6 +17,7 @@ import { basename, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
+import { removeWorktree } from "./worktree-remove.mjs";
 
 // Preserve launcher settings without inheriting the dashboard's dotenv file.
 const SERVICE_BASE_ENV = { ...process.env };
@@ -60,9 +61,24 @@ const SERVICE_DEFINITIONS = {
     cargo: true,
     args: ["run", "-p", "nightfall-input-sacn", "--bin", "send-sacn"],
   },
+  docs: {
+    command: process.platform === "win32" ? "mdbook.exe" : "mdbook",
+    requiresPort: true,
+    /** Serves the user manual on this worktree's docs port so worktrees never share one. */
+    args: (env) => {
+      const port = servicePortFromEnv("docs", env);
+      if (port === null) {
+        throw new Error("docs needs a valid NIGHTFALL_PORT in .env");
+      }
+      return ["serve", "docs", "--port", String(port)];
+    },
+    installHint:
+      'install mdBook as described under "Building the documentation" in CONTRIBUTING.md',
+  },
 };
 const SERVICES = Object.keys(SERVICE_DEFINITIONS);
-const PORT_SCOPED_SERVICES = new Set(["backend", "ui"]);
+/** Offsets from NIGHTFALL_PORT for the services that listen on a port. */
+const SERVICE_PORT_OFFSETS = { backend: 0, ui: 1, docs: 2 };
 const COMPLETION_SCOPED_SERVICES = new Set(["wasm"]);
 
 mkdirSync(LOG_DIR, { recursive: true });
@@ -120,6 +136,13 @@ function createServiceState() {
   };
 }
 
+/** Stands in for a worktree whose services the dashboard has never touched. */
+const EMPTY_MANAGED_RECORD = Object.freeze(
+  Object.fromEntries(
+    SERVICES.map((service) => [service, Object.freeze(createServiceState())]),
+  ),
+);
+
 function getManagedRecord(worktreePath) {
   const existing = managedServices.get(worktreePath);
   if (existing) return existing;
@@ -131,7 +154,23 @@ function getManagedRecord(worktreePath) {
   return created;
 }
 
-/** Selects the Cargo executable from the same environment used by the child. */
+/**
+ * Returns the port a service listens on, derived from NIGHTFALL_PORT in the
+ * given environment, or null for services without a port or when
+ * NIGHTFALL_PORT is missing or not a number.
+ */
+export function servicePortFromEnv(service, env) {
+  const offset = SERVICE_PORT_OFFSETS[service];
+  if (offset === undefined) return null;
+  const nightfallPort = Number.parseInt(env.NIGHTFALL_PORT ?? "", 10);
+  return Number.isFinite(nightfallPort) ? nightfallPort + offset : null;
+}
+
+/**
+ * Builds a service's command line from the same environment used by the
+ * child: Cargo services honor NIGHTFALL_CARGO_COMMAND, and services whose
+ * arguments depend on the worktree (such as the docs port) resolve them here.
+ */
 export function commandForService(service, env) {
   const definition = SERVICE_DEFINITIONS[service];
   if (definition) {
@@ -139,10 +178,15 @@ export function commandForService(service, env) {
       ? env.NIGHTFALL_CARGO_COMMAND?.trim() ||
         (process.platform === "win32" ? "cargo.exe" : "cargo")
       : definition.command;
+    const args =
+      typeof definition.args === "function"
+        ? definition.args(env)
+        : definition.args;
     return {
       command,
-      args: definition.args,
-      label: `${command} ${definition.args.join(" ")}`,
+      args,
+      label: `${command} ${args.join(" ")}`,
+      installHint: definition.installHint ?? null,
     };
   }
   throw new Error(`Unsupported service: ${service}`);
@@ -314,7 +358,11 @@ function startManagedService(
   state.logStream = logStream;
 
   child.on("error", (error) => {
-    state.lastError = `${commandSpec.label}: ${error.message}`;
+    const hint =
+      error.code === "ENOENT" && commandSpec.installHint
+        ? ` (${commandSpec.installHint})`
+        : "";
+    state.lastError = `${commandSpec.label}: ${error.message}${hint}`;
     writeLogLine(state, `Process error: ${state.lastError}`);
     if (!child.pid) {
       state.running = false;
@@ -363,6 +411,13 @@ async function startServiceIfStopped(worktreePath, service, options = {}) {
   }
 
   const servicePort = await getServicePort(worktreePath, service);
+  if (SERVICE_DEFINITIONS[service].requiresPort && servicePort === null) {
+    return {
+      ok: false,
+      message: `${service} needs a valid NIGHTFALL_PORT in .env`,
+      state: serviceStateSnapshot(state),
+    };
+  }
   if (servicePort && (await probePortOpen(servicePort))) {
     return {
       ok: true,
@@ -633,24 +688,12 @@ function sleep(ms) {
   });
 }
 
+/** Resolves the port a service listens on from the worktree's `.env`. */
 async function getServicePort(worktreePath, service) {
-  if (!PORT_SCOPED_SERVICES.has(service)) {
+  if (!Object.hasOwn(SERVICE_PORT_OFFSETS, service)) {
     return null;
   }
-
-  const env = await readEnvMap(worktreePath);
-  const nightfallPortRaw = env.values.NIGHTFALL_PORT;
-  const nightfallPort = nightfallPortRaw
-    ? Number.parseInt(nightfallPortRaw, 10)
-    : Number.NaN;
-  if (!Number.isFinite(nightfallPort)) {
-    return null;
-  }
-
-  if (service === "backend") {
-    return nightfallPort;
-  }
-  return nightfallPort + 1;
+  return servicePortFromEnv(service, (await readEnvMap(worktreePath)).values);
 }
 
 /**
@@ -1002,33 +1045,34 @@ async function collectWorktreeState() {
     (await findListeningPids(port)).pids[0] ?? null;
 
   const collected = await Promise.all(
-    parsed.map(async (entry) => {
+    parsed.map(async (entry, index) => {
       const worktreePath = String(entry.worktree);
       const env = await readEnvMap(worktreePath);
       const branch = shortBranchName(
         typeof entry.branch === "string" ? entry.branch : null,
       );
-      const nightfallPortRaw = env.values.NIGHTFALL_PORT;
-      const nightfallPort = nightfallPortRaw
-        ? Number.parseInt(nightfallPortRaw, 10)
-        : Number.NaN;
-      const backendPort = Number.isFinite(nightfallPort) ? nightfallPort : null;
-      const webUiPort = Number.isFinite(nightfallPort)
-        ? nightfallPort + 1
-        : null;
-      const [backendPortOpen, webUiPortOpen] = await Promise.all([
-        backendPort ? probePortOpen(backendPort) : Promise.resolve(false),
-        webUiPort ? probePortOpen(webUiPort) : Promise.resolve(false),
-      ]);
-      const [backendPid, webUiPid] = await Promise.all([
+      const backendPort = servicePortFromEnv("backend", env.values);
+      const webUiPort = servicePortFromEnv("ui", env.values);
+      const docsPort = servicePortFromEnv("docs", env.values);
+      const [backendPortOpen, webUiPortOpen, docsPortOpen] = await Promise.all(
+        [backendPort, webUiPort, docsPort].map((port) =>
+          port ? probePortOpen(port) : Promise.resolve(false),
+        ),
+      );
+      const [backendPid, webUiPid, docsPid] = await Promise.all([
         backendPort && backendPortOpen
           ? listenerPid(backendPort)
           : Promise.resolve(null),
         webUiPort && webUiPortOpen
           ? listenerPid(webUiPort)
           : Promise.resolve(null),
+        docsPort && docsPortOpen
+          ? listenerPid(docsPort)
+          : Promise.resolve(null),
       ]);
-      const record = getManagedRecord(worktreePath);
+      // Reading without creating keeps a poll that overlaps a removal from
+      // re-adding the removed worktree's record.
+      const record = managedServices.get(worktreePath) ?? EMPTY_MANAGED_RECORD;
 
       return {
         id: worktreeIdFromPath(worktreePath),
@@ -1037,23 +1081,28 @@ async function collectWorktreeState() {
         branch,
         head: typeof entry.HEAD === "string" ? entry.HEAD : null,
         isMain: branch === "main",
+        // Git lists the primary worktree first; it and the dashboard's own checkout stay put.
+        canRemove: index > 0 && !isDashboardRootWorktree(worktreePath),
         envPath: env.envPath,
         envExists: env.exists,
         nightfallPort: backendPort,
         webUiPort,
         webUiUrl: webUiPort ? `http://localhost:${webUiPort}` : null,
-        managed: {
-          backend: serviceStateSnapshot(record.backend),
-          ui: serviceStateSnapshot(record.ui),
-          wasm: serviceStateSnapshot(record.wasm),
-          "artnet-sender": serviceStateSnapshot(record["artnet-sender"]),
-          "sacn-sender": serviceStateSnapshot(record["sacn-sender"]),
-        },
+        docsPort,
+        docsUrl: docsPort ? `http://localhost:${docsPort}` : null,
+        managed: Object.fromEntries(
+          SERVICES.map((service) => [
+            service,
+            serviceStateSnapshot(record[service]),
+          ]),
+        ),
         observed: {
           backendPortOpen,
           webUiPortOpen,
+          docsPortOpen,
           backendPid,
           webUiPid,
+          docsPid,
           artnetSenderRunning: record["artnet-sender"].running,
           sacnSenderRunning: record["sacn-sender"].running,
         },
@@ -1151,34 +1200,22 @@ function dashboardApiInfo() {
   ].join("\n");
 }
 
+/** Group selectors accepted alongside single service names. */
+const SERVICE_GROUPS = ["all", "both", "senders"];
+const SERVICE_TARGETS = [...SERVICES, ...SERVICE_GROUPS];
+/** Services whose log the dashboard can open; WASM builds are one-shot. */
+const LOG_SERVICES = SERVICES.filter((service) => service !== "wasm");
+
+/** Reads the `service` query parameter, defaulting to backend and web UI. */
 function parseServiceTarget(searchParams) {
   const service = searchParams.get("service") ?? "both";
-  if (
-    service === "all" ||
-    service === "both" ||
-    service === "backend" ||
-    service === "ui" ||
-    service === "wasm" ||
-    service === "artnet-sender" ||
-    service === "sacn-sender" ||
-    service === "senders"
-  ) {
-    return service;
-  }
-  return null;
+  return SERVICE_TARGETS.includes(service) ? service : null;
 }
 
+/** Reads the `service` query parameter of an open-log request. */
 function parseLogService(searchParams) {
   const service = searchParams.get("service") ?? "backend";
-  if (
-    service === "backend" ||
-    service === "ui" ||
-    service === "artnet-sender" ||
-    service === "sacn-sender"
-  ) {
-    return service;
-  }
-  return null;
+  return LOG_SERVICES.includes(service) ? service : null;
 }
 
 function parseSampleData(searchParams) {
@@ -1195,13 +1232,7 @@ function parseSampleData(searchParams) {
 
 async function withTargetServices(serviceTarget, handler) {
   if (serviceTarget === "all") {
-    return Promise.all([
-      handler("backend"),
-      handler("ui"),
-      handler("wasm"),
-      handler("artnet-sender"),
-      handler("sacn-sender"),
-    ]);
+    return Promise.all(SERVICES.map(handler));
   }
   if (serviceTarget === "both") {
     return Promise.all([handler("backend"), handler("ui")]);
@@ -1240,8 +1271,34 @@ async function handleServiceAction(
 }
 
 async function isKnownWorktreePath(worktreePath) {
+  return (await findKnownWorktree(worktreePath)) !== undefined;
+}
+
+/** Returns the dashboard's current summary for a worktree path, if git still lists it. */
+async function findKnownWorktree(worktreePath) {
   const current = await collectWorktreeState();
-  return current.some((entry) => entry.path === worktreePath);
+  return current.find((entry) => entry.path === worktreePath);
+}
+
+/** Parses the `force` query flag that lets removal discard local changes and unmerged work. */
+function parseForce(searchParams) {
+  const force = searchParams.get("force");
+  return force === "1" || force?.toLowerCase() === "true";
+}
+
+/**
+ * Closes a removed worktree's service logs and drops its managed-process record.
+ * A record with a child still running (its stop timed out) is kept, so its log
+ * stream stays open for the child's output and shutdown can still kill it.
+ */
+function forgetManagedRecord(worktreePath) {
+  const record = managedServices.get(worktreePath);
+  if (!record) return;
+  if (SERVICES.some((service) => record[service].running)) return;
+  for (const service of SERVICES) {
+    closeLogStream(record[service]);
+  }
+  managedServices.delete(worktreePath);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1290,7 +1347,7 @@ const server = http.createServer(async (req, res) => {
         textResponse(
           res,
           400,
-          "service must be one of: all, backend, ui, wasm, both, artnet-sender, sacn-sender, senders",
+          `service must be one of: ${SERVICE_TARGETS.join(", ")}`,
         );
         return;
       }
@@ -1389,6 +1446,47 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    const removeMatch = url.pathname.match(
+      /^\/api\/worktrees\/([^/]+)\/remove$/u,
+    );
+
+    if (method === "POST" && removeMatch) {
+      const [, worktreeId] = removeMatch;
+      const worktreePath = pathFromWorktreeId(worktreeId);
+      const worktree = worktreePath
+        ? await findKnownWorktree(worktreePath)
+        : undefined;
+
+      if (!worktree) {
+        textResponse(res, 404, "Unknown worktree id");
+        return;
+      }
+      if (!worktree.canRemove) {
+        textResponse(
+          res,
+          400,
+          "The primary worktree and the checkout running the dashboard can't be removed",
+        );
+        return;
+      }
+
+      const result = await removeWorktree({
+        worktreePath,
+        branch: worktree.branch,
+        force: parseForce(url.searchParams),
+        root: DASHBOARD_ROOT,
+      });
+      // A failed removal can still have deleted the worktree before erroring.
+      if (result.ok || !(await isKnownWorktreePath(worktreePath))) {
+        forgetManagedRecord(worktreePath);
+      }
+      jsonResponse(res, result.ok ? 200 : 409, {
+        ...result,
+        action: "remove",
+      });
+      return;
+    }
+
     const openLogMatch = url.pathname.match(
       /^\/api\/worktrees\/([^/]+)\/open-log$/u,
     );
@@ -1407,7 +1505,7 @@ const server = http.createServer(async (req, res) => {
         textResponse(
           res,
           400,
-          "service must be one of: backend, ui, artnet-sender, sacn-sender",
+          `service must be one of: ${LOG_SERVICES.join(", ")}`,
         );
         return;
       }

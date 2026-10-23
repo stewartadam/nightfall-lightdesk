@@ -19,7 +19,6 @@ mod client;
 pub mod client_bridge;
 pub mod client_ingress;
 pub mod command_lifecycle;
-pub mod command_traits;
 pub mod data_provider;
 pub mod diagnostic_paths;
 pub mod eval_action;
@@ -28,7 +27,9 @@ pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
 pub mod protocol;
+pub mod reference_index;
 pub mod render_pass;
+pub mod resync;
 pub mod runtime_capabilities;
 pub mod variables;
 
@@ -72,61 +73,67 @@ pub mod prelude {
     pub use nightfall_engine_derive::EnginePayload;
 
     pub use crate::EnginePlugin;
-    pub use crate::blueprint::{
-        BlueprintAction, BlueprintCommand, BlueprintDefinitionChange, BlueprintReferenceIndex,
-    };
+    pub use crate::blueprint::{BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation};
     pub use crate::client_bridge::{
-        ClientBridgeHost, ClientBridgePlugin, ClientEventSink, CommandDeserializerRegistry,
-        CommandJsonEnvelope, CommandSender, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
-        EncodedClientMessage, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        Audience, ClientBridgeHost, ClientBridgePlugin, ClientDisconnectReport, ClientDisconnected,
+        ClientEventSink, ClientPresenceSender, CommandDeserializerRegistry, CommandJsonEnvelope,
+        CommandSender, DISCRIMINATOR_DELTA, DISCRIMINATOR_DROPPABLE, DISCRIMINATOR_NON_DROPPABLE,
+        EncodedClientMessage, LastClientDisconnected, OutboundFrame, PendingAudience,
+        PendingReplies, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
+        encode_client_cbor,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
-        ActiveCommand, CommandLifecycleError, CommandRegistrationError, CommandReply,
-        CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
+        ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
+        CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
     };
-    pub use crate::command_traits::CliCommand;
-    pub use crate::data_provider::{DataProvider, DataStoreError};
-    pub use crate::eval_action::EvalAction;
+    pub use crate::data_provider::{DataChanges, DataProvider, DataRevision, DataStoreError};
+    pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{
         DebugPanicTarget, debug_panic_target_names, init_process_shutdown,
-        is_process_shutdown_requested, maybe_trigger_debug_worker_panic, parse_debug_panic_target,
-        process_shutdown_grace_period, process_shutdown_reason, request_debug_worker_panic,
+        is_graceful_exit_requested, is_process_shutdown_requested,
+        maybe_trigger_debug_worker_panic, parse_debug_panic_target, process_shutdown_grace_period,
+        process_shutdown_reason, request_debug_worker_panic, request_graceful_exit,
         request_process_shutdown, subscribe_process_shutdown,
     };
     pub use crate::protocol::client::EngineClientMessage;
-    pub use crate::protocol::dispatch::{CommandIngressRouter, EngineActionRouter};
+    pub use crate::protocol::dispatch::{CommandIngressRouter, EngineOperationRouter};
     pub use crate::protocol::dispatch_ast::{AstConvert, DispatchError};
     pub use crate::protocol::engine_command::{
-        CommandEnvelope, CommandId, CommandOrigin, EngineAction, EngineActionEnvelope,
-        EngineIngressMeta, EnginePayload, EventEnvelope, IngressCommand, NotificationEnvelope,
-        OperationId, OperationResult, ReplyTarget, RequestEnvelope, UndoId,
+        ClientId, CommandEnvelope, CommandId, CommandOrigin, EngineIngressMeta, EngineOperation,
+        EngineOperationEnvelope, EnginePayload, EventEnvelope, IngressCommand,
+        NotificationEnvelope, OperationId, OperationResult, ReplyTarget, RequestEnvelope, UndoId,
     };
     pub use crate::protocol::erased::{
-        DelayedCommandQueue, DynEngineAction, DynEngineActionEnvelope, DynEnginePayload,
-        PayloadEnvelope, PendingCommandBuffer, PendingEngineActionBuffer,
+        DelayedCommandQueue, DynEngineOperation, DynEngineOperationEnvelope, DynEnginePayload,
+        PayloadEnvelope, PendingCommandBuffer, PendingEngineOperationBuffer,
     };
     pub use crate::protocol::results::{
         CommandError, CommandNotice, CommandOutcome, CommandOutput, CommandResult, NoticeLevel,
     };
+    pub use crate::reference_index::{
+        BlueprintReferenceIndex, GroupReferenceIndex, ReferenceIndex,
+    };
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
-    pub use crate::register_update_deserializer;
     pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
+    pub use crate::resync::{ResyncReplies, ResyncRequested, resync_audience};
     pub use crate::runtime_capabilities::{
-        FxModuleCapability, LibraryCapability, PersistenceCapability, RuntimeCapabilities,
-        RuntimeMode, TimelineAudioCapability,
+        FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
+        TimelineAudioCapability, disk_storage_available,
     };
     pub use crate::variables::GlobalVariables;
     pub use crate::{
         AppState, ClientFeedback, ClientOutput, ClockUpdate, CommandFeedbackEgress, Compositing,
-        DeskEventSet, DmxOutput, EventHandling, InputHandling, LayerGeneration, ResyncHandling,
-        StartupFrameCounter, VdimProcessing,
+        DeskEventSet, DmxOutput, EventHandling, InputHandling, LayerGeneration,
+        PendingCommandExpansion, PendingCommandProcessing, ResyncHandling, StartupFrameCounter,
+        VdimProcessing,
     };
-    pub use crate::{EngineCommand, ResyncRequested, register_engine_action};
+    pub use crate::{EngineCommand, register_engine_operation};
+    pub use crate::{register_client_update_deserializer, register_update_deserializer};
 }
 
 /// Plugin for fixtures
@@ -146,7 +153,9 @@ impl Plugin for EnginePlugin {
             Update,
             (
                 InputHandling,
-                EventHandling.after(InputHandling),
+                PendingCommandExpansion.after(InputHandling),
+                PendingCommandProcessing.after(PendingCommandExpansion),
+                EventHandling.after(PendingCommandProcessing),
                 ResyncHandling.after(EventHandling),
             ),
         );
@@ -166,11 +175,11 @@ impl Plugin for EnginePlugin {
         app.init_resource::<UpdateDeserializerRegistry>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<CommandIngressRouter>();
-        app.init_resource::<EngineActionRouter>();
+        app.init_resource::<EngineOperationRouter>();
         app.add_message::<CommandResult>();
         app.add_message::<command_lifecycle::CommandReply>();
         app.add_message::<command_lifecycle::FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         // Add startup transition system
         app.add_systems(
             Update,
@@ -184,7 +193,7 @@ impl Plugin for EnginePlugin {
         app.add_systems(
             Update,
             (
-                broadcast_app_state_on_resync.before(ResyncHandling),
+                send_app_state_on_resync.before(ResyncHandling),
                 send_runtime_capabilities_on_resync.before(ResyncHandling),
                 send_attribute_metadata_on_resync.before(ResyncHandling),
                 send_resync_complete.after(ResyncHandling),
@@ -201,7 +210,7 @@ impl Plugin for EnginePlugin {
             app,
             crate::client::deserialize_engine_commands,
         );
-        app.add_systems(Update, begin_resync.in_set(InputHandling));
+        app.add_systems(Update, resync::begin_resync.in_set(InputHandling));
     }
 }
 
@@ -209,7 +218,22 @@ impl Plugin for EnginePlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InputHandling;
 
-/// System set for turning ingested events into engine actions.
+/// System set for systems that rewrite queued commands before undo capture and dispatch.
+///
+/// Expanders replace wrapper commands in the pending buffer with the concrete commands they
+/// stand for, such as desk eval text or context-dependent transport commands, so the
+/// concrete commands are captured and dispatched in the same frame.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PendingCommandExpansion;
+
+/// System set that drains queued ingress commands and engine operations for undo capture.
+///
+/// Runs after [`InputHandling`] and before [`EventHandling`]; producers that queue commands
+/// outside input handling order themselves before this set to dispatch in the same frame.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PendingCommandProcessing;
+
+/// System set for turning ingested events into engine operations.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventHandling;
 
@@ -270,6 +294,8 @@ pub enum DeskEventSet {
     BlueprintActions,
     /// Applies instance playback commands.
     InstancePlayback,
+    /// Replaces queued desk eval commands with the concrete commands they evaluate to.
+    EvalExpansion,
 }
 
 /// Registers one user-facing command for semantic envelope dispatch.
@@ -281,10 +307,10 @@ pub fn register_ingress_command<T: IngressCommand + Clone>(app: &mut App) {
 }
 
 /// Registers a domain-owned engine action for erased queue and typed message dispatch.
-pub fn register_engine_action<T: EngineAction + Clone>(app: &mut App) {
-    app.add_message::<EngineActionEnvelope<T>>();
+pub fn register_engine_operation<T: EngineOperation + Clone>(app: &mut App) {
+    app.add_message::<EngineOperationEnvelope<T>>();
     app.world_mut()
-        .resource_mut::<EngineActionRouter>()
+        .resource_mut::<EngineOperationRouter>()
         .register::<T>();
 }
 
@@ -310,6 +336,20 @@ pub fn register_update_deserializer(
 ) {
     app.world_mut()
         .resource_mut::<UpdateDeserializerRegistry>()
+        .register(module, move |world, update, _sender| {
+            deserializer(world, update)
+        });
+}
+
+/// Registers an untracked update deserializer that also receives the clients that sent the
+/// update, for domains that keep per-session state such as subscriptions.
+pub fn register_client_update_deserializer(
+    app: &mut App,
+    module: &'static str,
+    deserializer: fn(&mut World, serde_json::Value, Audience) -> Result<(), String>,
+) {
+    app.world_mut()
+        .resource_mut::<UpdateDeserializerRegistry>()
         .register(module, deserializer);
 }
 
@@ -331,27 +371,6 @@ impl IngressCommand for EngineCommand {}
 
 impl EngineIngressMeta for EngineCommand {
     const COMMAND_MODULE: &'static str = "EngineCommand";
-}
-
-/// Fact published when an external command or internal transition requests a state resync.
-#[derive(Clone, Debug, Message)]
-pub struct ResyncRequested {
-    /// User command awaiting completion after the resync, when externally requested.
-    pub command_id: Option<CommandId>,
-}
-
-/// Converts semantic resync commands into the event consumed across domain crates.
-fn begin_resync(
-    mut commands: MessageReader<CommandEnvelope<EngineCommand>>,
-    mut resync_requests: MessageWriter<ResyncRequested>,
-) {
-    for command in commands.read() {
-        if matches!(command.command, EngineCommand::ResyncState) {
-            resync_requests.write(ResyncRequested {
-                command_id: Some(command.command_id),
-            });
-        }
-    }
 }
 
 /// This parses top-level command expressions using AST-based dispatch.
@@ -388,19 +407,13 @@ fn check_startup_complete(
     }
 }
 
-/// System that broadcasts the current backend lifecycle state during a full resync.
-fn broadcast_app_state_on_resync(
-    mut events: MessageReader<ResyncRequested>,
-    app_state: Res<State<AppState>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+/// System that sends the current backend lifecycle state to clients that resync.
+fn send_app_state_on_resync(mut resync: ResyncReplies, app_state: Res<State<AppState>>) {
+    let Some(sink) = resync.sink() else {
         return;
-    }
+    };
 
-    broadcaster.publish(
+    sink.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::AppState(app_state.get()),
     );
@@ -421,52 +434,47 @@ fn broadcast_app_state_on_change(
     );
 }
 
-/// System that sends static attribute metadata before plugin resync handlers.
-fn send_attribute_metadata_on_resync(
-    mut events: MessageReader<ResyncRequested>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+/// System that sends static attribute metadata to resyncing clients before plugin resync handlers.
+fn send_attribute_metadata_on_resync(mut resync: ResyncReplies) {
+    let Some(sink) = resync.sink() else {
         return;
-    }
+    };
 
     let attribute_metadata = nightfall_dmx::prelude::standard_attribute_metadata();
-    broadcaster.publish(
+    sink.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::AttributeMetadata(&attribute_metadata),
     );
 }
 
-/// System that sends the host-authored runtime capability snapshot on resync.
+/// System that sends the host-authored runtime capability snapshot to resyncing clients.
 fn send_runtime_capabilities_on_resync(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     capabilities: Res<RuntimeCapabilities>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    if events.read().next().is_none() {
+    let Some(sink) = resync.sink() else {
         return;
-    }
+    };
 
-    broadcaster.publish(
+    sink.publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::RuntimeCapabilities(&capabilities),
     );
 }
 
-/// System that sends ResyncComplete after all plugin resync handlers have run.
+/// System that sends ResyncComplete to the resyncing clients after all plugin resync handlers
+/// have run, then completes the resync commands.
 fn send_resync_complete(
     mut events: MessageReader<ResyncRequested>,
     broadcaster: Res<ClientEventSink>,
     mut responder: CommandResponder,
 ) {
     let requests = events.read().cloned().collect::<Vec<_>>();
-    if requests.is_empty() {
+    let Some(audience) = resync_audience(&requests) else {
         return;
-    }
+    };
 
-    broadcaster.publish(
+    broadcaster.narrowed_to(audience.into_audiences()).publish(
         DISCRIMINATOR_NON_DROPPABLE,
         &EngineClientMessage::ResyncComplete,
     );
@@ -515,7 +523,8 @@ mod tests {
         );
     }
 
-    /// Verifies that resync fans out as an event and completes only at the finalizer.
+    /// Verifies that resync fans out as an event and completes only at the finalizer, with its
+    /// completion notification sent only to the client that asked.
     #[test]
     fn resync_command_completes_after_resync_event_is_processed() {
         let mut app = App::new();
@@ -525,14 +534,14 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         let (sender, receiver) = unbounded();
         app.insert_resource(ClientEventSink::new(sender));
-        app.add_systems(Update, (begin_resync, send_resync_complete).chain());
+        app.add_systems(Update, (resync::begin_resync, send_resync_complete).chain());
         let command = CommandEnvelope::new(
             EngineCommand::ResyncState,
             CommandOrigin::WebUi,
-            ReplyTarget::ClientBroadcast,
+            ReplyTarget::Client(ClientId(3)),
         );
         let command_id = command.command_id;
         app.world_mut()
@@ -559,13 +568,15 @@ mod tests {
         let notification = receiver
             .try_recv()
             .expect("resync should publish its completion notification");
-        let decoded: serde_json::Value = minicbor_serde::from_slice(&notification[1..]).unwrap();
+        assert_eq!(notification.audience, Audience::Client(ClientId(3)));
+        let decoded: serde_json::Value =
+            minicbor_serde::from_slice(&notification.bytes[1..]).unwrap();
         assert_eq!(decoded["type"], "ResyncComplete");
     }
 
     /// Receiving end of the client sink, readable from systems under test.
     #[derive(Resource)]
-    struct PublishedPayloads(async_channel::Receiver<Vec<u8>>);
+    struct PublishedPayloads(async_channel::Receiver<OutboundFrame>);
 
     /// Whether ResyncComplete had already been published when clock work started.
     #[derive(Resource, Default)]
@@ -577,7 +588,7 @@ mod tests {
         mut seen: ResMut<ResyncCompleteBeforeClock>,
     ) {
         let published = std::iter::from_fn(|| payloads.0.try_recv().ok()).any(|payload| {
-            minicbor_serde::from_slice::<serde_json::Value>(&payload[1..])
+            minicbor_serde::from_slice::<serde_json::Value>(&payload.bytes[1..])
                 .is_ok_and(|decoded| decoded["type"] == "ResyncComplete")
         });
         seen.0.get_or_insert(published);
@@ -597,8 +608,10 @@ mod tests {
             Render,
             record_resync_complete_before_clock.in_set(ClockUpdate),
         );
-        app.world_mut()
-            .write_message(ResyncRequested { command_id: None });
+        app.world_mut().write_message(ResyncRequested {
+            command_id: None,
+            audience: Audience::All,
+        });
 
         app.update();
 

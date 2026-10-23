@@ -318,22 +318,30 @@ fn add_input_mappings(world: &mut World) {
     world
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0001),
             device_name: "Parser Grid".to_owned(),
-            channel: 176,
-            note: 36,
-            velocity: None,
-            action: set_control_action(1),
+            source: MidiSource::ControlChange {
+                channel: 0,
+                controller: 36,
+            },
+            behavior: nightfall_actions::ControlBehavior::Press,
+            led: Default::default(),
+            action: control_level_action(1),
         }]);
 
     #[cfg(feature = "osc")]
     world
         .resource_mut::<OscMappings>()
         .set_mappings(vec![OscMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0002),
             source: Some("127.0.0.1:9000".to_owned()),
             address: "/parser/fader".to_owned(),
             arg_index: Some(0),
-            arg_value: Some("0.5".to_owned()),
-            action: set_control_action(2),
+            arg_value: None,
+            release_value: None,
+            range: None,
+            behavior: nightfall_actions::ControlBehavior::Press,
+            action: control_level_action(2),
         }]);
 }
 
@@ -410,12 +418,14 @@ fn add_blueprint(world: &mut World) -> Result<(), String> {
         .map_err(|error| format!("failed to add parser blueprint: {error}"))
 }
 
-/// Add fixture-inhibition and playback-rate masters with distinct target scopes.
+/// Replace the new-show default masters with fixture-inhibition and playback-rate masters that
+/// use distinct target scopes and fixed UIDs.
 fn add_masters(world: &mut World) -> Result<(), String> {
     let mut system_state: SystemState<(ResMut<DataProvider<Master>>,)> = SystemState::new(world);
     let (mut master_data_provider,) = system_state
         .get_mut(world)
         .expect("sample data system parameters should be available");
+    master_data_provider.clear();
     master_data_provider
         .add(Master {
             identifiers: Identifiers {
@@ -751,6 +761,8 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
         },
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
+        freewheel: None,
+        audio_input: None,
     };
     let timeline = Timeline {
         identifiers: Identifiers {
@@ -774,7 +786,7 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
             actions: vec![Action {
                 id: "item-1".to_owned(),
                 label: "Start Parser Sequence".to_owned(),
-                action: ActionKind::StartClip(uuid(CUE_CLIP_UID)),
+                action: ActionKind::StartClip(uuid(CUE_CLIP_UID)).to_reference(),
                 position: Duration::from_secs(1),
                 duration: Duration::from_secs(2),
             }],
@@ -808,17 +820,7 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
         scroll_mode: TimelineScrollMode::Free,
     };
 
-    world.spawn(TimecodeGenerator {
-        timecode: timecode.clone(),
-        state: TimecodeState {
-            timecode_id: timecode.identifiers.id,
-            is_active: false,
-            current_time: Duration::ZERO,
-            start_time: None,
-            end_time: None,
-        },
-        ..Default::default()
-    });
+    world.spawn(TimecodeGenerator::new(timecode.clone()));
     world.spawn(MaterializedTimeline::new(timeline.clone()));
 
     let mut system_state: SystemState<TimelineSeedParams> = SystemState::new(world);

@@ -6,34 +6,59 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Domain-owned registrations for desk automation capabilities.
+//! Domain-owned bindable actions for desk clips, controls, and command evaluation.
+
+use std::collections::BTreeSet;
 
 use bevy_app::App;
-use bevy_ecs::prelude::Messages;
+use bevy_ecs::prelude::{Changed, DetectChanges, Local, Query, RemovedComponents, Res, World};
 use nightfall::prelude::IdExpr;
 use nightfall_actions::{
-    ActionDescriptor, ActionId, ActionInput, ActionInvocation, ActionReference, ActionRegistry,
-    ActionSurface, ExternalCommandInvocation, InvocationDispatch, InvocationError,
+    ActionAppExt, ActionDescriptor, ActionFeedback, ActionInputKind, ActionInvocation,
+    ActionParameter, ActionParameterKind, ActionReference, ActionSurface, DESK_EVAL_ACTION_ID,
+    DeskEvalActionArguments, ExternalCommandInvocation, InvocationDispatch, InvocationError,
+    submit_command,
 };
 use nightfall_clips::{
-    CLIP_GO_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipTarget,
+    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_RATE_ACTION_ID,
+    CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipGotoActionArguments,
+    ClipRateActionArguments,
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
-    PlannedPlaybackInterventionKind, TimelinePlaybackActionOperation, TimelinePlaybackActionPlan,
+    PlannedPlaybackInterventionKind, TimelineEvalActionPlan, TimelinePlaybackActionKind,
+    TimelinePlaybackActionPlan,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use uuid::Uuid;
 
-use crate::clips::{Clip, ClipAction};
-use crate::controls::ControlUpdate;
+use crate::clips::{Clip, ClipCommand};
+use crate::controls::{
+    ControlCommand, ControlUpdate, Controls, clip_live_state, master_contributes,
+};
 use crate::desk_command::DeskCommand;
+use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
 
-/// Stable action ID for setting a control from external hardware input.
-pub const CONTROL_SET_ACTION_ID: &str = "control.set-external";
+/// Stable action ID for driving a control slot's level from external hardware input.
+pub const CONTROL_LEVEL_ACTION_ID: &str = "control.level";
 
-/// Stable action ID for evaluating a desk command.
-pub const DESK_EVAL_ACTION_ID: &str = "desk.eval";
+/// Stable action ID for running a control slot's Go behavior.
+pub const CONTROL_GO_ACTION_ID: &str = "control.go";
+
+/// Stable action ID for pressing and releasing a control slot's button in its button mode.
+pub const CONTROL_BUTTON_ACTION_ID: &str = "control.button";
+
+/// Stable action ID for driving a master's level.
+pub const MASTER_LEVEL_ACTION_ID: &str = "master.level";
+
+/// Stable action ID for toggling a toggle-mode master.
+pub const MASTER_TOGGLE_ACTION_ID: &str = "master.toggle";
+
+/// Stable action ID for turning a toggle-mode master on.
+pub const MASTER_ON_ACTION_ID: &str = "master.on";
+
+/// Stable action ID for turning a toggle-mode master off.
+pub const MASTER_OFF_ACTION_ID: &str = "master.off";
 
 /// Persisted arguments for externally-driven control actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,274 +68,520 @@ pub struct ControlActionArguments {
     pub control_index: u32,
 }
 
-/// Persisted arguments for desk command evaluation actions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Persisted arguments for actions addressing one master.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct DeskEvalActionArguments {
-    /// Command text evaluated by the desk command parser.
-    pub command: String,
+pub struct MasterActionArguments {
+    /// Persistent UID of the addressed master.
+    #[typeshare(serialized_as = "String")]
+    pub master: Uuid,
 }
 
-/// Creates a persisted external control action reference.
-pub fn set_control_action(control_index: u32) -> ActionReference {
-    ActionReference::with_arguments(
-        CONTROL_SET_ACTION_ID,
-        &ControlActionArguments { control_index },
-    )
-    .expect("control action arguments should serialize")
+/// Creates a persisted control level action reference.
+pub fn control_level_action(control_index: u32) -> ActionReference {
+    control_action_reference(CONTROL_LEVEL_ACTION_ID, control_index)
 }
 
-/// Creates a persisted desk-eval action reference.
-pub fn desk_eval_action(command: impl Into<String>) -> ActionReference {
-    ActionReference::with_arguments(
-        DESK_EVAL_ACTION_ID,
-        &DeskEvalActionArguments {
-            command: command.into(),
+/// Creates a persisted control Go action reference.
+pub fn control_go_action(control_index: u32) -> ActionReference {
+    control_action_reference(CONTROL_GO_ACTION_ID, control_index)
+}
+
+/// Creates a persisted control button action reference.
+pub fn control_button_action(control_index: u32) -> ActionReference {
+    control_action_reference(CONTROL_BUTTON_ACTION_ID, control_index)
+}
+
+/// Creates a persisted master level action reference.
+pub fn master_level_action(master: Uuid) -> ActionReference {
+    master_action_reference(MASTER_LEVEL_ACTION_ID, master)
+}
+
+/// Creates a persisted master toggle action reference.
+pub fn master_toggle_action(master: Uuid) -> ActionReference {
+    master_action_reference(MASTER_TOGGLE_ACTION_ID, master)
+}
+
+/// Registers every bindable action owned by the desk domain.
+pub fn register_desk_actions(app: &mut App) {
+    register_desk_target_validators(app);
+    register_clip_action(
+        app,
+        ActionDescriptor::new(CLIP_START_ACTION_ID, "Start clip", "Clips")
+            .with_hold_release(CLIP_STOP_ACTION_ID),
+        ClipCommand::StartClip,
+        TimelinePlaybackActionKind::Start,
+    );
+    register_clip_action(
+        app,
+        ActionDescriptor::new(CLIP_STOP_ACTION_ID, "Stop clip", "Clips"),
+        ClipCommand::StopClip,
+        TimelinePlaybackActionKind::Stop,
+    );
+    register_clip_action(
+        app,
+        ActionDescriptor::new(CLIP_GO_ACTION_ID, "Go clip", "Clips"),
+        ClipCommand::GoClip,
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
+    );
+    register_clip_action(
+        app,
+        ActionDescriptor::new(CLIP_BACK_ACTION_ID, "Back clip", "Clips"),
+        ClipCommand::BackClip,
+        TimelinePlaybackActionKind::Intervene(PlannedPlaybackInterventionKind::SequenceBack),
+    );
+    app.register_command_action::<ClipGotoActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_GOTO_ACTION_ID, "Go to cue", "Clips")
+            .with_description("Jumps a sequence clip to a cue position")
+            .with_parameter(clip_parameter())
+            .with_parameter(ActionParameter::required(
+                "cue_index",
+                "Cue",
+                ActionParameterKind::Integer { min: 1, max: None },
+            )),
+        |world, arguments| {
+            Ok(ClipCommand::GotoClip {
+                clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
+                position: arguments.cue_index,
+                timing: None,
+            })
         },
     )
-    .expect("desk eval action arguments should serialize")
-}
-
-/// Decodes a clip target only when a reference matches the expected desk action.
-pub fn clip_target_for_action(
-    action: &ActionReference,
-    expected_action_id: &str,
-) -> Option<ClipTarget> {
-    if action.id.as_str() != expected_action_id {
-        return None;
-    }
-    serde_json::from_value::<ClipActionArguments>(action.arguments.clone())
-        .ok()
-        .map(|arguments| arguments.target)
-}
-
-/// Decodes command text only when a reference identifies the desk eval capability.
-pub fn desk_eval_command_for_action(action: &ActionReference) -> Option<&str> {
-    if action.id.as_str() != DESK_EVAL_ACTION_ID {
-        return None;
-    }
-    action.arguments.get("command")?.as_str()
-}
-
-/// Registers every automation capability owned by the desk domain.
-pub fn register_desk_actions(app: &mut App) {
-    let mut registry = app.world_mut().resource_mut::<ActionRegistry>();
-    register_clip_action(
-        &mut registry,
-        CLIP_START_ACTION_ID,
-        "Start clip",
-        ClipAction::Start,
-        TimelinePlaybackActionOperation::Start,
+    .register_action_feedback::<ClipGotoActionArguments, _>(
+        CLIP_GOTO_ACTION_ID,
+        |world, arguments| clip_feedback(world, arguments.clip),
+    )
+    .register_action_capability::<ClipGotoActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_GOTO_ACTION_ID,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.clip,
+                kind: TimelinePlaybackActionKind::Intervene(
+                    PlannedPlaybackInterventionKind::SequenceGotoCue(arguments.cue_index),
+                ),
+            })
+        },
     );
-    register_clip_action(
-        &mut registry,
-        CLIP_STOP_ACTION_ID,
-        "Stop clip",
-        ClipAction::Stop,
-        TimelinePlaybackActionOperation::Stop,
+    app.register_command_action::<ClipRateActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_SET_RATE_ACTION_ID, "Set clip rate", "Clips")
+            .with_description("Sets the playback rate multiplier of a running clip")
+            .with_parameter(clip_parameter())
+            .with_parameter(ActionParameter::required(
+                "rate",
+                "Rate",
+                ActionParameterKind::Number { min: 0.0, max: 4.0 },
+            )),
+        |world, arguments| {
+            Ok(ClipCommand::SetRate {
+                clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
+                rate: arguments.rate,
+            })
+        },
+    )
+    .register_action_capability::<ClipRateActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_SET_RATE_ACTION_ID,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.clip,
+                kind: TimelinePlaybackActionKind::SetRate(arguments.rate),
+            })
+        },
     );
-    register_clip_action(
-        &mut registry,
-        CLIP_GO_ACTION_ID,
-        "Go clip",
-        ClipAction::Go,
-        TimelinePlaybackActionOperation::Intervene(PlannedPlaybackInterventionKind::SequenceGo),
+    app.register_update_action::<ControlActionArguments, ControlUpdate, _>(
+        ActionDescriptor::new(CONTROL_LEVEL_ACTION_ID, "Control level", "Controls")
+            .with_description("Drives a control fader from hardware with soft pickup")
+            .with_input(ActionInputKind::Absolute)
+            .with_parameter(control_parameter()),
+        |_world, arguments, value| {
+            Ok(ControlUpdate::SetExternalHardwareValue {
+                control_index: arguments.control_index,
+                value: value * 100.0,
+            })
+        },
+    )
+    .register_action_feedback::<ControlActionArguments, _>(
+        CONTROL_LEVEL_ACTION_ID,
+        |world, arguments| {
+            let (level, active) = control_live_state(world, arguments.control_index)?;
+            Ok(ActionFeedback {
+                level: Some((level / 100.0).clamp(0.0, 1.0)),
+                ..ActionFeedback::active_if(active)
+            })
+        },
     );
-    registry.register::<ControlActionArguments, _>(
-        descriptor(
-            CONTROL_SET_ACTION_ID,
-            "Set control",
-            vec![ActionSurface::Midi, ActionSurface::Osc],
-            object_schema("control_index", "integer"),
-        ),
-        invoke_control,
+    app.register_command_action::<ControlActionArguments, ControlCommand, _>(
+        ActionDescriptor::new(CONTROL_GO_ACTION_ID, "Control Go", "Controls")
+            .with_description("Starts or advances the control's clip, or toggles its master")
+            .with_parameter(control_parameter()),
+        |_world, arguments| {
+            Ok(ControlCommand::Go {
+                control_index: arguments.control_index,
+            })
+        },
+    )
+    .register_action_feedback::<ControlActionArguments, _>(
+        CONTROL_GO_ACTION_ID,
+        |world, arguments| {
+            let (_, active) = control_live_state(world, arguments.control_index)?;
+            Ok(ActionFeedback::active_if(active))
+        },
     );
-    registry.register::<DeskEvalActionArguments, _>(
-        descriptor(
-            DESK_EVAL_ACTION_ID,
-            "Evaluate command",
-            vec![ActionSurface::Osc, ActionSurface::Timeline],
-            object_schema("command", "string"),
-        ),
-        invoke_desk_eval,
-    );
-}
-
-/// Registers one clip lifecycle capability with shared typed argument handling.
-fn register_clip_action(
-    registry: &mut ActionRegistry,
-    action_id: &'static str,
-    label: &'static str,
-    action: fn(IdExpr) -> ClipAction,
-    timeline_operation: TimelinePlaybackActionOperation,
-) {
-    registry.register::<ClipActionArguments, _>(
-        descriptor(
-            action_id,
-            label,
-            vec![
+    app.register_momentary_command_action::<ControlActionArguments, ControlCommand, _>(
+        ActionDescriptor::new(CONTROL_BUTTON_ACTION_ID, "Control button", "Controls")
+            .with_description("Presses and releases the control's button in its button mode")
+            .with_input(ActionInputKind::Momentary)
+            .with_surfaces([
                 ActionSurface::Midi,
                 ActionSurface::Osc,
-                ActionSurface::Timeline,
-            ],
-            json!({
-                "type": "object",
-                "required": ["target"],
-                "properties": { "target": { "type": "object" } }
-            }),
-        ),
-        move |world, arguments, _invocation| {
-            let id = resolve_clip_id(world, arguments.target)?;
-            let Some(mut messages) =
-                world.get_resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
-            else {
-                return Err(InvocationError::new(
-                    "clip.dispatch_unavailable",
-                    "Clip action dispatch is unavailable",
-                ));
-            };
-            messages.write(EngineActionEnvelope::detached(action(IdExpr::Single(id))));
-            Ok(InvocationDispatch::Accepted)
+                ActionSurface::Websocket,
+            ])
+            .with_parameter(control_parameter()),
+        |_world, arguments, pressed| {
+            let control_index = arguments.control_index;
+            Ok(if pressed {
+                ControlCommand::PressButton { control_index }
+            } else {
+                ControlCommand::ReleaseButton { control_index }
+            })
         },
     );
-    registry.register_capability::<ClipActionArguments, TimelinePlaybackActionPlan, _>(
-        action_id,
-        move |arguments| {
-            let ClipTarget::Uid(owner_uid) = arguments.target else {
-                return Err(InvocationError::new(
-                    "timeline.stable_target_required",
-                    "Deterministic timeline planning requires a clip UID",
-                ));
-            };
-            Ok(TimelinePlaybackActionPlan {
-                owner_uid,
-                operation: timeline_operation,
+    app.register_action_feedback::<ControlActionArguments, _>(
+        CONTROL_BUTTON_ACTION_ID,
+        |world, arguments| {
+            let (_, active) = control_live_state(world, arguments.control_index)?;
+            Ok(ActionFeedback::active_if(active))
+        },
+    );
+    app.register_update_action::<MasterActionArguments, MasterUpdate, _>(
+        ActionDescriptor::new(MASTER_LEVEL_ACTION_ID, "Master level", "Masters")
+            .with_input(ActionInputKind::Absolute)
+            .with_parameter(master_parameter()),
+        |world, arguments, value| {
+            let master = resolve_master(world, arguments.master)?;
+            Ok(MasterUpdate::SetLevel {
+                id: master.identifiers.id,
+                level_percent: Master::level_percent_from_control(master.kind, value * 100.0),
+            })
+        },
+    )
+    .register_flash_level::<MasterActionArguments, _>(MASTER_LEVEL_ACTION_ID, |world, arguments| {
+        let master = resolve_master(world, arguments.master)?;
+        Ok(Some(
+            Master::control_percent_from_level(master.kind, master.level_percent) / 100.0,
+        ))
+    })
+    .register_action_feedback::<MasterActionArguments, _>(
+        MASTER_LEVEL_ACTION_ID,
+        |world, arguments| {
+            let master = resolve_master(world, arguments.master)?;
+            Ok(ActionFeedback::level(
+                Master::control_percent_from_level(master.kind, master.level_percent) / 100.0,
+            ))
+        },
+    );
+    app.register_command_action::<MasterActionArguments, MasterCommand, _>(
+        ActionDescriptor::new(MASTER_TOGGLE_ACTION_ID, "Toggle master", "Masters")
+            .with_parameter(master_parameter()),
+        |world, arguments| {
+            let master = resolve_master(world, arguments.master)?;
+            Ok(MasterCommand::ToggleMaster {
+                id: master.identifiers.id,
+            })
+        },
+    );
+    for (action_id, label, active) in [
+        (MASTER_ON_ACTION_ID, "Master on", true),
+        (MASTER_OFF_ACTION_ID, "Master off", false),
+    ] {
+        let mut descriptor = ActionDescriptor::new(action_id, label, "Masters")
+            .with_description("Turns a toggle-mode master on or off")
+            .with_parameter(master_parameter());
+        if active {
+            descriptor = descriptor.with_hold_release(MASTER_OFF_ACTION_ID);
+        }
+        app.register_command_action::<MasterActionArguments, MasterCommand, _>(
+            descriptor,
+            move |world, arguments| set_master_active(world, arguments.master, active),
+        );
+    }
+    for action_id in [
+        MASTER_TOGGLE_ACTION_ID,
+        MASTER_ON_ACTION_ID,
+        MASTER_OFF_ACTION_ID,
+    ] {
+        app.register_action_feedback::<MasterActionArguments, _>(action_id, |world, arguments| {
+            let master = resolve_master(world, arguments.master)?;
+            Ok(ActionFeedback::active_if(master_contributes(&master)))
+        });
+    }
+    app.register_action::<DeskEvalActionArguments, _>(
+        ActionDescriptor::new(DESK_EVAL_ACTION_ID, "Evaluate command", "Desk")
+            .with_description("Runs a desk command line as if it were typed")
+            .with_parameter(ActionParameter::required(
+                "command",
+                "Command",
+                ActionParameterKind::Text,
+            )),
+        invoke_desk_eval,
+    )
+    .register_action_capability::<DeskEvalActionArguments, TimelineEvalActionPlan, _>(
+        DESK_EVAL_ACTION_ID,
+        TimelineEvalActionPlan::CAPABILITY,
+        |arguments| {
+            Ok(TimelineEvalActionPlan {
+                command: arguments.command,
             })
         },
     );
 }
 
-/// Resolves a persisted clip target to the numeric ID used by runtime commands.
-fn resolve_clip_id(
-    world: &bevy_ecs::prelude::World,
-    target: ClipTarget,
-) -> Result<u32, InvocationError> {
-    match target {
-        ClipTarget::Id(id) => Ok(id),
-        ClipTarget::Uid(uid) => world
-            .get_resource::<DataProvider<Clip>>()
-            .ok_or_else(|| {
-                InvocationError::new("clip.registry_unavailable", "Clip storage is unavailable")
-            })?
-            .get(uid)
-            .map(|clip| clip.identifiers.id)
-            .map_err(|_| {
-                InvocationError::new(
-                    "clip.not_found",
-                    format!("Clip with UID {uid} does not exist"),
-                )
-            }),
+/// Registers how stored bindings check that their clip, master, and control targets exist.
+///
+/// Binding diagnostics are recomputed when clip entities, the set of masters, or the number
+/// of control slots change.
+fn register_desk_target_validators(app: &mut App) {
+    app.register_action_target_validator::<Uuid, _>(ActionParameterKind::Clip, |world, uid| {
+        resolve_clip_id(world, uid).map(drop)
+    })
+    .register_action_target_validator::<Uuid, _>(ActionParameterKind::Master, |world, uid| {
+        resolve_master(world, uid).map(drop)
+    })
+    .register_action_target_validator::<u32, _>(ActionParameterKind::Control, validate_control)
+    .invalidate_action_targets_when(clips_changed)
+    .invalidate_action_targets_when(master_set_changed)
+    .invalidate_action_targets_when(control_slot_count_changed);
+}
+
+/// Run condition reporting whether masters were added or removed.
+///
+/// Master levels change on every fader move and master targets only need to exist, so this
+/// compares the set of master UIDs, and only on frames where masters changed at all.
+fn master_set_changed(
+    masters: Option<Res<DataProvider<Master>>>,
+    mut last_uids: Local<Option<BTreeSet<Uuid>>>,
+) -> bool {
+    let Some(masters) = masters else {
+        return last_uids.take().is_some();
+    };
+    if !masters.is_changed() && last_uids.is_some() {
+        return false;
     }
+    let uids: BTreeSet<Uuid> = masters.iter().map(|entry| *entry.key()).collect();
+    let changed = last_uids.as_ref() != Some(&uids);
+    *last_uids = Some(uids);
+    changed
 }
 
-/// Applies normalized automation input to a desk-owned control update.
-fn invoke_control(
-    world: &mut bevy_ecs::prelude::World,
-    arguments: ControlActionArguments,
-    invocation: &ActionInvocation,
-) -> Result<InvocationDispatch, InvocationError> {
-    let ActionInput::Scalar(value) = invocation.input else {
+/// Run condition reporting whether any clip was added, edited, or removed.
+fn clips_changed(changed: Query<(), Changed<Clip>>, removed: RemovedComponents<Clip>) -> bool {
+    !changed.is_empty() || !removed.is_empty()
+}
+
+/// Run condition reporting whether the control bank gained or lost slots.
+///
+/// Controls change on every fader move, so this compares slot counts rather than change
+/// ticks to avoid recomputing binding diagnostics while a fader is dragged.
+fn control_slot_count_changed(
+    controls: Option<Res<Controls>>,
+    mut last_count: Local<Option<usize>>,
+) -> bool {
+    let count = controls.map(|controls| controls.slot_count());
+    let changed = *last_count != count;
+    *last_count = count;
+    changed
+}
+
+/// Checks that a 1-based control index addresses a slot in the bank.
+///
+/// Unassigned slots are valid targets, since a binding follows whatever is later assigned.
+fn validate_control(world: &World, control_index: u32) -> Result<(), InvocationError> {
+    let controls = world.get_resource::<Controls>().ok_or_else(|| {
+        InvocationError::new("control.bank_unavailable", "Controls are unavailable")
+    })?;
+    if controls.contains(control_index) {
+        return Ok(());
+    }
+    Err(InvocationError::new(
+        "control.not_found",
+        format!(
+            "Control {control_index} does not exist; controls are numbered 1 to {}",
+            controls.slot_count()
+        ),
+    )
+    .with_details(serde_json::json!({ "control_index": control_index })))
+}
+
+/// Creates a control action reference for one stable action ID.
+fn control_action_reference(action_id: &str, control_index: u32) -> ActionReference {
+    ActionReference::with_arguments(action_id, &ControlActionArguments { control_index })
+        .expect("control action arguments should serialize")
+}
+
+/// Creates a master action reference for one stable action ID.
+fn master_action_reference(action_id: &str, master: Uuid) -> ActionReference {
+    ActionReference::with_arguments(action_id, &MasterActionArguments { master })
+        .expect("master action arguments should serialize")
+}
+
+/// Describes the clip argument shared by clip actions.
+fn clip_parameter() -> ActionParameter {
+    ActionParameter::required("clip", "Clip", ActionParameterKind::Clip)
+}
+
+/// Describes the control slot argument shared by control actions.
+fn control_parameter() -> ActionParameter {
+    ActionParameter::required("control_index", "Control", ActionParameterKind::Control)
+}
+
+/// Describes the master argument shared by master actions.
+fn master_parameter() -> ActionParameter {
+    ActionParameter::required("master", "Master", ActionParameterKind::Master)
+}
+
+/// Resolves a persisted master UID to a copy of its current definition.
+fn resolve_master(world: &World, uid: Uuid) -> Result<Master, InvocationError> {
+    world
+        .get_resource::<DataProvider<Master>>()
+        .ok_or_else(|| {
+            InvocationError::new(
+                "master.registry_unavailable",
+                "Master storage is unavailable",
+            )
+        })?
+        .get(uid)
+        .map(|master| master.clone())
+        .map_err(|_| {
+            InvocationError::new(
+                "master.not_found",
+                format!("Master with UID {uid} does not exist"),
+            )
+            .with_details(serde_json::json!({ "master": uid }))
+        })
+}
+
+/// Lowers turning a toggle-mode master on or off to a mode change.
+///
+/// Masters in other modes are rejected so a held button never changes how a master works.
+fn set_master_active(
+    world: &World,
+    uid: Uuid,
+    active: bool,
+) -> Result<MasterCommand, InvocationError> {
+    let master = resolve_master(world, uid)?;
+    if !matches!(master.mode, MasterMode::Toggle { .. }) {
         return Err(InvocationError::new(
-            "control.scalar_required",
-            "Control actions require a scalar input value",
-        ));
-    };
-    let Some(mut messages) = world.get_resource_mut::<Messages<ControlUpdate>>() else {
-        return Err(InvocationError::new(
-            "control.dispatch_unavailable",
-            "Control dispatch is unavailable",
-        ));
-    };
-    messages.write(ControlUpdate::SetExternalHardwareValue {
-        control_index: arguments.control_index,
-        value: value * 100.0,
+            "master.not_toggle",
+            format!(
+                "Master '{}' is not a toggle master",
+                master.identifiers.label
+            ),
+        )
+        .with_details(serde_json::json!({ "master": uid })));
+    }
+    Ok(MasterCommand::SetMasterMode {
+        id: master.identifiers.id,
+        mode: MasterMode::Toggle { active },
+    })
+}
+
+/// Registers one clip lifecycle action lowering to its clip command and timeline plan.
+fn register_clip_action(
+    app: &mut App,
+    descriptor: ActionDescriptor,
+    command: fn(IdExpr) -> ClipCommand,
+    timeline_kind: TimelinePlaybackActionKind,
+) {
+    let action_id = descriptor.id.as_str().to_owned();
+    app.register_command_action::<ClipActionArguments, ClipCommand, _>(
+        descriptor.with_parameter(clip_parameter()),
+        move |world, arguments| {
+            let id = resolve_clip_id(world, arguments.clip)?;
+            Ok(command(IdExpr::Single(id)))
+        },
+    )
+    .register_action_capability::<ClipActionArguments, TimelinePlaybackActionPlan, _>(
+        &action_id,
+        TimelinePlaybackActionPlan::CAPABILITY,
+        move |arguments| {
+            Ok(TimelinePlaybackActionPlan {
+                owner_uid: arguments.clip,
+                kind: timeline_kind,
+            })
+        },
+    )
+    .register_action_feedback::<ClipActionArguments, _>(&action_id, |world, arguments| {
+        clip_feedback(world, arguments.clip)
     });
-    Ok(InvocationDispatch::Accepted)
 }
 
-/// Starts a tracked desk eval command when an automation capability requests one.
+/// Reports a clip as active while it is running.
+fn clip_feedback(world: &World, clip: Uuid) -> Result<ActionFeedback, InvocationError> {
+    let clip_id = resolve_clip_id(world, clip)?;
+    Ok(ActionFeedback::active_if(clip_live_state(world, clip_id).1))
+}
+
+/// Reads a control slot's console level and whether its assignment is running.
+fn control_live_state(world: &World, control_index: u32) -> Result<(f32, bool), InvocationError> {
+    validate_control(world, control_index)?;
+    world
+        .resource::<Controls>()
+        .live_state(world, control_index)
+        .ok_or_else(|| InvocationError::new("control.not_found", "Control does not exist"))
+}
+
+/// Resolves a persisted clip UID to the numeric ID used by runtime commands.
+///
+/// Clips are stored as entities, so the lookup scans clip components.
+fn resolve_clip_id(world: &World, uid: Uuid) -> Result<u32, InvocationError> {
+    world
+        .try_query::<&Clip>()
+        .and_then(|mut clips| {
+            clips
+                .iter(world)
+                .find(|clip| clip.identifiers.uid == uid)
+                .map(|clip| clip.identifiers.id)
+        })
+        .ok_or_else(|| {
+            InvocationError::new(
+                "clip.not_found",
+                format!("Clip with UID {uid} does not exist"),
+            )
+            .with_details(serde_json::json!({ "clip": uid }))
+        })
+}
+
+/// Submits a tracked desk eval command and announces the command text to the invoking surface.
 fn invoke_desk_eval(
-    world: &mut bevy_ecs::prelude::World,
+    world: &mut World,
     arguments: DeskEvalActionArguments,
     invocation: &ActionInvocation,
 ) -> Result<InvocationDispatch, InvocationError> {
-    let eval = CommandEnvelope::new(
+    let command_id = submit_command(
+        world,
+        invocation,
         DeskCommand::Eval(arguments.command.clone()),
-        CommandOrigin::Remote(format!("{:?}", invocation.surface)),
-        ReplyTarget::ClientBroadcast,
-    );
-    world
-        .get_resource_mut::<CommandTracker>()
-        .ok_or_else(|| {
-            InvocationError::new(
-                "desk.command_tracker_unavailable",
-                "Command tracking is unavailable",
-            )
-        })?
-        .register(&eval)
-        .map_err(|error| {
-            InvocationError::new(
-                "desk.command_registration_failed",
-                format!("Unable to register command: {error}"),
-            )
-        })?;
-
-    let source = invocation
-        .source
-        .clone()
-        .unwrap_or_else(|| format!("{:?}", invocation.surface));
+    )?;
     world.write_message(ExternalCommandInvocation {
         invocation_id: invocation.invocation_id,
-        command_id: eval.command_id.into(),
+        command_id,
         command: arguments.command,
         surface: invocation.surface,
-        source,
+        source: invocation.source_label(),
     });
-    world.write_message(eval);
-    Ok(InvocationDispatch::Accepted)
-}
-
-/// Creates one action descriptor with a stable ID and domain schema.
-fn descriptor(
-    id: &str,
-    label: &str,
-    allowed_surfaces: Vec<ActionSurface>,
-    argument_schema: Value,
-) -> ActionDescriptor {
-    ActionDescriptor {
-        id: ActionId::new(id),
-        label: label.to_string(),
-        allowed_surfaces,
-        argument_schema,
-    }
-}
-
-/// Creates a compact JSON Schema for one required object property.
-fn object_schema(property: &str, property_type: &str) -> Value {
-    let mut properties = serde_json::Map::new();
-    properties.insert(property.to_string(), json!({ "type": property_type }));
-    json!({
-        "type": "object",
-        "required": [property],
-        "properties": properties
-    })
+    Ok(InvocationDispatch::Submitted { command_id })
 }
 
 #[cfg(test)]
 mod tests {
+    use bevy_ecs::change_detection::DetectChanges;
     use bevy_ecs::message::Messages;
-    use nightfall_actions::{ActionsPlugin, InvocationOutcome, InvocationResult};
-    use nightfall_clips::start_clip_action;
+    use nightfall_actions::{
+        ActionInput, ActionSurface, ActionsPlugin, InvocationOutcome, InvocationResult,
+        desk_eval_action,
+    };
+    use nightfall_clips::{go_clip_action, start_clip_action, stop_clip_action};
 
     use super::*;
 
@@ -318,11 +589,12 @@ mod tests {
     fn desk_action_app() -> App {
         let mut app = App::new();
         app.add_plugins(ActionsPlugin);
-        app.add_message::<EngineActionEnvelope<ClipAction>>();
         app.add_message::<ControlUpdate>();
-        app.add_message::<CommandEnvelope<DeskCommand>>();
-        app.init_resource::<DataProvider<Clip>>();
+        app.add_message::<MasterUpdate>();
+        app.init_resource::<DataProvider<Master>>();
+        app.init_resource::<Controls>();
         app.init_resource::<CommandTracker>();
+        app.init_resource::<PendingCommandBuffer>();
         register_desk_actions(&mut app);
         app
     }
@@ -336,41 +608,88 @@ mod tests {
             .expect("registered action should emit an invocation result")
     }
 
-    /// Verifies clip action arguments are interpreted only by the desk registration.
+    /// Drains the commands queued for undo capture and ingress dispatch.
+    fn take_pending_commands(app: &mut App) -> Vec<PayloadEnvelope> {
+        app.world_mut()
+            .resource_mut::<PendingCommandBuffer>()
+            .drain()
+    }
+
+    /// Verifies clip actions lower to tracked clip commands instead of runtime operations.
     #[test]
-    fn clip_action_invoker_dispatches_runtime_action() {
+    fn clip_action_submits_tracked_clip_command() {
         let mut app = desk_action_app();
+        let uid = Uuid::from_u128(7);
+        app.world_mut().spawn(Clip {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 7,
+                uid,
+                label: "Clip 7".to_string(),
+            },
+            ..Default::default()
+        });
         app.world_mut().write_message(ActionInvocation::trigger(
-            start_clip_action(ClipTarget::Id(7)),
+            go_clip_action(uid),
             ActionSurface::Midi,
         ));
 
         app.update();
 
-        let actions = app
-            .world_mut()
-            .resource_mut::<Messages<EngineActionEnvelope<ClipAction>>>()
-            .drain()
-            .collect::<Vec<_>>();
+        let InvocationOutcome::Submitted { command_id } = take_invocation_result(&mut app).outcome
+        else {
+            panic!("clip action should submit a tracked command");
+        };
+        let pending = take_pending_commands(&mut app);
+        let [envelope] = pending.as_slice() else {
+            panic!("clip action should queue one command");
+        };
+        assert_eq!(envelope.command_id, command_id);
         assert!(matches!(
-            actions.as_slice(),
-            [EngineActionEnvelope {
-                action: ClipAction::Start(IdExpr::Single(7)),
-                ..
-            }]
+            envelope.payload.as_any().downcast_ref::<ClipCommand>(),
+            Some(ClipCommand::GoClip(IdExpr::Single(7)))
         ));
-        assert!(matches!(
-            take_invocation_result(&mut app).outcome,
-            InvocationOutcome::Accepted
-        ));
+    }
+
+    /// Verifies Start clip declares Stop clip as its Hold release counterpart.
+    #[test]
+    fn start_clip_holds_until_stop_clip() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
+        let uid = Uuid::from_u128(7);
+
+        assert_eq!(
+            registry.hold_release_action(&start_clip_action(uid)),
+            Some(stop_clip_action(uid))
+        );
+    }
+
+    /// Verifies clip actions expose deterministic timeline plans keyed by the clip UID.
+    #[test]
+    fn clip_action_plans_timeline_playback() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
+        let uid = Uuid::new_v4();
+
+        let plan = registry
+            .resolve_capability::<TimelinePlaybackActionPlan>(&start_clip_action(uid))
+            .expect("clip arguments should plan")
+            .expect("clip actions should expose timeline planning");
+
+        assert_eq!(
+            plan,
+            TimelinePlaybackActionPlan {
+                owner_uid: uid,
+                kind: TimelinePlaybackActionKind::Start,
+            }
+        );
     }
 
     /// Verifies normalized action input is converted to the desk control percentage scale.
     #[test]
-    fn control_invoker_dispatches_normalized_update() {
+    fn control_action_writes_normalized_update() {
         let mut app = desk_action_app();
         app.world_mut().write_message(ActionInvocation::scalar(
-            set_control_action(3),
+            control_level_action(3),
             ActionSurface::Osc,
             0.25,
         ));
@@ -389,15 +708,12 @@ mod tests {
                 value,
             }] if (*value - 25.0).abs() < f32::EPSILON
         ));
-        assert!(matches!(
-            take_invocation_result(&mut app).outcome,
-            InvocationOutcome::Accepted
-        ));
+        assert!(take_pending_commands(&mut app).is_empty());
     }
 
-    /// Verifies discrete eval invocations explicitly create tracked command lifecycles.
+    /// Verifies eval invocations submit tracked commands and announce their source.
     #[test]
-    fn desk_eval_invoker_registers_command_and_source_notification() {
+    fn desk_eval_action_submits_command_and_source_notification() {
         let mut app = desk_action_app();
         app.world_mut().write_message(
             ActionInvocation::trigger(desk_eval_action("clip 1 go"), ActionSurface::Osc)
@@ -406,22 +722,18 @@ mod tests {
 
         app.update();
 
-        let commands = app
-            .world_mut()
-            .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
-            .drain()
-            .collect::<Vec<_>>();
-        let [command] = commands.as_slice() else {
-            panic!("eval invocation should dispatch one desk command");
+        let pending = take_pending_commands(&mut app);
+        let [envelope] = pending.as_slice() else {
+            panic!("eval invocation should queue one desk command");
         };
         assert!(matches!(
-            command.command,
-            DeskCommand::Eval(ref value) if value == "clip 1 go"
+            envelope.payload.as_any().downcast_ref::<DeskCommand>(),
+            Some(DeskCommand::Eval(value)) if value == "clip 1 go"
         ));
         assert!(
             app.world()
                 .resource::<CommandTracker>()
-                .is_active(command.command_id)
+                .is_active(envelope.command_id)
         );
         let notifications = app
             .world_mut()
@@ -429,14 +741,337 @@ mod tests {
             .drain()
             .collect::<Vec<_>>();
         assert_eq!(notifications.len(), 1);
-        assert_eq!(
-            notifications[0].command_id,
-            uuid::Uuid::from(command.command_id)
-        );
+        assert_eq!(notifications[0].command_id, envelope.command_id);
         assert_eq!(notifications[0].source, "OSC 127.0.0.1:9000");
         assert!(matches!(
             take_invocation_result(&mut app).outcome,
-            InvocationOutcome::Accepted
+            InvocationOutcome::Submitted { command_id } if command_id == envelope.command_id
+        ));
+    }
+
+    /// Verifies desk target validators report missing clips and masters and accept present ones.
+    #[test]
+    fn target_validation_resolves_clips_and_masters() {
+        let mut app = desk_action_app();
+        let clip_uid = Uuid::from_u128(8);
+        let master_uid = Uuid::from_u128(41);
+        /// Validates one reference's targets against the app's current world.
+        fn validate(app: &App, action: &ActionReference) -> Result<(), InvocationError> {
+            app.world()
+                .resource::<nightfall_actions::ActionRegistry>()
+                .validate_target(app.world(), action)
+        }
+
+        assert_eq!(
+            validate(&app, &start_clip_action(clip_uid)).map_err(|error| error.code),
+            Err("clip.not_found".to_string())
+        );
+        assert_eq!(
+            validate(&app, &master_level_action(master_uid)).map_err(|error| error.code),
+            Err("master.not_found".to_string())
+        );
+
+        app.world_mut().spawn(Clip {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 8,
+                uid: clip_uid,
+                label: "Clip 8".to_string(),
+            },
+            ..Default::default()
+        });
+        add_rate_master(&mut app);
+
+        assert!(validate(&app, &start_clip_action(clip_uid)).is_ok());
+        assert!(validate(&app, &master_level_action(master_uid)).is_ok());
+        assert!(validate(&app, &control_go_action(2)).is_ok());
+    }
+
+    /// Verifies control targets accept every slot in the bank, assigned or not, and reject
+    /// indices outside `1..=slot_count`.
+    #[test]
+    fn target_validation_bounds_control_slots() {
+        let app = desk_action_app();
+        let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
+        let last = u32::try_from(app.world().resource::<Controls>().slot_count())
+            .expect("slot count fits in u32");
+        let code = |index| {
+            registry
+                .validate_target(app.world(), &control_go_action(index))
+                .map_err(|error| error.code)
+        };
+
+        assert_eq!(code(1), Ok(()));
+        assert_eq!(code(last), Ok(()));
+        assert_eq!(code(0), Err("control.not_found".to_string()));
+        assert_eq!(code(last + 1), Err("control.not_found".to_string()));
+        assert_eq!(
+            registry
+                .validate_target(app.world(), &control_level_action(last + 1))
+                .map_err(|error| error.code),
+            Err("control.not_found".to_string())
+        );
+    }
+
+    /// Verifies removing a clip marks action targets changed so bindings are re-diagnosed.
+    #[test]
+    fn removing_a_clip_marks_action_targets_changed() {
+        let mut app = desk_action_app();
+        let clip = app.world_mut().spawn(Clip::default()).id();
+        app.update();
+        app.update();
+        let unchanged = app
+            .world()
+            .resource_ref::<nightfall_actions::ActionTargets>()
+            .last_changed();
+
+        app.world_mut().despawn(clip);
+        app.update();
+
+        assert!(
+            app.world()
+                .resource_ref::<nightfall_actions::ActionTargets>()
+                .last_changed()
+                .is_newer_than(unchanged, app.world().read_change_tick()),
+            "clip removal should mark action targets changed"
+        );
+    }
+
+    /// Verifies changing a master's level leaves action targets untouched, so dragging a
+    /// master fader does not recompute binding diagnostics, while adding a master marks them.
+    #[test]
+    fn only_master_set_changes_mark_action_targets_changed() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        app.update();
+        app.update();
+        /// Returns when action targets were last marked changed.
+        fn targets_changed(app: &App) -> bevy_ecs::change_detection::Tick {
+            app.world()
+                .resource_ref::<nightfall_actions::ActionTargets>()
+                .last_changed()
+        }
+        let settled = targets_changed(&app);
+
+        let mut masters = app.world_mut().resource_mut::<DataProvider<Master>>();
+        let mut master = masters.remove(&uid).expect("master should exist");
+        master.level_percent = 40.0;
+        masters.add(master).expect("master should store");
+        app.update();
+        assert_eq!(
+            targets_changed(&app),
+            settled,
+            "a level change is not a target change"
+        );
+
+        let second = Master {
+            identifiers: nightfall::prelude::Identifiers {
+                id: 5,
+                uid: Uuid::from_u128(42),
+                label: "Second".to_string(),
+            },
+            ..app
+                .world()
+                .resource::<DataProvider<Master>>()
+                .get(uid)
+                .expect("master should exist")
+                .clone()
+        };
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(second)
+            .expect("master should store");
+        app.update();
+        assert!(
+            targets_changed(&app).is_newer_than(settled, app.world().read_change_tick()),
+            "adding a master should mark action targets changed"
+        );
+    }
+
+    /// Stores a toggle-mode playback rate master and returns its persistent UID.
+    fn add_rate_master(app: &mut App) -> Uuid {
+        let uid = Uuid::from_u128(41);
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(Master {
+                identifiers: nightfall::prelude::Identifiers {
+                    id: 4,
+                    uid,
+                    label: "Rate".to_string(),
+                },
+                kind: crate::masters::MasterKind::PlaybackRate,
+                target: crate::masters::MasterTarget::Instances(
+                    crate::masters::InstanceMasterTarget::All,
+                ),
+                mode: crate::masters::MasterMode::Toggle { active: false },
+                level_percent: 100.0,
+            })
+            .expect("master should store");
+        uid
+    }
+
+    /// Verifies master level input is scaled to the master kind's range as an untracked update.
+    #[test]
+    fn master_level_action_scales_rate_masters() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        app.world_mut().write_message(ActionInvocation::scalar(
+            master_level_action(uid),
+            ActionSurface::Midi,
+            0.75,
+        ));
+
+        app.update();
+
+        let updates = app
+            .world_mut()
+            .resource_mut::<Messages<MasterUpdate>>()
+            .drain()
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            updates.as_slice(),
+            [MasterUpdate::SetLevel { id: 4, level_percent }]
+                if (*level_percent - 150.0).abs() < f32::EPSILON
+        ));
+        assert!(take_pending_commands(&mut app).is_empty());
+    }
+
+    /// Verifies master toggle resolves the master UID to a tracked toggle command.
+    #[test]
+    fn master_toggle_action_submits_toggle_command() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        app.world_mut().write_message(ActionInvocation::trigger(
+            master_toggle_action(uid),
+            ActionSurface::Osc,
+        ));
+
+        app.update();
+
+        let pending = take_pending_commands(&mut app);
+        assert!(matches!(
+            pending
+                .as_slice()
+                .first()
+                .and_then(|envelope| envelope.payload.as_any().downcast_ref::<MasterCommand>()),
+            Some(MasterCommand::ToggleMaster { id: 4 })
+        ));
+    }
+
+    /// Verifies Master on and off set a toggle master's state and pair up for Hold.
+    #[test]
+    fn master_on_and_off_set_toggle_state() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        let on = master_action_reference(MASTER_ON_ACTION_ID, uid);
+        assert_eq!(
+            app.world()
+                .resource::<nightfall_actions::ActionRegistry>()
+                .hold_release_action(&on),
+            Some(master_action_reference(MASTER_OFF_ACTION_ID, uid))
+        );
+        for action in [on, master_action_reference(MASTER_OFF_ACTION_ID, uid)] {
+            app.world_mut()
+                .write_message(ActionInvocation::trigger(action, ActionSurface::Midi));
+            app.update();
+        }
+
+        let modes = take_pending_commands(&mut app)
+            .iter()
+            .filter_map(|envelope| match envelope.payload.as_any().downcast_ref() {
+                Some(MasterCommand::SetMasterMode { id: 4, mode }) => Some(mode.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            modes,
+            vec![
+                MasterMode::Toggle { active: true },
+                MasterMode::Toggle { active: false }
+            ]
+        );
+    }
+
+    /// Verifies flashing a master pushes it to full and restores its level on release.
+    #[test]
+    fn master_level_flash_restores_the_previous_level() {
+        let mut app = desk_action_app();
+        let uid = add_rate_master(&mut app);
+        for input in [ActionInput::Press, ActionInput::Release] {
+            app.world_mut().write_message(ActionInvocation::new(
+                master_level_action(uid),
+                ActionSurface::Midi,
+                input,
+            ));
+            app.update();
+        }
+
+        let levels = app
+            .world_mut()
+            .resource_mut::<Messages<MasterUpdate>>()
+            .drain()
+            .filter_map(|update| match update {
+                MasterUpdate::SetLevel {
+                    id: 4,
+                    level_percent,
+                } => Some(level_percent),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(levels, vec![200.0, 100.0]);
+    }
+
+    /// Verifies control Go lowers to the control Go command expanded later in the frame.
+    #[test]
+    fn control_go_action_submits_control_go_command() {
+        let mut app = desk_action_app();
+        app.world_mut().write_message(ActionInvocation::new(
+            control_go_action(2),
+            ActionSurface::Midi,
+            nightfall_actions::ActionInput::Press,
+        ));
+
+        app.update();
+
+        let pending = take_pending_commands(&mut app);
+        assert!(matches!(
+            pending
+                .as_slice()
+                .first()
+                .and_then(|envelope| envelope.payload.as_any().downcast_ref::<ControlCommand>()),
+            Some(ControlCommand::Go { control_index: 2 })
+        ));
+    }
+
+    /// Verifies the control button action lowers each press and release edge to its own
+    /// control command, so held MIDI pads reach the slot's button mode on both edges.
+    #[test]
+    fn control_button_action_submits_press_and_release_commands() {
+        let mut app = desk_action_app();
+        for input in [ActionInput::Press, ActionInput::Release] {
+            app.world_mut().write_message(ActionInvocation::new(
+                control_button_action(3),
+                ActionSurface::Midi,
+                input,
+            ));
+            app.update();
+        }
+
+        let commands = take_pending_commands(&mut app)
+            .iter()
+            .filter_map(|envelope| {
+                envelope
+                    .payload
+                    .as_any()
+                    .downcast_ref::<ControlCommand>()
+                    .cloned()
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            commands.as_slice(),
+            [
+                ControlCommand::PressButton { control_index: 3 },
+                ControlCommand::ReleaseButton { control_index: 3 }
+            ]
         ));
     }
 }

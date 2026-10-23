@@ -7,13 +7,10 @@
  */
 
 import { Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import type { VisualizerStats } from "../../../state/appStores";
-import { formatNumber, getFpsColor, UI_TARGET_FPS } from "../model/metrics";
-import {
-  CollapsibleSection,
-  MetricCard,
-  PipelineStep,
-} from "./metric-sections";
+import { formatNumber, getFpsTone, UI_TARGET_FPS } from "../model/metrics";
+import { MetricCard, MetricValue, PipelineStep } from "./metric-sections";
 
 interface VisualizerMetricsSectionProps {
   stats: VisualizerStats | null;
@@ -23,10 +20,12 @@ interface VisualizerMetricsSectionProps {
 export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
   return (
     <Show when={props.stats}>
-      <CollapsibleSection
+      <Collapsible
+        lazy
         title="Visualizer"
-        headerContent={
-          <span class="ml-auto flex items-center gap-2">
+        contentClass="p-3"
+        actions={
+          <span class="flex items-center gap-2">
             <span
               class={`rounded px-1.5 py-0.5 text-xs ${
                 props.stats?.renderMode === "worker"
@@ -41,11 +40,12 @@ export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
             >
               {props.stats?.renderMode === "worker" ? "Worker" : "Main"}
             </span>
-            <span
-              class={`font-mono text-xs ${getFpsColor(props.stats?.fps, UI_TARGET_FPS)}`}
+            <MetricValue
+              tone={getFpsTone(props.stats?.fps, UI_TARGET_FPS)}
+              class="text-xs"
             >
               {formatNumber(props.stats?.fps, 0)} fps
-            </span>
+            </MetricValue>
           </span>
         }
       >
@@ -72,12 +72,13 @@ export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
             <MetricCard
               label="FPS"
               value={formatNumber(props.stats?.fps, 0)}
-              valueClass={`text-xl font-bold ${getFpsColor(props.stats?.fps, UI_TARGET_FPS)}`}
+              size="lg"
+              tone={getFpsTone(props.stats?.fps, UI_TARGET_FPS)}
             />
             <MetricCard
               label="Total"
               value={formatNumber(props.stats?.totalRenderMs, 2, " ms")}
-              valueClass="text-xl font-bold"
+              size="lg"
             />
             <MetricCard
               label="Update"
@@ -114,7 +115,7 @@ export function VisualizerMetricsSection(props: VisualizerMetricsSectionProps) {
             <PipelineStep label="Bloom" value={props.stats?.bloomMs} />
           </div>
         </div>
-      </CollapsibleSection>
+      </Collapsible>
     </Show>
   );
 }

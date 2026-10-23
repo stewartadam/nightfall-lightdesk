@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -29,7 +30,7 @@ import { Button } from "../../../components/ui/visual-language/button";
  */
 
 import { type Component, createSignal, Show } from "solid-js";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import type { ObjectLibraryCommand } from "../../../types";
 
@@ -162,10 +163,7 @@ const CreateObjectModal: Component<CreateObjectModalProps> = (props) => {
         },
       };
 
-      engineRuntime.sendCommand({
-        module: "ObjectLibraryCommand",
-        command,
-      });
+      commandClient.emit("ObjectLibraryCommand", command);
 
       log.info(`Created object: ${objectName}`);
       handleClose();
@@ -333,7 +331,9 @@ const CreateObjectModal: Component<CreateObjectModalProps> = (props) => {
 
           {/* Error */}
           <Show when={error()}>
-            <div class="text-red-400 text-sm">{error()}</div>
+            <Alert variant="caution" density="compact" role="alert">
+              <p>{error()}</p>
+            </Alert>
           </Show>
         </DialogBody>
         <DialogFooter>

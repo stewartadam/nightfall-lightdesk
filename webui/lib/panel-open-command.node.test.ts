@@ -186,6 +186,78 @@ test("openOrFocusPanel expands edge group for existing edge panel", () => {
   assert.equal(focusCalls, 1);
 });
 
+/** Verifies a hidden edge group is made visible before it is expanded. */
+test("openOrFocusPanel reveals a hidden edge group before expanding it", () => {
+  const calls: string[] = [];
+  let rightVisible = false;
+
+  const api = createDockApi({
+    getPanel: (id) =>
+      id === "panel-PropertiesInspector"
+        ? {
+            id,
+            api: { location: { position: "right", type: "edge" } },
+            focus: () => {
+              calls.push("focus");
+            },
+          }
+        : undefined,
+    isEdgeGroupVisible: (position) =>
+      position === "right" ? rightVisible : true,
+    setEdgeGroupVisible: (position, visible) => {
+      calls.push(`visible:${position}:${visible}`);
+      rightVisible = visible;
+    },
+    getEdgeGroup: (position) => ({
+      expand: () => {
+        calls.push(`expand:${position}`);
+      },
+    }),
+  });
+
+  const result = openOrFocusPanel(
+    api,
+    "panel-PropertiesInspector",
+    "PropertiesInspector",
+    "Properties",
+  );
+
+  assert.equal(result, "focused");
+  assert.deepEqual(calls, ["visible:right:true", "expand:right", "focus"]);
+});
+
+/** Verifies an already visible edge group is expanded without toggling visibility. */
+test("openOrFocusPanel leaves visible edge groups visible", () => {
+  const calls: string[] = [];
+
+  const api = createDockApi({
+    addPanel: () => ({
+      id: "panel-CommandLine",
+      api: { location: { position: "bottom", type: "edge" } },
+      focus: () => {},
+    }),
+    isEdgeGroupVisible: () => true,
+    setEdgeGroupVisible: (position, visible) => {
+      calls.push(`visible:${position}:${visible}`);
+    },
+    getEdgeGroup: (position) => ({
+      expand: () => {
+        calls.push(`expand:${position}`);
+      },
+    }),
+  });
+
+  const result = openOrFocusPanel(
+    api,
+    "panel-CommandLine",
+    "CommandLine",
+    "Console",
+  );
+
+  assert.equal(result, "opened");
+  assert.deepEqual(calls, ["expand:bottom"]);
+});
+
 test("openOrFocusPanel opens panel when not present", () => {
   const addedPanels: AddedPanelParams[] = [];
 

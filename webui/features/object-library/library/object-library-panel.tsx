@@ -53,7 +53,7 @@ import {
   type FilterableGridColumn,
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { objectLibrary } from "../../../state/appStores";
@@ -116,10 +116,7 @@ const ObjectLibraryPanel: Component<ObjectLibraryPanelProps> = (props) => {
       data: objectsToDelete,
     };
 
-    engineRuntime.sendCommand({
-      module: "ObjectLibraryCommand",
-      command,
-    });
+    commandClient.emit("ObjectLibraryCommand", command);
   };
 
   // Register properties panel

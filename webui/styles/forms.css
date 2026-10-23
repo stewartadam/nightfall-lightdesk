@@ -24,7 +24,9 @@
     input[type="time"],
     textarea,
     select
-  ) {
+  ),
+  /* Preline's advanced select toggle stands in for a native select; the element type outranks preflight. */
+  button:where(.nf-select-toggle) {
     --nf-control-padding: 9px 10px;
     --nf-control-height: 38px;
     display: block;
@@ -81,6 +83,9 @@
     flex-shrink: 0;
     width: 16px;
     height: 16px;
+    accent-color: var(--accent);
+  }
+  :where(input[type="range"]) {
     accent-color: var(--accent);
   }
   :where(input, textarea, select):disabled {

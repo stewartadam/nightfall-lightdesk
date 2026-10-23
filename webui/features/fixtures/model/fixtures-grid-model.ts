@@ -20,6 +20,10 @@ import {
   normalizeAttributeName,
   resolveParameterValue,
 } from "../../../lib/utils";
+import type {
+  LayerElementParameterValues,
+  LayerState,
+} from "../../../lib/ws/types";
 import type { ParameterMap } from "../../../state/appStores";
 import * as types from "../../../types";
 export type FixtureParameterState = NonNullable<
@@ -123,26 +127,6 @@ export function recordAttributeNames(
   for (const attr of Object.keys(entries)) {
     allAttributes.add(normalizeAttributeName(attr));
   }
-}
-
-/** Records every attribute key that can affect the fixture grid schema for a parent row. */
-export function recordParentAttributeNames(
-  param: FixtureParameterState | undefined,
-  allAttributes: Set<string>,
-): void {
-  recordAttributeNames(param?.raw, allAttributes);
-  recordAttributeNames(param?.absolute, allAttributes);
-  recordAttributeNames(param?.relative, allAttributes);
-}
-
-/** Records every attribute key that can affect the fixture grid schema for an element row. */
-export function recordElementAttributeNames(
-  element: FixtureElementParameterState | undefined,
-  allAttributes: Set<string>,
-): void {
-  recordAttributeNames(element?.raw, allAttributes);
-  recordAttributeNames(element?.absolute, allAttributes);
-  recordAttributeNames(element?.relative, allAttributes);
 }
 
 /** Returns normalized output values, optionally limited to asserted attributes. */
@@ -318,7 +302,7 @@ export function fixtureAttributeSignature(
 
 /** Returns whether parameter rows assert an attribute for a fixture element. */
 export function layerHasAssertedAttribute(
-  rows: types.OutboundElementParameterValues[],
+  rows: LayerElementParameterValues[],
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,
@@ -347,7 +331,7 @@ export function layerHasAssertedAttribute(
 
 /** Finds normalized parameter values in one asserted layer row set. */
 export function layerParameterValuesForAttribute(
-  rows: readonly types.OutboundElementParameterValues[],
+  rows: readonly LayerElementParameterValues[],
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,
@@ -578,7 +562,7 @@ export function assertedFixtureValueAttributes(
 
 /** Resolves the value display for the topmost layer assertion affecting a fixture cell. */
 export function fixtureValueAttributesForTopLayer(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixture: types.Fixture | undefined,
   fixtureUid: string,
   elementIndex: number | undefined,
@@ -626,7 +610,7 @@ export function fixtureValueAttributesForTopLayer(
 
 /** Resolves the attribute values that should be rendered for one fixture value cell. */
 export function resolvedFixtureValueAttributes(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixture: types.Fixture | undefined,
   fixtureUid: string,
   elementIndex: number | undefined,
@@ -667,7 +651,7 @@ export function fixtureValueCellDisplayText(cell: GridCell): string {
 /** Returns whether child element cells render non-uniform values for one attribute. */
 export function childElementDisplaysVary(
   childStates: readonly FixtureElementValueState[],
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixture: types.Fixture | undefined,
   fixtureUid: string,
   attribute: string,
@@ -720,7 +704,7 @@ export function childElementDisplaysVary(
 
 /** Finds the highest layer asserting a fixture value channel. */
 export function findAssertingLayerIndexIn(
-  layers: readonly types.OutboundLayerState[],
+  layers: readonly LayerState[],
   fixtureUid: string,
   elementIndex: number | undefined,
   attribute: string,

@@ -16,6 +16,7 @@ pub(crate) struct ResyncSettingsParams<'w> {
     settings: Res<'w, crate::settings::DeskSettings>,
     io_settings: Res<'w, IoRuntimeSettings>,
     external_control: Res<'w, ExternalControlState>,
+    telemetry: Res<'w, crate::settings::TelemetryState>,
     available_audio_devices: Res<'w, AvailableAudioDevices>,
     available_usb_dmx_devices: Res<'w, AvailableUsbDmxDevices>,
     network_interface_state: Res<'w, NetworkInterfaceState>,
@@ -28,36 +29,39 @@ pub(crate) struct ResyncControlParams<'w, 's> {
     controls: Res<'w, Controls>,
     instance_index: Res<'w, InstanceIndex>,
     controls_query: Query<'w, 's, &'static InstanceControls>,
+    held_buttons: Res<'w, HeldButtonEffects>,
 }
 
 /// Handle ResyncState by sending desk-owned lists immediately
 pub(crate) fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     group_data_provider: Res<DataProvider<Group>>,
     exec_query: Query<&Clip>,
     blueprint_data_provider: Res<DataProvider<Blueprint>>,
     blueprint_reference_index: Res<BlueprintReferenceIndex>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
     resync_settings: ResyncSettingsParams,
-    parameters_query: Query<&Parameter>,
-    layers: Query<super::layers::LayerSnapshotData>,
+    mut layer_stack_publication: ResMut<LayerStackPublication>,
     instance_query: Query<super::instances::InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
     control_params: ResyncControlParams,
     undo_manager: Res<UndoManager>,
     mut pending_ui_notifications: Option<ResMut<UiNotificationState>>,
-    broadcaster: Res<ClientEventSink>,
+    every_client: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_groups(group_data_provider, &broadcaster);
     send_masters(&control_params.masters, &broadcaster);
     send_clips(exec_query, materialized_clips, &broadcaster);
-    send_instances(instance_query, materialized_clips, exec_query, &broadcaster);
+    send_instances(
+        instance_query,
+        materialized_clips,
+        exec_query,
+        &control_params.held_buttons,
+        &broadcaster,
+    );
     send_controls(
         &control_params.controls,
         &exec_query,
@@ -65,6 +69,7 @@ pub(crate) fn handle_resync_state(
         &materialized_clips,
         &control_params.instance_index,
         &control_params.controls_query,
+        &control_params.held_buttons,
         &broadcaster,
     );
     send_blueprints(blueprint_data_provider, &broadcaster);
@@ -72,6 +77,7 @@ pub(crate) fn handle_resync_state(
     send_settings(&resync_settings.settings, &broadcaster);
     send_io_settings(&resync_settings.io_settings, &broadcaster);
     send_external_control_state(&resync_settings.external_control, &broadcaster);
+    send_telemetry_state(&resync_settings.telemetry, &broadcaster);
     send_network_interface_state(
         &resync_settings.io_settings,
         &resync_settings.network_interface_state,
@@ -82,22 +88,29 @@ pub(crate) fn handle_resync_state(
         &broadcaster,
     );
     send_available_usb_dmx_devices(&resync_settings.available_usb_dmx_devices.0, &broadcaster);
-    send_layer_stack(
-        &fixture_data_provider,
-        parameters_query,
-        layers,
-        None,
+    // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
+    layer_stack_publication.invalidate();
+    send_undo_state(undo_manager, &broadcaster);
+    flush_pending_ui_notifications(
+        pending_ui_notifications.as_deref_mut(),
+        &every_client,
         &broadcaster,
     );
-    send_undo_state(undo_manager, &broadcaster);
-    flush_pending_ui_notifications(pending_ui_notifications.as_deref_mut(), &broadcaster);
+}
+
+/// State the layer stack snapshot is built from and change-checked against.
+#[derive(SystemParam)]
+pub(crate) struct LayerStackParams<'w, 's> {
+    projection: Res<'w, ParameterStateProjection>,
+    parameters: Query<'w, 's, &'static Parameter>,
+    layers: Query<'w, 's, super::layers::LayerSnapshotData>,
+    publication: ResMut<'w, LayerStackPublication>,
+    held_buttons: Res<'w, HeldButtonEffects>,
 }
 
 /// Emits rate-limited droppable metrics, layer, and playback snapshots.
 pub(crate) fn handle_low_freq_updates(
-    fixtures_data_provider: Res<FixtureDataProviderExt>,
-    parameters_query: Query<&Parameter>,
-    layers: Query<super::layers::LayerSnapshotData>,
+    mut layer_stack: LayerStackParams,
     io_settings: Res<IoRuntimeSettings>,
     network_interface_state: Res<NetworkInterfaceState>,
     output_frames: Res<OutputDmxFrames>,
@@ -136,13 +149,21 @@ pub(crate) fn handle_low_freq_updates(
         &broadcaster,
     );
     send_layer_stack(
-        &fixtures_data_provider,
-        parameters_query,
-        layers,
+        &layer_stack.projection,
+        layer_stack.parameters,
+        layer_stack.layers,
+        &mut layer_stack.publication,
+        &layer_stack.held_buttons,
         Some(&mut performance_diagnostics),
         &broadcaster,
     );
-    send_instances(instance_query, materialized_clips, clips, &broadcaster);
+    send_instances(
+        instance_query,
+        materialized_clips,
+        clips,
+        &layer_stack.held_buttons,
+        &broadcaster,
+    );
 }
 
 /// Returns wall-clock milliseconds for the low-frequency snapshot rate limiter.

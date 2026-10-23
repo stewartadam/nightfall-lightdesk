@@ -126,3 +126,31 @@ test("validateCommandSemantics checks every command in a command chain", async (
   assert.equal(result.status, "error");
   assert.match(result.status === "error" ? result.message : "", /unknownnode/);
 });
+
+/**
+ * Verifies unicast targets are recognized whichever form the settings snapshot carries the IP
+ * in: dotted text from JSON, or the octet array and byte array the CBOR snapshot decodes to.
+ */
+test("validateCommandSemantics accepts unicast targets with octet IP addresses", async () => {
+  for (const ip of [[192, 168, 1, 45], new Uint8Array([192, 168, 1, 45])]) {
+    const target = {
+      id: "sacnnode5",
+      protocol: types.NetworkDmxProtocol.Sacn,
+      delivery: { type: "Unicast", data: { ip } },
+    } as unknown as types.NetworkDmxOutputTarget;
+    const settings = makeSettings([
+      ...defaultNetworkDmxOutputs().targets,
+      target,
+    ]);
+    assert.deepEqual(
+      await validateCommandSemantics("patch fix 4 @sacnnode5:0.50", settings),
+      { status: "ok" },
+    );
+    // An unreadable snapshot would skip the check, so an unknown target must still fail.
+    const unknown = await validateCommandSemantics(
+      "patch fix 4 @othernode:0.50",
+      settings,
+    );
+    assert.equal(unknown.status, "error");
+  }
+});

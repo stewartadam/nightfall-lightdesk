@@ -7,6 +7,7 @@
  */
 
 import { createMemo } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
@@ -19,12 +20,16 @@ import {
 import {
   type ReferenceEntry,
   type ReferenceIssue,
-  referenceDomainLabel,
-  referenceIssueReasonLabel,
-} from "../../../lib/reference-audit";
+  ReferenceStatus,
+} from "../../../types";
 import {
   REFERENCE_COLUMNS,
   REFERENCE_ROW_HEIGHT,
+  referenceDomainLabel,
+  referenceIssueReasonLabel,
+  referenceOwnerLabel,
+  referenceRowKey,
+  referenceTargetLabel,
 } from "../model/reference-panel-model";
 
 const referenceColumns: GridColumn[] = REFERENCE_COLUMNS.map((column) => ({
@@ -51,19 +56,20 @@ function auditCell(
   let value: string;
   switch (column.id) {
     case "target":
-      value = row.targetLabel;
+      value = referenceTargetLabel(row.target);
       break;
     case "source":
       value = referenceDomainLabel(row.source.domain);
       break;
     case "object":
-      value = `${row.source.id}: ${row.source.label}`;
+      value = referenceOwnerLabel(row.source);
       break;
     case "path":
       value = row.path;
       break;
     case "status":
-      value = "status" in row && row.status === "ok" ? "OK" : "Missing";
+      value =
+        "status" in row && row.status === ReferenceStatus.Ok ? "OK" : "Missing";
       break;
     case "issue":
       value = "reason" in row ? referenceIssueReasonLabel(row.reason) : "";
@@ -106,20 +112,22 @@ const referenceDetailExtension: DataGridRichCellExtension = {
     if (column === "status")
       return (
         <ReferenceStatusPill
-          status={cell.copyData === "OK" ? "ok" : "missing"}
+          status={
+            cell.copyData === "OK"
+              ? ReferenceStatus.Ok
+              : ReferenceStatus.Missing
+          }
         />
       );
     if (column === "action")
       return (
-        <span
-          class={
-            cell.copyData === "Prune"
-              ? "rounded bg-amber-950 px-2 py-1 text-xs text-amber-200"
-              : "rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-400"
-          }
+        <Badge
+          size="md"
+          appearance="soft"
+          tone={cell.copyData === "Prune" ? "warning" : "neutral"}
         >
           {cell.copyData}
-        </span>
+        </Badge>
       );
     return <span class="truncate font-mono">{cell.copyData}</span>;
   },
@@ -143,7 +151,7 @@ export function ReferencesTable(props: { references: ReferenceEntry[] }) {
     createKeyedDataGridCellProvider({
       rows: props.references,
       columns: referenceColumns,
-      rowKey: (row) => row.id,
+      rowKey: referenceRowKey,
       columnKey: (column) => column.id!,
       getCellContent: ({ row, column }) => auditCell(row, column),
     }),
@@ -176,7 +184,7 @@ export function ReferenceHealthTable(props: { issues: ReferenceIssue[] }) {
     createKeyedDataGridCellProvider({
       rows: props.issues,
       columns: healthColumns,
-      rowKey: (row) => row.id,
+      rowKey: referenceRowKey,
       columnKey: (column) => column.id!,
       getCellContent: ({ row, column }) => auditCell(row, column),
     }),
@@ -196,19 +204,15 @@ export function ReferenceHealthTable(props: { issues: ReferenceIssue[] }) {
   );
 }
 
-/** Renders the status badge for a reverse-reference row. */
+/** Maps a reverse-reference row's status onto a success or danger badge labelled OK or Missing. */
 export function ReferenceStatusPill(props: {
   status: ReferenceEntry["status"];
 }) {
+  /** Whether the referenced target still resolves. */
+  const ok = () => props.status === ReferenceStatus.Ok;
   return (
-    <span
-      class={
-        props.status === "ok"
-          ? "rounded bg-emerald-950 px-2 py-1 text-xs text-emerald-200"
-          : "rounded bg-red-950 px-2 py-1 text-xs text-red-200"
-      }
-    >
-      {props.status === "ok" ? "OK" : "Missing"}
-    </span>
+    <Badge size="md" appearance="soft" tone={ok() ? "success" : "danger"}>
+      {ok() ? "OK" : "Missing"}
+    </Badge>
   );
 }

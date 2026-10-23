@@ -8,6 +8,7 @@
 
 //! Transport-neutral timeline audio directives for browser hosts.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
@@ -49,6 +50,15 @@ pub enum TimelineAudioDirective {
         #[typeshare(serialized_as = "String")]
         timeline_uid: Uuid,
         /// Requested media offset.
+        offset: Duration,
+    },
+    /// Report where engine playback is now, so playing media can correct its drift.
+    Sync {
+        /// Timeline definition that is playing.
+        #[serde(with = "nightfall::serde_uuid_simple")]
+        #[typeshare(serialized_as = "String")]
+        timeline_uid: Uuid,
+        /// Current authoritative media offset.
         offset: Duration,
     },
     /// Pause playback while retaining the loaded media and position.
@@ -100,23 +110,49 @@ enum TimelineAudioClientMessage<'a> {
     TimelineAudioDirective(&'a TimelineAudioDirective),
 }
 
-/// Emit browser audio effects for timelines whose authoritative state changed.
+/// Emit browser audio effects for timelines whose authoritative state changed, and report
+/// the engine clock to playing media every
+/// [`AUDIO_CLOCK_REPORT_INTERVAL`](crate::components::AUDIO_CLOCK_REPORT_INTERVAL) of playback.
 pub(crate) fn emit_browser_audio_directives(
     mut timelines: Query<&mut MaterializedTimeline>,
     timecodes: Query<&TimecodeGenerator>,
     broadcaster: Res<ClientEventSink>,
 ) {
-    for mut timeline in timelines
-        .iter_mut()
-        .filter(|timeline| timeline.audio_needs_sync)
-    {
+    let timecode_info = timecodes
+        .iter()
+        .map(|timecode| {
+            (
+                timecode.timecode.identifiers.uid,
+                (timecode.state.current_time, timecode.state.is_active),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    for mut timeline in timelines.iter_mut().filter(|timeline| {
+        timeline.audio_needs_sync || timeline.audio_clock_reported_offset.is_some()
+    }) {
         let timeline_uid = timeline.timeline.identifiers.uid;
-        let (current_time, timecode_running) = timecodes
-            .iter()
-            .find(|timecode| timecode.timecode.identifiers.uid == timeline.timeline.timecode_uid)
-            .map(|timecode| (timecode.state.current_time, timecode.state.is_active))
+        let (current_time, timecode_running) = timecode_info
+            .get(&timeline.timeline.timecode_uid)
+            .copied()
             .unwrap_or((Duration::ZERO, false));
         let offset = timeline.get_playback_position(current_time);
+        let playing = timeline.is_active && timeline.timeline.audio_enabled && timecode_running;
+
+        if !timeline.audio_needs_sync {
+            if timeline.take_audio_clock_report(playing, offset) {
+                publish(
+                    &broadcaster,
+                    &TimelineAudioDirective::Sync {
+                        timeline_uid,
+                        offset,
+                    },
+                );
+            }
+            continue;
+        }
+
+        timeline.anchor_audio_clock(playing, offset);
         let loop_range = timeline
             .timeline
             .loop_range

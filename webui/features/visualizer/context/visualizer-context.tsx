@@ -14,8 +14,7 @@ import {
   type ParentProps,
   useContext,
 } from "solid-js";
-import { commandEnvelope } from "../../../lib/command-envelope";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import type * as types from "../../../types";
 import type { VisualizerInteractionMode } from "../rendering/renderers/renderer-api";
@@ -165,9 +164,7 @@ export function createVisualizerContextValue(
     command: types.ProgrammerCommand,
     batchId?: string,
   ) => {
-    engineRuntime.sendCommand(
-      commandEnvelope("ProgrammerCommand", command, batchId),
-    );
+    commandClient.emit("ProgrammerCommand", command, { undoId: batchId });
   };
 
   const dispatchProgrammerSelectionCommand = (

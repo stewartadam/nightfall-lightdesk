@@ -11,15 +11,20 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
+import { Badge } from "../../../components/ui/badge";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudViewModeToggle, {
@@ -27,7 +32,8 @@ import CrudViewModeToggle, {
 } from "../../../components/widgets/crud/crud-view-mode-toggle";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import EntityEditorModal from "../../../components/widgets/entity-editor-dialog";
-import type { Blueprint } from "../../../types";
+import { setObjectDragData } from "../../../lib/object-drag";
+import { type Blueprint, ObjectType } from "../../../types";
 import type { BlueprintsController } from "../controllers/blueprints-controller";
 
 interface BlueprintsViewProps {
@@ -53,11 +59,19 @@ function BlueprintCard(props: BlueprintCardProps) {
     <button
       type="button"
       data-crud-select-id={uid}
-      class={CRUD_CARD_CLASS}
-      classList={{
-        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
+      draggable={!controller.selectionMode()}
+      onDragStart={(event) => {
+        if (!event.dataTransfer) return;
+        setObjectDragData(event.dataTransfer, ObjectType.Blueprint, uid);
+        event.dataTransfer.setData(
+          "text/plain",
+          props.blueprint.identifiers.label,
+        );
+        event.dataTransfer.effectAllowed = "copy";
       }}
+      class={CRUD_CARD_CLASS}
+      data-selectable-surface
+      data-selected={isSelected()}
       onClick={(event) => {
         if (controller.gridDragSelection.consumeSuppressedClick()) {
           event.preventDefault();
@@ -81,23 +95,27 @@ function BlueprintCard(props: BlueprintCardProps) {
       <div class="flex items-center justify-between gap-2">
         <span class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
           <span>{props.blueprint.identifiers.id}:</span>
-          <CrudInlineLabelEditor
-            ariaLabel="Blueprint card label"
-            class="truncate"
-            editing={controller.editingCardLabelUid() === uid}
-            label={props.blueprint.identifiers.label}
-            onCancel={() => controller.setEditingCardLabelUid(null)}
-            onCommit={(label) =>
-              controller.updateBlueprintLabel(props.blueprint, label)
+          <Show
+            when={controller.editingCardLabelUid() === uid}
+            fallback={
+              <span class="truncate">{props.blueprint.identifiers.label}</span>
             }
           >
-            {props.blueprint.identifiers.label}
-          </CrudInlineLabelEditor>
+            <InlineRenameField
+              ariaLabel="Blueprint card label"
+              allowEmpty
+              value={props.blueprint.identifiers.label}
+              onClose={() => controller.setEditingCardLabelUid(null)}
+              onCommit={(label) =>
+                controller.updateBlueprintLabel(props.blueprint, label)
+              }
+            />
+          </Show>
         </span>
         <Show when={dependents().length > 0}>
-          <span class="rounded border border-emerald-500/40 bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-100">
+          <Badge tone="success" appearance="soft">
             Referenced
-          </span>
+          </Badge>
         </Show>
       </div>
       <div class="mt-2 space-y-0.5 text-left text-[10px] text-neutral-400">
@@ -273,16 +291,16 @@ export function BlueprintsView(props: BlueprintsViewProps) {
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <Show when={controller.viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
-              <ToolbarButton
+              <ToolbarSeparator />
+              <ToggleToolbarButton
                 tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={controller.handleToggleSelectionMode}
-                ariaPressed={controller.selectionMode()}
+                pressed={controller.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }
@@ -357,21 +375,17 @@ export function BlueprintsView(props: BlueprintsViewProps) {
           <Show
             when={controller.displayRows().length > 0}
             fallback={
-              <div class="py-8 text-center text-neutral-500">
-                <Show
-                  when={controller.allDisplayRows().length > 0}
-                  fallback={
-                    <>
-                      <p>No blueprints defined</p>
-                      <p class="mt-2 text-sm">
-                        Use the add button in the toolbar to create a blueprint
-                      </p>
-                    </>
-                  }
-                >
-                  <p>No matching blueprints</p>
-                </Show>
-              </div>
+              <Show
+                when={controller.allDisplayRows().length > 0}
+                fallback={
+                  <EmptyState
+                    title="No blueprints defined"
+                    description="Use the add button in the toolbar to create a blueprint"
+                  />
+                }
+              >
+                <EmptyState title="No matching blueprints" />
+              </Show>
             }
           >
             <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">

@@ -31,7 +31,7 @@ import "dockview/dist/styles/dockview.css";
 import "../index.css";
 import "./styles.css";
 import GlobalContextMenuHost from "../components/overlays/context-menu";
-import { useCommand } from "../components/providers/command-registry";
+import { useUiAction } from "../components/providers/command-registry";
 import {
   closeContextMenu,
   openContextMenu,
@@ -47,7 +47,13 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "../components/ui/dropdown-menu";
-import { MenuHeading } from "../components/ui/menu";
+import {
+  MenuHeading,
+  MenuItem,
+  MenuSeparator,
+  MenuSurface,
+} from "../components/ui/menu";
+import { Popover } from "../components/ui/popover";
 import { AccentPicker } from "../components/ui/visual-language/accent-picker";
 import {
   visualLanguageAccents as accents,
@@ -61,17 +67,31 @@ import { getLogger } from "../lib/logger";
 import { initializePrelineRuntime } from "../lib/preline-runtime";
 import { pushToast } from "../state/appStores";
 import { AnimationsDemo } from "./animations-demo";
+import { CollapsibleDemo } from "./collapsible-demo";
 import { ColorPickerDemo } from "./color-picker-demo";
 import { ButtonDemo, DockingDemo, SliderDemo } from "./component-demos";
 import { ComponentIndex } from "./component-index";
-import { AttributeDemo, FaderDemo, SwitchDemo } from "./control-demos";
+import {
+  AttributeDemo,
+  FaderDemo,
+  SegmentedControlDemo,
+  SwitchDemo,
+} from "./control-demos";
 import { DataGridDemo } from "./data-grid-demo";
 import { DialogsDemo } from "./dialogs-demo";
-import { SparklineDemo, TooltipDemo } from "./feedback-demos";
+import {
+  AlertDemo,
+  BadgeDemo,
+  EmptyStateDemo,
+  ErrorFallbackDemo,
+  SparklineDemo,
+  TooltipDemo,
+} from "./feedback-demos";
 import { InputFormsDemo } from "./input-forms-demo";
 import { CommandPaletteDemo, ShortcutsDemo } from "./keyboard-demos";
 import { InlineRenameDemo, ObjectSelectorDemo } from "./object-demos";
 import { PopoutPreview, PopupDemo } from "./popup-demo";
+import { TabMenuDemo } from "./tab-menu-demo";
 import { ToastDemo } from "./toast-demo";
 import { ToolbarDemo } from "./toolbar-demo";
 
@@ -95,6 +115,11 @@ const componentDemos = [
   { id: "menus", title: "Context menus", component: "menus" },
   { id: "sliders", title: "Sliders", component: "sliders" },
   { id: "switches", title: "Switches", component: "switches" },
+  {
+    id: "segmented-controls",
+    title: "Segmented controls",
+    component: "segmentedControls",
+  },
   { id: "faders", title: "Vertical faders", component: "faders" },
   { id: "attributes", title: "Attribute sliders", component: "attributes" },
   {
@@ -103,10 +128,20 @@ const componentDemos = [
     component: "objectSelector",
   },
   { id: "inline-rename", title: "Inline rename", component: "inlineRename" },
+  { id: "alerts", title: "Alerts", component: "alerts" },
+  {
+    id: "error-fallback",
+    title: "Error fallback",
+    component: "errorFallback",
+  },
+  { id: "collapsibles", title: "Collapsibles", component: "collapsibles" },
+  { id: "badges", title: "Badges", component: "badges" },
+  { id: "empty-states", title: "Empty states", component: "emptyStates" },
   { id: "sparklines", title: "Sparklines", component: "sparklines" },
   { id: "tooltips", title: "Tooltips", component: "tooltips" },
   { id: "color-picker", title: "Color picker", component: "colorPicker" },
   { id: "docking", title: "Docking", component: "docking" },
+  { id: "tab-menu", title: "Tab menu", component: "tabMenu" },
   { id: "dialogs", title: "Dialogs", component: "dialogs" },
   { id: "popups", title: "Popups & popouts", component: "popups" },
   { id: "toasts", title: "Toasts", component: "toasts" },
@@ -206,7 +241,7 @@ function DesignLab() {
   const popoutWindows = new Set<Window>();
 
   for (const demo of componentDemos) {
-    useCommand({
+    useUiAction({
       id: `design-lab.open.${demo.id}`,
       name: `Open ${demo.title}`,
       description: `Open or focus the ${demo.title.toLowerCase()} panel`,
@@ -214,7 +249,7 @@ function DesignLab() {
       execute: () => openDemo(demo),
     });
   }
-  useCommand({
+  useUiAction({
     id: "design-lab.toggle-density",
     name: "Toggle density",
     description: "Toggle Comfort / Compact density",
@@ -222,7 +257,7 @@ function DesignLab() {
     shortcut: "Alt+Shift+d",
     execute: () => setCompact((current) => !current),
   });
-  useCommand({
+  useUiAction({
     id: "design-lab.next-accent",
     name: "Next accent",
     description: "Cycle the lab accent color",
@@ -540,6 +575,74 @@ function DesignLab() {
     );
   }
 
+  /**
+   * Demonstrates a `Popover` menu that stays open while its checkable items
+   * toggle, with a described item below a literal heading.
+   */
+  function PopoverMenuDemo() {
+    const [open, setOpen] = createSignal(false);
+    const [layers, setLayers] = createSignal(new Set(["Beams"]));
+    let anchor: HTMLButtonElement | undefined;
+
+    /** Adds or removes one layer without closing the popover. */
+    const toggleLayer = (layer: string) => {
+      const next = new Set(layers());
+      if (next.has(layer)) next.delete(layer);
+      else next.add(layer);
+      setLayers(next);
+    };
+
+    return (
+      <div class="property-section">
+        <div class="section-label">Popover menu</div>
+        <Button
+          ref={anchor}
+          aria-expanded={open()}
+          aria-haspopup="menu"
+          onClick={() => setOpen((value) => !value)}
+        >
+          Visible layers ({layers().size})
+        </Button>
+        <Popover
+          anchor={() => anchor}
+          open={open()}
+          onClose={() => setOpen(false)}
+          surface={MenuSurface}
+          class="w-64"
+          role="menu"
+          aria-label="Visible layers"
+        >
+          <MenuHeading literal>Stage left · /stage/left</MenuHeading>
+          <For each={["Beams", "Fixtures", "Labels"]}>
+            {(layer) => (
+              <MenuItem
+                role="menuitemcheckbox"
+                aria-checked={layers().has(layer)}
+                checked={layers().has(layer)}
+                onClick={() => toggleLayer(layer)}
+              >
+                {layer}
+              </MenuItem>
+            )}
+          </For>
+          <MenuSeparator />
+          <MenuItem
+            description="Shows every layer and closes this menu."
+            onClick={() => {
+              setLayers(new Set(["Beams", "Fixtures", "Labels"]));
+              setOpen(false);
+            }}
+          >
+            Show all
+          </MenuItem>
+        </Popover>
+        <p class="field-help">
+          Items toggle without closing; Escape or an outside click dismisses.
+        </p>
+      </div>
+    );
+  }
+
   /** Demonstrates the same menu primitives through dropdown and context-menu interactions. */
   function Menus() {
     const [checked, setChecked] = createSignal(true);
@@ -606,6 +709,7 @@ function DesignLab() {
             {lastAction()}
           </p>
         </div>
+        <PopoverMenuDemo />
         <div
           class="menu-demo-target"
           onContextMenu={(event) => showTileMenu(selected(), event)}
@@ -783,10 +887,16 @@ function DesignLab() {
               menus: Menus,
               sliders: SliderDemo,
               switches: SwitchDemo,
+              segmentedControls: SegmentedControlDemo,
               faders: FaderDemo,
               attributes: AttributeDemo,
               objectSelector: ObjectSelectorDemo,
               inlineRename: InlineRenameDemo,
+              alerts: AlertDemo,
+              errorFallback: ErrorFallbackDemo,
+              collapsibles: CollapsibleDemo,
+              badges: BadgeDemo,
+              emptyStates: EmptyStateDemo,
               sparklines: SparklineDemo,
               tooltips: TooltipDemo,
               colorPicker: ColorPickerDemo,
@@ -807,6 +917,7 @@ function DesignLab() {
                 />
               ),
               toasts: ToastDemo,
+              tabMenu: TabMenuDemo,
               animations: AnimationsDemo,
               docking: () => (
                 <DockingDemo

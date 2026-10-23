@@ -18,8 +18,8 @@
 
 import type { ReadableAtom } from "nanostores";
 import { createEffect, createRoot, createSignal } from "solid-js";
+import { registerUiAction } from "../components/providers/command-registry";
 import {
-  dockviewLayoutActiveLayoutKey,
   dockviewLayoutSettingsSnapshotRevision,
   dockviewLayoutShowfileRevision,
 } from "../components/shell/docking/layout-readiness";
@@ -31,7 +31,8 @@ import {
 import type { NightfallHarness } from "../e2e/harness/registry";
 import { type AppLifecyclePhase, appLifecycle } from "../state/app-lifecycle";
 import { $settings, $settingsSnapshotRevision } from "../state/settings";
-import { activeLayoutKey } from "./dockview-active-layout";
+import type { DeskCommand } from "../types";
+import { commandClient } from "./engine-commands";
 import {
   backendAppState,
   connectionStatus,
@@ -65,8 +66,6 @@ export type TestReadiness = {
   layoutShowfileRevision: number;
   settingsRevision: number;
   layoutSettingsRevision: number;
-  /** Whether Dockview restored the active layout the settings describe. */
-  activeLayoutApplied: boolean;
   /** Whether Dockview applied the layout for the current showfile and settings. */
   layoutApplied: boolean;
   /** Whether startup finished and a resynced backend session drives the shell. */
@@ -138,6 +137,12 @@ export type NightfallTestHooks = {
     /** Returns the desk command that saves the current show under a name. */
     saveNamedCommand: typeof saveNamedShowfileCommand;
   };
+  uiActions: {
+    /**
+     * Registers a UI action as a mounted panel would, returning the disposer its unmount runs.
+     */
+    register: typeof registerUiAction;
+  };
 };
 
 const DEFAULT_TIMEOUT_MS = 45_000;
@@ -148,7 +153,6 @@ const readinessAtoms: ReadableAtom<unknown>[] = [
   currentShowfileRevision,
   dockviewLayoutShowfileRevision,
   dockviewLayoutSettingsSnapshotRevision,
-  dockviewLayoutActiveLayoutKey,
   $settings,
   $settingsSnapshotRevision,
   e2eAutoOpenStartupShowfileSettled,
@@ -160,13 +164,9 @@ function readiness(): TestReadiness {
   const settingsRevision = $settingsSnapshotRevision.get();
   const layoutShowfileRevision = dockviewLayoutShowfileRevision.get();
   const layoutSettingsRevision = dockviewLayoutSettingsSnapshotRevision.get();
-  const activeLayoutApplied =
-    dockviewLayoutActiveLayoutKey.get() ===
-    activeLayoutKey($settings.get().active_panel_layout);
   const layoutApplied =
     layoutShowfileRevision >= showfileRevision &&
-    layoutSettingsRevision >= settingsRevision &&
-    activeLayoutApplied;
+    layoutSettingsRevision >= settingsRevision;
   const startupAutoOpenPending = e2eAutoOpenStartupShowfileName() !== null;
   const lifecyclePhase = appLifecycle.get().phase;
   const status = connectionStatus();
@@ -182,7 +182,6 @@ function readiness(): TestReadiness {
     layoutShowfileRevision,
     settingsRevision,
     layoutSettingsRevision,
-    activeLayoutApplied,
     layoutApplied,
     shellInteractive:
       lifecyclePhase === "interactive" &&
@@ -260,7 +259,7 @@ function swapWorld(
 ): Promise<void> {
   markResyncPending();
   return waitForStartupWorldSwapCommand(
-    engineRuntime.sendCommandAndAwait({ module: "DeskCommand", command }),
+    commandClient.invoke("DeskCommand", command as DeskCommand),
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     expectedShowfileName,
   );
@@ -356,6 +355,9 @@ function createTestHooks(): NightfallTestHooks {
       ensureLoaded: ensureShowfileLoaded,
       swapWorld,
       saveNamedCommand: saveNamedShowfileCommand,
+    },
+    uiActions: {
+      register: registerUiAction,
     },
   };
 }

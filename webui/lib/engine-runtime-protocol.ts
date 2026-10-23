@@ -16,7 +16,6 @@ export type EngineRuntimeConfig =
       mode: "embedded-demo";
       sampleId: string;
       showfileUrl: string;
-      tickRateHz?: number;
     };
 
 /** Browser-engine measurements exposed for feasibility tests and diagnostics. */

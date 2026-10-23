@@ -368,13 +368,8 @@ pub fn compositor<P: CompositorParameter>(
     // Update every parameter so released or cleared assertions fall back to defaults.
     for mut param in &mut param_query {
         let parameter = param.instance();
-        let final_value = if base_layer.absolute.contains_key(parameter)
-            || base_layer.relative.contains_key(parameter)
-        {
-            base_layer.get_effective_value(parameter)
-        } else {
-            param.compositing_context().default_value
-        };
+        let final_value =
+            base_layer.effective_value(parameter, param.compositing_context().default_value);
         if param.current_value() != final_value {
             param.set_raw_value(final_value);
         }

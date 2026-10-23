@@ -8,7 +8,8 @@
 
 /// Starts the headless application with shared configuration and logging.
 fn main() {
-    let (log_config, runtime_config, _log_guard) = app_runtime::initialize();
+    let (log_config, runtime_config, _runtime_guard) =
+        app_runtime::initialize(app_runtime::HostShell::Headless);
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

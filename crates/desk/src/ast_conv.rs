@@ -46,13 +46,10 @@ impl AstConvert for DeskAstConverter {
         match ast {
             ast::CommandAst::General(gen_ast) => match gen_ast {
                 ast::GeneralCommandAst::Save(save_ast) => match save_ast.name.as_ref() {
-                    Some(name) => Ok(vec![Box::new(DeskCommand::SaveNamedShowfile {
-                        name: name.0.to_string(),
-                        options: Default::default(),
-                    })]),
-                    None => Ok(vec![Box::new(
-                        DeskCommand::SaveShowfile(Default::default()),
-                    )]),
+                    Some(name) => Ok(vec![Box::new(DeskCommand::SaveNamedShowfile(
+                        name.0.to_string(),
+                    ))]),
+                    None => Ok(vec![Box::new(DeskCommand::SaveShowfile)]),
                 },
                 ast::GeneralCommandAst::Load(load_ast) => match load_ast.name.as_ref() {
                     Some(name) => Ok(vec![Box::new(load_command_for_target(name.0)?)]),

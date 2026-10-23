@@ -8,6 +8,7 @@
 
 import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
+import { XIcon } from "@squidlab/phosphor-solid/x";
 import { createSignal } from "solid-js";
 import { RangeSlider } from "../components/ui/range-slider";
 import { ToggleSwitch } from "../components/ui/toggle-switch";
@@ -18,13 +19,14 @@ import {
 } from "../components/ui/visual-language/tab-alignment-select";
 import { ButtonPopoverDemo } from "./button-popover-demo";
 
-/** Demonstrates scalar and two-handle sliders with editable units, fractional steps, and disabled state. */
+/** Demonstrates scalar and two-handle sliders with editable units, fractional steps, live versus committed values, and disabled state. */
 export function SliderDemo() {
   const [intensity, setIntensity] = createSignal<readonly [number, number]>([
     20, 80,
   ]);
   const [phase, setPhase] = createSignal<readonly [number, number]>([-90, 90]);
   const [amplitude, setAmplitude] = createSignal(65);
+  const [committedAmplitude, setCommittedAmplitude] = createSignal(65);
   const [disabled, setDisabled] = createSignal(false);
   return (
     <section class="properties lab-panel" aria-label="Slider examples">
@@ -70,10 +72,14 @@ export function SliderDemo() {
           <RangeSlider
             value={amplitude()}
             onChange={setAmplitude}
+            onCommit={setCommittedAmplitude}
             ariaLabel="Amplitude"
             disabled={disabled()}
           />
           <p class="field-help">Single handle · the FX editor control</p>
+          <p class="field-help" role="status" aria-label="Amplitude commit">
+            Live {amplitude()}% · committed {committedAmplitude()}%
+          </p>
         </div>
       </div>
       <ToggleSwitch
@@ -131,10 +137,44 @@ export function ButtonDemo() {
         <Button
           size="icon"
           aria-label="Add sample"
+          tooltip="Add a sample row"
           onClick={() => setNotice("Icon action activated.")}
         >
           <PlusIcon size={16} />
         </Button>
+      </div>
+      <div class="property-section">
+        <div class="section-label">Sizes</div>
+        <div class="button-samples">
+          <Button onClick={() => setNotice("Standard action activated.")}>
+            Standard
+          </Button>
+          <Button
+            size="compact"
+            onClick={() => setNotice("Compact action activated.")}
+          >
+            Compact
+          </Button>
+          <Button
+            size="icon-compact"
+            variant="subtle"
+            aria-label="Remove sample"
+            onClick={() => setNotice("Compact icon action activated.")}
+          >
+            <XIcon size={16} />
+          </Button>
+          <span class="field-help">
+            Inline{" "}
+            <Button
+              size="inline"
+              variant="primary"
+              onClick={() => setNotice("Inline action activated.")}
+            >
+              Reset
+            </Button>{" "}
+            sits in a line of text.
+          </span>
+        </div>
       </div>
       <p class="field-help" role="status">
         {notice()}
@@ -180,10 +220,14 @@ export function DockingDemo(props: {
         </div>
       </div>
       <div class="property-section">
-        <TabAlignmentSelect
-          value={props.alignment}
-          onChange={props.onAlignment}
-        />
+        <label class="block">
+          <span class="text-sm text-gray-300">Tab alignment</span>
+          <TabAlignmentSelect
+            class="mt-1"
+            value={props.alignment}
+            onChange={props.onAlignment}
+          />
+        </label>
         <p class="field-help">
           Applies to regular and edge groups. Justify fills the tab strip.
         </p>

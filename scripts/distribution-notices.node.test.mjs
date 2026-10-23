@@ -22,7 +22,11 @@ import {
   collectRust,
   documentFor,
   frontendNotices,
+  hostTriple,
   legalFiles,
+  noticesJson,
+  noticesText,
+  packageDevelopmentNotices,
   renderNotices,
   rustNotices,
   textHash,
@@ -82,6 +86,28 @@ test("Rust notices use cargo-about texts and selected licenses", () => {
     assert.throws(
       () => rustNotices({ ...report, licenses: [] }),
       /Missing cargo-about license/,
+    );
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
+
+/** Point registry crates at their crates.io archive and git-patched crates at the pinned commit. */
+test("Rust notices link each crate's packaged source", () => {
+  const root = mkdtempSync(join(tmpdir(), "nightfall-notices-"));
+  try {
+    const report = cargoReport(root, [
+      { id: "MIT", source_path: "LICENSE-MIT", text: "MIT attribution" },
+    ]);
+    assert.equal(
+      rustNotices(report)[0].source,
+      "https://crates.io/api/v1/crates/example/1.0.0/download",
+    );
+    report.crates[0].package.source =
+      "git+https://github.com/owner/example.git?rev=abc123#abc123def456";
+    assert.equal(
+      rustNotices(report)[0].source,
+      "https://github.com/owner/example/tree/abc123def456",
     );
   } finally {
     rmSync(root, { recursive: true });
@@ -187,6 +213,43 @@ test("distribution contains full Preline terms and upstream artwork copyright", 
 /** Normalize Windows checkouts when verifying pinned legal texts. */
 test("notice hashes are independent of checkout line endings", () => {
   assert.equal(textHash("one\ntwo\n"), textHash("one\r\ntwo\r\n"));
+});
+
+/**
+ * `tauri dev` needs the notices bundle resource to exist; the development preview fills it
+ * without a frontend build, and never replaces notices a real build already wrote.
+ */
+test("development notices fill a missing resource without replacing real notices", () => {
+  const outDir = mkdtempSync(join(tmpdir(), "nightfall-dev-notices-"));
+  try {
+    packageDevelopmentNotices(outDir);
+    const document = JSON.parse(
+      readFileSync(join(outDir, "notices", noticesJson), "utf8"),
+    );
+    assert.match(document.distribution, /^Development preview/);
+    assert.ok(existsSync(join(outDir, "notices", noticesText)));
+    assert.ok(existsSync(join(outDir, "notices", "NIGHTFALL-LICENSE.txt")));
+
+    writeFileSync(join(outDir, "notices", noticesJson), "release");
+    packageDevelopmentNotices(outDir);
+    assert.equal(
+      readFileSync(join(outDir, "notices", noticesJson), "utf8"),
+      "release",
+    );
+  } finally {
+    rmSync(outDir, { recursive: true });
+  }
+});
+
+/** Local packaging without an explicit target uses the host triple reported by rustc. */
+test("host triple comes from rustc's verbose version output", () => {
+  const output =
+    "rustc 1.0.0\nbinary: rustc\nhost: aarch64-apple-darwin\nrelease: 1.0.0\n";
+  assert.equal(
+    hostTriple(() => output),
+    "aarch64-apple-darwin",
+  );
+  assert.throws(() => hostTriple(() => "rustc 1.0.0\n"), /host triple/);
 });
 
 /** Fail rather than silently choosing between inconsistent inventories of one dependency. */

@@ -12,7 +12,8 @@ import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { FileIcon } from "@squidlab/phosphor-solid/file";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
-import { Show } from "solid-js";
+import { onMount, Show } from "solid-js";
+import { MappingModeToggle } from "../../../features/io";
 import { useShowfileObjectPalette } from "../../../features/showfile";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
@@ -24,6 +25,7 @@ import { ToolbarSeparator } from "../../ui/panel-toolbar";
 import Tooltip from "../../ui/tooltip";
 import { Button } from "../../ui/visual-language/button";
 import HeaderCommandLine from "../header/command-line";
+import { createCommandLineFit } from "../header/command-line-fit";
 import LayoutSwitcher from "../header/layout-switcher";
 import HeaderNotificationHistory from "../header/notification-history";
 import { resetBrowserDemo } from "../runtime/browser-demo-banner";
@@ -31,17 +33,14 @@ import AppMenu from "../status-bar/app-menu";
 import { ConnectionIndicator } from "../status-bar/connection-indicator";
 import UndoControls from "../status-bar/undo-controls";
 
-/** Renders the app logo and name in the docked header. */
-function HeaderBrand() {
+/** Renders the app logo that anchors the left edge of the docked header. */
+function HeaderLogo() {
   return (
-    <div class="flex items-center gap-2 text-sm font-semibold">
-      <img
-        src={`${import.meta.env.BASE_URL}logo.svg`}
-        alt="logo"
-        class="h-8 w-8 rounded"
-      />
-      <span>{isEmbeddedDemoRuntime() ? "nightfall demo" : "nightfall"}</span>
-    </div>
+    <img
+      src={`${import.meta.env.BASE_URL}logo.svg`}
+      alt={isEmbeddedDemoRuntime() ? "nightfall demo" : "nightfall"}
+      class="size-8 shrink-0 rounded"
+    />
   );
 }
 
@@ -72,6 +71,9 @@ function HeaderActions() {
           <FileIcon class="size-4" aria-hidden />
         </Button>
       </Tooltip>
+      <Tooltip content={() => "Controller mapping mode"} position="bottom">
+        <MappingModeToggle />
+      </Tooltip>
       <HeaderNotificationHistory />
     </>
   );
@@ -92,16 +94,16 @@ function CompactHeaderBar() {
     <nav class="flex min-w-0 w-full items-center gap-1" aria-label="Global">
       <AppMenu
         triggerLabel="Main menu"
-        triggerClass="nf-compact-logo-menu"
+        triggerSize="icon"
         trigger={
-          <>
+          <span class="inline-flex items-center gap-0.5">
             <img
               src={`${import.meta.env.BASE_URL}logo.svg`}
               alt=""
-              class="size-7 rounded"
+              class="size-7 max-w-none shrink-0 rounded"
             />
-            <CaretDownIcon class="size-3 text-gray-400" aria-hidden />
-          </>
+            <CaretDownIcon class="size-3 shrink-0 text-gray-400" aria-hidden />
+          </span>
         }
         placement="below"
         align="start"
@@ -143,7 +145,38 @@ function CompactHeaderBar() {
 }
 
 /**
- * Renders the global navigation header and command entry affordances. Compact
+ * The docked header on wider screens, always one row: the logo and layout
+ * switcher on the left, the command input beside the palette and notification
+ * buttons on the right. When the input would squeeze the layout switcher, it
+ * collapses to a Console button beside Clear (see `createCommandLineFit`).
+ */
+function DockedHeaderBar() {
+  const fit = createCommandLineFit();
+  let switcherSlot: HTMLDivElement | undefined;
+  let commandSlot: HTMLDivElement | undefined;
+  onMount(() => {
+    if (switcherSlot && commandSlot) fit.observe({ switcherSlot, commandSlot });
+  });
+
+  return (
+    <nav class="flex min-w-0 w-full items-center gap-3" aria-label="Global">
+      <HeaderLogo />
+      <div ref={switcherSlot} class="min-w-0 flex-1">
+        <LayoutSwitcher />
+      </div>
+      <div class="flex shrink-0 items-center gap-2">
+        <div ref={commandSlot} class="flex">
+          <HeaderCommandLine collapsed={fit.collapsed} />
+        </div>
+        <ToolbarSeparator />
+        <HeaderActions />
+      </div>
+    </nav>
+  );
+}
+
+/**
+ * Renders the global navigation header (see `DockedHeaderBar`). Compact
  * screens get one slim row instead (see `CompactHeaderBar`): the command line
  * stays reachable as its own panel, and the layout switcher is left out
  * because the compact shell does not switch named layouts.
@@ -161,24 +194,7 @@ export default function AppHeader() {
       }}
     >
       <Show when={!compact()} fallback={<CompactHeaderBar />}>
-        <nav
-          class="grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3"
-          aria-label="Global"
-        >
-          <div class="min-w-0">
-            <HeaderCommandLine />
-          </div>
-          <HeaderBrand />
-          <div class="contents min-w-0 items-center justify-end gap-2 xl:flex">
-            <div class="col-span-3 row-start-2 min-w-0 xl:contents">
-              <LayoutSwitcher />
-            </div>
-            <div class="col-start-3 row-start-1 flex shrink-0 flex-row items-center justify-end gap-2">
-              <ToolbarSeparator />
-              <HeaderActions />
-            </div>
-          </div>
-        </nav>
+        <DockedHeaderBar />
       </Show>
     </header>
   );

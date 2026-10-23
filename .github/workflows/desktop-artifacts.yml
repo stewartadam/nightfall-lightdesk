@@ -58,7 +58,7 @@ jobs:
           path: ${{ runner.temp }}/commits.json
           if-no-files-found: error
           retention-days: 7
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust-cache
         with:
           key: desktop-web
           cache-on-failure: true
@@ -74,6 +74,9 @@ jobs:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
       - name: Build shared desktop frontend
+        env:
+          # Stamp PR builds with the PR head, not GitHub's test merge commit.
+          NIGHTFALL_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           pnpm run build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -133,7 +136,7 @@ jobs:
           cache: pnpm
       - name: Load the repository Rust toolchain
         run: rustup target add ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust-cache
         with:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true
@@ -158,10 +161,69 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+          # The ERROR_REPORTS_DSN and USAGE_REPORTS_URL repository variables are compiled into
+          # published releases only, so every other build reports nowhere. They are variables, not
+          # secrets: each ships inside the app and only accepts new reports.
+          NIGHTFALL_ERROR_REPORTS_DSN: ${{ needs.prepare.outputs.publish == 'true' && vars.ERROR_REPORTS_DSN || '' }}
+          NIGHTFALL_USAGE_REPORTS_URL: ${{ needs.prepare.outputs.publish == 'true' && vars.USAGE_REPORTS_URL || '' }}
+          # Only published releases get the updater's public key, so no other build checks for
+          # updates.
+          NIGHTFALL_UPDATER_PUBKEY: ${{ needs.prepare.outputs.publish == 'true' && vars.TAURI_SIGNING_PUBLIC_KEY || '' }}
+          # Line tables let the error service resolve crash addresses to functions and lines.
+          # They are kept out of the installers: macOS and Windows write them beside the
+          # executable, and the Linux bundle hook splits them out before packaging.
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+          CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: ${{ runner.os == 'Linux' && 'off' || 'packed' }}
         with:
           projectPath: desktop/app-tauri
           tauriScript: pnpm exec tauri
           args: --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.ci.conf.json -- --locked
+      - name: Verify the release reports errors and usage and can update itself
+        if: needs.prepare.outputs.publish == 'true'
+        shell: bash
+        env:
+          DESKTOP_TARGET: ${{ matrix.target }}
+          ERROR_REPORTS_DSN: ${{ vars.ERROR_REPORTS_DSN }}
+          USAGE_REPORTS_URL: ${{ vars.USAGE_REPORTS_URL }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          for variable in ERROR_REPORTS_DSN USAGE_REPORTS_URL TAURI_SIGNING_PUBLIC_KEY; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Set the $variable repository variable before publishing a release"
+              exit 1
+            fi
+          done
+          if ! [[ "$USAGE_REPORTS_URL" =~ ^https://[^:@/]+:[^@/]+@[^/]+/track$ ]]; then
+            echo "::error::USAGE_REPORTS_URL must look like https://<client id>:<client secret>@<host>/track"
+            exit 1
+          fi
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          binary="$target_dir/$DESKTOP_TARGET/release/nightfall-app"
+          [ -f "$binary" ] || binary="$binary.exe"
+          if ! grep -qF "$ERROR_REPORTS_DSN" "$binary"; then
+            echo "::error::The release build does not contain the error report address"
+            exit 1
+          fi
+          if ! grep -qF "$USAGE_REPORTS_URL" "$binary"; then
+            echo "::error::The release build does not contain the usage report address"
+            exit 1
+          fi
+          if ! grep -qF "$TAURI_SIGNING_PUBLIC_KEY" "$binary"; then
+            echo "::error::The release build does not contain the updater public key"
+            exit 1
+          fi
+      - name: Stage debug symbols
+        env:
+          DESKTOP_TARGET: ${{ matrix.target }}
+        run: node scripts/desktop-artifacts.mjs stage-debug-symbols
+      - name: Upload debug symbols
+        if: needs.prepare.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: debug-symbols-${{ matrix.target }}-${{ github.sha }}
+          path: desktop-debug-symbols
+          if-no-files-found: error
+          retention-days: 7
       - name: Archive the macOS app for isolated signing
         if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
         shell: bash
@@ -192,7 +254,7 @@ jobs:
           path: desktop-artifacts/*${{ matrix.extensions[0] }}
           archive: false
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
       - name: Upload additional installer
         if: matrix.extensions[1] != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -200,14 +262,14 @@ jobs:
           path: desktop-artifacts/*${{ matrix.extensions[1] }}
           archive: false
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
       - name: Upload target notice inventory
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-notices-${{ matrix.target }}-${{ github.sha }}
           path: desktop-artifacts/notices-*.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   notices:
     name: Combine desktop release notices
@@ -236,7 +298,7 @@ jobs:
           path: release-notices/THIRD-PARTY-NOTICES-v*.txt
           archive: false
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   release-note-metadata:
     name: Collect PR metadata without executing repository code
@@ -271,7 +333,7 @@ jobs:
           name: release-note-metadata-${{ github.sha }}
           path: release-metadata/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
 
   release-notes:
     name: Render release notes without credentials
@@ -311,4 +373,4 @@ jobs:
             ${{ runner.temp }}/release-notes.md
             ${{ runner.temp }}/release-notes.md.json
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7

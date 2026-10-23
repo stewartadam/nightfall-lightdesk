@@ -6,13 +6,28 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::collections::BTreeSet;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use bevy_ecs::prelude::Resource;
 use nightfall::prelude::*;
-use nightfall_actions::ActionReference;
+use nightfall_actions::{
+    ActionReference, ActionRegistry, ActionSurface, InvocationError, desk_eval_action,
+    is_client_action,
+};
+use nightfall_clips::{
+    back_clip_action, go_clip_action, goto_clip_action, set_clip_rate_action, start_clip_action,
+    stop_clip_action,
+};
+use nightfall_playback_planner::{
+    PlannedPlaybackInterventionKind, TimelineEvalActionPlan, TimelinePlaybackActionKind,
+    TimelinePlaybackActionPlan,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::transport::fire_cue_action;
 
 /// Scroll behavior mode for timeline playback
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -288,6 +303,37 @@ pub struct TimelineLookaheadActionStatuses {
     pub statuses: Vec<TimelineLookaheadActionStatus>,
 }
 
+/// Sequence cue a timeline navigation action (Go, Back, or jump) leaves its clip on.
+///
+/// Resolved by replaying the timeline in position order, so it follows the action when it moves.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct TimelinePlannedCue {
+    /// Timeline definition UID that owns the action.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub timeline_uid: Uuid,
+    /// Timeline track that owns the action.
+    pub track_id: String,
+    /// Timeline action identifier.
+    pub action_id: String,
+    /// Sequence played by the action's clip.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub sequence_uid: Uuid,
+    /// Cue the sequence is on after the action runs, or `None` for an empty sequence.
+    #[serde(default, with = "nightfall::serde_option_uuid_simple")]
+    #[typeshare(serialized_as = "Option<String>")]
+    pub cue_uid: Option<Uuid>,
+}
+
+/// Resolved sequence cues for every timeline navigation action, across all timelines.
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub struct TimelinePlannedCuesByAction {
+    /// Planned cue of every Go, Back, and jump action.
+    pub cues: Vec<TimelinePlannedCue>,
+}
+
 /// A selected timeline object that can be edited by shared timeline commands.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -460,50 +506,161 @@ pub struct Action {
     pub position: Duration,
     /// Duration in milliseconds
     pub duration: Duration,
-    /// The action to perform when this action is triggered
-    pub action: ActionKind,
+    /// Bindable action invoked when timecode reaches the action.
+    pub action: ActionReference,
 }
 
-/// The action kind to invoke when a timeline action is triggered.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(tag = "type", content = "data")]
+impl Action {
+    /// Resolves the timeline meaning of this action through its domain capabilities.
+    pub fn kind(&self, registry: Option<&ActionRegistry>) -> ActionKind {
+        ActionKind::resolve(&self.action, registry)
+    }
+}
+
+/// Timeline meaning of an action, resolved from its reference through domain capabilities.
+///
+/// Persisted timelines store only [`ActionReference`]s. Domains describe how the timeline
+/// plans and replays their actions by registering [`TimelinePlaybackActionPlan`] or
+/// [`TimelineEvalActionPlan`] capabilities; actions without either run live as registered
+/// invocations and are skipped when seeking.
+#[derive(Debug, Clone, PartialEq)]
 pub enum ActionKind {
-    /// Trigger a cue from the cue library implicitly tied to an transient clip that removes itself when done.
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Play a cue as a transient timeline-owned playback lasting the action's duration.
     FireCue(Uuid),
-    /// Start a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Start a clip.
     StartClip(Uuid),
-    /// Stop a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Stop a clip.
     StopClip(Uuid),
-    /// Advance a sequence on a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Advance a sequence on a clip.
     AdvanceSequence(Uuid),
-    /// Go back in a sequence on a clip
-    #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+    /// Go back in a sequence on a clip.
     BackSequence(Uuid),
     /// Set the rate multiplier for a clip's active playback.
     SetClipRate {
         /// The unique ID of the clip to control.
-        #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
         uid: Uuid,
         /// Playback clock rate multiplier.
         rate: f32,
     },
-    /// Jump to a specific cue in a sequence on a clip
+    /// Jump to a specific cue in a sequence on a clip.
     JumpToCue {
-        /// The unique ID of the clip to jump to
-        #[serde(serialize_with = "nightfall::serde_uuid_simple::serialize")]
+        /// The unique ID of the clip to jump to.
         uid: Uuid,
-        /// The cue index to jump to (starts counting from 1)
+        /// The cue index to jump to (starts counting from 1).
         cue_index: u32,
     },
-    /// Dispatch a desk command string through the shared eval path.
+    /// Evaluate desk command text and track the playbacks it starts.
     DeskEval(String),
-    /// Dispatch a registered action reference.
+    /// Invoke a registered action live, without deterministic seek reconstruction.
     RegisteredAction(ActionReference),
+}
+
+impl ActionKind {
+    /// Resolves a stored action reference to its timeline meaning.
+    ///
+    /// Without a registry, or for actions that expose no timeline capability, the action is
+    /// invoked live as a registered action.
+    ///
+    /// A capability that fails to decode the stored arguments is logged and the action falls
+    /// back to live invocation, which reports the same failure when it fires. Command ingress
+    /// rejects such actions, so this only happens for timelines loaded from older showfiles.
+    pub fn resolve(action: &ActionReference, registry: Option<&ActionRegistry>) -> Self {
+        let Some(registry) = registry else {
+            return Self::RegisteredAction(action.clone());
+        };
+        match Self::resolve_planned(action, registry) {
+            Ok(Some(kind)) => kind,
+            Ok(None) => Self::RegisteredAction(action.clone()),
+            Err(error) => {
+                warn_invalid_plan_once(action, &error);
+                Self::RegisteredAction(action.clone())
+            }
+        }
+    }
+
+    /// Resolves a stored reference through the timeline planning capabilities.
+    ///
+    /// Returns `Ok(None)` for actions without a timeline capability, and the capability's
+    /// failure when the stored arguments cannot be planned.
+    fn resolve_planned(
+        action: &ActionReference,
+        registry: &ActionRegistry,
+    ) -> Result<Option<Self>, InvocationError> {
+        if is_client_action(&action.id) {
+            return Ok(None);
+        }
+        if let Some(plan) = registry.resolve_capability::<TimelinePlaybackActionPlan>(action)? {
+            let uid = plan.owner_uid;
+            return Ok(Some(match plan.kind {
+                TimelinePlaybackActionKind::Start => Self::StartClip(uid),
+                TimelinePlaybackActionKind::Stop => Self::StopClip(uid),
+                TimelinePlaybackActionKind::FireCue => Self::FireCue(uid),
+                TimelinePlaybackActionKind::SetRate(rate) => Self::SetClipRate { uid, rate },
+                TimelinePlaybackActionKind::Intervene(intervention) => match intervention {
+                    PlannedPlaybackInterventionKind::SequenceGo => Self::AdvanceSequence(uid),
+                    PlannedPlaybackInterventionKind::SequenceBack => Self::BackSequence(uid),
+                    PlannedPlaybackInterventionKind::SequenceGotoCue(cue_index) => {
+                        Self::JumpToCue { uid, cue_index }
+                    }
+                    PlannedPlaybackInterventionKind::Stop => Self::StopClip(uid),
+                },
+            }));
+        }
+        Ok(registry
+            .resolve_capability::<TimelineEvalActionPlan>(action)?
+            .map(|eval| Self::DeskEval(eval.command)))
+    }
+
+    /// Returns the persisted action reference that resolves to this timeline meaning.
+    pub fn to_reference(&self) -> ActionReference {
+        match self {
+            Self::FireCue(uid) => fire_cue_action(*uid),
+            Self::StartClip(uid) => start_clip_action(*uid),
+            Self::StopClip(uid) => stop_clip_action(*uid),
+            Self::AdvanceSequence(uid) => go_clip_action(*uid),
+            Self::BackSequence(uid) => back_clip_action(*uid),
+            Self::SetClipRate { uid, rate } => set_clip_rate_action(*uid, *rate),
+            Self::JumpToCue { uid, cue_index } => goto_clip_action(*uid, *cue_index),
+            Self::DeskEval(command) => desk_eval_action(command.clone()),
+            Self::RegisteredAction(action) => action.clone(),
+        }
+    }
+}
+
+/// Stored references whose timeline plan failed, already reported in the log.
+static REPORTED_INVALID_PLANS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Logs a warning the first time a stored reference fails timeline planning.
+///
+/// Timeline playback resolves actions every frame, so each distinct reference is reported
+/// once per process instead of flooding the log.
+fn warn_invalid_plan_once(action: &ActionReference, error: &InvocationError) {
+    let key = format!("{}:{}", action.id.as_str(), action.arguments);
+    let first = REPORTED_INVALID_PLANS
+        .lock()
+        .map(|mut reported| reported.insert(key))
+        .unwrap_or(true);
+    if first {
+        tracing::warn!(
+            action_id = action.id.as_str(),
+            code = %error.code,
+            message = %error.message,
+            "timeline_action_plan_invalid; running it as a live action without seek support"
+        );
+    }
+}
+
+/// Validates an action reference before a timeline command stores it.
+///
+/// The action must be registered and allowed on the timeline surface, its arguments must fit
+/// its parameters, and any timeline planning capability must accept them. Missing targets
+/// are not rejected: timelines may reference clips or cues that are created later.
+pub fn validate_timeline_action(
+    registry: &ActionRegistry,
+    action: &ActionReference,
+) -> Result<(), InvocationError> {
+    registry.validate_reference(action, ActionSurface::Timeline)?;
+    ActionKind::resolve_planned(action, registry).map(drop)
 }
 
 /// A parameter that can be adjusted over time with a curve of control points

@@ -445,7 +445,7 @@ async function openOwnedBackendReleaseCueEditor(page: Page) {
       .locator(
         `[data-component="CueEditor"][data-panel-id="${cueEditorPanelId}"]`,
       )
-      .getByRole("button", { name: "Switch to values display mode" }),
+      .getByRole("radio", { name: "Values", exact: true }),
   ).toBeDisabled();
   return {
     cueEditorPanelId,
@@ -700,7 +700,7 @@ test("sequence setup cue row opens value-capable cue editor", async ({
     page.getByRole("tab", { name: "Cue 900.0 (Setup)" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Switch to values display mode" }),
+    page.getByRole("radio", { name: "Values", exact: true }),
   ).toBeEnabled();
 
   const cueGrid = cueEditorGrid(page, SETUP_CUE_EDITOR_PANEL_ID);
@@ -979,10 +979,10 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
     page.getByRole("tab", { name: "Cue 900.0 (Release)" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Switch to values display mode" }),
+    page.getByRole("radio", { name: "Values", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Switch to timings display mode" }),
+    page.getByRole("radio", { name: "Timings", exact: true }),
   ).toBeVisible();
 
   const cueGrid = cueEditorGrid(page, RELEASE_CUE_EDITOR_PANEL_ID);

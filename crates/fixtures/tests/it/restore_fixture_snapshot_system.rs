@@ -10,7 +10,7 @@ use bevy_app::prelude::*;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
-    CommandNotice, CommandReply, CommandResult, CommandTracker, EngineActionEnvelope,
+    CommandNoticeReply, CommandReply, CommandResult, CommandTracker, EngineOperationEnvelope,
     FinishedCommand,
 };
 use nightfall_fixture_model::prelude::*;
@@ -25,7 +25,7 @@ fn init_command_lifecycle(app: &mut App) {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
 }
 
 /// Build a single-parameter fixture for restore system tests.
@@ -58,7 +58,7 @@ fn make_fixture(uid: Uuid) -> Fixture {
 fn restore_fixture_snapshot_spawns_parameter_entities() {
     let mut app = App::new();
     init_command_lifecycle(&mut app);
-    app.add_message::<EngineActionEnvelope<RestoreFixtureSnapshot>>();
+    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.add_systems(Update, handle_restore_fixture_snapshot);
 
@@ -72,7 +72,7 @@ fn restore_fixture_snapshot_spawns_parameter_entities() {
     let parameter_metadata = fixture.elements[0].parameters[0].clone();
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(RestoreFixtureSnapshot(
+        .write_message(EngineOperationEnvelope::detached(RestoreFixtureSnapshot(
             FixtureSnapshot {
                 fixture,
                 parameters: vec![ParameterSnapshot {
@@ -122,7 +122,7 @@ fn restore_fixture_snapshot_spawns_parameter_entities() {
 fn restore_fixture_snapshot_restores_color_path_defaults() {
     let mut app = App::new();
     init_command_lifecycle(&mut app);
-    app.add_message::<EngineActionEnvelope<RestoreFixtureSnapshot>>();
+    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.add_systems(Update, handle_restore_fixture_snapshot);
 
@@ -134,7 +134,7 @@ fn restore_fixture_snapshot_restores_color_path_defaults() {
     };
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(RestoreFixtureSnapshot(
+        .write_message(EngineOperationEnvelope::detached(RestoreFixtureSnapshot(
             FixtureSnapshot {
                 fixture,
                 parameters: vec![],

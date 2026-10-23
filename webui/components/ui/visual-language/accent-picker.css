@@ -8,6 +8,7 @@
 
 .nf-accent-picker {
   min-width: 0;
+  container-type: inline-size;
 }
 .nf-accent-picker legend {
   display: flex;
@@ -25,6 +26,12 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
+}
+/* Two rows of six where there is room, such as in Settings, instead of three rows of four. */
+@container (min-width: 400px) {
+  .nf-accent-options {
+    grid-template-columns: repeat(6, 1fr);
+  }
 }
 .nf-accent-options button {
   width: 100%;

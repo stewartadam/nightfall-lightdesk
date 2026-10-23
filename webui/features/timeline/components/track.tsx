@@ -11,12 +11,17 @@ import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { TIMELINE_INSERT_DRAG_MIME } from "../../../lib/timeline-insert-drag";
 import { durationToMs } from "../../../lib/utils";
-import { timelineLookaheadActionStatuses } from "../../../state/appStores";
+import {
+  timelineActionKey,
+  timelineLookaheadActionStatuses,
+  timelinePlannedCuesByAction,
+} from "../../../state/appStores";
 import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
 import { resolveActionVisualDuration } from "../model/action-duration";
 import type { ActionTargetIndex } from "../model/action-targets";
 import { seekPositionFromTimelineX } from "../model/grid-utils";
+import { timelineActionKind } from "../model/timeline-action-kind";
 import {
   Action,
   type ActionDragPreview,
@@ -72,6 +77,7 @@ export type TrackProps = {
 export const Track = (props: TrackProps) => {
   const ctx = useTimelineContext();
   const $lookaheadItemStatuses = useStore(timelineLookaheadActionStatuses);
+  const $plannedCues = useStore(timelinePlannedCuesByAction);
 
   const getPositionPx = (
     event: MouseEvent | PointerEvent | DragEvent,
@@ -113,13 +119,16 @@ export const Track = (props: TrackProps) => {
   );
 
   /** Builds the stable key used to identify a source action during preview drags. */
-  const actionKey = (trackId: string, actionId: string) =>
-    JSON.stringify([trackId, actionId]);
+  const actionKey = timelineActionKey;
 
   /** Returns current lookahead status for an action in this track. */
   const lookaheadStatusForAction = (actionId: string) =>
     $lookaheadItemStatuses()[ctx.timelineUid]?.[actionKey(props.id, actionId)]
       ?.kind;
+
+  /** Returns the backend-resolved sequence cue a Go, Back, or jump action in this track lands on. */
+  const plannedCueForAction = (actionId: string) =>
+    $plannedCues()[ctx.timelineUid]?.[actionKey(props.id, actionId)];
 
   /** Resolves an action's inferred visual duration from its action target. */
   const visualDurationForAction = (action: types.Action) => {
@@ -252,12 +261,13 @@ export const Track = (props: TrackProps) => {
               label={action.label}
               position={durationToMs(action.position)}
               durationTrail={visualDurationForAction(action)}
-              action={action.action}
-              actionType={action.action.type}
+              action={timelineActionKind(action.action)}
+              actionType={timelineActionKind(action.action).type}
               targetIndex={props.actionTargetIndex}
               showDurationTrail={ctx.showDurationTrails()}
               isPlayheadActive={playheadActiveActionId() === action.id}
               lookaheadStatus={lookaheadStatusForAction(action.id)}
+              plannedCue={plannedCueForAction(action.id)}
               trackId={props.id}
               isDragSourceOriginal={props.dragSourceActionKeys?.has(
                 actionKey(props.id, action.id),
@@ -274,8 +284,8 @@ export const Track = (props: TrackProps) => {
               label={previewItem.action.label}
               position={previewItem.positionMs}
               durationTrail={visualDurationForAction(previewItem.action)}
-              action={previewItem.action.action}
-              actionType={previewItem.action.action.type}
+              action={timelineActionKind(previewItem.action.action)}
+              actionType={timelineActionKind(previewItem.action.action).type}
               targetIndex={props.actionTargetIndex}
               showDurationTrail={ctx.showDurationTrails()}
               trackId={props.id}

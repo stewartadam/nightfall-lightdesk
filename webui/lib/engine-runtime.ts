@@ -8,38 +8,13 @@
 
 import { createSignal } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
-import type {
-  ElementParameterRow,
-  ElementProgrammerRow,
-  ParameterRow,
-  PerformanceMeasureStats,
-} from "../state/appStores";
+import type { PerformanceMeasureStats } from "../state/appStores";
 import { browserDemoAudioHost } from "./browser-demo-audio";
-import { normalizeDmxUniverseData } from "./dmx-universe-data";
-import { backendLogConfigToUi } from "./log-config-bridge";
-import {
-  configure as configureUiLogging,
-  createLogger,
-  getLogger,
-} from "./logger";
-import { setStoreAction, setStoreKeyAction } from "./nanostore-action";
-import { outputValuesConflict } from "./parameter-conflicts";
-import {
-  abandonPendingCommand,
-  settlePendingCommand,
-} from "./pending-command-lifecycle";
-import {
-  measureNextAnimationFrame,
-  measurePerformanceScope,
-} from "./performance-marks";
+import { getLogger } from "./logger";
+import { setStoreAction } from "./nanostore-action";
+import { measurePerformanceScope } from "./performance-marks";
 import { recordExternalPerformanceMeasure } from "./performance-measure-collector";
-import {
-  applyConfirmedShowfileChange,
-  currentShowfileName,
-  currentShowfileRevision,
-  normalizedShowfileName,
-  persistCurrentShowfileName,
-} from "./showfile-loading";
+import { currentShowfileName } from "./showfile-loading";
 import {
   configureActiveShowfileUrl,
   resolveCurrentNativeShowfileUrl,
@@ -56,101 +31,55 @@ import { sanitizeWebsocketPayload } from "./websocket-payload";
 export { getWebSocketUrl } from "./api";
 
 const log = getLogger(import.meta.url);
-const flowLog = createLogger("flow");
 const WEBSOCKET_WORKER_DELIVERY_MEASURE = "nightfall:websocket.worker-to-main";
-const REACTIVE_PARAMETER_STATE_INTERVAL_MS = 50;
-const mainThreadMessageHandlers = createMainThreadMessageHandlerRegistry();
 
 import EngineRuntimeWorker from "#engine-runtime-worker?worker";
 import {
   addConsoleSendError,
-  addExternalConsoleCommand,
   addPendingConsoleCommand,
   applyConsoleCommandResult,
-  availableFxModules,
-  bindings,
-  bindingValidationSettings,
-  blueprintDependencies,
-  blueprints,
   browserDemoRuntimeInfo,
   clearSelectionFlattenConfirmation,
-  clips,
-  colorPathDefaults,
-  colorPaths,
   cueDefinitionsLoaded,
-  cueDurationProfiles,
-  cues,
-  dmxUniverseData,
-  fixtureGeometries,
-  fixtures,
-  flowDefinitionsRevision,
-  flowNodeTemplates,
-  flowPortValues,
-  flows,
-  flowTriggerTicks,
-  fx,
-  fxModules,
-  groups,
-  inputContributionTrace,
-  layerStack,
-  masters,
-  type ParameterOutputMap,
-  parameters,
-  parameterUpdateTimestamp,
-  programmerResolvedSelection,
-  programmerSelection,
-  programmerSpatialSelection,
-  programmerState,
-  pushToast,
-  requestSelectionFlattenConfirmation,
+  dmxUniverseWatch,
+  referenceList,
+  referenceListWatch,
   runtimeCapabilities,
-  sceneObjects,
   selectionFlattenConfirmation,
   sequenceDefinitionsLoaded,
-  sequenceLookaheadStates,
-  sequences,
-  serverVersion,
-  setParametersImmediate,
-  stepFx,
-  timecodes,
-  timelineBeatgridDetectionStatus,
-  timelineBeatgridPreview,
-  timelineBeatgridProposals,
   timelineDefinitionsLoaded,
-  timelineLookaheadActionStatuses,
-  timelineRecordingPreviews,
-  timelineRecordingStates,
-  timelineStopEvent,
-  timelines,
   type WsPullStats,
   waitForSelectionFlattenConfirmation,
   wsLatency,
   wsStats,
 } from "../state/appStores";
-import { beginShowfileTransition } from "../state/showfile-transition";
 import type * as types from "../types";
-import type * as flowTypes from "../types/index";
-import { setAttributeMetadata } from "./attribute-metadata";
 import {
-  decodeCorrelationId,
-  normalizeCorrelationId,
-} from "./console-scrollback";
+  abandonCommandCorrelation,
+  aliasCommandResult,
+  type CommandResultWaiter,
+  registerCommandResultWaiter,
+  registerPendingCurrentShowfileName,
+  rejectPendingCommandWaiters,
+  selectionFlattenRetryFromResult,
+} from "./command-correlation";
+import { normalizeCorrelationId } from "./console-scrollback";
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
-import { applyFlowDeltaToDefinition } from "./flow-delta";
+import {
+  resetReactiveParameterStateQueue,
+  updateImmediateParams,
+} from "./parameter-state-publisher";
 import {
   carriesParameterState,
   ParameterStateDecoder,
   queuedWorkerMessageData,
   type WorkerQueuedMessage,
 } from "./parameter-state-transfer";
+import type { ParameterStreamStats } from "./parameter-stream";
 import { watchWorkerUncaughtErrors } from "./uncaught-error-reporter";
-import { valueSourceToProcessedParameterValue } from "./value-source";
 import { createMainThreadMessageHandlerRegistry } from "./ws/main-thread-handlers";
-import type {
-  AnyWsMessage,
-  ElementParameterState,
-  FixtureParameterState,
-} from "./ws/types";
+import type { WsMessageDelivery } from "./ws/message-registry";
+import type { AnyWsMessage, FixtureParameterState } from "./ws/types";
 
 /** Worker stats per message type */
 interface WorkerTypeStats {
@@ -168,6 +97,7 @@ interface WorkerAggregateStats {
   avgDecodeMs: number;
   queueDepth: number;
   lastStagedDeliveryMessageId: number;
+  parameterStream?: ParameterStreamStats;
   processing?: PerformanceMeasureStats;
 }
 
@@ -175,15 +105,6 @@ interface WorkerAggregateStats {
 interface WorkerStatsData {
   aggregate: WorkerAggregateStats;
   byType: Record<string, WorkerTypeStats>;
-}
-
-/** Indexes cue duration profile messages by cue UID. */
-function cueDurationProfileArrayToMap(
-  profiles: types.CueDurationProfileMessage[],
-) {
-  return Object.fromEntries(
-    profiles.map((profile) => [profile.cue_uid, profile]),
-  );
 }
 
 type WebsocketPullHandle =
@@ -433,8 +354,12 @@ function applyWorkerQueuedMessage(message: WorkerQueuedMessage): void {
   if (typeof message.deliveryMessageId === "number") {
     lastSeenDeliveryMessageId = message.deliveryMessageId;
   }
-  const data = queuedWorkerMessageData(message, parameterStateDecoder);
-  if (data) queueWorkerMessage(data);
+  const data = message.packedParameters
+    ? measurePerformanceScope("websocket-main.parameter-state.unpack", () =>
+        queuedWorkerMessageData(message, parameterStateDecoder),
+      )
+    : queuedWorkerMessageData(message, parameterStateDecoder);
+  if (data) queueWorkerMessage(data, message.postedAtMs);
 }
 
 /** Applies a pulled worker batch and schedules the next frame pull. */
@@ -458,55 +383,14 @@ function applyWorkerMessageBatch(messages: unknown): void {
   }
 }
 
-// The WebSocket worker handles connection, CBOR decode, and payload staging.
-// Main thread pulls already-decoded messages once per frame and dispatches them
-// in batch order.
-/**
- * Extract and update the immediate parameter output map synchronously.
- * Called when ParameterState arrives so visualizer has fresh DMX data.
- */
-function updateImmediateParams(rawData: FixtureParameterState[]) {
-  const outputMap: ParameterOutputMap = new Map();
-  for (const item of rawData) {
-    // Preserve per-element output arrays for multi-element fixtures
-    const elementOutputs = item.parameters.map((ps) =>
-      visualizerOutputForElement(ps),
-    );
-    outputMap.set(item.fixture_uid, elementOutputs);
-  }
-  setParametersImmediate(outputMap);
-}
-
-/**
- * Builds the visualizer-facing output for one element.
- *
- * Pan and tilt output defaults are always present in backend ParameterState even
- * when no object asserts movement. The visualizer needs absence to mean neutral
- * load pose, so only forward pan/tilt when absolute or relative state asserts it.
- */
-function visualizerOutputForElement(
-  state: ElementParameterState,
-): Record<string, number> {
-  if (!("Pan" in state.output) && !("Tilt" in state.output)) {
-    return state.output;
-  }
-
-  const output = { ...state.output };
-  if (!("Pan" in state.absolute) && !("Pan" in state.relative)) {
-    delete output.Pan;
-  }
-  if (!("Tilt" in state.absolute) && !("Tilt" in state.relative)) {
-    delete output.Tilt;
-  }
-  return output;
-}
-
 /**
  * Queue a message from the worker for processing.
  * Pulled messages are dispatched synchronously on the main thread after the
  * worker has ordered non-droppable messages before coalesced snapshots.
+ * `postedAtMs` is when the worker posted it, so time-sensitive handlers can
+ * discount how long it waited for the main thread.
  */
-function queueWorkerMessage(raw: AnyWsMessage) {
+function queueWorkerMessage(raw: AnyWsMessage, postedAtMs?: unknown) {
   log.trace(`Received message from websocket worker: ${raw.type}`);
 
   // ParameterState: always update immediate output for visualizer
@@ -521,1672 +405,24 @@ function queueWorkerMessage(raw: AnyWsMessage) {
   // Dispatch immediately
   measurePerformanceScope(
     `websocket-main.dispatch.${raw.type}`,
-    () => dispatchMessage(raw),
+    () =>
+      dispatchMessage(raw, {
+        postedAtMs: typeof postedAtMs === "number" ? postedAtMs : undefined,
+      }),
     { messageType: raw.type },
   );
 }
 
-/** Helper to convert array to UID-keyed map */
-function arrayToUidMap<T extends { identifiers: { uid: string } }>(
-  array: T[],
-): Record<string, T> {
-  const map: Record<string, T> = {};
-  for (const item of array) {
-    map[item.identifiers.uid] = item;
-  }
-  return map;
-}
-
-/** Measures one named sub-step inside a websocket message dispatch. */
-function measureDispatchStep<T>(
-  messageType: string,
-  stepName: string,
-  callback: () => T,
-  detail?: unknown,
-): T {
-  return measurePerformanceScope(
-    `websocket-main.dispatch.${messageType}.${stepName}`,
-    callback,
-    detail,
-  );
-}
-
-/** Normalizes direct backend UUID fields into the compact UID keys used by stores. */
-function normalizeBackendUid(rawUid: unknown): string {
-  const decoded = decodeCorrelationId(rawUid);
-  if (decoded) return decoded;
-  return typeof rawUid === "string" ? rawUid : String(rawUid);
-}
-
-/** Normalizes backend-authored sequence Lookahead projection state for UI store lookups. */
-function normalizeSequenceLookaheadState(
-  state: types.SequenceLookaheadStateMessage,
-): types.SequenceLookaheadStateMessage {
-  return {
-    ...state,
-    sequence_uid: normalizeBackendUid(state.sequence_uid),
-    rows: state.rows.map((row) => ({
-      ...row,
-      cue_uid: normalizeBackendUid(row.cue_uid),
-    })),
-  };
-}
-
 /**
- * Dispatch a single message to the appropriate handler.
- * This contains all the actual processing logic.
+ * Counts one processed message and routes it to the domain handler registered
+ * for its type, warning about types no domain module handles.
  */
-function dispatchMessage(raw: AnyWsMessage) {
+function dispatchMessage(raw: AnyWsMessage, delivery: WsMessageDelivery) {
   // Track that main thread processed a message
   // NOTE: transport heartbeat latency is measured in the worker for timing accuracy
   processedCount++;
-  if (mainThreadMessageHandlers.dispatch(raw)) {
-    return;
-  }
-
-  switch (raw.type) {
-    case "FixtureDefinitions": {
-      setStoreAction(
-        fixtures,
-        "Receive FixtureDefinitions",
-        arrayToUidMap(raw.data),
-      );
-      break;
-    }
-
-    case "AttributeMetadata": {
-      setAttributeMetadata(raw.data);
-      break;
-    }
-
-    case "SceneObjectDefinitions": {
-      setStoreAction(
-        sceneObjects,
-        "Receive SceneObjectDefinitions",
-        arrayToUidMap(raw.data as types.SceneObject[]),
-      );
-      break;
-    }
-
-    case "SceneObjectCommand": {
-      handleSceneObjectCommand(raw.data as unknown as types.SceneObjectCommand);
-      break;
-    }
-
-    case "FixtureGeometries": {
-      // Store geometry data in dedicated store (keyed by fixture UID)
-      setStoreAction(fixtureGeometries, "Receive FixtureGeometries", raw.data);
-      break;
-    }
-
-    case "ObjectLibraryCommand": {
-      handleObjectLibraryCommand(
-        raw.data as unknown as types.ObjectLibraryCommand,
-      );
-      break;
-    }
-
-    case "GroupDefinitions": {
-      setStoreAction(
-        groups,
-        "Receive GroupDefinitions",
-        arrayToUidMap(raw.data),
-      );
-      break;
-    }
-
-    case "MasterDefinitions": {
-      setStoreAction(
-        masters,
-        "Receive MasterDefinitions",
-        arrayToUidMap(raw.data as types.Master[]),
-      );
-      break;
-    }
-
-    case "CueDefinitions": {
-      const cueList = raw.data as types.Cue[];
-      const cueMap = measureDispatchStep(
-        raw.type,
-        "array-to-uid-map",
-        () => arrayToUidMap(cueList),
-        { itemCount: cueList.length },
-      );
-      measureDispatchStep(
-        raw.type,
-        "store.cues.set",
-        () => setStoreAction(cues, "Receive CueDefinitions", cueMap),
-        { itemCount: cueList.length },
-      );
-      setStoreAction(cueDefinitionsLoaded, "Receive CueDefinitions", true);
-      break;
-    }
-
-    case "CueDefinitionUpdated": {
-      const cue = raw.data as types.Cue;
-      setStoreKeyAction(
-        cues,
-        "Receive CueDefinitionUpdated",
-        cue.identifiers.uid,
-        cue,
-      );
-      setStoreAction(
-        cueDefinitionsLoaded,
-        "Receive CueDefinitionUpdated",
-        true,
-      );
-      break;
-    }
-
-    case "CueDefinitionRemoved": {
-      const removed = raw.data as types.RemovedCueDefinition;
-      const updated = measureDispatchStep(
-        raw.type,
-        "clone-without-removed",
-        () => {
-          const next = { ...cues.get() };
-          delete next[removed.uid];
-          return next;
-        },
-        { uid: removed.uid },
-      );
-      measureDispatchStep(
-        raw.type,
-        "store.cues.set",
-        () => setStoreAction(cues, "Receive CueDefinitionRemoved", updated),
-        { uid: removed.uid },
-      );
-      break;
-    }
-
-    case "CueDurationProfiles": {
-      const profiles = raw.data as types.CueDurationProfileMessage[];
-      const profileMap = measureDispatchStep(
-        raw.type,
-        "array-to-profile-map",
-        () => cueDurationProfileArrayToMap(profiles),
-        { itemCount: profiles.length },
-      );
-      measureDispatchStep(
-        raw.type,
-        "store.cue-duration-profiles.set",
-        () =>
-          setStoreAction(
-            cueDurationProfiles,
-            "Receive CueDurationProfiles",
-            profileMap,
-          ),
-        { itemCount: profiles.length },
-      );
-      break;
-    }
-
-    case "CueDurationProfileUpdated": {
-      const profile = raw.data as types.CueDurationProfileMessage;
-      setStoreKeyAction(
-        cueDurationProfiles,
-        "Receive CueDurationProfileUpdated",
-        profile.cue_uid,
-        profile,
-      );
-      break;
-    }
-
-    case "CueDurationProfileRemoved": {
-      const removed = raw.data as types.RemovedCueDefinition;
-      const updated = measureDispatchStep(
-        raw.type,
-        "clone-without-removed",
-        () => {
-          const next = { ...cueDurationProfiles.get() };
-          delete next[removed.uid];
-          return next;
-        },
-        { uid: removed.uid },
-      );
-      measureDispatchStep(
-        raw.type,
-        "store.cue-duration-profiles.set",
-        () =>
-          setStoreAction(
-            cueDurationProfiles,
-            "Receive CueDurationProfileRemoved",
-            updated,
-          ),
-        { uid: removed.uid },
-      );
-      break;
-    }
-
-    case "SequenceLookaheadStates": {
-      const rawStates = raw.data as types.SequenceLookaheadStateMessage[];
-      const states = measureDispatchStep(
-        raw.type,
-        "normalize-states",
-        () => rawStates.map(normalizeSequenceLookaheadState),
-        { itemCount: rawStates.length },
-      );
-      const stateMap = measureDispatchStep(
-        raw.type,
-        "array-to-state-map",
-        () =>
-          Object.fromEntries(
-            states.map((state) => [state.sequence_uid, state]),
-          ),
-        { itemCount: states.length },
-      );
-      measureDispatchStep(
-        raw.type,
-        "store.sequence-lookahead-states.set",
-        () =>
-          setStoreAction(
-            sequenceLookaheadStates,
-            "Receive SequenceLookaheadStates",
-            stateMap,
-          ),
-        { itemCount: states.length },
-      );
-      break;
-    }
-
-    case "SequenceDefinitions": {
-      const sequenceList = raw.data as types.Sequence[];
-      const sequenceMap = measureDispatchStep(
-        raw.type,
-        "array-to-uid-map",
-        () => arrayToUidMap(sequenceList),
-        { itemCount: sequenceList.length },
-      );
-      measureDispatchStep(
-        raw.type,
-        "store.sequences.set",
-        () =>
-          setStoreAction(sequences, "Receive SequenceDefinitions", sequenceMap),
-        { itemCount: sequenceList.length },
-      );
-      setStoreAction(
-        sequenceDefinitionsLoaded,
-        "Receive SequenceDefinitions",
-        true,
-      );
-      break;
-    }
-
-    case "SequenceDefinitionUpdated": {
-      const sequence = raw.data as types.Sequence;
-      setStoreKeyAction(
-        sequences,
-        "Receive SequenceDefinitionUpdated",
-        sequence.identifiers.uid,
-        sequence,
-      );
-      setStoreAction(
-        sequenceDefinitionsLoaded,
-        "Receive SequenceDefinitionUpdated",
-        true,
-      );
-      break;
-    }
-
-    case "SequenceDefinitionRemoved": {
-      const removed = raw.data as types.RemovedSequenceDefinition;
-      const updated = measureDispatchStep(
-        raw.type,
-        "clone-without-removed",
-        () => {
-          const next = { ...sequences.get() };
-          delete next[removed.uid];
-          return next;
-        },
-        { uid: removed.uid },
-      );
-      measureDispatchStep(
-        raw.type,
-        "store.sequences.set",
-        () =>
-          setStoreAction(
-            sequences,
-            "Receive SequenceDefinitionRemoved",
-            updated,
-          ),
-        { uid: removed.uid },
-      );
-      break;
-    }
-
-    case "ColorPathDefinitions": {
-      setStoreAction(
-        colorPaths,
-        "Receive ColorPathDefinitions",
-        arrayToUidMap(raw.data as types.ColorPath[]),
-      );
-      break;
-    }
-
-    case "ColorPathDefaults": {
-      setStoreAction(
-        colorPathDefaults,
-        "Receive ColorPathDefaults",
-        raw.data as types.ColorPathDefault[],
-      );
-      break;
-    }
-
-    case "FxDefinitions": {
-      setStoreAction(fx, "Receive FxDefinitions", arrayToUidMap(raw.data));
-      break;
-    }
-
-    case "StepFxDefinitions": {
-      setStoreAction(
-        stepFx,
-        "Receive StepFxDefinitions",
-        arrayToUidMap(raw.data),
-      );
-      break;
-    }
-
-    case "FxModuleDefinitions": {
-      setStoreAction(
-        fxModules,
-        "Receive FxModuleDefinitions",
-        arrayToUidMap(raw.data),
-      );
-      break;
-    }
-
-    case "ListAvailableFxModulesResponse": {
-      setStoreAction(
-        availableFxModules,
-        "Receive ListAvailableFxModulesResponse",
-        raw.data.modules,
-      );
-      break;
-    }
-
-    case "FlowDefinitions": {
-      setStoreAction(flows, "Receive FlowDefinitions", arrayToUidMap(raw.data));
-      setStoreAction(
-        flowDefinitionsRevision,
-        "Advance Flow Definitions Revision",
-        flowDefinitionsRevision.get() + 1,
-      );
-      break;
-    }
-
-    case "FlowNodeTemplates": {
-      setStoreAction(flowNodeTemplates, "Receive FlowNodeTemplates", raw.data);
-      break;
-    }
-
-    case "BlueprintDefinitions": {
-      setStoreAction(
-        blueprints,
-        "Receive BlueprintDefinitions",
-        arrayToUidMap(raw.data),
-      );
-      break;
-    }
-
-    case "BlueprintDependencies": {
-      setStoreAction(
-        blueprintDependencies,
-        "Receive BlueprintDependencies",
-        Object.fromEntries(
-          raw.data.map((entry) => [entry.blueprint_uid, entry.dependents]),
-        ),
-      );
-      break;
-    }
-
-    case "ClipDefinitions": {
-      const clipMap: Record<string, [types.Clip, boolean]> = {};
-      for (const { clip, is_active } of raw.data) {
-        clipMap[clip.identifiers.uid] = [clip, is_active];
-      }
-      setStoreAction(clips, "Receive ClipDefinitions", clipMap);
-      break;
-    }
-
-    case "TimecodeDefinitions": {
-      const timecodeMap: Record<string, [types.Timecode, types.TimecodeState]> =
-        {};
-      for (const { timecode, state } of raw.data) {
-        timecodeMap[timecode.identifiers.uid] = [timecode, state];
-      }
-      setStoreAction(timecodes, "Receive TimecodeDefinitions", timecodeMap);
-      break;
-    }
-
-    case "TimelineDefinitions": {
-      setStoreAction(
-        timelines,
-        "Receive TimelineDefinitions",
-        arrayToUidMap(raw.data),
-      );
-      setStoreAction(
-        timelineDefinitionsLoaded,
-        "Receive TimelineDefinitions",
-        true,
-      );
-      break;
-    }
-
-    case "TimelineAudioDirective": {
-      const session = browserDemoAudioHost.currentSession();
-      void browserDemoAudioHost
-        .applyDirective(raw.data as types.TimelineAudioDirective, session)
-        .catch((error: unknown) => {
-          log.error("Unable to apply browser demo timeline audio", error);
-          pushToast(
-            "error",
-            "Browser audio could not start. Select Play again to retry.",
-          );
-        });
-      break;
-    }
-
-    case "TimelineRecordingStates": {
-      const recordingStateMap: Record<string, types.TimelineRecordingState> =
-        {};
-      for (const state of raw.data as types.TimelineRecordingState[]) {
-        recordingStateMap[String(state.timeline_id)] = state;
-      }
-      setStoreAction(
-        timelineRecordingStates,
-        "Receive TimelineRecordingStates",
-        recordingStateMap,
-      );
-      break;
-    }
-
-    case "TimelineRecordingPreviews": {
-      const recordingPreviewMap: Record<
-        string,
-        types.TimelineRecordingPreview
-      > = {};
-      for (const preview of raw.data as types.TimelineRecordingPreview[]) {
-        recordingPreviewMap[String(preview.timeline_id)] = preview;
-      }
-      setStoreAction(
-        timelineRecordingPreviews,
-        "Receive TimelineRecordingPreviews",
-        recordingPreviewMap,
-      );
-      break;
-    }
-
-    case "TimelineLookaheadActionStatuses": {
-      const statusMap: Record<
-        string,
-        Record<string, types.TimelineLookaheadActionStatus>
-      > = {};
-      for (const status of raw.data as types.TimelineLookaheadActionStatus[]) {
-        statusMap[status.timeline_uid] ??= {};
-        statusMap[status.timeline_uid][
-          JSON.stringify([status.track_id, status.action_id])
-        ] = status;
-      }
-      setStoreAction(
-        timelineLookaheadActionStatuses,
-        "Receive TimelineLookaheadActionStatuses",
-        statusMap,
-      );
-      break;
-    }
-
-    case "BeatgridDetectionStarted": {
-      const started = raw.data as types.BeatgridDetectionStarted;
-      setStoreKeyAction(
-        timelineBeatgridDetectionStatus,
-        "Receive BeatgridDetectionStarted",
-        started.timeline_uid,
-        {
-          phase: "detecting",
-          requestId: started.request_id,
-        },
-      );
-      const nextPreview = { ...timelineBeatgridPreview.get() };
-      delete nextPreview[started.timeline_uid];
-      setStoreAction(
-        timelineBeatgridPreview,
-        "Clear Beatgrid Detection Preview",
-        nextPreview,
-      );
-      break;
-    }
-
-    case "BeatgridDetectionReady": {
-      const ready = raw.data as types.BeatgridDetectionReady;
-      setStoreKeyAction(
-        timelineBeatgridProposals,
-        "Receive BeatgridDetectionReady",
-        ready.timeline_uid,
-        ready.proposal,
-      );
-      setStoreKeyAction(
-        timelineBeatgridDetectionStatus,
-        "Receive BeatgridDetectionReady",
-        ready.timeline_uid,
-        {
-          phase: "ready",
-          requestId: ready.proposal.request_id,
-        },
-      );
-      break;
-    }
-
-    case "BeatgridDetectionFailed": {
-      const failed = raw.data as types.BeatgridDetectionFailed;
-      setStoreKeyAction(
-        timelineBeatgridDetectionStatus,
-        "Receive BeatgridDetectionFailed",
-        failed.timeline_uid,
-        {
-          phase: "failed",
-          requestId: failed.request_id,
-          error: failed.error,
-        },
-      );
-      const nextPreview = { ...timelineBeatgridPreview.get() };
-      delete nextPreview[failed.timeline_uid];
-      setStoreAction(
-        timelineBeatgridPreview,
-        "Clear Beatgrid Detection Preview",
-        nextPreview,
-      );
-      pushToast("warning", `Beatgrid detection failed: ${failed.error}`);
-      break;
-    }
-
-    case "Bindings": {
-      setStoreAction(
-        bindings,
-        "Receive Bindings",
-        raw.data as types.BindingsSnapshot,
-      );
-      break;
-    }
-
-    case "BindingValidationSettings": {
-      setStoreAction(
-        bindingValidationSettings,
-        "Receive BindingValidationSettings",
-        raw.data as types.BindingValidationSettings,
-      );
-      break;
-    }
-
-    case "ParameterState": {
-      const rawData = raw.data as FixtureParameterState[];
-      // Note: immediate output map already updated in queueMessage().
-      // The reactive panel store is throttled to keep Solid subscribers responsive.
-      queueReactiveParameterState(rawData);
-      break;
-    }
-
-    case "ProgrammerState": {
-      const processedProgrammerState = Object.values(raw.data).map((item) => {
-        // Track conflicts: attribute -> Set of unique formatted values
-        const conflictTracker: Record<string, Set<string>> = {};
-        const mergedParams: Record<
-          string,
-          {
-            value?: number;
-            isPercentage: boolean;
-            isRelative: boolean;
-            marker?: "release" | "block" | "hold";
-          }
-        > = {};
-        const elements: ElementProgrammerRow[] = [];
-
-        // Process per-element data with conflict tracking
-        for (
-          let elementIdx = 0;
-          elementIdx < item.parameters.length;
-          elementIdx++
-        ) {
-          const elementParams = item.parameters[elementIdx];
-          const elementAttrs: Record<
-            string,
-            {
-              value?: number;
-              isPercentage: boolean;
-              isRelative: boolean;
-              marker?: "release" | "block" | "hold";
-            }
-          > = {};
-
-          for (const [attr, value] of Object.entries(
-            elementParams.parameters,
-          )) {
-            const attrValue = valueSourceToProcessedParameterValue(
-              value as types.ValueSource,
-            );
-            if (!attrValue) continue;
-            attrValue.blueprintSource = elementParams.blueprint_sources[attr];
-            elementAttrs[attr] = attrValue;
-
-            // Track conflict using stringified value (to compare objects)
-            const valueKey = JSON.stringify(attrValue);
-            if (!conflictTracker[attr]) conflictTracker[attr] = new Set();
-            conflictTracker[attr].add(valueKey);
-
-            // Aggregated value (last element wins)
-            mergedParams[attr] = attrValue;
-          }
-
-          elements.push({
-            elementIndex: elementIdx + 1, // 1-based
-            attributes: elementAttrs,
-          });
-        }
-
-        // Identify conflicts (attributes with >1 unique value)
-        const conflicts = new Set<string>();
-        for (const [attr, values] of Object.entries(conflictTracker)) {
-          if (values.size > 1) {
-            conflicts.add(attr);
-          }
-        }
-
-        const row: import("../state/appStores").ProgrammerRow = {
-          fixtureUid: item.fixture_uid,
-          attributes: mergedParams,
-          elements: elements.length > 1 ? elements : undefined,
-          conflicts: conflicts.size > 0 ? conflicts : undefined,
-        };
-
-        return row;
-      });
-      setStoreAction(
-        programmerState,
-        "Receive ProgrammerState",
-        processedProgrammerState,
-      );
-      break;
-    }
-
-    case "ProgrammerSelection": {
-      setStoreAction(
-        programmerSelection,
-        "Receive ProgrammerSelection",
-        raw.data,
-      );
-      break;
-    }
-
-    case "ProgrammerSpatialSelection": {
-      setStoreAction(
-        programmerSpatialSelection,
-        "Receive ProgrammerSpatialSelection",
-        raw.data.selection,
-      );
-      setStoreAction(
-        programmerResolvedSelection,
-        "Receive ProgrammerSpatialSelection",
-        raw.data.resolved,
-      );
-      break;
-    }
-
-    case "LayerStack": {
-      const data = raw.data as types.OutboundLayerState[];
-      measurePerformanceScope(
-        "websocket-main.layer-stack.store-set",
-        () => setStoreAction(layerStack, "Receive LayerStack", data),
-        { layerCount: data.length },
-      );
-      measureNextAnimationFrame("websocket-main.layer-stack.next-frame", {
-        layerCount: data.length,
-      });
-      break;
-    }
-
-    case "DmxUniverseData": {
-      setStoreAction(
-        dmxUniverseData,
-        "Receive DmxUniverseData",
-        normalizeDmxUniverseData(raw.data as types.OutboundDmxUniverse[]),
-      );
-      break;
-    }
-
-    case "InputContributionTrace": {
-      setStoreAction(
-        inputContributionTrace,
-        "Receive InputContributionTrace",
-        raw.data as types.OutboundInputContribution[],
-      );
-      break;
-    }
-
-    case "UiNotification": {
-      handleUiNotification(raw.data as unknown as types.UiNotification);
-      break;
-    }
-
-    case "CueCommand": {
-      handleCueCommand(raw.data as unknown as types.CueCommand);
-      break;
-    }
-
-    case "GroupCommand": {
-      handleGroupCommand(raw.data as unknown as types.GroupCommand);
-      break;
-    }
-
-    case "ClipCommand": {
-      handleClipCommand(raw.data as unknown as types.ClipCommand);
-      break;
-    }
-
-    case "DeskCommand": {
-      handleDeskCommand(raw.data as unknown as types.DeskCommand);
-      break;
-    }
-
-    case "TimelineCommand": {
-      handleTimelineCommand(raw.data as unknown as types.TimelineCommand);
-      break;
-    }
-
-    case "FixtureCommand": {
-      handleFixtureCommand(raw.data as unknown as types.FixtureCommand);
-      break;
-    }
-
-    case "FixtureLibraryCommand": {
-      handleFixtureLibraryCommand(
-        raw.data as unknown as types.FixtureLibraryCommand,
-      );
-      break;
-    }
-
-    case "BlueprintCommand": {
-      handleBlueprintCommand(raw.data as unknown as types.BlueprintCommand);
-      break;
-    }
-
-    case "FxCommand": {
-      handleFxCommand(raw.data as unknown as types.FxCommand);
-      break;
-    }
-
-    case "FxModuleCommand": {
-      handleFxModuleCommand(raw.data as unknown as types.FxModuleCommand);
-      break;
-    }
-
-    case "FlowCommand": {
-      handleFlowCommand(raw.data as unknown as flowTypes.FlowCommand);
-      break;
-    }
-
-    case "FlowDelta": {
-      handleFlowDelta(raw.data as unknown as flowTypes.FlowDelta);
-      break;
-    }
-
-    case "FlowAck": {
-      handleFlowAck(raw.data as unknown as flowTypes.FlowAck);
-      break;
-    }
-
-    case "FlowSnapshot": {
-      handleFlowSnapshot(raw.data as unknown as flowTypes.FlowSnapshot);
-      break;
-    }
-
-    case "FlowPortValueDelta": {
-      handleFlowPortValueDelta(
-        raw.data as unknown as flowTypes.FlowPortValueDelta,
-      );
-      break;
-    }
-
-    case "FlowTriggerDelta": {
-      handleFlowTriggerDelta(raw.data as unknown as flowTypes.FlowTriggerDelta);
-      break;
-    }
-
-    case "ServerVersion": {
-      log.info(`Server version: ${raw.data}`);
-      setStoreAction(
-        serverVersion,
-        "Receive ServerVersion",
-        raw.data as string,
-      );
-      break;
-    }
-
-    case "AppState": {
-      log.debug("Backend app state:", raw.data);
-      setBackendAppState(raw.data as types.AppState);
-      break;
-    }
-
-    case "RuntimeCapabilities": {
-      setStoreAction(
-        runtimeCapabilities,
-        "Receive RuntimeCapabilities",
-        raw.data as types.RuntimeCapabilities,
-      );
-      break;
-    }
-
-    case "ResyncComplete": {
-      setResyncComplete(true);
-      setResyncGeneration(resyncGeneration() + 1);
-      break;
-    }
-
-    case "WorldReplaced": {
-      log.debug("Backend replaced its world, requesting resync");
-      beginShowfileTransition({
-        resyncGeneration: resyncGeneration(),
-        showfileRevision: currentShowfileRevision.get(),
-      });
-      engineRuntime.requestBackendSessionState();
-      break;
-    }
-
-    case "CommandResult": {
-      log.debug("CommandResult received:", raw.data);
-      const result = raw.data as types.CommandResult;
-
-      // Resolve any pending promise for this command_id.
-      const correlationKey = decodeCorrelationId(result.command_id as unknown);
-
-      const settledCommand = correlationKey
-        ? settlePendingCommand(pendingCommandLifecycle, correlationKey)
-        : {};
-      const hadWaiter = Boolean(settledCommand.waiter);
-      settledCommand.waiter?.resolve(result);
-
-      const flattenRetry = selectionFlattenRetryFromResult(result);
-      if (correlationKey) {
-        const showfileUpdate = settledCommand.resultMetadata;
-        if (showfileUpdate && result.outcome.type === "Succeeded") {
-          persistCurrentShowfileName(showfileUpdate.name);
-        }
-        if (!flattenRetry) {
-          const displayCorrelationKey =
-            commandResultAliases.get(correlationKey) ?? correlationKey;
-          commandResultAliases.delete(correlationKey);
-          applyConsoleCommandResult(displayCorrelationKey, result.outcome);
-        }
-      }
-
-      if (result.outcome.type === "Failed") {
-        if (flattenRetry) {
-          if (!hadWaiter) {
-            requestSelectionFlattenConfirmation(
-              flattenRetry,
-              correlationKey ?? undefined,
-              result.outcome,
-            );
-          }
-        } else {
-          pushToast("error", result.outcome.data.message);
-        }
-      }
-      break;
-    }
-
-    case "CommandNotice": {
-      const notice = raw.data as types.CommandNotice;
-      pushToast(
-        notice.level === "Warning" ? "warning" : "info",
-        notice.message,
-      );
-      break;
-    }
-
-    case "OscExternalEval": {
-      const data = raw.data as types.OscExternalEval;
-      const correlationId = decodeCorrelationId(data.correlation_id);
-      if (!correlationId) {
-        log.warn(
-          "Ignoring OscExternalEval with invalid correlation_id",
-          data.correlation_id,
-        );
-        break;
-      }
-      addExternalConsoleCommand(data.command, correlationId, data.source);
-      break;
-    }
-
-    default:
-      log.warn(`Unknown WsOutbound type: ${raw.type}`, raw);
-  }
-}
-
-/**
- * Handles cue commands that arrive before the corresponding provider snapshot.
- *
- * Cue and sequence mutations are intentionally ignored here because committed
- * definition updates arrive through backend websocket messages.
- */
-function handleCueCommand(command: types.CueCommand) {
-  log.trace("Handling CueCommand:", command);
-
-  // CRUD commands (StoreCue, RenameCue, DeleteCue, StoreSequence,
-  // RenameSequence, DeleteSequence) are not processed here.
-  // Instead, we receive CueDefinitionUpdated/CueDefinitionRemoved and
-  // SequenceDefinitionUpdated/SequenceDefinitionRemoved messages, or full
-  // snapshots during resync.
-  // This prevents optimistic updates that show stale data when commands fail.
-  switch (command.type) {
-    default:
-      log.trace(
-        "Ignoring CueCommand (handled via CueDefinitions/SequenceDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/** Ignores optimistic group mutations in favor of backend provider snapshots. */
-function handleGroupCommand(command: types.GroupCommand) {
-  log.trace("Handling GroupCommand:", command);
-
-  // CRUD commands (StoreGroup, RenameGroup, DeleteGroup) are not processed here.
-  // Instead, we receive full GroupDefinitions when the backend DataProvider changes.
-  // This prevents optimistic updates that show stale data when commands fail.
-  switch (command.type) {
-    default:
-      log.trace(
-        "Ignoring GroupCommand (handled via GroupDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/** Ignores optimistic blueprint mutations in favor of backend provider snapshots. */
-function handleBlueprintCommand(command: types.BlueprintCommand) {
-  log.trace("Handling BlueprintCommand:", command);
-
-  // CRUD commands (StoreBlueprint, RenameBlueprint, DeleteBlueprint) are not processed here.
-  // Instead, we receive full BlueprintDefinitions when the backend DataProvider changes.
-  // This prevents optimistic updates that show stale data when commands fail.
-  switch (command.type) {
-    default:
-      log.trace(
-        "Ignoring BlueprintCommand (handled via BlueprintDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/** Ignores optimistic FX mutations in favor of backend provider snapshots. */
-function handleFxCommand(command: types.FxCommand) {
-  log.trace("Handling FxCommand:", command);
-
-  // CRUD commands (StoreFx, RenameFx, DeleteFx) are not processed here.
-  // Instead, we receive full FxDefinitions when the backend DataProvider changes.
-  // This prevents optimistic updates that show stale data when commands fail.
-  switch (command.type) {
-    default:
-      log.trace(
-        "Ignoring FxCommand (handled via FxDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/** Ignores stored FX module mutations in favor of backend provider snapshots. */
-function handleFxModuleCommand(command: types.FxModuleCommand) {
-  log.trace("Handling FxModuleCommand:", command);
-
-  // Stored fx module updates are reflected through full FxModuleDefinitions
-  // snapshots rather than optimistic local mutation.
-  switch (command.type) {
-    default:
-      log.trace(
-        "Ignoring FxModuleCommand (handled via FxModuleDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/** Ignores optimistic flow CRUD commands in favor of backend provider snapshots. */
-function handleFlowCommand(command: flowTypes.FlowCommand) {
-  log.trace("Handling FlowCommand:", command);
-
-  // CRUD commands (StoreFlow, RenameFlow, DeleteFlow) are not processed here.
-  // Instead, we receive full FlowDefinitions when the backend DataProvider changes.
-  // This prevents optimistic updates that show stale data when commands fail.
-  switch (command.type) {
-    default:
-      log.trace(
-        "Ignoring FlowCommand (handled via FlowDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/**
- * Applies a backend flow delta when it matches the local base version.
- *
- * Deltas with stale or future base versions are skipped so the UI does not
- * apply edits onto the wrong graph revision.
- */
-function handleFlowDelta(delta: flowTypes.FlowDelta) {
-  const flowMap = flows.get();
-  const flowEntry = Object.entries(flowMap).find(
-    ([, flow]) => flow.identifiers.id === delta.flow_id,
-  );
-  if (!flowEntry) {
-    log.warn(`Flow ${delta.flow_id} not found for delta`);
-    return;
-  }
-  const [flowUid, flow] = flowEntry;
-  if (flow.flow_version !== delta.base_version) {
-    return;
-  }
-  const result = applyFlowDeltaToDefinition(flow, delta);
-  if (result.errors.length > 0) {
-    result.errors.forEach((message) => {
-      pushToast("error", message);
-    });
-  }
-  if (result.applied) {
-    setStoreKeyAction(flows, "Apply Backend Flow Delta", flowUid, result.flow);
-  }
-}
-
-/**
- * Reports backend flow acknowledgement errors and repairs the local version marker.
- */
-function handleFlowAck(ack: flowTypes.FlowAck) {
-  if (ack.errors.length > 0) {
-    flowLog.warn("Flow ack errors", ack);
-    ack.errors.forEach((err) => {
-      pushToast("error", err.message);
-    });
-    // On error, sync version from backend to recover.
-    // Note: local data may be out of sync - a page refresh may be needed.
-    const flowMap = flows.get();
-    const flowEntry = Object.entries(flowMap).find(
-      ([, flow]) => flow.identifiers.id === ack.flow_id,
-    );
-    if (flowEntry) {
-      const localVersion = flowEntry[1].flow_version;
-      if (ack.applied_version !== localVersion) {
-        flowLog.warn(
-          `Version desync detected (local=${localVersion} backend=${ack.applied_version}). ` +
-            "Syncing version, but data may be stale. Refresh if issues persist.",
-        );
-        setStoreKeyAction(
-          flows,
-          "Repair Flow Ack Version",
-          `${flowEntry[0]}.flow_version`,
-          ack.applied_version,
-        );
-      }
-    }
-  }
-  // On success: do nothing - optimistic update already set the version correctly.
-  // Updating here could cause version to go backwards if ACKs arrive out of order.
-}
-
-/** Stores the latest runtime value for a single flow node port. */
-function updateFlowPortValue(
-  flowId: number,
-  nodeId: number,
-  portId: number,
-  value: flowTypes.FlowValue,
-) {
-  const current = flowPortValues.get();
-  const flowValues = current[flowId] ?? {};
-  const portKey = `${nodeId}:${portId}`;
-  setStoreAction(flowPortValues, "Receive Flow Port Value", {
-    ...current,
-    [flowId]: {
-      ...flowValues,
-      [portKey]: value,
-    },
-  });
-}
-
-/** Replaces all known runtime port values for one flow from a backend snapshot. */
-function handleFlowSnapshot(snapshot: flowTypes.FlowSnapshot) {
-  const flowValues: Record<string, flowTypes.FlowValue> = {};
-  for (const port of snapshot.ports) {
-    flowValues[`${port.node_id}:${port.port_id}`] = port.value;
-  }
-  const current = flowPortValues.get();
-  setStoreAction(flowPortValues, "Receive FlowSnapshot", {
-    ...current,
-    [snapshot.flow_id]: flowValues,
-  });
-}
-
-/** Applies one backend runtime value update for a flow node port. */
-function handleFlowPortValueDelta(delta: flowTypes.FlowPortValueDelta) {
-  updateFlowPortValue(delta.flow_id, delta.node_id, delta.port_id, delta.value);
-}
-
-/** Records the timestamp of a flow trigger pulse so the UI can animate it. */
-function handleFlowTriggerDelta(delta: flowTypes.FlowTriggerDelta) {
-  const current = flowTriggerTicks.get();
-  const flowTicks = current[delta.flow_id] ?? {};
-  setStoreAction(flowTriggerTicks, "Receive FlowTriggerDelta", {
-    ...current,
-    [delta.flow_id]: {
-      ...flowTicks,
-      [delta.node_id]: Date.now(),
-    },
-  });
-}
-
-/** Expands a backend id expression into ordered numeric ids, honoring ranges and subtraction. */
-function expandIdExpr(idExpr: types.IdExpr): number[] {
-  switch (idExpr.type) {
-    case "Single":
-      return [idExpr.data];
-    case "Range": {
-      const { start, end } = idExpr.data;
-      if (start <= end) {
-        return Array.from({ length: end - start + 1 }, (_, i) => start + i);
-      }
-      return Array.from({ length: start - end + 1 }, (_, i) => start - i);
-    }
-    case "Add":
-      return [
-        ...expandIdExpr(idExpr.data.lhs),
-        ...expandIdExpr(idExpr.data.rhs),
-      ];
-    case "Sub": {
-      const lhs = expandIdExpr(idExpr.data.lhs);
-      const toRemove = new Set(expandIdExpr(idExpr.data.rhs));
-      return lhs.filter((id) => !toRemove.has(id));
-    }
-    case "Span":
-      return expandIdExpr(idExpr.data);
-  }
-  return [];
-}
-
-/** Applies clip start/stop/delete commands to the local clip store. */
-function handleClipCommand(command: types.ClipCommand) {
-  log.trace("Handling ClipCommand:", command);
-
-  switch (command.type) {
-    case "StartClip": {
-      const clipIds = new Set(expandIdExpr(command.data));
-      log.trace("Starting clips from command", [...clipIds]);
-      const execMap = clips.get();
-      for (const [uid, [clip, _isActive]] of Object.entries(execMap)) {
-        if (clipIds.has(clip.identifiers.id)) {
-          setStoreKeyAction(clips, "Start Clip", uid, [clip, true]);
-        }
-      }
-      break;
-    }
-    case "StopClip": {
-      const clipIds = new Set(expandIdExpr(command.data));
-      log.trace("Stopping clips from command", [...clipIds]);
-      const execMap = clips.get();
-      for (const [uid, [clip, _isActive]] of Object.entries(execMap)) {
-        if (clipIds.has(clip.identifiers.id)) {
-          setStoreKeyAction(clips, "Stop Clip", uid, [clip, false]);
-        }
-      }
-      break;
-    }
-    case "DeleteClip": {
-      const clipId = command.data as number;
-      log.trace(`Deleting clip ${clipId}`);
-      // Find the clip by ID and remove it from the map
-      const clipMap = clips.get();
-      for (const [uid, [clip]] of Object.entries(clipMap)) {
-        if (clip.identifiers.id === clipId) {
-          const updatedMap = { ...clipMap };
-          delete updatedMap[uid];
-          setStoreAction(clips, "Delete Clip", updatedMap);
-          break;
-        }
-      }
-      break;
-    }
-    default:
-      log.warn(`Unhandled ClipCommand: ${command.type}`);
-  }
-}
-
-/** Keeps UI-side logging configuration synchronized with desk commands from the backend. */
-function handleDeskCommand(command: types.DeskCommand) {
-  log.trace("Handling DeskCommand:", command);
-
-  switch (command.type) {
-    case "SetLogLevel": {
-      // Keep UI logging in sync with backend `log level ...` commands.
-      configureUiLogging(backendLogConfigToUi(command.data), false);
-      break;
-    }
-    default:
-      log.warn(`Unhandled DeskCommand: ${command.type}`);
-  }
-}
-
-/** Applies backend UI notifications such as toast presentation requests. */
-function handleUiNotification(notification: types.UiNotification) {
-  log.trace("Handling UiNotification:", notification);
-
-  switch (notification.type) {
-    case "ShowToast": {
-      const level = notification.data.level.toLowerCase();
-      pushToast(
-        level === "error" || level === "warning" || level === "success"
-          ? level
-          : "info",
-        notification.data.message,
-      );
-      break;
-    }
-    case "CurrentShowfileChanged": {
-      const changeId = decodeCorrelationId(notification.data.change_id);
-      if (!changeId) {
-        log.error("Current showfile notification has an invalid change ID");
-        break;
-      }
-      applyConfirmedShowfileChange(notification.data.name, changeId);
-      break;
-    }
-  }
-}
-
-/** Ignores optimistic timeline mutations in favor of backend component snapshots. */
-function handleTimelineCommand(command: types.TimelineCommand) {
-  log.trace("Handling TimelineCommand:", command);
-
-  // CRUD commands (StoreTimeline, RenameTimeline, DeleteTimeline) are not processed here.
-  // Instead, we receive full TimelineDefinitions when the backend components change.
-  // This prevents optimistic updates that show stale data when commands fail.
-  switch (command.type) {
-    case "StopTimeline": {
-      const previous = timelineStopEvent.get();
-      setStoreAction(timelineStopEvent, "Receive StopTimeline", {
-        timelineId: command.data,
-        revision: (previous?.revision ?? 0) + 1,
-      });
-      break;
-    }
-    default:
-      log.trace(
-        "Ignoring TimelineCommand (handled via TimelineDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/** Logs fixture-library command acknowledgements whose data arrives in later messages. */
-function handleFixtureLibraryCommand(command: types.FixtureLibraryCommand) {
-  log.trace("Handling FixtureLibraryCommand:", command);
-
-  switch (command.type) {
-    case "CreateFixtureFromLibrary": {
-      // Server echoes this back after processing - no action needed on client
-      // The fixture will be sent via FixtureCommand/StoreFixture
-      log.trace(
-        `CreateFixtureFromLibrary acknowledged for ${command.data.make} ${command.data.model}`,
-      );
-      break;
-    }
-
-    case "CreateFixturesFromLibrary": {
-      log.trace(
-        `CreateFixturesFromLibrary acknowledged for ${command.data.fixtures.length} ${command.data.make} ${command.data.model}`,
-      );
-      break;
-    }
-
-    case "GetFixtureProfile": {
-      // Server echoes this back - response comes via separate message
-      log.trace("GetFixtureProfile acknowledged");
-      break;
-    }
-
-    default:
-      log.warn(`Unhandled FixtureLibraryCommand: ${command.type}`);
-  }
-}
-
-/** Logs object-library command acknowledgements whose data arrives in later messages. */
-function handleObjectLibraryCommand(command: types.ObjectLibraryCommand) {
-  log.trace("Handling ObjectLibraryCommand:", command);
-
-  switch (command.type) {
-    case "CreateSceneObjectFromLibrary": {
-      // Server echoes this back after processing - no action needed on client
-      // The scene object will be sent via SceneObjectCommand/StoreSceneObject
-      log.trace(
-        `CreateSceneObjectFromLibrary acknowledged for ${command.data.object_name}`,
-      );
-      break;
-    }
-
-    case "GetObjectProfile": {
-      // Server echoes this back - response comes via separate message
-      log.trace("GetObjectProfile acknowledged");
-      break;
-    }
-
-    case "UpdateSceneObjectsFromLibrary": {
-      log.trace("UpdateSceneObjectsFromLibrary acknowledged");
-      break;
-    }
-
-    default:
-      log.warn(`Unhandled ObjectLibraryCommand: ${(command as any).type}`);
-  }
-}
-
-/** Applies fixture placement deltas while leaving fixture CRUD to provider snapshots. */
-function handleFixtureCommand(command: types.FixtureCommand) {
-  log.trace("Handling FixtureCommand:", command);
-
-  // Most fixture commands are handled via FixtureDefinitions/Bindings snapshots.
-  // Placement updates are handled directly as deltas to avoid full fixture re-sync churn.
-  switch (command.type) {
-    case "UpdateFixturePlacements": {
-      const startMs = performance.now();
-      const requestedUpdates = command.data.updates.length;
-      const fixtureMap = fixtures.get();
-      const fixtureUidById = new Map<number, string>();
-      for (const [uid, fixture] of Object.entries(fixtureMap)) {
-        fixtureUidById.set(fixture.identifiers.id, uid);
-      }
-
-      let nextFixtureMap: typeof fixtureMap | null = null;
-      let changedFixtureCount = 0;
-
-      for (const update of command.data.updates) {
-        const { id, position, rotation } = update;
-        const uid = fixtureUidById.get(id);
-        if (!uid) {
-          log.warn(`Fixture ${id} not found for placement update`);
-          continue;
-        }
-
-        const sourceFixtureMap = nextFixtureMap ?? fixtureMap;
-        const fixture = sourceFixtureMap[uid];
-        if (!fixture) {
-          log.warn(`Fixture ${id} (${uid}) not found for placement update`);
-          continue;
-        }
-
-        const currentPlacement: types.FixturePlacement = fixture.placement ?? {
-          position: { x: 0, y: 0, z: 0 },
-          rotation: { x: 0, y: 0, z: 0 },
-        };
-        const updatedPlacement: types.FixturePlacement = {
-          ...currentPlacement,
-          position: { ...currentPlacement.position },
-          rotation: { ...currentPlacement.rotation },
-        };
-        let hasChanges = false;
-
-        if (position) {
-          switch (position.type) {
-            case "All": {
-              const next = position.data;
-              if (
-                updatedPlacement.position.x !== next.x ||
-                updatedPlacement.position.y !== next.y ||
-                updatedPlacement.position.z !== next.z
-              ) {
-                updatedPlacement.position = next;
-                hasChanges = true;
-              }
-              break;
-            }
-            case "X":
-              if (updatedPlacement.position.x !== position.data) {
-                updatedPlacement.position.x = position.data;
-                hasChanges = true;
-              }
-              break;
-            case "Y":
-              if (updatedPlacement.position.y !== position.data) {
-                updatedPlacement.position.y = position.data;
-                hasChanges = true;
-              }
-              break;
-            case "Z":
-              if (updatedPlacement.position.z !== position.data) {
-                updatedPlacement.position.z = position.data;
-                hasChanges = true;
-              }
-              break;
-          }
-        }
-
-        if (rotation) {
-          switch (rotation.type) {
-            case "All": {
-              const next = rotation.data;
-              if (
-                updatedPlacement.rotation.x !== next.x ||
-                updatedPlacement.rotation.y !== next.y ||
-                updatedPlacement.rotation.z !== next.z
-              ) {
-                updatedPlacement.rotation = next;
-                hasChanges = true;
-              }
-              break;
-            }
-            case "X":
-              if (updatedPlacement.rotation.x !== rotation.data) {
-                updatedPlacement.rotation.x = rotation.data;
-                hasChanges = true;
-              }
-              break;
-            case "Y":
-              if (updatedPlacement.rotation.y !== rotation.data) {
-                updatedPlacement.rotation.y = rotation.data;
-                hasChanges = true;
-              }
-              break;
-            case "Z":
-              if (updatedPlacement.rotation.z !== rotation.data) {
-                updatedPlacement.rotation.z = rotation.data;
-                hasChanges = true;
-              }
-              break;
-          }
-        }
-
-        if (hasChanges) {
-          if (!nextFixtureMap) {
-            nextFixtureMap = { ...fixtureMap };
-          }
-          nextFixtureMap[uid] = {
-            ...fixture,
-            placement: updatedPlacement,
-          };
-          changedFixtureCount += 1;
-        }
-      }
-
-      if (nextFixtureMap) {
-        const storeMutationStartMs = performance.now();
-        setStoreAction(fixtures, "Update Fixture Placements", nextFixtureMap);
-        const storeMutationMs = performance.now() - storeMutationStartMs;
-        const totalMs = performance.now() - startMs;
-        log.trace(
-          `UpdateFixturePlacements requested=${requestedUpdates} changed=${changedFixtureCount} storeMutationMs=${storeMutationMs.toFixed(2)} totalMs=${totalMs.toFixed(2)}`,
-        );
-      } else {
-        const totalMs = performance.now() - startMs;
-        log.trace(
-          `UpdateFixturePlacements requested=${requestedUpdates} changed=0 totalMs=${totalMs.toFixed(2)}`,
-        );
-      }
-
-      break;
-    }
-
-    case "UpdateFixturePatch": {
-      const { id } = command.data;
-      log.trace(
-        `Patch update for fixture ${id} - waiting for Bindings message`,
-      );
-      // Patch updates are handled via the "Bindings" message sent by send_bindings_on_change
-      // Don't try to manually update here - the backend will send the complete binding state
-      break;
-    }
-
-    case "SetDmxChannels": {
-      // DMX channel commands don't affect fixture state directly
-      // They update parameter outputs which are handled via ParameterState messages
-      log.trace("SetDmxChannels command received (handled via ParameterState)");
-      break;
-    }
-
-    default:
-      log.trace(
-        "Ignoring FixtureCommand (handled via FixtureDefinitions):",
-        command.type,
-      );
-  }
-}
-
-/** Applies scene object store, delete, placement, and property updates to the local store. */
-function handleSceneObjectCommand(command: types.SceneObjectCommand) {
-  log.trace("Handling SceneObjectCommand:", command);
-
-  switch (command.type) {
-    case "StoreSceneObject": {
-      log.trace(`Storing scene object ${command.data.identifiers.id}`);
-      setStoreAction(sceneObjects, "Store Scene Object", {
-        ...sceneObjects.get(),
-        [command.data.identifiers.uid]: command.data,
-      });
-      break;
-    }
-    case "DeleteSceneObject": {
-      const sceneObjectId = command.data as number;
-      log.trace(`Deleting scene object ${sceneObjectId}`);
-      // Find the scene object by ID and remove it from the map
-      const sceneObjectMap = sceneObjects.get();
-      for (const [uid, sceneObject] of Object.entries(sceneObjectMap)) {
-        if (sceneObject.identifiers.id === sceneObjectId) {
-          const updatedMap = { ...sceneObjectMap };
-          delete updatedMap[uid];
-          setStoreAction(sceneObjects, "Delete Scene Object", updatedMap);
-          break;
-        }
-      }
-      break;
-    }
-    case "UpdateSceneObjectPlacement": {
-      const { id, position, rotation } = command.data;
-      log.trace(`Updating placement for scene object ${id}`);
-
-      // Find the scene object by ID
-      const sceneObjectMap = sceneObjects.get();
-      const sceneObjectEntry = Object.entries(sceneObjectMap).find(
-        ([, obj]) => obj.identifiers.id === id,
-      );
-      if (!sceneObjectEntry) {
-        log.warn(`Scene object ${id} not found for placement update`);
-        return;
-      }
-
-      const [uid, sceneObject] = sceneObjectEntry;
-
-      // Create deep copy with nested placement object
-      const updatedSceneObject = {
-        ...sceneObject,
-        placement: {
-          ...sceneObject.placement,
-          position: { ...sceneObject.placement.position },
-          rotation: { ...sceneObject.placement.rotation },
-        },
-      };
-
-      // Apply position updates
-      if (position) {
-        switch (position.type) {
-          case "All":
-            updatedSceneObject.placement.position = position.data;
-            break;
-          case "X":
-            updatedSceneObject.placement.position.x = position.data;
-            break;
-          case "Y":
-            updatedSceneObject.placement.position.y = position.data;
-            break;
-          case "Z":
-            updatedSceneObject.placement.position.z = position.data;
-            break;
-        }
-      }
-
-      // Apply rotation updates
-      if (rotation) {
-        switch (rotation.type) {
-          case "All":
-            updatedSceneObject.placement.rotation = rotation.data;
-            break;
-          case "X":
-            updatedSceneObject.placement.rotation.x = rotation.data;
-            break;
-          case "Y":
-            updatedSceneObject.placement.rotation.y = rotation.data;
-            break;
-          case "Z":
-            updatedSceneObject.placement.rotation.z = rotation.data;
-            break;
-        }
-      }
-
-      setStoreAction(sceneObjects, "Update Scene Object Placement", {
-        ...sceneObjectMap,
-        [uid]: updatedSceneObject,
-      });
-      break;
-    }
-    case "UpdateSceneObjectProperties": {
-      const { id, properties } = command.data;
-      log.trace(`Updating properties for scene object ${id}`);
-
-      // Find the scene object by ID
-      const sceneObjectMap = sceneObjects.get();
-      const sceneObjectEntry = Object.entries(sceneObjectMap).find(
-        ([, obj]) => obj.identifiers.id === id,
-      );
-      if (!sceneObjectEntry) {
-        log.warn(`Scene object ${id} not found for properties update`);
-        return;
-      }
-
-      const [uid, sceneObject] = sceneObjectEntry;
-
-      // Map properties.type (PascalCase) to objectType (camelCase)
-      const typeMap: Record<string, string> = {
-        Truss: "truss",
-        Audience: "audience",
-        StageElement: "stageElement",
-        Custom: "custom",
-      };
-
-      const updatedSceneObject: types.SceneObject = {
-        ...sceneObject,
-        properties,
-        objectType: typeMap[properties.type] as types.SceneObjectType,
-      };
-
-      setStoreAction(sceneObjects, "Update Scene Object Properties", {
-        ...sceneObjectMap,
-        [uid]: updatedSceneObject,
-      });
-      break;
-    }
-    default:
-      log.warn(`Unhandled SceneObjectCommand: ${(command as any).type}`);
+  if (!mainThreadMessageHandlers.dispatch(raw, delivery)) {
+    log.warn(`Unknown WsOutbound type: ${raw.type}`, raw);
   }
 }
 
@@ -2215,21 +451,21 @@ const [resyncGeneration, setResyncGeneration] = hmrSignals?.resyncGeneration
 const [backendAppState, setBackendAppState] = hmrSignals?.backendAppState
   ? [hmrSignals.backendAppState, hmrSignals.setBackendAppState]
   : createSignal<types.AppState | null>(null);
-let pendingReactiveParameterState: FixtureParameterState[] | null = null;
-let reactiveParameterStateTimer: ReturnType<typeof setTimeout> | null = null;
-let lastReactiveParameterStateFlushMs = 0;
-let previousParameterRows = new Map<string, ParameterRow>();
 
-/** Clears pending reactive parameter state without publishing it to UI stores. */
-function resetReactiveParameterStateQueue(): void {
-  if (reactiveParameterStateTimer !== null) {
-    clearTimeout(reactiveParameterStateTimer);
-    reactiveParameterStateTimer = null;
-  }
-  pendingReactiveParameterState = null;
-  lastReactiveParameterStateFlushMs = 0;
-  previousParameterRows = new Map<string, ParameterRow>();
-}
+const mainThreadMessageHandlers = createMainThreadMessageHandlerRegistry({
+  session: {
+    resyncGeneration: () => resyncGeneration(),
+    markResyncComplete: () => {
+      setResyncComplete(true);
+      setResyncGeneration(resyncGeneration() + 1);
+    },
+    setBackendAppState: (state) => setBackendAppState(state),
+    requestBackendSessionState: () =>
+      engineRuntime.requestBackendSessionState(),
+    sendDmxUniverseWatch,
+    sendReferenceListWatch,
+  },
+});
 
 /** Marks the current websocket state as waiting for a fresh backend resync. */
 function markResyncPending(): void {
@@ -2239,240 +475,6 @@ function markResyncPending(): void {
   setStoreAction(sequenceDefinitionsLoaded, "Start Resync", false);
   setStoreAction(timelineDefinitionsLoaded, "Start Resync", false);
   setStoreAction(runtimeCapabilities, "Start Resync", null);
-}
-
-/** Publishes the latest queued parameter state to reactive UI stores. */
-function flushReactiveParameterState(): void {
-  if (reactiveParameterStateTimer !== null) {
-    clearTimeout(reactiveParameterStateTimer);
-    reactiveParameterStateTimer = null;
-  }
-
-  const rawData = pendingReactiveParameterState;
-  pendingReactiveParameterState = null;
-  if (!rawData) return;
-
-  lastReactiveParameterStateFlushMs = performance.now();
-  setStoreAction(
-    parameterUpdateTimestamp,
-    "Receive ParameterState Timestamp",
-    Date.now(),
-  );
-  const paramMap = measurePerformanceScope(
-    "websocket-main.parameter-state.process",
-    () => processParameterState(rawData),
-    { fixtureCount: rawData.length },
-  );
-  measurePerformanceScope(
-    "websocket-main.parameter-state.store-set",
-    () => setStoreAction(parameters, "Receive ParameterState", paramMap),
-    { fixtureCount: rawData.length },
-  );
-  measureNextAnimationFrame("websocket-main.parameter-state.next-frame", {
-    fixtureCount: rawData.length,
-  });
-}
-
-/** Schedules the next reactive parameter state flush after the throttle window. */
-function scheduleReactiveParameterStateFlush(delayMs: number): void {
-  if (reactiveParameterStateTimer !== null) return;
-  reactiveParameterStateTimer = setTimeout(
-    flushReactiveParameterState,
-    Math.max(0, delayMs),
-  );
-}
-
-/** Queues the newest parameter state and throttles reactive store notification. */
-function queueReactiveParameterState(rawData: FixtureParameterState[]): void {
-  pendingReactiveParameterState = rawData;
-  const nowMs = performance.now();
-  const elapsedMs = nowMs - lastReactiveParameterStateFlushMs;
-  if (elapsedMs >= REACTIVE_PARAMETER_STATE_INTERVAL_MS) {
-    flushReactiveParameterState();
-    return;
-  }
-  scheduleReactiveParameterStateFlush(
-    REACTIVE_PARAMETER_STATE_INTERVAL_MS - elapsedMs,
-  );
-}
-
-/** Returns whether two optional record objects expose the same key/value pairs. */
-function recordsEqual<T>(
-  left: Record<string, T> | undefined,
-  right: Record<string, T> | undefined,
-  valueEqual: (leftValue: T, rightValue: T) => boolean,
-): boolean {
-  if (left === right) return true;
-  const leftRecord = left ?? {};
-  const rightRecord = right ?? {};
-  const leftKeys = Object.keys(leftRecord);
-  if (leftKeys.length !== Object.keys(rightRecord).length) return false;
-
-  for (const key of leftKeys) {
-    if (!(key in rightRecord)) return false;
-    if (!valueEqual(leftRecord[key]!, rightRecord[key]!)) return false;
-  }
-  return true;
-}
-
-/** Returns whether two parameter values resolve to the same serialized payload. */
-function parameterValuesEqual(
-  left: types.ParameterValue,
-  right: types.ParameterValue,
-): boolean {
-  if (left === right) return true;
-  if (left.type !== right.type) return false;
-
-  switch (left.type) {
-    case "Absolute":
-      return right.type === "Absolute" && left.data.value === right.data.value;
-    case "AbsolutePercent":
-      return (
-        right.type === "AbsolutePercent" && left.data.value === right.data.value
-      );
-    case "Relative":
-      return (
-        right.type === "Relative" && left.data.offset === right.data.offset
-      );
-    case "RelativePercent":
-      return (
-        right.type === "RelativePercent" &&
-        left.data.offset === right.data.offset
-      );
-  }
-}
-
-/** Returns whether two optional conflict sets contain the same attributes. */
-function conflictSetsEqual(
-  left: Set<string> | undefined,
-  right: Set<string> | undefined,
-): boolean {
-  if (left === right) return true;
-  if ((left?.size ?? 0) !== (right?.size ?? 0)) return false;
-  for (const value of left ?? []) {
-    if (!right?.has(value)) return false;
-  }
-  return true;
-}
-
-/** Returns whether two processed element rows have identical display data. */
-function elementParameterRowsEqual(
-  left: ElementParameterRow,
-  right: ElementParameterRow,
-): boolean {
-  return (
-    left.elementIndex === right.elementIndex &&
-    left.color === right.color &&
-    recordsEqual(left.raw, right.raw, Object.is) &&
-    recordsEqual(left.absolute, right.absolute, parameterValuesEqual) &&
-    recordsEqual(left.relative, right.relative, parameterValuesEqual)
-  );
-}
-
-/** Returns whether two processed fixture parameter rows have identical display data. */
-function parameterRowsEqual(left: ParameterRow, right: ParameterRow): boolean {
-  if (
-    left.uid !== right.uid ||
-    left.color !== right.color ||
-    !recordsEqual(left.raw, right.raw, Object.is) ||
-    !recordsEqual(left.absolute, right.absolute, parameterValuesEqual) ||
-    !recordsEqual(left.relative, right.relative, parameterValuesEqual) ||
-    !conflictSetsEqual(left.conflicts, right.conflicts)
-  ) {
-    return false;
-  }
-
-  const leftElements = left.elements ?? [];
-  const rightElements = right.elements ?? [];
-  return (
-    leftElements.length === rightElements.length &&
-    leftElements.every((element, index) =>
-      elementParameterRowsEqual(element, rightElements[index]!),
-    )
-  );
-}
-
-/**
- * Process raw parameter state into a Map for reactive UI panels.
- * Aggregates per-element data and detects conflicts.
- */
-function processParameterState(
-  rawData: FixtureParameterState[],
-): Map<string, ParameterRow> {
-  const paramMap = new Map<string, ParameterRow>();
-  for (const item of rawData) {
-    const uid = item.fixture_uid;
-    const elementStates = item.parameters;
-
-    // Track conflicts: attribute -> element output values
-    const conflictTracker: Record<string, number[]> = {};
-    const mergedOutput: Record<string, number> = {};
-    const mergedAbsolute: Record<string, types.ParameterValue> = {};
-    const mergedRelative: Record<string, types.ParameterValue> = {};
-
-    // Build per-element data
-    const elements: ElementParameterRow[] = elementStates.map(
-      (elementState, idx) => {
-        // Track conflicts for output values
-        for (const [attr, value] of Object.entries(elementState.output)) {
-          conflictTracker[attr] ??= [];
-          conflictTracker[attr].push(value);
-        }
-
-        // Calculate element color
-        const red = Math.round(elementState.output.Red ?? 0);
-        const green = Math.round(elementState.output.Green ?? 0);
-        const blue = Math.round(elementState.output.Blue ?? 0);
-
-        return {
-          elementIndex: idx + 1, // 1-based
-          color: `rgb(${red}, ${green}, ${blue})`,
-          raw: elementState.output,
-          absolute: elementState.absolute,
-          relative: elementState.relative,
-        };
-      },
-    );
-
-    // Aggregate: use last element's value for conflicts (Object.assign behavior)
-    for (const elementState of elementStates) {
-      Object.assign(mergedOutput, elementState.output);
-      Object.assign(mergedAbsolute, elementState.absolute);
-      Object.assign(mergedRelative, elementState.relative);
-    }
-
-    // Identify conflicts whose element outputs differ beyond display tolerance.
-    const conflicts = new Set<string>();
-    for (const [attr, values] of Object.entries(conflictTracker)) {
-      if (outputValuesConflict(values)) {
-        conflicts.add(attr);
-      }
-    }
-
-    // Calculate aggregated color
-    const red = Math.round(mergedOutput.Red ?? 0);
-    const green = Math.round(mergedOutput.Green ?? 0);
-    const blue = Math.round(mergedOutput.Blue ?? 0);
-
-    const nextRow: ParameterRow = {
-      uid,
-      color: `rgb(${red}, ${green}, ${blue})`,
-      raw: mergedOutput,
-      absolute: mergedAbsolute,
-      relative: mergedRelative,
-      elements: elements.length > 1 ? elements : undefined,
-      conflicts: conflicts.size > 0 ? conflicts : undefined,
-    };
-    const previousRow = previousParameterRows.get(uid);
-    paramMap.set(
-      uid,
-      previousRow && parameterRowsEqual(previousRow, nextRow)
-        ? previousRow
-        : nextRow,
-    );
-  }
-  previousParameterRows = paramMap;
-  return paramMap;
 }
 
 // The worker handles WebSocket connection, CBOR decoding, and frame dropping.
@@ -2500,62 +502,6 @@ function cancelPendingSelectionFlattenConfirmation(reason: string) {
   }
 }
 
-/** Pending terminal-result resolvers, keyed by command ID. */
-const commandWaiters = new Map<
-  string,
-  {
-    resolve: (result: types.CommandResult) => void;
-    reject: (error: Error) => void;
-  }
->();
-
-/** Retry results can resolve the console entry created for the rejected command. */
-const commandResultAliases = new Map<string, string>();
-
-/** Extracts a validated selection-flatten retry from a structured command failure. */
-function selectionFlattenRetryFromResult(
-  result: types.CommandResult,
-): import("../state/appStores").SelectionFlattenRetry | null {
-  if (
-    result.outcome.type !== "Failed" ||
-    result.outcome.data.code !==
-      "programmer.selection_flatten_confirmation_required"
-  ) {
-    return null;
-  }
-  const details = result.outcome.data.details;
-  if (!details || typeof details !== "object") {
-    return null;
-  }
-  const retry = details as {
-    module?: unknown;
-    command?: {
-      type?: unknown;
-      data?: {
-        allow_selection_flatten?: unknown;
-        selection_flatten_approval?: unknown;
-      };
-    };
-  };
-  const hasApproval =
-    typeof retry.command?.data?.selection_flatten_approval === "string" &&
-    retry.command.data.selection_flatten_approval.length > 0;
-  const isApprovedProgrammerRelease =
-    retry.module === "ProgrammerCommand" &&
-    retry.command?.type === "ReleaseProgrammerValues" &&
-    retry.command.data?.allow_selection_flatten === true &&
-    hasApproval;
-  const isApprovedUserCommand =
-    retry.module === "UserCommand" &&
-    (retry.command?.type === "Clear" || retry.command?.type === "Release") &&
-    retry.command.data?.allow_selection_flatten === true &&
-    hasApproval;
-  if (!isApprovedProgrammerRelease && !isApprovedUserCommand) {
-    return null;
-  }
-  return retry as import("../state/appStores").SelectionFlattenRetry;
-}
-
 /** Identifies a command whose result was interrupted when its runtime stopped. */
 export class EngineRuntimeCommandDisconnectedError extends Error {
   /** Creates the stable transport error used by world-swap command handling. */
@@ -2565,99 +511,16 @@ export class EngineRuntimeCommandDisconnectedError extends Error {
   }
 }
 
-/** Rejects terminal-result waiters when their transport session ends. */
-function rejectPendingCommandWaiters(error: Error): void {
-  const waiters = [...commandWaiters.values()];
-  commandWaiters.clear();
-  commandResultAliases.clear();
-  pendingCurrentShowfileNames.clear();
-  for (const waiter of waiters) {
-    waiter.reject(error);
-  }
-}
-
-interface PendingCurrentShowfileName {
-  name: string;
-}
-
-const pendingCurrentShowfileNames = new Map<
-  string,
-  PendingCurrentShowfileName
->();
-
-const pendingCommandLifecycle = {
-  waiters: commandWaiters,
-  resultMetadata: pendingCurrentShowfileNames,
-};
-
-/** Extracts the current showfile name implied by a successful desk command. */
-function currentShowfileNameFromCommand(
-  data: object,
-): PendingCurrentShowfileName | null {
-  const envelope = data as {
-    module?: unknown;
-    command?: { type?: unknown; data?: unknown };
-  };
-  if (envelope.module !== "DeskCommand") {
-    return null;
-  }
-
-  const command = envelope.command;
-  switch (command?.type) {
-    case "NewShowfile":
-    case "LoadShowfile":
-      return { name: "default" };
-    case "NewNamedShowfile":
-      return command.data &&
-        typeof command.data === "object" &&
-        "name" in command.data &&
-        typeof command.data.name === "string"
-        ? {
-            name: normalizedShowfileName(command.data.name),
-          }
-        : null;
-    case "LoadNamedShowfile":
-    case "LoadDraftShowfile":
-      return typeof command.data === "string"
-        ? {
-            name: normalizedShowfileName(command.data),
-          }
-        : null;
-    case "LoadShowfileRevision":
-      return command.data &&
-        typeof command.data === "object" &&
-        "showfileName" in command.data &&
-        typeof command.data.showfileName === "string"
-        ? {
-            name: normalizedShowfileName(command.data.showfileName),
-          }
-        : null;
-    case "SaveNamedShowfile":
-      return command.data &&
-        typeof command.data === "object" &&
-        "name" in command.data &&
-        typeof command.data.name === "string"
-        ? {
-            name: normalizedShowfileName(command.data.name),
-          }
-        : null;
-    default:
-      return null;
-  }
-}
-
-/** Defers a showfile-name update until the correlated command succeeds. */
-function registerPendingCurrentShowfileName(
-  correlationId: string,
-  data: object,
-): void {
-  const showfileUpdate = currentShowfileNameFromCommand(data);
-  if (showfileUpdate) {
-    pendingCurrentShowfileNames.set(
-      normalizeCorrelationId(correlationId),
-      showfileUpdate,
-    );
-  }
+/**
+ * Returns the console statement carried by a desk `Eval` command envelope, so typed
+ * statements sent from panels echo in console scrollback like ones typed at the command line.
+ */
+function evalStatementOf(data: object): string | undefined {
+  const command = (data as { command?: { type?: unknown; data?: unknown } })
+    .command;
+  return command?.type === "Eval" && typeof command.data === "string"
+    ? command.data
+    : undefined;
 }
 
 export type { EngineRuntimeConfig } from "./engine-runtime-protocol";
@@ -2730,6 +593,7 @@ export const engineRuntime = {
           "",
         ),
       );
+      browserDemoAudioHost.unlockOnUserGesture(document);
     }
     browserDemoAudioHost.beginSession();
     websocketBacklogSnapshot = createInitialWebsocketBacklogSnapshot();
@@ -2752,6 +616,9 @@ export const engineRuntime = {
         case "status":
           log.trace(`Connection status change: ${msg.status}`);
           setConnectionStatus(msg.status);
+          if (msg.status !== EngineRuntimeStatus.Connected) {
+            parameterStateDecoder.reset();
+          }
           if (msg.status === EngineRuntimeStatus.Disconnected) {
             rejectPendingCommandWaiters(
               new EngineRuntimeCommandDisconnectedError(),
@@ -2772,7 +639,7 @@ export const engineRuntime = {
           if (typeof msg.deliveryMessageId === "number") {
             lastSeenDeliveryMessageId = msg.deliveryMessageId;
           }
-          queueWorkerMessage(msg.data as AnyWsMessage);
+          queueWorkerMessage(msg.data as AnyWsMessage, msg.postedAtMs);
           break;
 
         case "messageBatch":
@@ -2914,74 +781,64 @@ export const engineRuntime = {
     setConnectionStatus(EngineRuntimeStatus.Disconnected);
   },
 
-  /** Sends one lifecycle-tracked command through the active adapter. */
-  sendCommand(
-    data: string | object,
-    shouldLog = true,
-    consoleCommandText?: string,
-  ): string | null {
-    if (!this.worker || !this.isRunning) {
-      log.warn("Tried to send but worker is not running");
-      if (consoleCommandText) {
-        addConsoleSendError(
-          consoleCommandText,
-          "Failed to send command: disconnected",
-        );
-      } else if (typeof data === "object" && "command" in data) {
-        const command = (
-          data as { command?: { type?: unknown; data?: unknown } }
-        ).command;
-        if (command?.type === "Eval" && typeof command.data === "string") {
-          addConsoleSendError(
-            command.data,
-            "Failed to send command: disconnected",
-          );
-        }
-      }
+  /**
+   * Sends one lifecycle-tracked command without waiting for its result. Failures still surface
+   * through the shared result handler. Returns the command id, or null when the runtime is
+   * disconnected or the payload cannot be serialized.
+   */
+  sendCommand(data: object, consoleCommandText?: string): string | null {
+    try {
+      return this.postCommand(data, consoleCommandText);
+    } catch {
       return null;
     }
+  },
 
-    let payload: string | object = data;
-    let commandId: string | null = null;
-    if (typeof data === "object") {
-      commandId = uuidv4();
-      (data as Record<string, unknown>).command_id = commandId;
-      (data as Record<string, unknown>).undo_id ??= commandId;
-      registerPendingCurrentShowfileName(commandId, data);
-      try {
-        payload = sanitizeWebsocketPayload(data);
-      } catch (error) {
-        abandonPendingCommand(
-          pendingCommandLifecycle,
-          normalizeCorrelationId(commandId),
+  /**
+   * Stamps command and undo identity onto a command envelope, registers the optional result
+   * waiter, and posts the envelope to the worker. Console scrollback tracks the operator text,
+   * or the statement of a desk `Eval` command when no text is given. Throws when the runtime
+   * is disconnected or the payload cannot be serialized, after recording a console send error.
+   */
+  postCommand(
+    data: object,
+    consoleCommandText?: string,
+    waiter?: CommandResultWaiter,
+  ): string {
+    const consoleText = consoleCommandText ?? evalStatementOf(data);
+    if (!this.worker || !this.isRunning) {
+      log.warn("Tried to send but worker is not running");
+      if (consoleText) {
+        addConsoleSendError(
+          consoleText,
+          "Failed to send command: disconnected",
         );
-        log.error("Failed to sanitize payload:", error);
-        return null;
       }
+      throw new Error("WebSocket worker is not running");
     }
 
-    if (shouldLog) {
+    const commandId = uuidv4();
+    const commandKey = normalizeCorrelationId(commandId);
+    const envelope = data as Record<string, unknown>;
+    envelope.command_id = commandId;
+    envelope.undo_id ??= commandId;
+    registerPendingCurrentShowfileName(commandId, data);
+    if (waiter) {
+      registerCommandResultWaiter(commandKey, waiter);
+    }
+
+    try {
+      const payload = sanitizeWebsocketPayload(data);
       log.debug("Sending:", payload);
+      this.worker.postMessage({ type: "submit", data: payload });
+    } catch (error) {
+      abandonCommandCorrelation(commandKey);
+      log.error("Failed to send command:", error);
+      throw error;
     }
-    this.worker.postMessage({ type: "submit", data: payload });
-
     // Results arrive in a later task, so console rendering can follow the send.
-    if (consoleCommandText && commandId) {
-      addPendingConsoleCommand(consoleCommandText, commandId, "UI");
-    } else if (
-      typeof data === "object" &&
-      "command" in data &&
-      commandId &&
-      (data as { command?: { type?: unknown; data?: unknown } }).command
-        ?.type === "Eval" &&
-      typeof (data as { command?: { type?: unknown; data?: unknown } }).command
-        ?.data === "string"
-    ) {
-      addPendingConsoleCommand(
-        (data as { command: { data: string } }).command.data,
-        commandId,
-        "UI",
-      );
+    if (consoleText) {
+      addPendingConsoleCommand(consoleText, commandId, "UI");
     }
     return commandId;
   },
@@ -2993,10 +850,7 @@ export const engineRuntime = {
   ): string | null {
     const commandId = this.sendCommand(retry);
     if (commandId && rejectedCorrelationId) {
-      commandResultAliases.set(
-        normalizeCorrelationId(commandId),
-        normalizeCorrelationId(rejectedCorrelationId),
-      );
+      aliasCommandResult(commandId, rejectedCorrelationId);
     }
     return commandId;
   },
@@ -3034,46 +888,11 @@ export const engineRuntime = {
     let originalCommandKey: string | undefined;
     const pendingResult = new Promise<types.CommandResult>(
       (resolve, reject) => {
-        if (!this.worker || !this.isRunning) {
-          if (consoleCommandText) {
-            addConsoleSendError(
-              consoleCommandText,
-              "Failed to send command: disconnected",
-            );
-          }
-          reject(new Error("WebSocket worker is not running"));
-          return;
-        }
-
-        const commandId = uuidv4();
-        const commandKey = normalizeCorrelationId(commandId);
-        originalCommandKey = commandKey;
-        (data as Record<string, unknown>).command_id = commandId;
-        (data as Record<string, unknown>).undo_id ??= commandId;
-        registerPendingCurrentShowfileName(commandId, data);
-
-        commandWaiters.set(commandKey, {
-          resolve: (result) => {
-            resolve(result);
-          },
-          reject: (error) => {
-            reject(error);
-          },
+        const commandId = this.postCommand(data, consoleCommandText, {
+          resolve,
+          reject,
         });
-
-        // Serialize and send
-        try {
-          const payload = sanitizeWebsocketPayload(data);
-          log.debug("Sending (awaited):", payload);
-          this.worker.postMessage({ type: "submit", data: payload });
-          // Results arrive in a later task, so console rendering can follow the send.
-          if (consoleCommandText) {
-            addPendingConsoleCommand(consoleCommandText, commandId, "UI");
-          }
-        } catch (error) {
-          abandonPendingCommand(pendingCommandLifecycle, commandKey);
-          reject(error);
-        }
+        originalCommandKey = normalizeCorrelationId(commandId);
       },
     );
     return pendingResult.then(async (result) => {
@@ -3102,6 +921,38 @@ export const engineRuntime = {
   },
 };
 
+/**
+ * Tells the backend which universes' channel values this client wants, replacing what it asked
+ * for before. An empty list stops the values.
+ */
+function sendDmxUniverseWatch(
+  universes: readonly types.DmxUniverseKey[],
+): void {
+  if (!engineRuntime.isRunning) return;
+  const watch: types.DmxUniverseWatch = { universes: [...universes] };
+  engineRuntime.sendUpdate("DmxUniverseWatch", watch, false);
+}
+
+const stopDmxUniverseWatchSync = dmxUniverseWatch.listen(sendDmxUniverseWatch);
+
+/**
+ * Tells the backend whether this client wants the full reference list, which it then keeps
+ * current with an update after every change. Stopping the watch also drops the list this client
+ * holds.
+ */
+function sendReferenceListWatch(references: boolean): void {
+  if (!references && referenceList.get().size > 0) {
+    setStoreAction(referenceList, "Stop watching references", new Map());
+  }
+  if (!engineRuntime.isRunning) return;
+  const watch: types.ReferenceWatch = { references };
+  engineRuntime.sendUpdate("ReferenceWatch", watch, false);
+}
+
+const stopReferenceListWatchSync = referenceListWatch.listen(
+  sendReferenceListWatch,
+);
+
 export {
   backendAppState,
   connectionStatus,
@@ -3128,6 +979,8 @@ if (import.meta.hot) {
     data.setResyncGeneration = setResyncGeneration;
     data.backendAppState = backendAppState;
     data.setBackendAppState = setBackendAppState;
+    stopDmxUniverseWatchSync();
+    stopReferenceListWatchSync();
     log.info("HMR dispose: disconnecting WebSocket");
     engineRuntime.stop();
   });

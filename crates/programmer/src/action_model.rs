@@ -13,8 +13,7 @@ use nightfall::prelude::{
     ElementSelectorExpr, FixtureRangeExpr, SelectionExpr, UnresolvedFixtureRef,
 };
 use nightfall_dmx::prelude::Attribute;
-use nightfall_engine::command_traits;
-use nightfall_engine::prelude::{EngineAction, EnginePayload, IngressCommand};
+use nightfall_engine::prelude::{EngineOperation, EnginePayload, IngressCommand};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -101,6 +100,13 @@ pub enum ReleaseTarget {
         /// DMX channel expression to release.
         channels: DmxChannelExpr,
     },
+    /// Release values held on an output transport's wire universes.
+    TransportChannels {
+        /// Output transport target ID, as used by patch commands.
+        target: String,
+        /// Wire channel expression to release.
+        channels: DmxChannelExpr,
+    },
 }
 
 impl UserCommand {
@@ -167,7 +173,7 @@ impl AttributeFilter {
 
 /// Programmer runtime actions.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ProgrammerAction {
+pub enum ProgrammerOperation {
     /// Clear active selection.
     ClearSelection,
     /// Clear values according to scope and attribute filter.
@@ -194,8 +200,8 @@ pub enum ProgrammerAction {
     },
 }
 
-impl EnginePayload for ProgrammerAction {}
-impl EngineAction for ProgrammerAction {}
+impl EnginePayload for ProgrammerOperation {}
+impl EngineOperation for ProgrammerOperation {}
 
 fn format_attribute(attribute: &Attribute) -> String {
     let label = attribute.to_string();
@@ -334,14 +340,11 @@ impl UserCommand {
                 Some(ReleaseTarget::Channels { channels }) => {
                     Some(format!("release ch {channels}"))
                 }
+                Some(ReleaseTarget::TransportChannels { target, channels }) => {
+                    Some(format!("release ch {target}:{channels}"))
+                }
             },
         }
-    }
-}
-
-impl command_traits::CliCommand for UserCommand {
-    fn to_cli(&self) -> Option<String> {
-        self.to_cli_command()
     }
 }
 

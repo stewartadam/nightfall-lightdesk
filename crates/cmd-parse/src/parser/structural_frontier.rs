@@ -15,19 +15,21 @@ use crate::parser::analysis::{
 };
 use crate::parser::frontier::is_complete_duration_value;
 use crate::parser::structural::{
-    StructuralClauseChild, StructuralClauseParser, child_clause_is_available, cue_ref_prefix,
-    cue_ref_surface, duration_range_can_extend, expected_tokens_for_clause_entry,
-    expected_tokens_for_slot, is_complete_cue_ref, is_complete_store_cue_ref, merged_fill_surface,
-    push_expected_token, rename_identifier_uses_cue_ref, rm_object_identifier_uses_cue_ref,
-    root_rule_for_clause, set_attr_value_can_extend, signed_numeric_expected_tokens,
-    slot_is_available_in_branch, slot_state, store_cue_ref_prefix, structural_clause_parser,
+    StructuralClauseChild, StructuralClauseParser, child_clause_is_available, child_nodes,
+    condition_holds, cue_ref_prefix, cue_ref_surface, duration_range_can_extend,
+    expected_tokens_for_clause_entry, expected_tokens_for_slot, is_complete_cue_ref,
+    is_complete_store_cue_ref, merged_fill_surface, push_expected_token,
+    rename_identifier_uses_cue_ref, rm_object_identifier_uses_cue_ref, root_rule_for_clause,
+    set_attr_value_can_extend, signed_numeric_expected_tokens, slot_is_available_in_branch,
+    slot_state, store_cue_ref_prefix, structural_clause_parser,
 };
 use crate::parser::structural_expectation::{
     clause_expectation, filtered_slot_expectation, slot_expectation, slot_value_expectation,
 };
 use crate::parser::structural_fx::{fx_rate_value_surface, step_fx_shaping_expected_tokens};
 use crate::parser::structural_programmer::programmer_placement_frontier;
-use crate::slots::contracts::{ClauseCardinality, ClauseId, SlotCardinality, SlotId};
+use crate::parser::structural_tempo::{tempo_action_can_extend, tempo_followup_expected_tokens};
+use crate::slots::contracts::{ClauseCardinality, ClauseId, SlotCardinality, SlotId, clause_rules};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TimingPairEvent {
@@ -129,25 +131,17 @@ fn immediate_frontier_for_clause(
     if clause.clause == ClauseId::ProgrammerPlacement3d {
         return programmer_placement_frontier(branch, clause, parser);
     }
-    if clause.clause == ClauseId::Store
-        && child_clause_is_available(branch, clause, ClauseId::StoreFixture)
-        && !branch.clause_tree.nodes.iter().any(|node| {
-            node.parent.is_some_and(|parent_id| {
-                branch.clause_tree.nodes[parent_id.0 as usize].clause == *clause
-            }) && node.clause.clause == ClauseId::StoreFixture
-        })
-    {
-        return (
-            vec![clause_expectation(parser, ClauseId::StoreFixture)],
-            true,
-        );
+    let rules = clause_rules(clause.clause);
+    for eager in rules.frontier.eager_children {
+        if !child_nodes(branch, clause).any(|node| node.clause.clause == eager.clause)
+            && child_clause_is_available(branch, clause, eager.clause)
+            && condition_holds(branch, clause, &eager.when)
+        {
+            return (vec![clause_expectation(parser, eager.clause)], true);
+        }
     }
     if clause.clause == ClauseId::StoreFixture
-        && !branch.clause_tree.nodes.iter().any(|node| {
-            node.parent.is_some_and(|parent_id| {
-                branch.clause_tree.nodes[parent_id.0 as usize].clause == *clause
-            })
-        })
+        && child_nodes(branch, clause).next().is_none()
         && branch
             .consumed_items
             .iter()
@@ -164,22 +158,6 @@ fn immediate_frontier_for_clause(
                 clause_expectation(parser, ClauseId::StoreFixtureOffset),
                 clause_expectation(parser, ClauseId::StoreFixturePayload),
             ],
-            true,
-        );
-    }
-    if clause.clause == ClauseId::StepFx
-        && branch
-            .consumed_items
-            .iter()
-            .any(|item| item.clause == *clause && item.slot.slot == SlotId::StoreFxAction)
-        && !branch.clause_tree.nodes.iter().any(|node| {
-            node.parent.is_some_and(|parent_id| {
-                branch.clause_tree.nodes[parent_id.0 as usize].clause == *clause
-            }) && node.clause.clause == ClauseId::StepFxSelection
-        })
-    {
-        return (
-            vec![clause_expectation(parser, ClauseId::StepFxSelection)],
             true,
         );
     }
@@ -485,14 +463,6 @@ fn immediate_frontier_for_clause(
                     clause.clone(),
                     slot.slot,
                 );
-                if should_offer_child_clauses_alongside_required_slot(slot.slot) {
-                    append_available_child_clause_expectations(
-                        &mut frontier,
-                        branch,
-                        clause,
-                        parser,
-                    );
-                }
                 return (frontier, true);
             }
             crate::parser::structural::SlotState::OptionalPending => {
@@ -523,7 +493,28 @@ fn immediate_frontier_for_clause(
                 }
             }
             crate::parser::structural::SlotState::ValuePending => {
-                if matches!(clause.clause, ClauseId::Rm | ClauseId::PatchTarget)
+                if let Some(expected_tokens) =
+                    crate::parser::structural::direct_dmx_channel_fills(slot.slot, &slot_fills)
+                        .and_then(|channel_fills| {
+                            if channel_fills.is_empty() {
+                                Some(
+                                    crate::parser::structural::dmx_channel_expression_start_tokens(
+                                    ),
+                                )
+                            } else {
+                                crate::parser::structural::dmx_transport_prefix_expected_tokens(
+                                    channel_fills,
+                                )
+                            }
+                        })
+                {
+                    frontier.push(filtered_slot_expectation(
+                        parser,
+                        clause.clone(),
+                        *slot,
+                        expected_tokens,
+                    ));
+                } else if matches!(clause.clause, ClauseId::Rm | ClauseId::PatchTarget)
                     && slot.slot == SlotId::PatchTargetEndpoint
                     && slot_fills.len() == 1
                     && slot_fills.first().is_some_and(|item| {
@@ -579,6 +570,13 @@ fn immediate_frontier_for_clause(
                         clause.clone(),
                         *slot,
                         expected_tokens,
+                    ));
+                } else if slot.slot == SlotId::TempoAction {
+                    frontier.push(filtered_slot_expectation(
+                        parser,
+                        clause.clone(),
+                        *slot,
+                        tempo_followup_expected_tokens(&slot_fills),
                     ));
                 } else if matches!(
                     slot.slot,
@@ -703,6 +701,15 @@ fn immediate_frontier_for_clause(
                         *slot,
                         vec![ExpectedToken::Token(TokenId::GreaterThan)],
                     ));
+                } else if slot.slot == SlotId::TempoAction {
+                    if tempo_action_can_extend(&slot_fills) {
+                        frontier.push(filtered_slot_expectation(
+                            parser,
+                            clause.clone(),
+                            *slot,
+                            vec![ExpectedToken::Token(TokenId::Dot)],
+                        ));
+                    }
                 } else if slot_keeps_expression_continuation_live(slot.slot, &slot_fills) {
                     frontier.push(slot_expectation(parser, clause.clone(), *slot));
                 }
@@ -719,48 +726,29 @@ fn immediate_frontier_for_clause(
         {
             continue;
         }
-        let child_count = branch
-            .clause_tree
-            .nodes
-            .iter()
-            .filter(|node| {
-                node.parent.is_some_and(|parent_id| {
-                    branch.clause_tree.nodes[parent_id.0 as usize].clause == *clause
-                }) && node.clause.clause == child.parser.clause
-            })
-            .count();
+        let entered =
+            child_nodes(branch, clause).any(|node| node.clause.clause == child.parser.clause);
         if !child_clause_is_available(branch, clause, child.parser.clause) {
             continue;
         }
-        if child_clause_requires_initial_entry(clause.clause, child.parser.clause, child_count) {
-            frontier.push(
-                initial_child_expectation(branch, child, child_count)
-                    .unwrap_or_else(|| clause_expectation(parser, child.parser.clause)),
-            );
+        if !entered
+            && clause_rules(child.parser.clause)
+                .frontier
+                .blocks_parent_until_entered
+        {
+            frontier.push(initial_child_expectation(branch, child));
             return (frontier, true);
         }
         match child.cardinality {
-            ClauseCardinality::Required if child_count == 0 => {
+            ClauseCardinality::Required if !entered => {
                 frontier.push(clause_expectation(parser, child.parser.clause));
                 return (frontier, true);
             }
-            ClauseCardinality::Optional if child_count == 0 => {
-                append_child_clause_frontier_projection(
-                    &mut frontier,
-                    branch,
-                    parser,
-                    child,
-                    child_count,
-                );
+            ClauseCardinality::Optional if !entered => {
+                append_child_clause_frontier_projection(&mut frontier, branch, parser, child);
             }
             ClauseCardinality::Repeated => {
-                append_child_clause_frontier_projection(
-                    &mut frontier,
-                    branch,
-                    parser,
-                    child,
-                    child_count,
-                );
+                append_child_clause_frontier_projection(&mut frontier, branch, parser, child);
             }
             _ => {}
         }
@@ -899,13 +887,26 @@ fn is_active_selection_programmer_branch(branch: &ParseBranchState<'_>) -> bool 
         })
 }
 
+/// Offers a clause's other required slots while its first required slot is pending, when the
+/// grammar asks for them together.
 fn append_parallel_required_slot_expectations(
     frontier: &mut Vec<ClauseExpectation>,
     parser: &StructuralClauseParser,
     clause: ClauseInstance,
     pending_slot: SlotId,
 ) {
-    if !should_offer_parallel_required_slots(parser.clause, pending_slot) {
+    if !clause_rules(parser.clause)
+        .frontier
+        .offer_required_slots_together
+    {
+        return;
+    }
+    let first_required = parser
+        .slots
+        .iter()
+        .find(|slot| matches!(slot.cardinality, SlotCardinality::Required))
+        .map(|slot| slot.slot);
+    if first_required != Some(pending_slot) {
         return;
     }
 
@@ -922,10 +923,6 @@ fn append_parallel_required_slot_expectations(
         }
         frontier.push(slot_expectation(parser, clause.clone(), *sibling));
     }
-}
-
-fn should_offer_parallel_required_slots(clause: ClauseId, pending_slot: SlotId) -> bool {
-    clause == ClauseId::ChannelOverride && pending_slot == SlotId::ChannelOverrideIdentifier
 }
 
 fn channel_root_value_expectation(
@@ -946,18 +943,22 @@ fn channel_root_value_expectation(
     }
 }
 
+/// Offers entry into a child clause and, when the grammar asks for it, the child's first slot
+/// directly, so the user can type the slot value without the entry keyword.
 fn append_child_clause_frontier_projection(
     frontier: &mut Vec<ClauseExpectation>,
     branch: &ParseBranchState<'_>,
     parser: &StructuralClauseParser,
     child: &StructuralClauseChild,
-    _child_count: usize,
 ) {
     let clause_entry = clause_expectation(parser, child.parser.clause);
     if !frontier.contains(&clause_entry) {
         frontier.push(clause_entry);
     }
-    if !child_clause_should_project_initial_slot(child.parser.clause) {
+    if !clause_rules(child.parser.clause)
+        .frontier
+        .project_initial_slot
+    {
         return;
     }
     let Some(slot) = child.parser.slots.first().copied() else {
@@ -1050,39 +1051,6 @@ fn step_selection_identifier_continuation_expectation(clause: ClauseInstance) ->
     }
 }
 
-fn should_offer_child_clauses_alongside_required_slot(slot: SlotId) -> bool {
-    matches!(slot, SlotId::ClearTarget)
-}
-
-fn append_available_child_clause_expectations(
-    frontier: &mut Vec<ClauseExpectation>,
-    branch: &ParseBranchState<'_>,
-    clause: &ClauseInstance,
-    parser: &StructuralClauseParser,
-) {
-    for child in &parser.children {
-        let child_count = branch
-            .clause_tree
-            .nodes
-            .iter()
-            .filter(|node| {
-                node.parent.is_some_and(|parent_id| {
-                    branch.clause_tree.nodes[parent_id.0 as usize].clause == *clause
-                }) && node.clause.clause == child.parser.clause
-            })
-            .count();
-        if child_count != 0 || !child_clause_is_available(branch, clause, child.parser.clause) {
-            continue;
-        }
-        if matches!(
-            child.cardinality,
-            ClauseCardinality::Optional | ClauseCardinality::Required
-        ) {
-            frontier.push(clause_expectation(parser, child.parser.clause));
-        }
-    }
-}
-
 pub(super) fn slot_keeps_expression_continuation_live(
     slot: SlotId,
     fills: &[&crate::parser::analysis::ConsumedSemanticItem],
@@ -1116,26 +1084,14 @@ pub(super) fn slot_keeps_expression_continuation_live(
     }
 }
 
-fn child_clause_requires_initial_entry(
-    parent_clause: ClauseId,
-    child_clause: ClauseId,
-    child_count: usize,
-) -> bool {
-    child_count == 0
-        && matches!(
-            (parent_clause, child_clause),
-            (
-                ClauseId::ProgrammerSelection,
-                ClauseId::ProgrammerSelectionIdentifier
-            ) | (ClauseId::StepFx, ClauseId::StepFxStepDefinition)
-        )
-}
-
+/// Builds the single expectation offered for a child that blocks its parent until entered.
+///
+/// Step definitions start with their attribute slot, and a selection identifier starts with an
+/// identifier expression; any other blocking child is offered as a plain clause entry.
 fn initial_child_expectation(
     branch: &ParseBranchState<'_>,
     child: &StructuralClauseChild,
-    _child_count: usize,
-) -> Option<ClauseExpectation> {
+) -> ClauseExpectation {
     let child_clause = ClauseInstance {
         clause: child.parser.clause,
         instance: crate::parser::structural::next_child_clause_instance(
@@ -1145,66 +1101,36 @@ fn initial_child_expectation(
             child.parser.clause,
         ),
     };
-    if child.parser.clause == ClauseId::StepFxDuration {
-        return Some(ClauseExpectation {
-            replace_active_token: false,
-            target: ContinuationTarget::Slot(SlotRef {
-                slot: SlotId::StepFxDuration,
-                clause: Some(child_clause),
-            }),
-            continuation_kind: crate::parser::structural::continuation_kind_for_slot(
-                SlotId::StepFxDuration,
-            ),
-            expected_tokens: vec![ExpectedToken::Placeholder(ValueKind::DurationValue)],
-            rule: GrammarRuleId::DurationValue,
-        });
-    }
     if child.parser.clause == ClauseId::StepFxStepDefinition {
         let slot_ref = SlotRef {
             slot: SlotId::StepFxStepAttribute,
             clause: Some(child_clause),
         };
-        return Some(ClauseExpectation {
+        return ClauseExpectation {
             replace_active_token: false,
             target: ContinuationTarget::Slot(slot_ref.clone()),
             continuation_kind: crate::parser::structural::continuation_kind_for_slot(slot_ref.slot),
             expected_tokens: expected_tokens_for_slot(slot_ref),
             rule: GrammarRuleId::FxAttributeSteps,
-        });
+        };
     }
 
     if child.parser.clause == ClauseId::ProgrammerSelectionIdentifier {
-        return Some(ClauseExpectation {
+        return ClauseExpectation {
             replace_active_token: false,
             target: ContinuationTarget::Clause(child.parser.clause),
             continuation_kind: ContinuationKind::ClauseEntry,
             expected_tokens: programmer_selection_identifier_entry_expectation(child_clause)
                 .expected_tokens,
             rule: GrammarRuleId::IdentifierExpression,
-        });
+        };
     }
 
-    Some(ClauseExpectation {
+    ClauseExpectation {
         replace_active_token: false,
         target: ContinuationTarget::Clause(child.parser.clause),
         continuation_kind: ContinuationKind::ClauseEntry,
         expected_tokens: expected_tokens_for_clause_entry(child.parser.clause),
         rule: root_rule_for_clause(child.parser.clause),
-    })
-}
-
-fn child_clause_should_project_initial_slot(clause: ClauseId) -> bool {
-    matches!(
-        clause,
-        ClauseId::ProgrammerSetAttributeItem
-            | ClauseId::ProgrammerTimings
-            | ClauseId::FxIdentifier
-            | ClauseId::FxAction
-            | ClauseId::RecallCue
-            | ClauseId::RecallBlueprint
-            | ClauseId::ClipAction
-            | ClauseId::FlowAction
-            | ClauseId::TimecodeAction
-            | ClauseId::TimelineAction
-    )
+    }
 }

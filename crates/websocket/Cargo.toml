@@ -10,6 +10,7 @@ axum.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 futures-util.workspace = true
+minicbor.workspace = true
 minicbor-serde.workspace = true
 nightfall = { path = "../common" }
 nightfall-io = { path = "../io" }

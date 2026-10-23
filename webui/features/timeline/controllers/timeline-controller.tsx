@@ -15,8 +15,11 @@ import { NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import {
   useConditionalShallowStore,
@@ -190,9 +193,9 @@ const TimelineOperatorControls = () => {
         <SkipForwardIcon class="size-4" aria-hidden />
       </ToolbarButton>
       <ToolbarSeparator />
-      <ToolbarButton
+      <ToggleToolbarButton
         type="button"
-        ariaPressed={ctx.loopRange()?.enabled ?? false}
+        pressed={ctx.loopRange()?.enabled ?? false}
         label="Toggle loop range"
         onClick={(event) => {
           if (event.shiftKey) {
@@ -204,7 +207,7 @@ const TimelineOperatorControls = () => {
         tooltip="Toggle loop range (Shift-click deletes loop)"
       >
         <RepeatIcon class="size-4" aria-hidden />
-      </ToolbarButton>
+      </ToggleToolbarButton>
     </div>
   );
 };
@@ -246,7 +249,7 @@ export const TimelineController = (props: TimelineControllerProps) => {
         target_track_id: request.targetTrackId,
       },
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   };
 
   const sendTimecodeCommand = (
@@ -266,10 +269,10 @@ export const TimelineController = (props: TimelineControllerProps) => {
       return;
     }
 
-    engineRuntime.sendCommand({
-      module: "TimecodeCommand",
-      command: commandForTimecode(timecode.identifiers.id),
-    });
+    commandClient.emit(
+      "TimecodeCommand",
+      commandForTimecode(timecode.identifiers.id),
+    );
   };
 
   const sendTimelineCommand = (
@@ -280,40 +283,26 @@ export const TimelineController = (props: TimelineControllerProps) => {
       return;
     }
 
-    engineRuntime.sendCommand({
-      module: "TimelineCommand",
-      command: commandForTimeline(timeline.identifiers.id),
-    });
+    commandClient.emit(
+      "TimelineCommand",
+      commandForTimeline(timeline.identifiers.id),
+    );
   };
 
   const isManualTriggerMode = () =>
     $timelines()[props.initialTimelineUid]?.trigger_mode === "Manual";
 
   const playbackCommands = {
-    onPlay: () => {
-      if (isManualTriggerMode()) {
-        sendTimelineCommand((timelineId) => ({
-          type: "StartTimeline",
-          data: timelineId,
-        }));
-      }
-      sendTimecodeCommand((timecodeId) => ({
-        type: "StartTimecode",
-        data: timecodeId,
-      }));
-    },
-    onPause: () => {
-      if (isManualTriggerMode()) {
-        sendTimelineCommand((timelineId) => ({
-          type: "StopTimeline",
-          data: timelineId,
-        }));
-      }
-      sendTimecodeCommand((timecodeId) => ({
-        type: "PauseTimecode",
-        data: timecodeId,
-      }));
-    },
+    onPlay: () =>
+      sendTimelineCommand((timelineId) => ({
+        type: "PlayTimeline",
+        data: timelineId,
+      })),
+    onPause: () =>
+      sendTimelineCommand((timelineId) => ({
+        type: "PauseTimeline",
+        data: timelineId,
+      })),
     onSeek: (position: number) =>
       sendTimecodeCommand((timecodeId) => ({
         type: "SeekTimecode",

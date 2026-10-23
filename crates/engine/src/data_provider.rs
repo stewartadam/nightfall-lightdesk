@@ -8,7 +8,9 @@
 
 //! Generic ECS data provider for managing items with identifiers.
 
+use std::collections::HashMap;
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use bevy_ecs::prelude::*;
 use bimap::BiMap;
@@ -144,13 +146,78 @@ impl<T: HasIdentifiers> DataStore<T> {
     }
 }
 
+/// Source of journal identities, so a replaced provider never matches a revision of the old one.
+static NEXT_JOURNAL: AtomicU64 = AtomicU64::new(1);
+
+/// A point in one data provider's change history, as returned by [`DataProvider::revision`].
+///
+/// The default revision matches no provider, so the first [`DataProvider::changes_since`] call
+/// for it reports [`DataChanges::All`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DataRevision {
+    /// Identity of the provider instance the revision belongs to.
+    journal: u64,
+    /// Number of mutations the provider had applied.
+    revision: u64,
+}
+
+/// Items of a data provider that changed after a [`DataRevision`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum DataChanges {
+    /// The provider was cleared or replaced, so every item must be treated as changed.
+    All,
+    /// UUIDs of items added, replaced or removed, in no particular order.
+    Items(Vec<Uuid>),
+}
+
+/// Records which items changed at which revision, so consumers can process only those items.
+struct ChangeJournal {
+    /// Identity of this journal, unique per provider instance.
+    journal: u64,
+    /// Count of mutations applied so far.
+    revision: u64,
+    /// Revision of the last clear; changes at or before it are covered by [`DataChanges::All`].
+    cleared_at: u64,
+    /// Revision at which each item last changed, including removed items.
+    changed_at: HashMap<Uuid, u64>,
+}
+
+impl Default for ChangeJournal {
+    /// Starts an empty journal with a process-unique identity.
+    fn default() -> Self {
+        Self {
+            journal: NEXT_JOURNAL.fetch_add(1, Ordering::Relaxed),
+            revision: 0,
+            cleared_at: 0,
+            changed_at: HashMap::new(),
+        }
+    }
+}
+
+impl ChangeJournal {
+    /// Records a change to one item.
+    fn record(&mut self, uid: Uuid) {
+        self.revision += 1;
+        self.changed_at.insert(uid, self.revision);
+    }
+
+    /// Records that every item changed.
+    fn record_clear(&mut self) {
+        self.revision += 1;
+        self.cleared_at = self.revision;
+        self.changed_at.clear();
+    }
+}
+
 /// Generic ECS resource for managing items with identifiers.
 ///
 /// Provides storage and lookup by both UUID and numeric ID for any type implementing HasIdentifiers.
-/// Thread-safe via DashMap for concurrent access.
+/// Thread-safe via DashMap for concurrent access. Every mutation is journaled, so systems that
+/// derive state from the items can update only what changed (see [`DataProvider::changes_since`]).
 #[derive(Resource, Default)]
 pub struct DataProvider<T: HasIdentifiers> {
     store: DataStore<T>,
+    journal: ChangeJournal,
 }
 
 impl<T: HasIdentifiers> DataProvider<T> {
@@ -167,11 +234,16 @@ impl<T: HasIdentifiers> DataProvider<T> {
     }
 
     pub fn add(&mut self, item: T) -> Result<(), DataStoreError<T>> {
-        self.store.add(item)
+        let uid = item.identifiers().uid;
+        self.store.add(item)?;
+        self.journal.record(uid);
+        Ok(())
     }
 
     pub fn remove(&mut self, uuid: &Uuid) -> Result<T, DataStoreError<T>> {
-        self.store.remove(uuid)
+        let item = self.store.remove(uuid)?;
+        self.journal.record(*uuid);
+        Ok(item)
     }
 
     pub fn iter(&self) -> Iter<'_, Uuid, T> {
@@ -181,6 +253,38 @@ impl<T: HasIdentifiers> DataProvider<T> {
     pub fn clear(&mut self) {
         self.store.data.clear();
         self.store.id_index.write().unwrap().clear();
+        self.journal.record_clear();
+    }
+
+    /// Returns the current point in this provider's change history.
+    pub fn revision(&self) -> DataRevision {
+        DataRevision {
+            journal: self.journal.journal,
+            revision: self.journal.revision,
+        }
+    }
+
+    /// Returns the items added, replaced or removed after `since`.
+    ///
+    /// Reports [`DataChanges::All`] when `since` belongs to another provider instance (such as
+    /// the default revision, or a provider that was since replaced) or the provider was cleared
+    /// after it.
+    pub fn changes_since(&self, since: DataRevision) -> DataChanges {
+        let journal = &self.journal;
+        if since.journal != journal.journal || journal.cleared_at > since.revision {
+            return DataChanges::All;
+        }
+        if since.revision == journal.revision {
+            return DataChanges::Items(Vec::new());
+        }
+        DataChanges::Items(
+            journal
+                .changed_at
+                .iter()
+                .filter(|(_, revision)| **revision > since.revision)
+                .map(|(uid, _)| *uid)
+                .collect(),
+        )
     }
 
     pub fn from_id(
@@ -194,7 +298,7 @@ impl<T: HasIdentifiers> DataProvider<T> {
 impl<T: HasIdentifiers + Clone> Extend<T> for DataProvider<T> {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         for elem in iter {
-            if let Err(e) = self.store.add(elem) {
+            if let Err(e) = self.add(elem) {
                 tracing::warn!("Failed to add item during extend: {}", e);
             }
         }
@@ -206,7 +310,7 @@ mod tests {
     use super::*;
 
     /// Minimal identifier-bearing item used to exercise `DataProvider`.
-    #[derive(Clone, Default)]
+    #[derive(Clone, Debug, Default)]
     struct TestItem {
         identifiers: Identifiers,
     }
@@ -215,6 +319,62 @@ mod tests {
         fn identifiers(&self) -> &Identifiers {
             &self.identifiers
         }
+    }
+
+    /// Builds a test item with `id` and a UID derived from it.
+    fn item(id: u32) -> TestItem {
+        TestItem {
+            identifiers: Identifiers {
+                id,
+                uid: Uuid::from_u128(u128::from(id)),
+                label: String::new(),
+            },
+        }
+    }
+
+    /// Verifies the journal reports added, replaced and removed items after a revision, and
+    /// nothing for an unchanged provider.
+    #[test]
+    fn changes_since_lists_items_changed_after_a_revision() {
+        let mut provider = DataProvider::<TestItem>::default();
+        provider.add(item(1)).unwrap();
+        provider.add(item(2)).unwrap();
+        let revision = provider.revision();
+        assert_eq!(provider.changes_since(revision), DataChanges::Items(vec![]));
+
+        provider.add(item(2)).unwrap();
+        provider.add(item(3)).unwrap();
+        provider.remove(&Uuid::from_u128(1)).unwrap();
+        let DataChanges::Items(mut changed) = provider.changes_since(revision) else {
+            panic!("expected item changes");
+        };
+        changed.sort();
+        assert_eq!(
+            changed,
+            vec![Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3)]
+        );
+    }
+
+    /// Verifies a cleared provider, a replaced provider and the default revision all report
+    /// every item as changed, and that failed adds record nothing.
+    #[test]
+    fn changes_since_reports_all_after_clear_or_replacement() {
+        let mut provider = DataProvider::<TestItem>::default();
+        assert_eq!(
+            provider.changes_since(DataRevision::default()),
+            DataChanges::All
+        );
+        provider.add(item(1)).unwrap();
+        let revision = provider.revision();
+        let mut duplicate = item(1);
+        duplicate.identifiers.uid = Uuid::from_u128(9);
+        assert!(provider.add(duplicate).is_err());
+        assert_eq!(provider.changes_since(revision), DataChanges::Items(vec![]));
+
+        provider.clear();
+        assert_eq!(provider.changes_since(revision), DataChanges::All);
+        let replacement = DataProvider::<TestItem>::default();
+        assert_eq!(replacement.changes_since(revision), DataChanges::All);
     }
 
     #[test]

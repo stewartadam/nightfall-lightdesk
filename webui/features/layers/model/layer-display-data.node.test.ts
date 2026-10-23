@@ -11,6 +11,7 @@ import test from "node:test";
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { setAttributeMetadata } from "../../../lib/attribute-metadata";
 import type { VisibilityGridColumn } from "../../../lib/datagrid-column-visibility";
+import type { LayerState } from "../../../lib/ws/types";
 import * as types from "../../../types";
 import {
   createLayerDisplayStructure,
@@ -38,7 +39,7 @@ function fixtureWithElements(elementCount: number): types.Fixture {
 }
 
 /** Creates a layer snapshot with computed intensity values for one fixture. */
-function layerWithIntensityValues(values: number[]): types.OutboundLayerState {
+function layerWithIntensityValues(values: number[]): LayerState {
   return {
     creator: "Test Layer",
     priority: 0,

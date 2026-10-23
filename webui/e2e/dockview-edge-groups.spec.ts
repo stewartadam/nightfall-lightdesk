@@ -8,7 +8,7 @@
 
 import type { Locator } from "@playwright/test";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
+import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 const EDGE_DROP_HOLD_DELAY_MS = 500;
 const LAYOUT_STORAGE_KEY = "nightfall-ui-layouts";
@@ -571,11 +571,53 @@ test("command opening existing edge panel expands its edge group", async ({
   await expect.poll(() => rightEdgeGroupWidth(page)).toBeGreaterThan(260);
 });
 
+/** Verifies command-opening a panel inside a hidden edge group reveals that group. */
+test("command opening a panel in a hidden edge group reveals it", async ({
+  page,
+}) => {
+  await installDockviewStartupSeed(page);
+
+  await page.goto("/?e2e=1");
+  await waitForDockview(page);
+  await runCommand(page, "Reset Layout");
+
+  await page.evaluate(() =>
+    (window as any).appStores.dockApi.get().setEdgeGroupVisible("right", false),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.dockApi.get().isEdgeGroupVisible("right"),
+      ),
+    )
+    .toBe(false);
+
+  await openPanelCommand(page, "Properties");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const api = (window as any).appStores.dockApi.get();
+        return {
+          visible: api.isEdgeGroupVisible("right"),
+          collapsed: api.getEdgeGroup("right")?.isCollapsed(),
+        };
+      }),
+    )
+    .toEqual({ visible: true, collapsed: false });
+  await expect.poll(() => rightEdgeGroupWidth(page)).toBeGreaterThan(260);
+  await page.screenshot({
+    path: test.info().outputPath("hidden-edge-group-revealed.png"),
+  });
+});
+
 /** Verifies resized edge group sizes are persisted and restored with layouts. */
 test("resized edge group sizes survive layout reload", async ({ page }) => {
   await installDockviewStartupSeed(page, {
     clearOnceKey: "edge-size-layout-test-cleared",
   });
+  // Leave room beside the seeded grid's minimum width for a wide edge group.
+  await page.setViewportSize({ width: 2048, height: 1056 });
 
   await page.goto("/?e2e=1");
   await waitForDockview(page);
@@ -592,6 +634,134 @@ test("resized edge group sizes survive layout reload", async ({ page }) => {
   await expect.poll(() => savedRightEdgeGroupSize(page)).toBeGreaterThan(500);
   await expandRightEdgeGroup(page);
   await expect.poll(() => rightEdgeGroupWidth(page)).toBeGreaterThan(500);
+});
+
+/**
+ * Verifies widening an edge group shrinks the grid panels instead of sliding
+ * the grid underneath the edge group, and stops once the grid reaches its
+ * panels' combined minimum width.
+ */
+test("widening an edge group stops at the grid minimum", async ({ page }) => {
+  await installDockviewStartupSeed(page, {
+    clearOnceKey: "edge-grid-minimum-test-cleared",
+  });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+
+  await page.goto("/?e2e=1");
+  await waitForDockview(page);
+  await resetToDefaultLayout(page);
+  await expandRightEdgeGroup(page);
+  await page.screenshot({
+    path: test.info().outputPath("01-before-widening.png"),
+  });
+
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("Missing viewport size");
+  await resizeRightEdgeGroup(page, viewport.width);
+  await page.screenshot({
+    path: test.info().outputPath("02-after-widening.png"),
+  });
+
+  const layout = await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const grid = document
+      .querySelector('[data-workspace-active="true"] .dv-dockview')
+      ?.getBoundingClientRect();
+    const edge = document
+      .querySelector('[data-testid="dv-edge-group-edge-Properties"]')
+      ?.getBoundingClientRect();
+    if (!edge) throw new Error("Missing right edge group");
+    const groups = api.groups
+      .filter((group: any) => group.api.location.type === "grid")
+      .map((group: any) => group.element.getBoundingClientRect());
+    return {
+      gridMinimumWidth: api.minimumWidth,
+      gridLeft: grid?.left ?? 0,
+      gridRight: grid?.right ?? 0,
+      edgeLeft: edge.left,
+      groupRight: Math.max(...groups.map((rect: DOMRect) => rect.right)),
+    };
+  });
+
+  expect(layout.groupRight).toBeLessThanOrEqual(layout.gridRight + 1);
+  expect(layout.groupRight).toBeLessThanOrEqual(layout.edgeLeft);
+  expect(layout.gridRight - layout.gridLeft).toBeGreaterThanOrEqual(
+    layout.gridMinimumWidth - 1,
+  );
+});
+
+/**
+ * Verifies a window too narrow for the grid minimum keeps expanded edge groups
+ * on screen, letting the grid clip instead of pushing the right edge out.
+ */
+test("narrow windows keep edge groups on screen", async ({ page }) => {
+  await installDockviewStartupSeed(page, {
+    clearOnceKey: "edge-grid-narrow-test-cleared",
+  });
+  await page.setViewportSize({ width: 900, height: 720 });
+
+  await page.goto("/?e2e=1");
+  await waitForDockview(page);
+  await resetToDefaultLayout(page);
+  await expandRightEdgeGroup(page);
+
+  await expect
+    .poll(async () => {
+      const box = await page
+        .locator('[data-testid="dv-edge-group-edge-Properties"]')
+        .boundingBox();
+      return box ? box.x + box.width : Number.POSITIVE_INFINITY;
+    })
+    .toBeLessThanOrEqual(900);
+});
+
+/**
+ * Verifies a window too narrow for the grid minimum still lets the expanded
+ * right edge group collapse from its tab: the clipped Visualizer's render
+ * overlay must not sit on top of the edge group and swallow the click.
+ */
+test("narrow windows keep edge group tabs clickable over clipped panels", async ({
+  page,
+}) => {
+  await installDockviewStartupSeed(page, {
+    clearOnceKey: "edge-grid-overlay-click-test-cleared",
+  });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+
+  await page.goto("/?e2e=1");
+  await waitForDockview(page);
+  await resetToDefaultLayout(page);
+  await expandRightEdgeGroup(page);
+  // Shrink the window afterwards, like a user resizing it, until the
+  // Visualizer is squeezed out of the grid underneath the edge group.
+  await page.setViewportSize({ width: 1400, height: 800 });
+  await page.waitForTimeout(500);
+  await page.screenshot({
+    path: test.info().outputPath("01-expanded-narrow.png"),
+  });
+
+  const propertiesTab = page
+    .getByTestId("dv-edge-group-edge-Properties")
+    .getByRole("tab", { name: "Properties", exact: true });
+  const box = await propertiesTab.boundingBox();
+  if (!box) throw new Error("Missing Properties tab bounds");
+  // Click the label, below the caret that opens the tab menu.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).appStores.dockApi
+          .get()
+          .getEdgeGroup("right")
+          ?.isCollapsed(),
+      ),
+    )
+    .toBe(true);
+  await page.mouse.move(700, 300);
+  await page.screenshot({
+    path: test.info().outputPath("02-collapsed-narrow.png"),
+  });
 });
 
 /** Verifies unarmed edge drops continue to use Dockview's normal grid behavior. */

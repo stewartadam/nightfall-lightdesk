@@ -21,4 +21,5 @@ mod structural_expectation;
 mod structural_frontier;
 mod structural_fx;
 mod structural_programmer;
+mod structural_tempo;
 mod structural_tree;

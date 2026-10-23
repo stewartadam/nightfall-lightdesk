@@ -8,10 +8,14 @@
 
 import { expect, type Page, test } from "./playwright-fixtures";
 
-/** Seeds lagging websocket stats through the app store debug surface. */
-async function seedLaggingWebsocketStats(page: Page) {
+/**
+ * Seeds lagging websocket stats through the app store debug surface and keeps re-seeding
+ * them, since the live websocket worker keeps republishing its own healthy stats.
+ */
+async function holdLaggingWebsocketStats(page: Page) {
   await page.evaluate(() => {
-    (window as any).appStores.wsStats.set({
+    /** Builds a stats snapshot whose main-thread delivery is falling behind. */
+    const lagging = () => ({
       worker: {
         totalMessages: 10,
         droppedMessages: 0,
@@ -29,6 +33,11 @@ async function seedLaggingWebsocketStats(page: Page) {
       byType: {},
       timestamp: performance.now(),
     });
+    (window as any).appStores.wsStats.set(lagging());
+    window.setInterval(
+      () => (window as any).appStores.wsStats.set(lagging()),
+      50,
+    );
   });
 }
 
@@ -91,7 +100,7 @@ test("status bar shows degraded connection while websocket delivery is lagging",
     timeout: 10_000,
   });
 
-  await seedLaggingWebsocketStats(page);
+  await holdLaggingWebsocketStats(page);
 
   await expect(
     statusBar.getByRole("status", { name: "Degraded" }),
@@ -129,12 +138,27 @@ test("status bar shows websocket, backend, and frontend frame metrics", async ({
   await expect(separator).toBeVisible();
   await holdDeliveryAndFrameStats(page);
 
-  await expect(statusBar).toContainText(/\d+\.\dms\s*\/\s*\d+\.\dms/);
+  await expect(statusBar).toContainText(/\d+\.\dms.*\d+\.\dms/);
   await expect(statusBar).toContainText(/\d+\sHz/);
   await expect(statusBar).toContainText(/\d+\sFPS/);
   await expect(statusBar).not.toContainText("Backend");
   await expect(statusBar).not.toContainText("UI");
   await page.screenshot({ path: testInfo.outputPath("metrics-separator.png") });
+  const stats = statusBar.locator(
+    '#status-metrics > [data-component="Tooltip"]',
+  );
+  for (const [index, name] of [
+    "Network latency",
+    "UI delivery lag",
+    "Engine frame rate",
+    "UI frame rate",
+  ].entries()) {
+    await stats.nth(index).hover();
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: name }),
+    ).toBeVisible();
+  }
+  await page.screenshot({ path: testInfo.outputPath("metrics-tooltip.png") });
   await statusBar.getByRole("button", { name: "Hide metrics" }).click();
   await expect(statusBar.locator("#status-metrics")).toBeHidden();
   await expect(separator).toBeHidden();
@@ -206,7 +230,9 @@ test("header and status bar keep secondary details compact", async ({
     exact: true,
   });
   await expect(indicator).toBeVisible({ timeout: 10_000 });
-  await expect(header.getByText("nightfall", { exact: true })).toBeVisible();
+  await expect(
+    header.getByRole("img", { name: "nightfall", exact: true }),
+  ).toBeVisible();
   await expect(statusBar).not.toContainText("Connected");
   await expect(statusBar).not.toContainText("Nightfall v");
   const clear = header.getByRole("button", {

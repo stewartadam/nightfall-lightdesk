@@ -7,9 +7,19 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
-import { Table, TableScroll } from "../../../components/ui/table";
+import DataGrid, {
+  activeGridSelectionRow,
+  createKeyedDataGridCellProvider,
+  singleRowGridSelection,
+} from "../../../components/widgets/data-grid";
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+  type GridSelection,
+} from "../../../lib/data-grid-types";
 import {
   libraryDefinitionId,
   libraryRevisionLabel,
@@ -19,11 +29,62 @@ import type { AvailableFixtureInfo } from "../../../types";
 import { LibraryFixturePreview } from "../../fixture-library";
 import { usePatchWizard } from "./wizard-context";
 
+const FIXTURE_COLUMNS: GridColumn[] = [
+  { id: "make", title: "Make", width: 140, minWidth: 96, maxWidth: 220 },
+  { id: "model", title: "Model", width: 200, minWidth: 120, maxWidth: 320 },
+  { id: "modes", title: "Modes", width: 72, sizing: "fixed", align: "right" },
+  { id: "format", title: "Format", width: 88, minWidth: 72, maxWidth: 140 },
+  { id: "revision", title: "Revision", width: 112, minWidth: 80 },
+];
+
+/** Projects one library definition into a sortable cell for the fixture picker. */
+function fixtureCell(
+  fixture: AvailableFixtureInfo,
+  column: GridColumn,
+): GridCell {
+  switch (column.id) {
+    case "make":
+      return {
+        kind: GridCellKind.Text,
+        data: fixture.make,
+        contentAlign: "left",
+      };
+    case "model":
+      return {
+        kind: GridCellKind.Text,
+        data: fixture.model,
+        contentAlign: "left",
+      };
+    case "modes":
+      return {
+        kind: GridCellKind.Number,
+        data: fixture.modes.length,
+        displayData: String(fixture.modes.length),
+        contentAlign: "right",
+      };
+    case "format":
+      return {
+        kind: GridCellKind.Text,
+        data: fixture.source_format,
+        contentAlign: "left",
+      };
+    default:
+      return {
+        kind: GridCellKind.Text,
+        data: libraryRevisionLabel(fixture.asset_etag),
+        contentAlign: "left",
+      };
+  }
+}
+
+/** Lets the user filter the fixture library and choose a definition to patch, with a live preview. */
 export function StepSelectFixture() {
   const { state, updateState } = usePatchWizard();
   const $fixtureLibrary = useStore(fixtureLibrary);
   const capabilities = useStore(runtimeCapabilities);
   const [filterText, setFilterText] = createSignal("");
+  const [reportedSelection, setReportedSelection] =
+    createSignal<GridSelection>();
 
   /** Whether the runtime can import fixture definition files into its library. */
   const canImportFixtures = createMemo(
@@ -62,8 +123,38 @@ export function StepSelectFixture() {
     return $fixtureLibrary().find((f) => libraryDefinitionId(f) === defId);
   });
 
+  /** Keys library rows by definition ID so selection and header sorts survive filtering. */
+  const fixtureProvider = createMemo(() =>
+    createKeyedDataGridCellProvider({
+      rows: filteredFixtures(),
+      columns: FIXTURE_COLUMNS,
+      rowKey: (fixture) => libraryDefinitionId(fixture),
+      columnKey: (column) => column.id!,
+      getCellContent: ({ row, column }) => fixtureCell(row, column),
+    }),
+  );
+
+  /** Highlights the wizard's chosen definition wherever it sits in the filtered list. */
+  const selection = createMemo(() => {
+    const defId = state().fixtureDefinitionId;
+    return singleRowGridSelection(
+      defId
+        ? filteredFixtures().findIndex(
+            (fixture) => libraryDefinitionId(fixture) === defId,
+          )
+        : undefined,
+      reportedSelection(),
+    );
+  });
+
+  /**
+   * Chooses a library definition and its first mode, leaving the wizard state
+   * untouched when the already-chosen definition is selected again so the
+   * user's mode choice survives re-clicks and keyboard moves within the row.
+   */
   const handleFixtureSelect = (fixture: AvailableFixtureInfo) => {
     const fixtureId = libraryDefinitionId(fixture);
+    if (state().fixtureDefinitionId === fixtureId) return;
     const defaultMode = fixture.modes.length > 0 ? fixture.modes[0] : null;
     updateState({
       fixtureDefinitionId: fixtureId,
@@ -87,10 +178,9 @@ export function StepSelectFixture() {
           />
         </div>
 
-        <TableScroll
+        <section
           aria-label="Fixture library"
-          class="flex-1 min-h-0  border border-gray-700 rounded bg-neutral-900"
-          role="region"
+          class="flex-1 min-h-0 overflow-hidden border border-gray-700 rounded bg-neutral-900"
         >
           <Show
             when={filteredFixtures().length > 0}
@@ -110,53 +200,26 @@ export function StepSelectFixture() {
               </div>
             }
           >
-            <Table aria-label="Available fixtures">
-              <thead>
-                <tr>
-                  <th scope="col" class="text-left">
-                    Make
-                  </th>
-                  <th scope="col" class="text-left">
-                    Model
-                  </th>
-                  <th scope="col" class="text-left">
-                    Modes
-                  </th>
-                  <th scope="col" class="text-left">
-                    Format
-                  </th>
-                  <th scope="col" class="text-left">
-                    Revision
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={filteredFixtures()}>
-                  {(fixture) => {
-                    const fixtureId = () => libraryDefinitionId(fixture);
-
-                    const isSelected = () =>
-                      state().fixtureDefinitionId === fixtureId();
-
-                    return (
-                      <tr
-                        class="cursor-pointer"
-                        data-selected={isSelected() ? "true" : "false"}
-                        onClick={() => handleFixtureSelect(fixture)}
-                      >
-                        <td>{fixture.make}</td>
-                        <td>{fixture.model}</td>
-                        <td>{fixture.modes.length}</td>
-                        <td>{fixture.source_format}</td>
-                        <td>{libraryRevisionLabel(fixture.asset_etag)}</td>
-                      </tr>
-                    );
-                  }}
-                </For>
-              </tbody>
-            </Table>
+            <DataGrid
+              ariaLabel="Available fixtures"
+              readOnly
+              selectionMode="row"
+              columns={FIXTURE_COLUMNS}
+              rows={filteredFixtures().length}
+              cellProvider={fixtureProvider}
+              sortableColumns={FIXTURE_COLUMNS.map((column) => column.id!)}
+              freezeColumns={2}
+              gridSelection={selection()}
+              onGridSelectionChange={(next) => {
+                setReportedSelection(next);
+                const row = activeGridSelectionRow(next);
+                const fixture =
+                  row === undefined ? undefined : filteredFixtures()[row];
+                if (fixture) handleFixtureSelect(fixture);
+              }}
+            />
           </Show>
-        </TableScroll>
+        </section>
         <Show when={builtInProfilesOnly()}>
           <p class="mt-2 text-xs text-gray-500">
             Only built-in profiles are available here. Importing GDTF files

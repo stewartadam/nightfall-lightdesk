@@ -17,7 +17,7 @@ test("semantic command architecture passes", () => {
     {
       path: "crates/example/src/lib.rs",
       source:
-        "MessageReader<CommandEnvelope<FooCommand>> EngineActionEnvelope<FooAction>",
+        "MessageReader<CommandEnvelope<FooCommand>> EngineOperationEnvelope<FooOperation>",
     },
   ]);
 
@@ -53,13 +53,13 @@ test("engine-owned domain actions fail", () => {
   const violations = findRetiredLifecycleUses([
     {
       path: "crates/engine/src/domain_actions.rs",
-      source: "pub enum PlaybackAction { ReleaseAll }",
+      source: "pub enum PlaybackOperation { ReleaseAll }",
     },
   ]);
 
   assert.deepEqual(
     violations.map(({ name }) => name),
-    ["engine-owned PlaybackAction"],
+    ["engine-owned PlaybackOperation"],
   );
 });
 
@@ -99,4 +99,20 @@ test("direct command result writers fail", () => {
       path: "crates/example/src/lib.rs",
     },
   ]);
+});
+
+/** Verifies web UI features send commands through the shared command client. */
+test("direct engine runtime command sends fail outside the transport owners", () => {
+  const source =
+    'engineRuntime.sendCommand({ module: "CueCommand", command });\nengineRuntime.sendCommandAndAwait(data);';
+  const violations = findRetiredLifecycleUses([
+    { path: "webui/lib/cue-service.ts", source },
+    { path: "webui/lib/engine-runtime.ts", source },
+    { path: "webui/e2e/example.spec.ts", source },
+  ]);
+
+  assert.deepEqual(
+    violations.map(({ line, path }) => `${path}:${line}`),
+    ["webui/lib/cue-service.ts:1", "webui/lib/cue-service.ts:2"],
+  );
 });

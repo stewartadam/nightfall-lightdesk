@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
@@ -17,6 +18,7 @@ import {
   useShallowStore,
 } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
+import type { LayerState } from "../../../lib/ws/types";
 import {
   activeInstances,
   attributeMetadata,
@@ -197,7 +199,7 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     );
   };
 
-  const isProgrammerLayer = (layer: types.OutboundLayerState): boolean => {
+  const isProgrammerLayer = (layer: LayerState): boolean => {
     if (
       layer.creator === "Programmer" ||
       layer.creator.startsWith("Programmer Instruction ")
@@ -273,7 +275,7 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     });
   };
 
-  const handleNavigateToLayerObject = (layer: types.OutboundLayerState) => {
+  const handleNavigateToLayerObject = (layer: LayerState) => {
     if (isProgrammerLayer(layer)) {
       openProgrammerPanel();
       return;
@@ -402,14 +404,10 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     <Show
       when={layerCount() > 0 || $inputTrace().length > 0}
       fallback={
-        <div class="h-full w-full flex items-center justify-center text-gray-500">
-          <div>
-            <p class="text-center">Empty layer stack.</p>
-            <p class="text-center text-sm mt-2">
-              Start a clip/playback to continue.
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          title="Empty layer stack."
+          description="Start a clip/playback to continue."
+        />
       }
     >
       <div

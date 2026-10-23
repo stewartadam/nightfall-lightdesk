@@ -8,6 +8,7 @@
 
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 import type { EmbeddedRuntimeFactory } from "./engine-runtime-worker-core";
+import { inflateGzipBounded } from "./gzip-bounded";
 
 interface EmbeddedBrowserEngine {
   /** Release the WASM-owned engine allocation. */
@@ -22,6 +23,8 @@ interface EmbeddedBrowserEngine {
   runtime_info(): unknown;
   /** Advance the engine by one frame. */
   tick(deltaMs: number): number;
+  /** Return the tick rate requested by the engine's `fps` frame limit. */
+  tick_rate_hz(): number;
 }
 
 const MAX_EMBEDDED_SHOWFILE_BYTES = 16 * 1024 * 1024;
@@ -105,12 +108,28 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
           postError("Embedded engine returned an invalid publication buffer");
         }
       }
+      scheduleEmbeddedTicks(embeddedEngine.tick_rate_hz());
     } catch (error) {
       postError(`Embedded engine tick failed: ${error}`);
     }
   }
 
-  /** Fetch and bound the immutable showfile selected by the browser-demo release config. */
+  /**
+   * Run engine ticks at the rate the engine requests, restarting the timer only when that
+   * rate changes so an `fps` command takes effect on the next tick.
+   */
+  function scheduleEmbeddedTicks(tickRateHz: number): void {
+    if (embeddedTickTimer && tickRateHz === embeddedTickRateHz) return;
+    if (embeddedTickTimer) clearInterval(embeddedTickTimer);
+    embeddedTickRateHz = tickRateHz;
+    embeddedTickTimer = setInterval(tickEmbeddedRuntime, 1000 / tickRateHz);
+  }
+
+  /**
+   * Fetch the immutable gzip-compressed showfile selected by the browser-demo
+   * release config and return its JSON text. The byte limit applies to both
+   * the transferred body and the unpacked snapshot.
+   */
   async function fetchEmbeddedShowfile(showfileUrl: string): Promise<string> {
     const response = await fetch(showfileUrl, { cache: "force-cache" });
     if (!response.ok) {
@@ -127,16 +146,11 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
         `showfile exceeds ${MAX_EMBEDDED_SHOWFILE_BYTES} byte limit`,
       );
     }
-    const showfileJson = await response.text();
-    if (
-      new TextEncoder().encode(showfileJson).byteLength >
-      MAX_EMBEDDED_SHOWFILE_BYTES
-    ) {
-      throw new Error(
-        `showfile exceeds ${MAX_EMBEDDED_SHOWFILE_BYTES} byte limit`,
-      );
-    }
-    return showfileJson;
+    const showfileBytes = await inflateGzipBounded(
+      new Uint8Array(await response.arrayBuffer()),
+      MAX_EMBEDDED_SHOWFILE_BYTES,
+    );
+    return new TextDecoder().decode(showfileBytes);
   }
 
   /** Load and start the worker-local WASM engine adapter. */
@@ -177,12 +191,9 @@ export const createEmbeddedRuntime: EmbeddedRuntimeFactory = ({
       ) as unknown as EmbeddedBrowserEngine;
 
       embeddedInitMs = performance.now() - initStartMs;
-      const tickRateHz = Math.min(120, Math.max(1, config.tickRateHz ?? 60));
-      embeddedTickRateHz = tickRateHz;
       embeddedWasmMemory = initialized.memory;
       embeddedLastTickMs = performance.now();
       tickEmbeddedRuntime();
-      embeddedTickTimer = setInterval(tickEmbeddedRuntime, 1000 / tickRateHz);
       postStatus(Status.Connected);
       postEmbeddedRuntimeInfo();
       self.postMessage({ type: "connected" });

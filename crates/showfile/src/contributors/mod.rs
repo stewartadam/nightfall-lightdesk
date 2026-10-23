@@ -12,6 +12,7 @@ use bevy_ecs::prelude::Commands;
 
 use super::{ShowfileLoadDomain, ShowfileLoadPhase, ShowfileSnapshot};
 
+mod boards;
 mod clips;
 mod color_paths;
 mod cue_structure;
@@ -23,6 +24,7 @@ mod scene_objects;
 mod snapshot_values;
 mod timecodes_timelines;
 
+pub(super) use boards::{BoardsLoadContributor, BoardsSaveContributor};
 pub(super) use clips::{ClipsLoadContributor, ClipsSaveContributor};
 pub(super) use color_paths::{ColorPathsLoadContributor, ColorPathsSaveContributor};
 pub(super) use cue_structure::{CueStructureLoadContributor, CueStructureSaveContributor};
@@ -46,6 +48,7 @@ pub(super) enum ShowfileContribution<'a> {
     Flows(flows::FlowsSnapshot<'a>),
     Clips(clips::ClipsSnapshot<'a>),
     TimecodesTimelines(timecodes_timelines::TimecodesTimelinesSnapshot<'a>),
+    Boards(boards::BoardsSnapshot<'a>),
 }
 
 /// Adds one domain-owned slice to a showfile save operation.
@@ -116,7 +119,7 @@ fn apply_save_contribution(
 ) {
     match contribution {
         ShowfileContribution::DeskState(contribution) => {
-            snapshot.control_assignments = contribution.control_assignments.into_owned();
+            snapshot.control_slots = contribution.control_slots.into_owned();
             snapshot.variables = contribution.variables.into_owned();
             snapshot.settings = contribution.settings.into_owned();
             snapshot.io_settings = contribution.io_settings.into_owned();
@@ -127,6 +130,7 @@ fn apply_save_contribution(
             #[cfg(feature = "midi")]
             {
                 snapshot.midi_mappings = contribution.midi_mappings.into_owned();
+                snapshot.midi_feedback_devices = contribution.midi_feedback_devices.into_owned();
             }
             #[cfg(feature = "osc")]
             {
@@ -162,6 +166,9 @@ fn apply_save_contribution(
             snapshot.timecodes = contribution.timecodes.into_owned();
             snapshot.timelines = contribution.timelines.into_owned();
         }
+        ShowfileContribution::Boards(contribution) => {
+            snapshot.boards = contribution.boards.into_owned();
+        }
     }
 }
 
@@ -173,7 +180,7 @@ fn load_contribution_for_domain(
     match domain {
         ShowfileLoadDomain::DeskState => {
             ShowfileContribution::DeskState(Box::new(desk_state::DeskStateSnapshot {
-                control_assignments: Cow::Borrowed(&snapshot.control_assignments),
+                control_slots: Cow::Borrowed(&snapshot.control_slots),
                 variables: Cow::Borrowed(&snapshot.variables),
                 settings: Cow::Borrowed(&snapshot.settings),
                 io_settings: Cow::Borrowed(&snapshot.io_settings),
@@ -186,6 +193,8 @@ fn load_contribution_for_domain(
                 bindings: Cow::Borrowed(&snapshot.bindings),
                 #[cfg(feature = "midi")]
                 midi_mappings: Cow::Borrowed(&snapshot.midi_mappings),
+                #[cfg(feature = "midi")]
+                midi_feedback_devices: Cow::Borrowed(&snapshot.midi_feedback_devices),
                 #[cfg(feature = "osc")]
                 osc_mappings: Cow::Borrowed(&snapshot.osc_mappings),
             })
@@ -227,5 +236,8 @@ fn load_contribution_for_domain(
                 timelines: Cow::Borrowed(&snapshot.timelines),
             },
         ),
+        ShowfileLoadDomain::Boards => ShowfileContribution::Boards(boards::BoardsSnapshot {
+            boards: Cow::Borrowed(&snapshot.boards),
+        }),
     }
 }

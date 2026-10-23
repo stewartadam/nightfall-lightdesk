@@ -86,38 +86,6 @@ pub struct Parameter {
 }
 
 impl Parameter {
-    /// Determines the value after merging a parameter value.
-    pub fn apply_value(&self, value: &ParameterValue) -> ParameterDmxValue {
-        let new_value = self.resolve_value(value);
-        let should_update_value = match self.metadata.merge_type {
-            MergeStrategy::HTP => !value.is_relative() && new_value > self.values.current_value,
-            MergeStrategy::LTP => true,
-        };
-
-        if should_update_value {
-            tracing::trace!(
-                ?new_value,
-                attribute = ?self.metadata.attribute,
-                "Merged value on parameter"
-            );
-            new_value
-        } else {
-            tracing::trace!(
-                ?new_value,
-                attribute = ?self.metadata.attribute,
-                retained_value = ?self.values.current_value,
-                "Merged value to parameter, retained existing value"
-            );
-            self.values.current_value
-        }
-    }
-
-    /// Merges a value into a parameter, setting the value if necessary
-    /// according to the parameter's merge strategy.
-    pub fn merge_value(&mut self, value: &ParameterValue) {
-        self.values.current_value = self.apply_value(value);
-    }
-
     /// Sets a parameter to the specified value, regardless of its merge strategy.
     pub fn set_value(&mut self, value: &ParameterValue) {
         self.values.current_value = self.resolve_value(value);

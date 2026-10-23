@@ -226,7 +226,7 @@ test("new show optionally includes standalone sample data", async ({
   const saveResult = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
       module: "DeskCommand",
-      command: { type: "SaveShowfile", data: {} },
+      command: { type: "SaveShowfile" },
     }),
   );
   expect(saveResult.outcome.type).toBe("Succeeded");

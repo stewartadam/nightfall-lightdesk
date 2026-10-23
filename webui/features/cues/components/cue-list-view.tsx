@@ -10,18 +10,21 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
+import { Collapsible } from "../../../components/ui/collapsible";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
-  CRUD_SECTION_CLASS,
-  CRUD_SECTION_SUMMARY_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
 import CrudViewModeToggle from "../../../components/widgets/crud/crud-view-mode-toggle";
@@ -67,23 +70,23 @@ function CueCard(props: CueCardProps) {
         controller.openCueContextMenu(props.cue, event.clientX, event.clientY);
       }}
       class={CRUD_CARD_CLASS}
-      classList={{
-        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-      }}
+      data-selectable-surface
+      data-selected={isSelected()}
     >
       <span class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
         <span>{props.cue.identifiers.id}:</span>
-        <CrudInlineLabelEditor
-          ariaLabel="Cue card label"
-          class="truncate"
-          editing={controller.editingCardLabelUid() === cueUid}
-          label={props.cue.identifiers.label}
-          onCancel={() => controller.setEditingCardLabelUid(null)}
-          onCommit={(label) => controller.updateCueLabel(props.cue, label)}
+        <Show
+          when={controller.editingCardLabelUid() === cueUid}
+          fallback={<span class="truncate">{props.cue.identifiers.label}</span>}
         >
-          {props.cue.identifiers.label}
-        </CrudInlineLabelEditor>
+          <InlineRenameField
+            ariaLabel="Cue card label"
+            allowEmpty
+            value={props.cue.identifiers.label}
+            onClose={() => controller.setEditingCardLabelUid(null)}
+            onCommit={(label) => controller.updateCueLabel(props.cue, label)}
+          />
+        </Show>
       </span>
     </button>
   );
@@ -94,21 +97,22 @@ function CueCardSection(
   props: CueListViewProps & { title: string; cues: Cue[] },
 ) {
   return (
-    <details open class={CRUD_SECTION_CLASS}>
-      <summary class={CRUD_SECTION_SUMMARY_CLASS}>
-        <span class="font-medium text-neutral-200">{props.title}</span>
-        <span class="text-xs text-neutral-400">
+    <Collapsible
+      defaultOpen
+      title={<span class="font-medium text-neutral-200">{props.title}</span>}
+      actions={
+        <span>
           {props.cues.length} cue{props.cues.length !== 1 ? "s" : ""}
         </span>
-      </summary>
-      <div class="p-3">
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
-          <For each={props.cues}>
-            {(cue) => <CueCard controller={props.controller} cue={cue} />}
-          </For>
-        </div>
+      }
+      contentClass="p-3"
+    >
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
+        <For each={props.cues}>
+          {(cue) => <CueCard controller={props.controller} cue={cue} />}
+        </For>
       </div>
-    </details>
+    </Collapsible>
   );
 }
 
@@ -267,16 +271,16 @@ export function CueListView(props: CueListViewProps) {
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <Show when={controller.viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
-              <ToolbarButton
+              <ToolbarSeparator />
+              <ToggleToolbarButton
                 tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={controller.handleToggleSelectionMode}
-                ariaPressed={controller.selectionMode()}
+                pressed={controller.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }
@@ -332,11 +336,12 @@ export function CueListView(props: CueListViewProps) {
             controller.cueGroups().length > 0
           }
           fallback={
-            <div class="text-neutral-500">
-              {Object.keys(controller.cues()).length > 0
-                ? "No matching cues"
-                : "Loading cues..."}
-            </div>
+            <Show
+              when={Object.keys(controller.cues()).length > 0}
+              fallback={<EmptyState loading title="Loading cues..." />}
+            >
+              <EmptyState title="No matching cues" />
+            </Show>
           }
         >
           <Show

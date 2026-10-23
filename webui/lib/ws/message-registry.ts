@@ -15,15 +15,27 @@ export type WsMessageOfType<
   Type extends Message["type"],
 > = Extract<Message, { type: Type }>;
 
+/** Transport details of one delivered message, for handlers that depend on timing. */
+export interface WsMessageDelivery {
+  /** Absolute time (`performance.timeOrigin + performance.now()`) the worker posted it. */
+  postedAtMs?: number;
+}
+
 /** Handles one websocket message variant after worker transport delivery. */
 export type WsMessageHandler<
   Message extends TypedWsMessage,
   Type extends Message["type"],
-> = (message: WsMessageOfType<Message, Type>) => void;
+> = (
+  message: WsMessageOfType<Message, Type>,
+  delivery: WsMessageDelivery,
+) => void;
 
 /** Dispatches websocket messages to explicitly registered typed handlers. */
 export class WsMessageHandlerRegistry<Message extends TypedWsMessage> {
-  private readonly handlers = new Map<string, (message: Message) => void>();
+  private readonly handlers = new Map<
+    string,
+    (message: Message, delivery: WsMessageDelivery) => void
+  >();
 
   /** Registers a handler for one websocket message type. */
   register<Type extends Message["type"]>(
@@ -33,17 +45,17 @@ export class WsMessageHandlerRegistry<Message extends TypedWsMessage> {
     if (this.handlers.has(type)) {
       throw new Error(`WebSocket handler already registered for ${type}`);
     }
-    this.handlers.set(type, (message) =>
-      handler(message as WsMessageOfType<Message, Type>),
+    this.handlers.set(type, (message, delivery) =>
+      handler(message as WsMessageOfType<Message, Type>, delivery),
     );
     return this;
   }
 
   /** Dispatches a message and reports whether a handler consumed it. */
-  dispatch(message: Message): boolean {
+  dispatch(message: Message, delivery: WsMessageDelivery = {}): boolean {
     const handler = this.handlers.get(message.type);
     if (!handler) return false;
-    handler(message);
+    handler(message, delivery);
     return true;
   }
 

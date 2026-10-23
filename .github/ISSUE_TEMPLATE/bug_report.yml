@@ -2,6 +2,12 @@ name: Bug report
 description: Report a reproducible problem in Nightfall.
 title: "[Bug] "
 body:
+  - type: markdown
+    attributes:
+      value: |
+        **This issue will be public.** Everything you submit, including the System Information filled in by Nightfall and any attachments, can be seen by anyone along with your GitHub username.
+
+        Diagnostics, logs and showfiles may contain personal information such as usernames, file paths or object labels. Review them before attaching, or email them privately to [hello@nightfall.live](mailto:hello@nightfall.live). Private submissions are used only to look into the problem you reported and are deleted within 30 days after use. See the [privacy policy](https://nightfall.live/privacy) for details.
   - type: textarea
     id: problem
     attributes:

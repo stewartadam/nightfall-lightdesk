@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS: VisualizerSettings = {
   highlightSelection: true,
   snapPointsEnabled: false,
   qualityPreset: "medium",
-  darkness: 50,
+  darkness: 10,
   cameraRotationMode: "camera-locked",
   showOrbitTargetIndicator: false,
 };

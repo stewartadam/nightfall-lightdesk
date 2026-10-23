@@ -6,8 +6,23 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, For } from "solid-js";
+import { CheckIcon } from "@squidlab/phosphor-solid/check";
+import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
+import { SparkleIcon } from "@squidlab/phosphor-solid/sparkle";
+import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import { WarningIcon } from "@squidlab/phosphor-solid/warning";
+import { createSignal, ErrorBoundary, For, Show } from "solid-js";
+import { Alert } from "../components/ui/alert";
+import {
+  Badge,
+  type BadgeAppearance,
+  type BadgeTone,
+  CountBadge,
+} from "../components/ui/badge";
+import { EmptyState } from "../components/ui/empty-state";
+import { ErrorFallback } from "../components/ui/error-fallback";
 import { Sparkline } from "../components/ui/sparkline";
+import { ToolbarButton } from "../components/ui/toolbar-button";
 import Tooltip from "../components/ui/tooltip";
 import { Button } from "../components/ui/visual-language/button";
 import "./widget-demos.css";
@@ -106,6 +121,278 @@ export function TooltipDemo() {
       <p class="field-help" role="status">
         Preview count: {count()}
       </p>
+    </section>
+  );
+}
+
+/** Sample panel content that throws while rendering whenever `failing` is set, to trip its boundary. */
+function FragileSample(props: { failing: boolean }) {
+  /** Reads the fault flag reactively so toggling it throws inside the boundary's render scope. */
+  const content = () => {
+    if (props.failing) {
+      throw new TypeError(
+        "Cannot read properties of undefined (reading 'cues')",
+      );
+    }
+    return "Sample panel content rendered normally.";
+  };
+  return <p class="widget-fallback-sample">{content()}</p>;
+}
+
+/** Wraps sample content in the production `ErrorFallback` boundary; Retry clears the simulated fault. */
+export function ErrorFallbackDemo() {
+  const [failing, setFailing] = createSignal(false);
+  const [reports, setReports] = createSignal(0);
+  return (
+    <section class="properties lab-panel" aria-label="Error fallback examples">
+      <div class="eyebrow">ERROR FALLBACK</div>
+      <h2>Contain a failure to its panel.</h2>
+      <div class="widget-alert-actions">
+        <Button variant="danger" onClick={() => setFailing(true)}>
+          Throw render error
+        </Button>
+      </div>
+      <div class="widget-fallback-frame">
+        <ErrorBoundary
+          fallback={(error, reset) => (
+            <ErrorFallback
+              title="Sample panel failed to render"
+              error={error}
+              reset={() => {
+                setFailing(false);
+                reset();
+              }}
+              actions={
+                <Button
+                  size="compact"
+                  onClick={() => setReports(reports() + 1)}
+                >
+                  Report Bug
+                </Button>
+              }
+            />
+          )}
+        >
+          <FragileSample failing={failing()} />
+        </ErrorBoundary>
+      </div>
+      <Show when={reports() > 0}>
+        <p class="widget-fallback-sample">Bug reports opened: {reports()}</p>
+      </Show>
+    </section>
+  );
+}
+
+const badgeTones: BadgeTone[] = [
+  "neutral",
+  "accent",
+  "info",
+  "success",
+  "warning",
+  "danger",
+];
+const badgeAppearances: BadgeAppearance[] = ["outline", "soft", "solid"];
+
+/** Shows every badge tone in each appearance and size, with icons, plus corner count bubbles on a toolbar button and a plain anchor. */
+export function BadgeDemo() {
+  const [count, setCount] = createSignal(3);
+  return (
+    <section class="properties lab-panel" aria-label="Badge examples">
+      <div class="eyebrow">BADGES</div>
+      <h2>Small labels, consistent states.</h2>
+      <For each={badgeAppearances}>
+        {(appearance) => (
+          <>
+            <div class="eyebrow">{appearance.toUpperCase()}</div>
+            <div class="widget-badge-row">
+              <For each={badgeTones}>
+                {(tone) => (
+                  <Badge tone={tone} appearance={appearance} uppercase>
+                    {tone}
+                  </Badge>
+                )}
+              </For>
+            </div>
+          </>
+        )}
+      </For>
+      <div class="eyebrow">SIZES, ICONS AND IDENTIFIERS</div>
+      <div class="widget-badge-row">
+        <Badge size="xs" tone="info" appearance="soft" uppercase>
+          Tile
+        </Badge>
+        <Badge tone="success" icon={CheckIcon}>
+          Saved
+        </Badge>
+        <Badge size="md" tone="warning" appearance="soft" icon={WarningIcon}>
+          Prune
+        </Badge>
+        <Badge appearance="soft" mono>
+          3f9c2a1b
+        </Badge>
+      </div>
+      <div class="eyebrow">COUNT BUBBLES</div>
+      <div class="widget-badge-row">
+        <ToolbarButton label="Delete selected" variant="danger" count={count()}>
+          <TrashIcon class="size-4" aria-hidden />
+        </ToolbarButton>
+        <span class="widget-badge-anchor">
+          Mapped
+          <CountBadge count={count()} tone="warning" />
+        </span>
+        <span class="widget-badge-anchor">
+          Overflow
+          <CountBadge count={count() * 40} max={99} />
+        </span>
+        <Button size="compact" onClick={() => setCount(count() + 1)}>
+          Add
+        </Button>
+        <Button
+          size="compact"
+          onClick={() => setCount(Math.max(0, count() - 1))}
+        >
+          Remove
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+/** Shows every inline alert kind, density and border, plus toggled transitions and a timed flash. */
+export function AlertDemo() {
+  const [shown, setShown] = createSignal(true);
+  const [saves, setSaves] = createSignal(0);
+  return (
+    <section class="properties lab-panel" aria-label="Alert examples">
+      <div class="eyebrow">ALERTS</div>
+      <h2>Inline callouts, in context.</h2>
+      <div class="widget-alert-stack">
+        <Alert variant="note" title="Note">
+          Fixtures patched to the same universe share one output stream.
+        </Alert>
+        <Alert variant="tip" title="Tip">
+          Hold Shift while dragging a fader for fine adjustments.
+        </Alert>
+        <Alert variant="important" title="Important">
+          Changes to the patch apply to every cue that uses these fixtures.
+        </Alert>
+        <Alert variant="warning" title="Warning">
+          This showfile was saved by a newer version of Nightfall.
+        </Alert>
+        <Alert variant="caution" title="Caution">
+          <p>Deleting this sequence also removes the clips that play it.</p>
+          <Button variant="danger" size="compact">
+            Delete sequence
+          </Button>
+        </Alert>
+      </div>
+      <div class="eyebrow">COMPACT, NO TITLE</div>
+      <div class="widget-alert-stack">
+        <Alert variant="note" density="compact">
+          Untitled alerts align the icon with the first line of text.
+        </Alert>
+        <Alert variant="warning" density="compact">
+          No WebAssembly modules found in this showfile.
+        </Alert>
+        <Alert variant="caution" density="compact" icon={false}>
+          Icons can be hidden when space is tight.
+        </Alert>
+      </div>
+      <div class="eyebrow">BORDERS</div>
+      <div class="widget-alert-stack">
+        <Alert variant="tip" border="left">
+          Left border, the blockquote default.
+        </Alert>
+        <Alert variant="tip" border="top">
+          Top border, like Flowbite's border accent.
+        </Alert>
+        <Alert variant="tip" border="none">
+          No border, tint only.
+        </Alert>
+      </div>
+      <div class="eyebrow">TRANSITIONS AND FLASH</div>
+      <div class="widget-alert-actions">
+        <Button onClick={() => setShown(!shown())}>
+          {shown() ? "Hide" : "Show"} warning
+        </Button>
+        <Button onClick={() => setSaves(saves() + 1)}>Save</Button>
+      </div>
+      <div class="widget-alert-stack">
+        <Alert variant="warning" transition="slide" show={shown()}>
+          Slides in and out over 150 ms when toggled.
+        </Alert>
+        <Alert variant="tip" role="alert" flash={saves} flashMs={1500}>
+          Saved. This confirmation shows for 1.5 s after each save.
+        </Alert>
+      </div>
+    </section>
+  );
+}
+
+/** Shows each empty-state variant with titles, guidance, icons, an action, and the loading state. */
+export function EmptyStateDemo() {
+  const [loading, setLoading] = createSignal(true);
+  return (
+    <section class="properties lab-panel" aria-label="Empty state examples">
+      <div class="eyebrow">EMPTY STATES</div>
+      <h2>Nothing here, yet.</h2>
+      <p class="field-help">
+        Panel empty states fill and center in their panel. Inline ones sit in
+        lists and inspectors; dashed ones mark placeholder areas.
+      </p>
+      <div class="eyebrow">PANEL</div>
+      <div class="widget-empty-state-frame">
+        <EmptyState
+          icon={SparkleIcon}
+          title="No FX defined"
+          description="Use the add button in the toolbar to create your first effect"
+          action={
+            <Button size="compact" variant="primary">
+              Create FX
+            </Button>
+          }
+        />
+      </div>
+      <div class="eyebrow">INLINE</div>
+      <div class="widget-alert-stack">
+        <EmptyState
+          variant="inline"
+          title="Select one clip to edit its source assignment and options."
+        />
+        <EmptyState
+          variant="inline"
+          icon={MagnifyingGlassIcon}
+          title="No matching fixtures"
+        />
+      </div>
+      <div class="eyebrow">DASHED</div>
+      <div class="widget-alert-stack">
+        <EmptyState
+          variant="dashed"
+          title="No active spatial selection."
+          description="Select fixtures in the programmer to inspect their resolved grid positions."
+        />
+        <EmptyState
+          variant="dashed"
+          density="compact"
+          title="No column filters"
+        />
+      </div>
+      <div class="eyebrow">LOADING</div>
+      <div class="widget-alert-actions">
+        <Button onClick={() => setLoading(!loading())}>
+          {loading() ? "Finish loading" : "Reload"}
+        </Button>
+      </div>
+      <div class="widget-alert-stack">
+        <Show
+          when={loading()}
+          fallback={<EmptyState variant="dashed" title="No showfiles found." />}
+        >
+          <EmptyState variant="dashed" loading title="Loading showfiles..." />
+        </Show>
+        <EmptyState variant="inline" loading />
+      </div>
     </section>
   );
 }

@@ -7,25 +7,26 @@
  */
 
 import { createSignal } from "solid-js";
-import { CommandClient } from "../../../lib/command-client";
 import {
   type CommandSequenceProgress,
   CommandSequenceRunner,
   splitCommandSequence,
 } from "../../../lib/command-sequence";
-import {
-  EngineRuntimeCommandDisconnectedError,
-  engineRuntime,
-} from "../../../lib/engine-runtime";
+import { hasDiskStorage } from "../../../lib/disk-storage";
+import { commandClient } from "../../../lib/engine-commands";
+import { EngineRuntimeCommandDisconnectedError } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { openOrFocusPanelDefinition } from "../../../lib/panel-open-command";
 import {
   newShowfile,
   promptForNewShowfile,
-  showfileSaveCommandForInput,
 } from "../../../lib/showfile-actions";
-import { dockApi, pushToast } from "../../../state/appStores";
+import {
+  dockApi,
+  pushToast,
+  runtimeCapabilities,
+} from "../../../state/appStores";
 import type * as types from "../../../types";
 import {
   type PendingCommandSubmission,
@@ -42,9 +43,7 @@ import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
 
 const log = getLogger(import.meta.url);
-const commandSequenceRunner = new CommandSequenceRunner(
-  new CommandClient(engineRuntime),
-);
+const commandSequenceRunner = new CommandSequenceRunner(commandClient);
 
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
 let commandSubmissionTail: Promise<void> = Promise.resolve();
@@ -174,7 +173,7 @@ export function createCommandLineController(
   /** Sends the global programmer-clear command. */
   const clearProgrammer = () => {
     const command: types.ProgrammerCommand = { type: "ClearProgrammer" };
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Opens or focuses the Console panel, whose scrollback lists running and queued commands. */
@@ -196,7 +195,12 @@ export function createCommandLineController(
     if (!trimmedInput || !(await analysis.validateSubmission(trimmedInput)))
       return;
 
-    if (isNewShowPromptCommand(trimmedInput)) {
+    // Without disk storage the backend rejects new shows, so skip the name prompt and let
+    // the command fail with the backend's explanation.
+    if (
+      hasDiskStorage(runtimeCapabilities.get()) &&
+      isNewShowPromptCommand(trimmedInput)
+    ) {
       const options = await promptForNewShowfile();
       if (!options) {
         queueMicrotask(() => inputElement?.focus());
@@ -211,28 +215,12 @@ export function createCommandLineController(
         },
       );
     } else {
-      const showfileSaveCommand = showfileSaveCommandForInput(trimmedInput);
-      if (showfileSaveCommand) {
-        queueCommandSubmission(
-          trimmedInput,
-          Promise.resolve([trimmedInput]),
-          (_statements, progress) => {
-            progress.onStatementStarted?.(0);
-            engineRuntime.sendCommand(
-              { module: "DeskCommand", command: showfileSaveCommand },
-              true,
-              trimmedInput,
-            );
-          },
-        );
-      } else {
-        queueCommandSubmission(
-          trimmedInput,
-          splitCommandSequence(trimmedInput),
-          (statements, progress) =>
-            commandSequenceRunner.runStatements(statements, progress),
-        );
-      }
+      queueCommandSubmission(
+        trimmedInput,
+        splitCommandSequence(trimmedInput),
+        (statements, progress) =>
+          commandSequenceRunner.runStatements(statements, progress),
+      );
     }
 
     recordSubmittedCommand(trimmedInput);
@@ -256,18 +244,27 @@ export function createCommandLineController(
     useKeyboardShortcut(
       {
         key: "$mod+l",
-        /** Focuses the preferred command input, falling back to any command field. */
+        /**
+         * Focuses the header command input. When the header has collapsed it to a
+         * Console button, opens or reveals the Console panel and focuses its input.
+         */
         handler: () => {
-          const preferred =
-            (document.getElementById(
-              "header-cmdline",
-            ) as HTMLInputElement | null) ??
-            (document.getElementById("cmdline") as HTMLInputElement | null) ??
-            (document.querySelector(
-              "input[aria-label='Command input'], input[aria-label='Panel command input']",
-            ) as HTMLInputElement | null);
-          preferred?.focus();
-          preferred?.select();
+          const header = document.getElementById(
+            "header-cmdline",
+          ) as HTMLInputElement | null;
+          if (header) {
+            header.focus();
+            header.select();
+            return;
+          }
+          openConsole();
+          requestAnimationFrame(() => {
+            const panelInput = document.getElementById(
+              "cmdline",
+            ) as HTMLInputElement | null;
+            panelInput?.focus();
+            panelInput?.select();
+          });
         },
         description: "Focus command line",
         componentId: undefined,

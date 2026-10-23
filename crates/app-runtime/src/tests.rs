@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use bevy::ecs::{
     component::ComponentId,
     schedule::{Schedule, ScheduleLabel, Schedules},
-    system::System,
+    system::{System, SystemAccess},
     world::World,
 };
 use bevy::prelude::{
@@ -35,16 +35,19 @@ use nightfall_cues::prelude::{
     BoundCueInstruction, Cue, CueInstruction, MaterializedSequence, Sequence,
 };
 use nightfall_desk::{
-    prelude::{ToastLevel, UiNotification, UiNotificationState, set_control_action},
+    prelude::{
+        FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
+        ToastLevel, UiNotification, UiNotificationState, control_level_action,
+    },
     resources::log_config::{LogConfig, TracingTarget},
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
-    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNotice,
+    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
     DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
-    EngineActionEnvelope, EngineClientMessage, EventHandling, FinishedCommand, Render, RenderPass,
-    ReplyTarget,
+    EngineClientMessage, EngineOperationEnvelope, EventHandling, FinishedCommand, Render,
+    RenderPass, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
@@ -59,7 +62,7 @@ use nightfall_timecode::prelude::{
     Timecode, TimecodeCommand, TimecodeGenerator, TimecodeRate, TimecodeSource,
 };
 use nightfall_timeline::prelude::{
-    Action, ActionKind, MaterializedTimeline, Timeline, TimelineAction, Track,
+    Action, ActionKind, MaterializedTimeline, Timeline, TimelineOperation, Track,
 };
 use uuid::Uuid;
 
@@ -275,6 +278,8 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
         },
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
+        freewheel: None,
+        audio_input: None,
     };
     app.world_mut()
         .resource_mut::<DataProvider<Timecode>>()
@@ -301,7 +306,7 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
                 label: "Start Sequence".to_owned(),
                 position: Duration::from_millis(100),
                 duration: Duration::ZERO,
-                action: ActionKind::StartClip(clip_uid),
+                action: ActionKind::StartClip(clip_uid).to_reference(),
             }],
             automation_lanes: Vec::new(),
         }],
@@ -313,7 +318,7 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
         .expect("test timeline should be stored");
     app.world_mut().spawn(MaterializedTimeline::new(timeline));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(TimelineAction::Start(
+        .write_message(EngineOperationEnvelope::detached(TimelineOperation::Start(
             timeline_id,
         )));
     app.update();
@@ -477,6 +482,58 @@ fn world_factory_empty_bootstrap_starts_initializing_without_showfile() {
     );
 }
 
+/// Verifies blank and sample new shows both start with one always-on global intensity master and
+/// one always-on global rate master, each at 100% with the shared default UIDs, so neither
+/// changes output until moved and merges between new shows match them up.
+#[test]
+fn world_factory_new_shows_start_with_global_masters() {
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    for bootstrap in [
+        WorldBootstrap::Empty {
+            showfile_name: None,
+        },
+        WorldBootstrap::SampleData {
+            showfile_name: None,
+        },
+    ] {
+        let app = factory
+            .build(bootstrap.clone())
+            .expect("new world factory build");
+        let masters = app.world().resource::<DataProvider<Master>>();
+        let mut masters: Vec<_> = masters.iter().map(|entry| entry.value().clone()).collect();
+        masters.sort_by_key(|master| master.identifiers.id);
+
+        assert_eq!(masters.len(), 2, "{bootstrap:?} should add two masters");
+        let [intensity, rate] = &masters[..] else {
+            unreachable!()
+        };
+        assert_eq!(intensity.identifiers.id, 1);
+        assert_eq!(
+            intensity.identifiers.uid,
+            nightfall_desk::masters::DEFAULT_INTENSITY_MASTER_UID
+        );
+        assert_eq!(intensity.kind, MasterKind::InhibitiveIntensity);
+        assert_eq!(
+            intensity.target,
+            MasterTarget::Fixtures(FixtureMasterTarget::All)
+        );
+        assert_eq!(rate.identifiers.id, 2);
+        assert_eq!(
+            rate.identifiers.uid,
+            nightfall_desk::masters::DEFAULT_RATE_MASTER_UID
+        );
+        assert_eq!(rate.kind, MasterKind::PlaybackRate);
+        assert_eq!(
+            rate.target,
+            MasterTarget::Instances(InstanceMasterTarget::All)
+        );
+        for master in [intensity, rate] {
+            assert_eq!(master.mode, MasterMode::AlwaysOn);
+            assert_eq!(master.level_percent, 100.0);
+        }
+    }
+}
+
 /// Verifies named empty bootstraps are command-ready after construction.
 #[test]
 fn world_factory_named_empty_bootstrap_starts_ready() {
@@ -582,6 +639,56 @@ fn world_factory_named_empty_bootstrap_persists_initial_draft() {
     nightfall::set_nightfall_data_dir(None);
 }
 
+/// Verifies unsaved work reaches the draft once the last client disconnects, and not before.
+#[tokio::test]
+async fn last_client_disconnect_saves_dirty_draft() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("tour".to_string()),
+        })
+        .expect("named empty world factory build");
+    let draft_snapshot = root
+        .path()
+        .join("drafts")
+        .join("tour.nightfall-show")
+        .join("showfile.json.gz");
+    let initial_draft = std::fs::read(&draft_snapshot).expect("read initial draft");
+
+    app.world()
+        .resource::<nightfall_engine::prelude::GlobalVariables>()
+        .set(
+            "unsaved",
+            nightfall::prelude::VariableValue::String("kept".to_string()),
+        );
+    app.update();
+    assert_eq!(
+        std::fs::read(&draft_snapshot).expect("read draft while clients remain"),
+        initial_draft,
+        "the draft should not change while a client is still connected"
+    );
+
+    app.world()
+        .resource::<nightfall_engine::prelude::ClientBridgeHost>()
+        .presence_sender()
+        .client_disconnected(nightfall_engine::prelude::ClientId(1), true);
+    app.update();
+    assert_ne!(
+        std::fs::read(&draft_snapshot).expect("read draft after last disconnect"),
+        initial_draft,
+        "the last disconnect should save the unsaved change into the draft"
+    );
+
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
 /// Verifies new-show UI notifications use the normalized active showfile name.
 #[test]
 fn new_showfile_current_showfile_notification_uses_normalized_name() {
@@ -637,24 +744,28 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
 /// Verify sample faders reference the intended clips and survive the portable snapshot path.
 #[test]
 fn world_factory_sample_data_seeds_fader_assignments() {
-    use nightfall_desk::prelude::{ControlAssignment, Controls};
+    use nightfall_desk::prelude::{ControlAssignment, ControlSlotConfig, Controls};
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
         .build(WorldBootstrap::SampleData {
             showfile_name: None,
         })
         .expect("sample world");
-    let assignments = app.world().resource::<Controls>().assignments();
+    let assignments = app.world().resource::<Controls>().slot_configs();
     assert_eq!(
         &assignments[..5],
-        &[1, 2, 100, 102, 30].map(|id| Some(ControlAssignment::Clip(id)))
+        &[1, 2, 100, 102, 30].map(|id| ControlSlotConfig::assigned(ControlAssignment::Clip(id)))
     );
-    assert!(assignments[5..].iter().all(Option::is_none));
+    assert!(
+        assignments[5..]
+            .iter()
+            .all(|config| config.assignment.is_none())
+    );
     let snapshot = nightfall_showfile::snapshot_from_world(app.world_mut()).unwrap();
     for id in [1, 2, 100, 102, 30] {
         assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
     }
-    assert_eq!(snapshot.control_assignments, assignments);
+    assert_eq!(snapshot.control_slots, assignments);
 }
 
 /// Verifies every seeded cue stores resolved fixture refs, since the cue editor only
@@ -709,6 +820,9 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
         .map(|clip| (clip.identifiers.uid, clip))
         .collect();
     let timelines = app.world().resource::<DataProvider<Timeline>>();
+    let registry = app
+        .world()
+        .get_resource::<nightfall_actions::ActionRegistry>();
 
     for timeline in timelines.iter() {
         let lanes = if timeline.identifiers.label == "Rap" {
@@ -726,24 +840,25 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
             .tracks
             .iter()
             .flat_map(|track| &track.actions)
+            .map(|action| (action, ActionKind::resolve(&action.action, registry)))
             .collect();
-        for action in &actions {
+        for (action, kind) in &actions {
             let (ActionKind::StartClip(uid)
             | ActionKind::StopClip(uid)
-            | ActionKind::SetClipRate { uid, .. }) = &action.action
+            | ActionKind::SetClipRate { uid, .. }) = kind
             else {
                 panic!("unexpected sample action {:?}", action.action);
             };
             let clip = clip_by_uid
                 .get(uid)
                 .unwrap_or_else(|| panic!("{} targets unknown clip {uid}", action.label));
-            if let ActionKind::StartClip(_) = action.action
+            if let ActionKind::StartClip(_) = kind
                 && !clip.options.deactivate_on_sequence_end
             {
                 assert!(
-                    actions.iter().any(|stop| matches!(
-                        stop.action,
-                        ActionKind::StopClip(stop_uid) if stop_uid == *uid
+                    actions.iter().any(|(stop, stop_kind)| matches!(
+                        stop_kind,
+                        ActionKind::StopClip(stop_uid) if stop_uid == uid
                     ) && stop.position > action.position),
                     "{} on {} is never stopped",
                     action.label,
@@ -1242,10 +1357,12 @@ fn sample_data_build_seeds_default_midi_mapping() {
 
     assert!(mappings.iter().any(|mapping| {
         mapping.device_name == "Grid"
-            && mapping.channel == 176
-            && mapping.note == 36
-            && mapping.velocity.is_none()
-            && mapping.action == set_control_action(1)
+            && mapping.source
+                == MidiSource::ControlChange {
+                    channel: 0,
+                    controller: 36,
+                }
+            && mapping.action == control_level_action(1)
     }));
 }
 
@@ -1375,7 +1492,7 @@ fn publish_world_replaced_notifies_clients() {
     )
     .expect("world replacement should encode")
     .to_bytes();
-    assert_eq!(rx.try_recv().ok(), Some(expected));
+    assert_eq!(rx.try_recv().ok().map(|frame| frame.bytes), Some(expected));
     assert!(rx.try_recv().is_err());
 }
 
@@ -1391,7 +1508,7 @@ fn world_swap_success_emits_command_result_for_original_request() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.world_mut()
         .resource_mut::<CommandTracker>()
@@ -2144,7 +2261,9 @@ fn schedule_message_access(
         .filter_map(|key| {
             let system = graph.systems.get_mut(key)?;
             let name = system.name().to_string();
-            let access = system.initialize(world);
+            let SystemAccess::Shared(access) = system.initialize(world) else {
+                return None;
+            };
             let access = access.combined_access();
             if access.has_read_all() {
                 return None;
@@ -2170,7 +2289,8 @@ fn schedule_message_access(
 /// swaps, so a render system reading a message written outside the render schedule can miss it.
 /// Input that render systems depend on must be applied to world state in the input sets instead.
 ///
-/// Exclusive systems are skipped because their access covers the whole world, and the order of
+/// Exclusive systems and systems reading the whole world are skipped because their access covers
+/// every message, and the order of
 /// writers and readers inside the render schedule is not checked.
 #[test]
 fn render_systems_only_read_messages_written_in_render() {
@@ -2179,7 +2299,7 @@ fn render_systems_only_read_messages_written_in_render() {
     let message_ids: Vec<_> = world
         .components()
         .iter_registered()
-        .map(|info| (info.id(), info.name().to_string()))
+        .map(|(id, info)| (id, info.name().to_string()))
         .filter(|(_, name)| name.starts_with("bevy_ecs::message::messages::Messages<"))
         .collect();
     assert!(
@@ -2234,4 +2354,175 @@ fn render_systems_only_read_messages_written_in_render() {
         })
         .collect();
     assert!(violations.is_empty(), "{}", violations.join("\n"));
+}
+
+/// Builds a sample-data world with seeded clips, faders, and timelines.
+fn sample_app() -> App {
+    WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("sample world")
+}
+
+/// Invokes one action in a fresh sample world and returns its submitted command's result.
+fn run_sample_action(invocation: nightfall_actions::ActionInvocation) -> Option<CommandOutcome> {
+    run_action(&mut sample_app(), invocation)
+}
+
+/// Invokes one action and returns the terminal result of the command it submitted.
+fn run_action(
+    app: &mut App,
+    invocation: nightfall_actions::ActionInvocation,
+) -> Option<CommandOutcome> {
+    use nightfall_actions::{InvocationOutcome, InvocationResult};
+
+    app.world_mut().write_message(invocation);
+
+    let mut submitted = None;
+    let mut outcome = None;
+    for _ in 0..5 {
+        app.update();
+        if submitted.is_none() {
+            submitted = app
+                .world_mut()
+                .resource_mut::<Messages<InvocationResult>>()
+                .drain()
+                .find_map(|result| match result.outcome {
+                    InvocationOutcome::Submitted { command_id } => Some(command_id),
+                    _ => None,
+                });
+        }
+        if let Some(command_id) = submitted {
+            outcome = app
+                .world_mut()
+                .resource_mut::<Messages<CommandResult>>()
+                .drain()
+                .find(|result| result.command_id == command_id)
+                .map(|result| result.outcome);
+        }
+        if outcome.is_some() {
+            break;
+        }
+    }
+
+    assert!(submitted.is_some(), "action should submit a command");
+    outcome
+}
+
+/// Verifies a hardware-triggered clip action runs through tracked command dispatch end to end.
+#[tokio::test]
+async fn automation_clip_action_completes_tracked_command() {
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+    use nightfall_clips::start_clip_action;
+
+    let mut app = sample_app();
+    let clip_uid = app
+        .world_mut()
+        .query::<&Clip>()
+        .iter(app.world())
+        .find(|clip| clip.identifiers.id == 1)
+        .map(|clip| clip.identifiers.uid)
+        .expect("sample data should seed clip 1");
+    let outcome = run_action(
+        &mut app,
+        ActionInvocation::trigger(start_clip_action(clip_uid), ActionSurface::Midi)
+            .with_source("MIDI test device"),
+    );
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
+}
+
+/// Verifies an OSC-triggered eval action expands and completes in the pending command stage.
+#[tokio::test]
+async fn automation_eval_action_expands_and_completes() {
+    use nightfall_actions::desk_eval_action;
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+
+    let outcome = run_sample_action(ActionInvocation::trigger(
+        desk_eval_action("clip 1 start"),
+        ActionSurface::Osc,
+    ));
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
+}
+
+/// Verifies a mapped control Go starts the control's assigned clip like the UI Go button.
+#[tokio::test]
+async fn automation_control_go_starts_assigned_clip() {
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+    use nightfall_clips::MaterializedClip;
+    use nightfall_desk::prelude::control_go_action;
+
+    let mut app = sample_app();
+    let outcome = run_action(
+        &mut app,
+        ActionInvocation::trigger(control_go_action(1), ActionSurface::Midi),
+    );
+    app.update();
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
+    let mut clips = app.world_mut().query::<&MaterializedClip>();
+    assert!(
+        clips.iter(app.world()).any(|clip| clip.clip_id == 1),
+        "control 1's clip should be running after Go"
+    );
+}
+
+/// Verifies the timeline toggle action starts and then pauses the linked timecode.
+#[tokio::test]
+async fn automation_timeline_toggle_starts_then_pauses_timecode() {
+    use nightfall_actions::{ActionInvocation, ActionSurface};
+    use nightfall_timeline::prelude::{
+        TIMELINE_TOGGLE_PLAYBACK_ACTION_ID, Timeline, timeline_transport_action,
+    };
+
+    let mut app = sample_app();
+    let timeline = app
+        .world()
+        .resource::<DataProvider<Timeline>>()
+        .iter()
+        .next()
+        .map(|entry| entry.value().clone())
+        .expect("sample data should seed a timeline");
+    let toggle = || {
+        ActionInvocation::trigger(
+            timeline_transport_action(TIMELINE_TOGGLE_PLAYBACK_ACTION_ID, timeline.identifiers.uid),
+            ActionSurface::Midi,
+        )
+    };
+    let is_running = |app: &mut App| {
+        let mut generators = app.world_mut().query::<&TimecodeGenerator>();
+        generators.iter(app.world()).any(|generator| {
+            generator.timecode.identifiers.uid == timeline.timecode_uid && generator.state.is_active
+        })
+    };
+
+    let started = run_action(&mut app, toggle());
+    let running_after_start = is_running(&mut app);
+    let paused = run_action(&mut app, toggle());
+
+    assert_eq!(started, Some(CommandOutcome::succeeded()));
+    assert!(
+        running_after_start,
+        "toggle should start the linked timecode"
+    );
+    assert_eq!(paused, Some(CommandOutcome::succeeded()));
+    assert!(
+        !is_running(&mut app),
+        "second toggle should pause the timecode"
+    );
+}
+
+/// Verifies the programmer clear action completes through its tracked command.
+#[tokio::test]
+async fn automation_programmer_clear_completes() {
+    use nightfall_actions::{ActionInvocation, ActionReference, ActionSurface};
+
+    let outcome = run_sample_action(ActionInvocation::trigger(
+        ActionReference::new("programmer.clear", serde_json::json!({})),
+        ActionSurface::Osc,
+    ));
+
+    assert_eq!(outcome, Some(CommandOutcome::succeeded()));
 }

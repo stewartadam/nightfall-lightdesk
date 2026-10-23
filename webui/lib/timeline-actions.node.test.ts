@@ -31,7 +31,7 @@ function action(id: string, positionMs: number): types.Action {
     label: id,
     position: { secs: 0, nanos: positionMs * 1_000_000 },
     duration: { secs: 1, nanos: 0 },
-    action: { type: "FireCue", data: "cue-1" },
+    action: { id: "timeline.fire-cue", arguments: { cue: "cue-1" } },
   };
 }
 

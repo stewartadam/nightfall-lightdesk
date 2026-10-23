@@ -11,6 +11,7 @@ import {
   createEffect,
   createSignal,
   type JSX,
+  on,
   onCleanup,
   Show,
 } from "solid-js";
@@ -32,8 +33,23 @@ export interface TooltipProps {
   animationKey?: Accessor<unknown>;
   /** Force tooltip visibility (used for imperative auto-open cases). */
   forceVisible?: Accessor<boolean>;
+  /**
+   * Shows the tooltip briefly each time this value changes after mount, then fades it out,
+   * e.g. a counter bumped after copying to the clipboard. A change while it is showing
+   * restarts the display period. Each flash is also announced to screen readers through a
+   * polite live region.
+   */
+  flash?: Accessor<unknown>;
+  /** How long each flash keeps the tooltip shown (ms), read when the flash starts. Default: 2000 */
+  flashMs?: number;
   /** Allow pointer selection and controls inside the tooltip surface. */
   interactive?: boolean;
+  /**
+   * Layout classes for the trigger wrapper, replacing the default
+   * `relative inline-block`. Use it when the wrapped control is positioned or
+   * sized by its parent, such as `absolute top-1 right-1` or `block w-full`.
+   */
+  class?: string;
 }
 
 /** Controls whose tap does something of its own, so a tap must not toggle their tooltip. */
@@ -72,6 +88,7 @@ export default function Tooltip(props: TooltipProps) {
   let exitTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let lastAnimationKey: unknown;
   let lastTouchPressAt = Number.NEGATIVE_INFINITY;
+  let focusLeftWithWindow = false;
   let triggerRef: HTMLSpanElement | undefined;
   let tooltipRef: HTMLSpanElement | undefined;
 
@@ -81,7 +98,27 @@ export default function Tooltip(props: TooltipProps) {
 
   const forceVisible = () => props.forceVisible?.() ?? false;
 
-  const wantsVisible = () => visible() || forceVisible();
+  const [flashing, setFlashing] = createSignal(false);
+  let flashTimeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  /** Shows the tooltip for the flash period whenever the flash value changes, skipping mount. */
+  createEffect(
+    on(
+      () => props.flash?.(),
+      () => {
+        clearTimeout(flashTimeoutId);
+        setFlashing(true);
+        flashTimeoutId = setTimeout(
+          () => setFlashing(false),
+          props.flashMs ?? 2000,
+        );
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => clearTimeout(flashTimeoutId));
+
+  const wantsVisible = () => visible() || forceVisible() || flashing();
   const OFFSET_PX = 10;
   const VIEWPORT_PADDING_PX = 8;
   const POINTER_SIZE_PX = 8;
@@ -229,6 +266,7 @@ export default function Tooltip(props: TooltipProps) {
     clearCloseTimer();
     timeoutId = setTimeout(() => {
       timeoutId = null;
+      if (!document.hasFocus()) return;
       resetTooltipPosition();
       setVisible(true);
     }, delay());
@@ -266,8 +304,13 @@ export default function Tooltip(props: TooltipProps) {
     handlePointerLeave();
   };
 
-  /** Remembers when a touch press began so the focus it causes does not open the tooltip. */
+  /**
+   * Remembers when a touch press began so the focus it causes does not open
+   * the tooltip. Any press also means the next focus is fresh, not focus the
+   * browser restored after the window became active again.
+   */
   const handleTouchPress = (event: PointerEvent) => {
+    focusLeftWithWindow = false;
     if (event.pointerType === "touch") lastTouchPressAt = performance.now();
   };
 
@@ -313,9 +356,21 @@ export default function Tooltip(props: TooltipProps) {
     document.addEventListener("pointerdown", dismissOnOutsideTap, true);
   };
 
-  /** Opens the tooltip immediately for keyboard focus, but not for focus a tap caused. */
-  const handleFocus = () => {
+  /**
+   * Opens the tooltip immediately for keyboard focus, but not for focus a tap
+   * caused. Focus the browser restores when the window becomes active again
+   * only reopens the tooltip when it was keyboard focus.
+   */
+  const handleFocus = (event: FocusEvent) => {
     if (performance.now() - lastTouchPressAt < TOUCH_FOCUS_WINDOW_MS) return;
+    const restoredWithWindow = focusLeftWithWindow;
+    focusLeftWithWindow = false;
+    if (
+      restoredWithWindow &&
+      event.target instanceof Element &&
+      !event.target.matches(":focus-visible")
+    )
+      return;
     clearOpenTimer();
     clearCloseTimer();
     if (!wantsVisible()) resetTooltipPosition();
@@ -334,6 +389,7 @@ export default function Tooltip(props: TooltipProps) {
   /** Hides the keyboard tooltip after focus leaves the complete interaction. */
   const handleBlur = (event: FocusEvent) => {
     if (retainsInteractiveFocus(event.relatedTarget)) return;
+    focusLeftWithWindow = !document.hasFocus();
     clearOpenTimer();
     clearCloseTimer();
     setVisible(false);
@@ -344,6 +400,22 @@ export default function Tooltip(props: TooltipProps) {
     clearCloseTimer();
     clearExitTimer();
     stopTapDismissal();
+  });
+
+  /**
+   * Hides an open tooltip when the window loses focus, e.g. switching to
+   * another app, since the pointer can leave without a pointerleave event.
+   */
+  createEffect(() => {
+    if (!visible()) return;
+    const handleWindowBlur = () => {
+      clearOpenTimer();
+      clearCloseTimer();
+      stopTapDismissal();
+      setVisible(false);
+    };
+    window.addEventListener("blur", handleWindowBlur);
+    onCleanup(() => window.removeEventListener("blur", handleWindowBlur));
   });
 
   /** Keeps the tooltip mounted briefly after close so opacity can animate out. */
@@ -398,7 +470,7 @@ export default function Tooltip(props: TooltipProps) {
   return (
     <span
       ref={triggerRef}
-      class="relative inline-block"
+      class={props.class ?? "relative inline-block"}
       data-component="Tooltip"
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
@@ -408,6 +480,11 @@ export default function Tooltip(props: TooltipProps) {
       onFocusOut={handleBlur}
     >
       {props.children}
+      <Show when={props.flash}>
+        <span class="sr-only" aria-live="polite">
+          {flashing() ? props.content() : ""}
+        </span>
+      </Show>
       <Show when={mounted()}>
         <Portal mount={overlayHost(triggerRef)}>
           <span

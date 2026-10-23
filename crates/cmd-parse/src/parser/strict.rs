@@ -55,9 +55,9 @@ use crate::ast::{
     SimpleIdentifierExpressionAst, SimpleOpTermAst, SimpleRangeAst, SimpleTermAst, SingleIdAst,
     SleepCommandAst, SpanFieldNameAst, SpanFieldValueAst, StartStopAst, StoreColorPathCommandAst,
     StoreCueCommandAst, StoreCueModeAst, StoreCueTargetAst, StoreGroupCommandAst, TargetAst,
-    TermAst, TimecodeActionAst, TimecodeCommandAst, TimecodeKeyword, TimelineCommandAst,
-    TimelineKeyword, TransportEndpointAst, TransportNameAst, UndoCommandAst, UniverseRangeAst,
-    ValueAst, WordAst,
+    TempoActionAst, TempoCommandAst, TermAst, TimecodeActionAst, TimecodeCommandAst,
+    TimecodeKeyword, TimelineCommandAst, TimelineKeyword, TransportEndpointAst, TransportNameAst,
+    UndoCommandAst, UniverseRangeAst, ValueAst, WordAst,
 };
 use crate::ast::{BlueprintKeyword, FlowActionAst, FlowCommandAst, QuotedStringAst};
 use crate::ast::{
@@ -795,6 +795,53 @@ fn parse_u16_token(token: &LexerToken) -> Option<u16> {
     (token.kind == LexerTokenKind::Number)
         .then(|| token.text.parse::<u16>().ok())
         .flatten()
+}
+
+/// Reads one endpoint word such as a transport target ID, joining adjacent word, number and
+/// hyphen tokens (`my-node2`) into a single surface. Returns the consumed token count.
+fn parse_endpoint_word_from_tokens<'i>(
+    command_str: &'i str,
+    tokens: &[&LexerToken],
+) -> Option<(usize, &'i str)> {
+    let first = tokens.first()?;
+    matches!(first.kind, LexerTokenKind::Word | LexerTokenKind::Number).then_some(())?;
+    let start = first.span.start;
+    let mut end = first.span.end;
+    let mut consumed = 1;
+
+    while let Some(token) = tokens.get(consumed) {
+        if !matches!(
+            token.kind,
+            LexerTokenKind::Word | LexerTokenKind::Number | LexerTokenKind::Minus
+        ) || token.span.start != end
+        {
+            break;
+        }
+        end = token.span.end;
+        consumed += 1;
+    }
+
+    Some((consumed, &command_str[start..end]))
+}
+
+/// Splits the optional `transport:` prefix off a direct DMX channel expression.
+///
+/// `sacn:1.1>1.4` yields the `sacn` transport and the tokens of `1.1>1.4`; an expression that
+/// starts with a number or parenthesis addresses console space and is returned unchanged.
+fn split_dmx_transport_prefix<'i, 't>(
+    command_str: &'i str,
+    tokens: &'t [&'t LexerToken],
+) -> Option<(Option<TransportNameAst<'i>>, &'t [&'t LexerToken])> {
+    if tokens
+        .first()
+        .is_none_or(|token| token.kind != LexerTokenKind::Word)
+    {
+        return Some((None, tokens));
+    }
+    let (consumed, transport) = parse_endpoint_word_from_tokens(command_str, tokens)?;
+    let colon = tokens.get(consumed)?;
+    (colon.kind == LexerTokenKind::Colon).then_some(())?;
+    Some((Some(TransportNameAst(transport)), &tokens[consumed + 1..]))
 }
 
 fn parse_dmx_channel_ref_from_tokens(tokens: &[&LexerToken]) -> Option<(usize, DmxChannelRefAst)> {
@@ -1581,7 +1628,7 @@ pub(crate) fn materialize_strict_ast_with_tokens<'i>(
     command_str: &'i str,
     tokens: &[LexerToken],
 ) -> Result<CommandAst<'i>, AstError> {
-    super::prefix::parse_tokenized_prefix(command_str, tokens)
+    super::prefix::parse_tokenized_prefix(command_str, tokens, &Default::default())
         .completed_ast()
         .ok_or_else(|| AstError::Strict("input does not match command grammar".to_owned()))
 }
@@ -1753,6 +1800,7 @@ fn dispatch_structural_branch<'i>(
         StructuralAstDispatchKind::Debug => general::materialize_general_object_ast(ctx),
         StructuralAstDispatchKind::Sleep => general::materialize_sleep_ast(ctx),
         StructuralAstDispatchKind::Fps => general::materialize_fps_ast(ctx),
+        StructuralAstDispatchKind::Tempo => general::materialize_tempo_ast(ctx),
     }
 }
 

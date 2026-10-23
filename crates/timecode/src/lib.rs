@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides uDMX USB output
+//! This crate provides timecode clocks driven by the engine or by an external source
 
 #![warn(missing_docs)]
 
@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 pub mod ast_conv;
 pub mod components;
 pub mod events;
+pub mod external;
 pub mod systems;
 pub mod timecode;
 mod undo;
@@ -30,8 +31,14 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::TimecodePlugin;
     pub use crate::components::TimecodeGenerator;
-    pub use crate::timecode::{Timecode, TimecodeRate, TimecodeSource, TimecodeState};
-    pub use crate::{TimecodeAction, TimecodeCommand, TimecodeEvent};
+    pub use crate::external::{
+        ExternalTimecodeFeed, ExternalTimecodeFeeds, ExternalTimecodeFrame, PlayStateInference,
+        SmpteTime,
+    };
+    pub use crate::timecode::{
+        Timecode, TimecodeAudioInput, TimecodeRate, TimecodeSignal, TimecodeSource, TimecodeState,
+    };
+    pub use crate::{TimecodeCommand, TimecodeEvent, TimecodeOperation};
 }
 
 /// Plugin for adding timecode functionality to the app
@@ -40,7 +47,7 @@ impl Plugin for TimecodePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering TimecodePlugin");
         register_ingress_command::<TimecodeCommand>(app);
-        app.add_message::<EngineActionEnvelope<TimecodeAction>>();
+        app.add_message::<EngineOperationEnvelope<TimecodeOperation>>();
         app.add_message::<TimecodeEvent>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimecodeAstConverter,
@@ -52,6 +59,7 @@ impl Plugin for TimecodePlugin {
         );
 
         app.init_resource::<DataProvider<timecode::Timecode>>();
+        app.init_resource::<external::ExternalTimecodeFeeds>();
 
         // Register undoable commands
         app.world_mut()
@@ -123,7 +131,7 @@ impl IngressCommand for TimecodeCommand {}
 
 /// Concrete runtime operations owned by the timecode domain.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum TimecodeAction {
+pub enum TimecodeOperation {
     /// Starts or resumes a timecode generator.
     Start(u32),
     /// Pauses a timecode generator without resetting its position.
@@ -139,7 +147,7 @@ pub enum TimecodeAction {
     },
 }
 
-impl EngineAction for TimecodeAction {}
+impl EngineOperation for TimecodeOperation {}
 
 /// Facts published after the timecode domain applies runtime or CRUD work.
 #[derive(Debug, Clone, Message)]

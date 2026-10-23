@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { gzipSync } from "node:zlib";
 
 import { copyTimelineAudio } from "./browser-demo-audio.mjs";
 
@@ -97,6 +98,29 @@ test("rejects a showfile that references no timeline audio", () => {
       () => copyTimelineAudio(demo),
       /does not reference timeline audio/,
     );
+  } finally {
+    rmSync(demo.root, { recursive: true, force: true });
+  }
+});
+
+/** The checked-in demo is gzip-compressed, so packaging reads timeline audio through the archive. */
+test("reads timeline audio from a gzip-compressed showfile", () => {
+  const demo = createDemo([]);
+  try {
+    const showfilePath = join(demo.showDir, "showfile.json.gz");
+    writeFileSync(
+      showfilePath,
+      gzipSync(
+        JSON.stringify({
+          timelines: [{ audio_path: "timeline-audio/a/lofi.mp3" }],
+        }),
+      ),
+    );
+    writeFileSync(join(demo.sampleAudioDir, "lofi.mp3"), "real lofi bytes");
+    const written = copyTimelineAudio({ ...demo, showfilePath });
+    assert.deepEqual(written, [
+      join(demo.showDir, "timeline-audio/a/lofi.mp3"),
+    ]);
   } finally {
     rmSync(demo.root, { recursive: true, force: true });
   }

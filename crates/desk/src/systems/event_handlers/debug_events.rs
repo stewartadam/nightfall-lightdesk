@@ -6,10 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::path::Path;
-
 use bevy_ecs::prelude::*;
-use nightfall::{constants::SHOW_DATA_DIR, prelude::*};
+use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
 
@@ -17,46 +15,6 @@ use crate::{
     prelude::*,
     resources::log_config::{LogConfig, TracingTarget},
 };
-
-/// Truncates a file in-place.
-fn truncate_file(filename: &str) {
-    // Truncate must be done separately if we want append:
-    // https://github.com/rust-lang/rust/issues/34347
-    std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(filename)
-        .unwrap_or_else(|error| {
-            panic!("failed to create or truncate file {}: {}", filename, error)
-        });
-}
-
-/// Writes JSON string to a file
-pub fn write_json_to_file(object_type: &str, target_id: u32, json: &str) {
-    let path = Path::new(SHOW_DATA_DIR).join(format!("{}-{}.json", object_type, target_id));
-    let filename = path // TODO: customizable filenames
-        .to_str()
-        .expect("failed to obtain filename as string");
-    truncate_file(filename);
-
-    let mut showfile = std::fs::OpenOptions::new()
-        .append(true)
-        .open(filename)
-        .expect("failed to open showfile");
-
-    use std::io::Write as _;
-    showfile
-        .write_all(json.as_bytes())
-        .unwrap_or_else(|error| panic!("failed to write to showfile {}: {}", filename, error));
-
-    tracing::debug!(
-        "Wrote JSON for {} {} to file {}",
-        object_type,
-        target_id,
-        filename
-    );
-}
 
 fn resolved_log_filter(level: &str) -> String {
     if level.trim().eq_ignore_ascii_case("clear") {
@@ -270,7 +228,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         app.add_systems(Update, handle_events);
         let command_id = CommandId::new();
         app.world_mut()

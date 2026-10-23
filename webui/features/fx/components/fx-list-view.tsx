@@ -20,16 +20,21 @@ import {
   DropdownMenu,
   DropdownMenuItem,
 } from "../../../components/ui/dropdown-menu";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import Tooltip from "../../../components/ui/tooltip";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
+  CRUD_CARD_ICON_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
@@ -78,36 +83,38 @@ function FxCard(props: FxCardProps) {
         controller.openFxContextMenu(props.entry, event.clientX, event.clientY);
       }}
       class={CRUD_CARD_CLASS}
-      classList={{
-        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-      }}
+      data-selectable-surface
+      data-selected={isSelected()}
     >
       <div class="flex items-start justify-between gap-3">
         <div class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
           <span>{props.entry.identifiers.id}:</span>
-          <CrudInlineLabelEditor
-            ariaLabel="FX card label"
-            class="truncate"
-            editing={
+          <Show
+            when={
               controller.editingCardLabelUid() === props.entry.identifiers.uid
             }
-            label={props.entry.identifiers.label}
-            onCancel={() => controller.setEditingCardLabelUid(null)}
-            onCommit={(label) =>
-              controller.updateFxEntryLabel(props.entry, label)
+            fallback={
+              <span class="truncate">{props.entry.identifiers.label}</span>
             }
           >
-            {props.entry.identifiers.label}
-          </CrudInlineLabelEditor>
+            <InlineRenameField
+              ariaLabel="FX card label"
+              allowEmpty
+              value={props.entry.identifiers.label}
+              onClose={() => controller.setEditingCardLabelUid(null)}
+              onCommit={(label) =>
+                controller.updateFxEntryLabel(props.entry, label)
+              }
+            />
+          </Show>
         </div>
         <div
-          class="rounded-md border border-neutral-700 bg-neutral-900/70 p-1 text-neutral-300"
+          class={`${CRUD_CARD_ICON_CLASS} border border-neutral-700 bg-neutral-900/70 text-neutral-300`}
           title={`${props.entry.typeLabel} FX`}
         >
           <Dynamic
             component={props.entry.typeIcon}
-            class="size-4"
+            class="size-3"
             aria-hidden
           />
         </div>
@@ -246,16 +253,16 @@ export function FxListView(props: FxListViewProps) {
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <Show when={controller.viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
-              <ToolbarButton
+              <ToolbarSeparator />
+              <ToggleToolbarButton
                 tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={controller.handleToggleSelectionMode}
-                ariaPressed={controller.selectionMode()}
+                pressed={controller.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }
@@ -319,22 +326,17 @@ export function FxListView(props: FxListViewProps) {
           <Show
             when={controller.visibleFxList().length > 0}
             fallback={
-              <div class="text-neutral-500 text-center py-8">
-                <Show
-                  when={controller.fxList().length > 0}
-                  fallback={
-                    <>
-                      <p>No FX defined</p>
-                      <p class="text-sm mt-2">
-                        Use the add button in the toolbar to create your first
-                        effect
-                      </p>
-                    </>
-                  }
-                >
-                  <p>No matching FX</p>
-                </Show>
-              </div>
+              <Show
+                when={controller.fxList().length > 0}
+                fallback={
+                  <EmptyState
+                    title="No FX defined"
+                    description="Use the add button in the toolbar to create your first effect"
+                  />
+                }
+              >
+                <EmptyState title="No matching FX" />
+              </Show>
             }
           >
             <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">

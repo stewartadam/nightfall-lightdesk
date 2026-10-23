@@ -20,7 +20,8 @@ use nightfall_instances::{
     InstanceMetadata, Owner,
 };
 use nightfall_selection::{
-    SelectionValidatedEntity, SpatialSelectionResolution, selection_validation_warnings,
+    HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
+    selection_validation_warnings,
 };
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -292,6 +293,33 @@ impl SelectionValidatedEntity for StepFx {
     }
 }
 
+/// Reports the Step FX selection and every step's live Blueprint in both lane contributions.
+impl ReferenceSource for StepFx {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        visit("selection", HeldReference::Selection(&self.selection));
+        for (lane_index, lane) in self.lanes.iter().enumerate() {
+            for (track_name, track) in [("absolute", &lane.absolute), ("relative", &lane.relative)]
+            {
+                let Some(track) = track else { continue };
+                for (step_index, step) in track.steps.iter().enumerate() {
+                    if let Some(blueprint_uid) = step.blueprint_uid {
+                        visit(
+                            &format!(
+                                "lanes[{lane_index}].{track_name}.steps[{step_index}].blueprint_uid"
+                            ),
+                            HeldReference::Blueprint(blueprint_uid),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        visit(&mut self.selection);
+    }
+}
+
 /// Playback direction shared by all Step FX lanes.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -321,20 +349,6 @@ pub enum DurationInput {
     Milliseconds(f32),
     /// Fraction of a one-second timing context.
     Percentage(#[serde_as(as = "PercentageAsF64")] Percentage),
-}
-
-impl DurationInput {
-    /// Converts valid positive input to the canonical duration per beat.
-    pub fn to_duration(&self) -> Option<Duration> {
-        match self {
-            Self::Seconds(seconds) => StepFxTiming::from_seconds(*seconds),
-            Self::Bpm(bpm) => StepFxTiming::from_bpm(*bpm),
-            Self::Hz(hz) => StepFxTiming::from_hz(*hz),
-            Self::Milliseconds(milliseconds) => StepFxTiming::from_milliseconds(*milliseconds),
-            Self::Percentage(percentage) => StepFxTiming::from_seconds(percentage.as_f32()),
-        }
-        .map(|timing| timing.beat_duration)
-    }
 }
 
 /// One lane's independently sampled absolute and relative contributions.
@@ -671,21 +685,6 @@ impl StepFx {
                 )
             })
             .unwrap_or_default()
-    }
-
-    /// Samples all lanes for one resolved non-empty selection index.
-    pub fn sample_for_selection_index(
-        &self,
-        elapsed: Duration,
-        selection_index: usize,
-        selection_index_count: usize,
-    ) -> Vec<FxLaneSample> {
-        self.sample_for_selection_index_with_offsets(
-            elapsed,
-            selection_index,
-            selection_index_count,
-            &StepFxLanePhaseOffsets::default(),
-        )
     }
 
     /// Samples all lanes while applying runtime-only continuity corrections.

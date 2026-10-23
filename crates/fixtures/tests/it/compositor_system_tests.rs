@@ -22,13 +22,13 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandNotice, CommandOrigin, CommandReply, CommandResult, CommandTracker,
-    EngineActionEnvelope, FinishedCommand, ReplyTarget,
+    CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
+    CommandTracker, EngineOperationEnvelope, FinishedCommand, ReplyTarget,
 };
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::undo::{FixtureSnapshot, ParameterSnapshot, RestoreFixtureSnapshot};
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 use nightfall_io::prelude::*;
 
 /// Installs the command lifecycle resources required by action handlers.
@@ -37,7 +37,7 @@ fn init_command_lifecycle(app: &mut App) {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
 }
 
 /// Registers and writes one fixture command through its semantic test envelope.
@@ -115,6 +115,35 @@ fn count_changed_parameters(
     changed_count.0 = changed_parameters.iter().count();
 }
 
+/// Verifies a relative assertion with no absolute value beneath it offsets the parameter's
+/// default instead of zero.
+#[test]
+fn compositor_applies_lone_relative_to_parameter_default() {
+    let mut app = App::new();
+    add_compositor_removal_observers::<Parameter>(&mut app);
+    app.init_resource::<FinalLayerAttributedAssertions>();
+    app.add_systems(Update, compositor::<Parameter>);
+
+    let parameter_entity = spawn_test_parameter(&mut app, 100.0, 100.0);
+    let parameter = unsafe { Instance::<Parameter>::from_entity_unchecked(parameter_entity) };
+    let mut layer = Layer::new("relative".to_owned(), Priority(1));
+    layer
+        .relative
+        .insert(parameter, (ParameterValue::Relative { offset: 20.0 }, None));
+    app.world_mut().spawn((
+        ObjectRefMarker(ObjectRef::ById {
+            object_type: ObjectType::Cue,
+            id: 1,
+        }),
+        layer,
+    ));
+
+    app.update();
+
+    let param = app.world().get::<Parameter>(parameter_entity).unwrap();
+    assert_eq!(param.values.current_value, 120.0);
+}
+
 /// Verifies the compositor publishes computed output values for downstream semantic invalidation.
 #[test]
 fn compositor_publishes_final_computed_output_layer() {
@@ -138,7 +167,7 @@ fn compositor_publishes_final_computed_output_layer() {
 
     let parameter = unsafe { Instance::<Parameter>::from_entity_unchecked(parameter_entity) };
     let output_layer = app.world().resource::<FinalLayerOutput>();
-    assert_eq!(output_layer.0.get_effective_value(parameter), 120.0);
+    assert_eq!(output_layer.0.effective_value(parameter, 0.0), 120.0);
 }
 
 /// Updates a running test effect layer against the current fixture parameter entity.
@@ -477,7 +506,7 @@ fn compositor_recomputes_when_release_marker_is_removed() {
         app.world()
             .resource::<FinalLayerOutput>()
             .0
-            .get_effective_value(parameter),
+            .effective_value(parameter, 0.0),
         0.0
     );
 
@@ -492,7 +521,7 @@ fn compositor_recomputes_when_release_marker_is_removed() {
         app.world()
             .resource::<FinalLayerOutput>()
             .0
-            .get_effective_value(parameter),
+            .effective_value(parameter, 0.0),
         120.0
     );
 }
@@ -555,7 +584,7 @@ fn compositor_recomputes_when_layer_compositing_context_is_removed() {
         app.world()
             .resource::<FinalLayerOutput>()
             .0
-            .get_effective_value(parameter),
+            .effective_value(parameter, 0.0),
         0.0
     );
 }
@@ -566,7 +595,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
     let mut app = App::new();
     add_compositor_removal_observers::<Parameter>(&mut app);
     init_command_lifecycle(&mut app);
-    app.add_message::<EngineActionEnvelope<RestoreFixtureSnapshot>>();
+    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<FinalLayerAttributedAssertions>();
     app.add_systems(
@@ -630,7 +659,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
         }),
     ));
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(RestoreFixtureSnapshot(
+        .write_message(EngineOperationEnvelope::detached(RestoreFixtureSnapshot(
             FixtureSnapshot {
                 fixture,
                 parameters: vec![ParameterSnapshot {
@@ -1506,8 +1535,8 @@ fn manual_channel_app(value: f32, components: impl Bundle) -> (App, Entity) {
     let mut app = App::new();
     add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
-    app.add_message::<EngineActionEnvelope<DmxAction>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
+    app.add_message::<EngineOperationEnvelope<DmxOperation>>();
     init_command_lifecycle(&mut app);
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(ConsoleDmxUniverses::default());
@@ -1704,12 +1733,12 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     let mut app = App::new();
     add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_message::<CommandEnvelope<FixtureCommand>>();
-    app.add_message::<EngineActionEnvelope<PlaybackAction>>();
-    app.add_message::<EngineActionEnvelope<DmxAction>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackOperation>>();
+    app.add_message::<EngineOperationEnvelope<DmxOperation>>();
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(ConsoleDmxUniverses::default());
@@ -1822,12 +1851,14 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     const { assert!(MANUAL_ASSERTION_LAYER_PRIORITY.0 > TRANSPORT_INPUT_LAYER_PRIORITY.0) };
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(DmxAction::ReleaseChannels {
-            channels: DmxChannelExpr::Single(DmxChannelRef {
-                universe: 5,
-                address: 13,
-            }),
-        }));
+        .write_message(EngineOperationEnvelope::detached(
+            DmxOperation::ReleaseChannels {
+                channels: DmxChannelExpr::Single(DmxChannelRef {
+                    universe: 5,
+                    address: 13,
+                }),
+            },
+        ));
     app.update();
 
     let parameter = app.world().get::<Parameter>(parameter_entity).unwrap();
@@ -1849,8 +1880,8 @@ fn test_manual_dmx_channel_command_materializes_after_input_layer() {
     assert_eq!(parameter.values.current_value, 111.0);
 
     app.world_mut()
-        .write_message(EngineActionEnvelope::detached(
-            PlaybackAction::ReleaseParameters {
+        .write_message(EngineOperationEnvelope::detached(
+            PlaybackOperation::ReleaseParameters {
                 scope: PlaybackScope::All,
             },
         ));

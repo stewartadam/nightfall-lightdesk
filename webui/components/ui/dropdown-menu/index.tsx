@@ -6,34 +6,17 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createContext,
-  createEffect,
-  createSignal,
-  type JSX,
-  onCleanup,
-  onMount,
-  Show,
-  useContext,
-} from "solid-js";
-import { Portal } from "solid-js/web";
+import { createContext, createSignal, type JSX, useContext } from "solid-js";
 import type { AppIcon } from "../icon";
 import { MenuItem, MenuSeparator, MenuSurface } from "../menu";
-import { overlayHost } from "../modal/dialog-stack";
-
-const FOCUSABLE_MENU_CONTROL_SELECTOR = [
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
+import { Popover } from "../popover";
+import {
+  type ButtonSize,
+  type ButtonVariant,
+  buttonClass,
+} from "../visual-language/button";
 
 const DropdownContext = createContext<{ close: () => void }>();
-/** Space between the trigger and its menu. */
-const MENU_GAP_PX = 4;
-/** Closest a menu may come to the viewport edge. */
-const MENU_EDGE_MARGIN_PX = 8;
 
 interface DropdownMenuProps {
   trigger: JSX.Element;
@@ -43,6 +26,14 @@ interface DropdownMenuProps {
   placement?: "above" | "below";
   align?: "start" | "end";
   triggerClass?: string;
+  /**
+   * Renders the trigger with the shared `Button` look in this variant. When
+   * neither this nor `triggerSize` is set the trigger is unstyled and the
+   * `trigger` content supplies its own appearance.
+   */
+  triggerVariant?: ButtonVariant;
+  /** Renders the trigger with the shared `Button` look at this size. */
+  triggerSize?: ButtonSize;
   triggerDisabled?: boolean;
   open?: boolean;
   contentLabel?: string;
@@ -50,111 +41,25 @@ interface DropdownMenuProps {
   onOpenChange?: (isOpen: boolean) => void;
 }
 
-/** Renders a button-triggered menu in the application top layer. */
+/**
+ * Renders a button-triggered menu in a `Popover`, which mounts it above (or
+ * inside) any open modal dialog and dismisses it on outside presses and Escape.
+ */
 export function DropdownMenu(props: DropdownMenuProps) {
   const [internalOpen, setInternalOpen] = createSignal(false);
-  const [menuPosition, setMenuPosition] = createSignal<JSX.CSSProperties>({});
   let triggerRef: HTMLButtonElement | undefined;
-  let menuRef: HTMLDivElement | undefined;
-  let wasOpen = false;
 
   /** Resolves controlled and self-owned menu visibility through one accessor. */
   const isOpen = (): boolean => props.open ?? internalOpen();
 
-  /**
-   * Anchors the portaled menu to the trigger's current viewport bounds. The
-   * menu scrolls when it is taller than the space on its side of the trigger,
-   * and slides sideways when its aligned edge would push it off screen, as on
-   * a phone where the trigger sits mid-toolbar.
-   */
-  const updateMenuPosition = () => {
-    if (!triggerRef) return;
-    const bounds = triggerRef.getBoundingClientRect();
-    const below = props.placement === "below";
-    const vertical = below
-      ? { top: `${bounds.bottom + MENU_GAP_PX}px` }
-      : { bottom: `${window.innerHeight - bounds.top + MENU_GAP_PX}px` };
-    const available = below
-      ? window.innerHeight - bounds.bottom - MENU_GAP_PX - MENU_EDGE_MARGIN_PX
-      : bounds.top - MENU_GAP_PX - MENU_EDGE_MARGIN_PX;
-    const width = menuRef?.offsetWidth ?? 0;
-    const maxLeft = window.innerWidth - MENU_EDGE_MARGIN_PX - width;
-    const anchoredLeft =
-      props.align === "end" ? bounds.right - width : bounds.left;
-    const left = Math.max(MENU_EDGE_MARGIN_PX, Math.min(anchoredLeft, maxLeft));
-    setMenuPosition({
-      ...vertical,
-      left: `${left}px`,
-      "max-height": `${Math.max(0, available)}px`,
-      "max-width": `calc(100vw - ${2 * MENU_EDGE_MARGIN_PX}px)`,
-      "overflow-y": "auto",
-    });
-  };
-
   /** Updates the menu state and notifies its owner. */
   const setOpen = (nextOpen: boolean) => {
-    if (nextOpen) updateMenuPosition();
     if (props.open === undefined) setInternalOpen(nextOpen);
     props.onOpenChange?.(nextOpen);
   };
 
   /** Closes the menu. */
   const close = () => setOpen(false);
-
-  /** Closes the menu when a pointer press occurs outside its trigger and content. */
-  const handleClickOutside = (e: MouseEvent) => {
-    if (
-      menuRef &&
-      !menuRef.contains(e.target as Node) &&
-      triggerRef &&
-      !triggerRef.contains(e.target as Node)
-    ) {
-      close();
-    }
-  };
-
-  /** Dismisses an open menu with Escape and restores focus to its trigger. */
-  const handleEscapeKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== "Escape" || !isOpen()) return;
-    event.preventDefault();
-    setOpen(false);
-    triggerRef?.focus();
-  };
-
-  /** Moves keyboard entry into the first enabled control in an opened menu. */
-  const focusFirstControl = (): void => {
-    menuRef
-      ?.querySelector<HTMLElement>(FOCUSABLE_MENU_CONTROL_SELECTOR)
-      ?.focus();
-  };
-
-  /** Repositions and enters menus whenever they transition from closed to open. */
-  createEffect(() => {
-    const open = isOpen();
-    if (open) {
-      updateMenuPosition();
-      if (!wasOpen) {
-        // Measure again once the menu has laid out so its width can be clamped.
-        queueMicrotask(updateMenuPosition);
-        queueMicrotask(focusFirstControl);
-      }
-    }
-    wasOpen = open;
-  });
-
-  onMount(() => {
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscapeKeyDown, true);
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-  });
-  /** Removes global listeners when the dropdown leaves the interface. */
-  onCleanup(() => {
-    document.removeEventListener("mousedown", handleClickOutside);
-    document.removeEventListener("keydown", handleEscapeKeyDown, true);
-    window.removeEventListener("resize", updateMenuPosition);
-    window.removeEventListener("scroll", updateMenuPosition, true);
-  });
 
   return (
     <DropdownContext.Provider value={{ close }}>
@@ -166,7 +71,12 @@ export function DropdownMenu(props: DropdownMenuProps) {
             event.stopPropagation();
             setOpen(!isOpen());
           }}
-          class={`appearance-none cursor-pointer border-none bg-transparent p-0 m-0 ${props.triggerClass ?? ""}`.trim()}
+          class={
+            props.triggerVariant || props.triggerSize
+              ? buttonClass(props.triggerVariant, props.triggerClass)
+              : `appearance-none cursor-pointer border-none bg-transparent p-0 m-0 ${props.triggerClass ?? ""}`.trim()
+          }
+          data-size={props.triggerSize}
           aria-label={props.triggerLabel}
           aria-expanded={isOpen()}
           aria-haspopup="menu"
@@ -175,31 +85,34 @@ export function DropdownMenu(props: DropdownMenuProps) {
         >
           {props.trigger}
         </button>
-        <Show when={isOpen()}>
-          <Portal mount={overlayHost(triggerRef)}>
-            <MenuSurface
-              ref={menuRef}
-              data-component="DropdownMenuContent"
-              data-menu-kind="dropdown"
-              class={`fixed nightfall-top-layer min-w-[220px] ${props.contentClass ?? ""}`}
-              role="menu"
-              aria-label={props.contentLabel}
-              style={menuPosition()}
-            >
-              {props.children}
-            </MenuSurface>
-          </Portal>
-        </Show>
+        <Popover
+          anchor={() => triggerRef}
+          open={isOpen()}
+          onClose={close}
+          placement={props.placement ?? "above"}
+          align={props.align}
+          surface={MenuSurface}
+          scrollIndicatorClass="nf-menu-scroll"
+          data-component="DropdownMenuContent"
+          data-menu-kind="dropdown"
+          class={`min-w-[220px] ${props.contentClass ?? ""}`}
+          role="menu"
+          aria-label={props.contentLabel}
+        >
+          {props.children}
+        </Popover>
       </div>
     </DropdownContext.Provider>
   );
 }
 
 interface DropdownMenuItemProps {
-  onClick: () => void;
+  /** Receives the click so items can read modifier keys, such as Shift to force an action. */
+  onClick: (event: MouseEvent) => void;
   children: JSX.Element;
   icon?: AppIcon;
   shortcut?: string;
+  description?: JSX.Element;
   checked?: boolean;
   disabled?: boolean;
   danger?: boolean;
@@ -292,9 +205,9 @@ export function DropdownMenuItem(props: DropdownMenuItemProps) {
   const ctx = useContext(DropdownContext);
 
   /** Runs the item action and closes the containing menu. */
-  const handleClick = () => {
+  const handleClick = (event: MouseEvent) => {
     if (props.disabled) return;
-    props.onClick();
+    props.onClick(event);
     ctx?.close();
   };
 
@@ -303,6 +216,7 @@ export function DropdownMenuItem(props: DropdownMenuItemProps) {
       data-component="DropdownMenuItem"
       icon={props.icon}
       shortcut={props.shortcut}
+      description={props.description}
       checked={props.checked}
       disabled={props.disabled}
       danger={props.danger}

@@ -17,6 +17,7 @@ use nightfall_desk::{
 use nightfall_engine::prelude::{
     ClientEventSink, CommandError, CommandId, CommandOutcome, CommandResult,
     DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, finish_command_in_world,
+    request_graceful_exit,
 };
 use nightfall_websocket::prelude::SharedWebUiAssets;
 
@@ -215,6 +216,7 @@ pub(super) fn publish_world_replaced(bevy_app: &App) {
 pub async fn run_headless(log_config: LogConfig, runtime_config: RuntimeConfig) {
     let stdin_commands = get_stdin();
 
+    spawn_exit_signal_listener();
     let bevy_task = tokio::task::spawn_blocking(move || {
         run_bevy_session(
             "bevy-session",
@@ -228,4 +230,37 @@ pub async fn run_headless(log_config: LogConfig, runtime_config: RuntimeConfig) 
     if exit_code != 0 {
         std::process::exit(exit_code);
     }
+}
+
+/// Turns Ctrl+C and termination signals into a graceful backend exit that saves the draft.
+///
+/// A second signal exits immediately, so an operator is never stuck behind a slow save.
+fn spawn_exit_signal_listener() {
+    tokio::spawn(async {
+        loop {
+            if let Err(error) = wait_for_exit_signal().await {
+                tracing::warn!(%error, "Could not listen for termination signals");
+                return;
+            }
+            if !request_graceful_exit("termination signal") {
+                tracing::warn!("Second termination signal; exiting without saving");
+                std::process::exit(130);
+            }
+        }
+    });
+}
+
+/// Waits for Ctrl+C, or on Unix also for the SIGTERM that service managers send.
+async fn wait_for_exit_signal() -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result,
+            _ = terminate.recv() => Ok(()),
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await
 }

@@ -230,6 +230,7 @@ mod pipeline_tests {
         assert_eq!(*base_layer.absolute.get(param).unwrap(), 100.0);
     }
 
+    /// Verifies stacked relative offsets on one parameter add up once each instead of compounding.
     #[test]
     fn test_pipeline_relative_values_accumulate() {
         let mut world = World::new();
@@ -263,12 +264,7 @@ mod pipeline_tests {
 
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
-        // Relative values accumulate in transition processing (sees increasing base each time)
-        // Layer 1: 10 offset + 0 base = 10
-        // Layer 2: 20 offset + 10 base = 30
-        // Layer 3: 30 offset + 40 base = 70
-        // Total = 10 + 30 + 70 = 110
-        assert_eq!(*base_layer.relative.get(param).unwrap(), 110.0);
+        assert_eq!(*base_layer.relative.get(param).unwrap(), 60.0);
     }
 
     #[test]
@@ -302,7 +298,7 @@ mod pipeline_tests {
         assert_eq!(*base_layer.relative.get(param).unwrap(), 25.0);
 
         // Effective value should combine them
-        assert_eq!(base_layer.get_effective_value(param), 125.0);
+        assert_eq!(base_layer.effective_value(param, 0.0), 125.0);
     }
 
     #[test]
@@ -699,15 +695,11 @@ mod pipeline_tests {
         // LTP: Same priority layers, last wins (75), then layer3 doesn't have absolute so keeps 75
         assert_eq!(*base_layer.absolute.get(ltp_param).unwrap(), 75.0);
 
-        // Relative: layer2 adds 25 on base 75, layer3 adds 10 on base (75+25)=100
-        // Total relative = 25 + (75) + 10 + (100) but that's not right...
-        // Actually: layer2 relative resolves to 25, layer3 relative resolves to 10
-        // But during transition they see base, so: 25+75 from layer2, 10+100 from layer3
-        // Hmm, let's check actual: relative should just be offsets: 25 + 10 + bases = 60
-        assert_eq!(*base_layer.relative.get(ltp_param).unwrap(), 60.0);
+        // Relative: layer2's 25 plus layer3's 10
+        assert_eq!(*base_layer.relative.get(ltp_param).unwrap(), 35.0);
 
-        // Effective LTP value: 75 + 60 = 135
-        assert_eq!(base_layer.get_effective_value(ltp_param), 135.0);
+        // Effective LTP value: 75 + 35 = 110
+        assert_eq!(base_layer.effective_value(ltp_param, 0.0), 110.0);
     }
 }
 
@@ -881,9 +873,10 @@ mod edge_case_tests {
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
         // Negative relative should subtract
-        assert_eq!(base_layer.get_effective_value(param), 70.0);
+        assert_eq!(base_layer.effective_value(param, 0.0), 70.0);
     }
 
+    /// Verifies relative-only layers sum their offsets once each and apply them to the default.
     #[test]
     fn test_pipeline_only_relative_values_no_absolute() {
         let mut world = World::new();
@@ -910,13 +903,10 @@ mod edge_case_tests {
 
         let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
 
-        // No absolute, only relative
-        // Layer1: 50 offset on base 0 = 50
-        // Layer2: 25 offset on base 50 = 75
-        // Total = 50 + 75 = 125
+        // No absolute, so the summed offsets apply to the parameter's default
         assert!(base_layer.absolute.is_empty());
-        assert_eq!(*base_layer.relative.get(param).unwrap(), 125.0);
-        assert_eq!(base_layer.get_effective_value(param), 125.0);
+        assert_eq!(*base_layer.relative.get(param).unwrap(), 75.0);
+        assert_eq!(base_layer.effective_value(param, 100.0), 175.0);
     }
 
     #[test]
@@ -1031,10 +1021,10 @@ mod edge_case_tests {
         assert_eq!(*base_layer.relative.get(param4).unwrap(), 50.0);
 
         // Check effective values
-        assert_eq!(base_layer.get_effective_value(param1), 255.0);
-        assert_eq!(base_layer.get_effective_value(param2), 225.0);
-        assert_eq!(base_layer.get_effective_value(param3), 100.0);
-        assert_eq!(base_layer.get_effective_value(param4), 50.0);
+        assert_eq!(base_layer.effective_value(param1, 0.0), 255.0);
+        assert_eq!(base_layer.effective_value(param2, 0.0), 225.0);
+        assert_eq!(base_layer.effective_value(param3, 0.0), 100.0);
+        assert_eq!(base_layer.effective_value(param4, 0.0), 50.0);
     }
 
     #[test]

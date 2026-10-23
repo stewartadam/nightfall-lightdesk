@@ -109,10 +109,9 @@ pub fn handle_preview_commands(
                     commands.entity(entity).insert(ReleaseMarker::default());
                 }
 
-                // Spawn new preview with Priority(75) - above cues but below programmer
                 let mfx = MaterializedFx {
                     fx: fx.clone(),
-                    priority: Priority(75),
+                    priority: Priority::PREVIEW,
                 };
                 let marker = ObjectRefMarker(ObjectRef::ByUid {
                     object_type: ObjectType::StepFx,
@@ -212,7 +211,7 @@ pub fn handle_step_fx_preview_commands(
         commands.spawn((
             ActiveStepFx {
                 fx_entity: definition_entity,
-                priority: Priority(75),
+                priority: Priority::PREVIEW,
                 rate: 1.0,
                 is_playing: true,
             },

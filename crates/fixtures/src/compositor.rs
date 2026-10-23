@@ -16,14 +16,14 @@ use nightfall::prelude::{ObjectRef, ObjectType, Priority};
 use nightfall_compositor::types::{Layer, ObjectRefMarker, ParameterMap, ParameterRef};
 use nightfall_dmx::prelude::{ParameterDmxValue, ParameterValue};
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandError, CommandResponder, EngineActionEnvelope, EventHandling,
+    CommandEnvelope, CommandError, CommandResponder, EngineOperationEnvelope, EventHandling,
     LayerGeneration, Render,
 };
 use nightfall_fixture_model::prelude::*;
-use nightfall_instances::{PlaybackAction, PlaybackScope};
+use nightfall_instances::{PlaybackOperation, PlaybackScope};
 
 use crate::prelude::{
-    ConsoleChannelOrigin, ConsoleDmxUniverses, DmxAction, FixtureCommand, InputDmxUniverses,
+    ConsoleChannelOrigin, ConsoleDmxUniverses, DmxOperation, FixtureCommand, InputDmxUniverses,
     ManualDmxChannelState, Parameter, ParameterAssertion, ParameterAssertionSource,
     ResolvedConsoleDestination, ResolvedInputBindings, ResolvedInputDestination,
     ResolvedOutputDestinations,
@@ -271,8 +271,8 @@ type ManualChannelQuery<'w, 's> = Query<
 /// unpatched slots stop being owned; restoring a captured state re-applies manual writes.
 pub fn update_manual_assertion_layer(
     mut set_events: MessageReader<CommandEnvelope<FixtureCommand>>,
-    mut playback_actions: MessageReader<EngineActionEnvelope<PlaybackAction>>,
-    mut dmx_actions: MessageReader<EngineActionEnvelope<DmxAction>>,
+    mut playback_actions: MessageReader<EngineOperationEnvelope<PlaybackOperation>>,
+    mut dmx_actions: MessageReader<EngineOperationEnvelope<DmxOperation>>,
     mut responder: CommandResponder,
     mut universes: ResMut<ConsoleDmxUniverses>,
     destinations_query: ManualChannelQuery,
@@ -280,6 +280,9 @@ pub fn update_manual_assertion_layer(
 ) {
     let Ok(mut layer) = layer_query.single_mut() else {
         for event in dmx_actions.read() {
+            if is_transport_dmx_operation(&event.operation) {
+                continue;
+            }
             if let Some(command_id) = event.command_id
                 && let Err(error) = responder.fail(
                     command_id,
@@ -312,8 +315,8 @@ pub fn update_manual_assertion_layer(
 
     for event in playback_actions.read() {
         if matches!(
-            &event.action,
-            PlaybackAction::ReleaseParameters {
+            &event.operation,
+            PlaybackOperation::ReleaseParameters {
                 scope: PlaybackScope::All
             }
         ) {
@@ -323,14 +326,18 @@ pub fn update_manual_assertion_layer(
     }
 
     for event in dmx_actions.read() {
-        match &event.action {
-            DmxAction::ReleaseChannels { channels } => {
+        // Wire holds bypass console space and answer their own commands.
+        if is_transport_dmx_operation(&event.operation) {
+            continue;
+        }
+        match &event.operation {
+            DmxOperation::ReleaseChannels { channels } => {
                 for channel in channels.expand() {
                     universes.release_value(channel.universe, channel.address);
                     remove_manual_assertion_for_channel(&channel, &destinations_query, &mut layer);
                 }
             }
-            DmxAction::RestoreChannels { channels } => {
+            DmxOperation::RestoreChannels { channels } => {
                 for ManualDmxChannelState {
                     channel,
                     manual_value,
@@ -362,12 +369,24 @@ pub fn update_manual_assertion_layer(
                     }
                 }
             }
+            DmxOperation::ReleaseTransportChannels { .. }
+            | DmxOperation::RestoreTransportChannels { .. } => {}
         }
         if let Some(command_id) = event.command_id
             && let Err(error) = responder.succeed(command_id)
         {
             tracing::error!(%command_id, %error, "dmx_release_success_response_failed");
         }
+    }
+}
+
+/// Returns whether a DMX operation targets output transport wire holds rather than console
+/// channels; those are applied by [`crate::transport_holds`].
+fn is_transport_dmx_operation(operation: &DmxOperation) -> bool {
+    match operation {
+        DmxOperation::ReleaseTransportChannels { .. }
+        | DmxOperation::RestoreTransportChannels { .. } => true,
+        DmxOperation::ReleaseChannels { .. } | DmxOperation::RestoreChannels { .. } => false,
     }
 }
 

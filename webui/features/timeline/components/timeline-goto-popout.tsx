@@ -15,10 +15,12 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { ScrollArea } from "../../../components/ui/scroll-area";
+import { createDismissable } from "../../../components/ui/dismissable";
+import { overlayHost } from "../../../components/ui/modal/dialog-stack";
 import {
   SearchPickerInput,
   SearchPickerOption,
+  SearchPickerResults,
   SearchPickerSurface,
 } from "../../../components/ui/search-picker";
 import { getFocusedComponentId } from "../../../lib/keyboardShortcuts";
@@ -200,12 +202,6 @@ export const TimelineGotoPopout = () => {
 
     if (!isOpen()) return;
 
-    if (event.key === "Escape") {
-      capturePopoverKey(event);
-      close();
-      return;
-    }
-
     if (event.key === "Enter") {
       capturePopoverKey(event);
       jumpToOption(jumpOptions()[selectedIndex()]);
@@ -231,22 +227,18 @@ export const TimelineGotoPopout = () => {
     }
   };
 
-  /** Closes the popout when the user clicks outside the floating panel. */
-  const handleClickOutside = (event: MouseEvent) => {
-    if (popoutRef?.contains(event.target as Node)) return;
-    close();
-  };
+  createDismissable({
+    active: () => workspaceActive() && isOpen(),
+    refs: () => [popoutRef],
+    onDismiss: close,
+  });
 
-  /** Only the active workspace can capture jump shortcuts or outside clicks. */
+  /** Only the active workspace can capture jump shortcuts. */
   createEffect(() => {
     if (!workspaceActive()) return;
     window.addEventListener("keydown", handleWindowKeyDown, { capture: true });
-    window.addEventListener("mousedown", handleClickOutside, { capture: true });
     onCleanup(() => {
       window.removeEventListener("keydown", handleWindowKeyDown, {
-        capture: true,
-      });
-      window.removeEventListener("mousedown", handleClickOutside, {
         capture: true,
       });
     });
@@ -272,7 +264,7 @@ export const TimelineGotoPopout = () => {
 
   return (
     <Show when={workspaceActive() && isOpen()}>
-      <Portal>
+      <Portal mount={overlayHost()}>
         <div class="fixed inset-0 nightfall-top-layer pointer-events-none">
           <SearchPickerSurface
             ref={popoutRef}
@@ -294,7 +286,7 @@ export const TimelineGotoPopout = () => {
                 setSelectedIndex(0);
               }}
             />
-            <ScrollArea
+            <SearchPickerResults
               class="min-h-0 max-h-[340px]"
               viewportProps={{
                 ref: (element) => {
@@ -355,7 +347,7 @@ export const TimelineGotoPopout = () => {
                   </For>
                 </ul>
               </Show>
-            </ScrollArea>
+            </SearchPickerResults>
           </SearchPickerSurface>
         </div>
       </Portal>

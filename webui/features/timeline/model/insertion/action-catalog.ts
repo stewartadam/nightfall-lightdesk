@@ -7,11 +7,15 @@
  */
 
 import type * as types from "../../../../types";
+import {
+  type TimelineActionKind,
+  timelineActionKind,
+} from "../timeline-action-kind";
 
 export const DEFAULT_ACTION_DURATION_MS = 1000;
 
 export type InsertableActionType = Exclude<
-  types.ActionKind["type"],
+  TimelineActionKind["type"],
   "RegisteredAction"
 >;
 
@@ -114,7 +118,7 @@ export function getActionFamilyForType(
   return getInsertableActionDefinition(type).family;
 }
 
-function getActionKindFamily(action: types.ActionKind): ActionFamily {
+function getActionKindFamily(action: TimelineActionKind): ActionFamily {
   if (action.type === "RegisteredAction") {
     return "clip";
   }
@@ -156,7 +160,7 @@ export function buildActionKind(
   targetUid: string,
   cueIndex = 1,
   rate = 1,
-): types.ActionKind {
+): TimelineActionKind {
   switch (type) {
     case "FireCue":
       return { type: "FireCue", data: targetUid };
@@ -198,7 +202,9 @@ export function resolveTrackCompatibility(
 
   const targetFamily = getActionFamilyForType(actionType);
   const families = new Set(
-    track.actions.map((action) => getActionKindFamily(action.action)),
+    track.actions.map((action) =>
+      getActionKindFamily(timelineActionKind(action.action)),
+    ),
   );
   return families.has(targetFamily) ? "compatible" : "warning";
 }

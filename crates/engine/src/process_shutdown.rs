@@ -64,6 +64,7 @@ const DEBUG_PANIC_TARGET_NAMES: &[&str] = &[
 /// Process-wide shutdown signal, reason, and grace-period configuration.
 struct ProcessShutdownState {
     requested: AtomicBool,
+    exit_requested: AtomicBool,
     reason: OnceCell<String>,
     signal_tx: broadcast::Sender<()>,
     grace_period: Duration,
@@ -80,6 +81,7 @@ fn new_process_shutdown_state(
     let (signal_tx, _) = broadcast::channel::<()>(1);
     ProcessShutdownState {
         requested: AtomicBool::new(false),
+        exit_requested: AtomicBool::new(false),
         reason: OnceCell::new(),
         signal_tx,
         grace_period,
@@ -221,6 +223,26 @@ pub fn request_process_shutdown(reason: impl Into<String>) -> bool {
     }
 
     first_request
+}
+
+/// Ask the backend to save its work and exit normally, as when the operator quits.
+///
+/// Unlike [`request_process_shutdown`], this is not a failure: the engine finishes its
+/// current frame, protects unsaved work, and exits with a success code. Returns `true`
+/// only for the first caller.
+pub fn request_graceful_exit(reason: &str) -> bool {
+    let first_request = !process_shutdown()
+        .exit_requested
+        .swap(true, Ordering::AcqRel);
+    if first_request {
+        tracing::info!(reason, "Graceful backend exit requested");
+    }
+    first_request
+}
+
+/// Returns true once a graceful backend exit has been requested.
+pub fn is_graceful_exit_requested() -> bool {
+    process_shutdown().exit_requested.load(Ordering::Acquire)
 }
 
 #[cfg(test)]

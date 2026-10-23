@@ -37,22 +37,42 @@ pub struct StoredPanelLayoutPanel {
     pub params: Value,
 }
 
-/// Serialized Dockview panel layout saved as the showfile's active UI layout.
+/// Panel arrangement a device saves into one named layout from its working copy.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[typeshare::typeshare]
 #[serde(rename_all = "camelCase")]
-pub struct ActivePanelLayout {
-    /// Named layout owning this working arrangement.
-    pub layout_id: Option<String>,
+pub struct PanelLayoutArrangement {
+    /// Named layout receiving the arrangement.
+    pub id: String,
     /// Layout storage format version.
     pub version: u32,
     /// Opaque Dockview layout payload.
     #[typeshare(serialized_as = "unknown")]
     pub layout: Value,
-    /// Panel metadata captured when the layout was stored.
+    /// Panel metadata captured with the arrangement.
     pub panels: Vec<StoredPanelLayoutPanel>,
-    /// Last layout update timestamp in milliseconds since Unix epoch.
-    pub updated_at: f64,
+}
+
+/// New user-visible name for one named layout.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct PanelLayoutRename {
+    /// Named layout to rename.
+    pub id: String,
+    /// New user-visible name; surrounding whitespace is trimmed.
+    pub name: String,
+}
+
+/// Whether one named layout appears in the layout switcher.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[typeshare::typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct PanelLayoutVisibility {
+    /// Named layout to show or hide.
+    pub id: String,
+    /// Whether the layout is listed in the switcher.
+    pub shown_in_switcher: bool,
 }
 
 /// Serialized Dockview panel layout that is named and saved with the showfile.
@@ -108,12 +128,16 @@ pub struct DeskSettings {
     /// Number of timestamped showfile backups to retain after each save; 0 means unlimited.
     #[serde(default = "default_showfile_backup_retention")]
     pub showfile_backup_retention: u32,
+    /// Sends clients every parameter value each frame instead of only the changed ones, a
+    /// fallback for when the UI shows values that do not match the output.
+    #[serde(default)]
+    pub parameter_keyframes_only: bool,
     /// Showfile-scoped named UI panel layouts.
     #[serde(default)]
     pub panel_layouts: Vec<StoredPanelLayout>,
-    /// Showfile-scoped active UI panel layout restored when the showfile loads.
+    /// Named layout a device opens when it has no arrangement of its own for this showfile.
     #[serde(default)]
-    pub active_panel_layout: Option<ActivePanelLayout>,
+    pub default_panel_layout_id: Option<String>,
 }
 
 impl Default for DeskSettings {
@@ -126,8 +150,9 @@ impl Default for DeskSettings {
             time_display_preference: TimeDisplayPreference::default(),
             timeline_placement_preference: TimelinePlacementPreference::default(),
             showfile_backup_retention: DEFAULT_SHOWFILE_BACKUP_RETENTION,
+            parameter_keyframes_only: false,
             panel_layouts: Vec::new(),
-            active_panel_layout: None,
+            default_panel_layout_id: None,
         }
     }
 }
@@ -193,6 +218,72 @@ pub enum TimelinePlacementPreference {
     Cursor,
 }
 
+/// Operator choices about anonymous telemetry, kept with the host rather than any showfile
+/// so that opening a show on another computer never changes what that computer shares.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+#[serde(default)]
+pub struct TelemetryConsent {
+    /// Whether the operator has answered the telemetry prompt; while false the UI keeps asking.
+    pub decided: bool,
+    /// Whether anonymous usage reports (hardware, patch makeup, app starts) may be sent.
+    pub share_usage: bool,
+    /// Whether automatic error and crash reports may be sent.
+    pub share_errors: bool,
+}
+
+/// Host telemetry consent plus the anonymous identifier that groups one installation's reports.
+#[derive(
+    Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, bevy_ecs::prelude::Resource,
+)]
+#[typeshare::typeshare]
+pub struct TelemetryState {
+    /// Whether this runtime can store host preferences; false in the browser demo and tests.
+    pub available: bool,
+    /// The operator's current choices.
+    pub consent: TelemetryConsent,
+    /// Random identifier attached to reports so monthly installs can be counted; empty until loaded.
+    pub install_id: String,
+    /// Persistence failure the operator should see.
+    pub error: Option<String>,
+}
+
+/// Graphics hardware the desktop app's own window renders with, which only the web view can see.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct GraphicsReport {
+    /// Graphics processor model as the web view names it, when it names one.
+    pub gpu: Option<String>,
+    /// Rendering API the visualizer can use, such as `WebGPU` or `WebGL 2`.
+    pub backend: String,
+}
+
+impl GraphicsReport {
+    /// Longest text kept from a client-supplied field.
+    const MAX_FIELD_LENGTH: usize = 160;
+
+    /// Returns the report with surrounding whitespace removed, empty names dropped, and each
+    /// field cut to a bounded length, since any connected client can send one.
+    pub fn sanitized(&self) -> Self {
+        let clean = |value: &str| {
+            let value = value.trim();
+            let end = value
+                .char_indices()
+                .nth(Self::MAX_FIELD_LENGTH)
+                .map_or(value.len(), |(index, _)| index);
+            value[..end].to_string()
+        };
+        Self {
+            gpu: self.gpu.as_deref().map(clean).filter(|gpu| !gpu.is_empty()),
+            backend: clean(&self.backend),
+        }
+    }
+}
+
+/// The most recent graphics report from the desktop app's window, kept out of client sync.
+#[derive(Debug, Default, Clone, PartialEq, Eq, bevy_ecs::prelude::Resource)]
+pub struct ReportedGraphics(pub Option<GraphicsReport>);
+
 /// Commands for modifying desk-wide settings
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
@@ -205,6 +296,12 @@ pub enum SettingsCommand {
     SetNetworkInterface(Option<String>),
     /// Sets host-owned external control permission and interface selection.
     SetExternalControl(ExternalControlSettings),
+    /// Sets host-owned telemetry consent.
+    SetTelemetryConsent(TelemetryConsent),
+    /// Replaces the anonymous telemetry identifier with a new random one.
+    ResetTelemetryInstallId,
+    /// Records the graphics hardware the desktop app's window renders with, for usage reports.
+    ReportGraphics(GraphicsReport),
     /// Set whether network DMX output is enabled
     SetNetworkOutputEnabled(bool),
     /// Set whether network DMX input is enabled
@@ -237,10 +334,22 @@ pub enum SettingsCommand {
     SetTimelinePlacementPreference(TimelinePlacementPreference),
     /// Set number of timestamped showfile backups to retain; 0 means unlimited
     SetShowfileBackupRetention(u32),
-    /// Set showfile-scoped named UI panel layouts
-    SetPanelLayouts(Vec<StoredPanelLayout>),
-    /// Set showfile-scoped active UI panel layout
-    SetActivePanelLayout(Option<ActivePanelLayout>),
+    /// Set whether clients receive every parameter value each frame instead of only changes
+    SetParameterKeyframesOnly(bool),
+    /// Add a named UI panel layout to the showfile; its id must not already exist
+    CreatePanelLayout(StoredPanelLayout),
+    /// Replace the saved arrangement of one named layout
+    SavePanelLayoutArrangement(PanelLayoutArrangement),
+    /// Rename one named layout
+    RenamePanelLayout(PanelLayoutRename),
+    /// Show or hide one named layout in the layout switcher
+    SetPanelLayoutVisibility(PanelLayoutVisibility),
+    /// Remove one named layout, clearing the default layout if it pointed there
+    DeletePanelLayout(String),
+    /// Reorder the layouts shown in the switcher; hidden layouts keep their positions
+    ReorderPanelLayouts(Vec<String>),
+    /// Set the named layout devices open when they have no arrangement for this showfile
+    SetDefaultPanelLayout(Option<String>),
     /// Request list of available network interfaces
     GetAvailableNetworkInterfaces,
     /// Request list of available audio devices
@@ -253,7 +362,18 @@ impl IngressCommand for SettingsCommand {}
 
 #[cfg(test)]
 mod tests {
-    use super::StoredPanelLayout;
+    use super::{SettingsCommand, StoredPanelLayout};
+
+    /// The web UI clears the default layout by omitting the payload, which must read as no layout.
+    #[test]
+    fn clearing_the_default_layout_needs_no_payload() {
+        let command: SettingsCommand =
+            serde_json::from_value(serde_json::json!({ "type": "SetDefaultPanelLayout" })).unwrap();
+        assert!(matches!(
+            command,
+            SettingsCommand::SetDefaultPanelLayout(None)
+        ));
+    }
 
     /// Saved layouts without visibility metadata remain accessible, while explicit hiding survives a round trip.
     #[test]

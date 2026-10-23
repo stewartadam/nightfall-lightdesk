@@ -13,7 +13,7 @@ import {
   createSignal,
   ErrorBoundary,
 } from "solid-js";
-import { Button } from "../../../components/ui/visual-language/button";
+import { ErrorFallback } from "../../../components/ui/error-fallback";
 import { applyFlowDelta } from "../../../lib/flow-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
@@ -46,28 +46,18 @@ export interface FlowEditorPanelProps extends BasePanelComponentProps {
 /**
  * Renders the flow editor error boundary fallback with retry controls.
  */
-function ErrorDisplay(props: { error: Error; reset: () => void }) {
+function ErrorDisplay(props: { error: unknown; reset: () => void }) {
   log.error("Flow editor error:", props.error);
   return (
-    <div class="flex h-full w-full items-center justify-center bg-neutral-950 text-sm text-neutral-300">
-      <div class="max-w-2xl rounded border border-neutral-800 bg-neutral-900 px-4 py-3 shadow">
-        <div class="text-base font-semibold text-neutral-100">
-          Flow editor failed
-        </div>
-        <div class="mt-2 text-xs text-red-400 font-mono">
-          {props.error.name}: {props.error.message}
-        </div>
-        <pre class="mt-2 text-xs text-neutral-400 max-h-96 overflow-auto whitespace-pre-wrap">
-          {props.error.stack}
-        </pre>
-        <Button size="compact" class="mt-3" onClick={() => props.reset()}>
-          Retry
-        </Button>
-      </div>
-    </div>
+    <ErrorFallback
+      title="Flow editor failed"
+      error={props.error}
+      reset={props.reset}
+    />
   );
 }
 
+/** Wraps the flow graph so a render failure shows a retryable fallback instead of blanking the panel. */
 function FlowEditorGraphWithErrorBoundary(props: FlowEditorGraphProps) {
   return (
     <ErrorBoundary

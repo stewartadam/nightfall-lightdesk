@@ -41,11 +41,12 @@ pub enum ObjectType {
     Master,
     Group,
     Parameter,
-    Palette,
+    Blueprint,
     Cue,
     Sequence,
     Timecode,
     Timeline,
+    Board,
 }
 
 impl Display for ObjectType {
@@ -60,11 +61,12 @@ impl Display for ObjectType {
             ObjectType::Master => write!(f, "master"),
             ObjectType::Group => write!(f, "group"),
             ObjectType::Parameter => write!(f, "parameter"),
-            ObjectType::Palette => write!(f, "palette"),
+            ObjectType::Blueprint => write!(f, "blueprint"),
             ObjectType::Cue => write!(f, "cue"),
             ObjectType::Sequence => write!(f, "sequence"),
             ObjectType::Timecode => write!(f, "timecode"),
             ObjectType::Timeline => write!(f, "timeline"),
+            ObjectType::Board => write!(f, "board"),
         }
     }
 }

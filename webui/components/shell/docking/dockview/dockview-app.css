@@ -34,3 +34,19 @@
   > .dv-drop-target-selection.dv-drop-target-right.dv-drop-target-small-horizontal {
   border-right: 1px solid var(--dv-drag-over-border-color, transparent);
 }
+
+/*
+ * Panels rendered "always" sit in Dockview's render overlays above the shell.
+ * When the grid is squeezed below its minimum, bindPanelClipping clips each
+ * panel's content to the grid, but the overlay box itself still spans the
+ * panel's full bounds, so it would swallow clicks meant for the edge groups it
+ * overlaps. Let only the (clipped) content take pointer input. Scoped to the
+ * active workspace so inactive workspaces keep ignoring the pointer entirely.
+ */
+[data-workspace-active="true"] .dv-render-overlay {
+  pointer-events: none;
+}
+
+[data-workspace-active="true"] .dv-render-overlay > * {
+  pointer-events: auto;
+}

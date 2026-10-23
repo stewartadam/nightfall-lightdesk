@@ -31,13 +31,10 @@ pub fn deserialize_desk_command(
         return Ok(());
     }
 
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
 
     Ok(())
 }
@@ -131,10 +128,12 @@ pub fn forward_ui_notifications(
     }
 }
 
-/// Broadcasts queued transient notifications and the retained showfile identity.
+/// Broadcasts queued transient notifications to every client, since they are drained once and no
+/// client has seen them yet, then sends the retained showfile identity to the resyncing clients.
 pub(super) fn flush_pending_ui_notifications(
     pending_ui_notifications: Option<&mut UiNotificationState>,
     broadcaster: &ClientEventSink,
+    resyncing: &ClientEventSink,
 ) {
     let Some(pending_ui_notifications) = pending_ui_notifications else {
         return;
@@ -145,7 +144,12 @@ pub(super) fn flush_pending_ui_notifications(
             ?notification,
             "Replaying pending UiNotification after resync"
         );
-        broadcaster.publish(
+        let sink = if matches!(notification, UiNotification::CurrentShowfileChanged { .. }) {
+            resyncing
+        } else {
+            broadcaster
+        };
+        sink.publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &DeskWsMessage::UiNotification(&notification),
         );
@@ -250,13 +254,10 @@ pub fn deserialize_settings_command(
     let command: SettingsCommand = serde_json::from_value(json)
         .map_err(|e| format!("Failed to parse SettingsCommand: {}", e))?;
 
-    world.write_message(CommandEnvelope::with_context(
-        command_id,
-        undo_id,
-        CommandOrigin::WebUi,
-        ReplyTarget::ClientBroadcast,
-        command,
-    ));
+    let envelope = world
+        .resource::<CommandTracker>()
+        .admitted_envelope(command_id, undo_id, command);
+    world.write_message(envelope);
 
     Ok(())
 }
@@ -299,6 +300,16 @@ pub fn deserialize_control_command(
             undo_id,
             Box::new(command),
         ));
+
+    Ok(())
+}
+
+/// Deserializes and dispatches an untracked master level update from JSON.
+pub fn deserialize_master_update(world: &mut World, json: Value) -> Result<(), String> {
+    let update: crate::masters::MasterUpdate =
+        serde_json::from_value(json).map_err(|e| format!("Failed to parse MasterUpdate: {}", e))?;
+
+    world.write_message(update);
 
     Ok(())
 }

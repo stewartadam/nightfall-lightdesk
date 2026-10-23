@@ -92,9 +92,7 @@ test("downloads a live showfile ZIP from the browser footer menu", async ({
       ),
     );
     expect(loaded.settings.showfile_backup_retention).toBe(37);
-    expect(loaded.settings.active_panel_layout.panels.length).toBeGreaterThan(
-      0,
-    );
+    expect(loaded.settings.panel_layouts.length).toBeGreaterThan(0);
     const entries = execFileSync("unzip", ["-Z1", path], {
       encoding: "utf8",
     }).split("\n");

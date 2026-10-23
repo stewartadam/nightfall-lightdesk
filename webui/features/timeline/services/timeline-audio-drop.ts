@@ -8,7 +8,7 @@
 
 import { createSignal } from "solid-js";
 import { getBackendUrl } from "../../../lib/api";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import {
@@ -60,7 +60,7 @@ export function createTimelineAudioDropController(ctx: TimelineContextType) {
       type: "StoreTimeline",
       data: timeline,
     };
-    engineRuntime.sendCommand({ module: "TimelineCommand", command });
+    commandClient.emit("TimelineCommand", command);
   };
 
   /** Uploads the first supported dropped audio file and updates timeline state. */

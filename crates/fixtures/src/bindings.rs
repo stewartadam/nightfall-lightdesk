@@ -11,8 +11,10 @@
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::{Component, Entity, Resource};
+use nightfall::prelude::SpatialSelection;
 use nightfall_io::BindingTransport;
 use nightfall_io::OutputTransport;
+use nightfall_selection::{HeldReference, ReferenceSource};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -60,8 +62,20 @@ pub struct OutputBinding {
     pub target: OutputTarget,
     /// Priority; when bindings conflict, the higher value wins and ties go to the earlier binding.
     pub priority: i32,
-    /// If true, duplicate the source address across a range destination.
+    /// If true, fixtures sharing a target universe all start at the target address instead of
+    /// being packed one after another.
     pub clone: bool,
+}
+
+/// Reports the output transport target of a transport binding.
+impl ReferenceSource for OutputBinding {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        if let OutputTarget::Transport { target, .. } = &self.target {
+            visit("target.target", HeldReference::OutputTarget(target));
+        }
+    }
+
+    fn visit_selections_mut(&mut self, _visit: &mut dyn FnMut(&mut SpatialSelection)) {}
 }
 
 /// Input binding source.
@@ -209,6 +223,10 @@ impl OutputSource {
 }
 
 /// Output binding target.
+///
+/// A fixture source patched to a universe range puts its Nth fixture in the Nth universe of
+/// the range, each at the target address, and packs every fixture past the end of the range
+/// into its last universe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]

@@ -11,13 +11,14 @@
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
+use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceStartContext, DomainInstanceReconstructionRequest,
     InstanceClock, InstanceControls, InstanceDisplayKind, InstanceId, InstanceKind,
-    InstanceMetadata, InstanceStatus, Owner, PlaybackReleaseAction,
+    InstanceMetadata, InstanceStatus, Owner, PlaybackReleaseOperation,
     instance_clock_from_reconstruction_timing, reconcile_instance_options,
 };
 use nightfall_playback_planner::{PlannedPlaybackSource, PlaybackReconstructionTiming};
@@ -209,7 +210,7 @@ pub struct MaterializedFlowReconstructionHandle {
 
 /// Clip-routed playback actions owned by the flow domain.
 #[derive(Debug, Clone, EnginePayload)]
-pub enum FlowPlaybackAction {
+pub enum FlowPlaybackOperation {
     /// Start or refresh a flow playback for a clip.
     Start {
         /// Flow source UID to materialize.
@@ -228,7 +229,7 @@ pub enum FlowPlaybackAction {
     },
 }
 
-impl EngineAction for FlowPlaybackAction {}
+impl EngineOperation for FlowPlaybackOperation {}
 
 /// Directly materializes flow playback reconstruction for a clip.
 pub fn spawn_reconstructed_flow_for_clip(
@@ -243,6 +244,7 @@ pub fn spawn_reconstructed_flow_for_clip(
         Option<&InstanceControls>,
     )>,
     instance_clock: InstanceClock,
+    priority: Priority,
 ) -> MaterializedFlowReconstructionHandle {
     for (entity, mut instance, instance_id, controls) in instances.iter_mut() {
         if instance.flow_id != flow.identifiers.id {
@@ -253,7 +255,8 @@ pub fn spawn_reconstructed_flow_for_clip(
             flow.identifiers.id,
             FlowRuntime::new(flow.clone()),
             registry,
-        );
+        )
+        .with_priority(priority);
         let instance_id = instance_id.copied().unwrap_or_else(InstanceId::new);
         commands
             .entity(entity)
@@ -281,7 +284,8 @@ pub fn spawn_reconstructed_flow_for_clip(
         flow.identifiers.id,
         FlowRuntime::new(flow.clone()),
         registry,
-    );
+    )
+    .with_priority(priority);
     let flow_entity = commands
         .spawn((
             instance,
@@ -334,6 +338,7 @@ pub fn handle_domain_playback_reconstruction_requests(
             &registry,
             &mut instances,
             event.clock.clone(),
+            event.priority,
         );
     }
 }
@@ -347,7 +352,7 @@ pub fn handle_events(
     mut layers: Query<&mut Layer>,
     mut flow_events: MessageReader<CommandEnvelope<FlowCommand>>,
     mut command_results: MessageWriter<FlowCommandResult>,
-    playback_actions: Option<MessageReader<EngineActionEnvelope<FlowPlaybackAction>>>,
+    playback_actions: Option<MessageReader<EngineOperationEnvelope<FlowPlaybackOperation>>>,
     attachments: Option<MessageWriter<EventEnvelope<ClipInstanceAttachment>>>,
 ) {
     for event in flow_events.read() {
@@ -360,6 +365,7 @@ pub fn handle_events(
                             tracing::debug!("Flow {} already running", id);
                         } else {
                             instance.restart();
+                            instance.set_priority(Priority::default());
                             tracing::debug!("Restarted flow {}", id);
                         }
                         let instance_id = instance_id.copied().unwrap_or_else(InstanceId::new);
@@ -447,8 +453,8 @@ pub fn handle_events(
     };
 
     for event in playback_actions.read() {
-        match &event.action {
-            FlowPlaybackAction::Start { flow_uid, context } => {
+        match &event.operation {
+            FlowPlaybackOperation::Start { flow_uid, context } => {
                 let context = *context;
                 let Ok(flow) = flow_data_provider.get(*flow_uid).map(|flow| flow.clone()) else {
                     tracing::warn!(
@@ -474,6 +480,7 @@ pub fn handle_events(
                         commands.entity(entity).remove::<ReleaseMarker>();
                         tracing::debug!("Restarted flow {}", flow.identifiers.id);
                     }
+                    instance.set_priority(context.priority);
                     let instance_id = instance_id.copied().unwrap_or_else(InstanceId::new);
                     attached_instance = Some(instance_id);
                     let instance_clock = context
@@ -505,7 +512,8 @@ pub fn handle_events(
                 if !restarted {
                     let instance_id = InstanceId::new();
                     let runtime = FlowRuntime::new(flow.clone());
-                    let instance = FlowInstance::new(flow.identifiers.id, runtime, &registry);
+                    let instance = FlowInstance::new(flow.identifiers.id, runtime, &registry)
+                        .with_priority(context.priority);
                     let instance_clock = context
                         .timing
                         .map(playback_start_timing)
@@ -546,7 +554,7 @@ pub fn handle_events(
                     ));
                 }
             }
-            FlowPlaybackAction::Stop {
+            FlowPlaybackOperation::Stop {
                 clip_id,
                 attached_instances,
                 timing,
@@ -587,7 +595,7 @@ pub fn handle_events(
 /// Handle playback-level stop commands for active flow playback entities.
 pub fn handle_playback_commands(
     mut commands: Commands,
-    mut instance_events: MessageReader<EngineActionEnvelope<PlaybackReleaseAction>>,
+    mut instance_events: MessageReader<EngineOperationEnvelope<PlaybackReleaseOperation>>,
     mut instances: Query<(
         Entity,
         &mut FlowInstance,
@@ -598,8 +606,8 @@ pub fn handle_playback_commands(
     mut layers: Query<&mut Layer>,
 ) {
     for event in instance_events.read() {
-        match &event.action {
-            PlaybackReleaseAction::One(target_instance_id) => {
+        match &event.operation {
+            PlaybackReleaseOperation::One(target_instance_id) => {
                 for (entity, mut instance, instance_id, _, clock) in instances.iter_mut() {
                     if instance_id == target_instance_id {
                         stop_flow_instance(
@@ -614,7 +622,7 @@ pub fn handle_playback_commands(
                     }
                 }
             }
-            PlaybackReleaseAction::All => {
+            PlaybackReleaseOperation::All => {
                 for (entity, mut instance, instance_id, _, clock) in instances.iter_mut() {
                     stop_flow_instance(
                         &mut commands,
@@ -627,7 +635,7 @@ pub fn handle_playback_commands(
                     );
                 }
             }
-            PlaybackReleaseAction::ByKind(kind) => {
+            PlaybackReleaseOperation::ByKind(kind) => {
                 for (entity, mut instance, instance_id, metadata, clock) in instances.iter_mut() {
                     if metadata.kind == *kind {
                         stop_flow_instance(
@@ -642,7 +650,7 @@ pub fn handle_playback_commands(
                     }
                 }
             }
-            PlaybackReleaseAction::ByTag(tag) => {
+            PlaybackReleaseOperation::ByTag(tag) => {
                 for (entity, mut instance, instance_id, metadata, clock) in instances.iter_mut() {
                     if metadata.tags.contains(tag) {
                         stop_flow_instance(
@@ -1017,7 +1025,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         let (sender, _receiver) = async_channel::unbounded();
         app.insert_resource(ClientEventSink::new(sender));
         app.add_systems(
@@ -1310,7 +1318,8 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -1386,7 +1395,8 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -1721,7 +1731,8 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -1740,11 +1751,13 @@ mod tests {
 
         let clip_uid = Uuid::new_v4();
         world
-            .resource_mut::<Messages<EngineActionEnvelope<FlowPlaybackAction>>>()
-            .write(EngineActionEnvelope::detached(FlowPlaybackAction::Start {
-                flow_uid,
-                context: test_start_context(12, clip_uid, None, true),
-            }));
+            .resource_mut::<Messages<EngineOperationEnvelope<FlowPlaybackOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                FlowPlaybackOperation::Start {
+                    flow_uid,
+                    context: test_start_context(12, clip_uid, None, true),
+                },
+            ));
 
         let mut schedule = Schedule::default();
         schedule.add_systems(handle_events);
@@ -1768,13 +1781,58 @@ mod tests {
         assert_eq!(attachment.event.clip_id, 12);
     }
 
+    /// Verifies clip-started flows take the clip's priority, both when spawned and when a later
+    /// clip with another priority starts the already running flow.
+    #[test]
+    fn start_clip_for_flow_uses_clip_priority() {
+        let mut world = World::new();
+        world.insert_resource(DataProvider::<FlowDefinition>::default());
+        init_flow_command_messages(&mut world);
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
+        world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
+        world.insert_resource(FlowNodeRegistry::default());
+
+        let flow = FlowDefinition::new(Identifiers {
+            id: 8,
+            label: "Priority Flow".to_string(),
+            uid: Uuid::new_v4(),
+        });
+        let flow_uid = flow.identifiers.uid;
+        world
+            .resource_mut::<DataProvider<FlowDefinition>>()
+            .add(flow)
+            .expect("store flow definition");
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(handle_events);
+
+        for (clip_id, priority) in [(13, Priority(5)), (14, Priority(-3))] {
+            let mut context = test_start_context(clip_id, Uuid::new_v4(), None, true);
+            context.priority = priority;
+            world
+                .resource_mut::<Messages<EngineOperationEnvelope<FlowPlaybackOperation>>>()
+                .write(EngineOperationEnvelope::detached(
+                    FlowPlaybackOperation::Start { flow_uid, context },
+                ));
+            schedule.run(&mut world);
+
+            let instance = world
+                .query::<&FlowInstance>()
+                .single(&world)
+                .expect("expected one clip-started flow instance");
+            assert_eq!(instance.priority(), priority);
+        }
+    }
+
     /// Verifies timeline reconstruction starts flow playback with a source-local clock.
     #[test]
     fn timed_start_clip_for_flow_seeds_instance_clock() {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -1795,21 +1853,23 @@ mod tests {
         let timeline_uid = Uuid::from_u128(0x2200);
 
         world
-            .resource_mut::<Messages<EngineActionEnvelope<FlowPlaybackAction>>>()
-            .write(EngineActionEnvelope::detached(FlowPlaybackAction::Start {
-                flow_uid,
-                context: test_start_context(
-                    22,
-                    clip_uid,
-                    Some(PlaybackReconstructionTiming::timeline(
-                        Duration::from_secs(10),
-                        Duration::from_millis(11_250),
-                        timeline_uid,
-                        Duration::from_secs(4),
-                    )),
-                    true,
-                ),
-            }));
+            .resource_mut::<Messages<EngineOperationEnvelope<FlowPlaybackOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                FlowPlaybackOperation::Start {
+                    flow_uid,
+                    context: test_start_context(
+                        22,
+                        clip_uid,
+                        Some(PlaybackReconstructionTiming::timeline(
+                            Duration::from_secs(10),
+                            Duration::from_millis(11_250),
+                            timeline_uid,
+                            Duration::from_secs(4),
+                        )),
+                        true,
+                    ),
+                },
+            ));
 
         let mut schedule = Schedule::default();
         schedule.add_systems(handle_events);
@@ -1836,7 +1896,8 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -1885,18 +1946,20 @@ mod tests {
 
         let timeline_uid = Uuid::from_u128(0x3200);
         world
-            .resource_mut::<Messages<EngineActionEnvelope<FlowPlaybackAction>>>()
-            .write(EngineActionEnvelope::detached(FlowPlaybackAction::Stop {
-                clip_id: 32,
-                attached_instances: vec![instance_id],
-                timing: PlaybackReconstructionTiming::timeline_source_local(
-                    Duration::from_millis(700),
-                    Duration::from_millis(1_200),
-                    timeline_uid,
-                    Duration::from_millis(300),
-                )
-                .into(),
-            }));
+            .resource_mut::<Messages<EngineOperationEnvelope<FlowPlaybackOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                FlowPlaybackOperation::Stop {
+                    clip_id: 32,
+                    attached_instances: vec![instance_id],
+                    timing: PlaybackReconstructionTiming::timeline_source_local(
+                        Duration::from_millis(700),
+                        Duration::from_millis(1_200),
+                        timeline_uid,
+                        Duration::from_millis(300),
+                    )
+                    .into(),
+                },
+            ));
 
         let mut schedule = Schedule::default();
         schedule.add_systems(handle_events);
@@ -1944,7 +2007,8 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -1993,7 +2057,8 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -2040,7 +2105,9 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<PlaybackReleaseAction>>::default());
+        world.insert_resource(
+            Messages::<EngineOperationEnvelope<PlaybackReleaseOperation>>::default(),
+        );
 
         let registry = FlowNodeRegistry::default();
         world.insert_resource(registry);
@@ -2068,8 +2135,10 @@ mod tests {
         assert!(instance.is_running());
 
         world
-            .resource_mut::<Messages<EngineActionEnvelope<PlaybackReleaseAction>>>()
-            .write(EngineActionEnvelope::detached(PlaybackReleaseAction::All));
+            .resource_mut::<Messages<EngineOperationEnvelope<PlaybackReleaseOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                PlaybackReleaseOperation::All,
+            ));
         schedule.run(&mut world);
 
         let mut stopped_query = world.query::<(
@@ -2093,7 +2162,8 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(DataProvider::<FlowDefinition>::default());
         init_flow_command_messages(&mut world);
-        world.insert_resource(Messages::<EngineActionEnvelope<FlowPlaybackAction>>::default());
+        world
+            .insert_resource(Messages::<EngineOperationEnvelope<FlowPlaybackOperation>>::default());
         world.insert_resource(Messages::<EventEnvelope<ClipInstanceAttachment>>::default());
 
         let registry = FlowNodeRegistry::default();
@@ -2116,11 +2186,13 @@ mod tests {
         schedule.add_systems(handle_events);
 
         world
-            .resource_mut::<Messages<EngineActionEnvelope<FlowPlaybackAction>>>()
-            .write(EngineActionEnvelope::detached(FlowPlaybackAction::Start {
-                flow_uid,
-                context: test_start_context(14, clip_uid, None, true),
-            }));
+            .resource_mut::<Messages<EngineOperationEnvelope<FlowPlaybackOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                FlowPlaybackOperation::Start {
+                    flow_uid,
+                    context: test_start_context(14, clip_uid, None, true),
+                },
+            ));
         schedule.run(&mut world);
         let instance_id = world
             .resource_mut::<Messages<EventEnvelope<ClipInstanceAttachment>>>()
@@ -2131,12 +2203,14 @@ mod tests {
             .instance_id;
 
         world
-            .resource_mut::<Messages<EngineActionEnvelope<FlowPlaybackAction>>>()
-            .write(EngineActionEnvelope::detached(FlowPlaybackAction::Stop {
-                clip_id: 14,
-                attached_instances: vec![instance_id],
-                timing: None,
-            }));
+            .resource_mut::<Messages<EngineOperationEnvelope<FlowPlaybackOperation>>>()
+            .write(EngineOperationEnvelope::detached(
+                FlowPlaybackOperation::Stop {
+                    clip_id: 14,
+                    attached_instances: vec![instance_id],
+                    timing: None,
+                },
+            ));
         schedule.run(&mut world);
 
         let mut instance_query = world.query::<(

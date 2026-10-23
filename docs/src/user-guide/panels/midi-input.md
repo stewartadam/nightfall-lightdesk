@@ -2,10 +2,18 @@
 
 {{#include ../../includes/human-review-disclaimer.md}}
 
-MIDI Input maps incoming controller events to Nightfall actions. Open it from the Command Palette. The connected-device section shows devices known to the engine.
+MIDI Input lists connected MIDI devices and every MIDI binding in the show. Open it from the Command Palette. For the quickest way to bind controls, use mapping mode, described in [Controllers and keybindings](../controller-mapping.md).
 
-Press a controller button and inspect **Last Input**, including device, channel, note, and velocity. Choose **Add Mapping** to create a row from that event, then edit its match fields and Action. The initial mapping targets `StartClip(1)`; change it to the intended action before testing the controller again.
+**Connected MIDI Devices** shows the controllers Nightfall can hear. Press a button or move a fader and **Last Input** shows the device, the control, and its channel. To bind that control from here, pick an action and a behavior beside Last Input and choose **Add Mapping**.
 
-Examples include `StartClip(1)` and `StopClip(2)`. Match values must reflect the event actually sent by the device. A button's press and release may produce different events, so observe both before choosing exact velocity matching.
+Each row in the table is one binding:
 
-Select mapping rows to delete obsolete assignments. Filters and hidden columns can obscure existing matches; clear them when investigating duplicate actions. If no input appears, check device detection before editing the mapping. Save the showfile to retain mappings.
+- **Device** is the controller the binding listens to. A device that is not connected is marked "(not connected)". Pick a connected device to move the binding to it, for example after replacing a controller.
+- **Control**, **Channel**, and **Number** identify the button, fader, or knob. Channel and Number can be edited.
+- **Behavior** decides what pressing and releasing the control does. See [Behaviors](../controller-mapping.md#behaviors).
+- **Action** is what the control runs. Select one row to change its action with the picker above the table.
+- **Status** flags bindings that cannot run, such as one whose clip was deleted.
+
+Edits apply to every selected row. Select rows and choose **Delete** to remove them. Filters and hidden columns can hide existing bindings, so clear them when a control seems to trigger something unexpected.
+
+If nothing appears in Last Input, check that the controller is connected and shows up under Connected MIDI Devices. Save the showfile to keep your bindings.

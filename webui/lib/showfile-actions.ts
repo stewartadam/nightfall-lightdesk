@@ -6,17 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { dockApi } from "../state/appStores";
-import { compactViewport } from "../state/viewport";
 import type * as types from "../types";
 import { requireCommandSuccess } from "./command-result";
-import { createActivePanelLayout } from "./dockview-active-layout";
-import { engineRuntime } from "./engine-runtime";
+import { commandClient } from "./engine-commands";
 import {
   persistCurrentShowfileName,
   showfileLoadCommandForName,
 } from "./showfile-loading";
-import { parseSimpleShowfileSaveCommand } from "./showfile-save-command-parser";
 
 export { promptForNewShowfile } from "./new-showfile-name-prompt";
 
@@ -28,72 +24,25 @@ export type OpenShowfileSelection =
 
 /** Sends a DeskCommand through the websocket showfile action service. */
 function sendDeskCommand(command: types.DeskCommand): void {
-  engineRuntime.sendCommand({ module: "DeskCommand", command });
+  commandClient.emit("DeskCommand", command);
 }
 
 /** Sends a DeskCommand and waits for the backend command result. */
 async function sendDeskCommandAndAwait(
   command: types.DeskCommand,
 ): Promise<void> {
-  const result = await engineRuntime.sendCommandAndAwait({
-    module: "DeskCommand",
-    command,
-  });
+  const result = await commandClient.invoke("DeskCommand", command);
   requireCommandSuccess(result);
 }
 
-/** Captures the current Dockview active layout when one is available. */
-/**
- * Captures the docked arrangement to store with the showfile. The compact
- * shell's one-panel view is not an arrangement, so saves made from it omit
- * the layout and the showfile keeps the one it already has.
- */
-function activePanelLayoutForSave(): types.ActivePanelLayout | undefined {
-  const api = dockApi.get();
-  return api && !compactViewport.get()
-    ? createActivePanelLayout(api)
-    : undefined;
-}
-
-/** Builds save options from the UI state available at the moment save is requested. */
-export function currentShowfileSaveOptions(): types.ShowfileSaveOptions {
-  const activePanelLayout = activePanelLayoutForSave();
-  return activePanelLayout ? { activePanelLayout } : {};
-}
-
-/** Builds a plain showfile save command with current UI save options attached. */
+/** Builds a plain showfile save command. */
 export function saveShowfileCommand(): types.DeskCommand {
-  return { type: "SaveShowfile", data: currentShowfileSaveOptions() };
+  return { type: "SaveShowfile" };
 }
 
-/** Builds a named showfile save command with current UI save options attached. */
+/** Builds a save command targeting a named showfile folder. */
 export function saveNamedShowfileCommand(name: string): types.DeskCommand {
-  return {
-    type: "SaveNamedShowfile",
-    data: {
-      name,
-      options: currentShowfileSaveOptions(),
-    },
-  };
-}
-
-/** Builds a draft save command with current UI save options attached. */
-export function saveDraftShowfileCommand(): types.DeskCommand {
-  return { type: "SaveDraftShowfile", data: currentShowfileSaveOptions() };
-}
-
-/** Converts simple command-line save input into a layout-aware save command. */
-export function showfileSaveCommandForInput(
-  commandInput: string,
-): types.DeskCommand | null {
-  const parsed = parseSimpleShowfileSaveCommand(commandInput);
-  if (!parsed) {
-    return null;
-  }
-
-  return parsed.name
-    ? saveNamedShowfileCommand(parsed.name)
-    : saveShowfileCommand();
+  return { type: "SaveNamedShowfile", data: name };
 }
 
 /** Returns the command payload for starting a new showfile. */

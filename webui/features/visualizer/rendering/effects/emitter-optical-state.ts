@@ -44,15 +44,6 @@ export interface ApertureControls {
   readonly focusDistance: number;
 }
 
-/** Controls of an aperture without optical channels: an unsplit, unmasked, unzoomed beam. */
-export const OPEN_APERTURE: ApertureControls = {
-  zoomDegrees: undefined,
-  gobos: [],
-  prism: undefined,
-  prismRotation: 0,
-  focusDistance: 0,
-};
-
 /** Upper bound on prepared prism facets per aperture, however many prism stages multiply. */
 const MAX_PREPARED_FACETS = 1024;
 

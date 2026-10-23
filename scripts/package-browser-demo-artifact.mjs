@@ -86,7 +86,8 @@ function main() {
     resolve(noticesDirectory, "SAMPLE-AUDIO-LICENSE.txt"),
   );
 
-  const applicationCommit = readGitValue(["rev-parse", "HEAD"]);
+  const applicationCommit =
+    process.env.NIGHTFALL_BUILD_COMMIT || readGitValue(["rev-parse", "HEAD"]);
   const sourceDateEpoch = process.env.SOURCE_DATE_EPOCH;
   const builtAt = sourceDateEpoch
     ? new Date(Number(sourceDateEpoch) * 1_000).toISOString()

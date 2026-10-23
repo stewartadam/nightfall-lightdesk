@@ -15,9 +15,9 @@ use nightfall_fixture_model::prelude::*;
 use nightfall_io::BindingTransport;
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePolicy};
 #[cfg(feature = "object-library")]
-use nightfall_object_library::manager::{
-    ObjectModelPathScope, decode_object_path, encode_object_path, encode_showfile_object_path,
-};
+use nightfall_object_library::manager::{decode_object_path, encode_showfile_object_path};
+#[cfg(feature = "object-library")]
+use nightfall_object_library::showfile::{SHOWFILE_OBJECT_SNAPSHOTS_DIR, scene_object_model_path};
 use nightfall_showfile::{CURRENT_SHOWFILE_VERSION, parse_showfile_snapshot_json};
 use uuid::Uuid;
 
@@ -52,6 +52,7 @@ fn setup_world() -> World {
     world.insert_resource(DataProvider::<FlowDefinition>::default());
     world.insert_resource(DataProvider::<Timecode>::default());
     world.insert_resource(DataProvider::<Timeline>::default());
+    world.insert_resource(DataProvider::<Board>::default());
     world.insert_resource(InputBindings::default());
     world.insert_resource(OutputBindings::default());
     world.insert_resource(DisabledBindings::default());
@@ -68,7 +69,7 @@ fn setup_world() -> World {
     world.insert_resource(Messages::<CommandResult>::default());
     world.insert_resource(Messages::<CommandReply>::default());
     world.insert_resource(Messages::<FinishedCommand>::default());
-    world.insert_resource(Messages::<CommandNotice>::default());
+    world.insert_resource(Messages::<CommandNoticeReply>::default());
     world.insert_resource(CommandTracker::default());
     world.insert_resource(CurrentShowfile::default());
     world.insert_resource(ShowfileCleanSnapshotHash::default());
@@ -587,44 +588,18 @@ fn effective_save_showfile_name_uses_current_loaded_showfile() {
     };
 
     assert_eq!(
-        effective_save_showfile_name(
-            &DeskCommand::SaveShowfile(Default::default()),
-            &current_showfile
-        )
-        .expect("resolve save target"),
+        effective_save_showfile_name(&DeskCommand::SaveShowfile, &current_showfile)
+            .expect("resolve save target"),
         Some("sample".to_string())
     );
     assert_eq!(
         effective_save_showfile_name(
-            &DeskCommand::SaveNamedShowfile {
-                name: "other.nightfall-show".to_string(),
-                options: Default::default(),
-            },
+            &DeskCommand::SaveNamedShowfile("other.nightfall-show".to_string()),
             &current_showfile,
         )
         .expect("resolve named save target"),
         Some("other".to_string())
     );
-}
-
-/// Verifies save-time layout options become the in-memory saved settings baseline.
-#[test]
-fn apply_showfile_save_options_updates_active_panel_layout() {
-    let active_panel_layout = ActivePanelLayout {
-        layout_id: None,
-        version: 1,
-        layout: serde_json::json!({ "layout": "saved" }),
-        panels: Vec::new(),
-        updated_at: 42.0,
-    };
-    let mut desk_settings = DeskSettings::default();
-    let save_options = ShowfileSaveOptions {
-        active_panel_layout: Some(active_panel_layout.clone()),
-    };
-
-    apply_showfile_save_options(&mut desk_settings, &save_options);
-
-    assert_eq!(desk_settings.active_panel_layout, Some(active_panel_layout));
 }
 
 /// Verifies any directory can supply a snapshot while saving remains targeted elsewhere.
@@ -676,12 +651,12 @@ fn reset_working_draft_from_revision_preserves_saved_showfile() {
         .path()
         .join(SHOWFILE_DRAFTS_DIR)
         .join("default.nightfall-show");
-    let current_assets = show_data_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
+    let current_assets = show_data_dir.join("scene-objects");
     let revision_dir = root
         .path()
         .join("backups")
         .join("default-20260520-010203.nightfall-show");
-    let revision_assets = revision_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
+    let revision_assets = revision_dir.join("scene-objects");
     std::fs::create_dir_all(&current_assets).expect("create current asset dir");
     std::fs::create_dir_all(&revision_assets).expect("create revision asset dir");
     let mut world = setup_world();
@@ -726,14 +701,14 @@ fn reset_working_draft_from_revision_preserves_saved_showfile() {
     );
     assert!(
         show_data_dir
-            .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+            .join("scene-objects")
             .join("current.robj")
             .exists(),
         "saved assets should remain unchanged"
     );
     assert!(
         draft_dir
-            .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+            .join("scene-objects")
             .join("revision.robj")
             .exists(),
         "revision assets should be copied into working state"
@@ -1786,7 +1761,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
     app.add_message::<CommandResult>();
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
-    app.add_message::<CommandNotice>();
+    app.add_message::<CommandNoticeReply>();
     app.init_resource::<CommandTracker>();
     app.add_message::<UiNotification>();
     let correlation_id = Uuid::new_v4();
@@ -1795,7 +1770,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
         correlation_id.into(),
         CommandOrigin::WebUi,
         ReplyTarget::Detached,
-        DeskCommand::SaveShowfile(Default::default()),
+        DeskCommand::SaveShowfile,
     );
     app.world_mut()
         .resource_mut::<CommandTracker>()
@@ -2146,10 +2121,7 @@ fn load_showfile_revision_event_preserves_saved_showfile_until_save() {
         "revision variable should retain its loaded string value"
     );
 
-    let save_command_id = submit_showfile_command(
-        &mut world,
-        DeskCommand::SaveShowfile(ShowfileSaveOptions::default()),
-    );
+    let save_command_id = submit_showfile_command(&mut world, DeskCommand::SaveShowfile);
     world
         .run_system_once(handle_events)
         .expect("run explicit save handler");
@@ -2397,21 +2369,29 @@ fn seed_world(world: &mut World) {
     world
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0001),
             device_name: "Grid".to_string(),
-            channel: 176,
-            note: 36,
-            velocity: None,
-            action: set_control_action(1),
+            source: MidiSource::ControlChange {
+                channel: 0,
+                controller: 36,
+            },
+            behavior: nightfall_actions::ControlBehavior::Press,
+            led: Default::default(),
+            action: control_level_action(1),
         }]);
     #[cfg(feature = "osc")]
     world
         .resource_mut::<OscMappings>()
         .set_mappings(vec![OscMapping {
+            id: uuid::Uuid::from_u128(0x5a3d_0002),
             source: Some("127.0.0.1:9000".to_string()),
             address: "/grid/fader".to_string(),
             arg_index: Some(1),
-            arg_value: Some("0.5".to_string()),
-            action: set_control_action(2),
+            arg_value: None,
+            release_value: None,
+            range: None,
+            behavior: nightfall_actions::ControlBehavior::Press,
+            action: control_level_action(2),
         }]);
 
     {
@@ -2419,22 +2399,7 @@ fn seed_world(world: &mut World) {
         desk_settings.programmer_auto_select = true;
         desk_settings.audio_device = Some("Built-in Output".to_string());
         desk_settings.selection_flatten_policy = SelectionFlattenPolicy::Prompt;
-        desk_settings.active_panel_layout = Some(ActivePanelLayout {
-            layout_id: None,
-            version: 2,
-            layout: serde_json::json!({
-                "grid": "active",
-                "activeGroup": "main",
-            }),
-            panels: vec![StoredPanelLayoutPanel {
-                id: "panel-Visualizer".to_string(),
-                title: "Visualizer".to_string(),
-                params: serde_json::json!({
-                    "mode": "operator",
-                }),
-            }],
-            updated_at: 1_700_000_002_000.0,
-        });
+        desk_settings.default_panel_layout_id = Some("operator-layout".to_string());
         desk_settings.panel_layouts = vec![StoredPanelLayout {
             shown_in_switcher: true,
             id: "operator-layout".to_string(),
@@ -2490,6 +2455,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     flow_data_provider,
                     timecode_data_provider,
                     timeline_data_provider,
+                    board_data_provider,
                     active_fx_module_ids: _,
                     input_bindings,
                     output_bindings,
@@ -2518,6 +2484,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     flow_data_provider.as_mut(),
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
+                    board_data_provider.as_mut(),
                     input_bindings.as_mut(),
                     output_bindings.as_mut(),
                     disabled_bindings.as_mut(),
@@ -2556,6 +2523,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     flow_data_provider,
                     timecode_data_provider,
                     timeline_data_provider,
+                    board_data_provider,
                     active_fx_module_ids: _,
                     input_bindings,
                     output_bindings,
@@ -2584,6 +2552,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     flow_data_provider.as_mut(),
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
+                    board_data_provider.as_mut(),
                     input_bindings.as_mut(),
                     output_bindings.as_mut(),
                     disabled_bindings.as_mut(),
@@ -2688,6 +2657,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     flow_data_provider,
                     timecode_data_provider,
                     timeline_data_provider,
+                    board_data_provider,
                     active_fx_module_ids,
                     input_bindings,
                     output_bindings,
@@ -2711,6 +2681,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     global_variables,
                     desk_settings,
                     io_settings,
+                    controller_mapping_mode: _,
                 } = &mut showfile_load_state;
 
                 load_showfile_in_place(
@@ -2728,6 +2699,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     flow_data_provider.as_mut(),
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
+                    board_data_provider.as_mut(),
                     active_fx_module_ids.as_deref_mut(),
                     input_bindings.as_mut(),
                     output_bindings.as_mut(),
@@ -2760,6 +2732,34 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
 
 fn load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) {
     try_load_snapshot_in_place(world, snapshot).expect("in-place load should succeed");
+}
+
+/// Verifies loading a show in place ends every client's controller mapping mode and
+/// publishes a new show generation, which tells mapping clients why they left.
+#[test]
+fn loading_a_show_ends_controller_mapping_mode() {
+    let mut source_world = setup_world();
+    seed_world(&mut source_world);
+    let snapshot = collect_snapshot(&mut source_world);
+
+    let mut world = setup_world();
+    let mut mode = nightfall_actions::ControllerMappingMode::default();
+    mode.enter(ClientId(7), std::time::Instant::now());
+    let generation = mode.state().show_generation;
+    world.insert_resource(mode);
+
+    world
+        .run_system_once(
+            move |mut state: ShowfileLoadState, mut commands: Commands| {
+                load_showfile_snapshot_from_state(snapshot.clone(), &mut state, &mut commands)
+            },
+        )
+        .expect("load system should run")
+        .expect("load should succeed");
+
+    let mode = world.resource::<nightfall_actions::ControllerMappingMode>();
+    assert!(!mode.is_active());
+    assert_ne!(mode.state().show_generation, generation);
 }
 
 #[test]
@@ -2944,9 +2944,58 @@ fn roundtrip_preserves_desk_settings() {
         source_snapshot.settings.panel_layouts
     );
     assert_eq!(
-        restored_snapshot.settings.active_panel_layout,
-        source_snapshot.settings.active_panel_layout
+        restored_snapshot.settings.default_panel_layout_id,
+        source_snapshot.settings.default_panel_layout_id
     );
+}
+
+/// Verifies boards, including their elements and collection queries, survive save and load.
+#[test]
+fn roundtrip_preserves_boards() {
+    let mut source_world = setup_world();
+    let board = Board {
+        identifiers: Identifiers {
+            id: 4,
+            uid: Uuid::from_u128(4),
+            label: "Colors".to_string(),
+        },
+        elements: vec![BoardElement {
+            uid: Uuid::from_u128(40),
+            cell: BoardCell {
+                x: 1,
+                y: 0,
+                width: 3,
+                height: 2,
+            },
+            label: Some("Washes".to_string()),
+            color: Some("#ff8800".to_string()),
+            show_title: false,
+            kind: BoardElementKind::Collection {
+                query: ObjectQuery {
+                    object_type: ObjectType::Blueprint,
+                    id_range: Some(ObjectIdRange { first: 1, last: 20 }),
+                    label_contains: Some("wash".to_string()),
+                },
+                exclusive: true,
+            },
+        }],
+        ..Default::default()
+    };
+    source_world
+        .resource_mut::<DataProvider<Board>>()
+        .add(board.clone())
+        .expect("board should insert");
+    let source_snapshot = collect_snapshot(&mut source_world);
+    assert_eq!(source_snapshot.boards, vec![board.clone()]);
+
+    let mut restored_world = setup_world();
+    apply_snapshot(&mut restored_world, source_snapshot);
+    let restored = restored_world
+        .resource::<DataProvider<Board>>()
+        .get(board.identifiers.uid)
+        .expect("board should be restored")
+        .clone();
+    assert_eq!(restored, board);
 }
 
 /// Verifies the desk-state contributor preserves variables and settings through snapshot load.
@@ -3027,10 +3076,14 @@ fn roundtrip_preserves_midi_mappings() {
     assert_eq!(restored_snapshot.midi_mappings.len(), 1);
     let mapping = &restored_snapshot.midi_mappings[0];
     assert_eq!(mapping.device_name, "Grid");
-    assert_eq!(mapping.channel, 176);
-    assert_eq!(mapping.note, 36);
-    assert_eq!(mapping.velocity, None);
-    assert_eq!(mapping.action, set_control_action(1));
+    assert_eq!(
+        mapping.source,
+        MidiSource::ControlChange {
+            channel: 0,
+            controller: 36
+        }
+    );
+    assert_eq!(mapping.action, control_level_action(1));
 }
 
 /// Verifies OSC input mappings survive showfile save/load snapshot application.
@@ -3051,8 +3104,8 @@ fn roundtrip_preserves_osc_mappings() {
     assert_eq!(mapping.source.as_deref(), Some("127.0.0.1:9000"));
     assert_eq!(mapping.address, "/grid/fader");
     assert_eq!(mapping.arg_index, Some(1));
-    assert_eq!(mapping.arg_value.as_deref(), Some("0.5"));
-    assert_eq!(mapping.action, set_control_action(2));
+    assert_eq!(mapping.arg_value, None);
+    assert_eq!(mapping.action, control_level_action(2));
 }
 
 #[test]
@@ -3142,7 +3195,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
@@ -3153,6 +3206,8 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -3170,6 +3225,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -3220,7 +3276,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
@@ -3231,6 +3287,8 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -3248,6 +3306,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -3286,7 +3345,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),
@@ -3297,6 +3356,8 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![scene_object_a, scene_object_b],
@@ -3314,6 +3375,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -3322,55 +3384,6 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
     assert!(result.is_err());
     let error = result.expect_err("expected scene object version validation error");
     assert!(error.contains("multiple versions of scene object asset"));
-}
-
-#[cfg(feature = "object-library")]
-#[test]
-fn snapshot_library_model_path_for_showfile_rewrites_scope_and_copies_bundle() {
-    let temp_root = std::env::temp_dir().join(format!(
-        "nightfall-showfile-events-{}",
-        Uuid::new_v4().simple()
-    ));
-    let library_path = temp_root.join("objects");
-    let show_data_dir = temp_root.join("default.nightfall-show");
-
-    std::fs::create_dir_all(&library_path).expect("create temp library directory");
-    std::fs::create_dir_all(&show_data_dir).expect("create temp show-data directory");
-
-    let library_bundle_path = library_path.join("object-a.robj");
-    std::fs::write(&library_bundle_path, b"bundle").expect("write temp object bundle");
-    let encoded_library_path = encode_object_path(&library_bundle_path);
-
-    let snapshot_model_path = snapshot_library_model_path_for_showfile(
-        &encoded_library_path,
-        &library_path,
-        &show_data_dir,
-    )
-    .expect("snapshot should succeed")
-    .expect("library path should be converted to showfile path");
-
-    let decoded_snapshot_path =
-        decode_object_path(&snapshot_model_path).expect("snapshot path should decode");
-    assert_eq!(
-        decoded_snapshot_path.scope,
-        ObjectModelPathScope::ShowfileData
-    );
-    assert!(
-        decoded_snapshot_path
-            .bundle_filename
-            .ends_with("object-a.robj")
-    );
-
-    let copied_bundle_path = show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
-        .join(decoded_snapshot_path.bundle_filename);
-    assert!(
-        copied_bundle_path.exists(),
-        "expected copied bundle at {}",
-        copied_bundle_path.display()
-    );
-
-    std::fs::remove_dir_all(temp_root).expect("remove temp test directory");
 }
 
 /// Verifies imported showfile scene object bundles are copied into current show-data.
@@ -3384,7 +3397,7 @@ fn copy_imported_scene_object_assets_copies_showfile_bundle() {
     let source_show_data_dir = temp_root.join("source-show-data");
     let current_show_data_dir = temp_root.join("current-show-data");
     let source_bundle_path = source_show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+        .join(SHOWFILE_OBJECT_SNAPSHOTS_DIR)
         .join("case.robj");
     std::fs::create_dir_all(source_bundle_path.parent().expect("bundle parent"))
         .expect("create source bundle directory");
@@ -3416,7 +3429,7 @@ fn copy_imported_scene_object_assets_copies_showfile_bundle() {
         decode_object_path(scene_object_model_path(&incoming[0]).expect("model path"))
             .expect("model path should decode");
     let copied_bundle_path = current_show_data_dir
-        .join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR)
+        .join(SHOWFILE_OBJECT_SNAPSHOTS_DIR)
         .join(decoded_path.bundle_filename);
     assert_eq!(
         std::fs::read(copied_bundle_path).expect("read copied object bundle"),
@@ -3434,7 +3447,7 @@ fn remove_orphaned_showfile_object_snapshots_keeps_only_referenced_showfile_asse
         Uuid::new_v4().simple()
     ));
     let show_data_dir = temp_root.join("default.nightfall-show");
-    let snapshots_dir = show_data_dir.join(SHOWFILE_SCENE_OBJECT_SNAPSHOTS_DIR);
+    let snapshots_dir = show_data_dir.join(SHOWFILE_OBJECT_SNAPSHOTS_DIR);
     std::fs::create_dir_all(&snapshots_dir).expect("create snapshot directory");
 
     let retained_snapshot_path = snapshots_dir.join("keep.robj");
@@ -4117,7 +4130,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
     };
 
     let invalid_snapshot = ShowfileSnapshot {
-        control_assignments: Vec::new(),
+        control_slots: Vec::new(),
         metadata: ShowfileMetadata::default(),
         fixtures: vec![fixture_a, fixture_b],
         variables: HashMap::new(),
@@ -4128,6 +4141,8 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         },
         #[cfg(feature = "midi")]
         midi_mappings: vec![],
+        #[cfg(feature = "midi")]
+        midi_feedback_devices: vec![],
         #[cfg(feature = "osc")]
         osc_mappings: vec![],
         scene_objects: vec![],
@@ -4145,6 +4160,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         timecodes: vec![],
         timelines: vec![],
         clips: vec![],
+        boards: vec![],
         settings: DeskSettings::default(),
         io_settings: IoRuntimeSettings::default(),
     };
@@ -4196,7 +4212,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
     apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture],
             variables: HashMap::new(),
@@ -4209,6 +4225,8 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -4226,6 +4244,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             timecodes: vec![],
             timelines: vec![],
             clips: vec![],
+            boards: vec![],
         },
     );
 
@@ -4291,7 +4310,7 @@ fn load_materializes_timecodes_and_timelines() {
     apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_assignments: Vec::new(),
+            control_slots: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),
@@ -4304,6 +4323,8 @@ fn load_materializes_timecodes_and_timelines() {
             },
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
+            #[cfg(feature = "midi")]
+            midi_feedback_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -4321,6 +4342,7 @@ fn load_materializes_timecodes_and_timelines() {
             timecodes: vec![timecode],
             timelines: vec![timeline],
             clips: vec![],
+            boards: vec![],
         },
     );
 

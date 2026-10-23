@@ -294,6 +294,11 @@ test("timeline properties expose and persist timeline configuration", async ({
   await expect(page.getByText("Markers", { exact: true })).toHaveCount(1);
   await expect(page.getByText("Regions", { exact: true })).toHaveCount(1);
 
+  await expect(page.getByTestId("linked-timecode-source")).toContainText(
+    "Change the source in the Timecodes panel.",
+  );
+  await expect(page.getByLabel("Timecode source")).toHaveCount(0);
+
   await linkedTimecode.selectOption(context.alternateTimecodeUid);
   await expect
     .poll(() =>

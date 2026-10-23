@@ -6,8 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { submitCommand } from "./gdtf-bench-support";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { prepareStoreSeededTestApp } from "./showfile-startup";
+import {
+  prepareStoreSeededTestApp,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
 const FIXTURE_UID = "11111111111111111111111111111111";
 
@@ -349,17 +353,19 @@ test("layers panel toolbar controls layer expansion", async ({ page }) => {
     panel.locator('[data-grid-header-id="tanstack-header-Green_Rel"]'),
   ).toHaveCount(0);
 
-  const populatedLayer = panel.locator("details").filter({ hasText: "Cue 1" });
-  await expect(populatedLayer.locator("summary")).toContainText(
+  const populatedLayer = panel
+    .locator(".nf-collapsible")
+    .filter({ hasText: "Cue 1" });
+  await expect(populatedLayer.locator(".nf-collapsible-header")).toContainText(
     /Layer 0:\s*Cue\s*Cue 1/,
   );
-  await expect(populatedLayer).not.toHaveAttribute("open", "");
+  await expect(populatedLayer).not.toHaveAttribute("data-open", "true");
   await expect(
     panel.getByRole("button", { name: "Collapse all layers" }),
   ).toBeDisabled();
 
   await panel.getByRole("button", { name: "Expand all layers" }).click();
-  await expect(populatedLayer).toHaveAttribute("open", "");
+  await expect(populatedLayer).toHaveAttribute("data-open", "true");
   await expect(
     panel.getByRole("columnheader", { name: "Green" }),
   ).toBeVisible();
@@ -371,10 +377,10 @@ test("layers panel toolbar controls layer expansion", async ({ page }) => {
   ).toHaveCount(2);
 
   await panel.getByRole("button", { name: "Collapse all layers" }).click();
-  await expect(populatedLayer).not.toHaveAttribute("open", "");
+  await expect(populatedLayer).not.toHaveAttribute("data-open", "true");
 
   await panel.getByRole("button", { name: "Expand all layers" }).click();
-  await expect(populatedLayer).toHaveAttribute("open", "");
+  await expect(populatedLayer).toHaveAttribute("data-open", "true");
 });
 
 /**
@@ -397,15 +403,15 @@ test("layers panel displays computed sequence intensity values", async ({
     '[data-panel-kind="layer"][data-panel-id="panel-LayerStack-sequence-values"]',
   );
   await expect(panel).toBeVisible();
-  const sequenceLayer = panel.locator("details").filter({
+  const sequenceLayer = panel.locator(".nf-collapsible").filter({
     hasText: "sparkles int",
   });
-  await expect(sequenceLayer.locator("summary")).toContainText(
+  await expect(sequenceLayer.locator(".nf-collapsible-header")).toContainText(
     /Layer 0:\s*Sequence\s*sparkles int/,
   );
 
   await panel.getByRole("button", { name: "Expand all layers" }).click();
-  await expect(sequenceLayer).toHaveAttribute("open", "");
+  await expect(sequenceLayer).toHaveAttribute("data-open", "true");
   const fixtureParentCell = sequenceLayer.locator(
     `[data-grid-column-key="id"][data-grid-row-key="${FIXTURE_UID}"]`,
   );
@@ -486,9 +492,11 @@ test("layers panel preserves clicked layer expansion during layer updates", asyn
   await expect(panel).toBeVisible();
   await seedLayerData(page);
 
-  const populatedLayer = panel.locator("details").filter({ hasText: "Cue 1" });
-  await populatedLayer.locator("summary").click();
-  await expect(populatedLayer).toHaveAttribute("open", "");
+  const populatedLayer = panel
+    .locator(".nf-collapsible")
+    .filter({ hasText: "Cue 1" });
+  await populatedLayer.locator(".nf-collapsible-trigger").click();
+  await expect(populatedLayer).toHaveAttribute("data-open", "true");
   await populatedLayer.evaluate((element) => {
     (element as HTMLElement & { __layerRowMarker?: string }).__layerRowMarker =
       "mounted";
@@ -496,7 +504,7 @@ test("layers panel preserves clicked layer expansion during layer updates", asyn
 
   for (const intensity of [181, 182, 183, 184, 185]) {
     await updateLayerOutput(page, intensity);
-    await expect(populatedLayer).toHaveAttribute("open", "");
+    await expect(populatedLayer).toHaveAttribute("data-open", "true");
     await expect
       .poll(async () =>
         populatedLayer.evaluate(
@@ -535,9 +543,11 @@ test("layers panel preserves expansion when a layer moves in the stack", async (
   await expect(panel).toBeVisible();
   await seedLayerData(page);
 
-  const populatedLayer = panel.locator("details").filter({ hasText: "Cue 1" });
-  await populatedLayer.locator("summary").click();
-  await expect(populatedLayer).toHaveAttribute("open", "");
+  const populatedLayer = panel
+    .locator(".nf-collapsible")
+    .filter({ hasText: "Cue 1" });
+  await populatedLayer.locator(".nf-collapsible-trigger").click();
+  await expect(populatedLayer).toHaveAttribute("data-open", "true");
   await expect(populatedLayer.getByRole("grid")).toBeVisible();
   await populatedLayer.evaluate((element) => {
     (element as HTMLElement & { __layerRowMarker?: string }).__layerRowMarker =
@@ -546,7 +556,7 @@ test("layers panel preserves expansion when a layer moves in the stack", async (
 
   await insertLayerBeforeCue(page);
 
-  await expect(populatedLayer).toHaveAttribute("open", "");
+  await expect(populatedLayer).toHaveAttribute("data-open", "true");
   await expect
     .poll(async () =>
       populatedLayer.evaluate(
@@ -556,7 +566,7 @@ test("layers panel preserves expansion when a layer moves in the stack", async (
       ),
     )
     .toBe("mounted");
-  await expect(panel.locator("details").first()).toContainText(
+  await expect(panel.locator(".nf-collapsible").first()).toContainText(
     "Inserted Layer",
   );
   await expect(populatedLayer).toContainText("Layer 1:");
@@ -584,9 +594,11 @@ test("layers panel reorders existing layer rows without remounting", async ({
   await expect(panel).toBeVisible();
   await seedLayerData(page);
 
-  const populatedLayer = panel.locator("details").filter({ hasText: "Cue 1" });
-  await populatedLayer.locator("summary").click();
-  await expect(populatedLayer).toHaveAttribute("open", "");
+  const populatedLayer = panel
+    .locator(".nf-collapsible")
+    .filter({ hasText: "Cue 1" });
+  await populatedLayer.locator(".nf-collapsible-trigger").click();
+  await expect(populatedLayer).toHaveAttribute("data-open", "true");
   await expect(populatedLayer.getByRole("grid")).toBeVisible();
   await populatedLayer.evaluate((element) => {
     (element as HTMLElement & { __layerRowMarker?: string }).__layerRowMarker =
@@ -595,8 +607,10 @@ test("layers panel reorders existing layer rows without remounting", async ({
 
   await swapSeededLayers(page);
 
-  await expect(panel.locator("details").first()).toContainText("Empty Layer");
-  await expect(populatedLayer).toHaveAttribute("open", "");
+  await expect(panel.locator(".nf-collapsible").first()).toContainText(
+    "Empty Layer",
+  );
+  await expect(populatedLayer).toHaveAttribute("data-open", "true");
   await expect
     .poll(async () =>
       populatedLayer.evaluate(
@@ -631,8 +645,8 @@ test("layers panel pauses offscreen snapshots and refreshes on reentry", async (
     '[data-panel-kind="layer"][data-panel-id="panel-LayerStack-e2e-viewport"]',
   );
   await panel.getByRole("button", { name: "Expand all layers" }).click();
-  const first = panel.locator("details").first();
-  const last = panel.locator("details").last();
+  const first = panel.locator(".nf-collapsible").first();
+  const last = panel.locator(".nf-collapsible").last();
   await expect(
     first.getByRole("gridcell", { name: "180", exact: true }),
   ).toHaveCount(2);
@@ -712,4 +726,68 @@ test("layers panel pauses offscreen snapshots and refreshes on reentry", async (
   await expect(
     panel.getByRole("gridcell", { name: "199", exact: true }),
   ).toBeVisible();
+});
+
+/**
+ * Verifies the backend's slot-packed layer stack decodes into the Layers panel: programmer
+ * intensity set by command shows as the layer's asserted value for each selected fixture.
+ */
+test("layers panel shows programmer values sent by the backend", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 2200, height: 1200 });
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    const created = await stores.sendAndAwait({
+      module: "FixtureLibraryCommand",
+      command: {
+        type: "CreateFixturesFromLibrary",
+        data: {
+          make: "Generic",
+          model: "Moving Head RGBW",
+          mode: "Spot",
+          fixtures: [9101, 9102, 9103, 9104].map((id) => ({
+            id,
+            label: `Layer Probe ${id}`,
+          })),
+        },
+      },
+    });
+    if (created.outcome.type !== "Succeeded") {
+      throw new Error(`Unable to patch fixtures: ${JSON.stringify(created)}`);
+    }
+  });
+  await submitCommand(page, "fix 9101>9104 int @ 50");
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.addPanel({
+      id: "panel-LayerStack-backend",
+      component: "LayerStack",
+      title: "Layers",
+      position: { direction: "right" },
+      params: {},
+    });
+    panel.api.setActive();
+  });
+
+  const panel = page.locator(
+    '[data-panel-kind="layer"][data-panel-id="panel-LayerStack-backend"]',
+  );
+  const programmerLayer = panel
+    .locator(".nf-collapsible")
+    .filter({ hasText: "Programmer" });
+  await expect(programmerLayer).toHaveCount(1);
+  await panel.getByRole("button", { name: "Expand all layers" }).click();
+  await expect(
+    programmerLayer
+      .locator('[data-grid-column-key="Intensity_Value"]')
+      .filter({ hasText: "50%" }),
+  ).toHaveCount(4);
+  await page.screenshot({
+    path: testInfo.outputPath("layers-panel-backend-programmer.png"),
+  });
+
+  await submitCommand(page, "clear");
 });

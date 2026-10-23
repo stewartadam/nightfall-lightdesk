@@ -10,6 +10,7 @@ import { RepeatIcon } from "@squidlab/phosphor-solid/repeat";
 import type { AppIcon } from "../components/ui/icon";
 import type {
   Blueprint,
+  Board,
   Clip,
   ColorPath,
   Cue,
@@ -48,7 +49,8 @@ export type ShowfileObjectType =
   | "master"
   | "sceneObject"
   | "timecode"
-  | "timeline";
+  | "timeline"
+  | "board";
 
 export interface ShowfileObjectTypeDefinition {
   type: ShowfileObjectType;
@@ -99,6 +101,7 @@ export interface ShowfileObjectStoresSnapshot {
   sceneObjects: Record<string, SceneObject>;
   timecodes: Record<string, [Timecode, unknown]>;
   timelines: Record<string, Timeline>;
+  boards: Record<string, Board>;
 }
 
 interface RankedEntry {
@@ -233,6 +236,13 @@ export const SHOWFILE_OBJECT_TYPE_DEFINITIONS: readonly ShowfileObjectTypeDefini
       badge: "timeline",
       ...showfileObjectPanelFields("TimelinesPanel"),
       aliases: ["timeline", "timelines", "tl"],
+    },
+    {
+      type: "board",
+      label: "Board",
+      badge: "board",
+      ...showfileObjectPanelFields("BoardsPanel"),
+      aliases: ["board", "boards"],
     },
   ];
 
@@ -394,6 +404,9 @@ export function buildShowfileObjectSearchEntries(
         timeline.audio_path,
         timeline.tracks?.length,
       ]),
+    ),
+    ...Object.values(stores.boards).map((board) =>
+      createEntry("board", board.identifiers, []),
     ),
   ];
 }

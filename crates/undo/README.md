@@ -20,7 +20,7 @@ Implemented a **two-phase command dispatch pattern** with **exclusive system pro
 
 1. **Inverse Capture Phase** (`process_pending_commands`):
    - Commands enter `PendingCommandBuffer` instead of executing immediately
-   - Registry pattern generates inverse commands by calling `UndoableOperation::inverse()`
+   - Registry pattern generates inverse commands by calling `Undoable::inverse()`
    - Inverses are pushed to `UndoManager` with batch grouping
    - Original commands are then queued for normal dispatch
 
@@ -58,11 +58,11 @@ app.world_mut()
     .register::<MyCommand>();
 ```
 
-Plugins implement the `UndoableOperation` trait:
+Plugins implement the `Undoable` trait:
 
 ```rust
-impl UndoableOperation for MyCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn UndoableOperation>> {
+impl Undoable for MyCommand {
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         // Read state via ctx.world.resource::<T>()
         // Return inverse command or None if not undoable
     }
@@ -73,7 +73,7 @@ impl UndoableOperation for MyCommand {
 }
 ```
 
-**Note:** The `UndoableOperation` trait does not use `typetag` for serialization. Undo commands are generated and dispatched internally within the engine and never serialized over WebSocket.
+**Note:** The `Undoable` trait does not use `typetag` for serialization. Undo commands are generated and dispatched internally within the engine and never serialized over WebSocket.
 
 #### Command Flow
 

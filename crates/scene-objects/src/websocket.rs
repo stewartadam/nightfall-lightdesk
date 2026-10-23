@@ -85,15 +85,12 @@ pub fn send_scene_objects_on_change(
 
 /// Handle ResyncState by sending scene objects.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     scene_object_provider: Res<SceneObjectDataProvider>,
-    broadcaster: Res<ClientEventSink>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
     send_scene_objects(&scene_object_provider, &broadcaster);
 }

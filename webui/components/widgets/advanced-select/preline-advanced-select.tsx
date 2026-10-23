@@ -16,8 +16,10 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createDismissable } from "../../ui/dismissable";
 import { overlayHost } from "../../ui/modal/dialog-stack";
 import { ScrollIndicators } from "../../ui/scroll-area";
+import "../../ui/menu/menu.css";
 
 export interface PrelineAdvancedSelectOption {
   value: string;
@@ -42,12 +44,23 @@ type PrelineSelectConstructor = {
   ) => PrelineSelectInstance | undefined;
 };
 
+/** Layout for a toggle that takes the shared native field look from `styles/forms.css`. */
 const PANEL_TOGGLE_CLASSES =
-  "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative flex min-h-9 w-full cursor-pointer items-center text-nowrap rounded border border-neutral-700 bg-neutral-800/40 py-2 ps-3 pe-9 text-start text-sm text-neutral-100 transition-colors hover:border-neutral-500 hover:bg-neutral-700/60 focus:border-neutral-500 focus:bg-neutral-700/60 focus:outline-hidden";
+  "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative flex w-full cursor-pointer items-center text-nowrap text-start pe-9";
 
+/** Inline grid editors stay transparent and borderless so the cell's selection perimeter frames them. */
 const GRID_TOGGLE_CLASSES =
-  "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative flex h-full min-h-full w-full cursor-pointer items-center truncate border-0 bg-transparent px-2 pe-7 py-0 text-start text-sm leading-none text-white outline-hidden hover:bg-white/5 focus:bg-white/10";
+  "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative flex h-full min-h-full w-full cursor-pointer items-center truncate border-0 bg-transparent px-2 pe-7 py-0 text-start text-sm leading-none outline-hidden hover:bg-white/5 focus:bg-white/10";
 
+const CHECK_ICON =
+  '<svg class="hidden hs-selected:block" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+/**
+ * Preline renders the list itself, so the menu primitives' classes are applied here: the dropdown
+ * is a `MenuSurface`, each option a `MenuItem` with its checkmark slot, and the search field an
+ * ordinary compact input. Preline keeps only the template's first element, so the option parts
+ * sit in a `display: contents` wrapper that leaves them laid out as `MenuItem` children.
+ */
 const ADVANCED_SELECT_BASE_CONFIG = {
   placeholder: "None",
   toggleTag: '<button type="button" aria-expanded="false"></button>',
@@ -58,13 +71,16 @@ const ADVANCED_SELECT_BASE_CONFIG = {
   dropdownAutoPlacement: true,
   dropdownScope: "window",
   dropdownClasses:
-    "nf-select-menu mt-2 nightfall-popover-layer w-full min-w-44 max-h-72 p-1 space-y-0.5 bg-neutral-900 border border-white/15 rounded-lg shadow-xl overflow-hidden overflow-y-auto",
-  optionClasses:
-    "nf-select-option w-full cursor-pointer rounded-lg px-4 py-2 text-sm text-neutral-100 transition-colors hover:bg-neutral-700 focus:bg-neutral-700 focus:outline-hidden",
-  optionTemplate:
-    '<div class="flex w-full items-center justify-between"><span data-title></span><span class="hidden hs-selected:block"><svg class="size-3.5 shrink-0 text-sky-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>',
+    "nf-menu nf-select-menu nightfall-popover-layer mt-2 w-full min-w-44 max-h-72 overflow-hidden overflow-y-auto",
+  optionClasses: "nf-menu-item nf-select-option",
+  optionTemplate: `<span class="contents"><span class="nf-menu-icon" aria-hidden="true">${CHECK_ICON}</span><span class="nf-menu-label" data-title></span></span>`,
   extraMarkup:
     '<div class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-neutral-400"><svg class="size-3.5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></div>',
+  searchPlaceholder: "Search options",
+  searchTemplate: '<input type="text" data-density="compact">',
+  searchWrapperClasses:
+    "nf-select-search-wrapper sticky top-0 z-10 bg-inherit pb-1",
+  searchClasses: "nf-select-search",
 };
 
 let nextSelectId = 0;
@@ -120,7 +136,8 @@ export function PrelineAdvancedSelect(props: {
   let pendingSelectedValues: readonly string[] | undefined;
   let committedSelectedValues: readonly string[] = props.selectedValues;
   let outsidePointerStartedWithOpen = false;
-  let restorePrelineClose: (() => void) | undefined;
+  let restorePrelineHooks: (() => void) | undefined;
+  const [menuOpen, setMenuOpen] = createSignal(false);
   const [dropdownViewport, setDropdownViewport] = createSignal<HTMLElement>();
   const selectId = `${props.selectIdPrefix ?? "preline-advanced-select"}-${nextSelectId++}`;
 
@@ -132,11 +149,6 @@ export function PrelineAdvancedSelect(props: {
       toggleClasses: `nf-select-toggle ${gridVariant ? GRID_TOGGLE_CLASSES : PANEL_TOGGLE_CLASSES}`,
       wrapperClasses: gridVariant ? "h-full w-full" : "w-full",
       hasSearch: props.searchable ?? false,
-      searchPlaceholder: "Search options",
-      searchWrapperClasses:
-        "nf-select-search-wrapper bg-neutral-900 p-1 sticky top-0",
-      searchClasses:
-        "nf-select-search block w-full bg-neutral-800 border border-neutral-600 rounded px-3 py-2 text-sm text-neutral-100",
     });
   });
 
@@ -226,25 +238,52 @@ export function PrelineAdvancedSelect(props: {
     requestAnimationFrame(() => syncToggleSummaryText(selectedValues));
   };
 
-  /** Installs a close hook so app state changes do not re-render open menus. */
-  const installCloseFlush = () => {
+  /**
+   * Hooks Preline's open and close so the menu's open state is reactive (for
+   * Escape dismissal through the dialog stack), and so app state changes do
+   * not re-render open menus: buffered selections commit only on close.
+   */
+  const installOpenStateHooks = () => {
     const instance = prelineSelectInstance(selectElement)?.element;
-    if (!instance?.close || restorePrelineClose) return;
+    if (!instance?.close || !instance.open || restorePrelineHooks) return;
+
+    const originalOpen = instance.open.bind(instance);
+    instance.open = () => {
+      const result = originalOpen();
+      setMenuOpen(instance.isOpened?.() ?? false);
+      return result;
+    };
 
     const originalClose = instance.close.bind(instance);
     instance.close = (forceFocus?: boolean) => {
       const wasOpened = instance.isOpened?.() ?? false;
       const result = originalClose(forceFocus);
+      setMenuOpen(instance.isOpened?.() ?? false);
       if (result !== false && wasOpened && !instance.isOpened?.()) {
         flushPendingSelectedValues(true);
       }
       return result;
     };
 
-    restorePrelineClose = () => {
+    restorePrelineHooks = () => {
+      instance.open = originalOpen;
       instance.close = originalClose;
+      setMenuOpen(false);
     };
   };
+
+  // Preline closes itself on outside presses; Escape goes through the shared stack so a select in a dialog or popover closes first,
+  // and presses in its relocated list do not dismiss a popover beneath it.
+  createDismissable({
+    active: menuOpen,
+    refs: () => [
+      selectElement?.closest(".hs-select"),
+      prelineSelectInstance(selectElement)?.element?.dropdown,
+    ],
+    onDismiss: () =>
+      prelineSelectInstance(selectElement)?.element?.close?.(true),
+    outsidePress: false,
+  });
 
   /** Records whether an outside pointer action started while the menu was open. */
   const handleDocumentPointerDown = (event: PointerEvent) => {
@@ -274,14 +313,6 @@ export function PrelineAdvancedSelect(props: {
     if (target.closest(".hs-select, [data-hs-select-dropdown]")) return;
     flushPendingSelectedValues(outsidePointerStartedWithOpen);
     outsidePointerStartedWithOpen = false;
-  };
-
-  /** Closes a portaled menu on Escape even when clicking an option moved focus outside its wrapper. */
-  const handleDocumentKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || !isAdvancedSelectOpen()) return;
-    event.preventDefault();
-    event.stopPropagation();
-    prelineSelectInstance(selectElement)?.element?.close?.(true);
   };
 
   /** Stores open-menu changes locally and commits closed-menu changes directly. */
@@ -346,11 +377,10 @@ export function PrelineAdvancedSelect(props: {
     const host = overlayHost(selectElement);
     if (dropdown && host !== document.body) host.append(dropdown);
     setDropdownViewport(dropdown);
-    installCloseFlush();
+    installOpenStateHooks();
     selectElement.addEventListener("change", handleSelectChange);
     window.addEventListener("pointerdown", handleDocumentPointerDown, true);
     window.addEventListener("click", handleDocumentClick);
-    document.addEventListener("keydown", handleDocumentKeyDown, true);
     syncAdvancedSelectValue();
     requestAnimationFrame(openInitializedSelect);
   };
@@ -387,8 +417,7 @@ export function PrelineAdvancedSelect(props: {
     selectElement?.removeEventListener("change", handleSelectChange);
     window.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     window.removeEventListener("click", handleDocumentClick);
-    document.removeEventListener("keydown", handleDocumentKeyDown, true);
-    restorePrelineClose?.();
+    restorePrelineHooks?.();
     prelineSelectInstance(selectElement)?.element?.destroy?.();
   });
 

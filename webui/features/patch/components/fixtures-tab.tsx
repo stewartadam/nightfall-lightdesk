@@ -20,6 +20,7 @@ import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
+import { EmptyState } from "../../../components/ui/empty-state";
 import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
@@ -56,7 +57,7 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { useSharedStore } from "../../../lib/use-shared-store";
-import { bindings, dmxUniverseData, fixtures } from "../../../state/appStores";
+import { bindings, dmxUniverseList, fixtures } from "../../../state/appStores";
 import {
   type BindingRow,
   toDisabledBindingRow,
@@ -87,7 +88,7 @@ export interface PatchFixturesTabProps {
 export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   const $bindings = useStore(bindings);
   const $fixtures = useSharedStore(fixtures);
-  const $dmxUniverseData = useStore(dmxUniverseData);
+  const $dmxUniverseList = useStore(dmxUniverseList);
 
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
   const [conflictTooltip, setConflictTooltip] =
@@ -174,7 +175,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
   const rows = createMemo<FixtureDisplayRow[]>(() => {
     const snapshot = $bindings();
     const fixtureMap = $fixtures();
-    const activeUniverses = $dmxUniverseData().map(
+    const activeUniverses = $dmxUniverseList().map(
       (universe) => universe.universe_id,
     );
     const conflictColumnsByBinding = computeBindingOverlapAnalysis(
@@ -603,7 +604,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
     <div class="relative h-full w-full">
       <Show
         when={Object.keys($fixtures()).length > 0}
-        fallback={<div class="p-4 text-gray-500">Loading fixtures...</div>}
+        fallback={<EmptyState loading title="Loading fixtures..." />}
       >
         <DataGrid
           rows={displayRows().length}

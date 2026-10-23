@@ -333,20 +333,6 @@ impl SceneObject {
         }
     }
 
-    /// Create a new audience scene object
-    pub fn new_audience(id: u32, label: impl Into<String>, properties: AudienceProperties) -> Self {
-        Self {
-            identifiers: Identifiers {
-                id,
-                uid: Uuid::new_v4(),
-                label: label.into(),
-            },
-            object_type: SceneObjectType::Audience,
-            placement: SceneObjectPlacement::default(),
-            properties: SceneObjectProperties::Audience(properties),
-        }
-    }
-
     /// Create a new stage element scene object
     pub fn new_stage_element(
         id: u32,

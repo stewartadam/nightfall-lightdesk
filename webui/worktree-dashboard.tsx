@@ -11,12 +11,14 @@ import { ArrowSquareOutIcon } from "@squidlab/phosphor-solid/arrow-square-out";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { DatabaseIcon } from "@squidlab/phosphor-solid/database";
+import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { RepeatIcon } from "@squidlab/phosphor-solid/repeat";
 import { SignInIcon } from "@squidlab/phosphor-solid/sign-in";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { TerminalWindowIcon } from "@squidlab/phosphor-solid/terminal-window";
+import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import type { JSX } from "solid-js";
 import {
   createEffect,
@@ -29,22 +31,29 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Dynamic, Portal, render } from "solid-js/web";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "./components/ui/dropdown-menu";
 import type { AppIcon } from "./components/ui/icon";
 import { Table, TableScroll } from "./components/ui/table";
 import { writeClipboardText } from "./lib/clipboard";
+import { TOAST_DURATION_MS } from "./lib/constants";
 import { getLogger } from "./lib/logger";
 import { pushToast } from "./state/appStores";
 
 import "./index.css";
 
-type ServiceName = "backend" | "ui" | "artnet-sender" | "sacn-sender";
+type ServiceName = "backend" | "ui" | "docs" | "artnet-sender" | "sacn-sender";
 type ServiceTarget = ServiceName | "wasm" | "both" | "senders";
 type ServiceAction = "start" | "stop" | "recycle";
 type DashboardAction =
   | ServiceAction
   | "open-editor"
   | "open-log"
-  | "reseed-data-dir";
+  | "reseed-data-dir"
+  | "remove";
 interface RunActionOptions {
   sampleData?: boolean;
 }
@@ -66,17 +75,23 @@ interface WorktreeSummary {
   branch: string | null;
   head: string | null;
   isMain: boolean;
+  /** False for the primary worktree and the checkout running the dashboard. */
+  canRemove: boolean;
   envPath: string;
   envExists: boolean;
   nightfallPort: number | null;
   webUiPort: number | null;
   webUiUrl: string | null;
+  docsPort: number | null;
+  docsUrl: string | null;
   managed: Record<ServiceName, ManagedServiceState>;
   observed: {
     backendPortOpen: boolean;
     webUiPortOpen: boolean;
+    docsPortOpen: boolean;
     backendPid: number | null;
     webUiPid: number | null;
+    docsPid: number | null;
     artnetSenderRunning: boolean;
     sacnSenderRunning: boolean;
   };
@@ -86,6 +101,17 @@ interface DashboardStatePayload {
   generatedAt: string;
   dashboardPid: number;
   worktrees: WorktreeSummary[];
+}
+
+/** Body of a refused or failed worktree removal. */
+interface RemoveWorktreeResponse {
+  ok: boolean;
+  reason?: "local-changes" | "unmerged" | "failed";
+  message: string;
+  /** The first few changed files or unmerged commits. */
+  details: string[];
+  /** How many changed files or unmerged commits there are in all. */
+  total: number;
 }
 
 interface ActionMenuItem {
@@ -130,11 +156,18 @@ const log = getLogger(import.meta.url);
 const ACTION_MENU_OFFSET_PX = 4;
 const ACTION_MENU_VIEWPORT_PADDING_PX = 8;
 const ACTION_MENU_Z_INDEX = "2147483647";
+const REFUSAL_TOAST_MS = TOAST_DURATION_MS * 3;
+const REFUSAL_DETAILS_SHOWN = 3;
 const WORKTREE_SERVICE_OPTIONS: Array<{ value: ServiceTarget; label: string }> =
   [
     { value: "backend", label: "Backend" },
     { value: "ui", label: "Web UI" },
   ];
+
+const DOCS_SERVICE_GROUP: ServiceTargetGroup = {
+  key: "docs-services",
+  options: [{ value: "docs", label: "Docs" }],
+};
 
 const WORKTREE_SERVICE_OPTIONS_WITH_WASM: Array<{
   value: ServiceTarget;
@@ -161,6 +194,7 @@ function serviceTargetGroupsForAction(
           ? WORKTREE_SERVICE_OPTIONS_WITH_WASM
           : WORKTREE_SERVICE_OPTIONS,
     },
+    DOCS_SERVICE_GROUP,
   ];
   if (senderActionsSupported) {
     groups.push(SENDER_SERVICE_GROUP);
@@ -236,6 +270,40 @@ function StatusDot(props: StatusDotProps) {
   );
 }
 
+interface ServiceLogButtonProps {
+  /** Service name as shown in the tooltip and accessible label. */
+  label: string;
+  logPath: string | null;
+  /** Last start error, shown instead of the log path so failures are visible on hover. */
+  lastError?: string | null;
+  pending: boolean;
+  onOpen: () => void;
+}
+
+/**
+ * Opens a managed service's log file in the editor; disabled until the
+ * dashboard has started the service once and while an open is in flight.
+ */
+function ServiceLogButton(props: ServiceLogButtonProps) {
+  return (
+    <button
+      type="button"
+      class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+      title={
+        props.lastError ??
+        (props.logPath
+          ? `Open ${props.label} log: ${props.logPath}`
+          : `No ${props.label} log file yet`)
+      }
+      aria-label={`Open ${props.label} log file`}
+      disabled={!props.logPath || props.pending}
+      onClick={() => props.onOpen()}
+    >
+      <FileTextIcon class="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
 function actionKey(
   worktreeId: string,
   action: DashboardAction,
@@ -254,10 +322,34 @@ function serviceLabel(service: ServiceTarget): string {
   if (service === "both") return "both";
   if (service === "senders") return "both senders";
   if (service === "ui") return "web ui";
+  if (service === "docs") return "docs";
   if (service === "wasm") return "wasm";
   if (service === "artnet-sender") return "art-net sender";
   if (service === "sacn-sender") return "sacn sender";
   return "backend";
+}
+
+/**
+ * Explains why a worktree was kept and how to remove it anyway: uncommitted
+ * files are named, and an unmerged branch reports its commit count and the
+ * reason `wt done` gave.
+ */
+function removalRefusalMessage(
+  label: string,
+  response: RemoveWorktreeResponse,
+): string {
+  const forceHint = "Hold Shift and choose Force delete to remove it anyway.";
+  const { total } = response;
+  if (response.reason === "local-changes") {
+    const files = response.details.slice(0, REFUSAL_DETAILS_SHOWN);
+    const more = total > files.length ? ", …" : "";
+    return `${label} has ${response.message} (${files.join(", ")}${more}). ${forceHint}`;
+  }
+  const unmerged =
+    total > 0
+      ? `has ${total} unmerged ${total === 1 ? "commit" : "commits"}`
+      : "isn't merged";
+  return `${label} ${unmerged} (${response.message}). ${forceHint}`;
 }
 
 function normalizeManagedServiceState(
@@ -290,9 +382,13 @@ function normalizeDashboardPayload(
 
       return {
         ...worktree,
+        canRemove: Boolean(worktree.canRemove),
+        docsPort: worktree.docsPort ?? null,
+        docsUrl: worktree.docsUrl ?? null,
         managed: {
           backend: normalizeManagedServiceState(managed.backend),
           ui: normalizeManagedServiceState(managed.ui),
+          docs: normalizeManagedServiceState(managed.docs),
           "artnet-sender": normalizeManagedServiceState(
             managed["artnet-sender"],
           ),
@@ -307,6 +403,9 @@ function normalizeDashboardPayload(
               : null,
           webUiPid:
             typeof observed.webUiPid === "number" ? observed.webUiPid : null,
+          docsPortOpen: Boolean(observed.docsPortOpen),
+          docsPid:
+            typeof observed.docsPid === "number" ? observed.docsPid : null,
           artnetSenderRunning: Boolean(observed.artnetSenderRunning),
           sacnSenderRunning: Boolean(observed.sacnSenderRunning),
         },
@@ -327,6 +426,7 @@ function WorktreeDashboardApp() {
     new Set(),
   );
   const [copiedPathFor, setCopiedPathFor] = createSignal<string | null>(null);
+  const [shiftHeld, setShiftHeld] = createSignal(false);
   const [openActionMenu, setOpenActionMenu] = createSignal<string | null>(null);
   const [actionMenuPlacement, setActionMenuPlacement] =
     createSignal<ActionMenuPlacement>("down");
@@ -668,6 +768,119 @@ function WorktreeDashboardApp() {
     }
   }
 
+  /**
+   * Removes a worktree and, when merged, its branch. The dashboard refuses a
+   * worktree with local changes or an unmerged branch and the toast says which;
+   * `force` removes it anyway and deletes the branch.
+   */
+  async function deleteWorktree(
+    worktreeId: string,
+    force: boolean,
+  ): Promise<void> {
+    const key = actionKey(worktreeId, "remove", "both");
+    const label = worktreeLabel(worktreeId);
+    markPendingOperation(key);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_PATH}/worktrees/${encodeURIComponent(worktreeId)}/remove${force ? "?force=1" : ""}`,
+        { method: "POST" },
+      );
+
+      if (response.status === 409) {
+        const refusal = (await response.json()) as RemoveWorktreeResponse;
+        if (refusal.reason !== "failed") {
+          pushToast(
+            "warning",
+            removalRefusalMessage(label, refusal),
+            REFUSAL_TOAST_MS,
+            [],
+            { title: `Kept ${label}` },
+          );
+          return;
+        }
+        throw new Error(refusal.message);
+      }
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(body || `Request failed (${response.status})`);
+      }
+
+      pushToast("success", `Deleted ${label}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      pushToast("error", `Failed to delete ${label}: ${message}`);
+      log.error("Failed to delete worktree:", { error, worktreeId, force });
+    } finally {
+      clearPendingOperation(key);
+      // A failed removal may still have deleted the worktree.
+      await refresh({ silent: true });
+    }
+  }
+
+  /**
+   * Collects the less frequent per-worktree actions behind a "..." button.
+   * Delete turns into Force delete while Shift is held.
+   */
+  function WorktreeOverflowMenu(props: {
+    worktree: WorktreeSummary;
+    showReseed: boolean;
+  }) {
+    const pending = (action: DashboardAction) =>
+      isPendingOperation(actionKey(props.worktree.id, action, "both"));
+    return (
+      <DropdownMenu
+        trigger={<DotsThreeIcon class="size-4" weight="bold" aria-hidden />}
+        triggerLabel="More actions"
+        triggerTitle="More actions"
+        triggerClass="inline-flex items-center justify-center px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700"
+        contentLabel={`Actions for ${props.worktree.branch ?? props.worktree.name}`}
+        placement="below"
+        align="end"
+      >
+        <Show when={props.showReseed}>
+          <DropdownMenuItem
+            icon={DatabaseIcon}
+            description={
+              props.worktree.isMain
+                ? "Main worktree is the data seed source"
+                : undefined
+            }
+            disabled={props.worktree.isMain || pending("reseed-data-dir")}
+            onClick={() => void reseedDataDirectory(props.worktree.id)}
+          >
+            Re-seed data from main
+          </DropdownMenuItem>
+        </Show>
+        <DropdownMenuItem
+          icon={TerminalWindowIcon}
+          disabled={pending("open-editor")}
+          onClick={() => void openEditor(props.worktree.id)}
+        >
+          Open in VS Code
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          icon={TrashIcon}
+          danger
+          description={
+            !props.worktree.canRemove
+              ? "The primary worktree can't be deleted"
+              : shiftHeld()
+                ? "Discards local changes and unmerged commits"
+                : "Hold Shift to force"
+          }
+          disabled={!props.worktree.canRemove || pending("remove")}
+          onClick={(event) =>
+            void deleteWorktree(props.worktree.id, event.shiftKey)
+          }
+        >
+          {shiftHeld() ? "Force delete" : "Delete"}
+        </DropdownMenuItem>
+      </DropdownMenu>
+    );
+  }
+
   async function openServiceLog(
     worktreeId: string,
     service: ServiceName,
@@ -742,9 +955,21 @@ function WorktreeDashboardApp() {
     };
     document.addEventListener("pointerdown", handlePointerDown);
 
+    /** Mirrors the Shift key so the overflow menu can relabel Delete as Force delete. */
+    const handleModifierChange = (event: KeyboardEvent) =>
+      setShiftHeld(event.shiftKey);
+    /** Clears Shift when the window loses focus and its keyup would be missed. */
+    const handleBlur = () => setShiftHeld(false);
+    window.addEventListener("keydown", handleModifierChange);
+    window.addEventListener("keyup", handleModifierChange);
+    window.addEventListener("blur", handleBlur);
+
     onCleanup(() => {
       window.clearInterval(pollTimer);
       document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleModifierChange);
+      window.removeEventListener("keyup", handleModifierChange);
+      window.removeEventListener("blur", handleBlur);
     });
   });
 
@@ -818,6 +1043,9 @@ function WorktreeDashboardApp() {
                   Web UI
                 </th>
                 <th scope="col" class="text-left">
+                  Docs
+                </th>
+                <th scope="col" class="text-left">
                   Senders
                 </th>
                 <th scope="col" class="text-left">
@@ -880,27 +1108,16 @@ function WorktreeDashboardApp() {
                             {worktree.nightfallPort ?? "n/a"}
                           </p>
                         </StatusDot>
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                          title={
-                            worktree.managed.backend.logPath
-                              ? `Open backend log: ${worktree.managed.backend.logPath}`
-                              : "No backend log file yet"
-                          }
-                          aria-label="Open backend log file"
-                          disabled={
-                            !worktree.managed.backend.logPath ||
-                            isPendingOperation(
-                              actionKey(worktree.id, "open-log", "backend"),
-                            )
-                          }
-                          onClick={() =>
+                        <ServiceLogButton
+                          label="backend"
+                          logPath={worktree.managed.backend.logPath}
+                          pending={isPendingOperation(
+                            actionKey(worktree.id, "open-log", "backend"),
+                          )}
+                          onOpen={() =>
                             void openServiceLog(worktree.id, "backend")
                           }
-                        >
-                          <FileTextIcon class="size-3.5" aria-hidden />
-                        </button>
+                        />
                       </div>
                     </td>
                     <td>
@@ -937,6 +1154,56 @@ function WorktreeDashboardApp() {
                       </Show>
                     </td>
                     <td>
+                      <div class="inline-flex items-center gap-2">
+                        <StatusDot
+                          isReachable={worktree.observed.docsPortOpen}
+                          isManagedRunning={worktree.managed.docs.running}
+                          status={serviceStatusText(
+                            worktree.observed.docsPortOpen,
+                            worktree.managed.docs.running,
+                            worktree.managed.docs.pid ??
+                              worktree.observed.docsPid,
+                          )}
+                        >
+                          <p class="font-mono text-xs text-slate-600 dark:text-slate-300">
+                            {worktree.docsPort ?? "n/a"}
+                          </p>
+                        </StatusDot>
+                        <ServiceLogButton
+                          label="docs"
+                          logPath={worktree.managed.docs.logPath}
+                          lastError={worktree.managed.docs.lastError}
+                          pending={isPendingOperation(
+                            actionKey(worktree.id, "open-log", "docs"),
+                          )}
+                          onOpen={() =>
+                            void openServiceLog(worktree.id, "docs")
+                          }
+                        />
+                      </div>
+                      <Show
+                        when={
+                          worktree.observed.docsPortOpen && worktree.docsUrl
+                        }
+                      >
+                        {(url) => (
+                          <a
+                            href={url()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open docs"
+                            aria-label="Open docs"
+                            class="ml-2 inline-flex items-center p-1 text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+                          >
+                            <ArrowSquareOutIcon
+                              class="size-3 text-sky-700 dark:text-sky-300"
+                              aria-hidden
+                            />
+                          </a>
+                        )}
+                      </Show>
+                    </td>
+                    <td>
                       <div class="space-y-2">
                         <div class="flex items-center gap-2">
                           <StatusDot
@@ -954,31 +1221,20 @@ function WorktreeDashboardApp() {
                               art-net
                             </p>
                           </StatusDot>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                            title={
-                              worktree.managed["artnet-sender"].logPath
-                                ? `Open art-net sender log: ${worktree.managed["artnet-sender"].logPath}`
-                                : "No art-net sender log file yet"
-                            }
-                            aria-label="Open art-net sender log file"
-                            disabled={
-                              !worktree.managed["artnet-sender"].logPath ||
-                              isPendingOperation(
-                                actionKey(
-                                  worktree.id,
-                                  "open-log",
-                                  "artnet-sender",
-                                ),
-                              )
-                            }
-                            onClick={() =>
+                          <ServiceLogButton
+                            label="art-net sender"
+                            logPath={worktree.managed["artnet-sender"].logPath}
+                            pending={isPendingOperation(
+                              actionKey(
+                                worktree.id,
+                                "open-log",
+                                "artnet-sender",
+                              ),
+                            )}
+                            onOpen={() =>
                               void openServiceLog(worktree.id, "artnet-sender")
                             }
-                          >
-                            <FileTextIcon class="size-3.5" aria-hidden />
-                          </button>
+                          />
                         </div>
                         <div class="flex items-center gap-2">
                           <StatusDot
@@ -996,31 +1252,16 @@ function WorktreeDashboardApp() {
                               sacn
                             </p>
                           </StatusDot>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                            title={
-                              worktree.managed["sacn-sender"].logPath
-                                ? `Open sACN sender log: ${worktree.managed["sacn-sender"].logPath}`
-                                : "No sACN sender log file yet"
-                            }
-                            aria-label="Open sACN sender log file"
-                            disabled={
-                              !worktree.managed["sacn-sender"].logPath ||
-                              isPendingOperation(
-                                actionKey(
-                                  worktree.id,
-                                  "open-log",
-                                  "sacn-sender",
-                                ),
-                              )
-                            }
-                            onClick={() =>
+                          <ServiceLogButton
+                            label="sACN sender"
+                            logPath={worktree.managed["sacn-sender"].logPath}
+                            pending={isPendingOperation(
+                              actionKey(worktree.id, "open-log", "sacn-sender"),
+                            )}
+                            onOpen={() =>
                               void openServiceLog(worktree.id, "sacn-sender")
                             }
-                          >
-                            <FileTextIcon class="size-3.5" aria-hidden />
-                          </button>
+                          />
                         </div>
                       </div>
                     </td>
@@ -1131,43 +1372,10 @@ function WorktreeDashboardApp() {
                               </div>
                             )}
                           </For>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center border-r border-slate-300 px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title={
-                              worktree.isMain
-                                ? "Main worktree is the data seed source"
-                                : "Re-seed data directory from main"
-                            }
-                            aria-label="Re-seed data directory from main"
-                            disabled={
-                              worktree.isMain ||
-                              isPendingOperation(
-                                actionKey(
-                                  worktree.id,
-                                  "reseed-data-dir",
-                                  "both",
-                                ),
-                              )
-                            }
-                            onClick={() =>
-                              void reseedDataDirectory(worktree.id)
-                            }
-                          >
-                            <DatabaseIcon class="size-4" aria-hidden />
-                          </button>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title="Open in VS Code"
-                            aria-label="Open in VS Code"
-                            disabled={isPendingOperation(
-                              actionKey(worktree.id, "open-editor", "both"),
-                            )}
-                            onClick={() => void openEditor(worktree.id)}
-                          >
-                            <TerminalWindowIcon class="size-4" aria-hidden />
-                          </button>
+                          <WorktreeOverflowMenu
+                            worktree={worktree}
+                            showReseed={true}
+                          />
                         </div>
                         <div class="ml-auto flex h-6 w-6 items-center justify-center">
                           <Show
@@ -1186,7 +1394,7 @@ function WorktreeDashboardApp() {
               </For>
               <Show when={uninitializedWorktrees().length > 0}>
                 <tr data-table-group="true">
-                  <td colSpan={5}>Uninitialized worktrees</td>
+                  <td colSpan={6}>Uninitialized worktrees</td>
                 </tr>
               </Show>
               <For each={uninitializedWorktrees()}>
@@ -1231,6 +1439,11 @@ function WorktreeDashboardApp() {
                       </p>
                     </td>
                     <td>
+                      <p class="font-mono text-xs text-slate-500 dark:text-slate-400">
+                        n/a
+                      </p>
+                    </td>
+                    <td>
                       <p class="text-xs text-slate-500 dark:text-slate-400">
                         Unavailable until .env exists
                       </p>
@@ -1238,18 +1451,10 @@ function WorktreeDashboardApp() {
                     <td>
                       <div class="flex w-full items-center gap-2">
                         <div class="inline-flex rounded-md border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800">
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title="Open in VS Code"
-                            aria-label="Open in VS Code"
-                            disabled={isPendingOperation(
-                              actionKey(worktree.id, "open-editor", "both"),
-                            )}
-                            onClick={() => void openEditor(worktree.id)}
-                          >
-                            <TerminalWindowIcon class="size-4" aria-hidden />
-                          </button>
+                          <WorktreeOverflowMenu
+                            worktree={worktree}
+                            showReseed={false}
+                          />
                         </div>
                         <div class="ml-auto flex h-6 w-6 items-center justify-center">
                           <Show

@@ -8,9 +8,9 @@
 
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { createMemo, createSignal, For } from "solid-js";
-import { ShortcutKeys } from "../components/overlays/keyboard-shortcuts";
 import { useCommandPalette } from "../components/providers/command-registry";
 import { Input } from "../components/ui/form-controls";
+import { Kbd, KbdShortcut } from "../components/ui/kbd";
 import { Button } from "../components/ui/visual-language/button";
 import { allShortcuts } from "../lib/keyboardShortcuts";
 import "./keyboard-demos.css";
@@ -31,7 +31,7 @@ export function CommandPaletteDemo() {
           <MagnifyingGlassIcon size={16} />
           Open command palette
         </Button>
-        <ShortcutKeys shortcut="$mod+Shift+P" />
+        <KbdShortcut shortcut="$mod+Shift+P" />
       </div>
       <div class="property-section">
         <div class="section-label">Try a search</div>
@@ -66,7 +66,7 @@ export function ShortcutsDemo(props: { compact: boolean; accentName: string }) {
             <div>
               <dt>{shortcut.description}</dt>
               <dd>
-                <ShortcutKeys shortcut={shortcut.key} />
+                <KbdShortcut shortcut={shortcut.key} />
               </dd>
             </div>
           )}
@@ -92,19 +92,56 @@ export function ShortcutsDemo(props: { compact: boolean; accentName: string }) {
           <div>
             <dt>Move between results</dt>
             <dd>
-              <ShortcutKeys shortcut="↑ / ↓" />
+              <span class="lab-key-pair">
+                <Kbd keyName="ArrowUp" />
+                <Kbd keyName="ArrowDown" />
+              </span>
             </dd>
           </div>
           <div>
             <dt>Run the selected command</dt>
             <dd>
-              <ShortcutKeys shortcut="Enter" />
+              <KbdShortcut shortcut="Enter" />
             </dd>
           </div>
           <div>
             <dt>Dismiss the palette</dt>
             <dd>
-              <ShortcutKeys shortcut="Escape" />
+              <KbdShortcut shortcut="Escape" />
+            </dd>
+          </div>
+        </dl>
+      </div>
+      <div class="property-section">
+        <div class="section-label">Key caps</div>
+        <p class="field-help">
+          Shortcut hints share one key cap. Modifiers follow your platform, and
+          compact caps suit dense rows such as the palette and keybinding
+          settings.
+        </p>
+        <dl class="lab-shortcut-list" aria-label="Key cap variants">
+          <div>
+            <dt>Default</dt>
+            <dd>
+              <KbdShortcut shortcut="$mod+Alt+Shift+KeyS" />
+            </dd>
+          </div>
+          <div>
+            <dt>Compact</dt>
+            <dd>
+              <KbdShortcut shortcut="Control+PageDown" size="compact" />
+            </dd>
+          </div>
+          <div>
+            <dt>Muted, for disabled shortcuts</dt>
+            <dd>
+              <KbdShortcut shortcut="Shift++" size="compact" tone="muted" />
+            </dd>
+          </div>
+          <div>
+            <dt>Chord</dt>
+            <dd>
+              <KbdShortcut shortcut="$mod+k w" />
             </dd>
           </div>
         </dl>

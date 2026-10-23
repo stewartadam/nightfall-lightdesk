@@ -17,6 +17,7 @@ use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{EditorPreviewInstance, InstanceControls, InstanceId};
+use nightfall_selection::{HeldReference, ReferenceSource};
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use uuid::Uuid;
@@ -119,6 +120,28 @@ impl HasIdentifiers for Master {
     }
 }
 
+/// Reports the group or selection an intensity master is scoped to.
+impl ReferenceSource for Master {
+    fn visit_references(&self, visit: &mut dyn FnMut(&str, HeldReference<'_>)) {
+        match &self.target {
+            MasterTarget::Fixtures(FixtureMasterTarget::Group(uid)) => {
+                visit("target.group", HeldReference::Group(*uid));
+            }
+            MasterTarget::Fixtures(FixtureMasterTarget::Selection(selection)) => {
+                visit("target.selection", HeldReference::Selection(selection));
+            }
+            MasterTarget::Fixtures(FixtureMasterTarget::All) | MasterTarget::Instances(_) => {}
+        }
+    }
+
+    fn visit_selections_mut(&mut self, visit: &mut dyn FnMut(&mut SpatialSelection)) {
+        if let MasterTarget::Fixtures(FixtureMasterTarget::Selection(selection)) = &mut self.target
+        {
+            visit(selection);
+        }
+    }
+}
+
 impl Master {
     /// Returns the normalized intensity limit used by inhibitive master math.
     pub fn normalized_level(&self) -> f32 {
@@ -146,6 +169,14 @@ impl Master {
         }
     }
 
+    /// Converts a stored level back into the control position that produces it.
+    pub fn control_percent_from_level(kind: MasterKind, level_percent: f32) -> f32 {
+        match kind {
+            MasterKind::InhibitiveIntensity => level_percent.clamp(0.0, 100.0),
+            MasterKind::PlaybackRate => (level_percent / 2.0).clamp(0.0, 100.0),
+        }
+    }
+
     /// Returns whether this master should affect output in the current frame.
     pub fn is_active(&self) -> bool {
         match self.mode {
@@ -154,6 +185,58 @@ impl Master {
             MasterMode::Disabled => false,
         }
     }
+
+    /// Builds the always-on master at full level that a new show starts with for a master kind.
+    ///
+    /// Intensity masters cover every fixture and rate masters cover every live instance, so
+    /// the pair gives each new show one grand intensity fader and one show-wide speed fader.
+    fn global(id: u32, uid: Uuid, kind: MasterKind, label: &str) -> Self {
+        let target = match kind {
+            MasterKind::InhibitiveIntensity => MasterTarget::Fixtures(FixtureMasterTarget::All),
+            MasterKind::PlaybackRate => MasterTarget::Instances(InstanceMasterTarget::All),
+        };
+        Self {
+            identifiers: Identifiers {
+                id,
+                uid,
+                label: label.to_owned(),
+            },
+            kind,
+            target,
+            mode: MasterMode::AlwaysOn,
+            level_percent: default_master_level(),
+        }
+    }
+}
+
+/// Stable UID of the global intensity master every new show starts with.
+pub const DEFAULT_INTENSITY_MASTER_UID: Uuid =
+    Uuid::from_u128(0x6e66_6d61_7374_4000_8000_0000_0000_0001);
+
+/// Stable UID of the global rate master every new show starts with.
+pub const DEFAULT_RATE_MASTER_UID: Uuid =
+    Uuid::from_u128(0x6e66_6d61_7374_4000_8000_0000_0000_0002);
+
+/// Adds the global intensity master (ID 1) and global rate master (ID 2) to a new, empty show.
+///
+/// Both start at 100%, so they leave output and playback speed untouched until someone moves
+/// them. Their UIDs are the same in every show, so merging one new show into another matches
+/// the defaults instead of colliding on their numeric IDs.
+pub fn add_default_show_masters(
+    masters: &mut DataProvider<Master>,
+) -> Result<(), DataStoreError<Master>> {
+    masters.add(Master::global(
+        1,
+        DEFAULT_INTENSITY_MASTER_UID,
+        MasterKind::InhibitiveIntensity,
+        "Global Intensity Master",
+    ))?;
+    masters.add(Master::global(
+        2,
+        DEFAULT_RATE_MASTER_UID,
+        MasterKind::PlaybackRate,
+        "Global Rate Master",
+    ))
 }
 
 /// User and UI commands that mutate master configuration or levels.
@@ -192,12 +275,27 @@ pub enum MasterCommand {
         /// Master numeric ID.
         id: u32,
     },
+    /// Commits a level reached through untracked updates as one undoable change.
+    ///
+    /// Continuous drags stream `MasterUpdate::SetLevel`; on release the client commits the
+    /// final level with the level from before the drag so undo restores the starting point.
+    CommitMasterLevel {
+        /// Master numeric ID.
+        id: u32,
+        /// Level in percent before the drag began.
+        from_percent: f32,
+        /// Final level in percent.
+        level_percent: f32,
+    },
 }
 
 impl IngressCommand for MasterCommand {}
 
 /// High-frequency master state changes produced by local control surfaces.
-#[derive(Clone, Debug, Message)]
+#[derive(Clone, Debug, Serialize, Deserialize, Message)]
+#[typeshare::typeshare]
+#[serde(tag = "type", content = "data")]
+#[serde(deny_unknown_fields)]
 pub enum MasterUpdate {
     /// Set a master's level without creating a user-command lifecycle.
     SetLevel {
@@ -208,14 +306,12 @@ pub enum MasterUpdate {
     },
 }
 
-impl crate::object_crud::ObjectCrud for Master {
-    type Command = MasterCommand;
-
+impl crate::object_crud::ObjectCrud<MasterCommand> for Master {
     fn type_name() -> &'static str {
         "master"
     }
 
-    fn extract_store(command: &Self::Command) -> Option<Self> {
+    fn extract_store(command: &MasterCommand) -> Option<Self> {
         match command {
             MasterCommand::StoreMaster(master) => {
                 let mut master = master.clone();
@@ -226,14 +322,14 @@ impl crate::object_crud::ObjectCrud for Master {
         }
     }
 
-    fn extract_rename(command: &Self::Command) -> Option<(u32, u32)> {
+    fn extract_rename(command: &MasterCommand) -> Option<(u32, u32)> {
         match command {
             MasterCommand::RenameMaster { id, new_id } => Some((*id, *new_id)),
             _ => None,
         }
     }
 
-    fn extract_delete(command: &Self::Command) -> Option<u32> {
+    fn extract_delete(command: &MasterCommand) -> Option<u32> {
         match command {
             MasterCommand::DeleteMaster(id) => Some(*id),
             _ => None,
@@ -256,7 +352,7 @@ pub fn handle_master_commands(
         let mut command = event.command.clone();
         stabilize_master_group_refs(&mut command, &selection_resolver);
 
-        if let Some(result) = crate::object_crud::apply_object_crud_command::<Master>(
+        if let Some(result) = crate::object_crud::apply_object_crud_command::<Master, _>(
             &command,
             &mut master_data_provider,
         ) {
@@ -265,11 +361,12 @@ pub fn handle_master_commands(
         }
 
         let result = match &command {
-            MasterCommand::SetMasterLevel { id, level_percent } => {
-                update_master_by_id(*id, &mut master_data_provider, |master| {
-                    master.level_percent = clamp_master_level(master.kind, *level_percent);
-                })
-            }
+            MasterCommand::SetMasterLevel { id, level_percent }
+            | MasterCommand::CommitMasterLevel {
+                id, level_percent, ..
+            } => update_master_by_id(*id, &mut master_data_provider, |master| {
+                master.level_percent = clamp_master_level(master.kind, *level_percent);
+            }),
             MasterCommand::SetMasterMode { id, mode } => {
                 update_master_by_id(*id, &mut master_data_provider, |master| {
                     master.mode = mode.clone();
@@ -410,7 +507,12 @@ pub fn apply_master_inhibition(
         .iter()
         .filter_map(|entry| {
             let master = entry.value().clone();
-            (master.kind == MasterKind::InhibitiveIntensity && master.is_active()).then_some(master)
+            // A master at full level scales by 1.0, so skipping it keeps the default global
+            // master from forcing the per-parameter loop every frame.
+            (master.kind == MasterKind::InhibitiveIntensity
+                && master.is_active()
+                && master.normalized_level() < 1.0)
+                .then_some(master)
         })
         .collect();
 
@@ -450,7 +552,13 @@ pub fn apply_master_inhibition(
         }
 
         parameter.values.current_value *= scale;
-        scale_final_layer_parameter(&mut final_layer_output.0, parameter_instance, scale);
+        let default_value = parameter.values.default_value;
+        scale_final_layer_parameter(
+            &mut final_layer_output.0,
+            parameter_instance,
+            default_value,
+            scale,
+        );
     }
 }
 
@@ -564,11 +672,21 @@ fn master_targets_parameter(
 }
 
 /// Scale final layer output maps so layer/output inspection matches mastered values.
+///
+/// A relative offset with no absolute value beneath it applies to the parameter's default, which
+/// the master scales along with the offset, so that default is written into the absolute map
+/// before scaling.
 fn scale_final_layer_parameter(
     final_layer_output: &mut ComputedLayer,
     parameter: Instance<Parameter>,
+    default_value: ParameterDmxValue,
     scale: f32,
 ) {
+    if final_layer_output.relative.contains_key(parameter)
+        && !final_layer_output.absolute.contains_key(parameter)
+    {
+        final_layer_output.absolute.insert(parameter, default_value);
+    }
     if let Some(value) = final_layer_output.absolute.get_mut(parameter) {
         *value *= scale;
     }
@@ -624,7 +742,7 @@ mod tests {
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
-        app.add_message::<CommandNotice>();
+        app.add_message::<CommandNoticeReply>();
         app.add_systems(Update, handle_master_commands);
         app
     }
@@ -691,6 +809,43 @@ mod tests {
             .drain()
             .next()
             .expect("master command should return a terminal result")
+    }
+
+    /// Verifies committing a dragged level applies the final level through the command path.
+    #[test]
+    fn commit_master_level_applies_final_level() {
+        let mut app = master_command_app();
+        app.world_mut()
+            .resource_mut::<DataProvider<Master>>()
+            .add(master(
+                1,
+                MasterTarget::Fixtures(FixtureMasterTarget::All),
+                80.0,
+            ))
+            .expect("master should store");
+        submit_master_command(
+            &mut app,
+            MasterCommand::CommitMasterLevel {
+                id: 1,
+                from_percent: 20.0,
+                level_percent: 80.0,
+            },
+        );
+
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<DataProvider<Master>>()
+                .from_id(1)
+                .expect("master should remain stored")
+                .level_percent,
+            80.0
+        );
+        assert!(matches!(
+            take_master_result(&mut app).outcome,
+            CommandOutcome::Succeeded { .. }
+        ));
     }
 
     /// Verifies master level mutation is visible before terminal success.

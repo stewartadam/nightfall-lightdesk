@@ -44,7 +44,7 @@ jobs:
       # Native validation already runs the browser runtime's tests; this job only
       # caches its installed Cargo tools.
       - name: Cache Cargo tools
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: ./.github/actions/rust-cache
         with:
           key: browser-demo-tools
           cache-targets: false
@@ -82,6 +82,9 @@ jobs:
         run: pnpm test
 
       - name: Build and package the release artifact
+        env:
+          # Stamp PR builds with the PR head, not GitHub's test merge commit.
+          NIGHTFALL_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: pnpm run demo:bundle
 
       - name: Run the Chromium product flow
@@ -98,3 +101,4 @@ jobs:
           name: nightfall-browser-demo-${{ github.sha }}
           path: webui/dist/
           if-no-files-found: error
+          retention-days: 7

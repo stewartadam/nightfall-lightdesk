@@ -33,6 +33,7 @@ import type {
 import { GridCellKind } from "../../../lib/data-grid-types";
 import { getLogger } from "../../../lib/logger";
 import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
+import { EmptyState } from "../../ui/empty-state";
 import { BodyCell } from "./body-cell";
 import { createDataGridEditingController } from "./editing-controller";
 import { clampIndex, isSpaceKey } from "./event-adapter";
@@ -57,11 +58,15 @@ import {
   sizeColumnsToContent,
 } from "./model/column-sizing";
 import { createDataGridRowMapping } from "./model/row-order";
-import { selectionFromState } from "./model/selection-model";
+import {
+  initialDataGridSelectionState,
+  selectionFromState,
+  selectionModeUsesGridSelection,
+} from "./model/selection-model";
 import { dataGridTableFeatures } from "./model/table-features";
 import type { DataGridProps, HeaderCellView, TableRow } from "./model/types";
 import { createDataGridPointerEventController } from "./pointer-event-controller";
-import "./read-only.css";
+import "./table-appearance.css";
 import { createDataGridSelectionController } from "./selection-controller";
 import {
   createDataGridViewportController,
@@ -71,6 +76,7 @@ import {
 
 const MARKER_WIDTH = 34;
 const HEADER_ROW_HEIGHT = 30;
+const EMPTY_STATE_HEIGHT = 52;
 const DEFAULT_ROW_HEIGHT = 30;
 const DATA_GRID_MEASURE_PREFIX = "nightfall:data-grid.";
 const METRIC_FRAGMENT_PATTERN = /[^a-zA-Z0-9_-]/g;
@@ -113,6 +119,8 @@ export default function TanStackDataGrid(props: DataGridProps) {
   let handledScrollRequestId: number | undefined;
   const columnMeasurementContext = createColumnMeasurementContext();
   const [horizontalScrollLeft, setHorizontalScrollLeft] = createSignal(0);
+  const [horizontalScrollbarHeight, setHorizontalScrollbarHeight] =
+    createSignal(0);
   const [computedStyleVisible, setComputedStyleVisible] = createSignal(true);
   const [cellUpdateVersion, setCellUpdateVersion] = createSignal(0);
   let cachedCellProvider: ReturnType<DataGridProps["cellProvider"]> | undefined;
@@ -264,9 +272,14 @@ export default function TanStackDataGrid(props: DataGridProps) {
     recordDataGridCount(metric, 1);
   };
 
-  /** Returns whether the leading row marker column should be visible. */
+  /**
+   * Returns whether the leading row marker column should be visible. Text and
+   * none selection modes hide it, since their checkboxes could select nothing.
+   */
   const markerEnabled = () =>
-    props.rowMarkers !== undefined && props.rowMarkers !== "none";
+    props.rowMarkers !== undefined &&
+    props.rowMarkers !== "none" &&
+    selectionModeUsesGridSelection(props.selectionMode);
 
   /** Supplies the latest provider while visible and the last visible provider while hidden. */
   const effectiveCellProvider = createMemo(() => {
@@ -676,6 +689,8 @@ export default function TanStackDataGrid(props: DataGridProps) {
     editingCell,
     getCellContent,
     primaryColumnIndex,
+    selectionMode: () => props.selectionMode ?? "cell",
+    columnCount: () => leafColumns().length,
     focusRoot: () => focusRoot(),
     scrollCellIntoView: (cell) => scrollCellIntoView(cell),
     onCellClicked: viewProps.onCellClicked,
@@ -691,6 +706,35 @@ export default function TanStackDataGrid(props: DataGridProps) {
     selectionState,
     selectCell,
   } = selectionController;
+  /** Resolves the chrome style, letting read-only grids present as plain tables by default. */
+  const appearance = () =>
+    props.appearance ?? (props.readOnly ? "table" : "grid");
+  /** Collects the display rows that hold selected cells so table chrome can tint whole rows. */
+  const rowsWithSelection = createMemo(() => {
+    const rows = new Set(selectedRowSet());
+    const range = currentSelection()?.range;
+    if (range) {
+      for (let row = range.y; row < range.y + range.height; row += 1) {
+        rows.add(row);
+      }
+    }
+    return rows;
+  });
+  /**
+   * Resolves the root height. A content-height grid adds up its header rows,
+   * virtual row extent (or empty state) and any horizontal scrollbar so it
+   * occupies exactly the space a native table would.
+   */
+  const rootHeight = () => {
+    if (props.height !== "content") return styleSize(props.height, "100%");
+    const body =
+      tableRows().length === 0
+        ? props.emptyState
+          ? EMPTY_STATE_HEIGHT
+          : 0
+        : rowVirtualizer.getTotalSize();
+    return `${headerRows().length * HEADER_ROW_HEIGHT + body + horizontalScrollbarHeight()}px`;
+  };
   const currentRangeData = createMemo(() => {
     const range = currentSelection()?.range;
     if (!range) return "";
@@ -979,6 +1023,20 @@ export default function TanStackDataGrid(props: DataGridProps) {
     });
   });
 
+  /**
+   * Drops any held cell or row selection when the grid switches to text or no
+   * selection, and reports the empty selection so owners stop showing it.
+   */
+  createEffect(() => {
+    if (selectionModeUsesGridSelection(props.selectionMode)) return;
+    untrack(() => {
+      selectionController.dispose();
+      if (selectionState() === initialDataGridSelectionState) return;
+      selectionController.setSelectionState(initialDataGridSelectionState);
+      publishSelection(selectionFromState(initialDataGridSelectionState));
+    });
+  });
+
   /** Starts inline editing when an owner component requests a specific cell. */
   createEffect(() => {
     const request = props.editRequest;
@@ -1035,6 +1093,17 @@ export default function TanStackDataGrid(props: DataGridProps) {
 
   /** Installs document keyboard listeners and visibility instrumentation. */
   onMount(() => {
+    const scrollElement = scrollRef;
+    if (props.height === "content" && scrollElement) {
+      /** Tracks the horizontal scrollbar so a content-height grid never hides its last row. */
+      const scrollbarObserver = new ResizeObserver(() =>
+        setHorizontalScrollbarHeight(
+          scrollElement.offsetHeight - scrollElement.clientHeight,
+        ),
+      );
+      scrollbarObserver.observe(scrollElement);
+      onCleanup(() => scrollbarObserver.disconnect());
+    }
     document.addEventListener("keydown", handleDocumentGridKeyDown, true);
     document.addEventListener("keydown", handleDocumentKeyDown, true);
     const visibilityRoot = rootRef;
@@ -1100,17 +1169,19 @@ export default function TanStackDataGrid(props: DataGridProps) {
       role="grid"
       aria-readonly={props.readOnly === true}
       aria-label={props.ariaLabel}
+      data-grid-appearance={appearance()}
+      data-grid-selection-mode={props.selectionMode ?? "cell"}
       data-column-guides={props.columnGuides}
       tabIndex={0}
       data-selection-range={currentRangeData()}
       data-grid-model-column-count={leafColumns().length}
       data-grid-model-row-count={tableRows().length}
-      class={`h-full w-full select-none overflow-hidden bg-[#16161b] text-[13px] text-white outline-none ${props.class ?? ""}`}
+      class={`h-full w-full ${props.selectionMode === "text" ? "select-text" : "select-none"} overflow-hidden bg-[#16161b] text-[13px] text-white outline-none ${props.class ?? ""}`}
       onCopy={handleCopy}
       onPaste={handlePaste}
       style={{
         width: styleSize(props.width, "100%"),
-        height: styleSize(props.height, "100%"),
+        height: rootHeight(),
         "--data-grid-column-border":
           props.columnGuides === undefined
             ? undefined
@@ -1169,11 +1240,20 @@ export default function TanStackDataGrid(props: DataGridProps) {
               />
             </div>
           </Show>
-          <div class="sticky top-0 z-30 bg-[#212121]">
+          <div
+            data-grid-header-rows
+            class="sticky top-0 z-30 select-none"
+            style={{ background: "var(--data-grid-header-bg, #212121)" }}
+          >
             <For each={headerRows()}>
               {(headerRow) => {
                 return (
-                  <div class="flex h-[30px] border-b border-white/20">
+                  // biome-ignore lint/a11y/useFocusableInteractive: Grid rows are structural; keyboard focus stays on the grid and its cells.
+                  <div
+                    role="row"
+                    data-grid-header-row
+                    class="flex h-[30px] border-b border-white/20"
+                  >
                     <Show when={markerEnabled() && headerRow.depth === 0}>
                       <div
                         class="sticky left-0 z-40 flex shrink-0 items-center justify-center border-r border-white/20 bg-[#212121]"
@@ -1237,12 +1317,13 @@ export default function TanStackDataGrid(props: DataGridProps) {
           </div>
 
           <Show when={tableRows().length === 0 && props.emptyState}>
-            <div
+            <EmptyState
+              variant="inline"
               role="status"
-              class="sticky left-0 w-fit max-w-full p-4 text-sm text-neutral-400"
-            >
-              {props.emptyState}
-            </div>
+              class="sticky left-0 w-fit max-w-full px-4"
+              style={{ height: `${EMPTY_STATE_HEIGHT}px` }}
+              title={props.emptyState}
+            />
           </Show>
           <div
             class="relative"
@@ -1255,7 +1336,13 @@ export default function TanStackDataGrid(props: DataGridProps) {
                 if (rowIndex() === undefined) return null;
                 const virtualRow = () => virtualRowByIndex().get(rowModelIndex);
                 return (
+                  // biome-ignore lint/a11y/useFocusableInteractive: Grid rows are structural; keyboard focus stays on the grid and its cells.
                   <div
+                    role="row"
+                    data-grid-row
+                    data-selected={
+                      rowsWithSelection().has(rowModelIndex) ? "true" : "false"
+                    }
                     class="absolute left-0 flex"
                     style={{
                       height: `${virtualRow()?.size ?? rowHeight()}px`,

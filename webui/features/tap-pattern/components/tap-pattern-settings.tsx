@@ -7,6 +7,7 @@
  */
 
 import { Input } from "../../../components/ui/form-controls";
+import { RangeSlider } from "../../../components/ui/range-slider";
 import { formatGranularity, formatSliderValue } from "../model/panel-model";
 import type { TapPatternDetectionOptions } from "../model/tap-pattern-analysis";
 
@@ -39,54 +40,48 @@ export function TapPatternSettings(props: TapPatternSettingsProps) {
           }
         />
       </label>
-      <label
+      <div
         class="flex items-center gap-2 text-xs text-neutral-400"
         data-tap-control="true"
       >
         <span>Sensitivity</span>
-        <input
-          aria-label="Sensitivity"
-          class="h-7 w-28 accent-cyan-300"
-          min="0"
-          max="100"
-          step="1"
-          type="range"
+        <RangeSlider
           value={props.detectionOptions.sensitivity}
-          onInput={(event) =>
-            props.onDetectionOptionChange(
-              "sensitivity",
-              event.currentTarget.value,
-            )
+          ariaLabel="Sensitivity"
+          format={formatSliderValue}
+          showPips={false}
+          showInputs={false}
+          tooltips={false}
+          containerClass="w-28"
+          onChange={(value) =>
+            props.onDetectionOptionChange("sensitivity", String(value))
           }
         />
         <span class="w-10 font-mono text-neutral-300">
           {formatSliderValue(props.detectionOptions.sensitivity)}
         </span>
-      </label>
-      <label
+      </div>
+      <div
         class="flex items-center gap-2 text-xs text-neutral-400"
         data-tap-control="true"
       >
         <span>Granularity</span>
-        <input
-          aria-label="Granularity"
-          class="h-7 w-28 accent-cyan-300"
-          min="0"
-          max="100"
-          step="1"
-          type="range"
+        <RangeSlider
           value={props.detectionOptions.granularity}
-          onInput={(event) =>
-            props.onDetectionOptionChange(
-              "granularity",
-              event.currentTarget.value,
-            )
+          ariaLabel="Granularity"
+          format={formatGranularity}
+          showPips={false}
+          showInputs={false}
+          tooltips={false}
+          containerClass="w-28"
+          onChange={(value) =>
+            props.onDetectionOptionChange("granularity", String(value))
           }
         />
         <span class="w-16 font-mono text-neutral-300">
           {formatGranularity(props.detectionOptions.granularity)}
         </span>
-      </label>
+      </div>
     </div>
   );
 }

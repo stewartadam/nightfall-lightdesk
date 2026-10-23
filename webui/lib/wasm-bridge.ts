@@ -179,11 +179,6 @@ export interface SpatialProjectionResponse {
   issues: string[];
 }
 
-export interface SpannedSpatialProjectionRequest {
-  spans: types.FixtureRef[][];
-  clauses: types.SpatialClause[];
-}
-
 interface SpatialSelectionResolutionRequest {
   selection: types.SpatialSelection;
   fixtures: Array<{
@@ -381,27 +376,6 @@ export async function projectResolvedSpatialSelection(
   }
 }
 
-/** Projects explicit source spans through the shared Rust spatial replay implementation. */
-export async function projectSpannedSpatialSelection(
-  request: SpannedSpatialProjectionRequest,
-): Promise<SpatialProjectionResponse | null> {
-  try {
-    await initWasm();
-
-    if (!wasmModule) {
-      log.error("WASM module not loaded");
-      return null;
-    }
-
-    return wasmModule.project_spanned_spatial_selection(
-      JSON.stringify(request),
-    ) as SpatialProjectionResponse;
-  } catch (error) {
-    log.error("Failed to project spanned spatial selection:", error);
-    return null;
-  }
-}
-
 /** Resolves a complete selection through the Rust engine using browser lookup snapshots. */
 export async function resolveSpatialSelection(
   selection: types.SpatialSelection,
@@ -503,10 +477,14 @@ export async function calculateSequenceDurationSummary(
 
 /**
  * Get command autocomplete metadata at the given cursor position.
+ *
+ * `ioSettings` is the engine's I/O settings snapshot; the bridge reads its output targets
+ * with the engine's own rules and the parser offers them wherever a command names an output.
  */
 export async function completeCommand(
   input: string,
   cursor: number,
+  ioSettings: types.IoRuntimeSettings,
 ): Promise<CommandAutocompleteResponse | null> {
   try {
     await initWasm();
@@ -522,6 +500,7 @@ export async function completeCommand(
       wasmModule.complete_command(
         input,
         byteCursor,
+        ioSettings,
       ) as CommandAutocompleteResponse,
     );
     return areExperimentalFlowsEnabled()
@@ -585,6 +564,28 @@ export async function splitCommandStatements(
 function stringArrayFromWasmValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+/**
+ * Returns the output target IDs commands can name, read from the engine's I/O settings
+ * snapshot by the Rust WASM bridge with the engine's own sanitizing rules.
+ */
+export async function outputTargetIds(
+  ioSettings: types.IoRuntimeSettings,
+): Promise<string[] | null> {
+  try {
+    await initWasm();
+
+    if (!wasmModule) {
+      log.error("WASM module not loaded");
+      return null;
+    }
+
+    return wasmModule.output_target_ids(ioSettings);
+  } catch (error) {
+    log.error("Failed to read configured output targets:", error);
+    return null;
+  }
 }
 
 /**

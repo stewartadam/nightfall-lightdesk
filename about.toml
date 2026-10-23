@@ -113,6 +113,13 @@ path = "LICENSE.md"
 license = "MIT"
 checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
 
+[objc2-osa-kit.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-osa-kit.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
 [objc2-core-audio-types.clarify]
 license = "Zlib OR Apache-2.0 OR MIT"
 [[objc2-core-audio-types.clarify.git]]
@@ -123,6 +130,20 @@ checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
 [objc2-core-foundation.clarify]
 license = "Zlib OR Apache-2.0 OR MIT"
 [[objc2-core-foundation.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-io-kit.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-io-kit.clarify.git]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-quartz-core.clarify]
+license = "Zlib OR Apache-2.0 OR MIT"
+[[objc2-quartz-core.clarify.git]]
 path = "LICENSE.md"
 license = "MIT"
 checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"

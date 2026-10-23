@@ -20,6 +20,7 @@ Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
     - [Git hooks](#git-hooks)
     - [Optional tools](#optional-tools)
   - [Running Nightfall](#running-nightfall)
+  - [Error reports](#error-reports)
   - [Quality checks and browser tests](#quality-checks-and-browser-tests)
     - [Visualizer optics and performance tests](#visualizer-optics-and-performance-tests)
   - [Building the documentation](#building-the-documentation)
@@ -34,6 +35,8 @@ Contributions are welcome under the project's [license](LICENSE). Before a contr
 
 A CLA can look intimidating. Its purpose is to make long-term maintenance practical: as a codebase and its contributor community grow, tracking permissions and contacting every past contributor for a license change can become difficult or impossible. The CLA establishes those permissions up front, including the ability to relicense contributions or offer multiple licenses. You retain ownership and can use and license your own contributions independently; the maintainer can also license them under open-source, commercial, or proprietary terms without seeking further permission or owing payment. Third-party material remains subject to its own license.
 
+If the `license/cla` check on your PR stays at "Waiting for status to be reported", ask a maintainer to comment `/recheck-cla` on it.
+
 Please read the linked CLA and DCO before contributing. Those documents contain the full terms; we link to their maintained versions rather than duplicate them here.
 
 To attest to the DCO, add a sign-off to each commit using your configured Git identity:
@@ -47,6 +50,8 @@ This adds a trailer in the following format:
 ```text
 Signed-off-by: Your Name <Your@Email.tld>
 ```
+
+The sign-off email must match the commit's author email, or the DCO check on the pull request fails. The `commit-signoff` prek hook rejects commits whose sign-off doesn't match, before they reach a pull request.
 
 First-party source files must include the `SPDX-License-Identifier: MPL-2.0`
 comment and Mozilla MPL 2.0 notice. The `insert-license` prek hook checks the
@@ -162,7 +167,9 @@ pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
 See [distribution notices](docs/src/developer-reference/distribution-notices.md)
 for packaging and dependency-update requirements.
 
-Run `cargo install --locked typeshare-cli --version 1.13.3` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env` and `.cargo/config.toml`; it chooses a backend port, configures the shared Playwright browser location, and enables the Cargo settings expected by the build. It overwrites those files, so run it once for a new checkout rather than over an environment you have customized.
+Run `cargo install --locked typeshare-cli --version 1.13.3` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env`; it chooses a backend port and configures the shared Playwright browser location. It overwrites that file, so run it once for a new checkout rather than over an environment you have customized.
+
+If you use [kache](https://github.com/kunobi-ninja/kache) as your `rustc` wrapper on macOS, set `cache_executables = false` under `[cache]` in `~/.config/kache/config.toml`. Each time kache stores a binary or test harness it runs `dsymutil`, which takes ~20s for each app-runtime executable, while relinking them on a cache hit takes a few seconds.
 
 The backend port is `NIGHTFALL_PORT` in `.env`; Vite uses the following port. For example, `NIGHTFALL_PORT=3544` gives a web UI at `http://localhost:3545`. Keep the existing Cargo target directory, including when another worktree is building. A build lock means another build is using those artifacts.
 
@@ -227,14 +234,14 @@ For an existing checkout that already has prek hooks, run the following once to
 reinstall both tools in that order (without making commits or pushes between steps):
 
 ```sh
-pnpm exec prek uninstall -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek uninstall -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 git lfs install --local
 ```
 
 Then install the combined hooks:
 
 ```sh
-pnpm exec prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek install -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 ```
 
 If you wish to also use beads, ensure hooks are chained:
@@ -264,7 +271,6 @@ cargo install cargo-udeps
 cargo install cargo-edit
 
 # cleanup cache
-cargo install cargo-sweep
 cargo install cargo-cache
 ```
 
@@ -380,6 +386,7 @@ pnpm run dashboard:ui
 
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
 The API discovers all worktrees from `git worktree list`, reads each `.env` (`NIGHTFALL_PORT`), and provides launch/recycle controls plus direct links to each Web UI.
+The `docs` service runs `mdbook serve docs` on `NIGHTFALL_PORT + 2` so each worktree previews its own copy of the user manual; it needs `mdbook` on the dashboard's `PATH` (see [Building the documentation](#building-the-documentation)).
 
 To run the backend and Art-Net/sACN sender examples through a Cargo wrapper such
 as Mr Boxington, set `NIGHTFALL_CARGO_COMMAND=mbx` in the target worktree's `.env`.
@@ -403,7 +410,9 @@ worktrees. UI and WASM builds still launch through pnpm with their worktree's
 environment.
 
 New worktrees seed their `.env` from the primary worktree's `.env`, preserving
-its settings and comments. Setup then appends the generated port and shared
+its settings and comments. Setup then appends the generated port (a random
+block of 10 ports between 3000 and 3999 that no other worktree's `.env` uses,
+so backend, web UI and docs ports never collide across worktrees) and shared
 Playwright browser path, plus the isolated data directory and disabled network
 input/output settings for secondary worktrees. These generated values override
 the inherited settings. If the primary `.env` is missing, setup uses only the
@@ -421,7 +430,7 @@ wt -C ../other service restart -s backend,ui
 ```
 
 `start`, `stop`, and `restart` target the backend unless `--service` (`-s`)
-names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `all`).
+names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `docs`, `all`).
 They act on the current worktree; use `wt -C <path>` for another one. Start and
 restart wait until each service is reachable (up to `--timeout` seconds, 600 by
 default), print the log tail of any service that fails, and exit non-zero on
@@ -451,7 +460,7 @@ Use `dashboard_list_worktrees` to get paths, then pass a `worktree` path explici
 - `dashboard_sender_examples_status`
 - `dashboard_sender_examples_manage`
 
-`dashboard_worktree_manage` supports `services=[backend|ui|wasm|artnet-sender|sacn-sender|all,...]`.
+`dashboard_worktree_manage` supports `services=[backend|ui|wasm|artnet-sender|sacn-sender|docs|all,...]`.
 Use `dashboard_sender_examples_manage` for a sender-focused API with
 `senders=[art-net|sacn|all,...]`.
 
@@ -475,6 +484,21 @@ To start the desktop application with Tauri:
 pnpm tauri dev
 ```
 
+### Error reports
+
+Only official release builds send error reports. The error service address is
+compiled in from the `ERROR_REPORTS_DSN` repository variable when the desktop
+workflow publishes a release, so development builds, pull request builds, and
+builds from a fork or your own checkout have no address and send nothing, even
+when error reports are turned on in **Settings > Privacy**. Building without the
+`telemetry` Cargo feature removes error reporting entirely.
+
+To test reporting against your own GlitchTip or Sentry project, set
+`NIGHTFALL_ERROR_REPORTS_DSN` to its DSN in `.env` before starting the backend.
+An empty value turns reporting off in a build that has an address compiled in.
+What reports contain and how operators opt in is described in the
+[privacy policy](https://nightfall.live/privacy).
+
 ### Package scripts
 
 Run these with `pnpm run <script>`; arguments after the script name are passed
@@ -488,6 +512,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `tauri` | Run the Tauri CLI, for example `pnpm tauri dev`, `pnpm tauri build [-d]` or `pnpm tauri bundle`. |
 | `wasm`, `wasm:bridge`, `wasm:demo` | Build both WASM packages, only the bridge the web UI needs, or only the embedded demo engine. Release by default; pass `--dev` for a faster debug build. |
 | `typeshare` | Regenerate `webui/types/index.ts` from the Rust types. |
+| `icons:generate` | Regenerate the desktop and mobile app icons from `webui/public/logo.svg`; the macOS icon is placed on Apple's icon grid. |
 | `lint` | Run Biome lints on the web UI. |
 | `typecheck` | Type-check the TypeScript projects. |
 | `autofix`, `autofix:ts`, `autofix:rs` | Apply Biome, rustfmt and Clippy fixes. |
@@ -508,7 +533,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `gdtf:bench` | Check the pinned bench archives against their committed expectations. |
 | `gdtf:corpus` | Check that every GDTF file in `NIGHTFALL_GDTF_CORPUS_DIR` converts or is rejected cleanly. |
 | `fx-module:install` | Build an FX module and install it into the application data directory. |
-| `package:notices` | Generate dependency notices for a desktop target triple. |
+| `package:notices` | Generate dependency notices for a desktop target triple (defaults to the Rust host triple). |
 | `package:sample-audio` | Copy the sample tracks next to a standalone backend executable. |
 
 ### Quality checks and browser tests
@@ -621,6 +646,10 @@ cargo install --locked mdbook --version 0.4.49
 mdbook build docs
 mdbook serve docs --open
 ```
+
+With the worktree dashboard running, `wt service start -s docs` (or the dashboard's Docs column) serves the current worktree's manual on its own port instead.
+
+CI builds every book under `docs/` on PRs that change it, with the same mdBook version (keep the version in `.github/workflows/ci.yml` in sync), and fails on any error or warning mdBook logs.
 
 Internal design decisions, BRDs, and developer reference live in a separate mdBook in `docs/internal/`, with navigation in `docs/internal/src/SUMMARY.md`. Keep internal content in that source tree so it is excluded from the user manual, including its search index and downloadable output.
 

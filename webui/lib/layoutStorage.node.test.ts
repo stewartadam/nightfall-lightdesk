@@ -68,7 +68,7 @@ test("saveLayout stores and clears the active session layout", async () => {
   assert.equal(storage.loadLayout(), null);
 });
 
-test("stored layouts are snapshots loaded into the active session", async () => {
+test("stored layouts are snapshots independent of the active session", async () => {
   const storage = await importLayoutStorage();
 
   const stored = storage.storeCurrentLayout(
@@ -78,7 +78,7 @@ test("stored layouts are snapshots loaded into the active session", async () => 
   assert.ok(stored);
   assert.equal(storage.getActiveStoredLayoutId(), stored.id);
   assert.deepEqual(
-    storage.listStoredLayouts().map((layout) => layout.name),
+    storage.getShowfilePanelLayouts().map((layout) => layout.name),
     ["Board Op"],
   );
 
@@ -87,13 +87,24 @@ test("stored layouts are snapshots loaded into the active session", async () => 
   assert.deepEqual(storage.getStoredLayout(stored.id)?.layout, {
     grid: "stored",
   });
+});
 
-  const loaded = storage.loadStoredLayout(stored.id);
-  assert.deepEqual(loaded?.layout, { grid: "stored" });
+/** Verifies committing a restored layout updates the session without aliasing the snapshot. */
+test("commitActiveLayout records a restored layout as the active session", async () => {
+  const storage = await importLayoutStorage();
+
+  const stored = storage.storeCurrentLayout(createDockApi("stored"), "One");
+  assert.ok(stored);
+  assert.equal(storage.saveLayout(createDockApi("session-edit")), true);
+
+  const restored = storage.getStoredLayout(stored.id);
+  assert.ok(restored);
+  assert.equal(storage.commitActiveLayout(stored.id, restored), true);
+  assert.equal(storage.getActiveStoredLayoutId(), stored.id);
   assert.deepEqual(storage.loadLayout()?.layout, { grid: "stored" });
-  assert.deepEqual(storage.getStoredLayout(stored.id)?.layout, {
-    grid: "stored",
-  });
+
+  (restored.layout as { grid: string }).grid = "mutated";
+  assert.deepEqual(storage.loadLayout()?.layout, { grid: "stored" });
 });
 
 test("legacy Dockview session layouts gain hidden default edge groups", async () => {
@@ -331,42 +342,6 @@ test("stored layouts capture live edge shell sizes over stale Dockview JSON", as
   });
 });
 
-test("overwrite, rename, duplicate, and delete update named layouts", async () => {
-  const storage = await importLayoutStorage();
-
-  const stored = storage.storeCurrentLayout(createDockApi("one"), "One");
-  assert.ok(stored);
-
-  const overwritten = storage.overwriteStoredLayout(
-    createDockApi("two"),
-    stored.id,
-  );
-  assert.equal(overwritten?.name, "One");
-  assert.deepEqual(storage.getStoredLayout(stored.id)?.layout, { grid: "two" });
-
-  const renamed = storage.renameStoredLayout(stored.id, "Primary");
-  assert.equal(renamed?.name, "Primary");
-
-  const duplicate = storage.duplicateStoredLayout(stored.id, "Copy");
-  assert.ok(duplicate);
-  assert.notEqual(duplicate.id, stored.id);
-  assert.deepEqual(duplicate.layout, { grid: "two" });
-
-  assert.deepEqual(
-    storage.listStoredLayouts().map((layout) => layout.name),
-    ["Copy", "Primary"],
-  );
-
-  assert.equal(storage.deleteStoredLayout(stored.id), true);
-  assert.deepEqual(
-    storage.listStoredLayouts().map((layout) => layout.name),
-    ["Copy"],
-  );
-
-  assert.equal(storage.clearStoredLayouts(), true);
-  assert.deepEqual(storage.listStoredLayouts(), []);
-});
-
 test("showfile panel layouts replace only named layout storage", async () => {
   const storage = await importLayoutStorage();
 
@@ -386,7 +361,7 @@ test("showfile panel layouts replace only named layout storage", async () => {
   assert.equal(storage.replaceStoredLayoutsFromShowfile(showfileLayouts), true);
   assert.deepEqual(storage.loadLayout()?.layout, { grid: "session" });
   assert.deepEqual(
-    storage.listStoredLayouts().map((layout) => layout.name),
+    storage.getShowfilePanelLayouts().map((layout) => layout.name),
     ["Showfile"],
   );
   assert.deepEqual(storage.getShowfilePanelLayouts(), showfileLayouts);
@@ -399,13 +374,28 @@ test("invalid layout store data falls back to an empty state", async () => {
   const storage = await importLayoutStorage();
 
   assert.equal(storage.loadLayout(), null);
-  assert.deepEqual(storage.listStoredLayouts(), []);
+  assert.deepEqual(storage.getShowfilePanelLayouts(), []);
   assert.equal(storage.clearAllLayoutStorage(), true);
 
   assert.deepEqual(JSON.parse(getTestStorage()[LAYOUT_STORAGE_KEY]), {
     version: 2,
     activeLayoutId: null,
     sessionLayout: null,
+    sessionShowfileName: null,
     layouts: [],
   });
+});
+
+/** Verifies a device's arrangement is only reused for the showfile it was made for. */
+test("session layouts belong to the showfile they were saved for", async () => {
+  const storage = await importLayoutStorage();
+  const { persistCurrentShowfileName } = await import("./showfile-loading.js");
+
+  persistCurrentShowfileName("tour");
+  assert.equal(storage.saveLayout(createDockApi("session")), true);
+  assert.equal(storage.hasSessionLayoutFor("tour"), true);
+  assert.equal(storage.hasSessionLayoutFor("festival"), false);
+
+  assert.equal(storage.clearLayout(), true);
+  assert.equal(storage.hasSessionLayoutFor("tour"), false);
 });

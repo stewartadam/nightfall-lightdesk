@@ -31,7 +31,7 @@ test("cue transition slider scrubs output backward and steps through time", asyn
     module: "DeskCommand",
     command: {
       type: "SaveNamedShowfile",
-      data: { name: "scrub-output", options: {} },
+      data: "scrub-output",
     },
   });
   await sendCommand(page, {
@@ -184,7 +184,7 @@ test("cue transition backgrounds respect fixture element overrides", async ({
     module: "DeskCommand",
     command: {
       type: "SaveNamedShowfile",
-      data: { name: "override-progress", options: {} },
+      data: "override-progress",
     },
   });
   await sendCommand(page, {
@@ -196,9 +196,7 @@ test("cue transition backgrounds respect fixture element overrides", async ({
   const panelId = "panel-CueEditor-override-progress";
   await openCuePreviewPanel(page, { panelId });
   const panel = page.locator(`[data-panel-id="${panelId}"]`);
-  await panel
-    .getByRole("button", { name: "Switch to timings display mode" })
-    .click();
+  await panel.getByRole("radio", { name: "Timings", exact: true }).click();
   await panel.getByRole("button", { name: "Toggle cue preview" }).click();
   const slider = panel.getByRole("slider", { name: "Transition progress" });
   await expect(slider).toHaveAttribute("max", "2");
@@ -829,7 +827,7 @@ test("cue properties transition duration includes fanned instruction timings", a
     '[data-panel-id="panel-CueEditor-fanned-properties-e2e"]',
   );
   await expect(
-    fannedPanel.getByRole("button", { name: "Switch to values display mode" }),
+    fannedPanel.getByRole("radio", { name: "Values", exact: true }),
   ).toBeVisible();
   await expandPropertiesPanel(page, "panel-CueEditor-fanned-properties-e2e");
   await expect(

@@ -29,7 +29,7 @@ export default function BrowserDemoBanner() {
         data-testid="browser-demo-banner"
       >
         <Button
-          size="compact"
+          size="inline"
           variant="primary"
           type="button"
           data-testid="browser-demo-reset"

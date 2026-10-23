@@ -11,6 +11,8 @@
 //! Each step rewrites the raw JSON of one schema version into the next, so persisted
 //! data that no longer has a runtime type can still be read and converted.
 
+mod action_references;
+
 use nightfall_fixtures::bindings::{DmxRange, OutputSource};
 use serde_json::Value;
 
@@ -28,6 +30,8 @@ pub(crate) fn migrate_showfile_json(showfile: &mut Value, version: u32) -> Resul
     while version < CURRENT_SHOWFILE_VERSION {
         match version {
             17 => remove_output_disabled_bindings(showfile)?,
+            18 => action_references::migrate_v18_to_v19(showfile)?,
+            19 => control_assignments_to_slots(showfile)?,
             _ => return Err(format!("no migration from showfile version {version}")),
         }
         version += 1;
@@ -100,6 +104,30 @@ fn remove_output_disabled_bindings(showfile: &mut Value) -> Result<(), String> {
             "Migrated output disabled rules out of showfile"
         );
     }
+    Ok(())
+}
+
+/// Schema 19 → 20: control slots gain a button mode next to their assignment.
+///
+/// Each `controlAssignments` entry (an assignment or `null`) becomes a `controlSlots` entry
+/// holding that assignment and the Go button every slot had before modes existed.
+fn control_assignments_to_slots(showfile: &mut Value) -> Result<(), String> {
+    let Some(object) = showfile.as_object_mut() else {
+        return Err("showfile root is not an object".to_string());
+    };
+    let Some(assignments) = object.remove("controlAssignments") else {
+        return Ok(());
+    };
+    let Value::Array(assignments) = assignments else {
+        return Err(format!(
+            "controlAssignments must be an array, found {assignments}"
+        ));
+    };
+    let slots = assignments
+        .into_iter()
+        .map(|assignment| serde_json::json!({ "assignment": assignment, "buttonMode": "Go" }))
+        .collect();
+    object.insert("controlSlots".to_string(), Value::Array(slots));
     Ok(())
 }
 
@@ -311,5 +339,32 @@ mod tests {
             &console(1, 1, None),
             &console(2, 2, None)
         ));
+    }
+
+    /// Schema 19 assignments, empty slots included, become slots with the Go button.
+    #[test]
+    fn schema_19_control_assignments_become_go_slots() {
+        let mut showfile = json!({"controlAssignments": [{"Clip": 3}, null, {"Master": 2}]});
+
+        control_assignments_to_slots(&mut showfile).unwrap();
+
+        assert_eq!(
+            showfile,
+            json!({"controlSlots": [
+                {"assignment": {"Clip": 3}, "buttonMode": "Go"},
+                {"assignment": null, "buttonMode": "Go"},
+                {"assignment": {"Master": 2}, "buttonMode": "Go"}
+            ]})
+        );
+    }
+
+    /// A schema 19 showfile without control assignments is left as it is.
+    #[test]
+    fn schema_19_without_control_assignments_is_unchanged() {
+        let mut showfile = json!({"variables": {}});
+
+        control_assignments_to_slots(&mut showfile).unwrap();
+
+        assert_eq!(showfile, json!({"variables": {}}));
     }
 }

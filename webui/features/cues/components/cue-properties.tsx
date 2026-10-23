@@ -20,6 +20,7 @@ import {
   untrack,
 } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { calculateCueTransitionDurations } from "../../../lib/cue-timing-values";
@@ -30,7 +31,7 @@ import {
   transitionModeToDuration,
   transitionModeToSeconds,
 } from "../../../lib/duration";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { colorPaths } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -293,7 +294,7 @@ export default function CueProperties() {
             },
           };
 
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Recalls the parent cue or active cue part into the programmer. */
@@ -323,7 +324,7 @@ export default function CueProperties() {
             },
           };
 
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
   };
 
   /** Updates the selected tracking categories on the parent cue or active cue part. */
@@ -369,7 +370,7 @@ export default function CueProperties() {
         color_path_id: value === "" ? undefined : Number.parseInt(value, 10),
       },
     };
-    engineRuntime.sendCommand({ module: "CueCommand", command });
+    commandClient.emit("CueCommand", command);
   };
 
   /** Initializes local timing and trigger controls from the current cue data. */
@@ -569,10 +570,15 @@ export default function CueProperties() {
   return (
     <Switch>
       <Match when={ctx.loadingState().status === "loading"}>
-        <div class="p-4 text-neutral-400">Loading cue properties...</div>
+        <EmptyState
+          variant="inline"
+          class="p-4"
+          loading
+          title="Loading cue properties..."
+        />
       </Match>
       <Match when={ctx.loadingState().status === "not_found"}>
-        <div class="p-4 text-neutral-400">Cue not found</div>
+        <EmptyState variant="inline" class="p-4" title="Cue not found" />
       </Match>
       <Match when={ctx.loadingState().status === "loaded"}>
         {(() => {

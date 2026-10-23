@@ -24,8 +24,11 @@ import {
 import type { BrowserDemoRuntimeInfo } from "../lib/engine-runtime-protocol";
 import { setStoreAction } from "../lib/nanostore-action";
 import { registerPanelTabStatus } from "../lib/panel-tab-status";
+import type { ParameterStreamStats } from "../lib/parameter-stream";
+import type { ReferenceListByOwner } from "../lib/reference-list";
 import type { SelectionTarget } from "../lib/selection-targets";
 import { testHooksEnabled } from "../lib/test-mode";
+import type { LayerState } from "../lib/ws/types";
 import type * as types from "../types";
 import type * as flowTypes from "../types/index";
 import {
@@ -40,6 +43,7 @@ import {
   $ioSettings,
   $networkInterfaceStatus,
   $settings,
+  $telemetryState,
 } from "./settings";
 
 // Local type definitions for types not yet exported from backend
@@ -143,6 +147,15 @@ export interface TimelineStopEvent {
 export interface TimelineLookaheadActionStatusMap {
   [timelineUid: string]: Record<string, types.TimelineLookaheadActionStatus>;
 }
+/** Builds the per-timeline key that identifies one action across its track. */
+export function timelineActionKey(trackId: string, actionId: string): string {
+  return JSON.stringify([trackId, actionId]);
+}
+
+/** Backend-planned cue of each Go, Back, and jump action, keyed by timeline UID then by {@link timelineActionKey}. */
+export interface TimelinePlannedCuesByActionMap {
+  [timelineUid: string]: Record<string, types.TimelinePlannedCue>;
+}
 export interface TimelineBeatgridProposalMap {
   [timelineUid: string]: types.BeatgridProposal;
 }
@@ -188,6 +201,11 @@ export type FixtureMap = { [uid: string]: types.Fixture };
 export type SceneObjectMap = { [uid: string]: types.SceneObject };
 export type GroupMap = { [uid: string]: types.Group };
 export type MasterMap = { [uid: string]: types.Master };
+export type BoardMap = { [uid: string]: types.Board };
+/** Resolved buttons per board, keyed by board UID and then element UID. */
+export type BoardStatusMap = {
+  [boardUid: string]: { [elementUid: string]: types.BoardItem[] };
+};
 export type FxMap = { [uid: string]: types.Fx };
 export type StepFxMap = { [uid: string]: types.StepFx };
 export type FxModuleMap = { [uid: string]: types.StoredFxModule };
@@ -300,6 +318,8 @@ export const objectLibrary = atom<types.AvailableObjectInfo[]>([]);
 export const objectProfile = atom<types.GetObjectProfileResponse | null>(null);
 export const groups = deepMap<GroupMap>({});
 export const masters = deepMap<MasterMap>({});
+export const boards = atom<BoardMap>({});
+export const boardStates = atom<BoardStatusMap>({});
 export const fx = deepMap<FxMap>({});
 export const stepFx = deepMap<StepFxMap>({});
 export const fxModules = deepMap<FxModuleMap>({});
@@ -401,6 +421,8 @@ export const timelineRecordingPreviews = deepMap<TimelineRecordingPreviewMap>(
 );
 export const timelineLookaheadActionStatuses =
   deepMap<TimelineLookaheadActionStatusMap>({});
+export const timelinePlannedCuesByAction =
+  deepMap<TimelinePlannedCuesByActionMap>({});
 export const timelineBeatgridProposals = deepMap<TimelineBeatgridProposalMap>(
   {},
 );
@@ -408,7 +430,7 @@ export const timelineBeatgridDetectionStatus =
   deepMap<TimelineBeatgridDetectionMap>({});
 export const timelineBeatgridPreview = deepMap<TimelineBeatgridPreviewMap>({});
 const timelineBeatgridShiftState = deepMap<TimelineBeatgridShiftMap>({});
-export const layerStack = atom<types.OutboundLayerState[]>([]);
+export const layerStack = atom<LayerState[]>([]);
 export const layerNavigationRequest = atom<LayerNavigationRequest | null>(null);
 export const layerObjectNavigationRequest =
   atom<LayerObjectNavigationRequest | null>(null);
@@ -423,21 +445,84 @@ export const activeInstances = deepMap<ActiveInstancesMap>({});
 export const controls = atom<ControlState[]>([]);
 export const engineMetrics = atom<EngineMetrics | null>(null);
 
+// Bindable action catalog published by backend domains
+export const actionCatalog = atom<types.ActionCatalogEntry[]>([]);
+/** Latest client-hosted action invocation forwarded from a MIDI or OSC mapping. */
+export const clientActionInvocation = atom<types.ClientActionInvocation | null>(
+  null,
+);
+/** Recent failed action invocations from any surface, newest first. */
+export const actionInvocationFailures = atom<types.ActionInvocationFailure[]>(
+  [],
+);
+
+/** Audio inputs the engine can read LTC from, as last discovered by the backend. */
+export const audioInputDevices = atom<types.AudioInputDevice[]>([]);
+
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
 export const midiLastEvent = atom<types.MidiLastEvent | null>(null);
+/** MIDI mappings that cannot currently invoke their action, as diagnosed by the backend. */
+export const midiMappingDiagnostics = atom<types.BindingDiagnostic[]>([]);
 export const oscSources = atom<types.OscSource[]>([]);
 export const oscMappings = atom<types.OscMapping[]>([]);
+/** OSC mappings that cannot currently invoke their action, as diagnosed by the backend. */
+export const oscMappingDiagnostics = atom<types.BindingDiagnostic[]>([]);
 export const oscLastEvent = atom<types.OscLastEvent | null>(null);
 export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
+/**
+ * MIDI controls the backend reported touched in one frame while mapping mode is active.
+ *
+ * Unlike `midiLastEvent`, every batch is delivered, so mapping mode arms from these.
+ */
+export const midiControlTouches = atom<types.MidiLastEvent[]>([]);
+/**
+ * OSC messages the backend reported in one frame while mapping mode is active.
+ *
+ * Unlike `oscLastEvent`, every batch is delivered, so mapping mode arms from these.
+ */
+export const oscControlTouches = atom<types.OscLastEvent[]>([]);
+/**
+ * How many clients are mapping controllers, which pauses MIDI and OSC actions while
+ * non-zero, and the loaded show's generation (empty until the backend reports it).
+ */
+export const controllerMappingMode = atom<types.ControllerMappingModeState>({
+  mapping_clients: 0,
+  show_generation: "",
+});
 
-// DMX Universe data for raw channel visualization (input + output)
-export type DmxUniverseMap = types.OutboundDmxUniverse[];
-export const dmxUniverseData = atom<DmxUniverseMap>([]);
+// Every output and input DMX universe, without channel values
+export const dmxUniverseList = atom<types.DmxUniverseSummary[]>([]);
+// Channel values of the universes this client watches (see lib/dmx-universe-watch.ts)
+export const dmxUniverseChannels = atom<types.DmxUniverseChannels[]>([]);
+// Universes whose channel values this client asks the backend for
+export const dmxUniverseWatch = atom<types.DmxUniverseKey[]>([]);
+// Reference counts and missing references across the show, broadcast by the backend
+export const referenceHealth = atom<types.ReferenceHealth>({
+  summary: {
+    object_count: 0,
+    reference_count: 0,
+    issue_count: 0,
+    prunable_issue_count: 0,
+    affected_object_count: 0,
+  },
+  issues: [],
+});
+// Every reference in the show by owning object, sent only while referenceListWatch is set
+export const referenceList = atom<ReferenceListByOwner>(new Map());
+// Whether this client asks the backend for referenceList (see features/references/services)
+export const referenceListWatch = atom(false);
 export const inputContributionTrace = atom<types.OutboundInputContribution[]>(
   [],
 );
+
+/** Last show tempo received from the engine, with its local receive time for extrapolation. */
+export interface ShowTempoState {
+  snapshot: types.TempoSnapshot;
+  receivedAtMs: number;
+}
+export const showTempo = atom<ShowTempoState | undefined>(undefined);
 
 // Undo/Redo state
 export const undoState = atom<UndoState>({
@@ -567,6 +652,7 @@ export interface WsStats {
     avgDecodeMs: number;
     queueDepth: number;
     lastStagedDeliveryMessageId: number;
+    parameterStream?: ParameterStreamStats;
     processing?: PerformanceMeasureStats;
   };
   main: {
@@ -998,6 +1084,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     ioSettings: $ioSettings,
     availableNetworkInterfaces: $availableNetworkInterfaces,
     externalControlState: $externalControlState,
+    telemetryState: $telemetryState,
     availableUsbDmxDevices: $availableUsbDmxDevices,
     networkInterfaceStatus: $networkInterfaceStatus,
     serverVersion,
@@ -1025,6 +1112,8 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     objectProfile,
     groups,
     masters,
+    boards,
+    boardStates,
     fx,
     stepFx,
     fxModules,
@@ -1055,6 +1144,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     timelineRecordingStates,
     timelineRecordingPreviews,
     timelineLookaheadActionStatuses,
+    timelinePlannedCuesByAction,
     timelineBeatgridProposals,
     timelineBeatgridDetectionStatus,
     timelineBeatgridPreview,
@@ -1064,10 +1154,16 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     layerObjectNavigationRequest,
     sequenceNavigationRequest,
     sceneObjectNavigationRequest,
-    dmxUniverseData,
+    dmxUniverseList,
+    dmxUniverseChannels,
+    dmxUniverseWatch,
+    referenceHealth,
+    referenceList,
+    referenceListWatch,
     inputContributionTrace,
     activeInstances,
     controls,
+    showTempo,
     undoState,
     engineMetrics,
     smoothedEngineMetrics,
@@ -1080,13 +1176,21 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     flowDefinitionsRevision,
     flowPortValues,
     flowTriggerTicks,
+    actionCatalog,
+    actionInvocationFailures,
+    audioInputDevices,
     midiDevices,
     midiMappings,
     midiLastEvent,
+    midiMappingDiagnostics,
     oscSources,
     oscMappings,
+    oscMappingDiagnostics,
     oscLastEvent,
     oscListenerStatus,
+    midiControlTouches,
+    oscControlTouches,
+    controllerMappingMode,
     consoleScrollback,
     clearConsoleScrollback,
     notificationHistory,

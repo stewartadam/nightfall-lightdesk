@@ -21,12 +21,10 @@ use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_dmx::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::BindingTransport;
-use nightfall_io::OutputTransport;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-use web_time::{Instant, SystemTime, UNIX_EPOCH};
+use web_time::Instant;
 
 use crate::FixtureCommand;
 use crate::binding_validation::BindingValidationSettings;
@@ -36,17 +34,20 @@ use crate::bindings::{
 };
 use crate::fixture::Fixture;
 use crate::geometry::FixtureGeometry;
-use crate::output_frames::{OutputDmxFrames, output_transport_label};
 use crate::parameter_state::{ParameterLayout, ParameterStateFrame, ParameterStateProjection};
 use crate::prelude::{BeamType, FixtureDataProviderExt, FixturePhysical};
+use crate::universe::InputDmxUniverses;
 use crate::universe::InputUniverseStaleTimeout;
-use crate::universe::{ConsoleDmxUniverses, InputDmxUniverses};
+use crate::universe_stream::{
+    DmxUniverseChannels, DmxUniverseStream, DmxUniverseSummary, STREAM_INTERVAL,
+    binding_transport_label,
+};
 
 /// Wrapper for serializing fx messages with WsOutbound-compatible format
 #[derive(Serialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare::typeshare]
-enum FixtureWsMessage<'a> {
+pub(crate) enum FixtureWsMessage<'a> {
     /// List of all fixtures (without geometry)
     FixtureDefinitions(&'a [Fixture]),
     /// Geometry data for fixtures, keyed by fixture UID
@@ -54,8 +55,10 @@ enum FixtureWsMessage<'a> {
         #[typeshare(serialized_as = "Record<string, FixtureGeometry>")]
         &'a HashMap<SimpleUuid, FixtureGeometry>,
     ),
-    /// DMX universes data
-    DmxUniverseData(&'a [OutboundDmxUniverse]),
+    /// Every output and input universe, without channel values.
+    DmxUniverseList(&'a [DmxUniverseSummary]),
+    /// Channel values of the universes the receiving client watches.
+    DmxUniverseChannels(&'a [DmxUniverseChannels<'a>]),
     /// Input contribution trace data.
     InputContributionTrace(&'a [OutboundInputContribution]),
     /// Binding definitions for fixtures and transports.
@@ -124,12 +127,22 @@ pub fn register_fixture_websocket_diagnostics(app: &mut App) {
         .register_diagnostic(Diagnostic::new(PARAMETER_STATE_BROADCAST_MS).with_suffix(" ms"));
 }
 
+/// Clients waiting for the parameter layout or a keyframe of the parameter stream.
+#[derive(Resource, Default)]
+pub struct ParameterStateRequests {
+    /// Clients that resynced and need the layout, which a keyframe then follows.
+    pub layout: PendingReplies,
+    /// Clients that need a keyframe, after resyncing or missing frames.
+    pub keyframe: PendingReplies,
+}
+
 /// Publish the current absolute, relative, and computed output parameter values.
 pub fn send_parameter_state(
     fixture_data_provider: Res<FixtureDataProviderExt>,
     parameters_query: Query<&crate::parameter::Parameter>,
     final_layer_attributed_assertions: Res<FinalLayerAttributedAssertions>,
     mut projection: ResMut<ParameterStateProjection>,
+    mut requests: ResMut<ParameterStateRequests>,
     mut diagnostics: Diagnostics,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -140,6 +153,33 @@ pub fn send_parameter_state(
         &fixture_data_provider.parameter_index(),
         fixture_data_provider.is_changed(),
     );
+    // Requests for every client are answered on the shared stream. Replies to individual clients
+    // carry the state the stream last left everyone in, so they go out before this frame and its
+    // shared delta then applies on top of them.
+    let layout_requests = requests.layout.take();
+    let keyframe_requests = requests.keyframe.take();
+    if layout_requests == Some(PendingAudience::Everyone) {
+        projection.request_layout();
+    }
+    if keyframe_requests == Some(PendingAudience::Everyone) {
+        projection.request_keyframe();
+    }
+    if let Some(PendingAudience::Clients(clients)) = layout_requests
+        && let Some(layout) = projection.layout_reply()
+    {
+        broadcaster.narrowed_to(clients).publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FixtureWsMessage::ParameterLayout(layout),
+        );
+    }
+    if let Some(PendingAudience::Clients(clients)) = keyframe_requests
+        && let Some(frame) = projection.keyframe_reply(build_start)
+    {
+        broadcaster.narrowed_to(clients).publish(
+            DISCRIMINATOR_DROPPABLE,
+            &FixtureWsMessage::ParameterState(&frame),
+        );
+    }
     projection.fill_values(&parameters_query, &final_layer_attributed_assertions.0);
 
     let build_elapsed = build_start.elapsed();
@@ -152,10 +192,15 @@ pub fn send_parameter_state(
             &FixtureWsMessage::ParameterLayout(layout),
         );
     }
-    broadcaster.publish(
-        DISCRIMINATOR_DROPPABLE,
-        &FixtureWsMessage::ParameterState(&projection.values()),
-    );
+    if let Some(frame) = projection.publish_frame(build_start) {
+        // A keyframe may replace a queued frame; a delta must never, since it builds on it.
+        let discriminator = if frame.keyframe {
+            DISCRIMINATOR_DROPPABLE
+        } else {
+            DISCRIMINATOR_DELTA
+        };
+        broadcaster.publish(discriminator, &FixtureWsMessage::ParameterState(&frame));
+    }
     let broadcast_elapsed = broadcast_start.elapsed();
     record_elapsed_ms(
         &mut diagnostics,
@@ -187,37 +232,10 @@ impl From<&FixturePhysical> for BeamSpec {
     }
 }
 
-/// DMX input/output mode.
-#[typeshare::typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-enum DmxIoMode {
-    Input,
-    Output,
-}
-
-/// Outbound representation of a DMX universe for WebSocket transmission.
-#[typeshare::typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct OutboundDmxUniverse {
-    pub universe_id: u16,
-    pub channels: Vec<ChannelDmxValue>,
-    pub io_mode: DmxIoMode,
-    /// Display label of the numbering space: `Console` for console-space output universes,
-    /// otherwise the transport (`sACN`, `sACN → 10.0.0.4`, `Art-Net`, `USB`…) using wire
-    /// numbering. Input universes carry their input transport family.
-    pub transport: Option<String>,
-    /// Concrete output transport of a wire output universe; `None` for console space and input.
-    pub output_transport: Option<OutputTransport>,
-    pub frame_age_ms: Option<u32>,
-    pub is_stale: Option<bool>,
-    pub is_self: Option<bool>,
-}
-
 /// Outbound input contribution to parameter state.
 #[typeshare::typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct OutboundInputContribution {
+pub(crate) struct OutboundInputContribution {
     #[serde(with = "nightfall::serde_uuid_simple")]
     pub fixture_uid: Uuid,
     pub element_index: u16,
@@ -248,6 +266,24 @@ pub fn deserialize_fixture_command(
             Box::new(command),
         ));
 
+    Ok(())
+}
+
+/// Handle a client's request for a parameter keyframe.
+///
+/// A client sends this after it detects a gap in the parameter frame sequence
+/// (or otherwise loses confidence in its rebuilt state). The payload carries no
+/// data; the sender alone gets a keyframe before the next frame, so other clients
+/// keep receiving deltas.
+pub fn deserialize_parameter_keyframe_request(
+    world: &mut World,
+    _json: Value,
+    sender: Audience,
+) -> Result<(), String> {
+    world
+        .resource_mut::<ParameterStateRequests>()
+        .keyframe
+        .request(sender);
     Ok(())
 }
 
@@ -352,155 +388,24 @@ pub fn send_fixtures<'a, F>(
     );
 }
 
-/// Last time droppable websocket data was sent (ms since epoch)
-static LAST_DROPPABLE_SEND_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-const DROPPABLE_INTERVAL_MS: u64 = (1000.0 / 10.0) as u64;
-/// Display label for console-space output universes in the DMX universe panel.
-const CONSOLE_SPACE_LABEL: &str = "Console";
-
-/// Returns the operator-facing label of a binding (input) transport.
-fn binding_transport_label(transport: BindingTransport) -> &'static str {
-    match transport {
-        BindingTransport::Sacn => "sACN",
-        BindingTransport::ArtNet => "Art-Net",
-        BindingTransport::Udmx => "USB",
-    }
-}
-
-/// Builds the output universe views reported to clients.
-///
-/// Console-space universes are reported under the `Console` label with console numbering.
-/// Every composed wire frame is reported as-is under its concrete transport label (for
-/// example `sACN` or `sACN → 10.0.0.4`) with wire numbering, so the panel shows exactly
-/// the frames the output drivers transmit.
-fn build_output_universes(
-    dmx_universes: &ConsoleDmxUniverses,
-    output_frames: &OutputDmxFrames,
-) -> Vec<OutboundDmxUniverse> {
-    let mut console_ids: Vec<u16> = dmx_universes.universe_ids().copied().collect();
-    console_ids.sort_unstable();
-    let console_views = console_ids
-        .into_iter()
-        .map(|universe_id| OutboundDmxUniverse {
-            universe_id,
-            channels: dmx_universes.get_universe(universe_id).to_vec(),
-            io_mode: DmxIoMode::Output,
-            transport: Some(CONSOLE_SPACE_LABEL.to_string()),
-            output_transport: None,
-            frame_age_ms: None,
-            is_stale: None,
-            is_self: None,
-        });
-    let wire_views = output_frames.iter().map(|frame| OutboundDmxUniverse {
-        universe_id: frame.universe,
-        channels: frame.channels.to_vec(),
-        io_mode: DmxIoMode::Output,
-        transport: Some(output_transport_label(&frame.transport)),
-        output_transport: Some(frame.transport.clone()),
-        frame_age_ms: None,
-        is_stale: None,
-        is_self: None,
-    });
-    console_views.chain(wire_views).collect()
-}
-
-/// Send DMX universe data for visualization
-pub fn send_dmx_universes(
-    dmx_universes: Res<ConsoleDmxUniverses>,
+/// Broadcasts a trace of effective input contributions from transport bindings to fixture
+/// parameters, at most once per [`STREAM_INTERVAL`].
+pub fn send_input_contribution_trace(
+    resolved_input_bindings: Res<ResolvedInputBindings>,
     input_universes: Res<InputDmxUniverses>,
     input_stale_timeout: Res<InputUniverseStaleTimeout>,
-    output_frames: Res<OutputDmxFrames>,
-    resolved_input_bindings: Res<ResolvedInputBindings>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     parameter_query: Query<&crate::parameter::Parameter>,
     broadcaster: Res<ClientEventSink>,
+    mut last_sent: Local<Option<Instant>>,
 ) {
-    // Apply rate limit
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let last_send = LAST_DROPPABLE_SEND_MS.load(std::sync::atomic::Ordering::Relaxed);
-    let within_rate_limit = now_ms.saturating_sub(last_send) < DROPPABLE_INTERVAL_MS;
-
-    if within_rate_limit {
+    let now = Instant::now();
+    if last_sent.is_some_and(|last| now.saturating_duration_since(last) < STREAM_INTERVAL) {
         return;
     }
-    LAST_DROPPABLE_SEND_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
-    let now_instant = Instant::now();
+    *last_sent = Some(now);
     let stale_after_ms = input_stale_timeout.0.as_millis() as u32;
 
-    let mut data = build_output_universes(&dmx_universes, &output_frames);
-
-    let transport_rank = |transport: BindingTransport| match transport {
-        BindingTransport::Sacn => 0,
-        BindingTransport::ArtNet => 1,
-        BindingTransport::Udmx => 2,
-    };
-
-    let mut input_entries: Vec<(BindingTransport, u16, Vec<ChannelDmxValue>, u32, bool)> =
-        input_universes
-            .iter()
-            .filter_map(|(transport, universe_id, channels)| {
-                let frame_age_ms =
-                    input_universes.frame_age_ms(transport, universe_id, now_instant)?;
-                let is_self = input_universes
-                    .is_self_frame(transport, universe_id)
-                    .unwrap_or(false);
-                Some((
-                    transport,
-                    universe_id,
-                    channels.to_vec(),
-                    frame_age_ms,
-                    is_self,
-                ))
-            })
-            .collect();
-    input_entries.sort_by_key(|(transport, universe_id, _, _, _)| {
-        (transport_rank(*transport), *universe_id)
-    });
-
-    for (transport, universe_id, channels, frame_age_ms, is_self) in input_entries {
-        let universe = OutboundDmxUniverse {
-            universe_id,
-            channels,
-            io_mode: DmxIoMode::Input,
-            transport: Some(binding_transport_label(transport).to_string()),
-            output_transport: None,
-            frame_age_ms: Some(frame_age_ms),
-            is_stale: Some(frame_age_ms >= stale_after_ms),
-            is_self: Some(is_self),
-        };
-        data.push(universe);
-    }
-
-    broadcaster.publish(
-        DISCRIMINATOR_DROPPABLE,
-        &FixtureWsMessage::DmxUniverseData(&data),
-    );
-    tracing::trace!("Sending DMX universes to websocket clients");
-
-    send_input_contribution_trace(
-        &resolved_input_bindings,
-        &input_universes,
-        &fixture_data_provider,
-        &parameter_query,
-        now_instant,
-        stale_after_ms,
-        &broadcaster,
-    );
-}
-
-/// Broadcasts a trace of effective input contributions from transport bindings to fixture parameters.
-fn send_input_contribution_trace(
-    resolved_input_bindings: &ResolvedInputBindings,
-    input_universes: &InputDmxUniverses,
-    fixture_data_provider: &FixtureDataProviderExt,
-    parameter_query: &Query<&crate::parameter::Parameter>,
-    now: Instant,
-    stale_after_ms: u32,
-    broadcaster: &ClientEventSink,
-) {
     let param_index = fixture_data_provider.parameter_index();
     let mut parameter_locations: HashMap<Entity, (Uuid, u16)> = HashMap::new();
     for (parameter_instance, location) in param_index.iter() {
@@ -679,23 +584,24 @@ pub fn send_binding_validation_settings_on_change(
 
 /// Handle ResyncState by sending fixtures and patch data.
 pub fn handle_resync_state(
-    mut events: MessageReader<ResyncRequested>,
+    mut resync: ResyncReplies,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     geometry_provider: Option<Res<crate::geometry::GeometryProviderResource>>,
     input_bindings: Res<InputBindings>,
     output_bindings: Res<OutputBindings>,
     disabled_bindings: Res<DisabledBindings>,
     binding_validation_settings: Res<BindingValidationSettings>,
-    mut parameter_state: ResMut<ParameterStateProjection>,
-    broadcaster: Res<ClientEventSink>,
+    mut parameter_requests: ResMut<ParameterStateRequests>,
+    mut universe_stream: ResMut<DmxUniverseStream>,
 ) {
-    let should_resync = events.read().next().is_some();
-
-    if !should_resync {
+    let Some(broadcaster) = resync.sink() else {
         return;
-    }
+    };
 
-    parameter_state.request_layout();
+    let audiences = broadcaster.audiences().iter().copied();
+    parameter_requests.layout.request_each(audiences.clone());
+    parameter_requests.keyframe.request_each(audiences);
+    universe_stream.request_list(broadcaster.audiences());
     // Send fixtures with geometry if provider is available
     send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {
         geometry_provider
@@ -719,14 +625,18 @@ mod tests {
     use nightfall::prelude::{FixtureRef, Identifiers};
     use nightfall_fixture_model::parameter::ParameterMetadata;
     use nightfall_io::prelude::{NetworkDmxOutputTargets, UsbDmxOutputTargets};
+    use nightfall_io::{BindingTransport, OutputTransport};
 
     use super::*;
     use crate::binding_resolution::{derive_console_addresses, resolve_output_bindings};
     use crate::bindings::{ConsoleDmxAddresses, DmxRange, OutputSource, OutputTarget};
     use crate::fixture::FixtureElement;
+    use crate::output_frames::OutputDmxFrames;
     use crate::output_frames::{OutputRouting, compose_output_frames, update_input_routing};
     use crate::parameter::{Parameter, ParameterValues};
+    use crate::universe::ConsoleDmxUniverses;
     use crate::universe::{ConsoleChannelOrigin, dmx_universes};
+    use crate::universe_stream::{DmxIoMode, collect_universes};
 
     /// Builds an app running binding resolution and DMX universe composition.
     fn pipeline_app() -> App {
@@ -851,16 +761,20 @@ mod tests {
         app.update();
         app.update();
         let world = app.world();
-        build_output_universes(
+        collect_universes(
             world.resource::<ConsoleDmxUniverses>(),
             world.resource::<OutputDmxFrames>(),
+            world.resource::<InputDmxUniverses>(),
+            u32::MAX,
+            Instant::now(),
         )
         .into_iter()
+        .filter(|view| view.key.io_mode == DmxIoMode::Output)
         .map(|view| {
             (
-                view.transport.expect("output views carry a label"),
-                view.universe_id,
-                view.channels,
+                view.key.transport,
+                view.key.universe_id,
+                view.channels.to_vec(),
             )
         })
         .collect()

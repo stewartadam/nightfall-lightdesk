@@ -32,8 +32,11 @@ async function expectEdges(viewport: Locator, visible: string[]) {
   }
 }
 
-/** Prevents activation through every blurred edge while retaining wheel scrolling and uncovered clicks. */
-test("blurred edges block pointer activation but preserve scrolling", async ({
+/**
+ * Verifies each visible edge shields the content beneath it from hover and activation, scrolls
+ * toward itself when clicked, and still passes wheel scrolling through to the viewport.
+ */
+test("blurred edges shield covered content and scroll when clicked", async ({
   page,
 }, testInfo) => {
   const panel = await openTables(page);
@@ -41,7 +44,6 @@ test("blurred edges block pointer activation but preserve scrolling", async ({
     name: "Timecode table scroll area",
   });
   await viewport.evaluate((element) => {
-    element.scrollTo({ top: 100, left: 40 });
     element.setAttribute("data-pointer-activations", "0");
     for (const type of ["pointerdown", "click", "dblclick", "contextmenu"]) {
       element.addEventListener(type, () => {
@@ -52,16 +54,48 @@ test("blurred edges block pointer activation but preserve scrolling", async ({
       });
     }
   });
-  await expectEdges(viewport, ["top", "bottom", "left", "right"]);
   const frame = viewport.locator("..");
-  for (const edge of ["top", "bottom", "left", "right"]) {
+  const start = { top: 100, left: 40 };
+  const moves = {
+    top: (after: { top: number }) => after.top < start.top,
+    bottom: (after: { top: number }) => after.top > start.top,
+    left: (after: { left: number }) => after.left < start.left,
+    right: (after: { left: number }) => after.left > start.left,
+  };
+  for (const edge of ["top", "bottom", "left", "right"] as const) {
+    await viewport.evaluate(
+      (element, position) =>
+        element.scrollTo({ ...position, behavior: "instant" }),
+      start,
+    );
+    await expectEdges(viewport, ["top", "bottom", "left", "right"]);
     const strip = frame.locator(`[data-edge="${edge}"]`);
     const bounds = (await strip.boundingBox())!;
     const x = bounds.x + bounds.width / 2;
     const y = bounds.y + bounds.height / 2;
-    await page.mouse.click(x, y);
-    await page.mouse.dblclick(x, y);
+    await page.mouse.move(x, y);
+    expect(
+      await page.evaluate(
+        ([px, py]) =>
+          document
+            .elementFromPoint(px, py)
+            ?.closest(".nf-scroll-edge")
+            ?.getAttribute("data-edge"),
+        [x, y],
+      ),
+    ).toBe(edge);
     await page.mouse.click(x, y, { button: "right" });
+    await page.mouse.click(x, y);
+    await expect
+      .poll(async () =>
+        moves[edge](
+          await viewport.evaluate((element) => ({
+            top: element.scrollTop,
+            left: element.scrollLeft,
+          })),
+        ),
+      )
+      .toBe(true);
     await expect(viewport).toHaveAttribute("data-pointer-activations", "0");
     expect(
       await strip.evaluate(
@@ -69,6 +103,12 @@ test("blurred edges block pointer activation but preserve scrolling", async ({
       ),
     ).toBe("blur(4px)");
   }
+  await viewport.evaluate(
+    (element, position) =>
+      element.scrollTo({ ...position, behavior: "instant" }),
+    start,
+  );
+  await expectEdges(viewport, ["top", "bottom", "left", "right"]);
   await frame.screenshot({
     path: testInfo.outputPath("stronger-edge-blur.png"),
   });
@@ -80,13 +120,13 @@ test("blurred edges block pointer activation but preserve scrolling", async ({
   await page.mouse.wheel(0, 80);
   await expect
     .poll(() => viewport.evaluate((element) => element.scrollTop))
-    .toBeGreaterThan(100);
+    .toBeGreaterThan(start.top);
   const right = (await frame.locator('[data-edge="right"]').boundingBox())!;
   await page.mouse.move(right.x + right.width / 2, right.y + right.height / 2);
   await page.mouse.wheel(60, 0);
   await expect
     .poll(() => viewport.evaluate((element) => element.scrollLeft))
-    .toBeGreaterThan(40);
+    .toBeGreaterThan(start.left);
   await expect(viewport).toHaveAttribute("data-pointer-activations", "0");
   const bounds = (await viewport.boundingBox())!;
   await page.mouse.click(
@@ -95,7 +135,11 @@ test("blurred edges block pointer activation but preserve scrolling", async ({
   );
   await expect(viewport).toHaveAttribute("data-pointer-activations", "2");
   await viewport.evaluate((element) =>
-    element.scrollTo({ top: element.scrollHeight, left: element.scrollWidth }),
+    element.scrollTo({
+      top: element.scrollHeight,
+      left: element.scrollWidth,
+      behavior: "instant",
+    }),
   );
   await expectEdges(viewport, ["top", "left"]);
   await page.mouse.click(
@@ -160,6 +204,28 @@ test("tab chevrons follow horizontal scrolling and direction", async ({
   const first = tabs.getByRole("tab", { name: "Editable cues" });
   await first.focus();
   await expectEdges(tabs, ["right"]);
+  expect(
+    await tabs.evaluate(
+      (element: HTMLElement) => element.offsetHeight - element.clientHeight,
+    ),
+  ).toBe(0);
+  const rightEdge = tabs.locator("..").locator('[data-edge="right"]');
+  const chevron = rightEdge.locator("svg");
+  await expect(chevron).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+  await rightEdge.hover();
+  await expect(chevron).not.toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+  await panel.screenshot({
+    path: testInfo.outputPath("tab-chevron-hover.png"),
+  });
+  await rightEdge.click();
+  await expect
+    .poll(() => tabs.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(0);
+  await expect(first).toBeFocused();
+  await tabs.locator("..").locator('[data-edge="left"]').click();
+  await expect
+    .poll(() => tabs.evaluate((element) => element.scrollLeft))
+    .toBe(0);
   await first.press("End");
   await expect(tabs.getByRole("tab", { name: "Progress bars" })).toBeFocused();
   await expectEdges(tabs, ["left"]);

@@ -32,6 +32,12 @@ export interface DataGridScrollRequest {
 
 export type DataGridEditCommitMode = "default" | "alternate";
 
+/**
+ * What a grid lets the user select: individual cells, whole rows, the browser's
+ * native text selection, or nothing.
+ */
+export type DataGridSelectionMode = "cell" | "row" | "text" | "none";
+
 /** Controls what an inline edit commit does besides writing the value. */
 export interface DataGridEditCommitOptions {
   /** Whether keyboard focus returns to the grid; false when focus is leaving it. */
@@ -48,6 +54,13 @@ interface DataGridBaseProps {
   rows: number;
   /** Disables all editing and deletion while preserving navigation, selection and copying. */
   readOnly?: boolean;
+  /**
+   * Chooses the surrounding chrome. `grid` draws spreadsheet cell borders and a
+   * cell selection outline for editing; `table` draws row lines, row hover and a
+   * row-tinted selection so status and report views read like a plain table.
+   * Defaults to `table` for read-only grids and `grid` otherwise.
+   */
+  appearance?: "grid" | "table";
   density?: "comfortable" | "compact";
   columnGuides?: boolean;
   ariaLabel?: string;
@@ -97,9 +110,24 @@ interface DataGridBaseProps {
   cellDecorations?: DataGridCellDecorationCallback;
   gridSelection?: GridSelection;
   rowMarkers?: "none" | "checkbox";
+  /**
+   * Chooses what clicks, drags and arrow keys select. `"cell"` (the default)
+   * selects individual cells and rectangular ranges; `"row"` always selects
+   * whole rows, for lists where a row is the record and its cells are not
+   * individually meaningful. `"text"` turns grid selection off and lets the
+   * browser select and copy cell text like a document table; `"none"` turns
+   * all selection off for purely presentational tables. Both hide row markers
+   * and are meant for read-only grids.
+   */
+  selectionMode?: DataGridSelectionMode;
   freezeColumns?: number;
   width?: number | string;
-  height?: number | string;
+  /**
+   * Pixel or CSS height, filling the parent by default. `"content"` sizes the
+   * grid to its headers and rows so it flows like a plain table; cap it with a
+   * max-height class to keep long lists scrolling inside the grid.
+   */
+  height?: number | "content" | (string & {});
   rowHeight?: number;
   primaryColumnIndex?: number;
   decorationInvalidateKey?: unknown;

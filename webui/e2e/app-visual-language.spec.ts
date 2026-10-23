@@ -61,10 +61,9 @@ test("application shares the design lab visual language", async ({
     .getByRole("button", { name: "Toggle selection mode", exact: true })
     .click();
   await card.click();
-  await expect(groupsPanel.locator(".nf-crud-card-selected").first()).toHaveCSS(
-    "border-top-color",
-    "rgb(84, 213, 180)",
-  );
+  await expect(
+    groupsPanel.locator('.nf-crud-card[data-selected="true"]').first(),
+  ).toHaveCSS("border-top-color", "rgb(84, 213, 180)");
   await card.click({ button: "right" });
   await expect(page.locator('[data-menu-kind^="context"]')).toBeVisible();
   await page.screenshot({
@@ -72,7 +71,7 @@ test("application shares the design lab visual language", async ({
   });
   await page.keyboard.press("Escape");
   await groupsPanel
-    .getByRole("button", { name: "Switch to list view", exact: true })
+    .getByRole("radio", { name: "List view", exact: true })
     .click();
   await expect(page.locator('[role="grid"]:visible').first()).toHaveCSS(
     "background-color",

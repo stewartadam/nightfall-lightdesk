@@ -17,7 +17,25 @@ import {
 import { playContentEntrance } from "./content-entrance";
 import { ScrollArea } from "./scroll-area";
 import { Button } from "./visual-language/button";
+import "./segmented.css";
 import "./segmented-tabs.css";
+
+/**
+ * Scrolls the strip horizontally so a tab is fully visible inside its scroll padding, which
+ * keeps the edge indicators from covering it. Only the strip scrolls: unlike
+ * `scrollIntoView`, this never moves an enclosing dialog, panel or page. Does nothing when
+ * the tab is already visible. The viewport is the tabs' offset parent, so `offsetLeft` is in
+ * the strip's scroll coordinates.
+ */
+function revealTab(viewport: HTMLElement, tab: HTMLElement) {
+  const style = getComputedStyle(viewport);
+  const padStart = Number.parseFloat(style.scrollPaddingInlineStart) || 0;
+  const padEnd = Number.parseFloat(style.scrollPaddingInlineEnd) || 0;
+  const start = tab.offsetLeft - padStart;
+  const end = tab.offsetLeft + tab.offsetWidth + padEnd - viewport.clientWidth;
+  if (viewport.scrollLeft > start) viewport.scrollLeft = start;
+  else if (viewport.scrollLeft < end) viewport.scrollLeft = end;
+}
 
 interface SegmentedTabsProps<T extends string> {
   density?: "compact" | "comfortable";
@@ -65,6 +83,22 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
       },
     ),
   );
+
+  /**
+   * Scrolls the selected tab into view whenever the selection changes, including the initial
+   * one, so a tab chosen programmatically (e.g. Settings opened on a specific tab) is not left
+   * hidden past the edge of a narrow strip. Waits a frame so the strip has been laid out.
+   */
+  createEffect(() => {
+    const index = props.options.findIndex(
+      (option) => option.key === props.value,
+    );
+    const frame = requestAnimationFrame(() => {
+      const tab = tabs[index];
+      if (tab) revealTab(viewport, tab);
+    });
+    onCleanup(() => cancelAnimationFrame(frame));
+  });
 
   /** Tracks the selected button's layout so the highlight slides between unequal-width tabs. */
   createEffect(() => {
@@ -150,12 +184,7 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
             aria-selected={props.value === tab.key}
             tabIndex={props.value === tab.key ? 0 : -1}
             onClick={() => props.onChange(tab.key)}
-            onFocus={(event) =>
-              event.currentTarget.scrollIntoView({
-                block: "nearest",
-                inline: "nearest",
-              })
-            }
+            onFocus={(event) => revealTab(viewport, event.currentTarget)}
             onKeyDown={(event) => navigateTabs(event, index())}
           >
             {tab.label}

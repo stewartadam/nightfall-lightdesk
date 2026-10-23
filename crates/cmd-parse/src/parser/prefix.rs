@@ -15,13 +15,24 @@ use crate::lexicon::aliases::canonical_token_has_alias_prefix;
 use crate::lexicon::tokens::{canonical_text, token_id_for_text, top_level_command_heads};
 use crate::parser::analysis::{
     ClauseExpectation, ClauseParseTree, CommandPrefixContext, CommandPrefixSnapshot,
-    ContinuationKind, ContinuationTarget, ExpectedToken, GrammarRuleId, ParseBranchState,
-    ParseCursor, ParseStatus, PathStatus, SlotRef, ValueKind,
+    CompletionInventory, ContinuationKind, ContinuationTarget, ExpectedToken, GrammarRuleId,
+    ParseBranchState, ParseCursor, ParseStatus, PathStatus, SlotRef, TokenId, ValueKind,
 };
 use crate::slots::contracts::{ClauseId, SlotId};
 
-/// Parses the command prefix up to the cursor and projects parser state for autocomplete.
+/// Parses the command prefix up to the cursor and projects parser state for autocomplete,
+/// offering only the grammar's built-in names.
 pub fn parse_prefix<'i>(input: &'i str, cursor: usize) -> CommandPrefixSnapshot<'i> {
+    parse_prefix_with_inventory(input, cursor, &CompletionInventory::default())
+}
+
+/// Parses the command prefix up to the cursor and projects parser state for autocomplete,
+/// offering the show's configured names (such as output targets) where the grammar takes them.
+pub fn parse_prefix_with_inventory<'i>(
+    input: &'i str,
+    cursor: usize,
+    inventory: &CompletionInventory,
+) -> CommandPrefixSnapshot<'i> {
     let mut bounded_cursor = cursor.min(input.len());
     while !input.is_char_boundary(bounded_cursor) {
         bounded_cursor -= 1;
@@ -29,7 +40,7 @@ pub fn parse_prefix<'i>(input: &'i str, cursor: usize) -> CommandPrefixSnapshot<
     let prefix = &input[..bounded_cursor];
 
     let tokens = lex_command(prefix);
-    let mut snapshot = parse_tokenized_prefix(prefix, &tokens);
+    let mut snapshot = parse_tokenized_prefix(prefix, &tokens, inventory);
     if !snapshot.context.has_trailing_whitespace {
         if let Some(token) = lex_command(input).iter().find(|token| {
             token.span.start == snapshot.context.active_token_start
@@ -45,6 +56,7 @@ pub fn parse_prefix<'i>(input: &'i str, cursor: usize) -> CommandPrefixSnapshot<
 pub(crate) fn parse_tokenized_prefix<'i>(
     prefix: &'i str,
     tokens: &[LexerToken],
+    inventory: &CompletionInventory,
 ) -> CommandPrefixSnapshot<'i> {
     let context = build_prefix_context(tokens, prefix.len());
     let mut branches = build_structural_branches(tokens, &context, 0);
@@ -89,7 +101,12 @@ pub(crate) fn parse_tokenized_prefix<'i>(
         .filter(|branch| branch.cursor.furthest_pos == furthest)
         .flat_map(|branch| branch.frontier.iter().cloned())
         .collect();
-    let replacement_branches = active_token_replacement_branches(prefix, &context);
+    let mut replacement_branches = active_token_replacement_branches(prefix, &context, inventory);
+    replacement_branches.extend(output_target_replacement_branches(
+        prefix, &context, inventory,
+    ));
+    let typing_word = !context.has_trailing_whitespace
+        && prefix.ends_with(|ch: char| ch.is_ascii_alphanumeric() || ch == '-');
     for branch in &mut branches {
         if branch.cursor.furthest_pos < consumed_end {
             if context.has_trailing_whitespace
@@ -102,6 +119,18 @@ pub(crate) fn parse_tokenized_prefix<'i>(
                 expectation.replace_active_token = true;
             }
         }
+        // An output name appended to a word being typed (`@ fog-f` + `fog-fx`) would glue two
+        // names together; the replacement branches offer outputs that replace the word instead.
+        if typing_word {
+            for expectation in &mut branch.frontier {
+                if !expectation.replace_active_token && expectation_names_output(expectation) {
+                    expectation.expected_tokens.retain(|token| {
+                        !matches!(token, ExpectedToken::Token(id) if OUTPUT_TARGET_KEYWORDS.contains(id))
+                    });
+                }
+            }
+        }
+        offer_output_targets(&mut branch.frontier, inventory);
         if let Some(active) = context.active_token_text.as_deref() {
             for expectation in &mut branch.frontier {
                 if expectation.replace_active_token {
@@ -183,6 +212,7 @@ fn build_structural_branches<'i>(
 fn active_token_replacement_branches<'i>(
     prefix: &str,
     context: &CommandPrefixContext,
+    inventory: &CompletionInventory,
 ) -> Vec<ParseBranchState<'i>> {
     let Some(active) = context.active_token_text.as_deref() else {
         return Vec::new();
@@ -201,14 +231,154 @@ fn active_token_replacement_branches<'i>(
                 .rfind(|token| token.kind != LexerTokenKind::Whitespace)
                 .map_or(0, |token| token.span.end)
     });
+    // Inside a hyphenated name only the last fragment is active, so output names offered
+    // here would replace just that fragment; output_target_replacement_branches covers them.
+    let inside_hyphenated_name = hyphenated_name_start(prefix, context).is_some();
     for branch in &mut branches {
         branch.ast = None;
         branch.status = PathStatus::Live;
+        if inside_hyphenated_name {
+            branch
+                .frontier
+                .retain(|expectation| !expectation_names_output(expectation));
+        } else {
+            offer_output_targets(&mut branch.frontier, inventory);
+        }
         for expectation in &mut branch.frontier {
             expectation.replace_active_token = true;
             expectation
                 .expected_tokens
                 .retain(|expected| expected_token_matches_active_text(expected, active));
+        }
+        branch
+            .frontier
+            .retain(|expectation| !expectation.expected_tokens.is_empty());
+    }
+    branches.retain(|branch| !branch.frontier.is_empty());
+    branches
+}
+
+/// Slots whose expectations name an output target (`patch ... @ <output>:1.1`, `ch <output>:1.1`).
+/// Patch sources are inputs, which are not configured by name, so they keep the keywords.
+const OUTPUT_TARGET_SLOTS: [SlotId; 3] = [
+    SlotId::PatchTargetEndpoint,
+    SlotId::ChannelOverrideIdentifier,
+    SlotId::ReleaseChannelExpr,
+];
+
+/// Built-in output keywords the grammar offers where a configured output name may appear.
+const OUTPUT_TARGET_KEYWORDS: [TokenId; 3] = [TokenId::Sacn, TokenId::Artnet, TokenId::Udmx];
+
+/// Swaps the built-in output keywords in output-naming expectations for the configured output
+/// target IDs, so completion lists exactly the outputs this show can address.
+fn offer_output_targets(frontier: &mut [ClauseExpectation], inventory: &CompletionInventory) {
+    if inventory.output_targets.is_empty() {
+        return;
+    }
+    for expectation in frontier {
+        if !expectation_names_output(expectation) {
+            continue;
+        }
+        let is_keyword = |token: &ExpectedToken| matches!(token, ExpectedToken::Token(id) if OUTPUT_TARGET_KEYWORDS.contains(id));
+        // Outputs take the keywords' place so they keep their rank among the suggestions.
+        let position = expectation
+            .expected_tokens
+            .iter()
+            .position(is_keyword)
+            .unwrap_or_default();
+        expectation
+            .expected_tokens
+            .retain(|token| !is_keyword(token));
+        let targets = inventory
+            .output_targets
+            .iter()
+            .map(|target| ExpectedToken::Literal(target.clone()))
+            .filter(|literal| !expectation.expected_tokens.contains(literal))
+            .collect::<Vec<_>>();
+        expectation
+            .expected_tokens
+            .splice(position..position, targets);
+    }
+}
+
+/// Returns whether an expected token is an output name at this continuation: a built-in output
+/// keyword or a configured output literal filling an output slot.
+pub(crate) fn is_output_target_name(target: &ContinuationTarget, token: &ExpectedToken) -> bool {
+    matches!(target, ContinuationTarget::Slot(slot) if OUTPUT_TARGET_SLOTS.contains(&slot.slot))
+        && match token {
+            ExpectedToken::Token(id) => OUTPUT_TARGET_KEYWORDS.contains(id),
+            ExpectedToken::Literal(_) => true,
+            ExpectedToken::Placeholder(_) => false,
+        }
+}
+
+/// Returns whether an expectation offers an output name: it fills an output slot and lists
+/// the built-in output keywords.
+fn expectation_names_output(expectation: &ClauseExpectation) -> bool {
+    matches!(
+        &expectation.target,
+        ContinuationTarget::Slot(slot) if OUTPUT_TARGET_SLOTS.contains(&slot.slot)
+    ) && expectation.expected_tokens.iter().any(
+        |token| matches!(token, ExpectedToken::Token(id) if OUTPUT_TARGET_KEYWORDS.contains(id)),
+    )
+}
+
+/// Returns where a hyphenated name ending at the cursor starts (`stage-l` in `ch stage-l`), or
+/// `None` when the word being typed has no hyphen, so the lexer keeps it as a single token.
+fn hyphenated_name_start(prefix: &str, context: &CommandPrefixContext) -> Option<usize> {
+    if context.has_trailing_whitespace {
+        return None;
+    }
+    let name_start = prefix
+        .bytes()
+        .rposition(|byte| !(byte.is_ascii_alphanumeric() || byte == b'-'))
+        .map_or(0, |index| index + 1);
+    let typed = &prefix[name_start..];
+    (name_start < context.active_token_start
+        && typed.contains('-')
+        && typed.starts_with(|ch: char| ch.is_ascii_alphabetic()))
+    .then_some(name_start)
+}
+
+/// Builds replacement branches for a hyphenated output name being typed, such as `stage-l`.
+///
+/// The lexer splits `stage-l` into several tokens, so the active-token replacement only sees
+/// `l`. These branches parse the text before the whole name and offer each configured output
+/// whose ID starts with it, replacing the full name.
+fn output_target_replacement_branches<'i>(
+    prefix: &str,
+    context: &CommandPrefixContext,
+    inventory: &CompletionInventory,
+) -> Vec<ParseBranchState<'i>> {
+    if inventory.output_targets.is_empty() {
+        return Vec::new();
+    }
+    let Some(name_start) = hyphenated_name_start(prefix, context) else {
+        return Vec::new();
+    };
+    let typed = prefix[name_start..].to_ascii_lowercase();
+
+    let before = &prefix[..name_start];
+    let tokens = lex_command(before);
+    let before_context = build_prefix_context(&tokens, before.len());
+    let consumed_end = tokens
+        .iter()
+        .rfind(|token| token.kind != LexerTokenKind::Whitespace)
+        .map_or(0, |token| token.span.end);
+    let mut branches = build_structural_branches(&tokens, &before_context, 0);
+    branches.retain(|branch| branch.cursor.furthest_pos >= consumed_end);
+    for branch in &mut branches {
+        branch.ast = None;
+        branch.status = PathStatus::Live;
+        branch.replace_start = Some(name_start);
+        branch.frontier.retain(expectation_names_output);
+        offer_output_targets(&mut branch.frontier, inventory);
+        for expectation in &mut branch.frontier {
+            expectation.replace_active_token = true;
+            expectation.expected_tokens.retain(|expected| {
+                matches!(expected, ExpectedToken::Literal(target)
+                    if target.to_ascii_lowercase().starts_with(&typed))
+            });
         }
         branch
             .frontier
@@ -330,6 +500,7 @@ fn build_command_head_branch<'i>(
             rule: GrammarRuleId::Command,
         }],
         ast: None,
+        replace_start: None,
     }
 }
 

@@ -169,6 +169,11 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
+    crate::error_reports::register_routes(
+        &mut app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+    );
     app.add_plugins(plugin_groups::DeskPlugins { log_config });
     app.add_plugins(plugin_groups::FxPlugins);
     app.add_plugins(plugin_groups::TimecodePlugins {
@@ -180,6 +185,7 @@ pub(super) fn init_bevy_with_transport_policy(
     app.add_plugins(plugin_groups::InputPlugins {
         network_input_enabled: transport_policy.allow_network_input,
         osc_bind_addr: runtime_config.osc_bind_addr,
+        midi_input_port: runtime_config.midi_input_port.clone(),
     });
 
     app.init_resource::<systems::showfile_events::ShowfileCleanSnapshotHash>();
@@ -225,11 +231,12 @@ pub(super) fn init_bevy_with_transport_policy(
         Update,
         (
             // event generation based on showfile
-            systems::showfile_events::handle_events,
+            systems::showfile_events::handle_events.run_if(disk_storage_available),
             bevy::ecs::schedule::ApplyDeferred,
             systems::deleted_object_instances::release_deleted_object_instances,
             systems::quit_event::handle_events,
             handle_periodic_draft_autosave,
+            save_draft_when_last_client_disconnects,
             handle_process_shutdown_request,
         )
             .chain()
@@ -281,7 +288,7 @@ fn native_runtime_capabilities(
     RuntimeCapabilities {
         runtime_mode: RuntimeMode::Native,
         experimental_flows: runtime_config.experimental_flows,
-        persistence: PersistenceCapability::Native,
+        disk_storage: true,
         fixture_library: if cfg!(feature = "fixture-library") {
             LibraryCapability::Native
         } else {
@@ -324,7 +331,6 @@ pub(super) fn handle_periodic_draft_autosave(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-        &Default::default(),
     ) {
         Ok(systems::showfile_events::DraftSaveOutcome::SavedDirtyDraft) => {
             tracing::debug!("Periodic showfile draft autosave wrote a dirty draft");
@@ -337,6 +343,41 @@ pub(super) fn handle_periodic_draft_autosave(
         }
         Err(error) => {
             tracing::warn!("Periodic showfile draft autosave failed: {}", error);
+        }
+    }
+}
+
+/// Persist a dirty working draft once the last connected client closes.
+///
+/// With no client left, nobody can save from a UI, so the backend keeps the work in the draft
+/// itself. A tab closing while another stays open saves nothing. Saves use the panel layout
+/// from the showfile's last explicit save, because each client arranges its own panels.
+pub(super) fn save_draft_when_last_client_disconnects(
+    mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
+    current_showfile: Res<systems::showfile_events::CurrentShowfile>,
+    mut clean_snapshot_hash: ResMut<systems::showfile_events::ShowfileCleanSnapshotHash>,
+    mut disconnects: MessageReader<LastClientDisconnected>,
+) {
+    if disconnects.read().count() == 0 || is_process_shutdown_requested() {
+        return;
+    }
+
+    match systems::showfile_events::save_draft_showfile_if_dirty(
+        &mut showfile_save_state,
+        current_showfile.name(),
+        &mut clean_snapshot_hash,
+    ) {
+        Ok(outcome) => {
+            tracing::info!(
+                ?outcome,
+                "Saved showfile draft after the last client disconnected"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(
+                "Failed to save showfile draft after the last client disconnected: {}",
+                error
+            );
         }
     }
 }

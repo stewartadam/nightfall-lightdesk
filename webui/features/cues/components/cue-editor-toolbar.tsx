@@ -15,6 +15,7 @@ import { Dynamic } from "solid-js/web";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
+import { SegmentedControl } from "../../../components/ui/segmented-control";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import type { GridColumn } from "../../../lib/data-grid-types";
@@ -40,27 +41,25 @@ export function CueEditorToolbar(props: CueEditorToolbarProps) {
     <PanelToolbar
       data-cue-editor-toolbar="true"
       left={
-        <>
-          <ToggleToolbarButton
-            tooltip="Display values"
-            disabled={props.isReleaseCue}
-            label="Switch to values display mode"
-            pressed={props.displayMode() === "values"}
-            size="labeled"
-            onClick={() => props.setDisplayMode("values")}
-          >
-            Values
-          </ToggleToolbarButton>
-          <ToggleToolbarButton
-            tooltip="Display timings"
-            label="Switch to timings display mode"
-            pressed={props.displayMode() === "timings"}
-            size="labeled"
-            onClick={() => props.setDisplayMode("timings")}
-          >
-            Timings
-          </ToggleToolbarButton>
-        </>
+        <SegmentedControl
+          label="Display mode"
+          density="compact"
+          options={[
+            {
+              value: "values",
+              label: "Values",
+              tooltip: "Display values",
+              disabled: props.isReleaseCue,
+            },
+            {
+              value: "timings",
+              label: "Timings",
+              tooltip: "Display timings",
+            },
+          ]}
+          value={props.displayMode()}
+          onChange={props.setDisplayMode}
+        />
       }
       right={
         <>

@@ -75,6 +75,14 @@ const TOKEN_SPECS: &[TokenSpec] = &[
     spec(TokenId::Debug, "debug"),
     spec(TokenId::Sleep, "sleep"),
     spec(TokenId::Fps, "fps"),
+    spec(TokenId::Tempo, "tempo"),
+    spec(TokenId::Tap, "tap"),
+    spec(TokenId::Resync, "resync"),
+    spec(TokenId::Snap, "snap"),
+    spec(TokenId::Half, "half"),
+    spec(TokenId::Double, "double"),
+    spec(TokenId::Nudge, "nudge"),
+    spec(TokenId::Bar, "bar"),
     spec(TokenId::Log, "log"),
     spec(TokenId::Fade, "fade"),
     spec(TokenId::Delay, "delay"),
@@ -147,13 +155,6 @@ pub fn top_level_command_heads() -> &'static [&'static str] {
                 .collect()
         })
         .as_slice()
-}
-
-/// Returns whether the text exactly matches a canonical top-level command head.
-pub fn is_exact_top_level_command_head(text: &str) -> bool {
-    top_level_command_heads()
-        .iter()
-        .any(|head| head.eq_ignore_ascii_case(text))
 }
 
 /// Returns the canonical text emitted for a token ID.

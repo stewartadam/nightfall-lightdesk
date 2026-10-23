@@ -7,8 +7,18 @@
  */
 
 import type { JSX } from "solid-js";
+import { RangeSlider } from "../ui/range-slider";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../ui/segmented-control";
 
 export type AttributeMode = "absolute" | "relative";
+
+const MODE_OPTIONS: readonly SegmentedControlOption<AttributeMode>[] = [
+  { value: "absolute", label: "Abs", tooltip: "Absolute value" },
+  { value: "relative", label: "Rel", tooltip: "Relative adjustment" },
+];
 
 export interface AttributeSliderProps {
   label: string;
@@ -21,14 +31,13 @@ export interface AttributeSliderProps {
   onValueChange: (value: number) => void;
   onCommit?: (value: number) => void;
   class?: string;
-  inputClass?: string;
 }
 
 /** Keeps committed attribute values inside the active mode's bounds. */
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
-/** Combines absolute/relative mode selection with synchronized range and numeric inputs. */
+/** Combines absolute/relative mode selection with the shared slider and its numeric entry, committing on release. */
 export default function AttributeSlider(
   props: AttributeSliderProps,
 ): JSX.Element {
@@ -50,60 +59,31 @@ export default function AttributeSlider(
 
   return (
     <div
-      class={`attribute-slider flex items-center gap-3 ${props.class ?? ""}`.trim()}
+      class={`flex flex-wrap items-center gap-3 ${props.class ?? ""}`.trim()}
     >
       <div class="w-28">
         <div class="text-xs font-medium text-neutral-300">{props.label}</div>
-        <div
-          class="mt-1 inline-flex rounded-md text-[10px] border border-neutral-600 overflow-hidden"
-          role="group"
-          aria-label={`${props.label} mode`}
-        >
-          <button
-            type="button"
-            aria-pressed={props.mode === "absolute"}
-            class={`px-2 py-0.5 ${props.mode === "absolute" ? "bg-blue-600 text-white" : "bg-neutral-800 text-neutral-300"}`}
-            onClick={() => updateMode("absolute")}
-          >
-            Abs
-          </button>
-          <button
-            type="button"
-            aria-pressed={props.mode === "relative"}
-            class={`px-2 py-0.5 ${props.mode === "relative" ? "bg-blue-600 text-white" : "bg-neutral-800 text-neutral-300"}`}
-            onClick={() => updateMode("relative")}
-          >
-            Rel
-          </button>
-        </div>
+        <SegmentedControl
+          class="mt-1"
+          label={`${props.label} mode`}
+          density="compact"
+          options={MODE_OPTIONS}
+          value={props.mode}
+          onChange={updateMode}
+        />
       </div>
 
-      <input
-        type="range"
-        aria-label={props.label}
+      <RangeSlider
+        value={props.value}
         min={props.min}
         max={props.max}
         step={step()}
-        value={props.value}
-        onInput={(e) => updateValue(Number.parseInt(e.currentTarget.value, 10))}
-        onChange={(e) =>
-          updateValue(Number.parseInt(e.currentTarget.value, 10), true)
-        }
-        class="flex-1 h-2 appearance-none rounded-full bg-neutral-700 accent-blue-600"
-      />
-
-      <input
-        type="number"
-        aria-label={`${props.label} value`}
-        min={props.min}
-        max={props.max}
-        step={step()}
-        value={props.value}
-        onInput={(e) => updateValue(Number.parseInt(e.currentTarget.value, 10))}
-        onChange={(e) =>
-          updateValue(Number.parseInt(e.currentTarget.value, 10), true)
-        }
-        class={`w-16 px-2 py-1 bg-neutral-800 border border-neutral-700 rounded text-right text-neutral-200 text-xs ${props.inputClass ?? ""}`.trim()}
+        ariaLabel={props.label}
+        suffix=""
+        showPips={false}
+        containerClass="min-w-0 flex-1"
+        onChange={(value) => updateValue(value)}
+        onCommit={(value) => updateValue(value, true)}
       />
     </div>
   );

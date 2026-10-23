@@ -24,10 +24,10 @@ import { Dynamic } from "solid-js/web";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { DialogBackdrop } from "../../../components/ui/dialog";
 import { registerDialog } from "../../../components/ui/modal/dialog-stack";
-import { ScrollArea } from "../../../components/ui/scroll-area";
 import {
   SearchPickerInput,
   SearchPickerOption,
+  SearchPickerResults,
   SearchPickerSurface,
 } from "../../../components/ui/search-picker";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -55,6 +55,7 @@ import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   blueprints,
+  boards,
   clips,
   colorPaths,
   cues,
@@ -76,6 +77,8 @@ import {
   visualizerEditSelection,
   visualizerSceneObjectSelection,
 } from "../../../state/appStores";
+import { activeBoardWorkspace } from "../../../state/layout-switcher";
+import { openBoardPanel } from "../../boards";
 import SequenceWrapTag from "../../sequences";
 
 interface ShowfileObjectPaletteProps {
@@ -90,7 +93,7 @@ const ShowfileObjectResultTagBadge: Component<{
   <Show
     fallback={
       <span
-        class="inline-flex h-6 max-w-32 shrink-0 items-center justify-center rounded border border-gray-300 bg-gray-50 px-2 text-xs font-medium text-gray-600 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+        class="inline-flex h-6 max-w-32 shrink-0 items-center justify-center rounded border border-neutral-600 bg-neutral-700 px-2 text-xs font-medium text-neutral-300"
         data-showfile-object-tag={props.tag.id}
         title={props.tag.label}
       >
@@ -130,6 +133,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   const $sceneObjects = useSharedStore(sceneObjects);
   const $timecodes = useStore(timecodes);
   const $timelines = useShallowStore(timelines);
+  const $boards = useShallowStore(boards);
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
 
@@ -173,6 +177,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
       sceneObjects: $sceneObjects(),
       timecodes: $timecodes(),
       timelines: $timelines(),
+      boards: $boards(),
     }),
   );
 
@@ -258,6 +263,12 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
 
   /** Opens the owning object panel and requests that the selected object is revealed. */
   const openObjectPanel = (entry: ShowfileObjectSearchEntry) => {
+    // Each board has its own panel, so boards open or focus that panel instead.
+    if (entry.type === "board") {
+      openBoardPanel(entry.uid);
+      props.onClose();
+      return;
+    }
     openOrFocusPanel(
       $dockApi(),
       entry.panelId,
@@ -399,6 +410,8 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
 
   /** Opens the editor for editable object types, or falls back to panel highlight. */
   const openObjectEditor = (entry: ShowfileObjectSearchEntry) => {
+    // Editors open beside the layout's panels, so a board filling the workspace makes way.
+    activeBoardWorkspace.set(null);
     switch (entry.type) {
       case "cue":
         openCueEditor(entry);
@@ -535,7 +548,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
           }
         />
 
-        <ScrollArea
+        <SearchPickerResults
           class="min-h-0 max-h-[32rem]"
           viewportProps={{
             ref: (element) => {
@@ -554,7 +567,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
                   class="mx-auto size-12 text-gray-400"
                   aria-hidden
                 />
-                <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                <h3 class="mt-2 text-sm font-medium text-neutral-100">
                   No objects found
                 </h3>
               </div>
@@ -580,10 +593,10 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
                       >
                         <div class="flex min-w-0 w-full items-center justify-between gap-4">
                           <div class="min-w-0">
-                            <div class="min-h-6 truncate font-medium text-gray-900 dark:text-gray-100">
+                            <div class="min-h-6 truncate font-medium text-neutral-100">
                               {showfileObjectResultLabel(entry)}
                             </div>
-                            <div class="truncate text-sm text-gray-500 dark:text-gray-400">
+                            <div class="truncate text-sm text-neutral-400">
                               {showfileObjectResultDescription(entry)}
                             </div>
                           </div>
@@ -602,7 +615,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
               </For>
             </ul>
           </Show>
-        </ScrollArea>
+        </SearchPickerResults>
       </SearchPickerSurface>
     </DialogBackdrop>
   );

@@ -34,6 +34,8 @@ Publication (fresh runner; contents: write; no Apple credentials)
   LFS media. It excludes Git hooks and redundant LFS object storage. This runner
   refuses to archive persisted Git credential or HTTP authorization settings.
   It never installs project dependencies, runs project scripts, or restores caches.
+  For a manual preview run it also lists the previewed PR's changed files as plain
+  data with a `pull-requests: read` token.
   On release tags it also snapshots the published-release API as plain data.
 - **Execute:** native checks, WASM, UI tests, browser-demo packaging, and desktop
   packaging download that source artifact. All workflows default to
@@ -63,20 +65,49 @@ Publication (fresh runner; contents: write; no Apple credentials)
   notarizes, and staples that DMG. A temporary keychain is removed on exit.
   The current app has no bundled frameworks or nested application bundles;
   adding those requires reviewing extraction and inside-out signing support.
+- **Update signing:** publishing a release runs `desktop-updates.yml`. A fresh
+  Linux runner downloads the four update packages (the signed macOS app archive,
+  Windows installer, Debian package, and AppImage) from that release as data and
+  signs each one with the updater key. This key is release authority: every
+  installed app accepts what it signs. The job holds only
+  `TAURI_SIGNING_PRIVATE_KEY` and its password, and a read-only token. It runs
+  system tools and one installed tool, an exact minisign release whose SHA-256 is
+  pinned in the workflow and checked before use. It checks each signature against
+  the `TAURI_SIGNING_PUBLIC_KEY` variable, removes the decoded key on exit, and
+  writes `latest.json`. A second runner, which never sees the key, checks that the
+  manifest names the published version and replaces it on the `updater` release.
 - **Publish:** another fresh runner downloads the installers, notices, and release
-  notes as data. It requires exactly four installers and one combined notices file,
+  notes as data. It requires exactly the four installers, the macOS update archive, and one combined notices file,
   rejects empty files and links, computes checksums, and uploads them to a draft
-  release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. Only this
+  release, which a maintainer reviews and publishes. It runs no downloaded code or project scripts. In the tag workflow, only this
   job uses a write-capable GitHub token; the reusable-workflow caller supplies
   that permission ceiling, while the signer retains `permissions: {}`.
-- **Preview:** for same-repository PRs, a fresh runner downloads this run's
-  browser-demo artifact as data and uploads it as a private Cloudflare Workers
+- **Preview:** for same-repository PRs (drafts when opened and through `/republish`), a fresh runner downloads this run's
+  browser-demo artifact (and, when the PR changes them, its built mdBooks) as data
+  and uploads them as a private Cloudflare Workers
   Preview, then comments the link on the PR. It is the one credentialed job that
   runs installed tooling: the pinned `cloudflare/wrangler-action` installs an exact
   Wrangler version from npm. That is acceptable because the job holds no release
   authority, only a token limited to Workers Scripts edits and a
   `pull-requests: write` GitHub token, and never acquires source or build caches.
   Fork PRs never select a preview, so they never reach this credential.
+- **PR commands:** `pr-commands.yml` runs on PR comments from the default
+  branch's copy of the workflow, never the PR's, and only for commenters with
+  write or admin access (checked by the pinned `github/command` action). It never
+  acquires source or runs project code. `/recheck-cla` only calls the public
+  cla-assistant.io check URL and reads commit statuses. `/republish` holds
+  `actions: write` solely to rerun jobs of the PR's existing CI run, so the rerun
+  keeps that run's own permissions and artifacts, or, for a draft PR, to dispatch
+  `ci.yml` on the PR's own branch with the preview input. That manual run follows
+  the same boundaries as the PR's CI run, and `/republish` refuses fork and
+  Dependabot PRs, so it never hands the preview credential to code CI would not.
+- **Debug symbols:** on version tags, a fresh runner downloads this run's debug
+  symbol artifacts as data and uploads them to the error service so crash stack
+  traces resolve to functions and lines. It holds only `GLITCHTIP_AUTH_TOKEN`,
+  which should be limited to uploading project files, and no GitHub permissions.
+  It runs one installed tool, an exact `glitchtip-cli` release whose SHA-256 is
+  pinned in the workflow and checked before use; it never acquires source or
+  build caches.
 
 Only version-tag **pushes** enter signing/publication. PRs (including same-repo
 PRs), branch pushes, and manual runs never do. The build validates that the tag

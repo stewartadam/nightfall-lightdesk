@@ -6,12 +6,29 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, onCleanup, type ParentComponent } from "solid-js";
+import { useStore } from "@nanostores/solid";
 import {
-  type CommandAction,
+  createMemo,
+  createSignal,
+  onCleanup,
+  type ParentComponent,
+} from "solid-js";
+import { actionAllowsSurface } from "../../../features/actions";
+import { $mappingMode, bindArmedSource } from "../../../features/io";
+import { invokeBoundAction } from "../../../features/keybindings";
+import { actionCatalog } from "../../../state/appStores";
+import {
+  ActionInputKind,
+  type ActionReference,
+  ActionSurface,
+} from "../../../types";
+import {
+  $uiActions,
   CommandPaletteContext,
   type CommandPaletteContextType,
-  DEFAULT_CATEGORY,
+  registerUiAction,
+  type UiAction,
+  uiActionId,
 } from "../../providers/command-registry";
 import { useShellOverlayCoordinator } from "../../providers/shell-overlay-coordinator";
 import Modal from "../../ui/modal";
@@ -20,26 +37,62 @@ import OpenCommandPalette from "./commands/open-command-palette";
 
 export const CommandPaletteProvider: ParentComponent = (props) => {
   const { closeOtherOverlays, registerOverlay } = useShellOverlayCoordinator();
-  const [commands, setCommands] = createSignal<CommandAction[]>([]);
+  const commands = useStore($uiActions);
   const [isOpen, setIsOpen] = createSignal(false);
   const [selectedCommandId, setSelectedCommandId] = createSignal<string>();
 
-  /** Add commands with a default category and return the unsubscriber used on cleanup. */
-  const registerCommand = (command: CommandAction) => {
-    const newCommand = {
+  /**
+   * Registers a UI action in the shared registry with a default category, returning the
+   * disposer that removes only this registration.
+   */
+  const registerAction = (command: UiAction) => registerUiAction(command);
+
+  const $backendCatalog = useStore(actionCatalog);
+  const $mode = useStore($mappingMode);
+
+  /**
+   * Returns UI actions plus argument-free backend trigger actions for the palette.
+   *
+   * While a MIDI or OSC control is armed in controller mapping mode, choosing an entry binds
+   * the control to it instead of running it, except entries that steer mapping mode itself.
+   * Before a control is armed, entries run as usual, so panels can still be opened.
+   */
+  const paletteEntries = createMemo<UiAction[]>(() => {
+    const backendEntries = $backendCatalog()
+      .filter(
+        (entry) =>
+          entry.descriptor.input === ActionInputKind.Trigger &&
+          actionAllowsSurface(entry, ActionSurface.CommandPalette) &&
+          entry.descriptor.parameters.every((parameter) => !parameter.required),
+      )
+      .map((entry): UiAction & { reference: ActionReference } => ({
+        id: `action:${entry.descriptor.id}`,
+        name: entry.descriptor.label,
+        description: entry.descriptor.description,
+        category: `Actions: ${entry.descriptor.category}`,
+        reference: { id: entry.descriptor.id, arguments: {} },
+        execute: () =>
+          invokeBoundAction(
+            { id: entry.descriptor.id, arguments: {} },
+            { source: "palette" },
+          ),
+      }));
+    const uiEntries = commands().map((command) => ({
       ...command,
-      category: command.category || DEFAULT_CATEGORY,
-    };
-
-    setCommands((prev) => [...prev, newCommand]);
-
-    return () => unregisterCommand(command.id);
-  };
-
-  /** Remove a command when its owning component unmounts or re-registers. */
-  const unregisterCommand = (id: string) => {
-    setCommands((prev) => prev.filter((cmd) => cmd.id !== id));
-  };
+      reference: { id: uiActionId(command), arguments: {} },
+    }));
+    return [...uiEntries, ...backendEntries].map(({ reference, ...entry }) =>
+      $mode().armed && !entry.runsWhileArmed
+        ? {
+            ...entry,
+            execute: () => {
+              hidePalette();
+              void bindArmedSource(reference, entry.name);
+            },
+          }
+        : entry,
+    );
+  });
 
   /** Opens the command palette after closing other transient shell overlays. */
   const showPalette = () => {
@@ -55,8 +108,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
   onCleanup(registerOverlay("commandPalette", hidePalette));
 
   const contextValue: CommandPaletteContextType = {
-    registerCommand,
-    unregisterCommand,
+    registerAction,
     showPalette,
     hidePalette,
     isOpen,
@@ -78,7 +130,7 @@ export const CommandPaletteProvider: ParentComponent = (props) => {
         <CommandPaletteUI
           isOpen={isOpen()}
           onClose={hidePalette}
-          commands={commands()}
+          commands={paletteEntries()}
           selectedCommandId={selectedCommandId()}
           onSelectedCommandIdChange={setSelectedCommandId}
         />

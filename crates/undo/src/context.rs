@@ -10,7 +10,7 @@ use bevy_ecs::world::World;
 
 /// Provides read-only access to ECS state for inverse generation.
 ///
-/// Used by `UndoableOperation::inverse()` to query current state before a command
+/// Used by `Undoable::inverse()` to query current state before a command
 /// executes, enabling capture of data needed to restore on undo.
 ///
 /// This struct holds a reference to the ECS World, allowing implementations

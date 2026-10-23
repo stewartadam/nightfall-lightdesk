@@ -18,7 +18,7 @@ use bevy_ecs::{prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_clips::{
-    Clip, ClipAction, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip, Source,
+    Clip, ClipOperation, ClipReleaseAfterInstance, InstanceIndex, MaterializedClip, Source,
     log_clip_lookup_failure,
 };
 use nightfall_compositor::prelude::*;
@@ -33,7 +33,7 @@ use nightfall_instances::{
 #[cfg(test)]
 use nightfall_instances::{InstanceClockDiscontinuity, InstanceClockSource};
 use nightfall_playback_planner::{PlaybackPositionSource, PlaybackReconstructionTiming};
-use nightfall_undo::prelude::{UndoEntry, UndoManager, UndoableOperation};
+use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -80,10 +80,6 @@ pub(crate) fn register_event_systems(app: &mut App) {
             sequence_crud_events,
             crate::materialized_sequence::rematerialize_sequences_after_sequence_definition_change
                 .after(sequence_crud_events),
-            crate::materialized_sequence::rebuild_blueprint_reference_index
-                .after(cue_crud_events)
-                .after(sequence_crud_events)
-                .before(DeskEventSet::BlueprintCrud),
             crate::materialized_sequence::rematerialize_after_blueprint_definition_change
                 .after(DeskEventSet::BlueprintCrud)
                 .after(DeskEventSet::BlueprintActions),

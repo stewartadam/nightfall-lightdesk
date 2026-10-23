@@ -216,8 +216,6 @@ export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
             fallback={
               <Button
                 size="compact"
-                type="button"
-                class="rounded bg-neutral-800 px-3 py-2 text-left text-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => void startEditing()}
                 disabled={props.disabled || !props.selection}
               >
@@ -254,8 +252,6 @@ export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
         <div class="flex items-center justify-end gap-2">
           <Button
             size="compact"
-            type="button"
-            class="rounded border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => void reset()}
             disabled={props.disabled || !props.selection}
           >
@@ -263,7 +259,6 @@ export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
           </Button>
           <Button
             size="compact"
-            type="button"
             variant="primary"
             onClick={() => void apply()}
             disabled={props.disabled || isApplying()}

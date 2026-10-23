@@ -298,10 +298,13 @@ async function insertedSequenceGotoAction(page: Page) {
       for (const track of timeline.tracks ?? []) {
         for (const item of track.actions ?? []) {
           if (
-            item.action?.type === "JumpToCue" &&
-            item.action.data?.uid === clipUid
+            item.action?.id === "clip.goto" &&
+            item.action.arguments?.clip === clipUid
           ) {
-            return item.action.data;
+            return {
+              uid: item.action.arguments.clip,
+              cue_index: item.action.arguments.cue_index,
+            };
           }
         }
       }
@@ -319,10 +322,13 @@ async function insertedClipRateAction(page: Page) {
       for (const track of timeline.tracks ?? []) {
         for (const item of track.actions ?? []) {
           if (
-            item.action?.type === "SetClipRate" &&
-            item.action.data?.uid === clipUid
+            item.action?.id === "clip.set-rate" &&
+            item.action.arguments?.clip === clipUid
           ) {
-            return item.action.data;
+            return {
+              uid: item.action.arguments.clip,
+              rate: item.action.arguments.rate,
+            };
           }
         }
       }
@@ -340,8 +346,8 @@ async function hasDeskEvalCommand(page: Page, expectedCommand: string) {
       for (const track of timeline.tracks ?? []) {
         for (const item of track.actions ?? []) {
           if (
-            item.action?.type === "DeskEval" &&
-            item.action.data === command
+            item.action?.id === "desk.eval" &&
+            item.action.arguments?.command === command
           ) {
             return true;
           }
@@ -363,7 +369,8 @@ async function deskEvalCommandTrackIds(page: Page, expectedCommand: string) {
         if (
           track.actions?.some(
             (item: any) =>
-              item.action?.type === "DeskEval" && item.action.data === command,
+              item.action?.id === "desk.eval" &&
+              item.action.arguments?.command === command,
           )
         ) {
           trackIds.push(track.id);
@@ -505,7 +512,7 @@ test("insert action picker inserts sequence goto target with cue index", async (
 
   await expect(
     timelineSurface.locator('[data-timeline-action="true"]').filter({
-      hasText: /Seq 1\.2: E2E Unique Goto via Exec 9101/,
+      hasText: /Jump 1\.2: Main Playback/,
     }),
   ).toBeVisible();
   await expect
@@ -545,6 +552,33 @@ test("insert action picker inserts clip rate actions", async ({ page }) => {
   await expect
     .poll(() => insertedClipRateAction(page))
     .toEqual({ uid: CLIP_RATE_UID, rate: 2.5 });
+});
+
+/** Verifies a typed rate above the action's maximum is clamped instead of rejected. */
+test("insert action picker clamps clip rates to the action's range", async ({
+  page,
+}) => {
+  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineSurface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  await expect(timelineSurface).toBeVisible();
+  await seedClipRateTarget(page);
+  await timelineSurface.click();
+
+  await page.keyboard.press("i");
+  await page.getByPlaceholder("Insert action...").fill("Set Clip Rate");
+  await page.keyboard.press("Enter");
+  await page
+    .getByPlaceholder(/Select target for Set Clip Rate/)
+    .fill("E2E Rate Target");
+  await page.keyboard.press("Enter");
+  await page.getByPlaceholder("Rate multiplier...").fill("6");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(() => insertedClipRateAction(page))
+    .toEqual({ uid: CLIP_RATE_UID, rate: 4 });
 });
 
 /** Keeps retained timeline portals and keyboard handlers scoped to their active layout. */
@@ -804,7 +838,10 @@ test("keyboard insert action uses the selected action track first", async ({
                 label: "Selected Insert Anchor",
                 position: { secs: 1, nanos: 0 },
                 duration: { secs: 1, nanos: 0 },
-                action: { type: "DeskEval", data: "group 1 at 10" },
+                action: {
+                  id: "desk.eval",
+                  arguments: { command: "group 1 at 10" },
+                },
               },
             ],
             automation_lanes: [],
@@ -896,4 +933,52 @@ test("timeline footer uses consistent compact sizing", async ({ page }) => {
   await page.screenshot({
     path: test.info().outputPath("timeline-footer-narrow.png"),
   });
+});
+
+/** Verifies catalog actions without a built-in timeline kind insert as action references. */
+test("insert action picker inserts registered catalog actions", async ({
+  page,
+}) => {
+  const timelineUid = await openOwnedTimelineApp(page);
+  const timelineSurface = page.locator(
+    `[data-timeline-surface="true"][data-timeline-uid="${timelineUid}"]`,
+  );
+  await expect(timelineSurface).toBeVisible();
+  const lane = timelineSurface
+    .locator('[data-timeline-track-lane="true"]')
+    .first();
+  await expect(lane).toBeVisible();
+  await lane.click({ button: "right", position: { x: 80, y: 18 } });
+  await page
+    .locator('[data-menu-kind="context"]')
+    .getByRole("menuitem", { name: "Insert Action..." })
+    .click();
+  await page.getByPlaceholder("Insert action...").fill("Clear programmer");
+  await expect(
+    page.getByText("live only; not replayed when seeking", { exact: false }),
+  ).toBeVisible();
+  await page.keyboard.press("Enter");
+
+  const configure = page.locator("[data-insert-registered-action]");
+  await expect(configure).toBeVisible();
+  await configure
+    .getByRole("button", { name: "Insert Clear programmer" })
+    .click();
+
+  await expect
+    .poll(() =>
+      page.evaluate((uid) => {
+        const timeline = (window as any).appStores.timelines.get()[uid];
+        return timeline.tracks.flatMap((track: any) =>
+          track.actions.map((action: any) => action.action),
+        );
+      }, timelineUid),
+    )
+    .toContainEqual({ id: "programmer.clear", arguments: {} });
+  await expect(
+    timelineSurface
+      .locator('[data-timeline-action="true"]')
+      .filter({ hasText: "Clear programmer" })
+      .first(),
+  ).toBeVisible();
 });

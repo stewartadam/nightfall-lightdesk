@@ -13,6 +13,7 @@ import {
   throttle,
 } from "@solid-primitives/scheduled";
 import { createMemo, createSignal } from "solid-js";
+import { EmptyState } from "../../../components/ui/empty-state";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridScrollRequest,
@@ -55,6 +56,7 @@ import { recordExternalPerformanceMeasure } from "../../../lib/performance-measu
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
+import type { LayerState } from "../../../lib/ws/types";
 import {
   fixtures,
   layerStack,
@@ -62,7 +64,6 @@ import {
   parameters,
   programmerSelection,
 } from "../../../state/appStores";
-import type * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import FixturesProperties from "../components/fixtures-properties";
 import { FixturesToolbar } from "../components/fixtures-toolbar";
@@ -148,13 +149,10 @@ export default function FixturesPanel(props: FixturesPanelProps) {
   }, $parametersRaw());
 
   /** Samples layer-derived display styling at the same cadence as displayed fixture values. */
-  const displayedLayerStack = createMemo<readonly types.OutboundLayerState[]>(
-    (previous) => {
-      const next = $layerStack();
-      return displayedOutputStateScheduled() ? next : previous;
-    },
-    $layerStack(),
-  );
+  const displayedLayerStack = createMemo<readonly LayerState[]>((previous) => {
+    const next = $layerStack();
+    return displayedOutputStateScheduled() ? next : previous;
+  }, $layerStack());
 
   /** Builds fixture source and transition styling from the shallow layer-stack snapshot. */
   const displayedLayerCellState = createMemo<FixtureLayerCellState>(() =>
@@ -660,7 +658,7 @@ export default function FixturesPanel(props: FixturesPanelProps) {
         />
         <div class="min-h-0 flex-1">
           {Object.keys($fixtures()).length === 0 ? (
-            <div class="p-4 text-center text-gray-500">Loading fixtures...</div>
+            <EmptyState loading title="Loading fixtures..." />
           ) : (
             <DataGrid
               columns={columns()}

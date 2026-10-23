@@ -12,15 +12,19 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
@@ -67,28 +71,32 @@ function TimelineCard(props: TimelineCardProps) {
         );
       }}
       class={CRUD_CARD_CLASS}
-      classList={{
-        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
-      }}
+      data-selectable-surface
+      data-selected={isSelected()}
       aria-pressed={isSelected()}
     >
       <div
         class="nf-timeline-card-title flex min-w-0 items-center"
         title={props.timeline.identifiers.label}
       >
-        <CrudInlineLabelEditor
-          ariaLabel="Timeline card label"
-          class="min-w-0 truncate"
-          editing={controller.editingCardLabelUid() === timelineUid}
-          label={props.timeline.identifiers.label}
-          onCancel={() => controller.setEditingCardLabelUid(null)}
-          onCommit={(label) =>
-            controller.updateTimelineLabel(props.timeline, label)
+        <Show
+          when={controller.editingCardLabelUid() === timelineUid}
+          fallback={
+            <span class="min-w-0 truncate">
+              {props.timeline.identifiers.label}
+            </span>
           }
         >
-          {props.timeline.identifiers.label}
-        </CrudInlineLabelEditor>
+          <InlineRenameField
+            ariaLabel="Timeline card label"
+            allowEmpty
+            value={props.timeline.identifiers.label}
+            onClose={() => controller.setEditingCardLabelUid(null)}
+            onCommit={(label) =>
+              controller.updateTimelineLabel(props.timeline, label)
+            }
+          />
+        </Show>
       </div>
       <div
         class="nf-timeline-card-audio truncate"
@@ -241,16 +249,16 @@ export function TimelineListView(props: TimelineListViewProps) {
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <Show when={controller.viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
-              <ToolbarButton
+              <ToolbarSeparator />
+              <ToggleToolbarButton
                 tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={controller.handleToggleSelectionMode}
-                ariaPressed={controller.selectionMode()}
+                pressed={controller.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }
@@ -334,11 +342,13 @@ export function TimelineListView(props: TimelineListViewProps) {
           <Show
             when={controller.timelineList().length > 0}
             fallback={
-              <div class="p-4 text-neutral-500">
-                {controller.allTimelineList().length > 0
-                  ? "No matching timelines"
-                  : "No timelines available"}
-              </div>
+              <EmptyState
+                title={
+                  controller.allTimelineList().length > 0
+                    ? "No matching timelines"
+                    : "No timelines available"
+                }
+              />
             }
           >
             <Show

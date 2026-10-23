@@ -16,10 +16,12 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ObjectSelector from "../../../components/widgets/object-selector";
-import { engineRuntime } from "../../../lib/engine-runtime";
+import { commandClient } from "../../../lib/engine-commands";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -114,7 +116,7 @@ export default function ClipProperties(props: ClipPropertiesProps) {
   });
 
   const sendClipCommand = (command: types.ClipCommand) => {
-    engineRuntime.sendCommand({ module: "ClipCommand", command });
+    commandClient.emit("ClipCommand", command);
   };
 
   const assignSource = (nextSource: types.Source) => {
@@ -253,9 +255,11 @@ export default function ClipProperties(props: ClipPropertiesProps) {
     <Show
       when={clip()}
       fallback={
-        <div class="p-4 text-sm text-neutral-500">
-          Select one clip to edit its source assignment and options.
-        </div>
+        <EmptyState
+          variant="inline"
+          class="p-4"
+          title="Select one clip to edit its source assignment and options."
+        />
       }
     >
       {(currentClip) => (
@@ -270,15 +274,13 @@ export default function ClipProperties(props: ClipPropertiesProps) {
                   {currentClip().identifiers.label || "Untitled"}
                 </p>
               </div>
-              <span
-                class="rounded-full px-2 py-1 text-[10px] font-medium uppercase tracking-wide"
-                classList={{
-                  "bg-emerald-500/20 text-emerald-200": isActive(),
-                  "bg-neutral-700 text-neutral-300": !isActive(),
-                }}
+              <Badge
+                tone={isActive() ? "success" : "neutral"}
+                appearance="soft"
+                uppercase
               >
                 {isActive() ? "Active" : "Idle"}
-              </span>
+              </Badge>
             </div>
             <label class="mt-3 block text-xs font-medium text-neutral-300">
               Label

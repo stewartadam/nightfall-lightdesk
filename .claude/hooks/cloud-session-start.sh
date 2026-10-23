@@ -23,6 +23,18 @@ cd "$CLAUDE_PROJECT_DIR"
 # SessionStart stdout is injected into the model context; keep install logs out.
 exec >&2
 
+# Cloud sessions have a fixed disk allowance that one test build nearly halves.
+# Incremental caches (~5 GB per build, growing with every edit) are not worth it
+# in a short-lived container, and zlib-compressed debug sections roughly halve
+# each test binary while keeping backtrace line numbers (std cannot read zstd).
+# Scoped to the host target so wasm32 builds keep their default linker flags.
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  cat >>"$CLAUDE_ENV_FILE" <<'EOF'
+export CARGO_INCREMENTAL=0
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,--compress-debug-sections=zlib"
+EOF
+fi
+
 # The clone carries LFS pointers only; lint and the demo show need the files.
 git lfs pull
 
@@ -40,7 +52,7 @@ pnpm install --frozen-lockfile
 
 # Run the same quality gates on commit and push as local checkouts. prek keeps
 # the clone's Git LFS hooks as chained legacy hooks.
-pnpm exec prek install -t pre-commit -t pre-push -t post-merge -t post-rewrite
+pnpm exec prek install -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 
 # pnpm switches to the packageManager version without running that wrapper's
 # install script, leaving a shebang-less placeholder at its `pnpm` bin. Shells

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
@@ -14,6 +15,7 @@ import { GearIcon } from "@squidlab/phosphor-solid/gear";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { type JSX, Show } from "solid-js";
+import { hasDiskStorage } from "../../../lib/disk-storage";
 import { openFeedbackPage } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -23,6 +25,7 @@ import {
 } from "../../../lib/showfile-actions";
 import { isTauriRuntime } from "../../../lib/tauri";
 import { invokeTauriMenuAction } from "../../../lib/tauri-menu";
+import { runtimeCapabilities } from "../../../state/appStores";
 import { useAppShell } from "../../providers/app-shell";
 import {
   DropdownMenu,
@@ -31,6 +34,7 @@ import {
   DropdownMenuSubmenu,
 } from "../../ui/dropdown-menu";
 import { TOOLBAR_BUTTON_CLASS } from "../../ui/toolbar-button";
+import type { ButtonSize } from "../../ui/visual-language/button";
 
 const log = getLogger(import.meta.url);
 
@@ -43,6 +47,8 @@ export default function AppMenu(props: {
   trigger: JSX.Element;
   triggerLabel: string;
   triggerClass?: string;
+  /** Gives the trigger the shared `Button` look at this size instead of the toolbar look. */
+  triggerSize?: ButtonSize;
   placement?: "above" | "below";
   align?: "start" | "end";
   /**
@@ -60,6 +66,10 @@ export default function AppMenu(props: {
     showShowfileImportModal,
     showShowfileExportModal,
   } = useAppShell();
+  const capabilities = useStore(runtimeCapabilities);
+
+  /** Shows the new, open, import, save, and export items only when the backend can store shows on disk. */
+  const showStorageItems = () => hasDiskStorage(capabilities());
 
   /** Prompts for a show name before starting a fresh showfile. */
   const promptAndNewShowfile = () => {
@@ -74,7 +84,11 @@ export default function AppMenu(props: {
     <DropdownMenu
       triggerLabel={props.triggerLabel}
       triggerTitle={props.triggerLabel}
-      triggerClass={props.triggerClass ?? TOOLBAR_BUTTON_CLASS}
+      triggerClass={
+        props.triggerClass ??
+        (props.triggerSize ? undefined : TOOLBAR_BUTTON_CLASS)
+      }
+      triggerSize={props.triggerSize}
       placement={props.placement}
       align={props.align}
       trigger={props.trigger}
@@ -83,56 +97,44 @@ export default function AppMenu(props: {
         {props.leadingItems?.()}
         <DropdownMenuSeparator />
       </Show>
-      <DropdownMenuItem
-        icon={FilePlusIcon}
-        shortcut="⌘⇧N"
-        onClick={promptAndNewShowfile}
-      >
-        New Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FolderOpenIcon}
-        shortcut="⌘O"
-        onClick={() => {
-          showOpenShowfileModal();
-        }}
-      >
-        Open Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FileArrowDownIcon}
-        onClick={showShowfileImportModal}
-      >
-        Import Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FileArrowDownIcon}
-        shortcut="⌘S"
-        onClick={saveShowfile}
-      >
-        Save Showfile
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={FileArrowDownIcon}
-        onClick={showShowfileExportModal}
-      >
-        Export Showfile
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem icon={GearIcon} onClick={openSettings} shortcut="⌘,">
-        Settings
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        icon={QuestionIcon}
-        onClick={showShortcutsPopup}
-        shortcut="⇧?"
-      >
-        Keyboard Shortcuts
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem icon={InfoIcon} onClick={openAbout}>
-        About
-      </DropdownMenuItem>
+      <Show when={showStorageItems()}>
+        <DropdownMenuItem
+          icon={FilePlusIcon}
+          shortcut="⌘⇧N"
+          onClick={promptAndNewShowfile}
+        >
+          New Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FolderOpenIcon}
+          shortcut="⌘O"
+          onClick={() => {
+            showOpenShowfileModal();
+          }}
+        >
+          Open Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FileArrowDownIcon}
+          onClick={showShowfileImportModal}
+        >
+          Import Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FileArrowDownIcon}
+          shortcut="⌘S"
+          onClick={saveShowfile}
+        >
+          Save Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={FileArrowDownIcon}
+          onClick={showShowfileExportModal}
+        >
+          Export Showfile
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+      </Show>
       <DropdownMenuItem
         icon={QuestionIcon}
         onClick={() => openFeedbackPage("feedback")}
@@ -164,6 +166,20 @@ export default function AppMenu(props: {
           Collect Diagnostics
         </DropdownMenuItem>
       </DropdownMenuSubmenu>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem icon={GearIcon} onClick={openSettings} shortcut="⌘,">
+        Settings
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        icon={QuestionIcon}
+        onClick={showShortcutsPopup}
+        shortcut="⇧?"
+      >
+        Keyboard Shortcuts
+      </DropdownMenuItem>
+      <DropdownMenuItem icon={InfoIcon} onClick={openAbout}>
+        About
+      </DropdownMenuItem>
     </DropdownMenu>
   );
 }

@@ -20,6 +20,7 @@ import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { createKeyedDataGridCellProvider } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -51,10 +52,12 @@ import {
 import { makeColorSwatchCell } from "../../../lib/datagrid-rich-cells";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
 import { useSharedStore } from "../../../lib/use-shared-store";
+import type { LayerState } from "../../../lib/ws/types";
 import type { LayerNavigationRequest } from "../../../state/appStores";
 import { attributeMetadata, fixtures } from "../../../state/appStores";
 import * as types from "../../../types";
 import { LayerGrid } from "../components/layer-grid";
+import { LayerSectionTitle } from "../components/layer-section-title";
 import {
   createLayerCellProjection,
   createLayerValueMaps,
@@ -72,7 +75,7 @@ import {
 export type LayerViewProps = {
   contentOnly?: boolean;
   expandedFixtures?: Accessor<Set<string>>;
-  layer: types.OutboundLayerState | Accessor<types.OutboundLayerState>;
+  layer: LayerState | Accessor<LayerState>;
   summary?: LayerViewSummary | Accessor<LayerViewSummary>;
   layerIndex: number | Accessor<number>;
   panelId: string;
@@ -84,7 +87,7 @@ export type LayerViewProps = {
   showColumnVisibilityMenu?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
   onNavigationHandled?: (requestId: number) => void;
-  onNavigateToLayerObject?: (layer: types.OutboundLayerState) => void;
+  onNavigateToLayerObject?: (layer: LayerState) => void;
 };
 
 type LayerViewSummary = {
@@ -100,7 +103,7 @@ function resolveMaybeAccessor<T>(value: T | Accessor<T>): T {
 
 type LayerDisplayStructureInput = {
   revision: string;
-  layer: types.OutboundLayerState;
+  layer: LayerState;
   expanded: Set<string>;
   fixtureList: Record<string, types.Fixture>;
 };
@@ -530,33 +533,20 @@ export function LayerViewController(props: LayerViewProps) {
   }
 
   return (
-    <details
+    <Collapsible
       open={isOpen()}
-      onToggle={(event) => {
-        const nextOpen = (event.currentTarget as HTMLDetailsElement).open;
+      onOpenChange={(nextOpen) => {
         if (props.onOpenChange) {
           props.onOpenChange(nextOpen);
         } else {
           setLocalIsOpen(nextOpen);
         }
       }}
-      class="rounded-md border border-gray-700"
-    >
-      <summary class="flex cursor-pointer select-none items-center justify-between bg-neutral-800 px-4 py-2">
-        <span class="flex min-w-0 items-center gap-2 text-white">
-          <span class="shrink-0">Layer {layerIndex()}:</span>
-          <Show when={layerSummary().objectType}>
-            {(objectType) => (
-              <span class="shrink-0 rounded border border-gray-600 px-1.5 py-0.5 text-xs font-medium text-gray-300">
-                {objectType()}
-              </span>
-            )}
-          </Show>
-          <span class="min-w-0 truncate">
-            {layerSummary().creator ? layerSummary().creator : "Unnamed"}
-          </span>
-        </span>
-        <span class="ml-3 flex shrink-0 items-center gap-2">
+      title={
+        <LayerSectionTitle index={layerIndex()} summary={layerSummary()} />
+      }
+      actions={
+        <>
           <span class="text-xs text-gray-500">
             Priority: {layerSummary().priority}
           </span>
@@ -574,9 +564,10 @@ export function LayerViewController(props: LayerViewProps) {
               columns={displayColumns().columns}
             />
           </Show>
-        </span>
-      </summary>
+        </>
+      }
+    >
       {gridContent}
-    </details>
+    </Collapsible>
   );
 }

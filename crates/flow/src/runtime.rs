@@ -17,7 +17,7 @@ use nightfall_compositor::prelude::*;
 #[cfg(feature = "fx-module")]
 use nightfall_engine::prelude::DataProvider;
 use nightfall_engine::prelude::{
-    ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, EngineActionEnvelope, RequestEnvelope,
+    ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, EngineOperationEnvelope, RequestEnvelope,
 };
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
@@ -26,6 +26,7 @@ use nightfall_fx_module::prelude::StoredFxModule;
 #[cfg(test)]
 use nightfall_instances::InstanceClockSource;
 use nightfall_instances::{ClipInstanceRequest, InstanceClock, InstancePosition, InstanceStatus};
+use nightfall_tempo::prelude::ShowTempo;
 use nightfall_timecode::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -138,11 +139,6 @@ impl FlowRuntime {
         entry.value = value;
         entry.version = entry.version.saturating_add(1);
         Ok(true)
-    }
-
-    /// Emit a trigger on a trigger port.
-    pub fn emit_trigger(&mut self, port: FlowPortRef) -> Result<(), String> {
-        self.emit_trigger_count(port, 1)
     }
 
     /// Emit multiple trigger events on a trigger port.
@@ -280,6 +276,8 @@ pub struct FlowInstance {
     #[cfg(feature = "fx-module")]
     fx_module_runtimes: HashMap<FlowNodeId, FlowFxModuleRuntime>,
     is_running: bool,
+    /// Compositor priority of the layer this flow renders, taken from the clip that started it.
+    priority: Priority,
 }
 
 impl FlowInstance {
@@ -298,9 +296,27 @@ impl FlowInstance {
             #[cfg(feature = "fx-module")]
             fx_module_runtimes: HashMap::new(),
             is_running: true,
+            priority: Priority::default(),
         };
         instance.rebuild_nodes(registry);
         instance
+    }
+
+    /// Returns this instance configured to render its layer at `priority`.
+    pub fn with_priority(mut self, priority: Priority) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Returns the compositor priority this flow renders its layer at.
+    #[cfg(test)]
+    pub(crate) fn priority(&self) -> Priority {
+        self.priority
+    }
+
+    /// Changes the compositor priority used for this flow's layer from the next evaluation on.
+    pub(crate) fn set_priority(&mut self, priority: Priority) {
+        self.priority = priority;
     }
 
     pub(crate) fn is_running(&self) -> bool {
@@ -321,6 +337,7 @@ impl FlowInstance {
         let ctx = FlowNodeContext {
             position: Duration::ZERO,
             frame_delta: Duration::ZERO,
+            tempo: None,
         };
         for node in self.nodes.values_mut() {
             node.node.reset(&ctx);
@@ -410,7 +427,8 @@ pub fn evaluate_flow_instances(
     selection_resolver: SpatialSelectionResolver,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     mut clip_events: MessageWriter<RequestEnvelope<ClipInstanceRequest>>,
-    mut timecode_actions: MessageWriter<EngineActionEnvelope<TimecodeAction>>,
+    mut timecode_actions: MessageWriter<EngineOperationEnvelope<TimecodeOperation>>,
+    show_tempo: Option<Res<ShowTempo>>,
 ) {
     for (entity, mut instance, clock) in instances.iter_mut() {
         if !instance.is_running {
@@ -460,11 +478,12 @@ pub fn evaluate_flow_instances(
         let ctx = FlowNodeContext {
             position: evaluation_position,
             frame_delta,
+            tempo: show_tempo.as_ref().map(|tempo| tempo.snapshot()),
         };
 
         let mut flow_layer = Layer::new(
             instance.runtime.definition.identifiers.label.clone(),
-            Priority::default(),
+            instance.priority,
         );
         let mut has_layer = false;
 
@@ -1042,7 +1061,7 @@ fn dispatch_action_commands(
     inputs: &FlowPortValues,
     input_triggers: &FlowTriggerValues,
     clip_events: &mut MessageWriter<RequestEnvelope<ClipInstanceRequest>>,
-    timecode_actions: &mut MessageWriter<EngineActionEnvelope<TimecodeAction>>,
+    timecode_actions: &mut MessageWriter<EngineOperationEnvelope<TimecodeOperation>>,
 ) {
     match node_def.kind.as_str() {
         CLIP_ACTION_KIND => dispatch_clip_action(inputs, input_triggers, clip_events),
@@ -1100,7 +1119,7 @@ fn dispatch_clip_action(
 fn dispatch_timecode_action(
     inputs: &FlowPortValues,
     input_triggers: &FlowTriggerValues,
-    timecode_actions: &mut MessageWriter<EngineActionEnvelope<TimecodeAction>>,
+    timecode_actions: &mut MessageWriter<EngineOperationEnvelope<TimecodeOperation>>,
 ) {
     let count = input_triggers
         .get(&TIMECODE_IN_TRIGGER)
@@ -1121,13 +1140,19 @@ fn dispatch_timecode_action(
     let action = action.trim().to_ascii_lowercase();
     match action.as_str() {
         "start" | "on" => {
-            timecode_actions.write(EngineActionEnvelope::detached(TimecodeAction::Start(id)));
+            timecode_actions.write(EngineOperationEnvelope::detached(TimecodeOperation::Start(
+                id,
+            )));
         }
         "stop" | "off" => {
-            timecode_actions.write(EngineActionEnvelope::detached(TimecodeAction::Stop(id)));
+            timecode_actions.write(EngineOperationEnvelope::detached(TimecodeOperation::Stop(
+                id,
+            )));
         }
         "pause" => {
-            timecode_actions.write(EngineActionEnvelope::detached(TimecodeAction::Pause(id)));
+            timecode_actions.write(EngineOperationEnvelope::detached(TimecodeOperation::Pause(
+                id,
+            )));
         }
         other => {
             tracing::warn!("Timecode action node has unknown action '{}'", other);
@@ -1379,6 +1404,29 @@ mod tests {
         });
     }
 
+    /// Verifies the flow layer is composited at the priority the instance was started with.
+    #[test]
+    fn flow_layer_uses_instance_priority() {
+        with_test_module_data_dir("sparkle", || {
+            let mut app = setup_flow_fx_module_app();
+            let mut instance = app
+                .world_mut()
+                .query::<&mut FlowInstance>()
+                .single_mut(app.world_mut())
+                .expect("flow instance should exist");
+            instance.set_priority(Priority(9));
+
+            app.update();
+
+            let layer = app
+                .world_mut()
+                .query::<&Layer>()
+                .single(app.world())
+                .expect("flow should render a layer");
+            assert_eq!(layer.priority, Priority(9));
+        });
+    }
+
     /// Verifies nested FX module nodes render from the flow playback-clock position.
     #[test]
     fn fx_module_flow_node_uses_instance_clock_for_elapsed_time() {
@@ -1532,7 +1580,7 @@ mod tests {
         app.insert_resource(DataProvider::<Group>::default());
         app.insert_resource(DataProvider::<StoredFxModule>::default());
         app.insert_resource(Messages::<RequestEnvelope<ClipInstanceRequest>>::default());
-        app.insert_resource(Messages::<EngineActionEnvelope<TimecodeAction>>::default());
+        app.insert_resource(Messages::<EngineOperationEnvelope<TimecodeOperation>>::default());
 
         let mut registry = FlowNodeRegistry::default();
         register_builtin_nodes(&mut registry).expect("register builtin nodes");

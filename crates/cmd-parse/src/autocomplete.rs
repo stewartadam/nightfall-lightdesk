@@ -15,8 +15,9 @@ use crate::completion::composer::compose_candidates_with_snapshot;
 use crate::completion::formatting::{
     apply_text_for_candidate as completion_apply_text_for_candidate, token_replace_bounds,
 };
+pub use crate::parser::analysis::CompletionInventory;
 use crate::parser::analysis::{ClauseInstance, ParseStatus as AnalysisParseStatus, ParserFrontier};
-use crate::parser::prefix::parse_prefix;
+use crate::parser::prefix::{is_output_target_name, parse_prefix, parse_prefix_with_inventory};
 use crate::slots::planner::build_slot_plan_with_snapshot;
 use crate::{split_command_statements, statement_range_at, statement_ranges};
 
@@ -100,8 +101,20 @@ pub struct CommandValidationResponse {
     pub message: Option<String>,
 }
 
-/// Parses the active command segment and returns parser state, slot plans, and completion candidates for the cursor.
+/// Parses the active command segment and returns parser state, slot plans, and completion
+/// candidates for the cursor, offering only the grammar's built-in names.
 pub fn complete_command(input: &str, cursor: usize) -> CommandCompletionResponse {
+    complete_command_with_inventory(input, cursor, &CompletionInventory::default())
+}
+
+/// Parses the active command segment and returns parser state, slot plans, and completion
+/// candidates for the cursor, offering the show's configured names (such as output targets)
+/// wherever the grammar accepts them.
+pub fn complete_command_with_inventory(
+    input: &str,
+    cursor: usize,
+    inventory: &CompletionInventory,
+) -> CommandCompletionResponse {
     let input_len = input.len();
     let mut cursor = cursor.min(input_len);
     while !input.is_char_boundary(cursor) {
@@ -119,7 +132,11 @@ pub fn complete_command(input: &str, cursor: usize) -> CommandCompletionResponse
         end: replace_end,
     };
 
-    let prefix_snapshot = parse_prefix(&input[segment_start..segment_end], cursor - segment_start);
+    let prefix_snapshot = parse_prefix_with_inventory(
+        &input[segment_start..segment_end],
+        cursor - segment_start,
+        inventory,
+    );
     let mut slot_plan = build_slot_plan_with_snapshot(&prefix_snapshot);
     let mut composed = compose_candidates_with_snapshot(
         input,
@@ -130,7 +147,7 @@ pub fn complete_command(input: &str, cursor: usize) -> CommandCompletionResponse
         &slot_plan,
     );
 
-    finalize_candidates_for_input(input, &mut composed.candidates);
+    finalize_candidates_for_input(input, &prefix_snapshot, &mut composed.candidates);
 
     slot_plan.bind_candidates(&composed.candidates);
 
@@ -244,14 +261,32 @@ fn is_validation_noise_token(token: &str) -> bool {
 }
 
 /// Applies display labels and cursor-aware insertion text to each composed candidate.
-fn finalize_candidates_for_input(input: &str, candidates: &mut [CompletionCandidate]) {
+///
+/// Output names are inserted without a trailing space because the `:universe` that follows
+/// must touch them (`stage-left:1.1`).
+fn finalize_candidates_for_input(
+    input: &str,
+    snapshot: &crate::parser::analysis::CommandPrefixSnapshot<'_>,
+    candidates: &mut [CompletionCandidate],
+) {
+    let projected = snapshot.projected_expectations();
     for candidate in candidates.iter_mut() {
-        candidate.apply_text = completion_apply_text_for_candidate(
+        let apply_text = completion_apply_text_for_candidate(
             input,
             candidate.replace.start,
             candidate.replace.end,
             &candidate.insert_text,
         );
+        let names_output = candidate.frontier_sources.iter().any(|source| {
+            projected.get(*source).is_some_and(|projected| {
+                is_output_target_name(&projected.expectation.target, &candidate.expected)
+            })
+        });
+        candidate.apply_text = if names_output {
+            apply_text.trim_end().to_owned()
+        } else {
+            apply_text
+        };
     }
 }
 

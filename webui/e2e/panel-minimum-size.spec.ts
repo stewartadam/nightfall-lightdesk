@@ -145,25 +145,13 @@ test("panel definitions constrain grid and edge groups", async ({
       }),
     )
     .toBe(true);
-  const saved = await page.evaluate(() => {
+  // This device's own arrangement wins over the showfile's default layout
+  // on reload, so persist the undersized edge in the browser session.
+  await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("nightfall-ui-layouts")!);
     state.sessionLayout.layout.edgeGroups.right.size = 80;
-    return state.sessionLayout;
+    localStorage.setItem("nightfall-ui-layouts", JSON.stringify(state));
   });
-  // A showfile's active layout takes precedence over the browser session
-  // layout on load, so persist the undersized edge through the demo showfile.
-  await page.route(
-    "**/nightfall-demo.nightfall-show/showfile.json",
-    async (route) => {
-      const showfile = await (await route.fetch()).json();
-      showfile.settings.active_panel_layout = {
-        ...saved,
-        layoutId: showfile.settings.active_panel_layout?.layoutId,
-        updatedAt: Date.now(),
-      };
-      await route.fulfill({ json: showfile });
-    },
-  );
   await page.reload();
   await waitForDockviewApp(page);
   await expect

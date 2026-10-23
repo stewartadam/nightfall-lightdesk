@@ -29,14 +29,16 @@ use axum::{
 };
 use futures_util::SinkExt;
 use futures_util::StreamExt;
-use minicbor_serde;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    net::TcpListener,
-    sync::{broadcast::Receiver as BroadcastReceiver, mpsc::UnboundedSender},
-};
+use tokio::{net::TcpListener, sync::broadcast::Receiver as BroadcastReceiver};
 use tower_http::cors::{AllowOrigin, CorsLayer};
+
+use crate::outbox::{ClientOutbox, Enqueued, OUTBOX_BYTE_LIMIT, Publication};
+
+/// How long a client dropped for lagging has to receive its close frame before its socket is
+/// torn down without one.
+const LAGGING_CLIENT_CLOSE_GRACE: Duration = Duration::from_secs(5);
 
 const TRANSPORT_HEARTBEAT_RESPONSE_TYPE: &str = "WebSocketHeartbeatResponse";
 
@@ -70,8 +72,10 @@ struct TransportHeartbeatResponse<'a> {
 /// A connected session and whether it arrived through the loopback interface.
 #[derive(Clone)]
 pub struct ConnectedClient {
-    /// Outbound message channel for this session.
-    pub sender: UnboundedSender<Message>,
+    /// Identity the engine uses to address replies to this session.
+    pub id: ClientId,
+    /// Bounded outbound queue for this session.
+    pub(crate) outbox: Arc<ClientOutbox>,
     /// Cancels both I/O tasks without depending on the peer reading an outgoing frame.
     pub cancellation: tokio::sync::watch::Sender<bool>,
     /// Whether the session is local and survives external permission changes.
@@ -85,8 +89,12 @@ pub struct AxumAppState {
     pub command_json_tx: CommandSender,
     /// Channel for sending untracked JSON update envelopes from Axum.
     pub update_json_tx: ClientSender<UpdateJsonEnvelope>,
+    /// Tells the engine when the last session closes so it can protect unsaved work.
+    pub client_presence: ClientPresenceSender,
     /// Maintains references the message channels of connected client
     pub clients: Arc<Mutex<Vec<ConnectedClient>>>,
+    /// Source of unique identities for sessions, never reused while the server runs.
+    pub next_client_id: Arc<AtomicU64>,
     /// Admission generation used to reject remote upgrades from retired listeners.
     pub remote_generation: Arc<AtomicU64>,
     /// Session PIN and tokens that devices on the network need to connect.
@@ -109,7 +117,7 @@ async fn handle_socket(
 
 /// Encodes a non-droppable CBOR payload using the websocket binary wire format.
 fn non_droppable_binary_message<T: Serialize>(payload: &T) -> Option<Message> {
-    minicbor_serde::to_vec(payload).ok().map(|cbor_data| {
+    encode_client_cbor(payload).map(|cbor_data| {
         let mut encoded = Vec::with_capacity(1 + cbor_data.len());
         encoded.push(DISCRIMINATOR_NON_DROPPABLE);
         encoded.extend(cbor_data);
@@ -152,11 +160,12 @@ async fn client_ws(
     }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    let outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
     let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
     let clients = state.clients.clone();
     let command_json_tx = state.command_json_tx.clone();
     let update_json_tx = state.update_json_tx.clone();
+    let client_id = ClientId(state.next_client_id.fetch_add(1, Ordering::Relaxed));
 
     // Register client and then drop reference to the guard
     // Required to that this async fn is Send-compatible
@@ -169,45 +178,53 @@ async fn client_ws(
             return;
         }
         guard.push(ConnectedClient {
-            sender: tx.clone(),
-            cancellation,
+            id: client_id,
+            outbox: outbox.clone(),
+            cancellation: cancellation.clone(),
             local,
         });
     }
 
     // Task: forward backend → client
-    let send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            let should_close = matches!(msg, Message::Close(_));
-            if ws_sender.send(msg).await.is_err() {
-                break;
-            }
-            if should_close {
-                break;
+    let send_task = tokio::spawn({
+        let outbox = outbox.clone();
+        async move {
+            while let Some(msg) = outbox.next().await {
+                let should_close = matches!(msg, Message::Close(_));
+                if ws_sender.send(msg).await.is_err() {
+                    break;
+                }
+                if should_close {
+                    break;
+                }
             }
         }
     });
 
     // Task: client → backend
-    let tx_for_recv = tx.clone();
     let recv_task = tokio::spawn({
-        let clients = clients.clone();
+        let outbox = outbox.clone();
+        let cancellation = cancellation.clone();
         async move {
             while let Some(Ok(msg)) = ws_receiver.next().await {
                 if let Message::Text(text) = msg {
                     match serde_json::from_str::<InboundWebsocketText>(&text) {
-                        Ok(InboundWebsocketText::Command(json_envelope)) => {
+                        Ok(InboundWebsocketText::Command(mut json_envelope)) => {
                             tracing::trace!(
+                                %client_id,
                                 "Parsed command envelope from websocket (module={})",
                                 json_envelope.module
                             );
+                            json_envelope.reply_target = ReplyTarget::Client(client_id);
                             let _ = command_json_tx.send(json_envelope).await;
                         }
-                        Ok(InboundWebsocketText::Update(json_envelope)) => {
+                        Ok(InboundWebsocketText::Update(mut json_envelope)) => {
                             tracing::trace!(
+                                %client_id,
                                 "Parsed update envelope from websocket (module={})",
                                 json_envelope.module
                             );
+                            json_envelope.sender = Audience::Client(client_id);
                             let _ = update_json_tx.send(json_envelope).await;
                         }
                         Ok(InboundWebsocketText::Transport(TransportMessage::Heartbeat {
@@ -215,7 +232,9 @@ async fn client_ws(
                         })) => {
                             if let Some(message) = encode_transport_heartbeat_response(&data) {
                                 tracing::trace!("Responding to transport websocket heartbeat");
-                                let _ = tx_for_recv.send(message);
+                                if outbox.push(message) == Enqueued::Overflowed {
+                                    cancel_after_lag_grace(cancellation.clone());
+                                }
                             }
                         }
                         Err(_) => {
@@ -225,20 +244,30 @@ async fn client_ws(
                     }
                 }
             }
-
-            // Stop tracking this client, then drop the reference to the guard
-            // Required to that this async fn is Send-compatible
-            {
-                let mut guard = clients.lock().unwrap();
-                guard.retain(|c| !c.sender.same_channel(&tx_for_recv));
-            }
         }
     });
 
     supervise_client_tasks(send_task, recv_task, cancellation_rx).await;
 
+    tracing::debug!(
+        coalesced = outbox.coalesced_count(),
+        "WebSocket client disconnected"
+    );
+    let last = forget_client(&clients, &outbox);
+    if last {
+        tracing::info!(%client_id, "Last websocket client disconnected");
+    }
+    state.client_presence.client_disconnected(client_id, last);
+}
+
+/// Removes a closed session from the registry and returns whether no session remains.
+///
+/// Every registered session passes through here exactly once when it ends, whichever path
+/// closed it first, so the session that leaves the registry empty is the one that reports it.
+fn forget_client(clients: &Mutex<Vec<ConnectedClient>>, outbox: &Arc<ClientOutbox>) -> bool {
     let mut guard = clients.lock().unwrap();
-    guard.retain(|c| !c.sender.same_channel(&tx));
+    guard.retain(|c| !Arc::ptr_eq(&c.outbox, outbox));
+    guard.is_empty()
 }
 
 /// Cancels both socket directions on revocation even when either task is blocked on I/O.
@@ -268,10 +297,9 @@ async fn supervise_client_tasks(
 /// Closes every active session when listener permissions change or the host exits.
 fn close_connected_clients(clients: &Arc<Mutex<Vec<ConnectedClient>>>) {
     let mut guard = clients.lock().unwrap();
-    let close_message = Message::Close(None);
     for client in guard.iter() {
         client.cancellation.send_replace(true);
-        let _ = client.sender.send(close_message.clone());
+        client.outbox.close();
     }
     guard.clear();
 }
@@ -297,9 +325,21 @@ fn close_remote_entries(clients: &mut Vec<ConnectedClient>) {
     clients.retain(|client| {
         if !client.local {
             client.cancellation.send_replace(true);
-            let _ = client.sender.send(Message::Close(None));
+            client.outbox.close();
         }
         client.local
+    });
+}
+
+/// Tears down a lagging client's socket tasks if its close frame has not gone out within
+/// [`LAGGING_CLIENT_CLOSE_GRACE`].
+///
+/// A client that stopped reading entirely never accepts the close frame, which would otherwise
+/// leave its send task blocked until the TCP connection times out.
+fn cancel_after_lag_grace(cancellation: tokio::sync::watch::Sender<bool>) {
+    tokio::spawn(async move {
+        tokio::time::sleep(LAGGING_CLIENT_CLOSE_GRACE).await;
+        cancellation.send_replace(true);
     });
 }
 
@@ -344,13 +384,40 @@ async fn stop_listeners(
     }
 }
 
+/// Queues one engine frame on every session in its audience.
+///
+/// Each session's outbox bounds what a slow reader can accumulate and drops the session once
+/// it falls too far behind. A frame addressed to a session that already disconnected reaches
+/// no one.
+fn deliver_frame(clients: &Mutex<Vec<ConnectedClient>>, frame: OutboundFrame) {
+    tracing::trace!(
+        audience = ?frame.audience,
+        "Sending plugin-serialized websocket message ({} KB)",
+        frame.bytes.len() as f32 / 1024.0
+    );
+    let audience = frame.audience;
+    let publication = Publication::from_encoded(frame.bytes);
+    let mut guard = clients.lock().unwrap();
+    guard.retain(|client| {
+        if !audience.includes(client.id) {
+            return true;
+        }
+        let outcome = client.outbox.publish(&publication);
+        if outcome == Enqueued::Overflowed {
+            cancel_after_lag_grace(client.cancellation.clone());
+        }
+        outcome.keeps_client()
+    });
+}
+
 /// Start the axum websocket server and broadcast task.
 pub(crate) fn create_axum_task(
     config: crate::external_control::ListenerTaskConfig,
     mut shutdown_rx: BroadcastReceiver<()>,
-    ws_broadcast_rx: ClientReceiver<Vec<u8>>,
+    ws_broadcast_rx: ClientReceiver<OutboundFrame>,
     command_json_tx: CommandSender,
     update_json_tx: ClientSender<UpdateJsonEnvelope>,
+    client_presence: ClientPresenceSender,
     plugin_routes: Router,
     stateful_plugin_routes: Router<AxumAppState>,
     web_ui: Option<crate::SharedWebUiAssets>,
@@ -366,25 +433,21 @@ pub(crate) fn create_axum_task(
     let state = AxumAppState {
         command_json_tx,
         update_json_tx,
+        client_presence,
         clients: clients.clone(),
+        next_client_id: Default::default(),
         remote_generation: remote_generation.clone(),
         pairing: Arc::new(crate::pairing::RemotePairing::new(port)),
     };
     let routes = SwappableRoutes::new(state.clone(), web_ui, plugin_routes, stateful_plugin_routes);
     let axum_app = websocket_router(state, routes.clone());
 
-    // Byte-oriented broadcast task for plugin-owned serialization
+    // Byte-oriented fan-out task for plugin-owned serialization
     let _broadcast_task = tokio::spawn({
         let clients = clients.clone();
         async move {
-            while let Ok(encoded) = ws_broadcast_rx.recv().await {
-                tracing::trace!(
-                    "Sending plugin-serialized websocket message ({} KB)",
-                    encoded.len() as f32 / 1024.0
-                );
-                let message = Message::Binary(encoded.into());
-                let mut guard = clients.lock().unwrap();
-                guard.retain(|client| client.sender.send(message.clone()).is_ok());
+            while let Ok(frame) = ws_broadcast_rx.recv().await {
+                deliver_frame(&clients, frame);
             }
         }
     });
@@ -623,6 +686,7 @@ fn websocket_router(state: AxumAppState, routes: SwappableRoutes) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outbox::TryNextError;
 
     /// Exercises live wildcard/local rebinding and fallback after a selected address fails.
     #[tokio::test]
@@ -657,6 +721,7 @@ mod tests {
             broadcast_rx,
             CommandSender::new(command_tx, FrameWaker::default()),
             update_tx,
+            ClientPresenceSender::new(async_channel::unbounded().0, FrameWaker::default()),
             Router::new(),
             Router::new(),
             None,
@@ -729,6 +794,78 @@ mod tests {
             .unwrap();
     }
 
+    /// Verifies the engine hears about every closed session, and that only the final one is
+    /// marked last, so a tab closing while another stays open does not trigger last-client work.
+    #[tokio::test]
+    async fn disconnects_report_the_session_and_whether_it_was_last() {
+        let (command_tx, _command_rx) = async_channel::unbounded();
+        let (update_json_tx, _update_rx) = async_channel::unbounded();
+        let (presence_tx, presence_rx) = async_channel::unbounded();
+        let state = AxumAppState {
+            command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
+            update_json_tx,
+            client_presence: ClientPresenceSender::new(presence_tx, FrameWaker::default()),
+            clients: Default::default(),
+            next_client_id: Default::default(),
+            remote_generation: Default::default(),
+            pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
+        };
+        let clients = state.clients.clone();
+        let routes = SwappableRoutes::new(state.clone(), None, Router::new(), Router::new());
+        let app = websocket_router(state, routes).layer(Extension(0_u64));
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+        });
+        let registered = |count: usize| {
+            let clients = clients.clone();
+            async move {
+                while clients.lock().unwrap().len() != count {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        };
+
+        let (mut first, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let (mut second, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), registered(2))
+            .await
+            .unwrap();
+
+        first.close(None).await.unwrap();
+        let report = tokio::time::timeout(Duration::from_secs(5), presence_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            report,
+            ClientDisconnectReport {
+                client: ClientId(0),
+                last: false
+            }
+        );
+
+        second.close(None).await.unwrap();
+        let report = tokio::time::timeout(Duration::from_secs(5), presence_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            report,
+            ClientDisconnectReport {
+                client: ClientId(1),
+                last: true
+            }
+        );
+        assert!(presence_rx.try_recv().is_err());
+        server.abort();
+    }
+
     /// Verifies direct native encoding matches the transport-neutral bridge bytes.
     #[test]
     fn native_wire_encoding_matches_client_bridge_encoding() {
@@ -748,25 +885,27 @@ mod tests {
     /// Ensures permission changes revoke remote sessions while preserving loopback sessions.
     #[test]
     fn permission_changes_close_only_remote_clients() {
-        let (local_tx, mut local_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (remote_tx, mut remote_rx) = tokio::sync::mpsc::unbounded_channel();
+        let local_outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let remote_outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
         let (local_cancel, local_cancellation) = tokio::sync::watch::channel(false);
         let (remote_cancel, remote_cancellation) = tokio::sync::watch::channel(false);
         let clients = Arc::new(Mutex::new(vec![
             ConnectedClient {
-                sender: local_tx,
+                id: ClientId(0),
+                outbox: local_outbox.clone(),
                 cancellation: local_cancel,
                 local: true,
             },
             ConnectedClient {
-                sender: remote_tx,
+                id: ClientId(1),
+                outbox: remote_outbox.clone(),
                 cancellation: remote_cancel,
                 local: false,
             },
         ]));
         close_remote_clients(&clients, &AtomicU64::new(0));
-        assert_eq!(remote_rx.try_recv().unwrap(), Message::Close(None));
-        assert!(local_rx.try_recv().is_err());
+        assert_eq!(remote_outbox.try_next(), Ok(Message::Close(None)));
+        assert_eq!(local_outbox.try_next(), Err(TryNextError::Empty));
         assert!(!*local_cancellation.borrow());
         assert!(*remote_cancellation.borrow());
         assert_eq!(clients.lock().unwrap().len(), 1);
@@ -796,9 +935,9 @@ mod tests {
         incoming_tx.send("before revocation").unwrap();
         assert_eq!(commands_rx.recv().await, Some("before revocation"));
         let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
-        let (message_tx, _unread_messages) = tokio::sync::mpsc::unbounded_channel();
         let clients = Arc::new(Mutex::new(vec![ConnectedClient {
-            sender: message_tx,
+            id: ClientId(0),
+            outbox: Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT)),
             cancellation,
             local: false,
         }]));
@@ -820,23 +959,64 @@ mod tests {
         assert!(clients.lock().unwrap().is_empty());
     }
 
+    /// Verifies addressed frames reach only their client, broadcast frames reach every client,
+    /// and both keep their relative order on each session.
+    #[test]
+    fn deliver_frame_honours_audience() {
+        let first = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let second = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let clients = Mutex::new(vec![
+            ConnectedClient {
+                id: ClientId(1),
+                outbox: first.clone(),
+                cancellation: tokio::sync::watch::channel(false).0,
+                local: true,
+            },
+            ConnectedClient {
+                id: ClientId(2),
+                outbox: second.clone(),
+                cancellation: tokio::sync::watch::channel(false).0,
+                local: false,
+            },
+        ]);
+        let frame = |audience, byte| OutboundFrame {
+            audience,
+            bytes: vec![byte],
+        };
+
+        deliver_frame(&clients, frame(Audience::All, 1));
+        deliver_frame(&clients, frame(Audience::Client(ClientId(2)), 2));
+        deliver_frame(&clients, frame(Audience::Client(ClientId(9)), 3));
+        deliver_frame(&clients, frame(Audience::All, 4));
+
+        let drain = |outbox: &ClientOutbox| {
+            std::iter::from_fn(|| outbox.try_next().ok())
+                .map(|message| match message {
+                    Message::Binary(bytes) => bytes[0],
+                    other => panic!("unexpected message {other:?}"),
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(drain(&first), vec![1, 4]);
+        assert_eq!(drain(&second), vec![1, 2, 4]);
+        assert_eq!(clients.lock().unwrap().len(), 2);
+    }
+
     /// Verifies shutdown fanout sends a close frame and removes all registered clients.
     #[test]
     fn close_connected_clients_sends_close_and_clears_registry() {
-        let (client_tx, mut client_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let outbox = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
         let (cancellation, cancellation_rx) = tokio::sync::watch::channel(false);
         let clients = Arc::new(Mutex::new(vec![ConnectedClient {
-            sender: client_tx,
+            id: ClientId(0),
+            outbox: outbox.clone(),
             cancellation,
             local: true,
         }]));
 
         close_connected_clients(&clients);
 
-        let close_message = client_rx
-            .try_recv()
-            .expect("client should receive close frame");
-        assert_eq!(close_message, Message::Close(None));
+        assert_eq!(outbox.try_next(), Ok(Message::Close(None)));
         assert!(clients.lock().unwrap().is_empty());
         assert!(*cancellation_rx.borrow());
     }
@@ -894,7 +1074,12 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
         };
@@ -994,7 +1179,12 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(3030)),
         };
@@ -1131,7 +1321,12 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(3030)),
         };
@@ -1251,7 +1446,12 @@ mod tests {
         let state = AxumAppState {
             command_json_tx: CommandSender::new(command_tx, FrameWaker::default()),
             update_json_tx,
+            client_presence: ClientPresenceSender::new(
+                async_channel::unbounded().0,
+                FrameWaker::default(),
+            ),
             clients: Default::default(),
+            next_client_id: Default::default(),
             remote_generation: Default::default(),
             pairing: Arc::new(crate::pairing::RemotePairing::new(0)),
         };

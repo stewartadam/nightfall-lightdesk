@@ -6,28 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { heldButtonTag } from "../../../lib/held-button";
 import { durationToMs, formatElapsedTime } from "../../../lib/time-format";
 import {
   InstanceDisplayKind,
   type InstanceDisplayKind as InstanceDisplayKindType,
   type InstanceInfo,
 } from "../../../types";
-export type InstanceSortColumn =
-  | "kind"
-  | "instance"
-  | "state"
-  | "clip"
-  | "owners"
-  | "priority"
-  | "position"
-  | "intensity"
-  | "rate"
-  | "tags";
-export type SortDirection = "asc" | "desc";
-export type InstanceSortLabels = {
-  clipLabel: (clipId: number | null | undefined) => string;
-  ownerLabels: (instance: StatusInstanceInfo) => string;
-};
 export type StatusInstanceInfo = InstanceInfo & {
   is_paused?: boolean;
   owner_uids?: unknown[];
@@ -105,11 +90,20 @@ export function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-/** Returns a dense status label for a instance row. */
+/** Returns a dense status label for a instance row; a held Flash or Swop names itself. */
 export function instanceStateLabel(instance: StatusInstanceInfo): string {
   if (instance.is_releasing)
     return instance.is_paused ? "Paused release" : "Releasing";
-  return instance.is_paused ? "Paused" : "Running";
+  if (instance.is_paused) return "Paused";
+  return heldButtonTag(instance.held_button)?.label ?? "Running";
+}
+
+/** Explains a held Flash or Swop state by naming the slot holding it, if one does. */
+export function instanceStateTitle(
+  instance: StatusInstanceInfo,
+): string | undefined {
+  if (instance.is_releasing || instance.is_paused) return undefined;
+  return heldButtonTag(instance.held_button)?.title;
 }
 
 /** Returns visual classes for a instance state badge. */
@@ -121,6 +115,12 @@ export function instanceStateClass(instance: StatusInstanceInfo): string {
   }
   if (instance.is_paused) {
     return "bg-yellow-500/20 text-yellow-100 ring-yellow-400/30";
+  }
+  const held = heldButtonTag(instance.held_button);
+  if (held) {
+    return held.active
+      ? "bg-amber-500/20 text-amber-300 ring-amber-400/30"
+      : "bg-neutral-700 text-neutral-300 ring-neutral-500/30";
   }
   return "bg-emerald-500/20 text-emerald-100 ring-emerald-400/30";
 }
@@ -178,54 +178,22 @@ export function formatInstanceNext(instance: InstanceInfo): string {
   );
 }
 
-/** Compares instance rows using operator-facing projected values. */
+/**
+ * Orders instance rows before any column sort: highest priority first, then
+ * oldest activation, kind and name, so ties stay put across snapshots.
+ */
 export function compareStatusInstanceRows(
   left: StatusInstanceInfo,
   right: StatusInstanceInfo,
-  column: InstanceSortColumn,
-  direction: SortDirection,
-  labels: InstanceSortLabels,
 ): number {
-  const multiplier = direction === "asc" ? 1 : -1;
-  /** Compares two labels using the requested direction. */
-  const stringCompare = (leftValue: string, rightValue: string) =>
-    leftValue.localeCompare(rightValue) * multiplier;
-  /** Compares two numbers using the requested direction. */
-  const numberCompare = (leftValue: number, rightValue: number) =>
-    (leftValue - rightValue) * multiplier;
-
-  switch (column) {
-    case "kind":
-      return stringCompare(left.display_kind, right.display_kind);
-    case "instance":
-      return stringCompare(left.name ?? "", right.name ?? "");
-    case "state":
-      return stringCompare(instanceStateLabel(left), instanceStateLabel(right));
-    case "clip":
-      return stringCompare(
-        labels.clipLabel(left.bound_clip_id),
-        labels.clipLabel(right.bound_clip_id),
-      );
-    case "owners":
-      return stringCompare(labels.ownerLabels(left), labels.ownerLabels(right));
-    case "priority": {
-      const priorityResult = numberCompare(
-        left.priority ?? Number.NEGATIVE_INFINITY,
-        right.priority ?? Number.NEGATIVE_INFINITY,
-      );
-      if (priorityResult !== 0) return priorityResult;
-      return (left.activation_epoch_ms ?? 0) - (right.activation_epoch_ms ?? 0);
-    }
-    case "position":
-      return stringCompare(
-        formatInstancePosition(left),
-        formatInstancePosition(right),
-      );
-    case "intensity":
-      return numberCompare(left.intensity_scale, right.intensity_scale);
-    case "rate":
-      return numberCompare(left.effective_rate, right.effective_rate);
-    case "tags":
-      return stringCompare(left.tags.join(","), right.tags.join(","));
-  }
+  const priority =
+    (right.priority ?? Number.NEGATIVE_INFINITY) -
+    (left.priority ?? Number.NEGATIVE_INFINITY);
+  if (priority !== 0 && !Number.isNaN(priority)) return priority;
+  const activation =
+    (left.activation_epoch_ms ?? 0) - (right.activation_epoch_ms ?? 0);
+  if (activation !== 0) return activation;
+  const kind = left.display_kind.localeCompare(right.display_kind);
+  if (kind !== 0) return kind;
+  return (left.name ?? "").localeCompare(right.name ?? "");
 }

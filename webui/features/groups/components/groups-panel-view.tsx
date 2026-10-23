@@ -11,22 +11,27 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
-import PanelToolbar from "../../../components/ui/panel-toolbar";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import CrudInlineLabelEditor from "../../../components/widgets/crud/crud-inline-label-editor";
+import { EmptyState } from "../../../components/ui/empty-state";
+import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import PanelToolbar, {
+  ToolbarSeparator,
+} from "../../../components/ui/panel-toolbar";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
 import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
-  CRUD_CARD_SELECTED_CLASS,
-  CRUD_CARD_UNSELECTED_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
 import CrudViewModeToggle from "../../../components/widgets/crud/crud-view-mode-toggle";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import EntityEditorModal from "../../../components/widgets/entity-editor-dialog";
-import type * as types from "../../../types";
+import { setObjectDragData } from "../../../lib/object-drag";
+import * as types from "../../../types";
 import type { GroupsPanelController } from "../controllers/groups-panel-controller";
 
 interface GroupsPanelViewProps {
@@ -48,11 +53,16 @@ function GroupCard(props: GroupCardProps) {
     <button
       type="button"
       data-crud-select-id={uid}
-      class={CRUD_CARD_CLASS}
-      classList={{
-        [CRUD_CARD_UNSELECTED_CLASS]: !isSelected(),
-        [CRUD_CARD_SELECTED_CLASS]: isSelected(),
+      draggable={!controller.selectionMode()}
+      onDragStart={(event) => {
+        if (!event.dataTransfer) return;
+        setObjectDragData(event.dataTransfer, types.ObjectType.Group, uid);
+        event.dataTransfer.setData("text/plain", props.group.identifiers.label);
+        event.dataTransfer.effectAllowed = "copy";
       }}
+      class={CRUD_CARD_CLASS}
+      data-selectable-surface
+      data-selected={isSelected()}
       onClick={(event) => {
         if (controller.gridDragSelection.consumeSuppressedClick()) {
           event.preventDefault();
@@ -77,20 +87,24 @@ function GroupCard(props: GroupCardProps) {
         }
       >
         <div class="flex min-w-0 text-sm text-neutral-400">
-          <CrudInlineLabelEditor
-            ariaLabel="Group card label"
-            class="truncate"
-            editing={
+          <Show
+            when={
               controller.editingCardLabelUid() === props.group.identifiers.uid
             }
-            label={props.group.identifiers.label}
-            onCancel={() => controller.setEditingCardLabelUid(null)}
-            onCommit={(label) =>
-              controller.updateGroupLabel(props.group, label)
+            fallback={
+              <span class="truncate">{props.group.identifiers.label}</span>
             }
           >
-            {props.group.identifiers.label}
-          </CrudInlineLabelEditor>
+            <InlineRenameField
+              ariaLabel="Group card label"
+              allowEmpty
+              value={props.group.identifiers.label}
+              onClose={() => controller.setEditingCardLabelUid(null)}
+              onCommit={(label) =>
+                controller.updateGroupLabel(props.group, label)
+              }
+            />
+          </Show>
         </div>
       </Show>
     </button>
@@ -184,16 +198,16 @@ export function GroupsPanelView(props: GroupsPanelViewProps) {
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <Show when={controller.viewMode() === "grid"}>
-              <div class="mx-1 h-6 w-px bg-neutral-700" aria-hidden="true" />
-              <ToolbarButton
+              <ToolbarSeparator />
+              <ToggleToolbarButton
                 tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
                 onClick={controller.handleToggleSelectionMode}
-                ariaPressed={controller.selectionMode()}
+                pressed={controller.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
-              </ToolbarButton>
+              </ToggleToolbarButton>
             </Show>
           </>
         }
@@ -268,21 +282,17 @@ export function GroupsPanelView(props: GroupsPanelViewProps) {
           <Show
             when={controller.displayRows().length > 0}
             fallback={
-              <div class="py-8 text-center text-neutral-500">
-                <Show
-                  when={controller.allDisplayRows().length > 0}
-                  fallback={
-                    <>
-                      <p>No groups defined</p>
-                      <p class="mt-2 text-sm">
-                        Use the add button in the toolbar to create a group
-                      </p>
-                    </>
-                  }
-                >
-                  <p>No matching groups</p>
-                </Show>
-              </div>
+              <Show
+                when={controller.allDisplayRows().length > 0}
+                fallback={
+                  <EmptyState
+                    title="No groups defined"
+                    description="Use the add button in the toolbar to create a group"
+                  />
+                }
+              >
+                <EmptyState title="No matching groups" />
+              </Show>
             }
           >
             <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">

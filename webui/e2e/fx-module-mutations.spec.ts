@@ -191,7 +191,7 @@ test("stored module fx can be moved and removed", async ({
     fullPage: true,
   });
 
-  await fxPanel.getByRole("button", { name: "Switch to list view" }).click();
+  await fxPanel.getByRole("radio", { name: "List view" }).click();
   await fxPanel.getByText("Module Mutation Spec", { exact: true }).click();
   const deleteButton = fxPanel.getByRole("button", {
     name: "Delete selected effects",

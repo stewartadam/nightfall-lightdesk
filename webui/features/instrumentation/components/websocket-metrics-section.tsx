@@ -6,46 +6,112 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
+import { Collapsible } from "../../../components/ui/collapsible";
 import { Table, TableScroll } from "../../../components/ui/table";
-import { Button } from "../../../components/ui/visual-language/button";
+import DataGrid, {
+  createKeyedDataGridCellProvider,
+} from "../../../components/widgets/data-grid";
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+} from "../../../lib/data-grid-types";
 import type {
   PerformanceMeasureStats,
   WsStats,
 } from "../../../state/appStores";
-import type { MessageSortColumn, MessageTypeRow } from "../model/message-table";
-import { formatNumber, getDeliveryLagColor } from "../model/metrics";
-import { CollapsibleSection, MetricCard } from "./metric-sections";
+import type { MessageTypeRow, MessageTypeStats } from "../model/message-table";
+import { formatNumber, getDeliveryLagTone } from "../model/metrics";
+import { MetricCard, MetricValue } from "./metric-sections";
 
 interface WebSocketMetricsSectionProps {
   measures: Record<string, PerformanceMeasureStats>;
-  getSortIndicator: (column: MessageSortColumn) => string;
   rows: MessageTypeRow[];
   stats: WsStats | null;
-  toggleSort: (column: MessageSortColumn) => void;
 }
 
-const MESSAGE_COLUMNS: {
-  column: MessageSortColumn;
-  label: string;
-  leftAligned?: boolean;
-}[] = [
-  { column: "type", label: "Type", leftAligned: true },
-  { column: "count", label: "Count" },
-  { column: "ratePerSec", label: "Rate/s" },
-  { column: "avgDecodeMs", label: "Decode (EMA)" },
-  { column: "avgProcessMs", label: "Processing (EMA)" },
-  { column: "dropped", label: "Drop (cum.)" },
+const MESSAGE_COLUMNS: GridColumn[] = [
+  { id: "type", title: "Type", width: 180, sizing: "fixed" },
+  { id: "count", title: "Count", width: 88, sizing: "fixed", align: "right" },
+  {
+    id: "ratePerSec",
+    title: "Rate/s",
+    width: 88,
+    sizing: "fixed",
+    align: "right",
+  },
+  {
+    id: "avgDecodeMs",
+    title: "Decode (EMA)",
+    width: 112,
+    sizing: "fixed",
+    align: "right",
+  },
+  {
+    id: "avgProcessMs",
+    title: "Processing (EMA)",
+    width: 128,
+    sizing: "fixed",
+    align: "right",
+  },
+  {
+    id: "dropped",
+    title: "Drop (cum.)",
+    width: 104,
+    sizing: "fixed",
+    align: "right",
+  },
 ];
+
+/** Shows the warning tone used for messages that were coalesced or discarded. */
+const DROPPED_THEME = { textDark: "#eab308" };
+
+/** Projects one message-type aggregate into a typed, sortable cell for a totals column. */
+function messageCell(
+  [type, stats]: MessageTypeRow,
+  column: GridColumn,
+): GridCell {
+  if (column.id === "type")
+    return { kind: GridCellKind.Text, data: type, contentAlign: "left" };
+  const value = stats[column.id as keyof MessageTypeStats];
+  const display =
+    column.id === "ratePerSec"
+      ? formatNumber(value, 1)
+      : column.id === "avgDecodeMs" || column.id === "avgProcessMs"
+        ? formatNumber(value, 2, " ms")
+        : String(value);
+  return {
+    kind: GridCellKind.Number,
+    data: value,
+    displayData: display,
+    copyData: display,
+    contentAlign: "right",
+    themeOverride:
+      column.id === "dropped" && value > 0 ? DROPPED_THEME : undefined,
+  };
+}
 
 /** Presents websocket delivery health, pull cadence, and sortable type totals. */
 export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
+  /** Keys aggregates by message type so a header sort follows each type as totals update. */
+  const messageProvider = createMemo(() =>
+    createKeyedDataGridCellProvider({
+      rows: props.rows,
+      columns: MESSAGE_COLUMNS,
+      rowKey: ([type]) => type,
+      columnKey: (column) => column.id!,
+      getCellContent: ({ row, column }) => messageCell(row, column),
+    }),
+  );
   return (
-    <CollapsibleSection
+    <Collapsible
+      lazy
       title="WebSocket Messages"
-      headerContent={
+      contentClass="p-3"
+      actions={
         <Show when={props.stats}>
-          <span class="ml-auto flex items-center gap-2">
+          <span class="flex items-center gap-2">
             <span
               class={`rounded px-1.5 py-0.5 text-xs ${
                 props.stats?.main.backlogLagging
@@ -55,13 +121,12 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             >
               {props.stats?.main.backlogLagging ? "Lagging" : "Current"}
             </span>
-            <span
-              class={`font-mono text-xs ${getDeliveryLagColor(
-                props.stats?.main.avgDeliveryLagMs,
-              )}`}
+            <MetricValue
+              tone={getDeliveryLagTone(props.stats?.main.avgDeliveryLagMs)}
+              class="text-xs"
             >
               {formatNumber(props.stats?.main.avgDeliveryLagMs, 1, " ms")}
-            </span>
+            </MetricValue>
           </span>
         </Show>
       }
@@ -69,7 +134,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
       <Show
         when={props.rows.length > 0}
         fallback={
-          <div class="rounded-lg bg-gray-100 p-3 text-sm text-gray-500 dark:bg-gray-800">
+          <div class="rounded-lg bg-neutral-800 p-3 text-sm text-neutral-500">
             Waiting for messages...
           </div>
         }
@@ -77,7 +142,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
         <div class="space-y-3">
           <TableScroll
             aria-label="WebSocket timing stages scroll area"
-            class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800"
+            class="rounded-lg bg-neutral-800 p-3"
           >
             <Table aria-label="WebSocket timing stages">
               <thead>
@@ -151,7 +216,7 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
               </tbody>
             </Table>
           </TableScroll>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-neutral-400">
             Timings use the newest 6,000 samples per stage from the last 60
             seconds. Transport RTT measures a worker–server–worker heartbeat
             round trip, not one-way delivery. Worker processing covers decode
@@ -165,7 +230,8 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             <MetricCard
               label="Main delivery EMA"
               value={formatNumber(props.stats?.main.avgDeliveryLagMs, 1, " ms")}
-              valueClass={`text-xl font-bold ${getDeliveryLagColor(props.stats?.main.avgDeliveryLagMs)}`}
+              size="lg"
+              tone={getDeliveryLagTone(props.stats?.main.avgDeliveryLagMs)}
             />
             <MetricCard
               label="Main delivery max (session)"
@@ -174,11 +240,12 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
             <MetricCard
               label="Worker queue depth"
               value={props.stats?.worker.queueDepth ?? 0}
-              valueClass={`text-xl font-bold ${
+              size="lg"
+              tone={
                 (props.stats?.worker.queueDepth ?? 0) > 0
-                  ? "text-yellow-500"
-                  : ""
-              }`}
+                  ? "warning"
+                  : "default"
+              }
             />
           </div>
           <div class="grid grid-cols-4 gap-3">
@@ -223,92 +290,80 @@ export function WebSocketMetricsSection(props: WebSocketMetricsSectionProps) {
               value={`${props.stats?.main.lastSeenDeliveryMessageId ?? "—"} / ${
                 props.stats?.worker.lastStagedDeliveryMessageId ?? "—"
               }`}
-              valueClass="text-sm"
+              size="sm"
             />
             <MetricCard
               label="Pull state"
               value={props.stats?.main.pull?.inFlight ? "in flight" : "idle"}
             />
           </div>
-          <h3 class="text-sm font-medium">Worker message totals</h3>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            Decode and processing are worker-side exponential moving averages
-            (EMA). ParameterState snapshots are coalesced: newer snapshots
-            replace older ones before delivery, increasing Drop (cum.). This is
-            expected when updates arrive faster than the main thread consumes
-            them. Structural messages are queued separately and are not
-            coalesced. Queue overflow, resynchronization, or ParameterState
-            frames indexed by an outdated ParameterLayout can also cause drops;
-            the counter is not exclusively snapshot replacement. Delivery IDs
-            show main-thread received / worker staged.
+          <h3 class="text-sm font-medium">Parameter stream</h3>
+          <div class="grid grid-cols-4 gap-3">
+            <MetricCard
+              label="Keyframes"
+              value={props.stats?.worker.parameterStream?.keyframes ?? "—"}
+            />
+            <MetricCard
+              label="Deltas"
+              value={props.stats?.worker.parameterStream?.deltas ?? "—"}
+            />
+            <MetricCard
+              label="Gaps"
+              value={props.stats?.worker.parameterStream?.gaps ?? "—"}
+              size="lg"
+              tone={
+                (props.stats?.worker.parameterStream?.gaps ?? 0) > 0
+                  ? "warning"
+                  : "default"
+              }
+            />
+            <MetricCard
+              label="Drifted keyframes"
+              value={
+                props.stats?.worker.parameterStream?.driftedKeyframes ?? "—"
+              }
+              size="lg"
+              tone={
+                (props.stats?.worker.parameterStream?.driftedKeyframes ?? 0) > 0
+                  ? "danger"
+                  : "default"
+              }
+            />
+          </div>
+          <p class="text-xs text-neutral-400">
+            The worker applies every numbered ParameterState frame as it
+            arrives. A gap means a frame was missed, so the worker stops
+            delivering parameter state and asks the backend for a keyframe.
+            Drifted keyframes disagreed with the state the worker rebuilt
+            without a gap, and should always be zero.
           </p>
-          <TableScroll
-            aria-label="Worker message totals scroll area"
-            class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800"
-          >
-            <Table aria-label="Worker message totals">
-              <thead>
-                <tr>
-                  <For each={MESSAGE_COLUMNS}>
-                    {({ column, label, leftAligned }) => (
-                      <th
-                        scope="col"
-                        class={leftAligned ? "text-left" : "text-right"}
-                      >
-                        <Button
-                          size="compact"
-                          variant="subtle"
-                          type="button"
-                          class="w-full"
-                          style={{
-                            "justify-content": leftAligned
-                              ? "flex-start"
-                              : "flex-end",
-                          }}
-                          onClick={() => props.toggleSort(column)}
-                        >
-                          <span>{label}</span>
-                          <span class="w-2 text-right text-[10px]">
-                            {props.getSortIndicator(column)}
-                          </span>
-                        </Button>
-                      </th>
-                    )}
-                  </For>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={props.rows}>
-                  {([type, stats]) => (
-                    <tr>
-                      <td class="max-w-[120px] truncate font-mono" title={type}>
-                        {type}
-                      </td>
-                      <td class="text-right font-mono">{stats.count}</td>
-                      <td class="text-right font-mono">
-                        {formatNumber(stats.ratePerSec, 1)}
-                      </td>
-                      <td class="text-right font-mono">
-                        {formatNumber(stats.avgDecodeMs, 2, " ms")}
-                      </td>
-                      <td class="text-right font-mono">
-                        {formatNumber(stats.avgProcessMs, 2, " ms")}
-                      </td>
-                      <td
-                        class={`text-right font-mono ${
-                          stats.dropped > 0 ? "text-yellow-500" : ""
-                        }`}
-                      >
-                        {stats.dropped}
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </Table>
-          </TableScroll>
+          <h3 class="text-sm font-medium">Worker message totals</h3>
+          <p class="text-xs text-neutral-400">
+            Decode and processing are worker-side exponential moving averages
+            (EMA). Snapshot messages are coalesced: newer snapshots replace
+            older ones before delivery, increasing Drop (cum.). This is expected
+            when updates arrive faster than the main thread consumes them.
+            Structural messages are queued separately and are not coalesced.
+            ParameterState frames are counted as dropped when they belong to an
+            outdated ParameterLayout, arrive after a gap, or arrive during a
+            resynchronization. Delivery IDs show main-thread received / worker
+            staged.
+          </p>
+          <div class="rounded-lg bg-neutral-800 p-3">
+            <DataGrid
+              ariaLabel="Worker message totals"
+              readOnly
+              columns={MESSAGE_COLUMNS}
+              rows={props.rows.length}
+              cellProvider={messageProvider}
+              sortableColumns={MESSAGE_COLUMNS.map((column) => column.id!)}
+              freezeColumns={1}
+              height="content"
+              class="max-h-[420px]"
+            />
+          </div>
         </div>
       </Show>
-    </CollapsibleSection>
+    </Collapsible>
   );
 }

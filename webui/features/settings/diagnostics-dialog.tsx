@@ -16,12 +16,14 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { Collapsible } from "../../components/ui/collapsible";
 import {
   Dialog,
   DialogCancelButton,
   DialogFooter,
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { SegmentedControl } from "../../components/ui/segmented-control";
 import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import { writeClipboardText } from "../../lib/clipboard";
@@ -33,10 +35,15 @@ import {
   formatSystemInfo,
 } from "../../lib/diagnostics";
 import { exportDiagnostics } from "../../lib/diagnostics-export";
+import { PRIVACY_CONTACT_EMAIL } from "../../lib/privacy";
 import { showfileExportOptions } from "../../lib/showfile-export-options";
 import { collectSystemInfo } from "../../lib/system-info";
 import { isTauriRuntime } from "../../lib/tauri";
 import { activeShellDialog, closeDiagnostics } from "../../state/shell-dialog";
+
+/** Status shown when System Info cannot be copied, so it can be withdrawn after a later copy works. */
+const CLIPBOARD_UNAVAILABLE_STATUS =
+  "Clipboard unavailable. Expand System information included above to select and copy it.";
 
 const logModes = [
   { value: "none", label: "None" },
@@ -85,9 +92,8 @@ export function DiagnosticsDialog() {
   const [saving, setSaving] = createSignal(false);
   const [logError, setLogError] = createSignal("");
   const [status, setStatus] = createSignal("");
-  const [copied, setCopied] = createSignal(false);
-  let copyTimer: ReturnType<typeof setTimeout> | undefined;
-  let disposed = false;
+  /** Counts System Info copies; each change flashes the confirmation tooltip. */
+  const [copies, setCopies] = createSignal(0);
   let copyButton: HTMLButtonElement | undefined;
   let downloadButton: HTMLButtonElement | undefined;
   let dialogElement: HTMLDivElement | undefined;
@@ -97,8 +103,6 @@ export function DiagnosticsDialog() {
 
   /** Invalidates pending reads after the dialog is disposed. */
   onCleanup(() => {
-    disposed = true;
-    clearTimeout(copyTimer);
     collectionId++;
   });
 
@@ -166,14 +170,11 @@ export function DiagnosticsDialog() {
   const copySystemInfo = async () => {
     try {
       await writeClipboardText(systemInfo());
-      if (disposed) return;
-      setCopied(true);
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => setCopied(false), 2000);
+      setCopies((count) => count + 1);
+      // Withdraw an earlier copy failure, leaving any other status in place.
+      if (status() === CLIPBOARD_UNAVAILABLE_STATUS) setStatus("");
     } catch {
-      setStatus(
-        "Clipboard unavailable. Expand System info above to select and copy it.",
-      );
+      setStatus(CLIPBOARD_UNAVAILABLE_STATUS);
     }
   };
 
@@ -210,10 +211,6 @@ export function DiagnosticsDialog() {
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
-  /** Styles the selected segment while keeping its radio input keyboard accessible. */
-  const segmentClass = (selected: boolean) =>
-    `relative cursor-pointer whitespace-nowrap rounded px-2.5 py-1 text-center text-sm has-focus-visible:ring-2 has-focus-visible:ring-blue-400 ${selected ? "bg-blue-600 text-white" : "text-neutral-300 hover:bg-neutral-800"}`;
-
   return (
     <Dialog
       kind="task"
@@ -228,21 +225,48 @@ export function DiagnosticsDialog() {
       onSubmit={() => void download()}
     >
       <div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
-        <details class="shrink-0 text-sm text-neutral-300">
-          <summary class="cursor-pointer">System info</summary>
+        <p class="text-sm text-neutral-300">
+          Generating a diagnostic bundle can help Nightfall authors troubleshoot
+          and reproduce your issue. It includes information from your logs and
+          showfile.
+        </p>
+        <p class="text-sm text-neutral-300">
+          The diagnostic bundle is saved on this computer until you share it,{" "}
+          <strong>and may contain personal information</strong> such as
+          usernames, file paths or object labels, along with showfile data like
+          audio and GDTF files.
+        </p>
+        <p class="text-sm text-neutral-300">
+          Bug reports are public GitHub issues that can be viewed by anyone.
+          Review the ZIP contents carefully before attaching it, or email it
+          privately to{" "}
+          <a
+            class="text-blue-300 underline"
+            href={`mailto:${PRIVACY_CONTACT_EMAIL}`}
+          >
+            {PRIVACY_CONTACT_EMAIL}
+          </a>
+          . Private submissions are used only to look into the problem you
+          reported and are deleted within 30 days after use.
+        </p>
+
+        <div class="my-1 border-t border-neutral-600" />
+
+        <Collapsible
+          variant="plain"
+          class="shrink-0 text-sm"
+          triggerClass="font-medium"
+          title="System information included"
+        >
           <textarea
-            aria-label="System info"
-            class="mt-2 h-24 resize-none w-full rounded border border-neutral-600 bg-neutral-950 p-3 font-mono text-xs leading-5"
+            aria-label="System information included"
+            class="h-24 resize-none w-full rounded border border-neutral-600 bg-neutral-950 p-3 font-mono text-xs leading-5"
             value={systemInfo()}
             readOnly
             spellcheck={false}
           />
-        </details>
-        <p class="text-sm text-neutral-300">
-          Download a ZIP with system information and the content you select
-          below. Review it before sharing; files stay on your computer until you
-          attach them to a bug report.
-        </p>
+        </Collapsible>
+
         <fieldset
           class="shrink-0 space-y-1"
           aria-describedby="diagnostic-showfile-description"
@@ -253,23 +277,13 @@ export function DiagnosticsDialog() {
             <span aria-hidden="true" class="w-32 shrink-0 text-sm font-medium">
               Showfile to include
             </span>
-            <div class="inline-flex flex-wrap gap-0.5 rounded-md border border-neutral-600 bg-neutral-950 p-0.5">
-              <For each={showfileModes}>
-                {(mode) => (
-                  <label class={segmentClass(showfileMode() === mode.value)}>
-                    <input
-                      type="radio"
-                      name="diagnostic-showfile-mode"
-                      value={mode.value}
-                      checked={showfileMode() === mode.value}
-                      class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      onChange={() => setShowfileMode(mode.value)}
-                    />
-                    {mode.label}
-                  </label>
-                )}
-              </For>
-            </div>
+            <SegmentedControl
+              label="Showfile to include"
+              options={showfileModes}
+              value={showfileMode()}
+              disabled={saving()}
+              onChange={setShowfileMode}
+            />
           </div>
           <p
             id="diagnostic-showfile-description"
@@ -288,26 +302,16 @@ export function DiagnosticsDialog() {
             <span aria-hidden="true" class="w-32 shrink-0 text-sm font-medium">
               Logs to include
             </span>
-            <div class="inline-flex flex-wrap gap-0.5 rounded-md border border-neutral-600 bg-neutral-950 p-0.5">
-              <For each={logModes}>
-                {(mode) => (
-                  <label class={segmentClass(logMode() === mode.value)}>
-                    <input
-                      type="radio"
-                      name="diagnostic-log-mode"
-                      value={mode.value}
-                      checked={logMode() === mode.value}
-                      class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      onChange={() => {
-                        setLogMode(mode.value);
-                        void readLogs();
-                      }}
-                    />
-                    {mode.label}
-                  </label>
-                )}
-              </For>
-            </div>
+            <SegmentedControl
+              label="Logs to include"
+              options={logModes}
+              value={logMode()}
+              disabled={saving()}
+              onChange={(mode) => {
+                setLogMode(mode);
+                void readLogs();
+              }}
+            />
           </div>
           <p
             id="diagnostic-log-description"
@@ -415,15 +419,13 @@ export function DiagnosticsDialog() {
           >
             Copy System Info
           </Button>
-          <Show when={copied()}>
-            <Tooltip
-              content={() => "System info copied."}
-              forceVisible={() => true}
-              anchorRect={() => copyButton?.getBoundingClientRect()}
-            >
-              <span />
-            </Tooltip>
-          </Show>
+          <Tooltip
+            content={() => "✅ System info copied."}
+            flash={copies}
+            anchorRect={() => copyButton?.getBoundingClientRect()}
+          >
+            <span />
+          </Tooltip>
         </div>
         <div class="flex gap-2">
           <DialogCancelButton />
