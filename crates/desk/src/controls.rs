@@ -316,6 +316,16 @@ impl Control {
         };
     }
 
+    /// Returns the level (percent) the slot is still driving its clip's playback toward, or
+    /// `None` once the playback has taken it.
+    ///
+    /// A clip started from a fader binds playback at full intensity before the fader's level
+    /// is applied, so the console briefly reads 100%; feedback shows this level instead.
+    fn settling_level(&self) -> Option<f32> {
+        self.pending_console_value
+            .or(self.pending_console_sync.then_some(self.hardware_value))
+    }
+
     /// Returns the level the slot's on-screen fader shows: the console level, unless a physical
     /// fader holds the slot, in which case the physical position until it is picked up.
     fn display_value(&self, runtime: ControlRuntimeState) -> f32 {
@@ -703,13 +713,16 @@ impl Controls {
     /// Reads a slot's live console level (percent) and whether its assignment is running, for
     /// controller feedback.
     ///
-    /// The level matches the console value control snapshots publish. A slot is active while
-    /// its clip runs or its master contributes (toggle masters only while on). Unassigned
-    /// slots read as idle at zero. Returns `None` for an index outside the bank.
+    /// The level matches the console value control snapshots publish, except while a fader
+    /// is still settling a clip it just started, when the fader's own level is reported. A
+    /// slot is active while its clip runs or its master contributes (toggle masters only
+    /// while on). Unassigned slots read as idle at zero. Returns `None` for an index outside
+    /// the bank.
     pub(crate) fn live_state(&self, world: &World, control_index: u32) -> Option<(f32, bool)> {
         let slot = self.slot(control_index)?;
         if let Some(clip_id) = slot.assigned_clip_id {
-            return Some(clip_live_state(world, clip_id));
+            let (level, active) = clip_live_state(world, clip_id);
+            return Some((slot.settling_level().unwrap_or(level), active));
         }
         let master = slot.assigned_master_id.and_then(|master_id| {
             world
@@ -2808,6 +2821,7 @@ mod tests {
             attached_instance_id: Some(instance_id),
         });
         assert_eq!(pending, Some(0.3));
+        assert_eq!(slot.settling_level(), Some(30.0));
 
         slot.sync_from_runtime(ControlRuntimeState {
             console_value: 30.0,
@@ -2816,6 +2830,7 @@ mod tests {
         });
         assert!(slot.is_grabbed);
         assert!(!slot.pending_console_sync);
+        assert_eq!(slot.settling_level(), None);
     }
 
     #[test]
