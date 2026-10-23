@@ -41,6 +41,7 @@ import {
 } from "../../../lib/datagrid-filtering";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
+  midiDeviceProfiles,
   midiDevices,
   midiLastEvent,
   midiMappingDiagnostics,
@@ -90,6 +91,7 @@ import {
   mappingStatusCell,
   mappingStatusText,
 } from "../model/mapping-diagnostics";
+import { editedLedValue, type LedValueKey, ledValueCell } from "./led-values";
 
 /** Input kinds a MIDI control can drive: notes as buttons, controllers as faders or buttons. */
 const MIDI_INPUT_KINDS = [
@@ -168,62 +170,37 @@ const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
   {
     title: "LED on",
     id: "led_on",
-    width: 80,
+    width: 140,
     filter: { kind: "number", value: (row) => row.mapping.led?.on },
     ...columnVisibilityMeta("Binding", "LED on"),
   },
   {
     title: "LED off",
     id: "led_off",
-    width: 80,
+    width: 140,
     filter: { kind: "number", value: (row) => row.mapping.led?.off },
     ...columnVisibilityMeta("Binding", "LED off"),
   },
+  {
+    title: "LED held",
+    id: "led_held",
+    width: 140,
+    filter: { kind: "number", value: (row) => row.mapping.led?.held },
+    ...columnVisibilityMeta("Binding", "LED held"),
+  },
 ];
 
-/** Placeholder shown in an LED value cell the mapping leaves at the desk's default. */
-const LED_DEFAULT_LABEL = "Default";
-
-/**
- * Builds an editable LED value cell. An unset value is shown as a text placeholder, since
- * the desk decides the default; typing a number sets it.
- */
-function ledValueCell(value: number | undefined | null): GridCell {
-  if (value === undefined || value === null) {
-    return {
-      kind: GridCellKind.Text,
-      data: "",
-      displayData: LED_DEFAULT_LABEL,
-      allowOverlay: true,
-    };
-  }
-  return {
-    kind: GridCellKind.Number,
-    data: value,
-    displayData: String(value),
-    allowOverlay: true,
-  };
-}
-
-/**
- * Reads an edited LED value cell: a MIDI data byte, `null` when cleared back to the default,
- * or undefined for invalid input.
- */
-function editedLedValue(cell: GridCell): number | null | undefined {
-  if (cell.kind !== GridCellKind.Number && cell.kind !== GridCellKind.Text) {
-    return undefined;
-  }
-  const text = String(cell.data ?? "").trim();
-  if (text === "" || text === "NaN") return null;
-  const value = Number(text);
-  return Number.isInteger(value) && value >= 0 && value <= 127
-    ? value
-    : undefined;
-}
+/** LED value each LED column edits, by column id. */
+const LED_COLUMN_KEYS: Record<string, LedValueKey> = {
+  led_on: "on",
+  led_off: "off",
+  led_held: "held",
+};
 
 /** Renders MIDI devices, the last received message, and editable controller mappings. */
 export default function MidiInputPanel(props: MidiInputPanelProps) {
   const $midiDevices = useStore(midiDevices);
+  const $midiDeviceProfiles = useStore(midiDeviceProfiles);
   const $midiMappings = useStore(midiMappings);
   const $midiLastEvent = useStore(midiLastEvent);
   const $midiMappingDiagnostics = useStore(midiMappingDiagnostics);
@@ -249,6 +226,13 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   /** Names of the connected MIDI devices, offered in each Device cell. */
   const connectedDeviceNames = createMemo(() =>
     $midiDevices().map((device) => device.name),
+  );
+  /** Controller profiles of connected and mapped devices, by device name, for naming LED colors. */
+  const deviceProfiles = createMemo(
+    () =>
+      new Map(
+        $midiDeviceProfiles().map((profile) => [profile.device, profile]),
+      ),
   );
   /** Devices the show's mappings listen to, offered even while unplugged. */
   const mappedDeviceNames = createMemo(() => [
@@ -367,9 +351,13 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
           case "status":
             return mappingStatusCell(row.error);
           case "led_on":
-            return ledValueCell(mapping.led?.on);
           case "led_off":
-            return ledValueCell(mapping.led?.off);
+          case "led_held":
+            return ledValueCell(
+              mapping.led,
+              LED_COLUMN_KEYS[column.id],
+              deviceProfiles().get(mapping.device_name),
+            );
           default:
             return {
               kind: GridCellKind.Loading,
@@ -470,7 +458,25 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                   class="flex items-center justify-between gap-3 bg-gray-800 rounded px-3 py-2"
                   data-testid="midi-device"
                 >
-                  <span class="min-w-0 truncate text-sm">{device.name}</span>
+                  <div class="min-w-0">
+                    <div class="truncate text-sm">{device.name}</div>
+                    <Show when={deviceProfiles().get(device.name)}>
+                      {(profile) => (
+                        <div
+                          class="text-xs text-gray-400"
+                          data-testid="midi-device-profile"
+                          title={profile().hint ?? undefined}
+                        >
+                          {profile().name}
+                          <Show when={device.feedback && profile().hint}>
+                            {(hint) => (
+                              <span class="block text-gray-500">{hint()}</span>
+                            )}
+                          </Show>
+                        </div>
+                      )}
+                    </Show>
+                  </div>
                   <Show
                     when={device.hasOutput}
                     fallback={
@@ -665,10 +671,11 @@ function editedMapping(
       return behavior === undefined ? undefined : { ...mapping, behavior };
     }
     case "led_on":
-    case "led_off": {
+    case "led_off":
+    case "led_held": {
       const led = editedLedValue(value);
       if (led === undefined) return undefined;
-      const key = columnId === "led_on" ? "on" : "off";
+      const key = LED_COLUMN_KEYS[columnId];
       return {
         ...mapping,
         led: { ...mapping.led, [key]: led ?? undefined },

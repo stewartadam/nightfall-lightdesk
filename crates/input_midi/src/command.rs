@@ -111,19 +111,32 @@ const DEFAULT_LED_OFF: u8 = 0;
 ///
 /// Most controllers light the LED of a pad or button when they receive a message on the
 /// same note or controller the pad sends. What the value means is device-specific: on/off
-/// for single-color LEDs, a palette index for color pads. Unset values use full on and off.
+/// for single-color LEDs, a color code for color pads. Unset values come from the device's
+/// controller profile, then full on and off.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct MidiLedValues {
-    /// Value sent while the action's target is running, enabled or held (0-127).
+    /// Value sent while the action's target is running or enabled (0-127).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on: Option<u8>,
     /// Value sent while the action's target is idle (0-127).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub off: Option<u8>,
+    /// Value sent while a flash binding holds the target (0-127); unset shows the on value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<u8>,
 }
 
 impl MidiLedValues {
+    /// Fills each unset value from `fallback`, such as a controller profile's defaults.
+    pub fn or(self, fallback: Self) -> Self {
+        Self {
+            on: self.on.or(fallback.on),
+            off: self.off.or(fallback.off),
+            held: self.held.or(fallback.held),
+        }
+    }
+
     /// Returns the value that lights the LED, clamped to a MIDI data byte.
     pub fn on_value(self) -> u8 {
         self.on.unwrap_or(DEFAULT_LED_ON).min(127)
@@ -132,6 +145,12 @@ impl MidiLedValues {
     /// Returns the value that darkens the LED, clamped to a MIDI data byte.
     pub fn off_value(self) -> u8 {
         self.off.unwrap_or(DEFAULT_LED_OFF).min(127)
+    }
+
+    /// Returns the value shown while a flash is held, falling back to the on value.
+    pub fn held_value(self) -> u8 {
+        self.held
+            .map_or_else(|| self.on_value(), |held| held.min(127))
     }
 }
 
