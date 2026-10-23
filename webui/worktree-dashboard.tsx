@@ -45,7 +45,7 @@ import { pushToast } from "./state/appStores";
 
 import "./index.css";
 
-type ServiceName = "backend" | "ui" | "artnet-sender" | "sacn-sender";
+type ServiceName = "backend" | "ui" | "docs" | "artnet-sender" | "sacn-sender";
 type ServiceTarget = ServiceName | "wasm" | "both" | "senders";
 type ServiceAction = "start" | "stop" | "recycle";
 type DashboardAction =
@@ -82,12 +82,16 @@ interface WorktreeSummary {
   nightfallPort: number | null;
   webUiPort: number | null;
   webUiUrl: string | null;
+  docsPort: number | null;
+  docsUrl: string | null;
   managed: Record<ServiceName, ManagedServiceState>;
   observed: {
     backendPortOpen: boolean;
     webUiPortOpen: boolean;
+    docsPortOpen: boolean;
     backendPid: number | null;
     webUiPid: number | null;
+    docsPid: number | null;
     artnetSenderRunning: boolean;
     sacnSenderRunning: boolean;
   };
@@ -158,6 +162,7 @@ const WORKTREE_SERVICE_OPTIONS: Array<{ value: ServiceTarget; label: string }> =
   [
     { value: "backend", label: "Backend" },
     { value: "ui", label: "Web UI" },
+    { value: "docs", label: "Docs" },
   ];
 
 const WORKTREE_SERVICE_OPTIONS_WITH_WASM: Array<{
@@ -278,6 +283,7 @@ function serviceLabel(service: ServiceTarget): string {
   if (service === "both") return "both";
   if (service === "senders") return "both senders";
   if (service === "ui") return "web ui";
+  if (service === "docs") return "docs";
   if (service === "wasm") return "wasm";
   if (service === "artnet-sender") return "art-net sender";
   if (service === "sacn-sender") return "sacn sender";
@@ -338,9 +344,12 @@ function normalizeDashboardPayload(
       return {
         ...worktree,
         canRemove: Boolean(worktree.canRemove),
+        docsPort: worktree.docsPort ?? null,
+        docsUrl: worktree.docsUrl ?? null,
         managed: {
           backend: normalizeManagedServiceState(managed.backend),
           ui: normalizeManagedServiceState(managed.ui),
+          docs: normalizeManagedServiceState(managed.docs),
           "artnet-sender": normalizeManagedServiceState(
             managed["artnet-sender"],
           ),
@@ -355,6 +364,9 @@ function normalizeDashboardPayload(
               : null,
           webUiPid:
             typeof observed.webUiPid === "number" ? observed.webUiPid : null,
+          docsPortOpen: Boolean(observed.docsPortOpen),
+          docsPid:
+            typeof observed.docsPid === "number" ? observed.docsPid : null,
           artnetSenderRunning: Boolean(observed.artnetSenderRunning),
           sacnSenderRunning: Boolean(observed.sacnSenderRunning),
         },
@@ -992,6 +1004,9 @@ function WorktreeDashboardApp() {
                   Web UI
                 </th>
                 <th scope="col" class="text-left">
+                  Docs
+                </th>
+                <th scope="col" class="text-left">
                   Senders
                 </th>
                 <th scope="col" class="text-left">
@@ -1100,6 +1115,67 @@ function WorktreeDashboardApp() {
                             href={url()}
                             target="_blank"
                             rel="noopener noreferrer"
+                            class="ml-2 inline-flex items-center p-1 text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+                          >
+                            <ArrowSquareOutIcon
+                              class="size-3 text-sky-700 dark:text-sky-300"
+                              aria-hidden
+                            />
+                          </a>
+                        )}
+                      </Show>
+                    </td>
+                    <td>
+                      <div class="inline-flex items-center gap-2">
+                        <StatusDot
+                          isReachable={worktree.observed.docsPortOpen}
+                          isManagedRunning={worktree.managed.docs.running}
+                          status={serviceStatusText(
+                            worktree.observed.docsPortOpen,
+                            worktree.managed.docs.running,
+                            worktree.managed.docs.pid ??
+                              worktree.observed.docsPid,
+                          )}
+                        >
+                          <p class="font-mono text-xs text-slate-600 dark:text-slate-300">
+                            {worktree.docsPort ?? "n/a"}
+                          </p>
+                        </StatusDot>
+                        <button
+                          type="button"
+                          class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                          title={
+                            worktree.managed.docs.lastError ??
+                            (worktree.managed.docs.logPath
+                              ? `Open docs log: ${worktree.managed.docs.logPath}`
+                              : "No docs log file yet")
+                          }
+                          aria-label="Open docs log file"
+                          disabled={
+                            !worktree.managed.docs.logPath ||
+                            isPendingOperation(
+                              actionKey(worktree.id, "open-log", "docs"),
+                            )
+                          }
+                          onClick={() =>
+                            void openServiceLog(worktree.id, "docs")
+                          }
+                        >
+                          <FileTextIcon class="size-3.5" aria-hidden />
+                        </button>
+                      </div>
+                      <Show
+                        when={
+                          worktree.observed.docsPortOpen && worktree.docsUrl
+                        }
+                      >
+                        {(url) => (
+                          <a
+                            href={url()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open docs"
+                            aria-label="Open docs"
                             class="ml-2 inline-flex items-center p-1 text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
                           >
                             <ArrowSquareOutIcon
@@ -1327,7 +1403,7 @@ function WorktreeDashboardApp() {
               </For>
               <Show when={uninitializedWorktrees().length > 0}>
                 <tr data-table-group="true">
-                  <td colSpan={5}>Uninitialized worktrees</td>
+                  <td colSpan={6}>Uninitialized worktrees</td>
                 </tr>
               </Show>
               <For each={uninitializedWorktrees()}>
@@ -1360,6 +1436,11 @@ function WorktreeDashboardApp() {
                           </p>
                         </div>
                       </div>
+                    </td>
+                    <td>
+                      <p class="font-mono text-xs text-slate-500 dark:text-slate-400">
+                        n/a
+                      </p>
                     </td>
                     <td>
                       <p class="font-mono text-xs text-slate-500 dark:text-slate-400">
