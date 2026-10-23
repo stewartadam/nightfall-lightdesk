@@ -12,6 +12,7 @@ typeshare = "pnpm run typeshare"
 [[post-start]]
 copy-data-dir = "node ./scripts/seed-data-dir-from-main.mjs {{ args }}"
 copy-assets = "cp -a {{ primary_worktree_path }}/webui/assets webui"
+copy-demo-audio = "node ./scripts/copy-browser-demo-audio.mjs"
 
 [[post-start]]
 build = "cargo build --tests --bin nightfall-headless"
