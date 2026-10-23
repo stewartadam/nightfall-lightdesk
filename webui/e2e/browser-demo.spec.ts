@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import {
   DEMO_SHOWFILE_PATH,
@@ -682,13 +682,18 @@ test("embedded demo decodes and plays timeline audio", async ({
 }, testInfo) => {
   await page.addInitScript(() => {
     (window as any).demoAudioStartCount = 0;
-    const start = AudioBufferSourceNode.prototype.start;
-    Object.defineProperty(AudioBufferSourceNode.prototype, "start", {
+    const createGain = BaseAudioContext.prototype.createGain;
+    Object.defineProperty(BaseAudioContext.prototype, "createGain", {
       configurable: true,
-      /** Count audio (re)starts while preserving real browser playback. */
-      value(this: AudioBufferSourceNode, ...args: [number?, number?, number?]) {
-        (window as any).demoAudioStartCount += 1;
-        return start.apply(this, args);
+      /**
+       * Count audio (re)starts while preserving real browser playback. Each streaming
+       * voice owns one gain stage, while its blocks share it.
+       */
+      value(this: BaseAudioContext) {
+        if (this instanceof AudioContext) {
+          (window as any).demoAudioStartCount += 1;
+        }
+        return createGain.call(this);
       },
     });
   });
@@ -774,15 +779,27 @@ test("embedded demo decodes and plays timeline audio", async ({
 
 /**
  * Phones fetch timeline audio only once playback starts, so sound is ready seconds after
- * the engine clock started. Delaying the audio download reproduces that, and the audio
- * must join the playhead where it is instead of trailing it for the rest of the song.
+ * the engine clock started. Delaying the first audio request reproduces that, and the
+ * audio must join the playhead where it is instead of trailing it for the rest of the
+ * song. Every later byte-range request also waits, like a slow mobile network, which
+ * the audio scheduled ahead must ride out.
  */
 test("embedded demo audio catches up with the playhead after a slow start", async ({
   page,
 }, testInfo) => {
+  if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview") {
+    await serveSampleMp3s(page, true);
+  }
+  let playbackRequests = 0;
+  // Registered last, so it runs before the route serving the file.
   await page.route(/\.mp3$/, async (route) => {
-    // Hold the audio download for two seconds, like a phone waiting on the network.
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    // Waveforms download whole files; playback reads by byte range.
+    if (route.request().headers().range) {
+      // Two seconds for the first request, then mobile network latency.
+      const delayMs = playbackRequests === 0 ? 2_000 : 300;
+      playbackRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     await route.fallback();
   });
   const basePath =
@@ -816,6 +833,13 @@ test("embedded demo audio catches up with the playhead after a slow start", asyn
         { timeout: 6_000 },
       )
       .toBe(true);
+    // Audio scheduled ahead rides out each slow request instead of stalling.
+    const heardBeforeMs = (await readDemoAudioState(page)).positionMs;
+    await page.waitForTimeout(2_000);
+    expect((await readDemoAudioState(page)).positionMs).toBeGreaterThan(
+      heardBeforeMs + 500,
+    );
+    expect(playbackRequests).toBeGreaterThan(1);
     await surface.screenshot({
       path: testInfo.outputPath("slow-start-audio-in-sync.png"),
     });
@@ -823,6 +847,151 @@ test("embedded demo audio catches up with the playhead after a slow start", asyn
     await surface.getByRole("button", { name: "Stop timeline" }).click();
   }
 });
+
+/**
+ * Serve the bundled sample MP3s for the demo's timeline audio instead of the generated
+ * test tone. With `byteRanges`, requests carrying a `Range` header get just those bytes,
+ * like production static hosting; without, every request gets the whole file, like the
+ * Vite dev server.
+ */
+async function serveSampleMp3s(page: Page, byteRanges: boolean): Promise<void> {
+  await page.route(
+    "**/nightfall-demo.nightfall-show/timeline-audio/**",
+    async (route) => {
+      const name = new URL(route.request().url()).pathname.split("/").pop();
+      const body = await readFile(
+        new URL(
+          `../../crates/app-runtime/assets/sample-audio/${name}`,
+          import.meta.url,
+        ),
+      );
+      const range = /bytes=(\d+)-(\d*)/.exec(
+        route.request().headers().range ?? "",
+      );
+      if (!byteRanges || !range) {
+        await route.fulfill({ contentType: "audio/mpeg", body });
+        return;
+      }
+      const start = Number(range[1]);
+      const end = Math.min(
+        range[2] ? Number(range[2]) + 1 : body.length,
+        body.length,
+      );
+      await route.fulfill({
+        status: 206,
+        contentType: "audio/mpeg",
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${start}-${end - 1}/${body.length}`,
+        },
+        body: body.subarray(start, end),
+      });
+    },
+  );
+}
+
+for (const byteRanges of [true, false]) {
+  /**
+   * Streaming decodes only the frames around a position, so it must produce exactly
+   * what decoding the whole file does: same samples at every start point, same length,
+   * and no offset from encoder delay or the frames decoded before a seek. Servers that
+   * honour byte ranges and ones that send the whole file must agree.
+   */
+  test(`embedded demo streams the same samples as a full decode (${byteRanges ? "byte ranges" : "whole download"})`, async ({
+    page,
+  }) => {
+    test.skip(
+      process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview",
+      "imports source modules from the dev server",
+    );
+    await serveSampleMp3s(page, byteRanges);
+    await compareStreamedSamples(page);
+  });
+}
+
+/** Stream the demo timeline's audio from several positions and compare with a full decode. */
+async function compareStreamedSamples(page: Page): Promise<void> {
+  await page.goto(
+    "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
+  );
+  await waitForDemoShow(page);
+  const results = await page.evaluate(async (timelineLabel) => {
+    const stores = (window as any).appStores;
+    const timeline = Object.values(stores.timelines.get()).find(
+      (entry: any) => entry?.identifiers?.label === timelineLabel,
+    ) as any;
+    const { resolveTimelineAudioUrl } = await import(
+      /* @vite-ignore */ "/lib/timeline-audio.ts"
+    );
+    const { openStreamingTrack } = await import(
+      /* @vite-ignore */ "/lib/streaming-audio/track.ts"
+    );
+    const url = resolveTimelineAudioUrl(timeline.audio_path);
+    const track = await openStreamingTrack(url);
+    if (!track) throw new Error("Demo audio did not open for streaming");
+    const bytes = await (await fetch(url)).arrayBuffer();
+    const full = await new OfflineAudioContext(
+      track.channelCount,
+      1,
+      track.sampleRate,
+    ).decodeAudioData(bytes);
+    // Wait for the background scan so the streamed length is final.
+    const deadline = performance.now() + 20_000;
+    while (
+      Math.abs((track.durationMs() ?? 0) - full.duration * 1_000) > 0.01 &&
+      performance.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const compareFrames = 16_384;
+    const starts = [0, 1_000, 123_457, 900_001, full.length - 5_000];
+    const comparisons = [];
+    for (const start of starts) {
+      const reader = track.openReader(start);
+      const streamed: Float32Array[] = [];
+      let total = 0;
+      while (total < compareFrames) {
+        const block = await reader.read();
+        if (!block) break;
+        streamed.push(block[1] ?? block[0]);
+        total += block[0].length;
+      }
+      reader.close();
+      const joined = new Float32Array(total);
+      let at = 0;
+      for (const part of streamed) {
+        joined.set(part, at);
+        at += part.length;
+      }
+      const reference = full
+        .getChannelData(track.channelCount - 1)
+        .subarray(start, start + compareFrames);
+      let maxDiff = 0;
+      for (let i = 0; i < Math.min(reference.length, joined.length); i += 1) {
+        maxDiff = Math.max(maxDiff, Math.abs(joined[i] - reference[i]));
+      }
+      comparisons.push({
+        start,
+        frames: Math.min(total, compareFrames),
+        expectedFrames: reference.length,
+        maxDiff,
+      });
+    }
+    track.close();
+    return {
+      streamedMs: track.durationMs(),
+      fullMs: full.duration * 1_000,
+      comparisons,
+    };
+  }, DEMO_TIMELINE_LABEL);
+  expect(results.streamedMs).toBeCloseTo(results.fullMs, 1);
+  for (const comparison of results.comparisons) {
+    expect(comparison.frames, `start ${comparison.start}`).toBe(
+      comparison.expectedFrames,
+    );
+    expect(comparison.maxDiff, `start ${comparison.start}`).toBeLessThan(1e-4);
+  }
+}
 
 /** Verifies demo identity, toolbar placement, and reset without changing the local showfile selection. */
 test("demo shell keeps runtime information in the bottom toolbar", async ({
