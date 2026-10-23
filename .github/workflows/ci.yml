@@ -55,8 +55,14 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           : > .ci-changed-files
+          rm -f .ci-base-Cargo.lock
           if [[ "$EVENT_NAME" == pull_request ]]; then
             git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
+            # Selection compares lockfiles to tell dependency changes from workspace rewiring.
+            if ! git diff --quiet HEAD^1 HEAD -- Cargo.lock &&
+              git cat-file -e HEAD^1:Cargo.lock 2> /dev/null; then
+              git show HEAD^1:Cargo.lock > .ci-base-Cargo.lock
+            fi
           fi
       # A manual preview run checks out the PR's branch without its base, so the PR's file list
       # stands in for the diff; selection only uses it to decide whether the preview gets docs.

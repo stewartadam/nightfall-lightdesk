@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const sharedPackaging = [
@@ -70,9 +70,78 @@ const documentation = [
 ];
 
 /**
+ * Reduce a Cargo.lock to the parts that can change a distribution: every external package
+ * entry, each workspace package's version, and the external packages each workspace package
+ * reaches through other workspace packages. Which workspace package supplies an external
+ * package is dropped, so rewiring that brings no new external package into any workspace
+ * package's graph reduces to the same inputs. Packages without a `source` (workspace members
+ * and path dependencies alike) count as workspace packages.
+ */
+export function lockfileDistributionInputs(contents) {
+  const [header, ...entries] = contents.split(/^\[\[package\]\]\n/m);
+  const packages = entries.map((entry) => {
+    /** Read one `key = "value"` field from this package entry. */
+    const field = (key) =>
+      entry.match(new RegExp(`^${key} = "([^"]*)"$`, "m"))?.[1];
+    return {
+      entry,
+      id: `${field("name")} ${field("version")}`,
+      member: field("source") === undefined,
+      dependencies: [...entry.matchAll(/^ "([^"]+)",$/gm)].map(
+        ([, dependency]) => dependency,
+      ),
+    };
+  });
+  // Cargo writes a dependency as `name` when the name is unique in the lockfile, and as
+  // `name version` or `name version (source)` otherwise, so both spellings resolve here and a
+  // same-named external package never does.
+  const workspace = new Map();
+  for (const pkg of packages.filter(({ member }) => member)) {
+    workspace.set(pkg.id, pkg);
+    workspace.set(pkg.id.split(" ")[0], pkg);
+  }
+  const reached = new Map(
+    [...workspace.values()].map((pkg) => [
+      pkg,
+      new Set(pkg.dependencies.filter((name) => !workspace.has(name))),
+    ]),
+  );
+  // Dev-dependencies can form cycles between workspace packages, so propagate to a fixpoint.
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [pkg, externals] of reached) {
+      for (const name of pkg.dependencies) {
+        for (const external of reached.get(workspace.get(name)) ?? []) {
+          if (!externals.has(external)) {
+            externals.add(external);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  const reduced = packages.map((pkg) =>
+    pkg.member
+      ? `${pkg.id}\n${[...reached.get(pkg)].sort().join("\n")}\n`
+      : pkg.entry,
+  );
+  return [header, ...reduced].join("[[package]]\n");
+}
+
+/**
+ * Whether two Cargo.lock revisions differ only in how workspace packages depend on each other,
+ * without bringing a new external package into any workspace package's graph.
+ */
+export function lockfileChangesOnlyWorkspaceEdges(base, head) {
+  return lockfileDistributionInputs(base) === lockfileDistributionInputs(head);
+}
+
+/**
  * Select validation by integration risk. Packaging compiles the desktop app but does not run
  * its tests, so desktop code or build-configuration changes select the desktop check even when
- * packaging also runs; shared inputs such as the lockfile rely on packaging alone.
+ * packaging also runs; shared inputs such as the lockfile rely on packaging alone. A lockfile
+ * change that only rewires workspace packages (`workspaceOnlyLockfile`) is left to the Rust
+ * tests, because no workspace package compiles a different set of external packages.
  *
  * Browser previews build the demo for every same-repository PR once a preview target is
  * configured. Fork PRs never receive the deployment credential, so they never select one.
@@ -101,6 +170,7 @@ export function selectScope({
   draft = false,
   pullRequest = "",
   previewPr = "",
+  workspaceOnlyLockfile = false,
 }) {
   /** Whether any changed path is an mdBook input. */
   const touchesDocumentation = () =>
@@ -145,7 +215,11 @@ export function selectScope({
   } else if (event === "pull_request") {
     browserPreview = previewTarget && sameRepository;
     for (const path of paths) {
-      if (sharedPackaging.some((pattern) => pattern.test(path))) {
+      const rewiresWorkspace = path === "Cargo.lock" && workspaceOnlyLockfile;
+      if (
+        !rewiresWorkspace &&
+        sharedPackaging.some((pattern) => pattern.test(path))
+      ) {
         desktopPackage = true;
         browserPackage = true;
       }
@@ -193,6 +267,13 @@ if (
     draft: process.env.PR_DRAFT === "true",
     pullRequest: process.env.PR_NUMBER || "",
     previewPr: process.env.PREVIEW_PR || "",
+    workspaceOnlyLockfile:
+      existsSync(".ci-base-Cargo.lock") &&
+      existsSync("Cargo.lock") &&
+      lockfileChangesOnlyWorkspaceEdges(
+        readFileSync(".ci-base-Cargo.lock", "utf8"),
+        readFileSync("Cargo.lock", "utf8"),
+      ),
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,
