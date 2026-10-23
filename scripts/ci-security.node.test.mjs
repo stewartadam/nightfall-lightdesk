@@ -652,6 +652,43 @@ test("update signing refuses incomplete releases and missing keys", (t) => {
   assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
 });
 
+/** A signature that fails to encode stops the release instead of publishing an empty one. */
+test("update signing fails when a signature cannot be encoded", (t) => {
+  const directory = fixtureDirectory(t);
+  mkdirSync(join(directory, "incoming"));
+  for (const suffix of [
+    "aarch64-apple-darwin.app.tar.gz",
+    "x86_64-pc-windows-msvc.exe",
+    "x86_64-unknown-linux-gnu.deb",
+    "x86_64-unknown-linux-gnu.AppImage",
+  ]) {
+    writeFileSync(
+      join(directory, `incoming/nightfall-v0.1.0-alpha.2-${suffix}`),
+      "package bytes",
+    );
+  }
+  const realBase64 = execFileSync("bash", ["-c", "command -v base64"], {
+    encoding: "utf8",
+  }).trim();
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, "base64"),
+    [
+      "#!/usr/bin/env bash",
+      'for arg in "$@"; do case "$arg" in -d|--decode) exec "$REAL_BASE64" "$@";; esac; done',
+      "exit 1",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const result = signUpdates(directory, {
+    PATH: `${bin}:${process.env.PATH}`,
+    REAL_BASE64: realBase64,
+  });
+  assert.notEqual(result.status, 0);
+  assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
+});
+
 /**
  * Runs the actual updater-release step with a stand-in `gh` that records its arguments, and
  * reports whether the `updater` release already exists through `existing`.
