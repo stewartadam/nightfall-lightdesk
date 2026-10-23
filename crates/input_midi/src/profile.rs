@@ -73,6 +73,10 @@ pub struct MidiLedColor {
     /// Whether the device blinks the LED by itself at this value.
     #[serde(default)]
     pub blink: bool,
+    /// Values that show this color at rising brightness, ending at full, so a pad mapped to
+    /// a fader can show its level; empty when the color has no dimmer versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ramp: Vec<u8>,
 }
 
 /// Color names a profile uses for mappings that leave their LED values unset.
@@ -130,6 +134,15 @@ impl MidiProfile {
         }
     }
 
+    /// Returns the brightness ramp of the color shown by `value`, or an empty slice when no
+    /// listed color with a ramp uses that value.
+    pub(crate) fn ramp(&self, value: u8) -> &[u8] {
+        self.colors
+            .iter()
+            .find(|color| color.value == value && !color.ramp.is_empty())
+            .map_or(&[], |color| color.ramp.as_slice())
+    }
+
     /// Checks that the profile's messages, values and default colors are usable.
     fn validate(&self) -> Result<(), String> {
         for message in self.init.iter().chain(&self.release) {
@@ -140,8 +153,15 @@ impl MidiProfile {
                 return Err(format!("malformed message {message:?}"));
             }
         }
-        if let Some(color) = self.colors.iter().find(|color| color.value > 0x7F) {
-            return Err(format!("color {:?} is not a MIDI data byte", color.name));
+        if let Some(color) = self
+            .colors
+            .iter()
+            .find(|color| color.value > 0x7F || color.ramp.iter().any(|value| *value > 0x7F))
+        {
+            return Err(format!(
+                "color {:?} has a value that is not a MIDI data byte",
+                color.name
+            ));
         }
         for name in [&self.defaults.off, &self.defaults.on, &self.defaults.held] {
             if self.color_value(name).is_none() {
@@ -306,6 +326,19 @@ mod tests {
                 held: Some(59),
             }
         );
+    }
+
+    /// Verifies the Launchpad's full colors ramp through its low, medium and full brightness
+    /// values while dim and flashing colors have no ramp.
+    #[test]
+    fn launchpad_full_colors_have_brightness_ramps() {
+        let profile = for_device("Launchpad").expect("Launchpad profile");
+
+        assert_eq!(profile.ramp(60), &[28, 44, 60]);
+        assert_eq!(profile.ramp(15), &[13, 14, 15]);
+        assert_eq!(profile.ramp(63), &[29, 46, 63]);
+        assert!(profile.ramp(28).is_empty());
+        assert!(profile.ramp(59).is_empty());
     }
 
     /// Verifies validation rejects a default naming a color the profile does not list.

@@ -11,13 +11,23 @@
   "colors": [
     { "name": "Off", "value": 12, "swatch": "#1f1f1f" },
     { "name": "Dim red", "value": 13, "swatch": "#7a1d14" },
-    { "name": "Red", "value": 15, "swatch": "#ff2a1a" },
+    { "name": "Red", "value": 15, "swatch": "#ff2a1a", "ramp": [13, 14, 15] },
     { "name": "Dim green", "value": 28, "swatch": "#17661f" },
-    { "name": "Green", "value": 60, "swatch": "#2cff3c" },
+    {
+      "name": "Green",
+      "value": 60,
+      "swatch": "#2cff3c",
+      "ramp": [28, 44, 60]
+    },
     { "name": "Dim amber", "value": 29, "swatch": "#7a5a14" },
-    { "name": "Amber", "value": 63, "swatch": "#ffb21a" },
-    { "name": "Yellow", "value": 62, "swatch": "#e2ff1a" },
-    { "name": "Orange", "value": 47, "swatch": "#ff6a1a" },
+    {
+      "name": "Amber",
+      "value": 63,
+      "swatch": "#ffb21a",
+      "ramp": [29, 46, 63]
+    },
+    { "name": "Yellow", "value": 62, "swatch": "#e2ff1a", "ramp": [45, 62] },
+    { "name": "Orange", "value": 47, "swatch": "#ff6a1a", "ramp": [30, 47] },
     { "name": "Red flashing", "value": 11, "swatch": "#ff2a1a", "blink": true },
     {
       "name": "Green flashing",
