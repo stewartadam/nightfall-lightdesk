@@ -902,7 +902,7 @@ for (const byteRanges of [true, false]) {
   }) => {
     test.skip(
       process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "preview",
-      "imports source modules from the dev server",
+      "the packaged demo ships without test harnesses",
     );
     await serveSampleMp3s(page, byteRanges);
     await compareStreamedSamples(page);
@@ -920,14 +920,10 @@ async function compareStreamedSamples(page: Page): Promise<void> {
     const timeline = Object.values(stores.timelines.get()).find(
       (entry: any) => entry?.identifiers?.label === timelineLabel,
     ) as any;
-    const { resolveTimelineAudioUrl } = await import(
-      /* @vite-ignore */ "/lib/timeline-audio.ts"
-    );
-    const { openStreamingTrack } = await import(
-      /* @vite-ignore */ "/lib/streaming-audio/track.ts"
-    );
-    const url = resolveTimelineAudioUrl(timeline.audio_path);
-    const track = await openStreamingTrack(url);
+    const { streamingAudio, timelineAudio } =
+      await window.__nightfallHarness.load("app");
+    const url = timelineAudio.resolveTimelineAudioUrl(timeline.audio_path);
+    const track = await streamingAudio.openStreamingTrack(url);
     if (!track) throw new Error("Demo audio did not open for streaming");
     const bytes = await (await fetch(url)).arrayBuffer();
     const full = await new OfflineAudioContext(
