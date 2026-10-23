@@ -152,6 +152,19 @@ The websocket host gives each session an outbox: a queue that the session's send
 
 For the parameter stream, this means a parameter keyframe replaces the queued deltas before it. The client sees a jump in `seq`, but the keyframe needs nothing before it, so the client stays correct and receives less data.
 
+The following steps walk through that replacement in a slow client's outbox:
+
+<div class="queue-steps" data-lane-label="Outbox, front of the queue on the left" data-frames='{"cr": ["CommandResult", "nd"], "d11": ["Delta seq 11", "delta"], "d12": ["Delta seq 12", "delta"], "d13": ["Delta seq 13", "delta"], "k14": ["Keyframe 14", "snap"]}'>
+<ol>
+<li data-queue="cr d11 d12 d13"><strong>A slow client.</strong> The client reads slower than the engine publishes. Its outbox holds a command result and parameter deltas 11, 12, and 13.</li>
+<li data-queue="cr d11 d12 d13" data-incoming="k14"><strong>A snapshot arrives.</strong> The engine publishes parameter keyframe 14, a droppable snapshot with the same <code>type</code> as the queued deltas.</li>
+<li data-queue="cr d11 d12 d13" data-incoming="k14" data-flash="d11 d12 d13"><strong>The outbox looks back.</strong> Deltas 11 to 13 have the same <code>type</code>, and no non-droppable frame was queued after delta 11, so the keyframe may replace all three.</li>
+<li data-queue="cr k14"><strong>The keyframe takes the oldest place.</strong> The deltas are removed, and the keyframe takes delta 11's position. It stays behind the command result, so it never moves past a non-droppable frame.</li>
+<li data-queue="k14" data-delivered="cr"><strong>The send task drains the queue.</strong> The command result goes out first.</li>
+<li data-delivered="cr k14"><strong>The client jumps ahead.</strong> The keyframe arrives, and the client's <code>seq</code> jumps from 10 to 14. A keyframe needs nothing before it, so the client stays correct.</li>
+</ol>
+</div>
+
 When the queued bytes would exceed 64 MiB, the host discards the whole queue and closes the connection with close code 4001. The limit is far above a full resync of a large show, so only a client that stopped reading for a long time reaches it. If the client doesn't accept the close frame within five seconds, the host tears down the socket. The client reconnects at once on code 4001 and resyncs from complete state. A second lagging disconnect within ten seconds waits the normal one-second reconnect delay instead, so a client that can't keep up doesn't reconnect in a tight loop.
 
 > [!WARNING]
