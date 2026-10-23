@@ -138,6 +138,54 @@ test("developer guide tables sort by a clicked column", async ({ page }) => {
 });
 
 /**
+ * Checks that the outbox step list becomes a step-through animation: the keyframe chip moves
+ * into the queue and the deltas disappear as the reader steps forward, the caption follows the
+ * step, and Back returns to the previous state. Captures each step for visual review.
+ */
+test("developer guide queue steps walk through outbox replacement", async ({
+  page,
+}, testInfo) => {
+  await page.goto(guideUrl("architecture/client-protocol.html"));
+  const widget = page.locator(".queue-steps-widget");
+  const next = widget.getByRole("button", { name: "Next step" });
+  const back = widget.getByRole("button", { name: "Back" });
+  const keyframe = widget.locator(".queue-steps-frame", {
+    hasText: "Keyframe 14",
+  });
+  const delta = widget.locator(".queue-steps-frame", {
+    hasText: "Delta seq 11",
+  });
+
+  await expect(page.locator(".queue-steps ol")).toBeHidden();
+  await expect(widget.locator(".queue-steps-count")).toHaveText("Step 1 of 6");
+  await expect(back).toBeDisabled();
+  await expect(keyframe).toHaveClass(/gone/);
+  await widget.scrollIntoViewIfNeeded();
+
+  for (let step = 1; step <= 6; step += 1) {
+    if (step > 1) await next.click();
+    await page.waitForTimeout(700);
+    await widget.screenshot({
+      path: testInfo.outputPath(`queue-step-${step}.png`),
+    });
+    if (step === 4) {
+      await expect(widget.locator(".queue-steps-caption")).toContainText(
+        "The keyframe takes the oldest place.",
+      );
+      await expect(delta).toHaveClass(/gone/);
+      await expect(keyframe).not.toHaveClass(/gone/);
+      await expect(keyframe).toHaveCSS("left", "278px");
+    }
+  }
+  await expect(next).toBeDisabled();
+
+  await back.click();
+  await back.click();
+  await expect(widget.locator(".queue-steps-count")).toHaveText("Step 4 of 6");
+  await expect(keyframe).toHaveCSS("left", "278px");
+});
+
+/**
  * Checks that a GitHub-style `[!WARNING]` blockquote renders as a titled callout without the raw
  * marker text.
  */
