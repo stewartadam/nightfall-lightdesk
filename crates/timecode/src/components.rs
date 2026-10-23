@@ -14,8 +14,7 @@ use nightfall::prelude::*;
 use web_time::Instant;
 
 use crate::external::{
-    ExternalTimecodeFrame, FREEWHEEL_DURATION, JITTER_TOLERANCE, POSITION_JUMP_THRESHOLD,
-    SIGNAL_TIMEOUT,
+    ExternalTimecodeFrame, JITTER_TOLERANCE, POSITION_JUMP_THRESHOLD, SIGNAL_TIMEOUT,
 };
 use crate::prelude::*;
 use crate::timecode::TimecodeSignal;
@@ -48,6 +47,7 @@ impl Default for TimecodeGenerator {
             },
             rate: TimecodeRate::Fps30,
             source: TimecodeSource::Internal,
+            freewheel: None,
             audio_input: None,
         })
     }
@@ -145,9 +145,10 @@ impl TimecodeGenerator {
     /// Moves the position to where the external source is now.
     ///
     /// While frames arrive, the position is the last frame plus the time since it arrived. When
-    /// they stop, the timecode freewheels on the engine clock for [`FREEWHEEL_DURATION`], then
-    /// holds its position and stops running until the source plays again. A locate moves the
-    /// position without running. Frames received before the timecode was started are ignored.
+    /// they stop, the timecode freewheels on the engine clock for the timecode's freewheel time,
+    /// then returns to the last position received and holds it until the source plays again, so
+    /// a stopped sender leaves the timecode where the sender stopped. A locate moves the position
+    /// without running. Frames received before the timecode was started are ignored.
     pub fn follow(&mut self, frame: Option<ExternalTimecodeFrame>, now: Instant) {
         let Some(armed_at) = self.armed_at else {
             self.state.is_active = false;
@@ -166,13 +167,10 @@ impl TimecodeGenerator {
             (TimecodeSignal::Waiting, frame.position)
         } else if age <= SIGNAL_TIMEOUT {
             (TimecodeSignal::Receiving, frame.position + age)
-        } else if age <= SIGNAL_TIMEOUT + FREEWHEEL_DURATION {
+        } else if age <= SIGNAL_TIMEOUT.saturating_add(self.timecode.freewheel()) {
             (TimecodeSignal::Freewheeling, frame.position + age)
         } else {
-            (
-                TimecodeSignal::Waiting,
-                frame.position + SIGNAL_TIMEOUT + FREEWHEEL_DURATION,
-            )
+            (TimecodeSignal::Waiting, frame.position)
         };
         let running = matches!(
             signal,
@@ -231,6 +229,7 @@ mod tests {
             },
             rate: TimecodeRate::Fps24,
             source: TimecodeSource::Internal,
+            freewheel: None,
             audio_input: None,
         };
 
@@ -388,8 +387,28 @@ mod tests {
         assert_eq!(generator.state.source_rate, Some(TimecodeRate::Fps25));
     }
 
-    /// After a dropout the timecode freewheels, then holds where freewheeling ended and stops
-    /// running.
+    /// A timecode with no freewheel time stops as soon as the signal times out.
+    #[test]
+    fn zero_freewheel_stops_at_signal_timeout() {
+        let mut generator = TimecodeGenerator::new(Timecode {
+            source: TimecodeSource::SmpteLtc,
+            freewheel: Some(Duration::ZERO),
+            ..Default::default()
+        });
+        generator.start();
+        let received_at = Instant::now();
+        let frame = Some(running_frame(1000, received_at));
+        generator.follow(
+            frame,
+            received_at + SIGNAL_TIMEOUT + Duration::from_millis(1),
+        );
+        assert_eq!(generator.state.signal, TimecodeSignal::Waiting);
+        assert!(!generator.state.is_active);
+        assert_eq!(generator.state.current_time, Duration::from_millis(1000));
+    }
+
+    /// After a dropout the timecode freewheels for its freewheel time, then returns to the last
+    /// position received and stops running.
     #[test]
     fn dropout_freewheels_then_holds() {
         let mut generator = external_generator();
@@ -397,18 +416,15 @@ mod tests {
         let received_at = Instant::now();
         let frame = Some(running_frame(1000, received_at));
 
-        generator.follow(frame, received_at + Duration::from_millis(500));
+        generator.follow(frame, received_at + Duration::from_millis(400));
         assert_eq!(generator.state.signal, TimecodeSignal::Freewheeling);
         assert!(generator.state.is_active);
-        assert_eq!(generator.state.current_time, Duration::from_millis(1500));
+        assert_eq!(generator.state.current_time, Duration::from_millis(1400));
 
         generator.follow(frame, received_at + Duration::from_secs(10));
         assert_eq!(generator.state.signal, TimecodeSignal::Waiting);
         assert!(!generator.state.is_active);
-        assert_eq!(
-            generator.state.current_time,
-            Duration::from_millis(1000) + SIGNAL_TIMEOUT + FREEWHEEL_DURATION
-        );
+        assert_eq!(generator.state.current_time, Duration::from_millis(1000));
     }
 
     /// A new frame slightly behind the extrapolated position holds the position instead of

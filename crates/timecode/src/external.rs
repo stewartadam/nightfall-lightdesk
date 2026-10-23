@@ -180,10 +180,6 @@ pub fn frames_to_duration(frames: u64, rate: TimecodeRate) -> Duration {
 /// Covers MIDI timecode's two-frame updates at the slowest rate plus scheduling jitter.
 pub const SIGNAL_TIMEOUT: Duration = Duration::from_millis(150);
 
-/// How long after its last frame a running source keeps advancing on the engine clock before the
-/// timecode holds its position.
-pub const FREEWHEEL_DURATION: Duration = Duration::from_secs(1);
-
 /// Backward correction below which a new frame is treated as jitter rather than a jump.
 ///
 /// Extrapolating between frames can run slightly ahead of the next frame. Holding the position

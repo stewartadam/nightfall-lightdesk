@@ -396,6 +396,7 @@ pub(super) fn add_tc(world: &mut World) {
         },
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
+        freewheel: None,
         audio_input: None,
     };
     world.spawn(TimecodeGenerator::new(timecode1.clone()));
@@ -409,6 +410,7 @@ pub(super) fn add_tc(world: &mut World) {
         },
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
+        freewheel: None,
         audio_input: None,
     };
     world.spawn(TimecodeGenerator::new(timecode2.clone()));

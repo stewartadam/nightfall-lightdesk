@@ -28,6 +28,22 @@ pub struct Timecode {
     /// reads the first channel of the system default input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_input: Option<TimecodeAudioInput>,
+    /// How long an external timecode keeps running on the engine clock after its signal stops,
+    /// to ride out a glitch, before it returns to the last position it received and holds.
+    /// `None` uses [`DEFAULT_FREEWHEEL`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freewheel: Option<Duration>,
+}
+
+/// Freewheel time for timecodes that don't set one: long enough to ride out a brief glitch,
+/// short enough that a stopped sender feels responsive.
+pub const DEFAULT_FREEWHEEL: Duration = Duration::from_millis(500);
+
+impl Timecode {
+    /// Returns how long this timecode freewheels after its external signal stops.
+    pub fn freewheel(&self) -> Duration {
+        self.freewheel.unwrap_or(DEFAULT_FREEWHEEL)
+    }
 }
 
 impl Default for Timecode {
@@ -37,6 +53,7 @@ impl Default for Timecode {
             rate: TimecodeRate::Fps30,
             source: TimecodeSource::Internal,
             audio_input: None,
+            freewheel: None,
         }
     }
 }

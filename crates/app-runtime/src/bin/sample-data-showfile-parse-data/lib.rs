@@ -761,6 +761,7 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
         },
         rate: TimecodeRate::Fps30,
         source: TimecodeSource::Internal,
+        freewheel: None,
         audio_input: None,
     };
     let timeline = Timeline {
