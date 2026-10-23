@@ -104,9 +104,11 @@ class BufferingAudio extends StationaryAudio {
 }
 
 /**
- * Audio that starts late or stalls far behind is seeked back onto the engine clock, while
- * small drift and Sync reports from an engine running slower than real time are eased out
- * through playback speed without seeking. At the loop end the media waits for the engine
+ * Media that resumes behind its seek target, as Safari and iOS do while rebuffering, is
+ * seeked again ahead of the engine clock by the shortfall just observed, and the learned
+ * lead carries over to later seeks and starts. Small drift and Sync reports from an engine
+ * running slower than real time are eased out through playback speed, playback that stalls
+ * far behind is seeked back onto the clock, at the loop end the media waits for the engine
  * to restart it, and once paused it is left alone at normal speed.
  */
 test("browser audio follows the engine clock when the media starts late", async () => {
@@ -122,62 +124,85 @@ test("browser audio follows the engine clock when the media starts late", async 
     const element = host.element as unknown as BufferingAudio;
     const session = host.beginSession();
     const timeline_uid = "timeline";
+    /** Report media at `seconds` after `elapsedMs` of wall-clock time. */
+    const mediaAt = (elapsedMs: number, seconds: number) => {
+      nowMs += elapsedMs;
+      element.currentTime = seconds;
+      element.dispatchEvent(new Event("timeupdate"));
+    };
     const unlocked = host.prime(timeline_uid, "https://example.test/demo.mp3");
     element.finishBuffering();
     await unlocked;
     assert.equal(element.muted, false);
 
+    // The phone spends 1.5 s buffering before sound starts at the requested 4 s.
     const playing = host.applyDirective(
       { type: "Play", data: { timeline_uid, offset: { secs: 4, nanos: 0 } } },
       session,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
-    nowMs += 2_500;
+    nowMs += 1_500;
     element.finishBuffering();
     await playing;
-    assert.equal(element.currentTime, 6.5);
+    assert.equal(element.currentTime, 4);
 
-    nowMs += 400;
-    element.currentTime = 6.85;
-    element.dispatchEvent(new Event("timeupdate"));
-    assert.equal(element.currentTime, 6.85);
-    assert.equal(element.playbackRate, 1 + 50 / 4_000);
+    // Once media advances, the 1.5 s shortfall becomes the lead for a follow-up seek.
+    mediaAt(250, 4.25);
+    assert.equal(element.currentTime, 7.25);
+    assert.equal(element.playbackRate, 1);
 
+    // That seek rebuffers for only 1 s and lands 0.5 s ahead, so the lead shrinks to 1 s.
+    mediaAt(1_000, 7.25);
+    mediaAt(250, 7.5);
+    assert.equal(element.currentTime, 8);
+
+    // Landing 62.5 ms behind is eased out by playback speed instead of another seek.
+    mediaAt(1_000, 8);
+    mediaAt(250, 8.1875);
+    assert.equal(element.currentTime, 8.1875);
+    assert.equal(element.playbackRate, 1 + 62.5 / 4_000);
+
+    // A stall far behind seeks back onto the clock, leading by the learned rebuffer time.
     nowMs += 3_000;
     element.dispatchEvent(new Event("playing"));
-    assert.equal(element.currentTime, 9.9);
+    assert.equal(element.currentTime, 12.3125);
     assert.equal(element.playbackRate, 1);
 
     // A busy engine reports less progress than real time; media slows down to follow it.
     nowMs += 1_200;
-    element.currentTime = 11.1;
+    element.currentTime = 12.5;
     await host.applyDirective(
-      {
-        type: "Sync",
-        data: { timeline_uid, offset: { secs: 10, nanos: 500_000_000 } },
-      },
+      { type: "Sync", data: { timeline_uid, offset: { secs: 12, nanos: 0 } } },
       session,
     );
-    assert.equal(element.currentTime, 11.1);
+    assert.equal(element.currentTime, 12.5);
     assert.equal(element.playbackRate, 0.95);
 
     host.setLoop(timeline_uid, {
       start: { secs: 2, nanos: 0 },
-      end: { secs: 12, nanos: 0 },
+      end: { secs: 14, nanos: 0 },
     });
-    nowMs += 3_000;
-    element.currentTime = 2;
-    element.dispatchEvent(new Event("timeupdate"));
+    mediaAt(3_000, 2);
     assert.equal(element.currentTime, 2);
 
     await host.applyDirective(
       { type: "Pause", data: { timeline_uid } },
       session,
     );
-    nowMs += 5_000;
-    element.dispatchEvent(new Event("timeupdate"));
+    mediaAt(5_000, 2);
     assert.equal(element.currentTime, 2);
     assert.equal(element.playbackRate, 1);
+
+    // The next start already seeks ahead by the learned rebuffer time.
+    host.setLoop(timeline_uid, undefined);
+    const resumed = host.applyDirective(
+      { type: "Play", data: { timeline_uid, offset: { secs: 20, nanos: 0 } } },
+      session,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(element.currentTime, 21.0625);
+    element.finishBuffering();
+    await resumed;
     host.unload();
   } finally {
     if (previous) Object.defineProperty(globalThis, "Audio", previous);

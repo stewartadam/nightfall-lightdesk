@@ -25,6 +25,13 @@ const CLOCK_RESYNC_COOLDOWN_MS = 3_000;
 const MAX_RATE_CORRECTION = 0.05;
 // Drift that playback speed aims to remove within this much playback.
 const RATE_CORRECTION_HORIZON_MS = 4_000;
+// Drift at or past this, measured once media resumes after a seek, is closed with another
+// seek that leads by the rebuffer time just observed.
+const CLOCK_SETTLE_THRESHOLD_MS = 150;
+// Follow-up seeks allowed after each start before only playback speed corrects drift.
+const MAX_SETTLE_SEEKS = 2;
+// Upper bound for how far ahead of the engine clock a seek aims to cover rebuffering.
+const MAX_SEEK_LEAD_MS = 2_000;
 // `HTMLMediaElement.HAVE_FUTURE_DATA`: enough media is buffered to keep playing.
 const HAVE_FUTURE_DATA = 3;
 
@@ -50,6 +57,10 @@ export class BrowserDemoAudioHost {
   private directiveQueue: Promise<void> = Promise.resolve();
   private clockAnchor: EngineClockAnchor | null = null;
   private lastResyncAtMs = Number.NEGATIVE_INFINITY;
+  private seekLeadMs = 0;
+  private settleSeeksLeft = 0;
+  private awaitingSeekLanding = false;
+  private lastMediaMs: number | null = null;
 
   /**
    * Create an unloaded browser audio host that wraps at loop boundaries and keeps the
@@ -146,8 +157,11 @@ export class BrowserDemoAudioHost {
     if (this.unlockPromise) await this.unlockPromise;
     const startAtMs = this.now();
     this.clockAnchor = { positionMs, atMs: requestedAtMs ?? startAtMs };
-    this.lastResyncAtMs = Number.NEGATIVE_INFINITY;
-    this.seek(timelineUid, this.engineClockPositionMs(startAtMs) ?? positionMs);
+    this.lastResyncAtMs = startAtMs;
+    this.settleSeeksLeft = MAX_SETTLE_SEEKS;
+    this.seekAheadOfEngineClock(
+      this.engineClockPositionMs(startAtMs) ?? positionMs,
+    );
     await this.element.play();
     this.hasPlayed = true;
     this.publishState();
@@ -307,7 +321,21 @@ export class BrowserDemoAudioHost {
   /** Stop following the engine clock until the next Play directive anchors it again. */
   private releaseEngineClock(): void {
     this.clockAnchor = null;
+    this.awaitingSeekLanding = false;
     this.element.playbackRate = 1;
+  }
+
+  /**
+   * Seek to `expectedMs` plus the time media recently took to resume after a seek, so it
+   * lands on the engine clock once sound starts. The landing is measured on the next
+   * samples that show media advancing.
+   */
+  private seekAheadOfEngineClock(expectedMs: number): void {
+    if (!this.timelineUid) return;
+    this.element.playbackRate = 1;
+    this.awaitingSeekLanding = true;
+    this.lastMediaMs = null;
+    this.seek(this.timelineUid, expectedMs + this.seekLeadMs);
   }
 
   /**
@@ -321,12 +349,13 @@ export class BrowserDemoAudioHost {
   }
 
   /**
-   * Keep the media on the engine clock. Large drift, e.g. a phone still fetching audio when
-   * the engine started or playback that stalled on the network, is closed with a seek.
-   * Smaller drift is eased out by nudging the playback speed, so Safari and iOS never
-   * rebuffer for it. Media that is still buffering is left alone, and seeks are rate
-   * limited so a rebuffering seek is not chased. Past the loop end the engine sends a fresh
-   * Play from the loop start, so the projection is not trusted there.
+   * Keep the media on the engine clock. Safari and iOS rebuffer after every seek, so media
+   * resumes behind its seek target; once it is advancing again, that shortfall becomes the
+   * lead for later seeks and a few follow-up seeks close what remains after each start.
+   * Large drift, e.g. playback that stalled on the network, is also closed with a seek,
+   * rate limited so a rebuffering seek is not chased. Smaller drift is eased out by nudging
+   * the playback speed. Media that is still buffering is left alone. Past the loop end the
+   * engine sends a fresh Play from the loop start, so the projection is not trusted there.
    */
   private syncToEngineClock(): void {
     if (
@@ -341,17 +370,38 @@ export class BrowserDemoAudioHost {
     const expectedMs = this.engineClockPositionMs(nowMs);
     if (expectedMs === null) return;
     if (this.loopRangeMs && expectedMs >= this.loopRangeMs.end) return;
-    const driftMs = this.element.currentTime * 1_000 - expectedMs;
+    const mediaMs = this.element.currentTime * 1_000;
+    const advancing = this.lastMediaMs !== null && mediaMs > this.lastMediaMs;
+    this.lastMediaMs = mediaMs;
+    const driftMs = mediaMs - expectedMs;
+    if (this.awaitingSeekLanding && advancing) {
+      this.awaitingSeekLanding = false;
+      this.seekLeadMs = Math.max(
+        0,
+        Math.min(MAX_SEEK_LEAD_MS, this.seekLeadMs - driftMs),
+      );
+      if (
+        Math.abs(driftMs) >= CLOCK_SETTLE_THRESHOLD_MS &&
+        this.settleSeeksLeft > 0
+      ) {
+        this.settleSeeksLeft -= 1;
+        this.lastResyncAtMs = nowMs;
+        log.debug(
+          `Browser demo audio resumed ${Math.round(driftMs)}ms from the engine clock; seeking ${Math.round(this.seekLeadMs)}ms ahead`,
+        );
+        this.seekAheadOfEngineClock(expectedMs);
+        return;
+      }
+    }
     if (
       Math.abs(driftMs) >= CLOCK_SEEK_THRESHOLD_MS &&
       nowMs - this.lastResyncAtMs >= CLOCK_RESYNC_COOLDOWN_MS
     ) {
       this.lastResyncAtMs = nowMs;
-      this.element.playbackRate = 1;
       log.debug(
         `Seeking browser demo audio that drifted ${Math.round(driftMs)}ms from the engine clock`,
       );
-      this.seek(this.timelineUid, expectedMs);
+      this.seekAheadOfEngineClock(expectedMs);
       return;
     }
     const correction =
