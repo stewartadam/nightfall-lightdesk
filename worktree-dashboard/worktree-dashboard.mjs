@@ -17,6 +17,7 @@ import { basename, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
+import { removeWorktree } from "./worktree-remove.mjs";
 
 // Preserve launcher settings without inheriting the dashboard's dotenv file.
 const SERVICE_BASE_ENV = { ...process.env };
@@ -119,6 +120,13 @@ function createServiceState() {
     logStream: null,
   };
 }
+
+/** Stands in for a worktree whose services the dashboard has never touched. */
+const EMPTY_MANAGED_RECORD = Object.freeze(
+  Object.fromEntries(
+    SERVICES.map((service) => [service, Object.freeze(createServiceState())]),
+  ),
+);
 
 function getManagedRecord(worktreePath) {
   const existing = managedServices.get(worktreePath);
@@ -1002,7 +1010,7 @@ async function collectWorktreeState() {
     (await findListeningPids(port)).pids[0] ?? null;
 
   const collected = await Promise.all(
-    parsed.map(async (entry) => {
+    parsed.map(async (entry, index) => {
       const worktreePath = String(entry.worktree);
       const env = await readEnvMap(worktreePath);
       const branch = shortBranchName(
@@ -1028,7 +1036,9 @@ async function collectWorktreeState() {
           ? listenerPid(webUiPort)
           : Promise.resolve(null),
       ]);
-      const record = getManagedRecord(worktreePath);
+      // Reading without creating keeps a poll that overlaps a removal from
+      // re-adding the removed worktree's record.
+      const record = managedServices.get(worktreePath) ?? EMPTY_MANAGED_RECORD;
 
       return {
         id: worktreeIdFromPath(worktreePath),
@@ -1037,6 +1047,8 @@ async function collectWorktreeState() {
         branch,
         head: typeof entry.HEAD === "string" ? entry.HEAD : null,
         isMain: branch === "main",
+        // Git lists the primary worktree first; it and the dashboard's own checkout stay put.
+        canRemove: index > 0 && !isDashboardRootWorktree(worktreePath),
         envPath: env.envPath,
         envExists: env.exists,
         nightfallPort: backendPort,
@@ -1240,8 +1252,34 @@ async function handleServiceAction(
 }
 
 async function isKnownWorktreePath(worktreePath) {
+  return (await findKnownWorktree(worktreePath)) !== undefined;
+}
+
+/** Returns the dashboard's current summary for a worktree path, if git still lists it. */
+async function findKnownWorktree(worktreePath) {
   const current = await collectWorktreeState();
-  return current.some((entry) => entry.path === worktreePath);
+  return current.find((entry) => entry.path === worktreePath);
+}
+
+/** Parses the `force` query flag that lets removal discard local changes and unmerged work. */
+function parseForce(searchParams) {
+  const force = searchParams.get("force");
+  return force === "1" || force?.toLowerCase() === "true";
+}
+
+/**
+ * Closes a removed worktree's service logs and drops its managed-process record.
+ * A record with a child still running (its stop timed out) is kept, so its log
+ * stream stays open for the child's output and shutdown can still kill it.
+ */
+function forgetManagedRecord(worktreePath) {
+  const record = managedServices.get(worktreePath);
+  if (!record) return;
+  if (SERVICES.some((service) => record[service].running)) return;
+  for (const service of SERVICES) {
+    closeLogStream(record[service]);
+  }
+  managedServices.delete(worktreePath);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1385,6 +1423,47 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         action: "reseed-data-dir",
         result,
+      });
+      return;
+    }
+
+    const removeMatch = url.pathname.match(
+      /^\/api\/worktrees\/([^/]+)\/remove$/u,
+    );
+
+    if (method === "POST" && removeMatch) {
+      const [, worktreeId] = removeMatch;
+      const worktreePath = pathFromWorktreeId(worktreeId);
+      const worktree = worktreePath
+        ? await findKnownWorktree(worktreePath)
+        : undefined;
+
+      if (!worktree) {
+        textResponse(res, 404, "Unknown worktree id");
+        return;
+      }
+      if (!worktree.canRemove) {
+        textResponse(
+          res,
+          400,
+          "The primary worktree and the checkout running the dashboard can't be removed",
+        );
+        return;
+      }
+
+      const result = await removeWorktree({
+        worktreePath,
+        branch: worktree.branch,
+        force: parseForce(url.searchParams),
+        root: DASHBOARD_ROOT,
+      });
+      // A failed removal can still have deleted the worktree before erroring.
+      if (result.ok || !(await isKnownWorktreePath(worktreePath))) {
+        forgetManagedRecord(worktreePath);
+      }
+      jsonResponse(res, result.ok ? 200 : 409, {
+        ...result,
+        action: "remove",
       });
       return;
     }

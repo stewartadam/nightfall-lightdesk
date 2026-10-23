@@ -11,12 +11,14 @@ import { ArrowSquareOutIcon } from "@squidlab/phosphor-solid/arrow-square-out";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { DatabaseIcon } from "@squidlab/phosphor-solid/database";
+import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { RepeatIcon } from "@squidlab/phosphor-solid/repeat";
 import { SignInIcon } from "@squidlab/phosphor-solid/sign-in";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { TerminalWindowIcon } from "@squidlab/phosphor-solid/terminal-window";
+import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import type { JSX } from "solid-js";
 import {
   createEffect,
@@ -29,9 +31,15 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Dynamic, Portal, render } from "solid-js/web";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "./components/ui/dropdown-menu";
 import type { AppIcon } from "./components/ui/icon";
 import { Table, TableScroll } from "./components/ui/table";
 import { writeClipboardText } from "./lib/clipboard";
+import { TOAST_DURATION_MS } from "./lib/constants";
 import { getLogger } from "./lib/logger";
 import { pushToast } from "./state/appStores";
 
@@ -44,7 +52,8 @@ type DashboardAction =
   | ServiceAction
   | "open-editor"
   | "open-log"
-  | "reseed-data-dir";
+  | "reseed-data-dir"
+  | "remove";
 interface RunActionOptions {
   sampleData?: boolean;
 }
@@ -66,6 +75,8 @@ interface WorktreeSummary {
   branch: string | null;
   head: string | null;
   isMain: boolean;
+  /** False for the primary worktree and the checkout running the dashboard. */
+  canRemove: boolean;
   envPath: string;
   envExists: boolean;
   nightfallPort: number | null;
@@ -86,6 +97,17 @@ interface DashboardStatePayload {
   generatedAt: string;
   dashboardPid: number;
   worktrees: WorktreeSummary[];
+}
+
+/** Body of a refused or failed worktree removal. */
+interface RemoveWorktreeResponse {
+  ok: boolean;
+  reason?: "local-changes" | "unmerged" | "failed";
+  message: string;
+  /** The first few changed files or unmerged commits. */
+  details: string[];
+  /** How many changed files or unmerged commits there are in all. */
+  total: number;
 }
 
 interface ActionMenuItem {
@@ -130,6 +152,8 @@ const log = getLogger(import.meta.url);
 const ACTION_MENU_OFFSET_PX = 4;
 const ACTION_MENU_VIEWPORT_PADDING_PX = 8;
 const ACTION_MENU_Z_INDEX = "2147483647";
+const REFUSAL_TOAST_MS = TOAST_DURATION_MS * 3;
+const REFUSAL_DETAILS_SHOWN = 3;
 const WORKTREE_SERVICE_OPTIONS: Array<{ value: ServiceTarget; label: string }> =
   [
     { value: "backend", label: "Backend" },
@@ -260,6 +284,29 @@ function serviceLabel(service: ServiceTarget): string {
   return "backend";
 }
 
+/**
+ * Explains why a worktree was kept and how to remove it anyway: uncommitted
+ * files are named, and an unmerged branch reports its commit count and the
+ * reason `wt done` gave.
+ */
+function removalRefusalMessage(
+  label: string,
+  response: RemoveWorktreeResponse,
+): string {
+  const forceHint = "Hold Shift and choose Force delete to remove it anyway.";
+  const { total } = response;
+  if (response.reason === "local-changes") {
+    const files = response.details.slice(0, REFUSAL_DETAILS_SHOWN);
+    const more = total > files.length ? ", …" : "";
+    return `${label} has ${response.message} (${files.join(", ")}${more}). ${forceHint}`;
+  }
+  const unmerged =
+    total > 0
+      ? `has ${total} unmerged ${total === 1 ? "commit" : "commits"}`
+      : "isn't merged";
+  return `${label} ${unmerged} (${response.message}). ${forceHint}`;
+}
+
 function normalizeManagedServiceState(
   input: Partial<ManagedServiceState> | null | undefined,
 ): ManagedServiceState {
@@ -290,6 +337,7 @@ function normalizeDashboardPayload(
 
       return {
         ...worktree,
+        canRemove: Boolean(worktree.canRemove),
         managed: {
           backend: normalizeManagedServiceState(managed.backend),
           ui: normalizeManagedServiceState(managed.ui),
@@ -327,6 +375,7 @@ function WorktreeDashboardApp() {
     new Set(),
   );
   const [copiedPathFor, setCopiedPathFor] = createSignal<string | null>(null);
+  const [shiftHeld, setShiftHeld] = createSignal(false);
   const [openActionMenu, setOpenActionMenu] = createSignal<string | null>(null);
   const [actionMenuPlacement, setActionMenuPlacement] =
     createSignal<ActionMenuPlacement>("down");
@@ -668,6 +717,119 @@ function WorktreeDashboardApp() {
     }
   }
 
+  /**
+   * Removes a worktree and, when merged, its branch. The dashboard refuses a
+   * worktree with local changes or an unmerged branch and the toast says which;
+   * `force` removes it anyway and deletes the branch.
+   */
+  async function deleteWorktree(
+    worktreeId: string,
+    force: boolean,
+  ): Promise<void> {
+    const key = actionKey(worktreeId, "remove", "both");
+    const label = worktreeLabel(worktreeId);
+    markPendingOperation(key);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_PATH}/worktrees/${encodeURIComponent(worktreeId)}/remove${force ? "?force=1" : ""}`,
+        { method: "POST" },
+      );
+
+      if (response.status === 409) {
+        const refusal = (await response.json()) as RemoveWorktreeResponse;
+        if (refusal.reason !== "failed") {
+          pushToast(
+            "warning",
+            removalRefusalMessage(label, refusal),
+            REFUSAL_TOAST_MS,
+            [],
+            { title: `Kept ${label}` },
+          );
+          return;
+        }
+        throw new Error(refusal.message);
+      }
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(body || `Request failed (${response.status})`);
+      }
+
+      pushToast("success", `Deleted ${label}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      pushToast("error", `Failed to delete ${label}: ${message}`);
+      log.error("Failed to delete worktree:", { error, worktreeId, force });
+    } finally {
+      clearPendingOperation(key);
+      // A failed removal may still have deleted the worktree.
+      await refresh({ silent: true });
+    }
+  }
+
+  /**
+   * Collects the less frequent per-worktree actions behind a "..." button.
+   * Delete turns into Force delete while Shift is held.
+   */
+  function WorktreeOverflowMenu(props: {
+    worktree: WorktreeSummary;
+    showReseed: boolean;
+  }) {
+    const pending = (action: DashboardAction) =>
+      isPendingOperation(actionKey(props.worktree.id, action, "both"));
+    return (
+      <DropdownMenu
+        trigger={<DotsThreeIcon class="size-4" weight="bold" aria-hidden />}
+        triggerLabel="More actions"
+        triggerTitle="More actions"
+        triggerClass="inline-flex items-center justify-center px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700"
+        contentLabel={`Actions for ${props.worktree.branch ?? props.worktree.name}`}
+        placement="below"
+        align="end"
+      >
+        <Show when={props.showReseed}>
+          <DropdownMenuItem
+            icon={DatabaseIcon}
+            description={
+              props.worktree.isMain
+                ? "Main worktree is the data seed source"
+                : undefined
+            }
+            disabled={props.worktree.isMain || pending("reseed-data-dir")}
+            onClick={() => void reseedDataDirectory(props.worktree.id)}
+          >
+            Re-seed data from main
+          </DropdownMenuItem>
+        </Show>
+        <DropdownMenuItem
+          icon={TerminalWindowIcon}
+          disabled={pending("open-editor")}
+          onClick={() => void openEditor(props.worktree.id)}
+        >
+          Open in VS Code
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          icon={TrashIcon}
+          danger
+          description={
+            !props.worktree.canRemove
+              ? "The primary worktree can't be deleted"
+              : shiftHeld()
+                ? "Discards local changes and unmerged commits"
+                : "Hold Shift to force"
+          }
+          disabled={!props.worktree.canRemove || pending("remove")}
+          onClick={(event) =>
+            void deleteWorktree(props.worktree.id, event.shiftKey)
+          }
+        >
+          {shiftHeld() ? "Force delete" : "Delete"}
+        </DropdownMenuItem>
+      </DropdownMenu>
+    );
+  }
+
   async function openServiceLog(
     worktreeId: string,
     service: ServiceName,
@@ -742,9 +904,21 @@ function WorktreeDashboardApp() {
     };
     document.addEventListener("pointerdown", handlePointerDown);
 
+    /** Mirrors the Shift key so the overflow menu can relabel Delete as Force delete. */
+    const handleModifierChange = (event: KeyboardEvent) =>
+      setShiftHeld(event.shiftKey);
+    /** Clears Shift when the window loses focus and its keyup would be missed. */
+    const handleBlur = () => setShiftHeld(false);
+    window.addEventListener("keydown", handleModifierChange);
+    window.addEventListener("keyup", handleModifierChange);
+    window.addEventListener("blur", handleBlur);
+
     onCleanup(() => {
       window.clearInterval(pollTimer);
       document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleModifierChange);
+      window.removeEventListener("keyup", handleModifierChange);
+      window.removeEventListener("blur", handleBlur);
     });
   });
 
@@ -1131,43 +1305,10 @@ function WorktreeDashboardApp() {
                               </div>
                             )}
                           </For>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center border-r border-slate-300 px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title={
-                              worktree.isMain
-                                ? "Main worktree is the data seed source"
-                                : "Re-seed data directory from main"
-                            }
-                            aria-label="Re-seed data directory from main"
-                            disabled={
-                              worktree.isMain ||
-                              isPendingOperation(
-                                actionKey(
-                                  worktree.id,
-                                  "reseed-data-dir",
-                                  "both",
-                                ),
-                              )
-                            }
-                            onClick={() =>
-                              void reseedDataDirectory(worktree.id)
-                            }
-                          >
-                            <DatabaseIcon class="size-4" aria-hidden />
-                          </button>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title="Open in VS Code"
-                            aria-label="Open in VS Code"
-                            disabled={isPendingOperation(
-                              actionKey(worktree.id, "open-editor", "both"),
-                            )}
-                            onClick={() => void openEditor(worktree.id)}
-                          >
-                            <TerminalWindowIcon class="size-4" aria-hidden />
-                          </button>
+                          <WorktreeOverflowMenu
+                            worktree={worktree}
+                            showReseed={true}
+                          />
                         </div>
                         <div class="ml-auto flex h-6 w-6 items-center justify-center">
                           <Show
@@ -1238,18 +1379,10 @@ function WorktreeDashboardApp() {
                     <td>
                       <div class="flex w-full items-center gap-2">
                         <div class="inline-flex rounded-md border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800">
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title="Open in VS Code"
-                            aria-label="Open in VS Code"
-                            disabled={isPendingOperation(
-                              actionKey(worktree.id, "open-editor", "both"),
-                            )}
-                            onClick={() => void openEditor(worktree.id)}
-                          >
-                            <TerminalWindowIcon class="size-4" aria-hidden />
-                          </button>
+                          <WorktreeOverflowMenu
+                            worktree={worktree}
+                            showReseed={false}
+                          />
                         </div>
                         <div class="ml-auto flex h-6 w-6 items-center justify-center">
                           <Show
