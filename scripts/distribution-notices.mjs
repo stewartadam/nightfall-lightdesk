@@ -38,6 +38,7 @@ const npmLicenses = new Set([
   "BSD-3-Clause",
   "ISC",
   "0BSD",
+  "MPL-2.0",
 ]);
 
 /** Read a UTF-8 file relative to the checkout, independent of the caller's cwd. */
