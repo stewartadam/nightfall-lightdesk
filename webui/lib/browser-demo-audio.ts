@@ -98,6 +98,7 @@ export class BrowserDemoAudioHost {
   private directiveQueue: Promise<void> = Promise.resolve();
   private clockAnchor: EngineClockAnchor | null = null;
   private publishTimer: ReturnType<typeof setInterval> | null = null;
+  private gestureTarget: EventTarget | null = null;
 
   /**
    * Create an unloaded browser audio host that keeps playback locked to the engine clock,
@@ -127,6 +128,24 @@ export class BrowserDemoAudioHost {
   prime(timelineUid: string, audioUrl: string): Promise<void> {
     this.loadUrl(timelineUid, audioUrl);
     return this.playbackContext().resume();
+  }
+
+  /**
+   * Resume audio output on every user gesture in `target`. Browsers only unlock audio from
+   * a gesture, and Safari suspends it again after interruptions, so playback started from
+   * a shortcut, board or cue still has sound. Installing twice is a no-op.
+   */
+  unlockOnUserGesture(target: EventTarget): void {
+    if (this.gestureTarget) return;
+    this.gestureTarget = target;
+    /** Create or resume the playback context while the browser counts a gesture. */
+    const unlock = () => {
+      const context = this.playbackContext();
+      if (context.state !== "running") void context.resume();
+    };
+    for (const type of ["pointerdown", "keydown", "touchend"]) {
+      target.addEventListener(type, unlock, { capture: true, passive: true });
+    }
   }
 
   /** Returns the token identifying the currently active engine session. */
@@ -195,7 +214,10 @@ export class BrowserDemoAudioHost {
     if (this.pendingBuffer !== pending) return;
     const context = this.playbackContext();
     if (context.state !== "running") {
-      throw new Error("Browser audio output is locked until the next Play");
+      // Without a gesture yet the voice stays silent; the next gesture resumes output and
+      // the following Sync puts it back on the engine clock.
+      log.debug("Browser demo audio output is waiting for a user gesture");
+      void context.resume();
     }
     this.clockAnchor = { positionMs, atMs: requestedAtMs ?? this.now() };
     this.hasPlayed = true;
@@ -259,27 +281,33 @@ export class BrowserDemoAudioHost {
     if (this.voice) this.applyLoop(this.voice.source);
   }
 
-  /** Apply one timeline-authored effect when it belongs to the current session. */
+  /**
+   * Apply one timeline-authored effect when it belongs to the current session. `sentAtMs`
+   * is when the engine sent it on this clock, so time spent reaching a busy main thread
+   * does not shift the engine clock carried by Play and Sync.
+   */
   async applyDirective(
     directive: types.TimelineAudioDirective,
     session: number,
+    sentAtMs?: number,
   ): Promise<void> {
-    const receivedAtMs = this.now();
+    const nowMs = this.now();
+    const issuedAtMs = Math.min(nowMs, sentAtMs ?? nowMs);
     const operation = this.directiveQueue.then(() =>
-      this.applyDirectiveInOrder(directive, session, receivedAtMs),
+      this.applyDirectiveInOrder(directive, session, issuedAtMs),
     );
     this.directiveQueue = operation.catch(() => undefined);
     return operation;
   }
 
   /**
-   * Apply one directive after all earlier operations have settled. `receivedAtMs` marks
-   * when it arrived, so playback queued behind decoding still lands on the engine clock.
+   * Apply one directive after all earlier operations have settled. `issuedAtMs` marks
+   * when the engine sent it, so playback queued behind decoding still lands on the engine clock.
    */
   private async applyDirectiveInOrder(
     directive: types.TimelineAudioDirective,
     session: number,
-    receivedAtMs: number,
+    issuedAtMs: number,
   ): Promise<void> {
     if (session !== this.session) return;
     switch (directive.type) {
@@ -290,14 +318,14 @@ export class BrowserDemoAudioHost {
         await this.play(
           directive.data.timeline_uid,
           durationToMs(directive.data.offset),
-          receivedAtMs,
+          issuedAtMs,
         );
         break;
       case "Sync":
         this.followEngineClock(
           directive.data.timeline_uid,
           durationToMs(directive.data.offset),
-          receivedAtMs,
+          issuedAtMs,
         );
         break;
       case "Pause":

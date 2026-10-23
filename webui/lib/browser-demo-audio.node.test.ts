@@ -99,6 +99,7 @@ async function createTestHost() {
     context,
     state: () => browserDemoAudioState.get(),
     finishDecoding: () => finishDecoding(),
+    now: () => nowMs,
     /** Advance wall-clock and audio-clock time together. */
     advance(ms: number) {
       nowMs += ms;
@@ -144,14 +145,18 @@ test("browser audio distinguishes paused playback at zero from ready media", asy
  * a paused seek is where the next start resumes.
  */
 test("browser audio follows the engine clock", async (t) => {
-  const { host, context, state, finishDecoding, advance } =
+  const { host, context, state, finishDecoding, advance, now } =
     await createTestHost();
   // A failed assertion must not leave the state publisher keeping the process alive.
   t.after(() => host.unload());
   const session = host.beginSession();
   const timeline_uid = "timeline";
-  /** Apply a directive carrying a whole-millisecond offset. */
-  const directive = (type: "Play" | "Sync" | "Seek", offsetMs: number) =>
+  /** Apply a directive carrying a whole-millisecond offset, optionally sent earlier. */
+  const directive = (
+    type: "Play" | "Sync" | "Seek",
+    offsetMs: number,
+    sentAtMs?: number,
+  ) =>
     host.applyDirective(
       {
         type,
@@ -164,6 +169,7 @@ test("browser audio follows the engine clock", async (t) => {
         },
       },
       session,
+      sentAtMs,
     );
   const primed = host.prime(timeline_uid, "https://example.test/demo.mp3");
   assert.equal(context.state, "running");
@@ -181,6 +187,12 @@ test("browser audio follows the engine clock", async (t) => {
 
   advance(1_000);
   await directive("Sync", 6_520);
+  assert.equal(context.sources.length, 1);
+
+  // A Sync that waited 400 ms for a busy main thread still describes the engine clock
+  // when it was sent, so audio on that clock keeps playing.
+  advance(400);
+  await directive("Sync", 6_500, now() - 400);
   assert.equal(context.sources.length, 1);
 
   // A busy engine falls half a second behind; the audio restarts where the engine is.
