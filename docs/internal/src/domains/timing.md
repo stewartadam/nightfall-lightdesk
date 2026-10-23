@@ -93,7 +93,7 @@ When you press Go, `Blue` becomes active at the playback clock's current positio
 | Green | 0% to 0% | 0 s | 3 s | `Blue` restates green at 0%, so the fade has no visible effect. |
 | Blue | 0% to 100% | 0.5 s | 1 s | The instruction's attribute override wins over the cue and the sequence default. |
 
-`Par 1` is one fixture, so each instruction has one slot, and a fanned mode would resolve to its first value. Every `Par 1` attribute merges LTP, so red uses its in timing even though it goes down. With a GDTF profile, intensity would be HTP, and a cue that lowered it would use the out timing, or the in timing under the exception described earlier.
+`Par 1` is one fixture, so each instruction has one slot, and a fanned mode would resolve to its first value. Red merges LTP, so it uses its in timing even though it goes down. Intensity merges HTP, so a cue that lowered it would use the out timing, or the in timing under the exception described earlier.
 
 Red reaches 0% 3 seconds after Go. Blue starts moving half a second after Go and reaches full 1.5 seconds after Go.
 
