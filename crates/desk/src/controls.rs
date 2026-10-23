@@ -338,6 +338,9 @@ impl Control {
         }
     }
 
+    /// Reconciles the slot with the target's live level each frame. Returns a level to push to
+    /// a newly attached instance when one is queued, and lets go of the physical fader when the
+    /// level moves away from it from elsewhere, so the fader must be picked up again.
     fn sync_from_runtime(&mut self, runtime: ControlRuntimeState) -> Option<f32> {
         let console_changed = !is_same_value(runtime.console_value, self.last_console_value);
         let pending_intensity = if let Some(pending_console_value) = self.pending_console_value {
@@ -374,10 +377,12 @@ impl Control {
             self.hardware_drove_console = false;
             None
         } else if self.is_grabbed
-            && self.external_grab_armed
-            && !self.hardware_drove_console
-            && console_changed
             && !is_same_value(runtime.console_value, self.hardware_value)
+            && ((self.external_grab_armed && !self.hardware_drove_console && console_changed)
+                // A clip started from elsewhere attaches a new instance at its own level, so a
+                // physical fader that drove the previous instance must be picked up again.
+                || (runtime.attached_instance_id.is_some()
+                    && runtime.attached_instance_id != self.attached_instance_id))
         {
             self.is_grabbed = false;
             self.external_grab_armed = true;
@@ -3223,6 +3228,44 @@ mod tests {
         );
         assert_eq!(hardware_pickup.intensity_value, Some(0.39));
         assert!(slot.is_grabbed);
+    }
+
+    /// Verifies that after a physical fader starts and stops a clip, starting the clip again
+    /// from elsewhere shows the new instance's full level and makes the physical fader pick it
+    /// up, instead of showing the parked fader while the clip plays at full.
+    #[test]
+    fn restarted_clip_releases_physical_fader_that_stopped_it() {
+        let active = |console_value: f32, instance_id: InstanceId| ControlRuntimeState {
+            console_value,
+            is_clip_active: true,
+            attached_instance_id: Some(instance_id),
+        };
+        let first_instance = InstanceId::new();
+        let mut slot = Control {
+            has_hardware: true,
+            ..Control::default()
+        };
+
+        let raise = slot.handle_external_hardware_value(20.0, ControlRuntimeState::default());
+        assert!(raise.should_start_clip);
+        assert_eq!(
+            slot.sync_from_runtime(active(100.0, first_instance)),
+            Some(0.2)
+        );
+        slot.sync_from_runtime(active(20.0, first_instance));
+        let lower = slot.handle_external_hardware_value(0.0, active(20.0, first_instance));
+        assert!(lower.should_stop_clip);
+        slot.sync_from_runtime(ControlRuntimeState::default());
+
+        let second_instance = InstanceId::new();
+        let restarted = active(100.0, second_instance);
+        assert_eq!(slot.sync_from_runtime(restarted), None);
+        assert!(!slot.is_grabbed);
+        assert_eq!(slot.display_value(restarted), 100.0);
+
+        let nudge = slot.handle_external_hardware_value(10.0, restarted);
+        assert_eq!(nudge.intensity_value, None);
+        assert!(!slot.is_grabbed);
     }
 
     /// Verifies a slot no physical fader has driven shows the console level, even while its
