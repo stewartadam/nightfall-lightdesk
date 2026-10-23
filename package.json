@@ -72,6 +72,7 @@
     "dotenv-expand": "^1000.0.0",
     "fkill": "^10.0.3",
     "loglayer": "^9.4.0",
+    "mediabunny": "^1.61.6",
     "nanostores": "^1.5.5",
     "nouislider": "^15.8.1",
     "pid-port": "^2.2.0",

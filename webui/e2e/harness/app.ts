@@ -32,6 +32,8 @@ export * as logger from "../../lib/logger";
 export * as performanceMeasures from "../../lib/performance-measure-collector";
 export * as showfileActions from "../../lib/showfile-actions";
 export * as showfileLoading from "../../lib/showfile-loading";
+export * as streamingAudio from "../../lib/streaming-audio/track";
+export * as timelineAudio from "../../lib/timeline-audio";
 export * as wasmBridge from "../../lib/wasm-bridge";
 export * as workspaceActivity from "../../lib/workspace-activity";
 export * as appLifecycle from "../../state/app-lifecycle";

@@ -9,6 +9,12 @@
 import { browserDemoAudioState } from "../state/appStores";
 import type * as types from "../types";
 import { getLogger } from "./logger";
+import {
+  type AudioTrack,
+  DecodedBufferTrack,
+  openStreamingTrack,
+} from "./streaming-audio/track";
+import { type LoopRangeMs, StreamingVoice } from "./streaming-audio/voice";
 import { resolveTimelineAudioUrl } from "./timeline-audio";
 import { durationToMs } from "./utils";
 
@@ -16,12 +22,9 @@ const log = getLogger(import.meta.url);
 
 // Drift this small is inaudible and left alone; larger drift restarts playback on the clock.
 const CLOCK_DRIFT_TOLERANCE_MS = 30;
-// Fade applied when a voice starts or stops, short enough to be inaudible but long enough
-// to avoid clicks when playback restarts mid-waveform.
-const VOICE_FADE_SECONDS = 0.01;
 // How often the diagnostic playback position is published while audio plays.
 const STATE_PUBLISH_INTERVAL_MS = 250;
-// Sample rate used to decode audio before any playback context exists.
+// Sample rate used to decode audio that cannot be streamed, before any playback context exists.
 const DECODE_SAMPLE_RATE = 48_000;
 
 /** Engine playback position paired with the local monotonic instant it applied. */
@@ -30,32 +33,33 @@ interface EngineClockAnchor {
   atMs: number;
 }
 
-/** One scheduled run of the decoded buffer and the audible position it started from. */
-interface Voice {
-  source: AudioBufferSourceNode;
-  gain: GainNode;
-  originMs: number;
-  startedAt: number;
-}
-
 /** Browser audio services the host depends on, replaceable for tests. */
 export interface BrowserDemoAudioBackend {
   /** Create the playback context; only called once a timeline needs to play. */
   createContext(): AudioContext;
-  /** Fetch and decode one bundled audio file into memory. */
-  decode(url: string): Promise<AudioBuffer>;
+  /** Open one bundled audio file for playback. */
+  open(url: string): Promise<AudioTrack>;
 }
 
-/** Fetch an audio file and decode it without needing a user gesture or playback context. */
-async function decodeAudioUrl(url: string): Promise<AudioBuffer> {
+/**
+ * Open `url` for streaming, or decode it whole when its format or the browser does not
+ * allow streaming. Decoding needs no user gesture or playback context.
+ */
+async function openAudioUrl(url: string): Promise<AudioTrack> {
+  const streaming = await openStreamingTrack(url);
+  if (streaming) return streaming;
+  log.debug("Decoding browser demo audio whole; it cannot be streamed");
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Unable to fetch timeline audio (${response.status})`);
   }
   const bytes = await response.arrayBuffer();
-  return new OfflineAudioContext(1, 1, DECODE_SAMPLE_RATE).decodeAudioData(
-    bytes,
-  );
+  const buffer = await new OfflineAudioContext(
+    1,
+    1,
+    DECODE_SAMPLE_RATE,
+  ).decodeAudioData(bytes);
+  return new DecodedBufferTrack(buffer);
 }
 
 /**
@@ -71,7 +75,7 @@ function createPlaybackContext(): AudioContext {
 
 const browserAudioBackend: BrowserDemoAudioBackend = {
   createContext: createPlaybackContext,
-  decode: decodeAudioUrl,
+  open: openAudioUrl,
 };
 
 /** Reads the browser's monotonic clock in milliseconds. */
@@ -79,9 +83,9 @@ const monotonicNow = () => globalThis.performance?.now() ?? Date.now();
 
 /**
  * Main-thread host for authoritative, gesture-gated browser demo audio effects. Audio is
- * decoded into memory and scheduled on the Web Audio clock, so starts and seeks are exact
- * and immediate on every browser instead of depending on media element buffering and the
- * position each browser chooses to report.
+ * streamed: a few seconds at a time are decoded and scheduled on the Web Audio clock, so
+ * starts and seeks are exact on every browser and memory stays constant however long
+ * the timeline's audio is.
  */
 export class BrowserDemoAudioHost {
   private context: AudioContext | null = null;
@@ -90,10 +94,14 @@ export class BrowserDemoAudioHost {
   private audioUrl: string | null = null;
   private session = 0;
   private timelineUid: string | null = null;
-  private loopRangeMs: { start: number; end: number } | null = null;
-  private pendingBuffer: Promise<AudioBuffer> | null = null;
-  private buffer: AudioBuffer | null = null;
-  private voice: Voice | null = null;
+  private loopRangeMs: LoopRangeMs | null = null;
+  private pendingTrack: Promise<AudioTrack> | null = null;
+  private track: AudioTrack | null = null;
+  private voice: StreamingVoice | null = null;
+  // A voice preparing to take over from `voice` once its first audio is decoded, and the
+  // position it is joining.
+  private incomingVoice: StreamingVoice | null = null;
+  private incomingPositionMs: ((nowMs: number) => number) | null = null;
   private pausedAtMs = 0;
   private directiveQueue: Promise<void> = Promise.resolve();
   private clockAnchor: EngineClockAnchor | null = null;
@@ -120,11 +128,12 @@ export class BrowserDemoAudioHost {
   }
 
   /**
-   * Unlock audio output synchronously from the operator's Play gesture and start decoding
-   * the timeline's audio. Browsers only let a gesture resume audio output, so this runs on
-   * every Play press. Neither decoding nor the resume is awaited: the engine clock starts
-   * right away and the audio joins it once decoded. Some browsers keep the resume pending
-   * indefinitely when they refuse audio output, which must not hold back the timeline.
+   * Unlock audio output synchronously from the operator's Play gesture and start opening
+   * the timeline's audio. Browsers only let a gesture resume audio output, so this runs
+   * on every Play press. Neither opening nor the resume is awaited: the engine clock
+   * starts right away and the audio joins it once the first samples are decoded. Some
+   * browsers keep the resume pending indefinitely when they refuse audio output, which
+   * must not hold back the timeline.
    */
   prime(timelineUid: string, audioUrl: string): void {
     this.loadUrl(timelineUid, audioUrl);
@@ -159,7 +168,7 @@ export class BrowserDemoAudioHost {
     this.loadUrl(timelineUid, resolveTimelineAudioUrl(assetId));
   }
 
-  /** Start fetching and decoding one already resolved bundled URL for the timeline. */
+  /** Start opening one already resolved bundled URL for the timeline. */
   private loadUrl(timelineUid: string, audioUrl: string): void {
     if (!audioUrl.trim()) {
       throw new Error(
@@ -173,22 +182,23 @@ export class BrowserDemoAudioHost {
     ) {
       return;
     }
-    this.stopVoice();
+    this.stopVoices();
     this.releaseEngineClock();
+    this.releaseTrack();
     this.timelineUid = timelineUid;
     this.audioUrl = audioUrl;
     this.loopRangeMs = null;
-    this.buffer = null;
     this.pausedAtMs = 0;
-    const pending = this.backend.decode(audioUrl);
-    this.pendingBuffer = pending;
+    const pending = this.backend.open(audioUrl);
+    this.pendingTrack = pending;
     pending.then(
-      (buffer) => {
-        if (this.pendingBuffer === pending) this.buffer = buffer;
+      (track) => {
+        if (this.pendingTrack === pending) this.track = track;
+        else track.close();
       },
       (error: unknown) => {
-        if (this.pendingBuffer !== pending) return;
-        log.warn("Unable to decode browser demo audio", error);
+        if (this.pendingTrack !== pending) return;
+        log.warn("Unable to open browser demo audio", error);
       },
     );
     this.loaded = true;
@@ -199,9 +209,9 @@ export class BrowserDemoAudioHost {
 
   /**
    * Start or resume playback for the active timeline. When `requestedAtMs` is given, the
-   * engine started its clock at `positionMs` at that instant, so audio starts at wherever
-   * that clock is once decoding finishes. Audio that is already playing on that clock,
-   * e.g. across a loop restart, carries on without a restart.
+   * engine started its clock at `positionMs` at that instant, so audio joins wherever
+   * that clock is once the first samples are decoded. Audio that is already playing on
+   * that clock, e.g. across a loop restart, carries on without a restart.
    */
   async play(
     timelineUid: string,
@@ -209,10 +219,10 @@ export class BrowserDemoAudioHost {
     requestedAtMs?: number,
   ): Promise<void> {
     this.assertTimeline(timelineUid);
-    const pending = this.pendingBuffer;
+    const pending = this.pendingTrack;
     if (!pending) return;
-    const buffer = await pending;
-    if (this.pendingBuffer !== pending) return;
+    await pending;
+    if (this.pendingTrack !== pending) return;
     const context = this.playbackContext();
     if (context.state !== "running") {
       // Without a gesture yet the voice stays silent; the next gesture resumes output and
@@ -222,7 +232,7 @@ export class BrowserDemoAudioHost {
     }
     this.clockAnchor = { positionMs, atMs: requestedAtMs ?? this.now() };
     this.hasPlayed = true;
-    this.followClock(buffer);
+    this.followClock();
   }
 
   /**
@@ -237,24 +247,24 @@ export class BrowserDemoAudioHost {
   ): void {
     if (!this.clockAnchor || this.timelineUid !== timelineUid) return;
     this.clockAnchor = { positionMs, atMs: reportedAtMs };
-    if (this.buffer) this.followClock(this.buffer);
+    this.followClock();
   }
 
   /** Pause playback without changing the current position. */
   pause(timelineUid: string): void {
     if (!this.loaded || this.timelineUid !== timelineUid) return;
     this.assertTimeline(timelineUid);
-    this.releaseEngineClock();
     this.pausedAtMs = this.positionMs();
-    this.stopVoice();
+    this.releaseEngineClock();
+    this.stopVoices();
     this.publishState();
   }
 
   /** Move the active timeline to a position in milliseconds, continuing if it plays. */
   seek(timelineUid: string, positionMs: number): void {
     this.assertTimeline(timelineUid);
-    const targetMs = this.clampToBuffer(positionMs);
-    if (this.voice && this.buffer) this.startVoice(this.buffer, targetMs);
+    const targetMs = this.clampToTrack(positionMs);
+    if (this.isPlaying()) this.startVoice(this.freeRunningFrom(targetMs));
     else this.pausedAtMs = targetMs;
     this.publishState();
   }
@@ -264,13 +274,16 @@ export class BrowserDemoAudioHost {
     if (!this.loaded || this.timelineUid !== timelineUid) return;
     this.assertTimeline(timelineUid);
     this.releaseEngineClock();
-    this.stopVoice();
+    this.stopVoices();
     this.hasPlayed = false;
     this.pausedAtMs = 0;
     this.publishState();
   }
 
-  /** Set or clear loop bounds for the active timeline, applied to audio already playing. */
+  /**
+   * Set or clear loop bounds for the active timeline. Audio already scheduled carries on
+   * when it still fits the new bounds, and restarts at the current position otherwise.
+   */
   setLoop(
     timelineUid: string,
     range: types.TimelineAudioLoopRange | undefined,
@@ -279,7 +292,14 @@ export class BrowserDemoAudioHost {
     this.loopRangeMs = range
       ? { start: durationToMs(range.start), end: durationToMs(range.end) }
       : null;
-    if (this.voice) this.applyLoop(this.voice.source);
+    this.incomingVoice?.setLoop(this.loopRangeMs);
+    if (this.voice && !this.voice.setLoop(this.loopRangeMs)) {
+      this.startVoice(
+        this.clockAnchor
+          ? this.engineClock()
+          : this.freeRunningFrom(this.wrapToLoop(this.positionMs())),
+      );
+    }
   }
 
   /**
@@ -303,7 +323,7 @@ export class BrowserDemoAudioHost {
 
   /**
    * Apply one directive after all earlier operations have settled. `issuedAtMs` marks
-   * when the engine sent it, so playback queued behind decoding still lands on the engine clock.
+   * when the engine sent it, so playback queued behind opening still lands on the engine clock.
    */
   private async applyDirectiveInOrder(
     directive: types.TimelineAudioDirective,
@@ -351,17 +371,16 @@ export class BrowserDemoAudioHost {
     }
   }
 
-  /** Release the decoded audio and stop any playback. The output context is kept unlocked. */
+  /** Release the opened audio and stop any playback. The output context is kept unlocked. */
   unload(): void {
-    this.stopVoice();
+    this.stopVoices();
     this.releaseEngineClock();
+    this.releaseTrack();
     this.loaded = false;
     this.hasPlayed = false;
     this.audioUrl = null;
     this.timelineUid = null;
     this.loopRangeMs = null;
-    this.pendingBuffer = null;
-    this.buffer = null;
     this.pausedAtMs = 0;
     this.publishState();
   }
@@ -384,6 +403,18 @@ export class BrowserDemoAudioHost {
     this.clockAnchor = null;
   }
 
+  /** Close the opened track, or the one still opening once it arrives. */
+  private releaseTrack(): void {
+    this.track?.close();
+    this.track = null;
+    this.pendingTrack = null;
+  }
+
+  /** Whether audio is playing or about to. */
+  private isPlaying(): boolean {
+    return this.voice !== null || this.incomingVoice !== null;
+  }
+
   /**
    * Project the engine's playback position at `nowMs` from the last Play or Sync report,
    * wrapped into the loop range the way looping audio wraps. Returns `null` when the
@@ -397,74 +428,93 @@ export class BrowserDemoAudioHost {
     );
   }
 
+  /** Expected position that follows the engine clock as Sync reports update it. */
+  private engineClock(): (nowMs: number) => number {
+    let lastMs = this.positionMs();
+    return (nowMs) => {
+      lastMs = this.engineClockPositionMs(nowMs) ?? lastMs;
+      return lastMs;
+    };
+  }
+
+  /** Expected position that runs on from `positionMs` in real time, starting now. */
+  private freeRunningFrom(positionMs: number): (nowMs: number) => number {
+    const atMs = this.now();
+    return (nowMs) => this.wrapToLoop(positionMs + Math.max(0, nowMs - atMs));
+  }
+
   /**
    * Keep audio on the engine clock: start it when nothing plays, and restart it at the
-   * engine position when it has drifted audibly away.
+   * engine position when it has drifted audibly away. Audio still joining the clock is
+   * left to finish joining.
    */
-  private followClock(buffer: AudioBuffer): void {
-    const expectedMs = this.engineClockPositionMs(this.now());
-    if (expectedMs === null) return;
+  private followClock(): void {
+    const projected = this.engineClockPositionMs(this.now());
+    if (projected === null || this.incomingVoice || !this.track) return;
+    const expectedMs = this.clampToTrack(projected);
     if (this.voice) {
-      const driftMs = this.positionMs() - expectedMs;
+      const driftMs = this.voice.heardPositionMs() - expectedMs;
       if (Math.abs(driftMs) <= CLOCK_DRIFT_TOLERANCE_MS) return;
       log.debug(
         `Restarting browser demo audio that drifted ${Math.round(driftMs)}ms from the engine clock`,
       );
+    } else if (expectedMs >= this.trackDurationMs()) {
+      return;
     }
-    this.startVoice(buffer, this.clampToBuffer(expectedMs));
+    this.startVoice(this.engineClock());
   }
 
   /**
-   * Play `buffer` so that `positionMs` is what is heard right now, replacing any current
-   * voice with a short crossfade. Output latency is added to the start offset so the
-   * sound leaving the speakers, not the sound being scheduled, matches the position.
+   * Start a voice that joins `expectedPositionMs` once its first audio is decoded. The
+   * current voice keeps playing until then and hands over with a short crossfade, so a
+   * restart never leaves a gap.
    */
-  private startVoice(buffer: AudioBuffer, positionMs: number): void {
-    const context = this.playbackContext();
-    this.stopVoice();
-    const latencyMs = outputLatencySeconds(context) * 1_000;
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    this.applyLoop(source);
-    const gain = context.createGain();
-    source.connect(gain);
-    gain.connect(context.destination);
-    const startedAt = context.currentTime;
-    gain.gain.setValueAtTime(0, startedAt);
-    gain.gain.linearRampToValueAtTime(1, startedAt + VOICE_FADE_SECONDS);
-    source.start(startedAt, (positionMs + latencyMs) / 1_000);
-    this.voice = { source, gain, originMs: positionMs, startedAt };
+  private startVoice(expectedPositionMs: (nowMs: number) => number): void {
+    const track = this.track;
+    if (!track) return;
+    this.incomingVoice?.stop();
+    const voice = new StreamingVoice({
+      context: this.playbackContext(),
+      track,
+      now: this.now,
+      expectedPositionMs,
+      loop: this.loopRangeMs,
+      /** Hand over from the current voice, or stop it when there is nothing to play. */
+      onStart: (startTime) => {
+        if (this.incomingVoice !== voice) return;
+        this.incomingVoice = null;
+        this.incomingPositionMs = null;
+        this.voice?.stop(startTime ?? undefined);
+        this.voice = startTime === null ? null : voice;
+        if (!this.isPlaying()) this.stopPublishing();
+        this.publishState();
+      },
+    });
+    this.incomingVoice = voice;
+    this.incomingPositionMs = expectedPositionMs;
     this.publishTimer ??= setInterval(
       () => this.publishState(),
       STATE_PUBLISH_INTERVAL_MS,
     );
+    voice.start();
     this.publishState();
   }
 
-  /** Fade out and release the current voice, if any. */
-  private stopVoice(): void {
-    const voice = this.voice;
-    if (!voice) return;
+  /** Stop the current and incoming voices. */
+  private stopVoices(): void {
+    this.incomingVoice?.stop();
+    this.incomingVoice = null;
+    this.incomingPositionMs = null;
+    this.voice?.stop();
     this.voice = null;
-    const context = this.playbackContext();
-    const at = context.currentTime;
-    voice.gain.gain.cancelScheduledValues(at);
-    voice.gain.gain.setValueAtTime(voice.gain.gain.value, at);
-    voice.gain.gain.linearRampToValueAtTime(0, at + VOICE_FADE_SECONDS);
-    voice.source.stop(at + VOICE_FADE_SECONDS);
+    this.stopPublishing();
+  }
+
+  /** Stop publishing the playback position periodically. */
+  private stopPublishing(): void {
     if (this.publishTimer !== null) {
       clearInterval(this.publishTimer);
       this.publishTimer = null;
-    }
-  }
-
-  /** Mirror the timeline loop range onto a buffer source so it wraps without a gap. */
-  private applyLoop(source: AudioBufferSourceNode): void {
-    const loop = this.loopRangeMs;
-    source.loop = loop !== null;
-    if (loop) {
-      source.loopStart = loop.start / 1_000;
-      source.loopEnd = loop.end / 1_000;
     }
   }
 
@@ -477,21 +527,27 @@ export class BrowserDemoAudioHost {
     return loop.start + ((positionMs - loop.start) % (loop.end - loop.start));
   }
 
-  /** Clamp a position to the decoded audio's length, when it is known. */
-  private clampToBuffer(positionMs: number): number {
-    const durationMs = this.buffer
-      ? this.buffer.duration * 1_000
-      : Number.POSITIVE_INFINITY;
-    return Math.min(durationMs, Math.max(0, positionMs));
+  /** Length of the opened audio, or infinity while it is unknown. */
+  private trackDurationMs(): number {
+    return this.track?.durationMs() ?? Number.POSITIVE_INFINITY;
   }
 
-  /** The position being heard now, or where playback paused. */
+  /** Clamp a position to the opened audio's length, when it is known. */
+  private clampToTrack(positionMs: number): number {
+    return Math.min(this.trackDurationMs(), Math.max(0, positionMs));
+  }
+
+  /**
+   * The position being heard now. While a voice is still joining, e.g. after a seek, the
+   * position it is joining stands in for it; when nothing plays, it is where playback
+   * paused.
+   */
   private positionMs(): number {
-    const voice = this.voice;
-    if (!voice) return this.pausedAtMs;
-    const elapsedMs =
-      (this.playbackContext().currentTime - voice.startedAt) * 1_000;
-    return this.clampToBuffer(this.wrapToLoop(voice.originMs + elapsedMs));
+    if (this.incomingPositionMs) {
+      return this.clampToTrack(this.incomingPositionMs(this.now()));
+    }
+    if (this.voice) return this.clampToTrack(this.voice.heardPositionMs());
+    return this.pausedAtMs;
   }
 
   /** Publish a stable diagnostic snapshot of the playback state. */
@@ -500,7 +556,7 @@ export class BrowserDemoAudioHost {
       session: this.session,
       status: !this.loaded
         ? "unloaded"
-        : this.voice
+        : this.isPlaying()
           ? "playing"
           : this.hasPlayed
             ? "paused"
@@ -508,14 +564,6 @@ export class BrowserDemoAudioHost {
       positionMs: this.positionMs(),
     });
   }
-}
-
-/**
- * Time between scheduling a sample and hearing it. Safari reports no `outputLatency`, so
- * the base latency of the processing graph is the best available estimate there.
- */
-function outputLatencySeconds(context: AudioContext): number {
-  return context.outputLatency || context.baseLatency || 0;
 }
 
 /** Singleton audio host owned by the current application page. */
