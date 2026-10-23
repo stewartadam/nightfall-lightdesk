@@ -19,9 +19,6 @@ use uuid::Uuid;
 
 use crate::components::MaterializedTimeline;
 
-/// Engine playback time between [`TimelineAudioDirective::Sync`] reports for playing media.
-const CLOCK_SYNC_INTERVAL: Duration = Duration::from_secs(1);
-
 /// Enabled browser media loop bounds.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[typeshare::typeshare]
@@ -114,7 +111,8 @@ enum TimelineAudioClientMessage<'a> {
 }
 
 /// Emit browser audio effects for timelines whose authoritative state changed, and report
-/// the engine clock to playing media every [`CLOCK_SYNC_INTERVAL`] of playback.
+/// the engine clock to playing media every
+/// [`AUDIO_CLOCK_REPORT_INTERVAL`](crate::components::AUDIO_CLOCK_REPORT_INTERVAL) of playback.
 pub(crate) fn emit_browser_audio_directives(
     mut timelines: Query<&mut MaterializedTimeline>,
     timecodes: Query<&TimecodeGenerator>,
@@ -131,7 +129,7 @@ pub(crate) fn emit_browser_audio_directives(
         .collect::<HashMap<_, _>>();
 
     for mut timeline in timelines.iter_mut().filter(|timeline| {
-        timeline.audio_needs_sync || timeline.browser_audio_reported_offset.is_some()
+        timeline.audio_needs_sync || timeline.audio_clock_reported_offset.is_some()
     }) {
         let timeline_uid = timeline.timeline.identifiers.uid;
         let (current_time, timecode_running) = timecode_info
@@ -142,12 +140,7 @@ pub(crate) fn emit_browser_audio_directives(
         let playing = timeline.is_active && timeline.timeline.audio_enabled && timecode_running;
 
         if !timeline.audio_needs_sync {
-            if !playing {
-                timeline.browser_audio_reported_offset = None;
-            } else if let Some(reported) = timeline.browser_audio_reported_offset
-                && offset.abs_diff(reported) >= CLOCK_SYNC_INTERVAL
-            {
-                timeline.browser_audio_reported_offset = Some(offset);
+            if timeline.take_audio_clock_report(playing, offset) {
                 publish(
                     &broadcaster,
                     &TimelineAudioDirective::Sync {
@@ -159,7 +152,7 @@ pub(crate) fn emit_browser_audio_directives(
             continue;
         }
 
-        timeline.browser_audio_reported_offset = playing.then_some(offset);
+        timeline.anchor_audio_clock(playing, offset);
         let loop_range = timeline
             .timeline
             .loop_range

@@ -208,6 +208,21 @@ impl AudioController {
         false
     }
 
+    /// Report the timecode position a playing sink should be at. The audio worker compares
+    /// it with the audio actually played and seeks the sink back when they drift apart.
+    pub fn sync(&mut self, id: AudioSinkId, position: Duration) -> bool {
+        let Some(sink) = self.sinks.get_mut(&id) else {
+            tracing::warn!(?id, "Attempted to sync non-existent sink");
+            return false;
+        };
+        if !sink.is_playing || !self.client.sync(id.0, position) {
+            return false;
+        }
+        sink.position = position;
+        sink.playback_started_at = Some(Instant::now());
+        true
+    }
+
     /// Check if the specified sink is currently playing.
     pub fn is_playing(&self, id: AudioSinkId) -> bool {
         self.sinks.get(&id).map(|s| s.is_playing).unwrap_or(false)
@@ -333,6 +348,34 @@ mod tests {
             }
             command => panic!("expected reconfigure output command, got {command:?}"),
         }
+    }
+
+    /// Timecode reports reach the worker only for playing sinks, and re-anchor the
+    /// controller's position estimate to the reported timecode.
+    #[test]
+    fn sync_forwards_timecode_reports_for_playing_sinks() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let client = AudioOutputClient::default();
+        client.set_sender(Some(tx));
+
+        let mut controller = AudioController::new(client);
+        let sink_id = controller
+            .create_sink()
+            .expect("expected sink to be created");
+        let _ = next_command(&mut rx);
+
+        assert!(!controller.sync(sink_id, Duration::from_secs(4)));
+        assert!(rx.try_recv().is_err(), "paused sinks must not be synced");
+
+        assert!(controller.play(sink_id));
+        let _ = next_command(&mut rx);
+        assert!(controller.sync(sink_id, Duration::from_secs(4)));
+        assert!(matches!(
+            next_command(&mut rx),
+            AudioWorkerCommand::Sync { id, position, .. }
+                if id == sink_id.0 && position == Duration::from_secs(4)
+        ));
+        assert!(controller.sinks[&sink_id].current_position() >= Duration::from_secs(4));
     }
 
     #[test]
