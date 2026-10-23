@@ -133,7 +133,7 @@ fn transport_commands(
         TransportRequest::Toggle => {
             let timecode_running = generators.iter().any(|generator| {
                 generator.timecode.identifiers.uid == timecode.identifiers.uid
-                    && generator.state.is_active
+                    && generator.is_started()
             });
             let started = materialized.iter().any(|materialized| {
                 materialized.timeline.identifiers.id == timeline_id && materialized.is_active

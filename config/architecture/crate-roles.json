@@ -41,6 +41,7 @@
       "nightfall-fx",
       "nightfall-fx-module",
       "nightfall-input-artnet",
+      "nightfall-input-ltc",
       "nightfall-input-midi",
       "nightfall-input-osc",
       "nightfall-input-sacn",

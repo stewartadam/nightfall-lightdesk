@@ -116,6 +116,7 @@ impl PluginGroup for InputPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .maybe_midi_input(self.midi_input_port)
+            .maybe_ltc_input()
             .maybe_osc_input(self.osc_bind_addr)
             .maybe_artnet_input(self.network_input_enabled)
             .maybe_sacn_input(self.network_input_enabled)

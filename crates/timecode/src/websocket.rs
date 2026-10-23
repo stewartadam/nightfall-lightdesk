@@ -68,14 +68,9 @@ struct OutboundTimecodeLocal {
 static LAST_DROPPABLE_SEND_MS: AtomicU64 = AtomicU64::new(0);
 const DROPPABLE_INTERVAL_MS: u64 = (1000.0 / 10.0) as u64;
 
-fn default_timecode_state(timecode_id: u32) -> TimecodeState {
-    TimecodeState {
-        timecode_id,
-        is_active: false,
-        current_time: std::time::Duration::ZERO,
-        start_time: None,
-        end_time: None,
-    }
+/// Returns the state published for a timecode that has no generator yet.
+fn default_timecode_state(timecode: &Timecode) -> TimecodeState {
+    TimecodeGenerator::new(timecode.clone()).state
 }
 
 fn collect_timecode_definitions(
@@ -89,7 +84,7 @@ fn collect_timecode_definitions(
             let state = generator_states
                 .get(&timecode.identifiers.uid)
                 .cloned()
-                .unwrap_or_else(|| default_timecode_state(timecode.identifiers.id));
+                .unwrap_or_else(|| default_timecode_state(&timecode));
             OutboundTimecodeLocal { timecode, state }
         })
         .collect();
@@ -244,11 +239,9 @@ mod tests {
             .expect("timecode should be added");
 
         let custom_state = TimecodeState {
-            timecode_id: 3,
             is_active: true,
             current_time: std::time::Duration::from_millis(420),
-            start_time: None,
-            end_time: None,
+            ..TimecodeState::new(3)
         };
         let mut generator_states = HashMap::new();
         generator_states.insert(uid, custom_state.clone());

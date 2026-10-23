@@ -41,6 +41,15 @@ import { useConditionalShallowStore } from "../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../lib/workspace-activity";
 import { timecodes } from "../../state/appStores";
 import type { TimecodeCommand } from "../../types";
+import { usePropertiesInspector } from "../property-inspector";
+import {
+  type TimecodeStatus,
+  timecodeRateLabel,
+  timecodeSourceLabel,
+  timecodeStatus,
+  timecodeStatusPillClass,
+} from "./status";
+import TimecodeProperties from "./timecode-properties";
 
 interface TimecodePanelProps extends BasePanelComponentProps {
   initialPanelId: string;
@@ -49,10 +58,12 @@ interface TimecodePanelProps extends BasePanelComponentProps {
 interface TimecodeRow {
   id: number;
   uid: string;
+  /** UID as keyed in the timecode store, which the Properties inspector reads. */
+  storeUid: string;
   label: string;
   rate: string;
   source: string;
-  running: boolean;
+  status: TimecodeStatus;
   currentFrame: string;
 }
 
@@ -67,7 +78,7 @@ const TIMECODE_COLUMNS: GridColumn[] = [
   { id: "currentFrame", title: "Timecode", width: 120, sizing: "fixed" },
   { id: "rate", title: "Rate", width: 88, sizing: "fixed" },
   { id: "source", title: "Source", width: 112, minWidth: 80 },
-  { id: "running", title: "Status", width: 96, sizing: "fixed" },
+  { id: "status", title: "Status", width: 96, sizing: "fixed" },
 ];
 
 /** Projects one timecode into a sortable, left-aligned cell for the list view. */
@@ -89,13 +100,8 @@ function timecodeCell(row: TimecodeRow, column: GridColumn): GridCell {
           ? row.rate
           : column.id === "source"
             ? row.source
-            : runStateLabel(row.running);
+            : row.status.label;
   return { kind: GridCellKind.Text, data: text, contentAlign: "left" };
-}
-
-/** Names a timecode's run state the same way Status Display does. */
-function runStateLabel(running: boolean): string {
-  return running ? "Running" : "Idle";
 }
 
 /** Normalizes object UIDs for stable lookup and DOM keys. */
@@ -135,10 +141,11 @@ export default function TimecodePanel(props: TimecodePanelProps) {
       .map(([tc, tcState]) => ({
         id: tc.identifiers.id,
         uid: normalizeUid(tc.identifiers.uid),
+        storeUid: tc.identifiers.uid,
         label: tc.identifiers.label,
-        rate: String(tc.rate),
-        source: String(tc.source),
-        running: tcState.is_active,
+        rate: timecodeRateLabel(tc.rate),
+        source: timecodeSourceLabel(tc, tcState),
+        status: timecodeStatus(tcState),
         currentFrame: tcState.current_time
           ? formatSMPTETime(durationToMs(tcState.current_time), tc.rate)
           : "00:00:00:00",
@@ -196,6 +203,16 @@ export default function TimecodePanel(props: TimecodePanelProps) {
       columnKey: (column) => column.id!,
       getCellContent: ({ row, column }) => timecodeCell(row, column),
     }),
+  );
+
+  /** Resolves the store key of the selected timecode for the Properties inspector. */
+  const selectedStoreUid = createMemo(() => selectedRow()?.storeUid);
+
+  usePropertiesInspector(
+    props.initialPanelId ?? props.id,
+    "Timecode",
+    () => <TimecodeProperties timecodeUid={selectedStoreUid()} />,
+    { priority: 10, autoActivate: true },
   );
 
   /** Sends a transport command to the selected timecode. */
@@ -299,13 +316,11 @@ export default function TimecodePanel(props: TimecodePanelProps) {
                     <div class="flex items-center justify-between gap-2">
                       <span class="font-bold text-neutral-200">{row.id}</span>
                       <span
-                        class={`rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ${
-                          row.running
-                            ? "bg-emerald-500/20 text-emerald-200 ring-emerald-400/30"
-                            : "bg-neutral-700/40 text-neutral-300 ring-neutral-600"
-                        }`}
+                        class={`rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ${timecodeStatusPillClass(
+                          row.status.tone,
+                        )}`}
                       >
-                        {runStateLabel(row.running)}
+                        {row.status.label}
                       </span>
                     </div>
                     <div class="truncate text-sm text-neutral-400">

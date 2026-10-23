@@ -21,6 +21,7 @@ import type * as types from "../types";
 import {
   actionCatalog,
   actionInvocationFailures,
+  audioInputDevices,
   clientActionInvocation,
   controllerMappingMode,
   midiControlTouches,
@@ -121,6 +122,13 @@ export function applyAvailableUsbDmxDevicesSnapshot(
     "Receive AvailableUsbDmxDevices",
     devices,
   );
+}
+
+/** Applies the audio inputs LTC timecodes can read from. */
+export function applyAudioInputDevicesSnapshot(
+  devices: types.AudioInputDevice[],
+): void {
+  setStoreAction(audioInputDevices, "Receive AudioInputDevices", devices);
 }
 
 /** Applies the current MIDI device list to the MIDI store. */

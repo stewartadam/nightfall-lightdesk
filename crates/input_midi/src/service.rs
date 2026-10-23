@@ -12,6 +12,9 @@ use std::time::{Duration, Instant};
 
 use nightfall_engine::prelude::FrameWaker;
 use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
+use nightfall_timecode::prelude::ExternalTimecodeFeed;
+
+use crate::mtc::{MtcDecoder, is_timecode_message};
 
 mod output;
 
@@ -182,11 +185,17 @@ pub(crate) struct MidiInputWorker {
     input_port: Option<String>,
     /// Outputs paired with the connected inputs, for controller feedback.
     pub(crate) output: MidiOutputWorker,
+    /// Receives MIDI timecode decoded from any connected port.
+    timecode_feed: ExternalTimecodeFeed,
 }
 
 impl MidiInputWorker {
-    /// Starts a worker that connects to `input_port` only, or to every port when `None`.
-    pub(crate) fn spawn(input_port: Option<String>) -> Option<Self> {
+    /// Starts a worker that connects to `input_port` only, or to every port when `None`, and
+    /// publishes MIDI timecode it receives to `timecode_feed`.
+    pub(crate) fn spawn(
+        input_port: Option<String>,
+        timecode_feed: ExternalTimecodeFeed,
+    ) -> Option<Self> {
         let (event_tx, _) = tokio::sync::broadcast::channel(1024);
         let mut worker = Self {
             event_tx,
@@ -197,6 +206,7 @@ impl MidiInputWorker {
             connections: Vec::new(),
             input_port,
             output: MidiOutputWorker::spawn(),
+            timecode_feed,
         };
         worker.refresh();
         tracing::info!("Connected to {} MIDI device(s)", worker.connections.len());
@@ -251,8 +261,9 @@ impl MidiInputWorker {
             .filter(|port| port_allowed(self.input_port.as_deref(), &port.name))
             .collect();
         let event_tx = self.event_tx.clone();
+        let timecode_feed = self.timecode_feed.clone();
         let changed = refresh_connections(&mut self.connections, discovered_ports, |port, name| {
-            connect_to_port(&port, name, &event_tx)
+            connect_to_port(&port, name, &event_tx, &timecode_feed)
         });
         let device_names = connected_device_names(&self.connections);
         self.output.refresh(&device_names);
@@ -368,10 +379,14 @@ fn connected_device_names<C>(connections: &[ConnectedMidiPort<C>]) -> Vec<String
 }
 
 /// Open one MIDI input connection and forward incoming messages onto `event_tx`.
+///
+/// MIDI timecode is decoded here instead, with its own decoder per connection, and published to
+/// `timecode_feed`. It streams continuously, so it is kept out of the control event stream.
 fn connect_to_port(
     port: &midir::MidiInputPort,
     device_name: String,
     event_tx: &tokio::sync::broadcast::Sender<MidiInputEvent>,
+    timecode_feed: &ExternalTimecodeFeed,
 ) -> Option<midir::MidiInputConnection<()>> {
     let mut midi_in = match midir::MidiInput::new("nightfall") {
         Ok(midi_in) => midi_in,
@@ -384,12 +399,18 @@ fn connect_to_port(
 
     let device_name_for_callback = device_name.clone();
     let event_tx = event_tx.clone();
+    let timecode_feed = timecode_feed.clone();
+    let mut mtc_decoder = MtcDecoder::default();
     let connection = midi_in.connect(
         port,
         "nightfall-input",
         move |_timestamp, message, _| {
             let received_at = Instant::now();
-            if message.len() >= 3 {
+            if is_timecode_message(message) {
+                if let Some(frame) = mtc_decoder.decode(message, received_at) {
+                    timecode_feed.publish(frame);
+                }
+            } else if message.len() >= 3 {
                 let _ = event_tx.send(MidiInputEvent {
                     device: device_name_for_callback.clone(),
                     channel: message[0],
@@ -429,6 +450,7 @@ pub struct MidiInputService {
     client: MidiInputClient,
     output_client: MidiOutputClient,
     input_port: Mutex<Option<String>>,
+    timecode_feed: ExternalTimecodeFeed,
 }
 
 impl MidiInputService {
@@ -438,7 +460,13 @@ impl MidiInputService {
             client: MidiInputClient::default(),
             output_client: MidiOutputClient::default(),
             input_port: Mutex::new(None),
+            timecode_feed: ExternalTimecodeFeed::default(),
         }
+    }
+
+    /// Feed receiving MIDI timecode from every connected port, kept across worker restarts.
+    pub fn timecode_feed(&self) -> ExternalTimecodeFeed {
+        self.timecode_feed.clone()
     }
 
     /// Restricts MIDI input to the named port, or to every port when `None`.
@@ -463,7 +491,7 @@ impl MidiInputService {
             .map(|input_port| input_port.clone())
             .unwrap_or_default();
         let has_worker = self.slot.ensure(
-            || MidiInputWorker::spawn(input_port),
+            || MidiInputWorker::spawn(input_port, self.timecode_feed.clone()),
             |worker| worker.shutdown(),
             |worker| worker.is_alive(),
         );

@@ -17,6 +17,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "ActiveInstances",
   "AppState",
   "AttributeMetadata",
+  "AudioInputDevices",
   "AvailableAudioDevices",
   "AvailableNetworkInterfaces",
   "AvailableUsbDmxDevices",

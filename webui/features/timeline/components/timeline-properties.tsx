@@ -20,6 +20,7 @@ import { useShallowStore } from "../../../lib/use-shallow-store";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timecodes, timelines } from "../../../state/appStores";
 import * as types from "../../../types";
+import { timecodeRateLabel, timecodeSourceName } from "../../timecode";
 
 type TimelinePropertiesProps = {
   timelineUid: string;
@@ -67,7 +68,6 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
     ),
   );
   let latestTimeline = timeline();
-
   /** Keeps property edits merging against the latest optimistic timeline snapshot. */
   createEffect(() => {
     latestTimeline = timeline();
@@ -197,20 +197,18 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
               </NativeSelect>
             </label>
 
-            <div class="grid grid-cols-2 gap-3 text-xs text-neutral-400">
-              <div>
-                <div class="uppercase tracking-wide">Rate</div>
-                <div class="mt-1 text-neutral-200">
-                  {linkedTimecode()?.rate ?? "Unknown"}
-                </div>
-              </div>
-              <div>
-                <div class="uppercase tracking-wide">Source</div>
-                <div class="mt-1 text-neutral-200">
-                  {linkedTimecode()?.source ?? "Unknown"}
-                </div>
-              </div>
-            </div>
+            <Show when={linkedTimecode()}>
+              {(timecode) => (
+                <p
+                  class="text-xs text-neutral-400"
+                  data-testid="linked-timecode-source"
+                >
+                  {timecodeSourceName(timecode().source)} at{" "}
+                  {timecodeRateLabel(timecode().rate)}. Change the source in the
+                  Timecodes panel.
+                </p>
+              )}
+            </Show>
 
             <label class="block space-y-1">
               <span class="text-xs text-neutral-400">Timecode start (ms)</span>

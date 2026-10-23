@@ -23,11 +23,13 @@ use nightfall_actions::{
     bindings_need_diagnosis, collect_binding_diagnostics, register_binding_undo,
 };
 use nightfall_engine::prelude::*;
+use nightfall_timecode::prelude::{ExternalTimecodeFeeds, TimecodeSource};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub mod command;
 mod feedback;
 pub mod mapping;
+mod mtc;
 mod service;
 mod undo;
 mod websocket;
@@ -78,6 +80,9 @@ impl Plugin for InputMidiPlugin {
             rx
         });
 
+        app.world_mut()
+            .get_resource_or_init::<ExternalTimecodeFeeds>()
+            .register(TimecodeSource::MidiMtc, midi_service.timecode_feed());
         app.insert_resource(MidiDevices::read(
             &midi_client,
             &midi_service.output_client(),

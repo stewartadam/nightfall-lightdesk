@@ -456,6 +456,9 @@ export const actionInvocationFailures = atom<types.ActionInvocationFailure[]>(
   [],
 );
 
+/** Audio inputs the engine can read LTC from, as last discovered by the backend. */
+export const audioInputDevices = atom<types.AudioInputDevice[]>([]);
+
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
@@ -1175,6 +1178,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     flowTriggerTicks,
     actionCatalog,
     actionInvocationFailures,
+    audioInputDevices,
     midiDevices,
     midiMappings,
     midiLastEvent,

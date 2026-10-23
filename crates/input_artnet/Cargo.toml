@@ -12,6 +12,7 @@ nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-io = { path = "../io" }
 nightfall-service-host = { path = "../service_host" }
+nightfall-timecode = { path = "../timecode" }
 socket2 = { workspace = true, features = ["all"] }
 tokio.workspace = true
 tracing.workspace = true

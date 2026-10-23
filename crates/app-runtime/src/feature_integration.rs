@@ -17,6 +17,8 @@ use nightfall_desk_audio::prelude::*;
 use nightfall_fixture_library::prelude::*;
 #[cfg(feature = "artnet")]
 use nightfall_input_artnet::prelude::*;
+#[cfg(feature = "ltc")]
+use nightfall_input_ltc::prelude::*;
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
@@ -37,6 +39,7 @@ pub trait FeatureIntegrationExt {
     fn maybe_desk_audio(self) -> Self;
     fn maybe_fixture_library(self) -> Self;
     fn maybe_object_library(self) -> Self;
+    fn maybe_ltc_input(self) -> Self;
     fn maybe_midi_input(self, input_port: Option<String>) -> Self;
     fn maybe_osc_input(self, bind_addr: SocketAddr) -> Self;
     fn maybe_artnet_input(self, network_input_enabled: bool) -> Self;
@@ -84,6 +87,16 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
 
     #[cfg(not(feature = "object-library"))]
     fn maybe_object_library(self) -> Self {
+        self
+    }
+
+    #[cfg(feature = "ltc")]
+    fn maybe_ltc_input(self) -> Self {
+        self.add(InputLtcPlugin)
+    }
+
+    #[cfg(not(feature = "ltc"))]
+    fn maybe_ltc_input(self) -> Self {
         self
     }
 

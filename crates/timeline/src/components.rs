@@ -102,6 +102,21 @@ pub struct MaterializedTimeline {
     pub audio_clock_reported_offset: Option<Duration>,
     /// Entities spawned by this timeline's track actions, maps entity to (track_id, action_id, type)
     pub spawned_entities: HashMap<Entity, (String, String, SpawnedEntityType)>,
+    /// The driving timecode's transport when this active timeline last observed it. `None`
+    /// while inactive.
+    observed_transport: Option<ObservedTransport>,
+}
+
+/// What a timeline last saw of its timecode's transport, to notice changes that no timeline
+/// event announces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ObservedTransport {
+    /// Whether the timecode followed an external source.
+    external: bool,
+    /// Whether the timecode was running.
+    running: bool,
+    /// How many times the running timecode had jumped to a new position.
+    position_jumps: u64,
 }
 
 /// Implementation of MaterializedTimeline
@@ -119,7 +134,41 @@ impl MaterializedTimeline {
             audio_sink_id: None,
             audio_clock_reported_offset: None,
             spawned_entities: HashMap::new(),
+            observed_transport: None,
         }
+    }
+
+    /// Resyncs audio when the timecode driving this timeline starts or stops running or jumps
+    /// while running because an external source said so, or when the timecode switches between
+    /// the engine clock and an external source.
+    ///
+    /// An external sender, not a transport command, decides when such a timecode plays, so no
+    /// timeline event marks those moments; switching a playing timecode to an external source
+    /// stops it the same way. Audio plays along on its own clock and must follow the timecode,
+    /// so each change re-seeks it to the timecode's position. Changes while the timecode stays on
+    /// the engine clock come from transport commands, which already resync audio.
+    pub fn follow_timecode_transport(
+        &mut self,
+        external: bool,
+        running: bool,
+        position_jumps: u64,
+    ) {
+        if !self.is_active {
+            self.observed_transport = None;
+            return;
+        }
+        let observed = ObservedTransport {
+            external,
+            running,
+            position_jumps,
+        };
+        if let Some(previous) = self.observed_transport
+            && previous != observed
+            && (previous.external || observed.external)
+        {
+            self.audio_needs_sync = true;
+        }
+        self.observed_transport = Some(observed);
     }
 
     /// Activate the timeline, which begins audio playback
@@ -374,6 +423,55 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    /// An active timeline resyncs audio when its external timecode starts, stops, or jumps,
+    /// but not on the first observation after activation or while nothing changes.
+    #[test]
+    fn external_transport_changes_resync_audio() {
+        let mut timeline = MaterializedTimeline::new(Timeline::default());
+        timeline.activate();
+        timeline.audio_needs_sync = false;
+
+        timeline.follow_timecode_transport(true, false, 0);
+        assert!(!timeline.audio_needs_sync);
+
+        timeline.follow_timecode_transport(true, true, 0);
+        assert!(timeline.audio_needs_sync);
+        timeline.audio_needs_sync = false;
+
+        timeline.follow_timecode_transport(true, true, 0);
+        assert!(!timeline.audio_needs_sync);
+
+        timeline.follow_timecode_transport(true, true, 1);
+        assert!(timeline.audio_needs_sync);
+        timeline.audio_needs_sync = false;
+
+        timeline.follow_timecode_transport(true, false, 1);
+        assert!(timeline.audio_needs_sync);
+    }
+
+    /// Switching a playing engine-clock timecode to an external source resyncs audio, so audio
+    /// stops with the now-waiting timecode; engine-clock transport changes leave audio to the
+    /// transport commands that caused them.
+    #[test]
+    fn switching_to_external_source_resyncs_audio() {
+        let mut timeline = MaterializedTimeline::new(Timeline::default());
+        timeline.activate();
+        timeline.audio_needs_sync = false;
+
+        timeline.follow_timecode_transport(false, true, 0);
+        timeline.follow_timecode_transport(false, false, 0);
+        assert!(!timeline.audio_needs_sync);
+        timeline.follow_timecode_transport(false, true, 0);
+        assert!(!timeline.audio_needs_sync);
+
+        timeline.follow_timecode_transport(true, false, 0);
+        assert!(timeline.audio_needs_sync);
+        timeline.audio_needs_sync = false;
+
+        timeline.follow_timecode_transport(false, false, 0);
+        assert!(timeline.audio_needs_sync);
+    }
 
     #[test]
     fn process_actions_preserves_track_identity() {

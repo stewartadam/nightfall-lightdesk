@@ -93,3 +93,43 @@ fn test_timecode_update_system() {
         assert_eq!(generator.state.current_time, Duration::ZERO);
     }
 }
+
+/// A started timecode following MIDI timecode takes its position from the registered feed and
+/// ignores the engine clock, while an internal timecode keeps running on the engine clock.
+#[test]
+fn update_system_follows_registered_external_feed() {
+    let mut app = App::new();
+    app.add_plugins(TimePlugin);
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(1)));
+    app.add_systems(Update, update_timecode_system);
+
+    let feed = ExternalTimecodeFeed::default();
+    let mut feeds = ExternalTimecodeFeeds::default();
+    feeds.register(TimecodeSource::MidiMtc, feed.clone());
+    app.insert_resource(feeds);
+
+    let mut external = TimecodeGenerator::new(Timecode {
+        source: TimecodeSource::MidiMtc,
+        ..Default::default()
+    });
+    external.start();
+    let external = app.world_mut().spawn(external).id();
+
+    feed.publish(ExternalTimecodeFrame {
+        position: Duration::from_secs(60),
+        rate: TimecodeRate::Fps25,
+        running: true,
+        received_at: web_time::Instant::now(),
+    });
+    app.update();
+
+    let generator = app
+        .world()
+        .entity(external)
+        .get::<TimecodeGenerator>()
+        .unwrap();
+    assert_eq!(generator.state.signal, TimecodeSignal::Receiving);
+    assert!(generator.state.is_active);
+    assert!(generator.state.current_time >= Duration::from_secs(60));
+    assert!(generator.state.current_time < Duration::from_secs(61));
+}

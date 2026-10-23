@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides uDMX USB output
+//! This crate provides timecode clocks driven by the engine or by an external source
 
 #![warn(missing_docs)]
 
@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 pub mod ast_conv;
 pub mod components;
 pub mod events;
+pub mod external;
 pub mod systems;
 pub mod timecode;
 mod undo;
@@ -30,7 +31,13 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::TimecodePlugin;
     pub use crate::components::TimecodeGenerator;
-    pub use crate::timecode::{Timecode, TimecodeRate, TimecodeSource, TimecodeState};
+    pub use crate::external::{
+        ExternalTimecodeFeed, ExternalTimecodeFeeds, ExternalTimecodeFrame, PlayStateInference,
+        SmpteTime,
+    };
+    pub use crate::timecode::{
+        Timecode, TimecodeAudioInput, TimecodeRate, TimecodeSignal, TimecodeSource, TimecodeState,
+    };
     pub use crate::{TimecodeCommand, TimecodeEvent, TimecodeOperation};
 }
 
@@ -52,6 +59,7 @@ impl Plugin for TimecodePlugin {
         );
 
         app.init_resource::<DataProvider<timecode::Timecode>>();
+        app.init_resource::<external::ExternalTimecodeFeeds>();
 
         // Register undoable commands
         app.world_mut()

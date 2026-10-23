@@ -20,7 +20,10 @@ use nightfall_engine::prelude::{
 };
 use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
 use nightfall_service_host::prelude::{ModeWorkerSlot, process_singleton};
+use nightfall_timecode::prelude::ExternalTimecodeFeed;
 use socket2::{Domain, Protocol, Socket, Type};
+
+use crate::timecode::ArtNetTimecodeDecoder;
 
 /// Art-Net frame received by the process-lifetime listener.
 #[derive(Debug, Clone)]
@@ -132,7 +135,12 @@ pub(crate) struct ArtNetInputWorker {
 }
 
 impl ArtNetInputWorker {
-    pub(crate) fn spawn(binding: ArtNetInputBinding) -> Result<Option<Self>, ()> {
+    /// Binds the listener described by `binding`, forwarding DMX frames to subscribers and
+    /// publishing Art-Net timecode to `timecode_feed`. Returns `Ok(None)` when input is disabled.
+    pub(crate) fn spawn(
+        binding: ArtNetInputBinding,
+        timecode_feed: ExternalTimecodeFeed,
+    ) -> Result<Option<Self>, ()> {
         if !binding.enabled {
             tracing::info!("Art-Net input is disabled by effective network input state");
             return Ok(None);
@@ -174,6 +182,7 @@ impl ArtNetInputWorker {
             .name("artnet-input-service".to_string())
             .spawn(move || {
                 let mut buffer = [0u8; 1024];
+                let mut timecode_decoder = ArtNetTimecodeDecoder::default();
                 loop {
                     maybe_trigger_debug_worker_panic(DebugPanicTarget::InputArtnetListener);
 
@@ -199,8 +208,14 @@ impl ArtNetInputWorker {
                     else {
                         continue;
                     };
-                    let artnet_protocol::ArtCommand::Output(output) = command else {
-                        continue;
+                    let output = match command {
+                        artnet_protocol::ArtCommand::Output(output) => output,
+                        artnet_protocol::ArtCommand::OpTimeCode(timecode) => {
+                            timecode_feed
+                                .publish(timecode_decoder.decode(&timecode, Instant::now()));
+                            continue;
+                        }
+                        _ => continue,
                     };
 
                     let mut data = [0u8; MAX_CHANNELS_PER_UNIVERSE];
@@ -324,6 +339,7 @@ impl ArtNetInputBinding {
 pub struct ArtNetInputService {
     slot: ModeWorkerSlot<ArtNetInputBinding, ArtNetInputWorker>,
     client: ArtNetInputClient,
+    timecode_feed: ExternalTimecodeFeed,
 }
 
 impl ArtNetInputService {
@@ -331,7 +347,13 @@ impl ArtNetInputService {
         Self {
             slot: ModeWorkerSlot::new(),
             client: ArtNetInputClient::default(),
+            timecode_feed: ExternalTimecodeFeed::default(),
         }
+    }
+
+    /// Feed receiving Art-Net timecode, kept across listener rebinds.
+    pub fn timecode_feed(&self) -> ExternalTimecodeFeed {
+        self.timecode_feed.clone()
     }
 
     /// Configure whether Art-Net input is enabled and ensure the process-lifetime worker is bound.
@@ -361,7 +383,7 @@ impl ArtNetInputService {
         };
         let has_worker = self.slot.rebind(
             binding,
-            |binding| match ArtNetInputWorker::spawn(binding) {
+            |binding| match ArtNetInputWorker::spawn(binding, self.timecode_feed.clone()) {
                 Ok(worker) => {
                     status = if worker.is_some() {
                         NetworkInputBindStatus::Listening

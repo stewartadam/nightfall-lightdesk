@@ -24,6 +24,26 @@ pub struct Timecode {
     pub rate: TimecodeRate,
     /// Timecode source
     pub source: TimecodeSource,
+    /// Audio input carrying the timecode when the source is [`TimecodeSource::SmpteLtc`]. `None`
+    /// reads the first channel of the system default input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_input: Option<TimecodeAudioInput>,
+    /// How long an external timecode keeps running on the engine clock after its signal stops,
+    /// to ride out a glitch, before it returns to the last position it received and holds.
+    /// `None` uses [`DEFAULT_FREEWHEEL`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freewheel: Option<Duration>,
+}
+
+/// Freewheel time for timecodes that don't set one: long enough to ride out a brief glitch,
+/// short enough that a stopped sender feels responsive.
+pub const DEFAULT_FREEWHEEL: Duration = Duration::from_millis(500);
+
+impl Timecode {
+    /// Returns how long this timecode freewheels after its external signal stops.
+    pub fn freewheel(&self) -> Duration {
+        self.freewheel.unwrap_or(DEFAULT_FREEWHEEL)
+    }
 }
 
 impl Default for Timecode {
@@ -32,8 +52,22 @@ impl Default for Timecode {
             identifiers: Identifiers::default(),
             rate: TimecodeRate::Fps30,
             source: TimecodeSource::Internal,
+            audio_input: None,
+            freewheel: None,
         }
     }
+}
+
+/// An audio device channel that linear timecode is read from.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct TimecodeAudioInput {
+    /// Id of the audio input device, or `None` for the system default input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    /// Zero-based channel carrying the timecode.
+    #[serde(default)]
+    pub channel: u16,
 }
 
 impl HasIdentifiers for Timecode {
@@ -43,7 +77,7 @@ impl HasIdentifiers for Timecode {
 }
 
 /// Timecode tick rate enum
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub enum TimecodeRate {
     /// NTSC standard (23.976 fps)
@@ -60,8 +94,23 @@ pub enum TimecodeRate {
     Fps60,
 }
 
+impl TimecodeRate {
+    /// Returns one frame's length in seconds as a `(numerator, denominator)` pair, exact for the
+    /// NTSC rates.
+    pub fn frame_duration_ratio(self) -> (u64, u64) {
+        match self {
+            TimecodeRate::Fps23_976 => (1001, 24_000),
+            TimecodeRate::Fps24 => (1, 24),
+            TimecodeRate::Fps25 => (1, 25),
+            TimecodeRate::Fps29_97 => (1001, 30_000),
+            TimecodeRate::Fps30 => (1, 30),
+            TimecodeRate::Fps60 => (1, 60),
+        }
+    }
+}
+
 /// Source for a timecode
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub enum TimecodeSource {
     /// Timecode generated from an internal source
@@ -94,4 +143,41 @@ pub struct TimecodeState {
     /// Timecode position after which the timecode will automatically disable
     // FIXME: this is presently unhandled
     pub end_time: Option<Duration>,
+    /// Whether an external source is armed and how its signal is doing.
+    pub signal: TimecodeSignal,
+    /// Frame rate the external source declared in its last frame, if one arrived since arming.
+    pub source_rate: Option<TimecodeRate>,
+}
+
+impl TimecodeState {
+    /// Returns the stopped, zeroed state of the timecode with slot `timecode_id`.
+    pub fn new(timecode_id: u32) -> Self {
+        Self {
+            timecode_id,
+            is_active: false,
+            current_time: Duration::ZERO,
+            start_time: None,
+            end_time: None,
+            signal: TimecodeSignal::Internal,
+            source_rate: None,
+        }
+    }
+}
+
+/// How a timecode is following its source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum TimecodeSignal {
+    /// The engine clock drives the timecode.
+    Internal,
+    /// The timecode has an external source but is not started, so it ignores the source.
+    Off,
+    /// The timecode is started and waits for its source to play. A locate from the source still
+    /// moves the position.
+    Waiting,
+    /// The source is playing and frames are arriving.
+    Receiving,
+    /// Frames stopped arriving recently; the timecode keeps running on the engine clock until
+    /// they return or the freewheel time runs out.
+    Freewheeling,
 }

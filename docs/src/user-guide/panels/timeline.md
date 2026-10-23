@@ -14,6 +14,6 @@ Audio can be dropped onto the timeline to provide a waveform for alignment. Beat
 
 Use zoom, scroll mode, markers, regions, and the jump control to navigate longer arrangements. Jump accepts labels, time expressions such as `t 1:05:05`, and bar expressions such as `b 45:04`. Loop controls rehearse a range.
 
-Properties includes linked timecode, start/end, audio, lookahead, trigger mode, seek behavior, and stop behavior. Seeking can affect scheduled actions; choose its behavior deliberately before rehearsing command actions or other actions with side effects.
+Properties includes linked timecode (with its source; change the source in [Timecodes](timecodes.md)), start/end, audio, lookahead, trigger mode, seek behavior, and stop behavior. Seeking can affect scheduled actions; choose its behavior deliberately before rehearsing command actions or other actions with side effects.
 
 Use **Play timeline**, **Pause timeline**, and **Stop timeline** for transport. Pausing and stopping have distinct behavior. Stop the timeline when finished, including after recording or rehearsal, and check Status Display for remaining instances. Save the showfile to keep the arrangement.
