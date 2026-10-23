@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseEnv } from "node:util";
 import { nightfallTestDataDir } from "./nightfall-test-data-dir.mjs";
-import { buildEnvLines } from "./setup-env.mjs";
+import { buildEnvLines, PORT_BLOCK_SIZE, pickPortBlock } from "./setup-env.mjs";
 
 /**
  * Converts dotenv lines into a key-value map for assertions.
@@ -125,4 +125,40 @@ test("overridden keys are replaced instead of duplicated", () => {
   assert.equal(lines[2], "KEEP=1");
   assert.equal(lines[3], "NIGHTFALL_OUTPUT_ARTNET=false");
   assert.equal(envMapFromLines(lines).NIGHTFALL_PORT, "3674");
+});
+
+/**
+ * Verifies new worktrees get an aligned port block that stays clear of every
+ * port block other worktrees own, including older unaligned ports.
+ */
+test("port blocks are aligned and avoid other worktrees", () => {
+  assert.equal(
+    pickPortBlock([], () => 0),
+    3000,
+  );
+  assert.equal(
+    pickPortBlock([], () => 0.999),
+    3990,
+  );
+  assert.equal(
+    pickPortBlock([3000], () => 0),
+    3010,
+  );
+  // Legacy 3005 owns 3005-3014, so both 3000 and 3010 are taken.
+  assert.equal(
+    pickPortBlock([3005], () => 0),
+    3020,
+  );
+  for (let i = 0; i < 200; i += 1) {
+    const base = pickPortBlock([3030, 3517, 3988]);
+    assert.equal(base % PORT_BLOCK_SIZE, 0);
+    for (const taken of [3030, 3517, 3988]) {
+      assert.ok(
+        base + PORT_BLOCK_SIZE <= taken || taken + PORT_BLOCK_SIZE <= base,
+        `${base} overlaps ${taken}`,
+      );
+    }
+  }
+  const everyBlock = Array.from({ length: 100 }, (_, i) => 3000 + i * 10);
+  assert.throws(() => pickPortBlock(everyBlock), /set NIGHTFALL_PORT/);
 });

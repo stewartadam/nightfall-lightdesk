@@ -410,7 +410,9 @@ worktrees. UI and WASM builds still launch through pnpm with their worktree's
 environment.
 
 New worktrees seed their `.env` from the primary worktree's `.env`, preserving
-its settings and comments. Setup then appends the generated port and shared
+its settings and comments. Setup then appends the generated port (a random
+block of 10 ports between 3000 and 3999 that no other worktree's `.env` uses,
+so backend, web UI and docs ports never collide across worktrees) and shared
 Playwright browser path, plus the isolated data directory and disabled network
 input/output settings for secondary worktrees. These generated values override
 the inherited settings. If the primary `.env` is missing, setup uses only the

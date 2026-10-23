@@ -162,8 +162,12 @@ const WORKTREE_SERVICE_OPTIONS: Array<{ value: ServiceTarget; label: string }> =
   [
     { value: "backend", label: "Backend" },
     { value: "ui", label: "Web UI" },
-    { value: "docs", label: "Docs" },
   ];
+
+const DOCS_SERVICE_GROUP: ServiceTargetGroup = {
+  key: "docs-services",
+  options: [{ value: "docs", label: "Docs" }],
+};
 
 const WORKTREE_SERVICE_OPTIONS_WITH_WASM: Array<{
   value: ServiceTarget;
@@ -190,6 +194,7 @@ function serviceTargetGroupsForAction(
           ? WORKTREE_SERVICE_OPTIONS_WITH_WASM
           : WORKTREE_SERVICE_OPTIONS,
     },
+    DOCS_SERVICE_GROUP,
   ];
   if (senderActionsSupported) {
     groups.push(SENDER_SERVICE_GROUP);
