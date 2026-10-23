@@ -24,6 +24,7 @@ import {
   clientActionInvocation,
   controllerMappingMode,
   midiControlTouches,
+  midiDeviceProfiles,
   midiDevices,
   midiLastEvent,
   midiMappingDiagnostics,
@@ -126,6 +127,13 @@ export function applyAvailableUsbDmxDevicesSnapshot(
 /** Applies the current MIDI device list to the MIDI store. */
 export function applyMidiDeviceListSnapshot(devices: types.MidiDevice[]): void {
   setStoreAction(midiDevices, "Receive MidiDeviceList", devices);
+}
+
+/** Applies the controller profiles of connected and mapped MIDI devices to the MIDI store. */
+export function applyMidiDeviceProfilesSnapshot(
+  profiles: types.MidiDeviceProfile[],
+): void {
+  setStoreAction(midiDeviceProfiles, "Receive MidiDeviceProfiles", profiles);
 }
 
 /**

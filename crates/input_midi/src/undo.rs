@@ -45,7 +45,7 @@ impl Undoable for MidiCommand {
                     .world
                     .get_resource::<MidiMappings>()?
                     .feedback_devices()
-                    .contains(device);
+                    .is_enabled(device);
                 (enabled != *requested).then(|| -> Box<dyn Undoable> {
                     Box::new(Self::SetDeviceFeedback {
                         device: device.clone(),
@@ -224,7 +224,7 @@ mod tests {
         app.world()
             .resource::<MidiMappings>()
             .feedback_devices()
-            .contains("Pad")
+            .is_enabled("Pad")
     }
 
     /// Verifies turning LED feedback on undoes and redoes, while repeating it adds no

@@ -28,6 +28,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 pub mod command;
 mod feedback;
 pub mod mapping;
+mod profile;
 mod service;
 mod undo;
 mod websocket;
@@ -45,8 +46,9 @@ pub mod prelude {
     pub use crate::command::{
         MidiCommand, MidiLastEvent, MidiLedValues, MidiMapping, MidiMappingUpserted, MidiSource,
     };
-    pub use crate::feedback::MidiFeedbackDevices;
+    pub use crate::feedback::{MidiFeedbackDevices, MidiFeedbackSetting};
     pub use crate::mapping::MidiMappings;
+    pub use crate::profile::{MidiDeviceProfile, MidiLedColor};
     pub use crate::websocket::MidiDevice;
     pub use crate::{InputMidiPlugin, MidiMappingDiagnostics};
 }
@@ -418,7 +420,7 @@ fn handle_midi_crud(
                     ),
                 ),
             MidiCommand::SetDeviceFeedback { device, enabled } => {
-                if mappings.feedback_devices().contains(device) != *enabled {
+                if mappings.feedback_devices().is_enabled(device) != *enabled {
                     mappings.feedback_devices_mut().set(device, *enabled);
                 }
                 responder.succeed(event.command_id)

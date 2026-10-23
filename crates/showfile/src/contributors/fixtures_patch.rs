@@ -29,7 +29,7 @@ pub(crate) struct FixturesPatchSnapshot<'a> {
     #[cfg(feature = "midi")]
     pub(super) midi_mappings: Cow<'a, [MidiMapping]>,
     #[cfg(feature = "midi")]
-    pub(super) midi_feedback_devices: Cow<'a, [String]>,
+    pub(super) midi_feedback_devices: Cow<'a, [MidiFeedbackSetting]>,
     #[cfg(feature = "osc")]
     pub(super) osc_mappings: Cow<'a, [OscMapping]>,
 }
@@ -92,11 +92,7 @@ impl ShowfileSaveContributor for FixturesPatchSaveContributor<'_> {
             midi_mappings: Cow::Owned(self.midi_mappings.mappings().to_vec()),
             #[cfg(feature = "midi")]
             midi_feedback_devices: Cow::Owned(
-                self.midi_mappings
-                    .feedback_devices()
-                    .devices()
-                    .cloned()
-                    .collect(),
+                self.midi_mappings.feedback_devices().settings().collect(),
             ),
             #[cfg(feature = "osc")]
             osc_mappings: Cow::Owned(self.osc_mappings.mappings().to_vec()),

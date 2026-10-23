@@ -458,6 +458,8 @@ export const actionInvocationFailures = atom<types.ActionInvocationFailure[]>(
 
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
+/** Controller profiles of connected and mapped MIDI devices, one per device name. */
+export const midiDeviceProfiles = atom<types.MidiDeviceProfile[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
 export const midiLastEvent = atom<types.MidiLastEvent | null>(null);
 /** MIDI mappings that cannot currently invoke their action, as diagnosed by the backend. */
@@ -1176,6 +1178,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     actionCatalog,
     actionInvocationFailures,
     midiDevices,
+    midiDeviceProfiles,
     midiMappings,
     midiLastEvent,
     midiMappingDiagnostics,

@@ -24,6 +24,19 @@ import "../../ui/menu/menu.css";
 export interface PrelineAdvancedSelectOption {
   value: string;
   label: string;
+  /** Hex color shown as a swatch before the label, such as a controller LED color. */
+  swatch?: string;
+}
+
+/** Hex colors a swatch accepts, since the color is written into option markup. */
+const SWATCH_COLOR = /^#[0-9a-f]{3,8}$/i;
+
+/** Returns the Preline option settings drawing a swatch, or undefined without a valid color. */
+function swatchOptionConfig(swatch: string | undefined): string | undefined {
+  if (!swatch || !SWATCH_COLOR.test(swatch)) return undefined;
+  return JSON.stringify({
+    icon: `<span class="block size-3 rounded-full border border-white/20" style="background-color: ${swatch}"></span>`,
+  });
 }
 
 type PrelineSelectInstance = {
@@ -73,7 +86,8 @@ const ADVANCED_SELECT_BASE_CONFIG = {
   dropdownClasses:
     "nf-menu nf-select-menu nightfall-popover-layer mt-2 w-full min-w-44 max-h-72 overflow-hidden overflow-y-auto",
   optionClasses: "nf-menu-item nf-select-option",
-  optionTemplate: `<span class="contents"><span class="nf-menu-icon" aria-hidden="true">${CHECK_ICON}</span><span class="nf-menu-label" data-title></span></span>`,
+  // Preline fills `data-icon` from an option's icon (a color swatch) and hides it otherwise.
+  optionTemplate: `<span class="contents"><span class="nf-menu-icon" aria-hidden="true">${CHECK_ICON}</span><span class="nf-menu-icon" data-icon aria-hidden="true"></span><span class="nf-menu-label" data-title></span></span>`,
   extraMarkup:
     '<div class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-neutral-400"><svg class="size-3.5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></div>',
   searchPlaceholder: "Search options",
@@ -451,6 +465,7 @@ export function PrelineAdvancedSelect(props: {
             <option
               value={option.value}
               selected={selectedValueSet().has(option.value)}
+              data-hs-select-option={swatchOptionConfig(option.swatch)}
             >
               {option.label}
             </option>
