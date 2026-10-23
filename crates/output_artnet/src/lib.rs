@@ -13,8 +13,11 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
+use nightfall_io::prelude::{
+    ArtNetNodeDirectory, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+};
 
+mod discovery;
 pub mod output_artnet;
 mod service;
 
@@ -67,6 +70,7 @@ impl Plugin for OutputArtnetPlugin {
 
         app.insert_resource(artnet_service.client());
         app.insert_resource(artnet_service.recent_frames());
+        app.insert_resource(ArtNetNodeDirectory::process());
         app.add_systems(
             Render,
             output_artnet::output

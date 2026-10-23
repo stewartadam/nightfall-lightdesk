@@ -5818,12 +5818,14 @@ dependencies = [
 name = "nightfall-io"
 version = "0.1.0-alpha.4"
 dependencies = [
+ "artnet_protocol",
  "bevy_ecs",
  "netdev",
  "nightfall-dmx",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
+ "tracing",
  "typeshare",
  "web-time",
 ]
@@ -5894,6 +5896,7 @@ dependencies = [
  "nightfall-io",
  "nightfall-service-host",
  "nightfall-workspace-hack",
+ "socket2",
  "tracing",
 ]
 
