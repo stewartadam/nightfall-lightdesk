@@ -97,8 +97,11 @@ jobs:
             printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | "$minisign" -S -s "$key" -m "$file" \
               -x "$RUNNER_TEMP/$name.minisig" -c "signature from tauri secret key" -t "$comment"
             "$minisign" -V -p "$RUNNER_TEMP/updater.pub" -m "$file" -x "$RUNNER_TEMP/$name.minisig"
-            printf '%s\t%s\t%s\n' "$target" "$name" "$(base64 --wrap=0 "$RUNNER_TEMP/$name.minisig")" \
-              >> "$RUNNER_TEMP/signatures.tsv"
+            # Encoded in an assignment so a failed encoder stops the step instead of writing an
+            # empty signature; stdin and tr keep it portable across GNU and BSD base64.
+            signature=$(base64 < "$RUNNER_TEMP/$name.minisig" | tr -d '\n')
+            [[ -n "$signature" ]]
+            printf '%s\t%s\t%s\n' "$target" "$name" "$signature" >> "$RUNNER_TEMP/signatures.tsv"
           done
           mkdir manifest
           python3 - "$RUNNER_TEMP/signatures.tsv" manifest/latest.json <<'EOF'
