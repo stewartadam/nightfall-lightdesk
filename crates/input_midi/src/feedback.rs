@@ -120,25 +120,50 @@ pub(crate) struct MidiFeedbackCache {
     generation: u64,
 }
 
+/// How a control shows the level of a target such as a fader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LevelLook<'a> {
+    /// Controllers send the raw level (motor faders, LED rings); notes show on or off.
+    Raw,
+    /// Notes and controllers light the step of the on color's brightness ramp matching the
+    /// level.
+    Ramp(&'a [u8]),
+    /// LED values are brightness, so notes and controllers scale the level between the
+    /// mapping's off and on values.
+    Scale,
+}
+
+impl<'a> LevelLook<'a> {
+    /// Picks how a mapping whose on value is `on` shows levels on a device with `profile`.
+    fn for_device(profile: Option<&'a profile::MidiProfile>, on: u8) -> Self {
+        match profile {
+            Some(profile) if profile.dimmable => Self::Scale,
+            Some(profile) if !profile.ramp(on).is_empty() => Self::Ramp(profile.ramp(on)),
+            _ => Self::Raw,
+        }
+    }
+}
+
 /// Encodes the message that shows `feedback` on a control address.
 ///
 /// Notes show on/off LED values. Controllers and pitch bend show the target's level when it
 /// has one (for faders and LED rings), and controllers otherwise show the on/off values.
-/// When the on color has a brightness `ramp`, an active level instead picks the ramp step
-/// matching it on notes and controllers alike, so a pad mapped to a fader brightens with it.
-/// Returns `None` when the address cannot show the feedback, such as pitch bend without a
-/// level.
+/// When `look` is not [`LevelLook::Raw`], an active level instead lights the matching ramp
+/// step or scaled brightness on notes and controllers alike, so a pad mapped to a fader
+/// brightens with it. Returns `None` when the address cannot show the feedback, such as
+/// pitch bend without a level.
 fn encode(
     address: MidiSource,
     led: MidiLedValues,
-    ramp: &[u8],
+    look: LevelLook,
     feedback: ActionFeedback,
 ) -> Option<Vec<u8>> {
-    let lit = match (feedback.state, feedback.level) {
-        (FeedbackState::Idle, _) => led.off_value(),
-        (FeedbackState::Active, Some(level)) if !ramp.is_empty() => ramp_step(ramp, level),
-        (FeedbackState::Active, _) => led.on_value(),
-        (FeedbackState::Held, _) => led.held_value(),
+    let lit = match (feedback.state, feedback.level, look) {
+        (FeedbackState::Idle, _, _) => led.off_value(),
+        (FeedbackState::Active, Some(level), LevelLook::Ramp(ramp)) => ramp_step(ramp, level),
+        (FeedbackState::Active, Some(level), LevelLook::Scale) => scaled(led, level),
+        (FeedbackState::Active, _, _) => led.on_value(),
+        (FeedbackState::Held, _, _) => led.held_value(),
     };
     match address {
         MidiSource::Note { channel, note } => Some(vec![0x90 | (channel & 0x0F), note, lit]),
@@ -146,8 +171,8 @@ fn encode(
             channel,
             controller,
         } => {
-            let value = match feedback.level {
-                Some(level) if ramp.is_empty() => seven_bit(level),
+            let value = match (feedback.level, look) {
+                (Some(level), LevelLook::Raw) => seven_bit(level),
                 _ => lit,
             };
             Some(vec![0xB0 | (channel & 0x0F), controller, value])
@@ -165,19 +190,19 @@ fn encode(
 
 /// Encodes what an address shows now, plus the message that releases it later.
 ///
-/// Addresses showing on/off state or a brightness ramp are released with the mapping's own
-/// off value. Addresses showing a raw level (motor faders, LED rings) are left where they
-/// are.
+/// Addresses showing on/off state or a level as LED brightness are released with the
+/// mapping's own off value. Addresses showing a raw level (motor faders, LED rings) are left
+/// where they are.
 fn encode_feedback(
     address: MidiSource,
     led: MidiLedValues,
-    ramp: &[u8],
+    look: LevelLook,
     feedback: ActionFeedback,
 ) -> Option<AddressFeedback> {
-    let message = encode(address, led, ramp, feedback)?;
-    let release = match feedback.level {
-        Some(_) if ramp.is_empty() => None,
-        _ => encode(address, led, ramp, ActionFeedback::IDLE),
+    let message = encode(address, led, look, feedback)?;
+    let release = match (feedback.level, look) {
+        (Some(_), LevelLook::Raw) => None,
+        _ => encode(address, led, look, ActionFeedback::IDLE),
     };
     Some(AddressFeedback { message, release })
 }
@@ -185,6 +210,13 @@ fn encode_feedback(
 /// Converts a normalized level to a 7-bit MIDI value.
 fn seven_bit(level: f32) -> u8 {
     (level.clamp(0.0, 1.0) * 127.0).round() as u8
+}
+
+/// Scales a normalized level between the off and on values, for LEDs whose value is their
+/// brightness, so picking a dimmer on color also caps the brightness a full level reaches.
+fn scaled(led: MidiLedValues, level: f32) -> u8 {
+    let (off, on) = (f32::from(led.off_value()), f32::from(led.on_value()));
+    (off + (on - off) * level.clamp(0.0, 1.0)).round() as u8
 }
 
 /// Picks the brightness step showing a normalized level above zero: the ramp is split into
@@ -233,8 +265,8 @@ fn desired_messages(
             ..mapping.led
         }
         .or(fallback);
-        let ramp = profile.map_or(&[][..], |profile| profile.ramp(led.on_value()));
-        if let Some(address) = encode_feedback(mapping.source, led, ramp, feedback) {
+        let look = LevelLook::for_device(profile, led.on_value());
+        if let Some(address) = encode_feedback(mapping.source, led, look, feedback) {
             desired.insert(key, address);
         }
     }
@@ -492,11 +524,12 @@ mod tests {
             controller: 7,
         };
 
-        let lit = encode_feedback(pad, led, &[], ActionFeedback::ACTIVE).expect("pad shows state");
+        let lit = encode_feedback(pad, led, LevelLook::Raw, ActionFeedback::ACTIVE)
+            .expect("pad shows state");
         assert_eq!(lit.message, vec![0x90, 36, 9]);
         assert_eq!(lit.release, Some(vec![0x90, 36, 2]));
 
-        let level = encode_feedback(fader, led, &[], ActionFeedback::level(0.5))
+        let level = encode_feedback(fader, led, LevelLook::Raw, ActionFeedback::level(0.5))
             .expect("fader shows its level");
         assert_eq!(level.message, vec![0xB0, 7, 64]);
         assert_eq!(level.release, None);
@@ -532,23 +565,23 @@ mod tests {
         };
 
         assert_eq!(
-            encode(note, led, &[], ActionFeedback::ACTIVE),
+            encode(note, led, LevelLook::Raw, ActionFeedback::ACTIVE),
             Some(vec![0x92, 60, 5])
         );
         assert_eq!(
-            encode(note, led, &[], ActionFeedback::IDLE),
+            encode(note, led, LevelLook::Raw, ActionFeedback::IDLE),
             Some(vec![0x92, 60, 1])
         );
         assert_eq!(
-            encode(note, led, &[], ActionFeedback::level(0.5)),
+            encode(note, led, LevelLook::Raw, ActionFeedback::level(0.5)),
             Some(vec![0x92, 60, 5])
         );
         assert_eq!(
-            encode(controller, led, &[], ActionFeedback::level(0.5)),
+            encode(controller, led, LevelLook::Raw, ActionFeedback::level(0.5)),
             Some(vec![0xB0, 7, 64])
         );
         assert_eq!(
-            encode(controller, led, &[], ActionFeedback::IDLE),
+            encode(controller, led, LevelLook::Raw, ActionFeedback::IDLE),
             Some(vec![0xB0, 7, 1])
         );
     }
@@ -560,10 +593,13 @@ mod tests {
         let led = MidiLedValues::default();
 
         assert_eq!(
-            encode(bend, led, &[], ActionFeedback::level(1.0)),
+            encode(bend, led, LevelLook::Raw, ActionFeedback::level(1.0)),
             Some(vec![0xE1, 0x7F, 0x7F])
         );
-        assert_eq!(encode(bend, led, &[], ActionFeedback::ACTIVE), None);
+        assert_eq!(
+            encode(bend, led, LevelLook::Raw, ActionFeedback::ACTIVE),
+            None
+        );
     }
 
     /// Verifies a held flash lights the LED like an active target.
@@ -579,7 +615,7 @@ mod tests {
         };
 
         assert_eq!(
-            encode(note, MidiLedValues::default(), &[], held),
+            encode(note, MidiLedValues::default(), LevelLook::Raw, held),
             Some(vec![0x90, 1, 127])
         );
     }
@@ -634,7 +670,10 @@ mod tests {
             note: 1,
         };
 
-        assert_eq!(encode(note, led, &[], held), Some(vec![0x90, 1, 59]));
+        assert_eq!(
+            encode(note, led, LevelLook::Raw, held),
+            Some(vec![0x90, 1, 59])
+        );
     }
 
     /// Verifies a level on a color with a ramp picks the matching brightness step on notes
@@ -656,7 +695,14 @@ mod tests {
             channel: 0,
             controller: 104,
         };
-        let shown = |address, level| encode(address, led, &ramp, ActionFeedback::level(level));
+        let shown = |address, level| {
+            encode(
+                address,
+                led,
+                LevelLook::Ramp(&ramp),
+                ActionFeedback::level(level),
+            )
+        };
 
         assert_eq!(shown(note, 0.0), Some(vec![0x90, 1, 12]));
         assert_eq!(shown(note, 0.01), Some(vec![0x90, 1, 28]));
@@ -669,10 +715,18 @@ mod tests {
             state: FeedbackState::Held,
             level: Some(1.0),
         };
-        assert_eq!(encode(note, led, &ramp, held), Some(vec![0x90, 1, 59]));
+        assert_eq!(
+            encode(note, led, LevelLook::Ramp(&ramp), held),
+            Some(vec![0x90, 1, 59])
+        );
 
-        let feedback = encode_feedback(note, led, &ramp, ActionFeedback::level(0.5))
-            .expect("pad shows its level");
+        let feedback = encode_feedback(
+            note,
+            led,
+            LevelLook::Ramp(&ramp),
+            ActionFeedback::level(0.5),
+        )
+        .expect("pad shows its level");
         assert_eq!(feedback.release, Some(vec![0x90, 1, 12]));
     }
 
@@ -680,17 +734,24 @@ mod tests {
     #[derive(Resource)]
     struct TestLevel(f32);
 
-    /// Verifies a Launchpad pad mapped to a level action brightens through the profile's
-    /// ramp for the mapping's on color, the profile default green or a chosen red.
-    #[test]
-    fn profiled_pad_brightens_with_level() {
-        let (mut app, rx, _) = device_feedback_app("Launchpad", MidiLedValues::default());
+    /// Builds [`device_feedback_app`] with its action reporting [`TestLevel`] (initially
+    /// half) instead of on/off state, like a fader.
+    fn level_feedback_app(device: &str, led: MidiLedValues) -> (App, Receiver<MidiOutputMessage>) {
+        let (mut app, rx, _) = device_feedback_app(device, led);
         app.world_mut()
             .resource_mut::<ActionRegistry>()
             .register_feedback::<serde::de::IgnoredAny, _>("test.start", |world, _| {
                 Ok(ActionFeedback::level(world.resource::<TestLevel>().0))
             });
         app.insert_resource(TestLevel(0.5));
+        (app, rx)
+    }
+
+    /// Verifies a Launchpad pad mapped to a level action brightens through the profile's
+    /// ramp for the mapping's on color, the profile default green or a chosen red.
+    #[test]
+    fn profiled_pad_brightens_with_level() {
+        let (mut app, rx) = level_feedback_app("Launchpad", MidiLedValues::default());
 
         assert_eq!(frame(&mut app, &rx).last(), Some(&vec![0x90, 60, 44]));
         app.insert_resource(TestLevel(1.0));
@@ -705,5 +766,41 @@ mod tests {
             .set_mappings(mappings);
         app.insert_resource(TestLevel(0.2));
         assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 13]]);
+    }
+
+    /// Verifies a dimmable device scales the level directly up to the mapping's on value,
+    /// full brightness by default or a dimmer chosen color, and darkens at zero.
+    #[test]
+    fn dimmable_device_scales_level_to_its_on_value() {
+        let (mut app, rx) = level_feedback_app("Intech Grid MIDI device", MidiLedValues::default());
+
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 64]]);
+        app.insert_resource(TestLevel(0.1));
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 13]]);
+        app.insert_resource(TestLevel(0.0));
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 0]]);
+
+        let mut mappings = app.world().resource::<MidiMappings>().mappings().to_vec();
+        mappings[0].led.on = Some(64);
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .set_mappings(mappings);
+        app.insert_resource(TestLevel(1.0));
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 64]]);
+    }
+
+    /// Verifies scaling interpolates between off and on values, so a lit off color stays
+    /// the floor.
+    #[test]
+    fn scaled_runs_from_off_to_on() {
+        let led = MidiLedValues {
+            on: Some(100),
+            off: Some(20),
+            held: None,
+        };
+
+        assert_eq!(scaled(led, 0.0), 20);
+        assert_eq!(scaled(led, 0.5), 60);
+        assert_eq!(scaled(led, 1.0), 100);
     }
 }
