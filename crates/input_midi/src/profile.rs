@@ -103,6 +103,10 @@ pub(crate) struct MidiProfile {
     ports: PortMatch,
     /// Whether LED feedback is on for matching devices until the operator turns it off.
     pub(crate) feedback: bool,
+    /// Whether LED values are plain brightness, so a level scales between a mapping's off
+    /// and on values instead of stepping through color ramps.
+    #[serde(default)]
+    pub(crate) dimmable: bool,
     /// Advice shown with the device, such as a setting the hardware needs.
     #[serde(default)]
     pub(crate) hint: Option<String>,

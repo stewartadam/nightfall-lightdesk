@@ -6,6 +6,7 @@
     "exclude": []
   },
   "feedback": true,
+  "dimmable": true,
   "hint": "Each control lights only when MIDI receive is enabled for it in Grid Editor; its color is set there too.",
   "init": [],
   "release": [],
@@ -13,12 +14,7 @@
     { "name": "Off", "value": 0, "swatch": "#1f1f1f" },
     { "name": "Dim", "value": 32, "swatch": "#5c5c5c" },
     { "name": "Half", "value": 64, "swatch": "#a3a3a3" },
-    {
-      "name": "Full",
-      "value": 127,
-      "swatch": "#f5f5f5",
-      "ramp": [16, 32, 48, 64, 80, 96, 112, 127]
-    }
+    { "name": "Full", "value": 127, "swatch": "#f5f5f5" }
   ],
   "defaults": { "off": "Off", "on": "Full", "held": "Full" }
 }
