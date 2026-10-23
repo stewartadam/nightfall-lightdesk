@@ -265,6 +265,40 @@ function StatusDot(props: StatusDotProps) {
   );
 }
 
+interface ServiceLogButtonProps {
+  /** Service name as shown in the tooltip and accessible label. */
+  label: string;
+  logPath: string | null;
+  /** Last start error, shown instead of the log path so failures are visible on hover. */
+  lastError?: string | null;
+  pending: boolean;
+  onOpen: () => void;
+}
+
+/**
+ * Opens a managed service's log file in the editor; disabled until the
+ * dashboard has started the service once and while an open is in flight.
+ */
+function ServiceLogButton(props: ServiceLogButtonProps) {
+  return (
+    <button
+      type="button"
+      class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+      title={
+        props.lastError ??
+        (props.logPath
+          ? `Open ${props.label} log: ${props.logPath}`
+          : `No ${props.label} log file yet`)
+      }
+      aria-label={`Open ${props.label} log file`}
+      disabled={!props.logPath || props.pending}
+      onClick={() => props.onOpen()}
+    >
+      <FileTextIcon class="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
 function actionKey(
   worktreeId: string,
   action: DashboardAction,
@@ -1069,27 +1103,16 @@ function WorktreeDashboardApp() {
                             {worktree.nightfallPort ?? "n/a"}
                           </p>
                         </StatusDot>
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                          title={
-                            worktree.managed.backend.logPath
-                              ? `Open backend log: ${worktree.managed.backend.logPath}`
-                              : "No backend log file yet"
-                          }
-                          aria-label="Open backend log file"
-                          disabled={
-                            !worktree.managed.backend.logPath ||
-                            isPendingOperation(
-                              actionKey(worktree.id, "open-log", "backend"),
-                            )
-                          }
-                          onClick={() =>
+                        <ServiceLogButton
+                          label="backend"
+                          logPath={worktree.managed.backend.logPath}
+                          pending={isPendingOperation(
+                            actionKey(worktree.id, "open-log", "backend"),
+                          )}
+                          onOpen={() =>
                             void openServiceLog(worktree.id, "backend")
                           }
-                        >
-                          <FileTextIcon class="size-3.5" aria-hidden />
-                        </button>
+                        />
                       </div>
                     </td>
                     <td>
@@ -1141,28 +1164,17 @@ function WorktreeDashboardApp() {
                             {worktree.docsPort ?? "n/a"}
                           </p>
                         </StatusDot>
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                          title={
-                            worktree.managed.docs.lastError ??
-                            (worktree.managed.docs.logPath
-                              ? `Open docs log: ${worktree.managed.docs.logPath}`
-                              : "No docs log file yet")
-                          }
-                          aria-label="Open docs log file"
-                          disabled={
-                            !worktree.managed.docs.logPath ||
-                            isPendingOperation(
-                              actionKey(worktree.id, "open-log", "docs"),
-                            )
-                          }
-                          onClick={() =>
+                        <ServiceLogButton
+                          label="docs"
+                          logPath={worktree.managed.docs.logPath}
+                          lastError={worktree.managed.docs.lastError}
+                          pending={isPendingOperation(
+                            actionKey(worktree.id, "open-log", "docs"),
+                          )}
+                          onOpen={() =>
                             void openServiceLog(worktree.id, "docs")
                           }
-                        >
-                          <FileTextIcon class="size-3.5" aria-hidden />
-                        </button>
+                        />
                       </div>
                       <Show
                         when={
@@ -1204,31 +1216,20 @@ function WorktreeDashboardApp() {
                               art-net
                             </p>
                           </StatusDot>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                            title={
-                              worktree.managed["artnet-sender"].logPath
-                                ? `Open art-net sender log: ${worktree.managed["artnet-sender"].logPath}`
-                                : "No art-net sender log file yet"
-                            }
-                            aria-label="Open art-net sender log file"
-                            disabled={
-                              !worktree.managed["artnet-sender"].logPath ||
-                              isPendingOperation(
-                                actionKey(
-                                  worktree.id,
-                                  "open-log",
-                                  "artnet-sender",
-                                ),
-                              )
-                            }
-                            onClick={() =>
+                          <ServiceLogButton
+                            label="art-net sender"
+                            logPath={worktree.managed["artnet-sender"].logPath}
+                            pending={isPendingOperation(
+                              actionKey(
+                                worktree.id,
+                                "open-log",
+                                "artnet-sender",
+                              ),
+                            )}
+                            onOpen={() =>
                               void openServiceLog(worktree.id, "artnet-sender")
                             }
-                          >
-                            <FileTextIcon class="size-3.5" aria-hidden />
-                          </button>
+                          />
                         </div>
                         <div class="flex items-center gap-2">
                           <StatusDot
@@ -1246,31 +1247,16 @@ function WorktreeDashboardApp() {
                               sacn
                             </p>
                           </StatusDot>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center rounded-md border border-slate-300 p-1 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                            title={
-                              worktree.managed["sacn-sender"].logPath
-                                ? `Open sACN sender log: ${worktree.managed["sacn-sender"].logPath}`
-                                : "No sACN sender log file yet"
-                            }
-                            aria-label="Open sACN sender log file"
-                            disabled={
-                              !worktree.managed["sacn-sender"].logPath ||
-                              isPendingOperation(
-                                actionKey(
-                                  worktree.id,
-                                  "open-log",
-                                  "sacn-sender",
-                                ),
-                              )
-                            }
-                            onClick={() =>
+                          <ServiceLogButton
+                            label="sACN sender"
+                            logPath={worktree.managed["sacn-sender"].logPath}
+                            pending={isPendingOperation(
+                              actionKey(worktree.id, "open-log", "sacn-sender"),
+                            )}
+                            onOpen={() =>
                               void openServiceLog(worktree.id, "sacn-sender")
                             }
-                          >
-                            <FileTextIcon class="size-3.5" aria-hidden />
-                          </button>
+                          />
                         </div>
                       </div>
                     </td>

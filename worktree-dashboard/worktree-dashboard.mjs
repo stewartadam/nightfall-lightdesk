@@ -63,6 +63,8 @@ const SERVICE_DEFINITIONS = {
   },
   docs: {
     command: process.platform === "win32" ? "mdbook.exe" : "mdbook",
+    requiresPort: true,
+    /** Serves the user manual on this worktree's docs port so worktrees never share one. */
     args: (env) => {
       const port = servicePortFromEnv("docs", env);
       if (port === null) {
@@ -409,6 +411,13 @@ async function startServiceIfStopped(worktreePath, service, options = {}) {
   }
 
   const servicePort = await getServicePort(worktreePath, service);
+  if (SERVICE_DEFINITIONS[service].requiresPort && servicePort === null) {
+    return {
+      ok: false,
+      message: `${service} needs a valid NIGHTFALL_PORT in .env`,
+      state: serviceStateSnapshot(state),
+    };
+  }
   if (servicePort && (await probePortOpen(servicePort))) {
     return {
       ok: true,
