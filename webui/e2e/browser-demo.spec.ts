@@ -931,14 +931,6 @@ async function compareStreamedSamples(page: Page): Promise<void> {
       1,
       track.sampleRate,
     ).decodeAudioData(bytes);
-    // Wait for the background scan so the streamed length is final.
-    const deadline = performance.now() + 20_000;
-    while (
-      Math.abs((track.durationMs() ?? 0) - full.duration * 1_000) > 0.01 &&
-      performance.now() < deadline
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
     const compareFrames = 16_384;
     const starts = [0, 1_000, 123_457, 900_001, full.length - 5_000];
     const comparisons = [];
