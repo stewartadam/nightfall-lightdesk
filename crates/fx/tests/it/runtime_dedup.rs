@@ -399,6 +399,8 @@ fn stop_clip_releases_running_fx_after_target_changes_to_sequence() {
     );
 }
 
+/// Verifies stopping a sequence clip leaves its clip binding alone in the desk router and FX
+/// domains, since the cue domain detaches sequence bindings itself in the same frame.
 #[test]
 fn stop_clip_ignores_non_fx_materialized_clip_bindings() {
     let mut app = App::new();
@@ -449,8 +451,8 @@ fn stop_clip_ignores_non_fx_materialized_clip_bindings() {
         .filter(|mexec| mexec.clip_id == 10 && mexec.attached_instance == instance_id)
         .count();
     assert_eq!(
-        mexec_count, 0,
-        "desk clip routing should remove the binding while FX ignores non-FX playback release"
+        mexec_count, 1,
+        "desk clip routing and FX should leave sequence bindings to the cue domain"
     );
 }
 
