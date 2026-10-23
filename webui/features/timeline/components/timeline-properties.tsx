@@ -7,25 +7,20 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, For, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import {
   Checkbox,
   Input,
   NativeSelect,
 } from "../../../components/ui/form-controls";
-import { commandSucceeded } from "../../../lib/command-result";
 import { commandClient } from "../../../lib/engine-commands";
 import { setStoreKeyAction } from "../../../lib/nanostore-action";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timecodes, timelines } from "../../../state/appStores";
 import * as types from "../../../types";
-import {
-  TimecodeAudioInputFields,
-  timecodeRateLabel,
-  timecodeSourceName,
-} from "../../timecode";
+import { timecodeRateLabel, timecodeSourceName } from "../../timecode";
 
 type TimelinePropertiesProps = {
   timelineUid: string;
@@ -73,45 +68,9 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
     ),
   );
   let latestTimeline = timeline();
-  const [pendingTimecodeEdit, setPendingTimecodeEdit] = createSignal<
-    { uid: string; patch: Partial<types.Timecode> } | undefined
-  >();
-  /**
-   * The linked timecode with edits the engine hasn't reported yet applied, so
-   * the controls keep showing a choice while timecode broadcasts sent before
-   * the engine applied it still carry the old values.
-   */
-  const shownTimecode = createMemo(() => {
-    const timecode = linkedTimecode();
-    const pending = pendingTimecodeEdit();
-    return timecode && pending?.uid === timecode.identifiers.uid
-      ? { ...timecode, ...pending.patch }
-      : timecode;
-  });
-
   /** Keeps property edits merging against the latest optimistic timeline snapshot. */
   createEffect(() => {
     latestTimeline = timeline();
-  });
-
-  /**
-   * Drops the pending timecode edits once the engine reports all of them. The
-   * timecode store is only written by the engine, so a match confirms the
-   * edits were applied. Edits stay pending while the timeline briefly reports
-   * another linked timecode, since the next edit to this one still needs them.
-   */
-  createEffect(() => {
-    const pending = pendingTimecodeEdit();
-    if (!pending) return;
-    const timecode = $timecodes()[pending.uid]?.[0];
-    const settled =
-      !timecode ||
-      Object.entries(pending.patch).every(
-        ([key, value]) =>
-          JSON.stringify(timecode[key as keyof types.Timecode]) ===
-          JSON.stringify(value),
-      );
-    if (settled) setPendingTimecodeEdit(undefined);
   });
 
   const storeTimeline = (nextTimeline: types.Timeline) => {
@@ -134,41 +93,6 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
       nextTimeline,
     );
     storeTimeline(nextTimeline);
-  };
-
-  /**
-   * Stores a change to the linked timecode itself. Every timeline sharing
-   * that timecode follows the new source, rate, or audio input. Edits the
-   * engine hasn't reported yet are merged in, so a second edit made before the
-   * engine applies the first doesn't revert it.
-   */
-  const updateTimecode = (
-    timecode: types.Timecode,
-    patch: Partial<types.Timecode>,
-  ) => {
-    const uid = timecode.identifiers.uid;
-    const reported = timecodes.get()[uid]?.[0];
-    if (!reported) return;
-    const pending = pendingTimecodeEdit();
-    const pendingPatch = pending?.uid === uid ? pending.patch : {};
-    const nextPatch = { ...pendingPatch, ...patch };
-    const edit = { uid, patch: nextPatch };
-    setPendingTimecodeEdit(edit);
-    const nextTimecode = { ...reported, ...nextPatch };
-    const command: types.TimecodeCommand = {
-      type: "StoreTimecode",
-      data: nextTimecode,
-    };
-    /** Stops showing the edit when the engine rejects it, unless a newer edit replaced it. */
-    const dropRejectedEdit = () => {
-      if (pendingTimecodeEdit() === edit) setPendingTimecodeEdit(undefined);
-    };
-    commandClient
-      .invoke("TimecodeCommand", command)
-      .then((result) => {
-        if (!commandSucceeded(result)) dropRejectedEdit();
-      })
-      .catch(dropRejectedEdit);
   };
 
   const updateStartMs = (value: string) => {
@@ -273,65 +197,16 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
               </NativeSelect>
             </label>
 
-            <Show when={shownTimecode()}>
+            <Show when={linkedTimecode()}>
               {(timecode) => (
-                <div class="grid grid-cols-2 gap-3">
-                  <label class="block space-y-1">
-                    <span class="text-xs text-neutral-400">Source</span>
-                    <NativeSelect
-                      density="compact"
-                      aria-label="Timecode source"
-                      value={timecode().source}
-                      onChange={(event) =>
-                        updateTimecode(timecode(), {
-                          source: event.currentTarget
-                            .value as types.TimecodeSource,
-                        })
-                      }
-                    >
-                      <For each={Object.values(types.TimecodeSource)}>
-                        {(source) => (
-                          <option value={source}>
-                            {timecodeSourceName(source)}
-                          </option>
-                        )}
-                      </For>
-                    </NativeSelect>
-                  </label>
-                  <label class="block space-y-1">
-                    <span class="text-xs text-neutral-400">Rate</span>
-                    <NativeSelect
-                      density="compact"
-                      aria-label="Timecode rate"
-                      value={timecode().rate}
-                      onChange={(event) =>
-                        updateTimecode(timecode(), {
-                          rate: event.currentTarget.value as types.TimecodeRate,
-                        })
-                      }
-                    >
-                      <For each={Object.values(types.TimecodeRate)}>
-                        {(rate) => (
-                          <option value={rate}>
-                            {timecodeRateLabel(rate)}
-                          </option>
-                        )}
-                      </For>
-                    </NativeSelect>
-                  </label>
-                  <Show
-                    when={timecode().source === types.TimecodeSource.SmpteLtc}
-                  >
-                    <div class="col-span-2">
-                      <TimecodeAudioInputFields
-                        input={timecode().audio_input}
-                        onChange={(audio_input) =>
-                          updateTimecode(timecode(), { audio_input })
-                        }
-                      />
-                    </div>
-                  </Show>
-                </div>
+                <p
+                  class="text-xs text-neutral-400"
+                  data-testid="linked-timecode-source"
+                >
+                  {timecodeSourceName(timecode().source)} at{" "}
+                  {timecodeRateLabel(timecode().rate)}. Change the source in the
+                  Timecodes panel.
+                </p>
               )}
             </Show>
 

@@ -89,3 +89,101 @@ test("a timecode following MIDI timecode waits for signal once started", async (
   await panel.getByRole("button", { name: "Stop timecode" }).click();
   await expect(card).toContainText("Idle");
 });
+
+/** Reads the source settings the engine reports for the test timecode. */
+async function readTimecodeSettings(page: Page) {
+  return page.evaluate((id) => {
+    const entry = Object.values((window as any).appStores.timecodes.get()).find(
+      (value: any) => value?.[0]?.identifiers.id === id,
+    ) as any;
+    const timecode = entry?.[0];
+    return {
+      source: timecode?.source,
+      rate: timecode?.rate,
+      audio_input: timecode?.audio_input,
+      freewheel: timecode?.freewheel,
+    };
+  }, TIMECODE_ID);
+}
+
+/**
+ * Selecting a timecode in the Timecodes panel shows its source, rate, audio
+ * input and freewheel in Properties, and edits there reach the engine.
+ */
+test("timecode properties edit source, rate, audio input and freewheel", async ({
+  backendSlot,
+  page,
+}) => {
+  await openApp(page, backendSlot.backendPort);
+  await storeMtcTimecode(page);
+  await openPanel(page, "Timecodes");
+
+  const panel = page.locator('[data-component="TimecodesPanel"]');
+  await panel.getByRole("radio", { name: "Grid view" }).click();
+  await panel
+    .locator("button[data-timecode-uid]")
+    .filter({ hasText: TIMECODE_LABEL })
+    .click();
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    if (!api.getPanel("panel-PropertiesInspector")) {
+      api.addPanel({
+        id: "panel-PropertiesInspector",
+        component: "PropertiesInspector",
+        title: "Properties",
+        params: {},
+      });
+    }
+    api.getPanel("panel-PropertiesInspector")?.api.setActive();
+    api.setEdgeGroupVisible("right", true);
+    api.getEdgeGroup("right")?.expand();
+  });
+
+  const source = page.getByLabel("Timecode source");
+  await expect(source).toHaveValue("MidiMtc");
+  await page.getByLabel("Timecode rate").selectOption("Fps25");
+  await expect
+    .poll(() => readTimecodeSettings(page))
+    .toEqual({
+      source: "MidiMtc",
+      rate: "Fps25",
+      audio_input: undefined,
+      freewheel: undefined,
+    });
+
+  await expect(page.getByLabel("Timecode audio input")).toHaveCount(0);
+  await source.selectOption("SmpteLtc");
+  await expect(page.getByLabel("Timecode audio input")).toHaveValue("");
+  await page.getByLabel("Timecode audio channel").selectOption({ label: "2" });
+  const freewheel = page.getByLabel("Timecode freewheel (ms)");
+  await expect(freewheel).toHaveValue("");
+  await freewheel.fill("250");
+  await freewheel.press("Enter");
+  await expect
+    .poll(() => readTimecodeSettings(page))
+    .toEqual({
+      source: "SmpteLtc",
+      rate: "Fps25",
+      audio_input: { channel: 1 },
+      freewheel: { secs: 0, nanos: 250_000_000 },
+    });
+  await expect(page.getByLabel("Timecode audio channel")).toHaveValue("1");
+  await expect(freewheel).toHaveValue("250");
+  await page.screenshot({
+    path: test.info().outputPath("timecode-ltc-properties.png"),
+  });
+
+  await freewheel.fill("-100");
+  await freewheel.press("Enter");
+  await expect(freewheel).toHaveValue("250");
+
+  await freewheel.fill("");
+  await freewheel.press("Enter");
+  await expect
+    .poll(async () => (await readTimecodeSettings(page)).freewheel)
+    .toBeUndefined();
+
+  await source.selectOption("Internal");
+  await expect(freewheel).toHaveCount(0);
+  await expect(page.getByLabel("Timecode audio input")).toHaveCount(0);
+});

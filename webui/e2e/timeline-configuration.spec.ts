@@ -294,48 +294,10 @@ test("timeline properties expose and persist timeline configuration", async ({
   await expect(page.getByText("Markers", { exact: true })).toHaveCount(1);
   await expect(page.getByText("Regions", { exact: true })).toHaveCount(1);
 
-  await page.getByLabel("Timecode source").selectOption("MidiMtc");
-  await page.getByLabel("Timecode rate").selectOption("Fps25");
-  await expect
-    .poll(() =>
-      page.evaluate((timecodeUid) => {
-        const timecode = (window as any).appStores.timecodes.get()[
-          timecodeUid
-        ]?.[0];
-        return { source: timecode?.source, rate: timecode?.rate };
-      }, context.initialTimecodeUid),
-    )
-    .toEqual({ source: "MidiMtc", rate: "Fps25" });
-  await page.screenshot({
-    path: test.info().outputPath("timecode-source-properties.png"),
-  });
-
-  await expect(page.getByLabel("Timecode audio input")).toHaveCount(0);
-  await page.getByLabel("Timecode source").selectOption("SmpteLtc");
-  await expect(page.getByLabel("Timecode audio input")).toHaveValue("");
-  await page.getByLabel("Timecode audio channel").selectOption({ label: "2" });
-  await expect
-    .poll(() =>
-      page.evaluate((timecodeUid) => {
-        const timecode = (window as any).appStores.timecodes.get()[
-          timecodeUid
-        ]?.[0];
-        return {
-          source: timecode?.source,
-          rate: timecode?.rate,
-          audio_input: timecode?.audio_input,
-        };
-      }, context.initialTimecodeUid),
-    )
-    .toEqual({
-      source: "SmpteLtc",
-      rate: "Fps25",
-      audio_input: { channel: 1 },
-    });
-  await expect(page.getByLabel("Timecode audio channel")).toHaveValue("1");
-  await page.screenshot({
-    path: test.info().outputPath("timecode-ltc-input-properties.png"),
-  });
+  await expect(page.getByTestId("linked-timecode-source")).toContainText(
+    "Change the source in the Timecodes panel.",
+  );
+  await expect(page.getByLabel("Timecode source")).toHaveCount(0);
 
   await linkedTimecode.selectOption(context.alternateTimecodeUid);
   await expect

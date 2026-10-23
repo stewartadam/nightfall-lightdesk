@@ -41,6 +41,7 @@ import { useConditionalShallowStore } from "../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../lib/workspace-activity";
 import { timecodes } from "../../state/appStores";
 import type { TimecodeCommand } from "../../types";
+import { usePropertiesInspector } from "../property-inspector";
 import {
   type TimecodeStatus,
   timecodeRateLabel,
@@ -48,6 +49,7 @@ import {
   timecodeStatus,
   timecodeStatusPillClass,
 } from "./status";
+import TimecodeProperties from "./timecode-properties";
 
 interface TimecodePanelProps extends BasePanelComponentProps {
   initialPanelId: string;
@@ -56,6 +58,8 @@ interface TimecodePanelProps extends BasePanelComponentProps {
 interface TimecodeRow {
   id: number;
   uid: string;
+  /** UID as keyed in the timecode store, which the Properties inspector reads. */
+  storeUid: string;
   label: string;
   rate: string;
   source: string;
@@ -137,6 +141,7 @@ export default function TimecodePanel(props: TimecodePanelProps) {
       .map(([tc, tcState]) => ({
         id: tc.identifiers.id,
         uid: normalizeUid(tc.identifiers.uid),
+        storeUid: tc.identifiers.uid,
         label: tc.identifiers.label,
         rate: timecodeRateLabel(tc.rate),
         source: timecodeSourceLabel(tc, tcState),
@@ -198,6 +203,16 @@ export default function TimecodePanel(props: TimecodePanelProps) {
       columnKey: (column) => column.id!,
       getCellContent: ({ row, column }) => timecodeCell(row, column),
     }),
+  );
+
+  /** Resolves the store key of the selected timecode for the Properties inspector. */
+  const selectedStoreUid = createMemo(() => selectedRow()?.storeUid);
+
+  usePropertiesInspector(
+    props.initialPanelId ?? props.id,
+    "Timecode",
+    () => <TimecodeProperties timecodeUid={selectedStoreUid()} />,
+    { priority: 10, autoActivate: true },
   );
 
   /** Sends a transport command to the selected timecode. */
