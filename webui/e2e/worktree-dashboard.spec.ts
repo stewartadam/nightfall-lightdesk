@@ -28,6 +28,7 @@ function managedServices() {
     wasm: EMPTY_SERVICE_STATE,
     "artnet-sender": EMPTY_SERVICE_STATE,
     "sacn-sender": EMPTY_SERVICE_STATE,
+    docs: EMPTY_SERVICE_STATE,
   };
 }
 
@@ -38,8 +39,10 @@ function observedProcesses() {
   return {
     backendPortOpen: false,
     webUiPortOpen: false,
+    docsPortOpen: false,
     backendPid: null,
     webUiPid: null,
+    docsPid: null,
     artnetSenderRunning: false,
     sacnSenderRunning: false,
   };
@@ -70,6 +73,8 @@ function worktree({
     nightfallPort: port,
     webUiPort: port === null ? null : port + 1,
     webUiUrl: port === null ? null : `http://localhost:${port + 1}`,
+    docsPort: port === null ? null : port + 2,
+    docsUrl: port === null ? null : `http://localhost:${port + 2}`,
     managed: managedServices(),
     observed: observedProcesses(),
   };
@@ -123,6 +128,91 @@ test("worktree dashboard groups uninitialized worktrees at the bottom", async ({
     path: test.info().outputPath("shared-worktree-table.png"),
     fullPage: true,
   });
+});
+
+/**
+ * Verifies the Docs column shows a running mdBook server with its port and
+ * link, and that Recycle and Stop can target it through the service API.
+ */
+test("worktree dashboard shows and manages the docs server", async ({
+  page,
+}) => {
+  const base = worktree({
+    branch: "docs-preview",
+    envExists: true,
+    port: 3080,
+  });
+  const target = {
+    ...base,
+    managed: {
+      ...base.managed,
+      docs: {
+        ...EMPTY_SERVICE_STATE,
+        pid: 4242,
+        running: true,
+        logPath: "/tmp/nightfall-worktree-dashboard/docs-preview-docs.log",
+      },
+    },
+    observed: { ...base.observed, docsPortOpen: true, docsPid: 4242 },
+  };
+
+  await page.route("**/worktree-api/worktrees", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        generatedAt: new Date("2026-10-23T12:00:00Z").toISOString(),
+        dashboardPid: 12345,
+        worktrees: [target],
+      }),
+    });
+  });
+  const actionRequests: URL[] = [];
+  await page.route(
+    /\/worktree-api\/worktrees\/[^/]+\/(recycle|stop)\?/u,
+    async (route) => {
+      const url = new URL(route.request().url());
+      actionRequests.push(url);
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, result: [{ ok: true }] }),
+      });
+    },
+  );
+
+  await page.goto("/worktree-dashboard.html");
+
+  await expect(page.getByRole("columnheader", { name: "Docs" })).toBeVisible();
+  const row = page.locator("tbody tr", { hasText: "docs-preview" });
+  await expect(row.getByText("3082", { exact: true })).toBeVisible();
+  await expect(row.getByRole("link", { name: "Open docs" })).toHaveAttribute(
+    "href",
+    "http://localhost:3082",
+  );
+  await expect(
+    row.getByRole("button", { name: "Open docs log file" }),
+  ).toBeEnabled();
+
+  await row.getByRole("button", { name: "Recycle..." }).click();
+  await page.screenshot({
+    path: test.info().outputPath("docs-recycle-menu.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Docs", exact: true }).click();
+  await expect.poll(() => actionRequests.length).toBe(1);
+
+  await row.getByRole("button", { name: "Stop..." }).click();
+  await page.getByRole("button", { name: "Docs", exact: true }).click();
+  await expect.poll(() => actionRequests.length).toBe(2);
+
+  expect(
+    actionRequests.map((url) => [
+      url.pathname.split("/").at(-1),
+      url.searchParams.get("service"),
+    ]),
+  ).toEqual([
+    ["recycle", "docs"],
+    ["stop", "docs"],
+  ]);
 });
 
 /** Verifies the data-directory action targets the selected worktree API route. */

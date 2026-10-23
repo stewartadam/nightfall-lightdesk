@@ -104,7 +104,7 @@ test("services accept repeats, commas, and all", () => {
   );
   assert.deepEqual(
     parseCliArgs(["--worktree=/w/a", "stop", "-s", "all"]).services,
-    ["backend", "ui", "wasm", "artnet-sender", "sacn-sender"],
+    ["backend", "ui", "wasm", "artnet-sender", "sacn-sender", "docs"],
   );
 });
 

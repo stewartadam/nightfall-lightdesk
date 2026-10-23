@@ -138,7 +138,7 @@ export function parseCliArgs(argv) {
   };
 }
 
-/** Renders one line per worktree with its backend port and service status. */
+/** Renders one line per worktree with its backend port and server statuses. */
 function formatWorktreeList(summaries) {
   const rows = summaries.map((summary) => [
     summary.name,
@@ -146,8 +146,9 @@ function formatWorktreeList(summaries) {
     String(summary.nightfallPort ?? "-"),
     summary.backend,
     summary.ui,
+    summary.docs,
   ]);
-  const header = ["NAME", "BRANCH", "PORT", "BACKEND", "UI"];
+  const header = ["NAME", "BRANCH", "PORT", "BACKEND", "UI", "DOCS"];
   const widths = header.map((title, column) =>
     Math.max(title.length, ...rows.map((row) => row[column].length)),
   );
@@ -168,6 +169,7 @@ function formatWorktreeStatus(summary) {
     `  path:    ${summary.path}`,
     `  backend: ${summary.backend} on port ${summary.nightfallPort ?? "-"}`,
     `  ui:      ${summary.ui}${summary.webUiUrl ? ` at ${summary.webUiUrl}` : ""}`,
+    `  docs:    ${summary.docs}${summary.docsUrl ? ` at ${summary.docsUrl}` : ""}`,
     `  wasm:    ${summary.wasm}`,
     `  art-net sender: ${summary.artnetSender}`,
     `  sACN sender:    ${summary.sacnSender}`,

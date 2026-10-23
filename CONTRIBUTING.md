@@ -386,6 +386,7 @@ pnpm run dashboard:ui
 
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
 The API discovers all worktrees from `git worktree list`, reads each `.env` (`NIGHTFALL_PORT`), and provides launch/recycle controls plus direct links to each Web UI.
+The `docs` service runs `mdbook serve docs` on `NIGHTFALL_PORT + 2` so each worktree previews its own copy of the user manual; it needs `mdbook` on the dashboard's `PATH` (see [Building the documentation](#building-the-documentation)).
 
 To run the backend and Art-Net/sACN sender examples through a Cargo wrapper such
 as Mr Boxington, set `NIGHTFALL_CARGO_COMMAND=mbx` in the target worktree's `.env`.
@@ -409,7 +410,9 @@ worktrees. UI and WASM builds still launch through pnpm with their worktree's
 environment.
 
 New worktrees seed their `.env` from the primary worktree's `.env`, preserving
-its settings and comments. Setup then appends the generated port and shared
+its settings and comments. Setup then appends the generated port (a random
+block of 10 ports between 3000 and 3999 that no other worktree's `.env` uses,
+so backend, web UI and docs ports never collide across worktrees) and shared
 Playwright browser path, plus the isolated data directory and disabled network
 input/output settings for secondary worktrees. These generated values override
 the inherited settings. If the primary `.env` is missing, setup uses only the
@@ -427,7 +430,7 @@ wt -C ../other service restart -s backend,ui
 ```
 
 `start`, `stop`, and `restart` target the backend unless `--service` (`-s`)
-names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `all`).
+names others (`backend`, `ui`, `wasm`, `artnet-sender`, `sacn-sender`, `docs`, `all`).
 They act on the current worktree; use `wt -C <path>` for another one. Start and
 restart wait until each service is reachable (up to `--timeout` seconds, 600 by
 default), print the log tail of any service that fails, and exit non-zero on
@@ -457,7 +460,7 @@ Use `dashboard_list_worktrees` to get paths, then pass a `worktree` path explici
 - `dashboard_sender_examples_status`
 - `dashboard_sender_examples_manage`
 
-`dashboard_worktree_manage` supports `services=[backend|ui|wasm|artnet-sender|sacn-sender|all,...]`.
+`dashboard_worktree_manage` supports `services=[backend|ui|wasm|artnet-sender|sacn-sender|docs|all,...]`.
 Use `dashboard_sender_examples_manage` for a sender-focused API with
 `senders=[art-net|sacn|all,...]`.
 
@@ -643,6 +646,8 @@ cargo install --locked mdbook --version 0.4.49
 mdbook build docs
 mdbook serve docs --open
 ```
+
+With the worktree dashboard running, `wt service start -s docs` (or the dashboard's Docs column) serves the current worktree's manual on its own port instead.
 
 CI builds every book under `docs/` on PRs that change it, with the same mdBook version (keep the version in `.github/workflows/ci.yml` in sync), and fails on any error or warning mdBook logs.
 

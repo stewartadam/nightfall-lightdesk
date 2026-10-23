@@ -50,7 +50,7 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
     import assert from "node:assert/strict";
     const launcherPort = process.env.NIGHTFALL_PORT;
     const launcherCargo = process.env.NIGHTFALL_CARGO_COMMAND;
-    const { processEnvForService, readEnvMap, commandForService } = await import(${JSON.stringify(dashboardUrl)});
+    const { processEnvForService, readEnvMap, commandForService, servicePortFromEnv } = await import(${JSON.stringify(dashboardUrl)});
     const { values: target } = await readEnvMap(cwd + "/worktree");
     assert.deepEqual({ ...target }, {
       NIGHTFALL_PORT: "3079",
@@ -61,7 +61,7 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
       WORKTREE_DATA_ROOT: process.env.HOME + "/worktree",
       PATH: "/extra:" + process.env.PATH,
     });
-    for (const service of ["backend", "ui", "wasm", "artnet-sender", "sacn-sender"]) {
+    for (const service of ["backend", "ui", "wasm", "artnet-sender", "sacn-sender", "docs"]) {
       const childEnv = processEnvForService(service, cwd + "/worktree", target);
       for (const [key, value] of Object.entries(target)) assert.equal(childEnv[key], value);
       assert.equal(childEnv.DASHBOARD_ONLY_SETTING, undefined);
@@ -70,10 +70,20 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
       if (["backend", "artnet-sender", "sacn-sender"].includes(service)) {
         assert.equal(command.command, target.NIGHTFALL_CARGO_COMMAND);
         assert.equal(command.label, command.command + " " + command.args.join(" "));
+      } else if (service === "docs") {
+        assert.equal(command.command, process.platform === "win32" ? "mdbook.exe" : "mdbook");
+        assert.deepEqual(command.args, ["serve", "docs", "--port", String(Number(target.NIGHTFALL_PORT) + 2)]);
+        assert.match(command.installHint, /Building the documentation/);
       } else {
         assert.equal(command.command, process.platform === "win32" ? "pnpm.cmd" : "pnpm");
       }
     }
+    assert.throws(() => commandForService("docs", {}), /NIGHTFALL_PORT/);
+    assert.equal(servicePortFromEnv("backend", target), 3079);
+    assert.equal(servicePortFromEnv("ui", target), 3080);
+    assert.equal(servicePortFromEnv("docs", target), 3081);
+    assert.equal(servicePortFromEnv("wasm", target), null);
+    assert.equal(servicePortFromEnv("docs", { NIGHTFALL_PORT: "invalid" }), null);
     const defaults = processEnvForService("backend", cwd + "/worktree");
     assert.equal(defaults.NIGHTFALL_PORT, launcherPort);
     assert.equal(defaults.NIGHTFALL_DATA_DIR, undefined);

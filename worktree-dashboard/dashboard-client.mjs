@@ -40,6 +40,7 @@ export const WORKTREE_MANAGED_SERVICES = [
   "wasm",
   "artnet-sender",
   "sacn-sender",
+  "docs",
 ];
 export const MANAGE_ACTIONS = ["start", "stop", "recycle"];
 export const ALL_SELECTOR = "all";
@@ -109,11 +110,14 @@ export function summarizeWorktree(worktree) {
     nightfallPort: worktree.nightfallPort,
     webUiPort: worktree.webUiPort,
     webUiUrl: worktree.webUiUrl,
+    docsPort: worktree.docsPort,
+    docsUrl: worktree.docsUrl,
     backend: statusSummary(worktree, "backend"),
     ui: statusSummary(worktree, "ui"),
     wasm: statusSummary(worktree, "wasm"),
     artnetSender: statusSummary(worktree, "artnet-sender"),
     sacnSender: statusSummary(worktree, "sacn-sender"),
+    docs: statusSummary(worktree, "docs"),
     managed: {
       backend: {
         running: Boolean(worktree.managed?.backend?.running),
@@ -134,6 +138,10 @@ export function summarizeWorktree(worktree) {
       "sacn-sender": {
         running: Boolean(worktree.managed?.["sacn-sender"]?.running),
         pid: worktree.managed?.["sacn-sender"]?.pid ?? null,
+      },
+      docs: {
+        running: Boolean(worktree.managed?.docs?.running),
+        pid: worktree.managed?.docs?.pid ?? null,
       },
     },
   };
@@ -178,7 +186,7 @@ export function resolveWorktreeServiceTargets(values) {
 
 /**
  * Reports whether the dashboard observed a service as live: an open port for
- * the backend and UI, or a running process for the sender examples.
+ * the backend, UI, and docs, or a running process for the sender examples.
  */
 function observedOpenForService(worktree, service) {
   if (service === "backend") {
@@ -186,6 +194,9 @@ function observedOpenForService(worktree, service) {
   }
   if (service === "ui") {
     return Boolean(worktree.observed?.webUiPortOpen);
+  }
+  if (service === "docs") {
+    return Boolean(worktree.observed?.docsPortOpen);
   }
   if (service === "artnet-sender") {
     return Boolean(worktree.observed?.artnetSenderRunning);
