@@ -129,12 +129,7 @@ impl Plugin for InputArtnetPlugin {
         app.insert_resource(ArtnetEventReceiver(artnet_rx));
         app.insert_resource(ArtNetInputStartup::default());
         app.add_systems(Update, sync_artnet_input_binding.after(EventHandling));
-        app.add_systems(
-            Render,
-            artnet_event_system
-                .in_set(DmxInputSet::Ingress)
-                .in_set(LayerGeneration),
-        );
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
     }
 }
 
