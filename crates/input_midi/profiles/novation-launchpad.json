@@ -1,6 +1,12 @@
 {
   "id": "novation.launchpad",
   "name": "Novation Launchpad",
+  "source": {
+    "project": "QLC+",
+    "file": "Novation-Launchpad.qxi",
+    "authors": "Maikel Boerebach+Jan Fries",
+    "license": "Apache-2.0"
+  },
   "ports": {
     "match": ["launchpad"],
     "exclude": ["mk2", "mk3", "pro", "launchpad x"]
@@ -10,25 +16,31 @@
   "release": [[176, 0, 0]],
   "colors": [
     { "name": "Off", "value": 12, "swatch": "#1f1f1f" },
-    { "name": "Dim red", "value": 13, "swatch": "#7a1d14" },
     { "name": "Red", "value": 15, "swatch": "#ff2a1a", "ramp": [13, 14, 15] },
+    { "name": "Medium red", "value": 14, "swatch": "#b3221a" },
+    { "name": "Dim red", "value": 13, "swatch": "#7a1d14" },
+    { "name": "Green", "value": 60, "swatch": "#2cff3c", "ramp": [28, 44, 60] },
+    { "name": "Medium green", "value": 44, "swatch": "#22b32e" },
     { "name": "Dim green", "value": 28, "swatch": "#17661f" },
-    {
-      "name": "Green",
-      "value": 60,
-      "swatch": "#2cff3c",
-      "ramp": [28, 44, 60]
-    },
+    { "name": "Amber", "value": 63, "swatch": "#ffb21a", "ramp": [29, 46, 63] },
+    { "name": "Medium amber", "value": 46, "swatch": "#b37d14" },
     { "name": "Dim amber", "value": 29, "swatch": "#7a5a14" },
-    {
-      "name": "Amber",
-      "value": 63,
-      "swatch": "#ffb21a",
-      "ramp": [29, 46, 63]
-    },
     { "name": "Yellow", "value": 62, "swatch": "#e2ff1a", "ramp": [45, 62] },
+    { "name": "Medium yellow", "value": 45, "swatch": "#9eb314" },
     { "name": "Orange", "value": 47, "swatch": "#ff6a1a", "ramp": [30, 47] },
     { "name": "Red flashing", "value": 11, "swatch": "#ff2a1a", "blink": true },
+    {
+      "name": "Medium red flashing",
+      "value": 10,
+      "swatch": "#b3221a",
+      "blink": true
+    },
+    {
+      "name": "Dim red flashing",
+      "value": 9,
+      "swatch": "#7a1d14",
+      "blink": true
+    },
     {
       "name": "Green flashing",
       "value": 56,
@@ -36,9 +48,45 @@
       "blink": true
     },
     {
+      "name": "Medium green flashing",
+      "value": 40,
+      "swatch": "#22b32e",
+      "blink": true
+    },
+    {
+      "name": "Dim green flashing",
+      "value": 24,
+      "swatch": "#17661f",
+      "blink": true
+    },
+    {
       "name": "Amber flashing",
       "value": 59,
       "swatch": "#ffb21a",
+      "blink": true
+    },
+    {
+      "name": "Medium amber flashing",
+      "value": 42,
+      "swatch": "#b37d14",
+      "blink": true
+    },
+    {
+      "name": "Dim amber flashing",
+      "value": 25,
+      "swatch": "#7a5a14",
+      "blink": true
+    },
+    {
+      "name": "Yellow flashing",
+      "value": 58,
+      "swatch": "#e2ff1a",
+      "blink": true
+    },
+    {
+      "name": "Medium yellow flashing",
+      "value": 41,
+      "swatch": "#9eb314",
       "blink": true
     }
   ],

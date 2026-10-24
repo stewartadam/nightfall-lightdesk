@@ -20,9 +20,10 @@
  * keeps its name, swatch and ramp, and hand-added colors QLC+ lacks are kept. A missing
  * profile is created with placeholder port matching and feedback off; port names, init and
  * release messages, ramps and the dimmable flag are then written by hand, and the file is
- * added to `BUNDLED_PROFILES`.
- * QLC+'s `MidiChannelTable` (blinking or brightness chosen by channel) has no equivalent
- * yet and is not imported.
+ * added to `BUNDLED_PROFILES`. The output can also be an existing shared palette in
+ * `profiles/palettes/` (only `id`, `source` and `colors`), which profiles name by id.
+ * QLC+'s `MidiChannelTable` (blinking or brightness chosen by channel) is not imported; a
+ * profile's hand-written `ledChannels` can send a range of notes on a fixed channel instead.
  *
  * Converted profiles name their QLC+ file and authors in `source`, and distributions carry
  * QLC+'s copyright and license through its entry in `config/notices/supplements.json`.
