@@ -1,0 +1,8 @@
+{
+  "id": "x-touch",
+  "colors": [
+    { "name": "Off", "value": 0, "swatch": "#000000" },
+    { "name": "Flashing", "value": 64, "swatch": "#ff0000", "blink": true },
+    { "name": "On", "value": 127, "swatch": "#ff0000" }
+  ]
+}

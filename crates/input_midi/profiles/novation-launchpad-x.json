@@ -1,0 +1,11 @@
+{
+  "id": "novation.launchpad-x",
+  "name": "Novation Launchpad X",
+  "ports": { "match": ["lpx mi"], "exclude": [] },
+  "feedback": false,
+  "hint": "Map the LPX MIDI port (MIDIIN2 on Windows), not DAW. Nightfall switches the Launchpad to Programmer mode while feedback is on: grid pads are notes 11-88, the top row is controllers 91-98, and the right column is controllers 19-89.",
+  "init": [[240, 0, 32, 41, 2, 12, 14, 1, 247]],
+  "release": [[240, 0, 32, 41, 2, 12, 14, 0, 247]],
+  "palette": "rgb-128",
+  "defaults": { "off": "Off", "on": "Green", "held": "Orange" }
+}
