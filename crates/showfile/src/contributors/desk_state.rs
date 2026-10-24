@@ -20,7 +20,7 @@ use crate::{ShowfileLoadDomain, ShowfileLoadPhase};
 /// Desk-level state used as owned save output or borrowed load input.
 pub(crate) struct DeskStateSnapshot<'a> {
     pub(super) variables: Cow<'a, HashMap<String, VariableValue>>,
-    pub(super) control_slots: Cow<'a, [ControlSlotConfig]>,
+    pub(super) faders: Cow<'a, [FaderConfig]>,
     pub(super) settings: Cow<'a, DeskSettings>,
     pub(super) io_settings: Cow<'a, IoRuntimeSettings>,
 }
@@ -28,7 +28,7 @@ pub(crate) struct DeskStateSnapshot<'a> {
 /// Save contributor for desk-level settings and global variables.
 pub(crate) struct DeskStateSaveContributor<'a> {
     global_variables: &'a GlobalVariables,
-    controls: &'a Controls,
+    faders: &'a Faders,
     desk_settings: &'a DeskSettings,
     io_settings: &'a IoRuntimeSettings,
 }
@@ -37,13 +37,13 @@ impl<'a> DeskStateSaveContributor<'a> {
     /// Build a contributor that copies the current desk state into a save snapshot.
     pub(crate) fn new(
         global_variables: &'a GlobalVariables,
-        controls: &'a Controls,
+        faders: &'a Faders,
         desk_settings: &'a DeskSettings,
         io_settings: &'a IoRuntimeSettings,
     ) -> Self {
         Self {
             global_variables,
-            controls,
+            faders,
             desk_settings,
             io_settings,
         }
@@ -54,7 +54,7 @@ impl ShowfileSaveContributor for DeskStateSaveContributor<'_> {
     /// Copy global variables and desk settings into their stable showfile fields.
     fn save_contribution(&self) -> ShowfileContribution<'static> {
         ShowfileContribution::DeskState(Box::new(DeskStateSnapshot {
-            control_slots: Cow::Owned(self.controls.slot_configs()),
+            faders: Cow::Owned(self.faders.fader_configs()),
             variables: Cow::Owned(self.global_variables.get_all()),
             settings: Cow::Owned(self.desk_settings.clone()),
             io_settings: Cow::Owned(self.io_settings.clone()),
@@ -111,7 +111,7 @@ impl ShowfileLoadContributor for DeskStateLoadContributor<'_> {
             self.global_variables.set(key, value.clone());
         }
 
-        commands.insert_resource(Controls::from_slot_configs(&contribution.control_slots));
+        commands.insert_resource(Faders::from_configs(&contribution.faders));
         *self.desk_settings = contribution.settings.clone().into_owned();
         *self.io_settings = contribution.io_settings.clone().into_owned();
 

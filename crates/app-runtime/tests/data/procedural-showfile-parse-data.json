@@ -1,7 +1,7 @@
 {
   "metadata": {
     "nightfallVersion": "0.1.0-alpha.4",
-    "showfileVersion": 21,
+    "showfileVersion": 22,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -146,7 +146,7 @@
     "panel_layouts": [],
     "default_panel_layout_id": null
   },
-  "controlSlots": [
+  "faders": [
     {
       "assignment": null,
       "buttonMode": "Go"
@@ -318,9 +318,9 @@
       },
       "behavior": "Press",
       "action": {
-        "id": "control.level",
+        "id": "fader.level",
         "arguments": {
-          "control_index": 1
+          "fader_index": 1
         }
       },
       "led": {}
@@ -338,9 +338,9 @@
       "range": null,
       "behavior": "Press",
       "action": {
-        "id": "control.level",
+        "id": "fader.level",
         "arguments": {
-          "control_index": 2
+          "fader_index": 2
         }
       }
     }

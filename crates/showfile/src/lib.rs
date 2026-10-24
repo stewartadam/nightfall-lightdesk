@@ -25,7 +25,7 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 21;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 22;
 pub use selection_refs::stabilize_showfile_group_refs;
 pub use snapshot::{
     RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
@@ -101,46 +101,44 @@ mod tests {
         assert_eq!(serialize_showfile_snapshot_json(&parsed).unwrap(), json);
     }
 
-    /// Preserve clip, master, and empty slots with their button modes through JSON, and replace
+    /// Preserve clip, master, and empty faders with their button modes through JSON, and replace
     /// a previous bank on load.
     #[test]
-    fn control_slots_round_trip_and_replace_existing_bank() {
+    fn faders_round_trip_and_replace_existing_bank() {
         use bevy_ecs::prelude::World;
-        use nightfall_desk::prelude::{
-            ControlAssignment, ControlButtonMode, ControlSlotConfig, Controls,
-        };
+        use nightfall_desk::prelude::{FaderAssignment, FaderButtonMode, FaderConfig, Faders};
 
         let mut world = World::new();
         initialize_showfile_resources(&mut world);
-        let controls = Controls::from_slot_configs(&[
-            ControlSlotConfig {
-                assignment: Some(ControlAssignment::Clip(28)),
-                button_mode: ControlButtonMode::Toggle,
+        let faders = Faders::from_configs(&[
+            FaderConfig {
+                assignment: Some(FaderAssignment::Clip(28)),
+                button_mode: FaderButtonMode::Toggle,
             },
-            ControlSlotConfig {
+            FaderConfig {
                 assignment: None,
-                button_mode: ControlButtonMode::Release,
+                button_mode: FaderButtonMode::Release,
             },
-            ControlSlotConfig::assigned(ControlAssignment::Master(7)),
+            FaderConfig::assigned(FaderAssignment::Master(7)),
         ]);
-        let expected = controls.slot_configs();
-        world.insert_resource(controls);
+        let expected = faders.fader_configs();
+        world.insert_resource(faders);
         let snapshot = snapshot_from_world(&mut world).unwrap();
         let json = serialize_showfile_snapshot_json(&snapshot).unwrap();
-        let parsed = parse_showfile_snapshot_json(&json, "controls").unwrap();
-        world.insert_resource(Controls::from_slot_configs(&[ControlSlotConfig::assigned(
-            ControlAssignment::Clip(99),
+        let parsed = parse_showfile_snapshot_json(&json, "faders").unwrap();
+        world.insert_resource(Faders::from_configs(&[FaderConfig::assigned(
+            FaderAssignment::Clip(99),
         )]));
         apply_showfile_snapshot_to_world(&mut world, parsed).unwrap();
-        assert_eq!(world.resource::<Controls>().slot_configs(), expected);
+        assert_eq!(world.resource::<Faders>().fader_configs(), expected);
 
         apply_showfile_snapshot_to_world(&mut world, ShowfileSnapshot::default()).unwrap();
         assert!(
             world
-                .resource::<Controls>()
-                .slot_configs()
+                .resource::<Faders>()
+                .fader_configs()
                 .iter()
-                .all(|config| *config == ControlSlotConfig::default())
+                .all(|config| *config == FaderConfig::default())
         );
     }
 

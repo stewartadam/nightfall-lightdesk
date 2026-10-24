@@ -97,7 +97,7 @@ pub enum ActionInputKind {
 ///
 /// The kind also fixes how the value is stored under the parameter's name in the persisted
 /// arguments object: object references (`Clip`, `Master`, `Timeline`, `Cue`) are UID strings,
-/// `Control` is a one-based slot index, `Panel` is a panel ID string, numeric kinds are JSON
+/// `Fader` is a one-based fader index, `Panel` is a panel ID string, numeric kinds are JSON
 /// numbers, and `Text` is a string. Clients rely on this to build arguments generically.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -107,8 +107,8 @@ pub enum ActionParameterKind {
     Clip,
     /// A master referenced by its persistent UID.
     Master,
-    /// A control slot referenced by its one-based index.
-    Control,
+    /// A fader referenced by its one-based index.
+    Fader,
     /// A timeline referenced by its persistent UID.
     Timeline,
     /// A cue referenced by its persistent UID.

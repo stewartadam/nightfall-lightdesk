@@ -24,7 +24,7 @@ pub(super) fn add_midi_mappings(world: &mut World) {
         },
         behavior: nightfall_actions::ControlBehavior::Press,
         led: Default::default(),
-        action: control_level_action(1),
+        action: fader_level_action(1),
     }]);
 }
 

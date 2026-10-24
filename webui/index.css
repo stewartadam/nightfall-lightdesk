@@ -155,13 +155,13 @@ select:not([multiple]):not([size]) {
   appearance: textfield;
 }
 
-/* Scroll cues blend into the controls strip's background. */
-.controls .nf-scroll-indicators {
+/* Scroll cues blend into the fader strip's background. */
+.faders .nf-scroll-indicators {
   --nf-scroll-surface: var(--color-neutral-900);
 }
 
 /* FIXME use tailwind for this for scalable widths */
-.control {
+.fader {
   width: 80px;
   flex-shrink: 0;
 }

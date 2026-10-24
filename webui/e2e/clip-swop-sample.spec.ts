@@ -11,7 +11,7 @@ import { waitForDockviewApp } from "./showfile-startup";
 
 test.use({ sampleDataOnly: true });
 
-/** Sample show clips in control slots 1 and 2; slot 3 holds the Rainbow Cycle clip. */
+/** Sample show clips in faders 1 and 2; fader 3 holds the Rainbow Cycle clip. */
 const RGB_FULL = 1;
 const RGB_HALF = 2;
 
@@ -92,7 +92,7 @@ async function showsLook(
 }
 
 /**
- * Verifies a held Swop on the Rainbow slot takes the running RGB cycles out entirely: the RGB
+ * Verifies a held Swop on the Rainbow fader takes the running RGB cycles out entirely: the RGB
  * cycles hold a steady colour on the rainbow's fixtures, which gives way to the moving rainbow
  * while the button is held and comes back once it is let go.
  */
@@ -113,9 +113,9 @@ test("Swop shows the swopped clip on its own", async ({ page }) => {
   expect(await showsLook(page, cycleLook, cycleKeys)).toBe(true);
 
   await openPanel(page, "Clips");
-  const button = page.locator('[data-control-button-index="3"]');
-  await page.getByRole("button", { name: "Button mode of control 3" }).click();
-  await page.locator('[data-control-button-mode-option="Swop"]').click();
+  const button = page.locator('[data-fader-button-index="3"]');
+  await page.getByRole("button", { name: "Button mode of fader 3" }).click();
+  await page.locator('[data-fader-button-mode-option="Swop"]').click();
   await expect(button).toHaveText("Swop");
   await page.screenshot({
     path: test.info().outputPath("swop-before.png"),
@@ -125,7 +125,7 @@ test("Swop shows the swopped clip on its own", async ({ page }) => {
   expect(box).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.down();
-  await expect(button).toHaveAttribute("data-control-button-flashing", "true");
+  await expect(button).toHaveAttribute("data-fader-button-flashing", "true");
   await page.waitForTimeout(500);
   let cycleLookSamples = 0;
   for (let sample = 0; sample < 6; sample += 1) {
@@ -134,12 +134,12 @@ test("Swop shows the swopped clip on its own", async ({ page }) => {
   }
   await page.screenshot({ path: test.info().outputPath("swop-held.png") });
   const level = await page
-    .locator('[data-control-index="3"]')
+    .locator('[data-fader-index="3"]')
     .locator(".vertical-range-slider .noUi-handle")
     .getAttribute("aria-valuenow");
 
   await page.mouse.up();
-  await expect(button).toHaveAttribute("data-control-button-flashing", "false");
+  await expect(button).toHaveAttribute("data-fader-button-flashing", "false");
   await expect.poll(() => showsLook(page, cycleLook, cycleKeys)).toBe(true);
   await setClipRunning(page, RGB_FULL, false);
   await setClipRunning(page, RGB_HALF, false);
@@ -148,15 +148,15 @@ test("Swop shows the swopped clip on its own", async ({ page }) => {
   expect(cycleLookSamples).toBe(0);
 });
 
-/** Sends one control slot command straight to the engine, as a controller would. */
-async function sendControlCommand(
+/** Sends one fader command straight to the engine, as a controller would. */
+async function sendFaderCommand(
   page: Page,
   command: Record<string, unknown>,
 ): Promise<void> {
   await page.evaluate(
     (command) =>
       (window as any).appStores.sendAndAwait({
-        module: "ControlCommand",
+        module: "FaderCommand",
         command,
       }),
     command,
@@ -172,7 +172,7 @@ async function runPaletteAction(page: Page, name: string): Promise<void> {
 
 /**
  * Verifies a Swop left held, as by a controller that never sent its release, is never silent:
- * the slots, Status Display and Layers tag the swop clip and every playback it takes out, and
+ * the faders, Status Display and Layers tag the swop clip and every playback it takes out, and
  * the "Release held buttons" palette action lets go of it.
  */
 test("a stuck Swop is shown and can be released", async ({ page }) => {
@@ -185,32 +185,26 @@ test("a stuck Swop is shown and can be released", async ({ page }) => {
   await setClipRunning(page, RGB_HALF, true);
 
   await openPanel(page, "Clips");
-  await page.getByRole("button", { name: "Button mode of control 3" }).click();
-  await page.locator('[data-control-button-mode-option="Swop"]').click();
-  await expect(page.locator('[data-control-button-index="3"]')).toHaveText(
+  await page.getByRole("button", { name: "Button mode of fader 3" }).click();
+  await page.locator('[data-fader-button-mode-option="Swop"]').click();
+  await expect(page.locator('[data-fader-button-index="3"]')).toHaveText(
     "Swop",
   );
 
-  await sendControlCommand(page, {
+  await sendFaderCommand(page, {
     type: "PressButton",
-    data: { control_index: 3 },
+    data: { fader_index: 3 },
   });
   for (const index of [1, 2]) {
-    const slot = page.locator(`[data-control-index="${index}"]`);
-    await expect(slot).toHaveAttribute(
-      "data-control-held-button",
-      "SwoppedOut",
-    );
-    await expect(slot.getByTestId("held-button-badge")).toHaveText("Swopped");
+    const fader = page.locator(`[data-fader-index="${index}"]`);
+    await expect(fader).toHaveAttribute("data-fader-held-button", "SwoppedOut");
+    await expect(fader.getByTestId("held-button-badge")).toHaveText("Swopped");
   }
-  const swopSlot = page.locator('[data-control-index="3"]');
-  await expect(swopSlot).toHaveAttribute(
-    "data-control-held-button",
-    "Swopping",
-  );
+  const swopSlot = page.locator('[data-fader-index="3"]');
+  await expect(swopSlot).toHaveAttribute("data-fader-held-button", "Swopping");
   await expect(swopSlot.getByTestId("held-button-badge")).toHaveText("Swop");
   await page.screenshot({
-    path: test.info().outputPath("swop-stuck-slots.png"),
+    path: test.info().outputPath("swop-stuck-faders.png"),
   });
 
   await openPanel(page, "Status Display");
@@ -222,7 +216,7 @@ test("a stuck Swop is shown and can be released", async ({ page }) => {
   await expect(statusBadges.first()).toHaveText("Swopped");
   await expect(statusBadges.first()).toHaveAttribute(
     "title",
-    "Taken out by the Swop held on slot 3",
+    "Taken out by the Swop held on fader 3",
   );
   await expect(
     instancesTable.locator('[data-held-button="Swopping"]'),
@@ -251,7 +245,7 @@ test("a stuck Swop is shown and can be released", async ({ page }) => {
   await expect(
     instancesTable.getByText("Running", { exact: true }),
   ).toHaveCount(2);
-  await expect(page.locator("[data-control-held-button]")).toHaveCount(0);
+  await expect(page.locator("[data-fader-held-button]")).toHaveCount(0);
   await page.screenshot({
     path: test.info().outputPath("swop-released.png"),
   });

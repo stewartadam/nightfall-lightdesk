@@ -19,7 +19,7 @@ import { pushToast } from "../../../state/appStores";
 /** Asks the backend to let go of every held Flash and Swop, reporting failures as a toast. */
 async function releaseHeldButtons(): Promise<void> {
   try {
-    const result = await commandClient.invoke("ControlCommand", {
+    const result = await commandClient.invoke("FaderCommand", {
       type: "ReleaseHeldButtons",
     });
     if (!commandSucceeded(result)) {
@@ -41,9 +41,9 @@ export function ReleaseHeldButtonsCommand() {
   /** Registers the release action for this mounted application shell. */
   onMount(() => {
     useUiAction({
-      id: "controls.release-held-buttons",
+      id: "faders.release-held-buttons",
       name: "Release held buttons",
-      description: "Let go of every held Flash and Swop on the control slots",
+      description: "Let go of every held Flash and Swop on the faders",
       icon: HandIcon,
       execute: () => {
         void releaseHeldButtons();

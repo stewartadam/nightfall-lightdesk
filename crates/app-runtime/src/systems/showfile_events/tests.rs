@@ -61,7 +61,7 @@ fn setup_world() -> World {
     #[cfg(feature = "osc")]
     world.insert_resource(OscMappings::default());
     world.insert_resource(DeskSettings::default());
-    world.insert_resource(Controls::default());
+    world.insert_resource(Faders::default());
     world.insert_resource(IoRuntimeSettings::default());
     world.insert_resource(GlobalVariables::default());
     world.insert_resource(PendingCommandBuffer::default());
@@ -2371,7 +2371,7 @@ fn seed_world(world: &mut World) {
             },
             behavior: nightfall_actions::ControlBehavior::Press,
             led: Default::default(),
-            action: control_level_action(1),
+            action: fader_level_action(1),
         }]);
     #[cfg(feature = "osc")]
     world
@@ -2385,7 +2385,7 @@ fn seed_world(world: &mut World) {
             release_value: None,
             range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
-            action: control_level_action(2),
+            action: fader_level_action(2),
         }]);
 
     {
@@ -3077,7 +3077,7 @@ fn roundtrip_preserves_midi_mappings() {
             controller: 36
         }
     );
-    assert_eq!(mapping.action, control_level_action(1));
+    assert_eq!(mapping.action, fader_level_action(1));
 }
 
 /// Verifies OSC input mappings survive showfile save/load snapshot application.
@@ -3099,7 +3099,7 @@ fn roundtrip_preserves_osc_mappings() {
     assert_eq!(mapping.address, "/grid/fader");
     assert_eq!(mapping.arg_index, Some(1));
     assert_eq!(mapping.arg_value, None);
-    assert_eq!(mapping.action, control_level_action(2));
+    assert_eq!(mapping.action, fader_level_action(2));
 }
 
 #[test]
@@ -3189,7 +3189,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_slots: Vec::new(),
+            faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
@@ -3270,7 +3270,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_slots: Vec::new(),
+            faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
@@ -3339,7 +3339,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
     let result = try_apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_slots: Vec::new(),
+            faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),
@@ -4124,7 +4124,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
     };
 
     let invalid_snapshot = ShowfileSnapshot {
-        control_slots: Vec::new(),
+        faders: Vec::new(),
         metadata: ShowfileMetadata::default(),
         fixtures: vec![fixture_a, fixture_b],
         variables: HashMap::new(),
@@ -4206,7 +4206,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
     apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_slots: Vec::new(),
+            faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture],
             variables: HashMap::new(),
@@ -4304,7 +4304,7 @@ fn load_materializes_timecodes_and_timelines() {
     apply_snapshot(
         &mut world,
         ShowfileSnapshot {
-            control_slots: Vec::new(),
+            faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),

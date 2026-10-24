@@ -71,7 +71,7 @@ export function layerSummariesEqual(
     left.objectType === right.objectType &&
     left.priority === right.priority &&
     left.heldButton?.type === right.heldButton?.type &&
-    left.heldButton?.data.control_index === right.heldButton?.data.control_index
+    left.heldButton?.data.fader_index === right.heldButton?.data.fader_index
   );
 }
 
