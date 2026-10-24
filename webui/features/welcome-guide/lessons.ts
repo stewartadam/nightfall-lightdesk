@@ -102,6 +102,8 @@ export interface GuideLesson {
   leavesShowUnchanged?: boolean;
   steps: GuideStep[];
 }
+/** The four pixel strips Your first lights selects, colors and stores in its sequence. */
+const FIRST_LIGHTS_FIXTURES = [370, 371, 372, 373];
 /** Lessons offered in the library, in learning-path order. */
 export const GUIDE_LESSONS: GuideLesson[] = [
   {
@@ -418,6 +420,456 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "action",
             body: "Open Menu at the bottom left, then choose Keyboard Shortcuts. Browse the reference, then close it to finish the introduction.",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "welcome",
+    label: "Module 2",
+    title: "Your first lights",
+    duration: "8–10 min",
+    introduction:
+      "Take control of four pixel strips, create your own Red and Blue sequence, and play it with a fader and Go.",
+    steps: [
+      {
+        id: "navigate-palette",
+        title: "Find your way around",
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
+        observe: {
+          type: "command-palette",
+        },
+        content: [
+          {
+            type: "text",
+            text: "The Command Palette opens panels or dialogs.",
+          },
+          {
+            type: "action",
+            body: "Click here or press {command-palette-shortcut} to open it.",
+          },
+        ],
+      },
+      {
+        id: "navigate-programmer",
+        title: "Open the Programmer",
+        target:
+          '[data-dialog-kind="command-palette"] input, [aria-label="Open command palette"]',
+        observe: {
+          type: "panel",
+          component: "ProgrammerGrid",
+        },
+        content: [
+          {
+            type: "text",
+            text: "You can use the Command Palette to open new panels.",
+          },
+          {
+            type: "action",
+            body: "Search for 'Programmer' and press Enter.",
+          },
+        ],
+      },
+      {
+        id: "select",
+        title: "Select lights",
+        target: "#header-cmdline",
+        focusTarget: true,
+        observe: {
+          type: "selection",
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
+        },
+        content: [
+          {
+            type: "text",
+            text: "The demo pixel strips include fixtures 370–373. The > operator selects an inclusive range.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ProgrammerGrid", "Visualizer"],
+          },
+          {
+            type: "action",
+            title: "Type this command, then press Enter:",
+            body: "Look for the four selected pixel strips in the Programmer.",
+            command: "fix 370>373",
+          },
+        ],
+      },
+      {
+        id: "intensity",
+        title: "Bring up the lights",
+        target: "#header-cmdline",
+        observe: {
+          type: "intensity",
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
+        },
+        content: [
+          {
+            type: "text",
+            text: "The Programmer holds live lighting instructions.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ProgrammerGrid", "Visualizer"],
+          },
+          {
+            type: "text",
+            text: "The @ command sets the selected strips’ intensity as a percentage. We will set them to full brightness.",
+          },
+          {
+            type: "action",
+            title: "Type this command, then press Enter:",
+            body: "",
+            command: "@ 100",
+          },
+          {
+            type: "text",
+            text: "These fixture values will be held in the Programmer until cleared.",
+          },
+        ],
+      },
+      {
+        id: "red",
+        title: "Make a red look",
+        keepVisible: ["visualizer"],
+        target: "#header-cmdline",
+        observe: {
+          type: "color",
+          color: "Red",
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
+        },
+        content: [
+          {
+            type: "text",
+            text: "The fixtures have not changed because we did not yet specify a color. These pixel strips mix red, green, and blue to set their color.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ProgrammerGrid", "Visualizer"],
+          },
+          {
+            type: "action",
+            title: "Type this command, then press Enter:",
+            body: "Watch the four selected pixel strips turn red in the visualizer.",
+            command: "red @ 100 green @ 0 blue @ 0",
+          },
+        ],
+      },
+      {
+        id: "cue-one",
+        title: "Store the red cue",
+        target: '[aria-label="Store cue"]',
+        observe: {
+          type: "cue",
+          sequenceId: 50,
+          id: 1,
+        },
+        content: [
+          {
+            type: "text",
+            text: "Let’s build a sequence of our own. Sequence 50 is unused in the sample, so its cues will contain only the four strips we selected.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ProgrammerGrid"],
+          },
+          {
+            type: "action",
+            title: "Store cue 50.1",
+            body: "In Programmer, choose Store cue. Enter Sequence ID 50, Cue ID 1, and Label Red, then confirm. This creates sequence 50.",
+          },
+        ],
+      },
+      {
+        id: "blue",
+        title: "Make a blue look",
+        keepVisible: ["visualizer"],
+        target: "#header-cmdline",
+        observe: {
+          type: "color",
+          color: "Blue",
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
+        },
+        content: [
+          {
+            type: "text",
+            text: "Let's turn the same fixtures blue. We need to update the programmer with new color values.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ProgrammerGrid", "Visualizer"],
+          },
+          {
+            type: "action",
+            title: "Type this command, then press Enter:",
+            body: "Watch the same four pixel strips turn blue.",
+            command: "red @ 0 green @ 0 blue @ 100",
+          },
+        ],
+      },
+      {
+        id: "cue-two",
+        title: "Store the blue cue",
+        target: '[aria-label="Store cue"]',
+        observe: {
+          type: "cue",
+          sequenceId: 50,
+          id: 2,
+        },
+        content: [
+          {
+            type: "text",
+            text: "Keep the same four fixtures selected. Our second cue stores their blue look in the same sequence; Go will advance between the two cues.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ProgrammerGrid"],
+          },
+          {
+            type: "action",
+            title: "Store cue 50.2",
+            body: "Choose Store cue again. Enter Sequence ID 50, Cue ID 2, and Label Blue, then confirm.",
+          },
+        ],
+      },
+      {
+        id: "clear",
+        title: "Clear the Programmer",
+        target: '[aria-label="Clear programmer"]',
+        observe: {
+          type: "clear",
+        },
+        content: [
+          {
+            type: "text",
+            text: "Stored cues and live Programmer values are separate. Clear the live instructions so playback can take over.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ProgrammerGrid"],
+          },
+          {
+            type: "action",
+            title: "Click Clear twice",
+            body: "The first click clears the selection; the second releases the Programmer’s values. You can also press {clear-shortcut} twice.",
+          },
+        ],
+      },
+      {
+        id: "open-sequence",
+        title: "Edit your new sequence",
+        targetSequence: { id: 50 },
+        observe: { type: "sequence-editor", sequenceId: 50 },
+        content: [
+          {
+            type: "text",
+            text: "Your Red and Blue looks are stored in sequence 50. Open it to choose how playback advances between them.",
+          },
+          { type: "prerequisite", panels: ["SequenceList"] },
+          {
+            type: "action",
+            title: "Open sequence 50",
+            body: "In Sequences, open sequence 50 to edit your new sequence.",
+          },
+        ],
+      },
+      {
+        id: "manual-blue",
+        title: "Let Go advance to Blue",
+        // Sits just right of the Trigger cell, clear of the panel title and the cue's ID and label.
+        keepVisible: ["tab", "row-start"],
+        placement: "side",
+        targetSequence: { id: 50, cueId: 2 },
+        observe: { type: "cue-manual", sequenceId: 50, id: 2 },
+        content: [
+          {
+            type: "text",
+            text: "Follow Previous advances to Blue automatically when Red finishes its transition. Manual keeps Red playing until you press Go again.",
+          },
+          {
+            type: "action",
+            title: "Set cue 50.2 to Manual",
+            body: "In the Blue cue’s row, double-click the highlighted Trigger cell and choose Manual.",
+          },
+        ],
+      },
+      {
+        id: "create-clip",
+        title: "Create a clip to play your sequence",
+        // Points at Add clip, then the dialog's ID field until it reads 50, then its Label field.
+        target:
+          '[aria-label="Add clip"], [role="dialog"] [data-entity-field="id"]:not([data-value="50"]), [role="dialog"] [data-entity-field="label"]',
+        focusTarget: true,
+        observe: { type: "clip-created", clipId: 50 },
+        content: [
+          {
+            type: "text",
+            text: "A clip connects a stored sequence to playback controls. We’ll give our two-cue sequence its own clip.",
+          },
+          { type: "prerequisite", panels: ["ClipList"] },
+          {
+            type: "action",
+            title: "Create clip 50: First Lights",
+            body: "In Clips, click Add clip. Set ID to 50 and Label to First Lights, then click Create.",
+          },
+        ],
+      },
+      {
+        id: "link-clip",
+        title: "Choose your clip’s sequence",
+        targetClip: { id: 50, gear: true },
+        observe: { type: "clip-sequence", clipId: 50, sequenceId: 50 },
+        content: [
+          {
+            type: "text",
+            text: "A clip’s Source is the sequence or effect it plays. Link First Lights to the sequence you just made.",
+          },
+          { type: "prerequisite", panels: ["ClipList"] },
+          {
+            type: "action",
+            title: "Choose sequence 50 in Properties",
+            body: "Click the gear on First Lights. In Properties, under Source, choose Sequence, then find and select sequence 50.",
+          },
+          {
+            type: "action",
+            title: "Command alternative",
+            body: "You can also set the same source from the command input.",
+            command: "set clip 50 target=sequence 50",
+          },
+        ],
+      },
+      {
+        id: "collapse-properties",
+        title: "Make room for the Visualizer",
+        target: '[role="tab"][aria-label="Properties"]',
+        observe: { type: "panel-hidden", component: "PropertiesInspector" },
+        content: [
+          {
+            type: "text",
+            text: "Your clip is linked to sequence 50. Collapse Properties to reveal more of the Visualizer before trying playback.",
+          },
+          {
+            type: "action",
+            body: "Click the active Properties tab on the right edge to collapse its panel.",
+          },
+        ],
+      },
+      {
+        id: "assign",
+        title: "Put First Lights on control 6",
+        target: '[data-clip-dropzone-index="6"]',
+        highlightClipId: 50,
+        observe: {
+          type: "assigned",
+          clipId: 50,
+          control: 6,
+        },
+        content: [
+          {
+            type: "text",
+            text: "Clip 50 starts playback of your new sequence. A control slot gives it a fader and a Go button.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["ClipList"],
+          },
+          {
+            type: "action",
+            title: "Drop First Lights on control 6.",
+            body: "Drag clip 50: First Lights onto control 6’s Drop target. You might need to scroll right, depending on your screen size.",
+          },
+        ],
+      },
+      {
+        id: "go",
+        title: "Start First Lights",
+        keepVisible: ["visualizer"],
+        target: '[data-control-button-index="6"]:not(:disabled)',
+        observe: {
+          type: "clip-playing",
+          clipId: 50,
+        },
+        content: [
+          {
+            type: "text",
+            text: "Go starts the sequence at its first cue: Red. The four pixel strips will show your red look.",
+          },
+          {
+            type: "prerequisite",
+            panels: ["Visualizer", "ClipList"],
+          },
+          {
+            type: "action",
+            body: "Raise control 6’s fader or press its Go button to start the clip.",
+          },
+        ],
+      },
+      {
+        id: "advance",
+        title: "Advance to blue",
+        keepVisible: ["visualizer"],
+        target: '[data-control-button-index="6"]:not(:disabled)',
+        observe: {
+          type: "cue-playing",
+          clipId: 50,
+          position: 2,
+        },
+        content: [
+          {
+            type: "text",
+            text: "The next Go advances the running sequence to Blue.",
+          },
+          {
+            type: "action",
+            body: "Press Go again and watch the pixel strips change from red to blue.",
+          },
+        ],
+      },
+      {
+        id: "fader",
+        title: "Control the level",
+        keepVisible: ["visualizer"],
+        target:
+          '[data-control-index="6"] .noUi-target:not([disabled]) [role="slider"]',
+        content: [
+          {
+            type: "text",
+            text: "The fader scales intensity while keeping the programmed color.",
+          },
+          {
+            type: "action",
+            title: "Try a few levels on control 6.",
+            body: "Move control 6’s fader down and up. Watch the blue pixel strips dim and brighten. Reducing it to zero stops the clip, so it will re-start at cue 1, Red.",
+          },
+        ],
+      },
+      {
+        id: "stop",
+        title: "Stop your clip",
+        targetClip: { id: 50 },
+        observe: {
+          type: "clip-stopped",
+          clipId: 50,
+        },
+        content: [
+          {
+            type: "text",
+            text: "Stopping the clip will stop the sequence and allow the fixtures to be controlled by other active clips, if any.",
+          },
+          { type: "prerequisite", panels: ["ClipList"] },
+          {
+            type: "action",
+            title: "Click First Lights again",
+            body: "Click the running First Lights tile to stop its playback.",
+          },
+          {
+            type: "action",
+            title: "Command alternative",
+            body: "You can also stop a clip via the command input.",
+            command: "clip 50 stop",
           },
         ],
       },
