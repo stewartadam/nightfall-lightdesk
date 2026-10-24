@@ -220,7 +220,11 @@ export function collectReleaseNotes(repository, from, to, list = githubList) {
     try {
       note = parseReleaseNote(pr.body);
     } catch (error) {
-      throw new Error(`PR #${pr.number}: ${error.message}`);
+      // A merged PR's description can't be fixed retroactively, so treat a bad declaration as no notes.
+      console.warn(
+        `::warning::PR #${pr.number} has no valid release notes (${error.message}); treating it as Notes: none.`,
+      );
+      note = { kind: "none", reason: "no valid Notes declaration" };
     }
     if (note.kind === "none")
       omitted.push({ number: pr.number, reason: note.reason });
