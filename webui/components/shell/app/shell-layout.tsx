@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { Show } from "solid-js";
+import { onCleanup, onMount, Show } from "solid-js";
 import { BoardPaletteCommands } from "../../../features/boards";
 import { ReleaseHeldButtonsCommand } from "../../../features/clips";
 import { MappingModeBanner, MappingModeController } from "../../../features/io";
@@ -23,6 +23,7 @@ import {
   UpdateNotice,
 } from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
+import { GuideInvitation, WelcomeGuide } from "../../../features/welcome-guide";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
 import ShellOverlayHosts from "../../overlays/shell-hosts";
@@ -38,6 +39,7 @@ import LayoutCommands from "../docking/layout-commands";
 import ShowfileTransitionVeil from "../docking/showfile-transition-veil";
 import StatusBar from "../status-bar";
 import AppHeader from "./app-header";
+import "./shell-layout.css";
 
 /** Mounts shell effects, bridges, overlays, and modal hosts outside Dockview. */
 function ShellRuntime() {
@@ -71,7 +73,8 @@ function ShellRuntime() {
 function DockedContent() {
   return (
     <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div class="min-h-0 w-full flex-1 overflow-hidden">
+      <GuideInvitation />
+      <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <ShowfileTransitionVeil>
           <DockviewApp />
         </ShowfileTransitionVeil>
@@ -118,14 +121,52 @@ function ShellContent() {
 
 /** Composes the global header, runtime hosts, and docked application layout. */
 export default function AppShell() {
+  let viewport!: HTMLDivElement;
+  /** Shares the app's actual bounds with dialogs mounted in providers or body portals. */
+  onMount(() => {
+    const root = document.documentElement;
+    /** Keeps overlay sizing aligned with the complete app, including its header and footer. */
+    const measure = () => {
+      const bounds = viewport.getBoundingClientRect();
+      root.style.setProperty(
+        "--app-viewport-right",
+        `${window.innerWidth - bounds.right}px`,
+      );
+      root.style.setProperty(
+        "--app-viewport-bottom",
+        `${window.innerHeight - bounds.bottom}px`,
+      );
+      root.style.setProperty("--app-viewport-height", `${bounds.height}px`);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    window.addEventListener("resize", measure);
+    measure();
+    onCleanup(() => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+      for (const property of [
+        "--app-viewport-right",
+        "--app-viewport-bottom",
+        "--app-viewport-height",
+      ])
+        root.style.removeProperty(property);
+    });
+  });
   return (
-    <div class="nf-app-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <AppHeader />
-      <MappingModeBanner />
-      <div class="min-h-0 flex-1 overflow-hidden">
-        <ShellRuntime />
-        <ShellContent />
+    <div class="nf-app-shell flex h-full min-h-0 w-full overflow-hidden">
+      <div
+        ref={viewport}
+        class="nf-app-viewport flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      >
+        <AppHeader />
+        <MappingModeBanner />
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <ShellRuntime />
+          <ShellContent />
+        </div>
       </div>
+      <WelcomeGuide />
     </div>
   );
 }
