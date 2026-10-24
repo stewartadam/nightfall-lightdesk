@@ -22,6 +22,23 @@ export const activeLayoutId = atom<string | null>(null);
  * saved; picking a layout or opening a panel returns to the layout underneath.
  */
 export const activeBoardWorkspace = atom<string | null>(null);
+/**
+ * True from the start of a layout switch until the incoming workspace has finished its entrance
+ * animation, so overlays aimed at panels can wait for them to stop moving.
+ */
+export const layoutTransitioning = atom(false);
+
+/** Resolves once no layout switch or entrance animation is running. */
+export function whenLayoutSettled(): Promise<void> {
+  if (!layoutTransitioning.get()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsubscribe = layoutTransitioning.listen((moving) => {
+      if (moving) return;
+      unsubscribe();
+      resolve();
+    });
+  });
+}
 /** Reports queued management edits so initial workspace adoption can wait for persistence. */
 export const layoutEditPending = atom(false);
 /** Layouts with pending edits, preventing conflicting actions on just those entries. */

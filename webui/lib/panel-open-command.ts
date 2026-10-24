@@ -25,6 +25,14 @@ export type PanelOpenPlacement =
   | "split-left"
   | "split-right";
 
+/** Opens a panel as another tab in the group that holds an existing panel. */
+export interface PanelOpenBeside {
+  readonly besidePanel: string;
+}
+
+/** Where a panel opens: a placement relative to the active group, or beside a named panel. */
+export type PanelOpenTarget = PanelOpenPlacement | PanelOpenBeside;
+
 type PanelOpenDirection = "left" | "right" | "above" | "below";
 
 interface FocusableGroupApi {
@@ -60,6 +68,10 @@ type PanelPosition =
     }
   | {
       direction: PanelOpenDirection;
+    }
+  | {
+      direction: "within";
+      referencePanel: string;
     };
 
 interface AddPanelParams {
@@ -350,14 +362,16 @@ function expandPanelEdgeGroup(
 
 /**
  * Opens a panel, focuses an existing singleton, or skips when Dockview is unavailable. A board
- * filling the workspace is put away first so the panel is never hidden behind it.
+ * filling the workspace is put away first so the panel is never hidden behind it. A beside target
+ * opens the panel in that panel's group, or uses the default placement when it is closed.
  */
 export function openOrFocusPanel(
   api: PanelOpenDockApi | undefined,
   panelId: string,
   componentName: string,
   title: string,
-  placement: PanelOpenPlacement = "default",
+  target: PanelOpenTarget = "default",
+  params: Record<string, unknown> = {},
 ): "skipped" | "focused" | "opened" {
   if (!api) {
     return "skipped";
@@ -371,13 +385,28 @@ export function openOrFocusPanel(
     return "focused";
   }
 
+  const reference =
+    typeof target === "object" ? api.getPanel(target.besidePanel) : undefined;
+  if (reference) {
+    const openedPanel = api.addPanel({
+      id: panelId,
+      component: componentName,
+      title,
+      params,
+      position: { direction: "within", referencePanel: reference.id },
+    }) as FocusablePanel | undefined;
+    expandPanelEdgeGroup(api, openedPanel);
+    return "opened";
+  }
+
+  const placement = typeof target === "object" ? "default" : target;
   const activeGroup = activeGroupForApi(api);
   const size = panelSizeForPlacement(api, placement, activeGroup);
   const openedPanel = api.addPanel({
     id: panelId,
     component: componentName,
     title,
-    params: {},
+    params,
     position: panelPositionForPlacement(api, placement, activeGroup),
     ...size,
   }) as FocusablePanel | undefined;
@@ -390,14 +419,14 @@ export function openOrFocusPanel(
 export function openOrFocusPanelDefinition(
   api: PanelOpenDockApi | undefined,
   definition: PanelDefinition,
-  placement: PanelOpenPlacement = "default",
+  target: PanelOpenTarget = "default",
 ): "skipped" | "focused" | "opened" {
   return openOrFocusPanel(
     api,
     definition.panelId,
     definition.componentName,
     definition.title,
-    placement,
+    target,
   );
 }
 

@@ -489,3 +489,52 @@ test("openOrFocusPanel skips when dock api is unavailable", () => {
 
   assert.equal(result, "skipped");
 });
+
+/** Opening beside a panel adds a tab to that panel's group and passes editor params through. */
+test("openOrFocusPanel opens beside a named panel's group", () => {
+  const added: AddedPanelParams[] = [];
+  const api = createDockApi({
+    getPanel: (id) =>
+      id === "panel-TimelinesPanel"
+        ? { id: "panel-TimelinesPanel", focus: () => {} }
+        : undefined,
+    addPanel: (params) => {
+      added.push(params);
+    },
+  });
+
+  const result = openOrFocusPanel(
+    api,
+    "panel-Timeline-1",
+    "Timeline",
+    "Timeline 1",
+    { besidePanel: "panel-TimelinesPanel" },
+    { initialTimelineUid: "1" },
+  );
+
+  assert.equal(result, "opened");
+  assert.deepEqual(added[0].position, {
+    direction: "within",
+    referencePanel: "panel-TimelinesPanel",
+  });
+  assert.deepEqual(added[0].params, { initialTimelineUid: "1" });
+});
+
+/** A beside target whose panel is closed opens exactly where the palette's default placement would. */
+test("openOrFocusPanel uses default placement when the beside panel is closed", () => {
+  const added: AddedPanelParams[] = [];
+  const api = createDockApi({
+    addPanel: (params) => {
+      added.push(params);
+    },
+  });
+
+  openOrFocusPanel(api, "panel-Timeline-1", "Timeline", "Timeline 1", {
+    besidePanel: "panel-TimelinesPanel",
+  });
+  openOrFocusPanel(api, "panel-Timeline-2", "Timeline", "Timeline 2");
+
+  const { id: _besideId, title: _besideTitle, ...beside } = added[0];
+  const { id: _defaultId, title: _defaultTitle, ...placed } = added[1];
+  assert.deepEqual(beside, placed);
+});

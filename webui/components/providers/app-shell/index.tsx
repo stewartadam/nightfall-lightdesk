@@ -47,6 +47,9 @@ interface AppShellContextValue {
   hideLayoutManager: () => void;
   dockviewApi: () => DockviewApi | undefined;
   setDockviewApi: (api: DockviewApi | undefined) => void;
+  /** Rebuilds the active workspace in the default arrangement; returns false when no workspace is mounted. */
+  resetDockviewLayout: () => boolean;
+  setDockviewLayoutReset: (reset: (() => boolean) | undefined) => void;
 }
 
 const AppShellContext = createContext<AppShellContextValue>();
@@ -163,6 +166,17 @@ export const AppShellProvider: ParentComponent = (props) => {
     setDockviewApiSignal(api);
   };
 
+  let dockviewLayoutReset: (() => boolean) | undefined;
+  /** Records how the workspace owner rebuilds the active workspace's default arrangement. */
+  const setDockviewLayoutReset = (reset: (() => boolean) | undefined) => {
+    dockviewLayoutReset = reset;
+  };
+
+  /** Rebuilds the active workspace's default arrangement, when a workspace owner is mounted. */
+  const resetDockviewLayout = () => {
+    return dockviewLayoutReset?.() ?? false;
+  };
+
   return (
     <AppShellContext.Provider
       value={{
@@ -192,6 +206,8 @@ export const AppShellProvider: ParentComponent = (props) => {
         hideLayoutManager,
         dockviewApi,
         setDockviewApi,
+        resetDockviewLayout,
+        setDockviewLayoutReset,
       }}
     >
       {props.children}

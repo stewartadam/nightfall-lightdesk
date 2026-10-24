@@ -7,6 +7,7 @@
  */
 
 import { createSignal } from "solid-js";
+import { CLEAR_PROGRAMMER_SHORTCUT } from "../../../components/providers/command-registry";
 import {
   type CommandSequenceProgress,
   CommandSequenceRunner,
@@ -292,7 +293,7 @@ export function createCommandLineController(
 
     useKeyboardShortcut(
       {
-        key: "Shift+Escape",
+        key: CLEAR_PROGRAMMER_SHORTCUT,
         /** Clears the programmer even while an editable element has focus. */
         handler: () => clearProgrammer(),
         description: "Clear programmer",
