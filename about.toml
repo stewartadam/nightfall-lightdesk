@@ -417,7 +417,7 @@ checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
 [tauri-plugin.clarify]
 license = "Apache-2.0 OR MIT"
 [[tauri-plugin.clarify.git]]
-path = "LICENSE_MIT"
+path = "LICENSE-MIT"
 license = "MIT"
 checksum = "9dd42ea92cff2ede5cd477cbfcce051b2d0115c0ac7f368ee88cb545055dff1d"
 
