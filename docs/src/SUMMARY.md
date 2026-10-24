@@ -8,6 +8,7 @@
 - [Color Paths](user-guide/color-paths.md)
 - [Basic command syntax](user-guide/commands.md)
 - [Controllers and keybindings](user-guide/controller-mapping.md)
+  - [Supported controllers](user-guide/controller-profiles.md)
 - [Panel guide](user-guide/panels/index.md)
   - [Patch](user-guide/panels/patch.md)
   - [Fixture Library](user-guide/panels/fixture-library.md)
