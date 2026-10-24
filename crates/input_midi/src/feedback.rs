@@ -231,7 +231,8 @@ fn ramp_step(ramp: &[u8], level: f32) -> u8 {
 ///
 /// When several mappings share an address (a press and a release binding on one pad), the
 /// first one in mapping order whose action reports feedback the address can show decides
-/// what the LED shows. LED values a mapping leaves unset come from its device's profile.
+/// what the LED shows. LED values a mapping leaves unset come from its device's profile,
+/// which may also move a note's LED message to another channel.
 fn desired_messages(
     world: &World,
     registry: &ActionRegistry,
@@ -245,13 +246,6 @@ fn desired_messages(
         if !enabled.contains(device) {
             continue;
         }
-        let key = (mapping.device_name.clone(), mapping.source);
-        if desired.contains_key(&key) {
-            continue;
-        }
-        let Some(feedback) = registry.feedback(world, &mapping.action) else {
-            continue;
-        };
         let (profile, fallback) = *profile_led.entry(device).or_insert_with(|| {
             let profile = profile::for_device(device);
             let fallback = profile
@@ -259,6 +253,18 @@ fn desired_messages(
                 .unwrap_or_default();
             (profile, fallback)
         });
+        // Keyed by the LED's address, so controls a profile lights on one shared address
+        // still leave the first mapping in charge of it.
+        let led_address = profile.map_or(mapping.source, |profile| {
+            profile.led_address(mapping.source)
+        });
+        let key = (mapping.device_name.clone(), led_address);
+        if desired.contains_key(&key) {
+            continue;
+        }
+        let Some(feedback) = registry.feedback(world, &mapping.action) else {
+            continue;
+        };
         // A mapping choosing its own on value but no held value keeps that color while held.
         let led = MidiLedValues {
             held: mapping.led.held.or(mapping.led.on),
@@ -266,7 +272,7 @@ fn desired_messages(
         }
         .or(fallback);
         let look = LevelLook::for_device(profile, led.on_value());
-        if let Some(address) = encode_feedback(mapping.source, led, look, feedback) {
+        if let Some(address) = encode_feedback(led_address, led, look, feedback) {
             desired.insert(key, address);
         }
     }
@@ -489,6 +495,23 @@ mod tests {
             vec![vec![0x90, 60, 12], vec![0xB0, 0, 0]]
         );
         assert!(frame(&mut app, &rx).is_empty());
+    }
+
+    /// Verifies a profile's LED channel rule moves a pad's feedback to its channel: an APC
+    /// mini mk2 pad mapped on channel 1 lights on channel 7, its full brightness, once the
+    /// operator turns feedback on for the untested profile.
+    #[test]
+    fn profile_led_channel_moves_pad_feedback() {
+        let (mut app, rx, _) = device_feedback_app("APC mini mk2", MidiLedValues::default());
+        assert!(frame(&mut app, &rx).is_empty());
+
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .feedback_devices_mut()
+            .set("APC mini mk2", true);
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x96, 60, 0]]);
+        app.insert_resource(TestRunning(true));
+        assert_eq!(frame(&mut app, &rx), vec![vec![0x96, 60, 21]]);
     }
 
     /// Verifies a value the mapping sets wins over the profile's default for that state only.

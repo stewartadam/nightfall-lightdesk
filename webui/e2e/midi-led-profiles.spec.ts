@@ -79,7 +79,7 @@ test("LED cells offer a profiled controller's colors by name", async ({
   await onCell.dblclick();
   const menu = page.locator("[data-hs-select-dropdown].opened");
   await expect(menu).toBeVisible();
-  await expect(menu.locator("[data-value]")).toHaveCount(13);
+  await expect(menu.locator("[data-value]")).toHaveCount(25);
   await page.screenshot({
     path: test.info().outputPath("midi-led-profile-colors.png"),
   });

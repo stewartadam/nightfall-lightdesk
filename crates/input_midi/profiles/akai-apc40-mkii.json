@@ -1,0 +1,14 @@
+{
+  "id": "akai.apc40-mkii",
+  "name": "Akai APC40 mkII",
+  "ports": {
+    "match": ["apc40 mkii"],
+    "exclude": []
+  },
+  "feedback": false,
+  "hint": "While feedback is on, the APC40 runs in Ableton Live mode so Nightfall controls its LEDs. Clip and scene launch pads show colors; other buttons light with any color.",
+  "init": [[240, 71, 127, 41, 96, 0, 4, 65, 1, 0, 0, 247]],
+  "release": [[240, 71, 127, 41, 96, 0, 4, 64, 1, 0, 0, 247]],
+  "palette": "rgb-128",
+  "defaults": { "off": "Off", "on": "Green", "held": "Orange" }
+}

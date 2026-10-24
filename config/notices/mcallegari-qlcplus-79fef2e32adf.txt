@@ -4,7 +4,8 @@ Copyright © Heikki Junnila, Massimo Callegari, and the author of each input pro
 
 The LED color tables of these profiles were converted into Nightfall controller profiles
 (crates/input_midi/profiles): values halved to MIDI data bytes and repeated entries renamed
-or dropped. Each converted profile names its QLC+ file and authors in its "source" field.
+or dropped. Each converted profile or palette names its QLC+ file and authors in its
+"source" field.
 
 
                                  Apache License

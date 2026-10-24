@@ -18,7 +18,7 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 
 use serde::{Deserialize, Serialize};
 
-use crate::command::MidiLedValues;
+use crate::command::{MidiLedValues, MidiSource};
 
 /// Profile files embedded in the binary, in matching order.
 const BUNDLED_PROFILES: &[(&str, &str)] = &[
@@ -31,14 +31,47 @@ const BUNDLED_PROFILES: &[(&str, &str)] = &[
         include_str!("../profiles/novation-launchpad-mk2.json"),
     ),
     (
+        "novation-launchpad-mini-mk3.json",
+        include_str!("../profiles/novation-launchpad-mini-mk3.json"),
+    ),
+    (
         "akai-apc-mini.json",
         include_str!("../profiles/akai-apc-mini.json"),
+    ),
+    (
+        "akai-apc-mini-mk2.json",
+        include_str!("../profiles/akai-apc-mini-mk2.json"),
+    ),
+    (
+        "akai-apc40-mkii.json",
+        include_str!("../profiles/akai-apc40-mkii.json"),
     ),
     (
         "intech-grid.json",
         include_str!("../profiles/intech-grid.json"),
     ),
 ];
+
+/// Color palettes embedded in the binary, shared by profiles of controllers whose LEDs
+/// understand the same values. `rgb-128` is the velocity table of Novation Launchpads (MK2
+/// and later) and Akai's APC mk2 controllers.
+const BUNDLED_PALETTES: &[(&str, &str)] = &[(
+    "palettes/rgb-128.json",
+    include_str!("../profiles/palettes/rgb-128.json"),
+)];
+
+/// Named LED values several controller families share, such as a fixed RGB velocity table.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LedPalette {
+    /// Identifier profiles refer to the palette by.
+    id: String,
+    /// Upstream file the colors were converted from.
+    #[serde(default)]
+    source: Option<ProfileSource>,
+    /// Named LED values, in the order the UI lists them.
+    colors: Vec<MidiLedColor>,
+}
 
 /// Upstream file a profile's colors were converted from, credited because its license
 /// requires the notice to travel with derived files.
@@ -79,6 +112,35 @@ impl PortMatch {
                 .exclude
                 .iter()
                 .any(|fragment| name.contains(fragment.as_str()))
+    }
+}
+
+/// Notes whose LEDs listen on a fixed channel instead of the one the control sends on, such
+/// as pads that pick their brightness by channel.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LedChannel {
+    /// First and last note number (inclusive) the rule applies to.
+    notes: [u8; 2],
+    /// Channel (0-15) LED messages for those notes are sent on.
+    channel: u8,
+}
+
+/// Returns whether `message` is one complete MIDI message: a channel message with the data
+/// bytes its status takes, or a SysEx message from `F0` to `F7`.
+fn is_midi_message(message: &[u8]) -> bool {
+    let data_only = |data: &[u8]| data.iter().all(|byte| *byte <= 0x7F);
+    match message {
+        [0xF0, data @ .., 0xF7] => data_only(data),
+        [status @ 0x80..=0xEF, data @ ..] => {
+            let length = if matches!(status & 0xF0, 0xC0 | 0xD0) {
+                1
+            } else {
+                2
+            };
+            data.len() == length && data_only(data)
+        }
+        _ => false,
     }
 }
 
@@ -137,11 +199,19 @@ pub(crate) struct MidiProfile {
     /// Advice shown with the device, such as a setting the hardware needs.
     #[serde(default)]
     pub(crate) hint: Option<String>,
+    /// Note ranges whose LEDs are lit on a fixed channel rather than the mapped one.
+    #[serde(default, rename = "ledChannels")]
+    led_channels: Vec<LedChannel>,
     /// Messages sent before any LED state, when the device connects or feedback turns on.
     pub(crate) init: Vec<Vec<u8>>,
     /// Messages sent when feedback turns off, after each LED is darkened.
     pub(crate) release: Vec<Vec<u8>>,
-    /// Named LED values, in the order the UI lists them.
+    /// Shared palette whose colors come before the profile's own, by palette id.
+    #[serde(default)]
+    palette: Option<String>,
+    /// Named LED values, in the order the UI lists them; after loading, a palette's colors
+    /// come first.
+    #[serde(default)]
     pub(crate) colors: Vec<MidiLedColor>,
     /// Colors for mapping LED values left unset.
     defaults: DefaultColors,
@@ -174,15 +244,36 @@ impl MidiProfile {
             .map_or(&[], |color| color.ramp.as_slice())
     }
 
+    /// Returns the address LED feedback for a mapped control is sent to: the control itself,
+    /// or for a note in one of the profile's `ledChannels` ranges, that note on the range's
+    /// channel.
+    pub(crate) fn led_address(&self, source: MidiSource) -> MidiSource {
+        let MidiSource::Note { note, .. } = source else {
+            return source;
+        };
+        self.led_channels
+            .iter()
+            .find(|rule| (rule.notes[0]..=rule.notes[1]).contains(&note))
+            .map_or(source, |rule| MidiSource::Note {
+                channel: rule.channel,
+                note,
+            })
+    }
+
     /// Checks that the profile's messages, values and default colors are usable.
     fn validate(&self) -> Result<(), String> {
-        for message in self.init.iter().chain(&self.release) {
-            let Some((status, data)) = message.split_first() else {
-                return Err("empty message".to_string());
-            };
-            if *status < 0x80 || data.iter().any(|byte| *byte > 0x7F) {
-                return Err(format!("malformed message {message:?}"));
-            }
+        if let Some(message) = self
+            .init
+            .iter()
+            .chain(&self.release)
+            .find(|message| !is_midi_message(message))
+        {
+            return Err(format!("malformed message {message:?}"));
+        }
+        if let Some(rule) = self.led_channels.iter().find(|rule| {
+            rule.notes[0] > rule.notes[1] || rule.notes[1] > 0x7F || rule.channel > 0x0F
+        }) {
+            return Err(format!("malformed LED channel rule {rule:?}"));
         }
         if let Some(color) = self
             .colors
@@ -241,14 +332,34 @@ impl MidiProfile {
     }
 }
 
-/// Parses every bundled profile, panicking on a malformed file since they ship with the app
-/// and are checked by tests.
+/// Parses every bundled profile, putting the colors of the palette it names before its own,
+/// and panics on a malformed file since they ship with the app and are checked by tests.
 fn parse_bundled() -> Vec<MidiProfile> {
+    let palettes: Vec<LedPalette> = BUNDLED_PALETTES
+        .iter()
+        .map(|(file, json)| {
+            serde_json::from_str(json)
+                .unwrap_or_else(|error| panic!("bundled MIDI palette {file}: {error}"))
+        })
+        .collect();
     BUNDLED_PROFILES
         .iter()
         .map(|(file, json)| {
-            let profile: MidiProfile = serde_json::from_str(json)
+            let mut profile: MidiProfile = serde_json::from_str(json)
                 .unwrap_or_else(|error| panic!("bundled MIDI profile {file}: {error}"));
+            if let Some(id) = &profile.palette {
+                let palette = palettes
+                    .iter()
+                    .find(|palette| palette.id == *id)
+                    .unwrap_or_else(|| panic!("bundled MIDI profile {file}: no palette {id:?}"));
+                profile.colors = palette
+                    .colors
+                    .iter()
+                    .cloned()
+                    .chain(profile.colors)
+                    .collect();
+                profile.source = profile.source.or_else(|| palette.source.clone());
+            }
             if let Err(error) = profile.validate() {
                 panic!("bundled MIDI profile {file}: {error}");
             }
@@ -334,7 +445,19 @@ mod tests {
             "Launchpad MK2:Launchpad MK2 MIDI 1 24:0",
             Some("novation.launchpad-mk2"),
         ),
-        ("Launchpad Mini MK3 LPMiniMK3 MIDI", None),
+        (
+            "Launchpad Mini MK3 LPMiniMK3 MIDI",
+            Some("novation.launchpad-mini-mk3"),
+        ),
+        (
+            "Launchpad Mini MK3:Launchpad Mini MK3 LPMiniMK3 MI 20:1",
+            Some("novation.launchpad-mini-mk3"),
+        ),
+        (
+            "MIDIIN2 (LPMiniMK3 MIDI)",
+            Some("novation.launchpad-mini-mk3"),
+        ),
+        ("Launchpad Mini MK3 LPMiniMK3 DAW", None),
         ("Launchpad X LPX MIDI", None),
         ("Launchpad Pro", None),
         ("Launchpad Pro MK2", None),
@@ -342,8 +465,13 @@ mod tests {
         ("Monome Grid", None),
         ("APC MINI", Some("akai.apc-mini")),
         ("APC MINI:APC MINI MIDI 1 28:0", Some("akai.apc-mini")),
-        ("APC mini mk2", None),
-        ("APC mini mk2 Control", None),
+        ("APC mini mk2", Some("akai.apc-mini-mk2")),
+        ("APC mini mk2 Control", Some("akai.apc-mini-mk2")),
+        ("APC mini mk2 Notes", None),
+        ("MIDIIN2 (APC mini mk2)", None),
+        ("APC40 mkII", Some("akai.apc40-mkii")),
+        ("APC40 mkII:APC40 mkII MIDI 1 24:0", Some("akai.apc40-mkii")),
+        ("APC40", None),
         ("IAC Driver Bus 1", None),
     ];
 
@@ -422,6 +550,71 @@ mod tests {
         );
         assert!(!profile.feedback);
         assert!(profile.source.is_some());
+    }
+
+    /// Verifies the APC mini mk2 lights its pads (notes 0-63) on channel 7, its full
+    /// brightness, while its single-color buttons and controllers keep the mapped address.
+    #[test]
+    fn apc_mini_mk2_pads_light_at_full_brightness() {
+        let profile = for_device("APC mini mk2").expect("APC mini mk2 profile");
+        let pad = MidiSource::Note {
+            channel: 0,
+            note: 63,
+        };
+        let button = MidiSource::Note {
+            channel: 0,
+            note: 0x64,
+        };
+        let fader = MidiSource::ControlChange {
+            channel: 0,
+            controller: 48,
+        };
+
+        assert_eq!(
+            profile.led_address(pad),
+            MidiSource::Note {
+                channel: 6,
+                note: 63
+            }
+        );
+        assert_eq!(profile.led_address(button), button);
+        assert_eq!(profile.led_address(fader), fader);
+    }
+
+    /// Verifies profiles naming the shared RGB palette list its 128 colors, with brightness
+    /// ramps on the full colors, and credit the palette's QLC+ source.
+    #[test]
+    fn rgb_profiles_share_the_palette() {
+        for port in [
+            "Launchpad MK2",
+            "LPMiniMK3 MIDI",
+            "APC mini mk2",
+            "APC40 mkII",
+        ] {
+            let profile = for_device(port).expect("RGB profile");
+
+            assert_eq!(profile.colors.len(), 128, "{port}");
+            assert_eq!(profile.ramp(5), &[7, 6, 5], "{port}");
+            assert!(profile.source.is_some(), "{port}");
+        }
+    }
+
+    /// Verifies init and release messages may be SysEx framed by F0 and F7 or channel
+    /// messages with the right number of data bytes, but not messages carrying bytes above
+    /// 127, an unterminated SysEx, a lone EOX or a bare data byte.
+    #[test]
+    fn messages_allow_complete_sysex() {
+        assert!(is_midi_message(&[0xF0, 0x00, 0x20, 0x29, 0xF7]));
+        assert!(is_midi_message(&[0xB0, 0, 0]));
+        assert!(is_midi_message(&[0xC0, 5]));
+        assert!(!is_midi_message(&[0xB0, 0]));
+        assert!(!is_midi_message(&[0x90, 1, 2, 3]));
+        assert!(!is_midi_message(&[0xF7]));
+        assert!(!is_midi_message(&[0xF0, 0x00, 0x20]));
+        assert!(!is_midi_message(&[0xF0, 0x80, 0xF7]));
+        assert!(!is_midi_message(&[0xB0, 0, 0xF7]));
+        assert!(!is_midi_message(&[0x40]));
+        assert!(!is_midi_message(&[]));
     }
 
     /// Verifies validation rejects a profile listing two colors under one name or one value,
