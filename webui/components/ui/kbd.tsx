@@ -22,6 +22,7 @@ import { describeKey, type KeyGlyph, parseShortcut } from "./kbd-keys";
 
 export {
   describeKey,
+  formatShortcutHint,
   formatShortcutLabel,
   IS_APPLE_PLATFORM,
   parseShortcut,

@@ -20,3 +20,4 @@ export {
   uiActionId,
 } from "./ui-action-registry";
 export { useUiAction } from "./use-ui-action";
+export { useUiActionShortcutHint } from "./use-ui-action-shortcut-hint";

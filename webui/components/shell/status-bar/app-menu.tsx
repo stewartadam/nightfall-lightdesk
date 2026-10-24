@@ -24,17 +24,24 @@ import {
   saveShowfile,
 } from "../../../lib/showfile-actions";
 import { isTauriRuntime } from "../../../lib/tauri";
-import { invokeTauriMenuAction } from "../../../lib/tauri-menu";
+import {
+  invokeTauriMenuAction,
+  TAURI_MENU_SHORTCUTS,
+} from "../../../lib/tauri-menu";
 import { runtimeCapabilities } from "../../../state/appStores";
 import { useAppShell } from "../../providers/app-shell";
+import { useUiActionShortcutHint } from "../../providers/command-registry";
 import {
   DropdownMenu,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuSubmenu,
 } from "../../ui/dropdown-menu";
+import { formatShortcutHint } from "../../ui/kbd-keys";
 import { TOOLBAR_BUTTON_CLASS } from "../../ui/toolbar-button";
 import type { ButtonSize } from "../../ui/visual-language/button";
+import { OPEN_SETTINGS_ACTION_ID } from "../command-palette/commands/settings-command";
+import { SHOW_KEYBOARD_SHORTCUTS_ACTION_ID } from "../docking/layout-commands";
 
 const log = getLogger(import.meta.url);
 
@@ -67,6 +74,16 @@ export default function AppMenu(props: {
     showShowfileExportModal,
   } = useAppShell();
   const capabilities = useStore(runtimeCapabilities);
+  const settingsShortcut = useUiActionShortcutHint(OPEN_SETTINGS_ACTION_ID);
+  const shortcutsShortcut = useUiActionShortcutHint(
+    SHOW_KEYBOARD_SHORTCUTS_ACTION_ID,
+  );
+  /**
+   * Labels a showfile item with its desktop menu shortcut. Browsers keep these keys for their
+   * own Save and Open commands, so the hint appears only in the desktop app, which binds them.
+   */
+  const desktopShortcut = (shortcut: string) =>
+    isTauriRuntime() ? formatShortcutHint(shortcut) : undefined;
 
   /** Shows the new, open, import, save, and export items only when the backend can store shows on disk. */
   const showStorageItems = () => hasDiskStorage(capabilities());
@@ -100,14 +117,14 @@ export default function AppMenu(props: {
       <Show when={showStorageItems()}>
         <DropdownMenuItem
           icon={FilePlusIcon}
-          shortcut="⌘⇧N"
+          shortcut={desktopShortcut(TAURI_MENU_SHORTCUTS.newShowfile)}
           onClick={promptAndNewShowfile}
         >
           New Showfile
         </DropdownMenuItem>
         <DropdownMenuItem
           icon={FolderOpenIcon}
-          shortcut="⌘O"
+          shortcut={desktopShortcut(TAURI_MENU_SHORTCUTS.loadShowfile)}
           onClick={() => {
             showOpenShowfileModal();
           }}
@@ -122,7 +139,7 @@ export default function AppMenu(props: {
         </DropdownMenuItem>
         <DropdownMenuItem
           icon={FileArrowDownIcon}
-          shortcut="⌘S"
+          shortcut={desktopShortcut(TAURI_MENU_SHORTCUTS.saveShowfile)}
           onClick={saveShowfile}
         >
           Save Showfile
@@ -167,13 +184,17 @@ export default function AppMenu(props: {
         </DropdownMenuItem>
       </DropdownMenuSubmenu>
       <DropdownMenuSeparator />
-      <DropdownMenuItem icon={GearIcon} onClick={openSettings} shortcut="⌘,">
+      <DropdownMenuItem
+        icon={GearIcon}
+        onClick={openSettings}
+        shortcut={settingsShortcut()}
+      >
         Settings
       </DropdownMenuItem>
       <DropdownMenuItem
         icon={QuestionIcon}
         onClick={showShortcutsPopup}
-        shortcut="⇧?"
+        shortcut={shortcutsShortcut()}
       >
         Keyboard Shortcuts
       </DropdownMenuItem>

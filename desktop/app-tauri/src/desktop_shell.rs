@@ -403,11 +403,13 @@ pub(super) fn build_help_menu<R: Runtime>(
         builder = builder.separator();
     }
 
+    // The web UI binds this to a bare `?`, which a native accelerator would steal from
+    // text fields, so the item carries no accelerator rather than a key that differs.
     builder = builder.item(&menu_item(
         app,
         MENU_ID_VIEW_KEYBOARD_SHORTCUTS,
         "Keyboard Shortcuts",
-        Some("CmdOrCtrl+Shift+/"),
+        None,
     )?);
 
     if include_about {
