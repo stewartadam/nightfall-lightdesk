@@ -183,7 +183,7 @@ test("Rust placeholder attribution uses local originals or fails", () => {
   }
 });
 
-/** Preserve the entire custom Preline license and original artwork credit in both output formats. */
+/** Preserve the entire custom Preline license, original artwork credit and QLC+ copyright in both output formats. */
 test("distribution contains full Preline terms and upstream artwork copyright", () => {
   const pkg = JSON.parse(
     readFileSync(
@@ -200,6 +200,7 @@ test("distribution contains full Preline terms and upstream artwork copyright", 
   assert.match(text, /Redistributions must include this Fair Use License/);
   assert.match(text, /https:\/\/github.com\/htmlstreamofficial\/preline/);
   assert.match(text, /Copyright \(c\) 2023 Phosphor Icons/);
+  assert.match(text, /Copyright © Heikki Junnila, Massimo Callegari/);
   assert.ok(
     text.includes(
       readFileSync(

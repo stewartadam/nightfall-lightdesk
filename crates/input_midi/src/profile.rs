@@ -13,7 +13,7 @@
 //! LED values the device understands, by name, so the UI can offer colors instead of numbers.
 //! Profiles never create mappings.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use serde::{Deserialize, Serialize};
@@ -27,10 +27,33 @@ const BUNDLED_PROFILES: &[(&str, &str)] = &[
         include_str!("../profiles/novation-launchpad.json"),
     ),
     (
+        "novation-launchpad-mk2.json",
+        include_str!("../profiles/novation-launchpad-mk2.json"),
+    ),
+    (
+        "akai-apc-mini.json",
+        include_str!("../profiles/akai-apc-mini.json"),
+    ),
+    (
         "intech-grid.json",
         include_str!("../profiles/intech-grid.json"),
     ),
 ];
+
+/// Upstream file a profile's colors were converted from, credited because its license
+/// requires the notice to travel with derived files.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProfileSource {
+    /// Project the file comes from, such as `QLC+`.
+    project: String,
+    /// File name within that project.
+    file: String,
+    /// Authors the upstream file credits.
+    authors: String,
+    /// SPDX identifier of the upstream file's license.
+    license: String,
+}
 
 /// Port name rule a profile matches devices by.
 #[derive(Debug, Clone, Deserialize)]
@@ -99,6 +122,10 @@ pub(crate) struct MidiProfile {
     pub(crate) id: String,
     /// Name shown next to a matching device.
     pub(crate) name: String,
+    /// Upstream file the colors were converted from, for profiles that were not written
+    /// from scratch.
+    #[serde(default)]
+    source: Option<ProfileSource>,
     /// Which input port names the profile applies to.
     ports: PortMatch,
     /// Whether LED feedback is on for matching devices until the operator turns it off.
@@ -170,6 +197,31 @@ impl MidiProfile {
         for name in [&self.defaults.off, &self.defaults.on, &self.defaults.held] {
             if self.color_value(name).is_none() {
                 return Err(format!("default color {name:?} is not listed"));
+            }
+        }
+        if let Some(source) = &self.source
+            && [
+                &source.project,
+                &source.file,
+                &source.authors,
+                &source.license,
+            ]
+            .iter()
+            .any(|field| field.trim().is_empty())
+        {
+            return Err("source must name its project, file, authors and license".to_string());
+        }
+        let mut names = HashSet::new();
+        let mut values = HashSet::new();
+        for color in &self.colors {
+            if !names.insert(color.name.as_str()) {
+                return Err(format!("color name {:?} is listed twice", color.name));
+            }
+            if !values.insert(color.value) {
+                return Err(format!(
+                    "color {:?} repeats value {}",
+                    color.name, color.value
+                ));
             }
         }
         if self.ports.any.is_empty() {
@@ -277,13 +329,21 @@ mod tests {
             Some("novation.launchpad"),
         ),
         ("2- Launchpad Mini", Some("novation.launchpad")),
-        ("Launchpad MK2", None),
+        ("Launchpad MK2", Some("novation.launchpad-mk2")),
+        (
+            "Launchpad MK2:Launchpad MK2 MIDI 1 24:0",
+            Some("novation.launchpad-mk2"),
+        ),
         ("Launchpad Mini MK3 LPMiniMK3 MIDI", None),
         ("Launchpad X LPX MIDI", None),
         ("Launchpad Pro", None),
+        ("Launchpad Pro MK2", None),
         ("Intech Grid MIDI device", Some("intech.grid")),
         ("Monome Grid", None),
+        ("APC MINI", Some("akai.apc-mini")),
+        ("APC MINI:APC MINI MIDI 1 28:0", Some("akai.apc-mini")),
         ("APC mini mk2", None),
+        ("APC mini mk2 Control", None),
         ("IAC Driver Bus 1", None),
     ];
 
@@ -343,6 +403,43 @@ mod tests {
         assert_eq!(profile.ramp(63), &[29, 46, 63]);
         assert!(profile.ramp(28).is_empty());
         assert!(profile.ramp(59).is_empty());
+    }
+
+    /// Verifies the APC mini profile converted from QLC+ halves QLC+'s doubled color values,
+    /// so its steady green is 1 and blinking green 2, and leaves feedback off until the
+    /// colors are checked on the hardware.
+    #[test]
+    fn apc_mini_colors_are_halved_from_qlcplus() {
+        let profile = for_device("APC MINI").expect("APC mini profile");
+
+        assert_eq!(
+            profile.default_led(),
+            MidiLedValues {
+                on: Some(1),
+                off: Some(0),
+                held: Some(2),
+            }
+        );
+        assert!(!profile.feedback);
+        assert!(profile.source.is_some());
+    }
+
+    /// Verifies validation rejects a profile listing two colors under one name or one value,
+    /// since defaults pick colors by name and ramps and the UI look them up by value.
+    #[test]
+    fn validation_rejects_repeated_colors() {
+        let launchpad = for_device("Launchpad").expect("Launchpad profile");
+        let mut same_name = launchpad.clone();
+        let mut repeated = same_name.colors[1].clone();
+        repeated.value = 0;
+        same_name.colors.push(repeated);
+        let mut same_value = launchpad.clone();
+        let mut repeated = same_value.colors[1].clone();
+        repeated.name = "Another red".to_string();
+        same_value.colors.push(repeated);
+
+        assert!(same_name.validate().is_err());
+        assert!(same_value.validate().is_err());
     }
 
     /// Verifies validation rejects a default naming a color the profile does not list.

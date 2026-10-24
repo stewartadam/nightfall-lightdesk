@@ -60,5 +60,13 @@
     "source": "https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz",
     "file": "phosphor-core-2.1.1.txt",
     "sha256": "b5b1f1da112d18ea2147decfd48ddc1bf2b5aeb6c265381579340e95b15a2bb2"
+  },
+  {
+    "name": "QLC+ input profiles (controller LED colors)",
+    "version": "6f7f290da8b04a360339667234cae5fb9207bfdc",
+    "license": "Apache-2.0",
+    "source": "https://github.com/mcallegari/qlcplus/tree/6f7f290da8b04a360339667234cae5fb9207bfdc/resources/inputprofiles",
+    "file": "mcallegari-qlcplus-a26a7f59c2bd.txt",
+    "sha256": "a26a7f59c2bd5b2f86d8f6f58668b6e815e38e8cce1a46712075f3d7d2939934"
   }
 ]
