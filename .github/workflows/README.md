@@ -43,7 +43,7 @@ selection can tell external dependency changes from workspace rewiring.
 | Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
 | `Cargo.lock` changes that only rewire workspace crates, without any crate reaching a different set of external crates | No | No | No |
 | Draft PR (any changes) | No | No | No |
-| Main push | No (packaging compiles only) | Yes | Yes |
+| Main push | No | No | Yes |
 | Develop push | No | No | No |
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
@@ -71,9 +71,10 @@ frontend and resources using the normal configuration.
 The check and release packaging caches are separate.
 
 Desktop checks link test binaries but do not validate the release build or
-installers. Full main-branch and
-release builds remain the cross-platform packaging backstop. Use manual dispatch
-with `desktop`, `browser`, or `all` when an artifact is needed before merging.
+installers. Release-tag builds remain the cross-platform packaging backstop. Main
+pushes skip desktop packaging: the release tag points at the main merge commit, so
+packaging both would build the same installers twice. Use manual dispatch with
+`desktop`, `browser`, or `all` when an artifact is needed before merging or tagging.
 Lockfile selection remains conservative; an ordinary lockfile update selects
 both distributions. Release-note-only changes do not select packaging.
 

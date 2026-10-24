@@ -285,10 +285,10 @@ test("workspace-only lockfile changes skip packaging", () => {
 });
 
 /** Branch, release, and manual policies do not accidentally depend on a PR path filter. */
-test("event policy retains main and release packaging with explicit manual choices", () => {
+test("event policy packages desktop on release tags only, browser on main, with explicit manual choices", () => {
   assert.deepEqual(
     selectScope({ event: "push", ref: "refs/heads/main" }),
-    both,
+    browser,
   );
   assert.deepEqual(
     selectScope({ event: "push", ref: "refs/heads/develop" }),

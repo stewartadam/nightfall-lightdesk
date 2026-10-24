@@ -210,7 +210,9 @@ export function selectScope({
     desktopPackage = distribution !== "browser";
     browserPackage = distribution !== "desktop";
   } else if (event === "push") {
-    desktopPackage = ref === "refs/heads/main" || ref.startsWith("refs/tags/v");
+    // The release tag points at the main merge commit, so packaging main as well would build
+    // the same installers twice; only the tag's build ships.
+    desktopPackage = ref.startsWith("refs/tags/v");
     browserPackage = ref === "refs/heads/main";
   } else if (event === "pull_request") {
     browserPreview = previewTarget && sameRepository;
