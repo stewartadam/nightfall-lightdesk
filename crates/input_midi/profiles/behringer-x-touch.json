@@ -1,0 +1,20 @@
+{
+  "id": "behringer.x-touch",
+  "name": "Behringer X-Touch",
+  "ports": {
+    "match": ["x-touch"],
+    "exclude": [
+      "x-touch-ext",
+      "x-touch ext",
+      "x-touch compact",
+      "x-touch mini",
+      "x-touch one"
+    ]
+  },
+  "feedback": false,
+  "hint": "Set the X-Touch to MIDI mode, not MC or HUI. Buttons are notes 0-103; motor faders follow the level of the binding they control.",
+  "init": [],
+  "release": [],
+  "palette": "x-touch",
+  "defaults": { "off": "Off", "on": "On", "held": "Flashing" }
+}

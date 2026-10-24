@@ -35,6 +35,14 @@ const BUNDLED_PROFILES: &[(&str, &str)] = &[
         include_str!("../profiles/novation-launchpad-mini-mk3.json"),
     ),
     (
+        "novation-launchpad-x.json",
+        include_str!("../profiles/novation-launchpad-x.json"),
+    ),
+    (
+        "novation-launchpad-pro-mk3.json",
+        include_str!("../profiles/novation-launchpad-pro-mk3.json"),
+    ),
+    (
         "akai-apc-mini.json",
         include_str!("../profiles/akai-apc-mini.json"),
     ),
@@ -47,6 +55,22 @@ const BUNDLED_PROFILES: &[(&str, &str)] = &[
         include_str!("../profiles/akai-apc40-mkii.json"),
     ),
     (
+        "akai-apc-key-25-mk2.json",
+        include_str!("../profiles/akai-apc-key-25-mk2.json"),
+    ),
+    (
+        "behringer-x-touch.json",
+        include_str!("../profiles/behringer-x-touch.json"),
+    ),
+    (
+        "behringer-x-touch-extender.json",
+        include_str!("../profiles/behringer-x-touch-extender.json"),
+    ),
+    (
+        "behringer-x-touch-compact.json",
+        include_str!("../profiles/behringer-x-touch-compact.json"),
+    ),
+    (
         "intech-grid.json",
         include_str!("../profiles/intech-grid.json"),
     ),
@@ -54,11 +78,18 @@ const BUNDLED_PROFILES: &[(&str, &str)] = &[
 
 /// Color palettes embedded in the binary, shared by profiles of controllers whose LEDs
 /// understand the same values. `rgb-128` is the velocity table of Novation Launchpads (MK2
-/// and later) and Akai's APC mk2 controllers.
-const BUNDLED_PALETTES: &[(&str, &str)] = &[(
-    "palettes/rgb-128.json",
-    include_str!("../profiles/palettes/rgb-128.json"),
-)];
+/// and later) and Akai's APC mk2 controllers. `x-touch` is the off/flash/on velocity scale
+/// of Behringer's X-Touch and X-Touch Extender in MIDI mode.
+const BUNDLED_PALETTES: &[(&str, &str)] = &[
+    (
+        "palettes/rgb-128.json",
+        include_str!("../profiles/palettes/rgb-128.json"),
+    ),
+    (
+        "palettes/x-touch.json",
+        include_str!("../profiles/palettes/x-touch.json"),
+    ),
+];
 
 /// Named LED values several controller families share, such as a fixed RGB velocity table.
 #[derive(Debug, Clone, Deserialize)]
@@ -458,7 +489,23 @@ mod tests {
             Some("novation.launchpad-mini-mk3"),
         ),
         ("Launchpad Mini MK3 LPMiniMK3 DAW", None),
-        ("Launchpad X LPX MIDI", None),
+        ("Launchpad X LPX MIDI", Some("novation.launchpad-x")),
+        (
+            "Launchpad X:Launchpad X LPX MIDI 20:1",
+            Some("novation.launchpad-x"),
+        ),
+        ("MIDIIN2 (LPX MIDI)", Some("novation.launchpad-x")),
+        ("Launchpad X LPX DAW", None),
+        (
+            "Launchpad Pro MK3 LPProMK3 MIDI",
+            Some("novation.launchpad-pro-mk3"),
+        ),
+        ("LPProMK3 MIDI", Some("novation.launchpad-pro-mk3")),
+        ("MIDIIN2 (LPProMK3 MIDI)", None),
+        ("MIDIIN3 (LPProMK3 MIDI)", None),
+        ("2- LPProMK3 MIDI", Some("novation.launchpad-pro-mk3")),
+        ("MIDIIN5 (2- LPProMK3 MIDI)", None),
+        ("Launchpad Pro MK3 LPProMK3 DAW", None),
         ("Launchpad Pro", None),
         ("Launchpad Pro MK2", None),
         ("Intech Grid MIDI device", Some("intech.grid")),
@@ -472,6 +519,21 @@ mod tests {
         ("APC40 mkII", Some("akai.apc40-mkii")),
         ("APC40 mkII:APC40 mkII MIDI 1 24:0", Some("akai.apc40-mkii")),
         ("APC40", None),
+        ("APC Key 25 mk2 Control", Some("akai.apc-key-25-mk2")),
+        ("MIDIIN2 (APC Key 25 mk2)", Some("akai.apc-key-25-mk2")),
+        ("APC Key 25 mk2 Keys", None),
+        ("APC Key 25 mk2", None),
+        ("APC Key 25", None),
+        ("X-Touch", Some("behringer.x-touch")),
+        ("X-Touch:X-Touch MIDI 1 24:0", Some("behringer.x-touch")),
+        ("X-Touch-Ext", Some("behringer.x-touch-extender")),
+        (
+            "X-Touch-Ext:X-Touch-Ext MIDI 1 28:0",
+            Some("behringer.x-touch-extender"),
+        ),
+        ("X-TOUCH COMPACT", Some("behringer.x-touch-compact")),
+        ("X-TOUCH MINI", None),
+        ("X-Touch One", None),
         ("IAC Driver Bus 1", None),
     ];
 
@@ -581,6 +643,50 @@ mod tests {
         assert_eq!(profile.led_address(fader), fader);
     }
 
+    /// Verifies the APC Key 25 mk2 lights its 40 pads (notes 0-39) on channel 7, its full
+    /// brightness, while the track buttons from note 64 keep the mapped address.
+    #[test]
+    fn apc_key_25_mk2_pads_light_at_full_brightness() {
+        let profile = for_device("APC Key 25 mk2 Control").expect("APC Key 25 mk2 profile");
+        let pad = MidiSource::Note {
+            channel: 0,
+            note: 39,
+        };
+        let button = MidiSource::Note {
+            channel: 0,
+            note: 0x40,
+        };
+
+        assert_eq!(
+            profile.led_address(pad),
+            MidiSource::Note {
+                channel: 6,
+                note: 39
+            }
+        );
+        assert_eq!(profile.led_address(button), button);
+    }
+
+    /// Verifies the X-Touch and Extender share the MIDI-mode scale: velocity 0 turns a button
+    /// LED off, 64 flashes it and 127 lights it.
+    #[test]
+    fn x_touch_profiles_share_the_midi_mode_scale() {
+        for port in ["X-Touch", "X-Touch-Ext"] {
+            let profile = for_device(port).expect("X-Touch profile");
+
+            assert_eq!(
+                profile.default_led(),
+                MidiLedValues {
+                    on: Some(127),
+                    off: Some(0),
+                    held: Some(64),
+                },
+                "{port}"
+            );
+            assert_eq!(profile.colors.len(), 3, "{port}");
+        }
+    }
+
     /// Verifies profiles naming the shared RGB palette list its 128 colors, with brightness
     /// ramps on the full colors, and credit the palette's QLC+ source.
     #[test]
@@ -588,8 +694,11 @@ mod tests {
         for port in [
             "Launchpad MK2",
             "LPMiniMK3 MIDI",
+            "LPX MIDI",
+            "LPProMK3 MIDI",
             "APC mini mk2",
             "APC40 mkII",
+            "APC Key 25 mk2 Control",
         ] {
             let profile = for_device(port).expect("RGB profile");
 

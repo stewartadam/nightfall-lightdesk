@@ -1,0 +1,15 @@
+{
+  "id": "akai.apc-key-25-mk2",
+  "name": "Akai APC Key 25 mk2",
+  "ports": {
+    "match": ["apc key 25 mk2 control", "midiin2 (apc key 25 mk2"],
+    "exclude": []
+  },
+  "feedback": false,
+  "hint": "Map the Control port (MIDIIN2 on Windows), which carries the pads and buttons; the Keys port carries the keyboard. Pads light at full brightness. The track buttons are red and the scene buttons green: any color lights them, and Light Gray makes them blink.",
+  "ledChannels": [{ "notes": [0, 39], "channel": 6 }],
+  "init": [],
+  "release": [],
+  "palette": "rgb-128",
+  "defaults": { "off": "Off", "on": "Green", "held": "Orange" }
+}

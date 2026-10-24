@@ -1,0 +1,14 @@
+{
+  "id": "behringer.x-touch-extender",
+  "name": "Behringer X-Touch Extender",
+  "ports": {
+    "match": ["x-touch-ext", "x-touch ext"],
+    "exclude": []
+  },
+  "feedback": false,
+  "hint": "Set the Extender to MIDI mode, not MC or HUI. Buttons are notes 0-103; motor faders follow the level of the binding they control.",
+  "init": [],
+  "release": [],
+  "palette": "x-touch",
+  "defaults": { "off": "Off", "on": "On", "held": "Flashing" }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "behringer.x-touch-compact",
+  "name": "Behringer X-Touch Compact",
+  "ports": { "match": ["x-touch compact"], "exclude": [] },
+  "feedback": false,
+  "hint": "Button LEDs listen on the global channel as notes 0-38, but the factory layers send other notes. In X-Touch Editor, set each button to send its LED note on the global channel so Nightfall can light it. Motor faders follow the level of the binding they control.",
+  "init": [],
+  "release": [],
+  "colors": [
+    { "name": "Off", "value": 0, "swatch": "#000000" },
+    { "name": "On", "value": 1, "swatch": "#ff0000" },
+    { "name": "Blinking", "value": 2, "swatch": "#ff0000", "blink": true }
+  ],
+  "defaults": { "off": "Off", "on": "On", "held": "Blinking" }
+}
