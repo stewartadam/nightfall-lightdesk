@@ -52,7 +52,7 @@ export type GuideFocusArea =
   | "visualizer";
 
 export interface GuideStep {
-  persistenceUnavailable?: Pick<
+  diskStorageUnavailable?: Pick<
     GuideStep,
     "title" | "content" | "target" | "observe"
   >;
@@ -65,7 +65,7 @@ export interface GuideStep {
   targetClip?: { id: number; gear?: boolean };
   /** Targets an action chip in the sample timeline editor by track and action ID. */
   targetTimelineAction?: { trackId: string; actionId: string };
-  /** Targets a fixture's ID cell in Patch, or the Fixtures view tab while DMX I/O is showing. */
+  /** Targets a fixture's ID cell in Patch, or the Fixtures view tab while DMX Routes is showing. */
   targetPatchFixture?: { id: number };
   /** Targets a regular FX card or list row in FX List by its user-facing ID. */
   targetFx?: { id: number };
@@ -369,7 +369,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "save-showfile",
-        persistenceUnavailable: {
+        diskStorageUnavailable: {
           title: "Demo edits are temporary",
           target: '[aria-label="Menu"]',
           observe: undefined,
@@ -941,34 +941,34 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         ],
       },
       {
-        id: "dmx-io",
-        title: "Open the DMX I/O view",
+        id: "dmx-routes",
+        title: "Open the DMX Routes view",
         target:
-          '[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-bindings"]',
-        observe: { type: "patch-view", view: "bindings" },
+          '[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-routes"]',
+        observe: { type: "patch-view", view: "routes" },
         content: [
           {
             type: "text",
-            text: "Bindings connect fixtures to DMX addresses. The DMX I/O view lists them.",
+            text: "DMX routes connect fixtures to DMX addresses. The DMX Routes view lists them.",
           },
           { type: "prerequisite", panels: ["PatchEditor"] },
-          { type: "action", body: "Click DMX I/O at the top of Patch." },
+          { type: "action", body: "Click DMX Routes at the top of Patch." },
         ],
       },
       {
-        id: "console-bindings",
+        id: "console-routes",
         title: "Patched to console universes",
         target:
           '[data-panel-kind="patch"] [data-grid-column-key="target"][data-grid-row-key^="output-"]',
         content: [
           {
             type: "text",
-            text: "Each sample fixture has an output binding to a console universe, starting at address 1. The pixel strips fill universes 1 to 8, and each other rig section gets universes of its own.",
+            text: "Each sample fixture has an output route to a console universe, starting at address 1. The pixel strips fill universes 1 to 8, and each other rig section gets universes of its own.",
           },
           { type: "prerequisite", panels: ["PatchEditor"] },
           {
             type: "action",
-            body: "Look at the Target column to see the universe each binding writes to.",
+            body: "Look at the Target column to see the universe each route writes to.",
           },
           {
             type: "details",

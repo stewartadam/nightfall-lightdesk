@@ -20,6 +20,7 @@ import {
 import { useAppShell } from "../../components/providers/app-shell";
 import { useUiAction } from "../../components/providers/command-registry";
 import { Button } from "../../components/ui/visual-language/button";
+import { hasDiskStorage } from "../../lib/disk-storage";
 import { getLogger } from "../../lib/logger";
 import {
   type PanelComponentName,
@@ -226,8 +227,8 @@ export default function WelcomeGuide() {
   /** Resolves the current instruction, leaving completion outside the action steps. */
   const step = createMemo(() => {
     const instruction = lesson()?.steps[index()];
-    return instruction && capabilities()?.persistence === "Unavailable"
-      ? { ...instruction, ...instruction.persistenceUnavailable }
+    return instruction && !hasDiskStorage(capabilities())
+      ? { ...instruction, ...instruction.diskStorageUnavailable }
       : instruction;
   });
   /**
@@ -235,11 +236,7 @@ export default function WelcomeGuide() {
    * which layout is showing and the show would otherwise reopen in the Lesson layout.
    */
   createEffect(() => {
-    if (
-      !opened() ||
-      !step()?.userLayout ||
-      capabilities()?.persistence === "Unavailable"
-    )
+    if (!opened() || !step()?.userLayout || !hasDiskStorage(capabilities()))
       return;
     const id = returnLayoutId();
     if (id && id !== activeLayout()) void returnToLayout();
@@ -801,7 +798,7 @@ export default function WelcomeGuide() {
                     </div>
                   </Show>
                   <Show
-                    when={capabilities()?.persistence === "Unavailable"}
+                    when={!hasDiskStorage(capabilities())}
                     fallback={
                       <p>
                         Save your practice show if you want to keep these

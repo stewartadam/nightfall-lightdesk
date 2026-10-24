@@ -12,7 +12,7 @@ import {
   CLEAR_PROGRAMMER_SHORTCUT,
   OPEN_COMMAND_PALETTE_SHORTCUT,
 } from "../../components/providers/command-registry";
-import { ShortcutKeys } from "../../components/ui/shortcut-keys";
+import { KbdShortcut } from "../../components/ui/kbd";
 import { Button } from "../../components/ui/visual-language/button";
 import {
   type PanelComponentName,
@@ -39,7 +39,7 @@ function GuideText(props: { text: string }) {
         <Show when={lessonShortcuts[text]} fallback={text}>
           {(shortcut) => (
             <span class="nf-guide-inline-shortcut">
-              <ShortcutKeys shortcut={shortcut()} />
+              <KbdShortcut shortcut={shortcut()} size="compact" />
             </span>
           )}
         </Show>

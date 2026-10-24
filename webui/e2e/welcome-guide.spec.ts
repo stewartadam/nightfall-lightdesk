@@ -868,14 +868,14 @@ test("welcome basics toggles a clip and opens properties", async ({
   ).toBeVisible();
 });
 
-/** Replaces native saving instructions when the runtime cannot persist showfiles. */
-test("welcome saving explains unavailable persistence", async ({
+/** Replaces native saving instructions when the runtime has no disk storage for showfiles. */
+test("welcome saving explains unavailable disk storage", async ({
   page,
 }, testInfo) => {
   await openSample(page);
   await page.evaluate(() => {
     const store = (window as any).appStores.runtimeCapabilities;
-    store.set({ ...store.get(), persistence: "Unavailable" });
+    store.set({ ...store.get(), disk_storage: false });
   });
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
@@ -986,14 +986,14 @@ for (const platform of ["MacIntel", "Win32"]) {
     const guide = page.getByTestId("welcome-guide");
     await openLesson(guide, /Your first lights/);
     await reachStep(page, "Find your way around");
-    const keys = guide.locator(".nf-guide-inline-shortcut kbd");
+    const keys = guide.locator(".nf-guide-inline-shortcut kbd[data-kbd-key]");
     await expect(keys).toHaveCount(3);
     await expect(keys.nth(0)).toHaveAttribute(
       "title",
-      platform === "MacIntel" ? "Command" : "Ctrl",
+      platform === "MacIntel" ? "Command" : "Control",
     );
     await expect(keys.nth(1)).toHaveAttribute("title", "Shift");
-    await expect(keys.nth(2)).toHaveText("p");
+    await expect(keys.nth(2)).toHaveText("P");
     await expect(guide).not.toContainText("Ctrl/Cmd");
     await page.screenshot({ path: testInfo.outputPath("guide-shortcut.png") });
     await page.keyboard.press(
@@ -1940,8 +1940,8 @@ test("orientation command step advances on the suggested command", async ({
   await expectStep(page, "Arrange your workspace");
 });
 
-/** Walks the patch lesson through Patch, selection, DMX I/O, and clearing. */
-test("patch lesson follows fixture picking, selection, and DMX I/O", async ({
+/** Walks the patch lesson through Patch, selection, DMX Routes, and clearing. */
+test("patch lesson follows fixture picking, selection, and DMX Routes", async ({
   page,
 }, testInfo) => {
   await openSample(page);
@@ -1965,12 +1965,12 @@ test("patch lesson follows fixture picking, selection, and DMX I/O", async ({
     .click();
   await expectStep(page, "Select it by ID", { target: true });
   await submitCommand(page, "fix 310");
-  await expectStep(page, "Open the DMX I/O view", { target: true });
+  await expectStep(page, "Open the DMX Routes view", { target: true });
   await activeLayout(page)
-    .locator('[data-panel-kind="patch"] [role="tab"][id$="-bindings"]')
+    .locator('[data-panel-kind="patch"] [role="tab"][id$="-routes"]')
     .click();
   await expectStep(page, "Patched to console universes", { target: true });
-  await page.screenshot({ path: testInfo.outputPath("patch-bindings.png") });
+  await page.screenshot({ path: testInfo.outputPath("patch-routes.png") });
   await page
     .getByTestId("welcome-guide")
     .getByRole("button", { name: "Continue", exact: true })

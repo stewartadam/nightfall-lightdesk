@@ -6,8 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show, untrack } from "solid-js";
 import { Portal } from "solid-js/web";
+import { overlayHost } from "../../components/ui/modal/dialog-stack";
 
 interface GuideTargetProps {
   stepId: string;
@@ -57,6 +58,8 @@ function revealInScroller(element: HTMLElement): boolean {
 export function GuideTarget(props: GuideTargetProps) {
   const [bounds, setBounds] = createSignal<DOMRect | null>(null);
   const [targetFocused, setTargetFocused] = createSignal(false);
+  /** Mounts the highlight beside its target, inside an open modal dialog when the target is in one. */
+  const [host, setHost] = createSignal<HTMLElement>(overlayHost());
 
   /** Re-resolves lazy panels and tracks scrolling, resizing, and dock rearrangement. */
   createEffect(() => {
@@ -136,6 +139,8 @@ export function GuideTarget(props: GuideTargetProps) {
         }
       }
       const rect = target?.getBoundingClientRect() ?? null;
+      const nextHost = overlayHost(target);
+      if (nextHost !== untrack(host)) setHost(nextHost);
       // A focused text field already shows its own focus ring, so the pulse would only add noise.
       // Buttons keep the pulse, since programmatic focus doesn't always draw a ring on them.
       setTargetFocused(
@@ -192,27 +197,31 @@ export function GuideTarget(props: GuideTargetProps) {
   });
 
   return (
-    <Portal>
-      <Show when={props.highlight !== false && bounds()}>
-        {(rect) => (
-          <div
-            class="nf-guide-anchor"
-            aria-hidden="true"
-            data-testid="guide-target"
-          >
-            <div
-              class="nf-guide-highlight"
-              data-target-focused={targetFocused() ? "" : undefined}
-              style={{
-                left: `${rect().left - 4}px`,
-                top: `${rect().top - 4}px`,
-                width: `${rect().width + 8}px`,
-                height: `${rect().height + 8}px`,
-              }}
-            />
-          </div>
-        )}
-      </Show>
-    </Portal>
+    <Show when={host()} keyed>
+      {(mount) => (
+        <Portal mount={mount}>
+          <Show when={props.highlight !== false && bounds()}>
+            {(rect) => (
+              <div
+                class="nf-guide-anchor"
+                aria-hidden="true"
+                data-testid="guide-target"
+              >
+                <div
+                  class="nf-guide-highlight"
+                  data-target-focused={targetFocused() ? "" : undefined}
+                  style={{
+                    left: `${rect().left - 4}px`,
+                    top: `${rect().top - 4}px`,
+                    width: `${rect().width + 8}px`,
+                    height: `${rect().height + 8}px`,
+                  }}
+                />
+              </div>
+            )}
+          </Show>
+        </Portal>
+      )}
+    </Show>
   );
 }

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { engineRuntime } from "../../lib/engine-runtime";
+import { commandClient } from "../../lib/engine-commands";
 import { activeInstances, timecodes } from "../../state/appStores";
 import type {
   InstanceCommand,
@@ -22,7 +22,7 @@ export function clearProgrammerCompletely(): void {
     { type: "ClearProgrammerSelection" },
     { type: "ClearProgrammerValues" },
   ] satisfies ProgrammerCommand[])
-    engineRuntime.sendCommand({ module: "ProgrammerCommand", command });
+    commandClient.emit("ProgrammerCommand", command);
 }
 
 /** Stops running timelines first so they cannot relaunch clips, then every playback instance. */
@@ -33,9 +33,9 @@ export function stopAllPlayback(): void {
       type: "StopTimecode",
       data: timecode.identifiers.id,
     };
-    engineRuntime.sendCommand({ module: "TimecodeCommand", command });
+    commandClient.emit("TimecodeCommand", command);
   }
   if (Object.keys(activeInstances.get()).length === 0) return;
   const command: InstanceCommand = { type: "StopAll", data: undefined };
-  engineRuntime.sendCommand({ module: "InstanceCommand", command });
+  commandClient.emit("InstanceCommand", command);
 }

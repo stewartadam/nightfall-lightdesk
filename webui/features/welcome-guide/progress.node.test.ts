@@ -234,11 +234,11 @@ test("guide observes Patch edit selection and view", () => {
   assert.equal(guideCompletionToken(picked, state), "");
   state.editSelection = ["310"];
   assert.equal(guideCompletionToken(picked, state), "selected");
-  const view = { type: "patch-view", view: "bindings" } as const;
+  const view = { type: "patch-view", view: "routes" } as const;
   state.patchView = "fixtures";
   assert.equal(guideCompletionToken(view, state), "");
-  state.patchView = "bindings";
-  assert.equal(guideCompletionToken(view, state), "bindings");
+  state.patchView = "routes";
+  assert.equal(guideCompletionToken(view, state), "routes");
   const none = { type: "selection", fixtureIds: [] } as const;
   assert.equal(guideCompletionToken(none, state), "");
   state.selection = [];
