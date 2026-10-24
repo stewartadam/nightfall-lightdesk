@@ -52,6 +52,8 @@ runs:
         shared-key: ${{ inputs.shared-key }}
         cache-targets: ${{ inputs.cache-targets }}
         cache-on-failure: ${{ inputs.cache-on-failure }}
+        # Only base-branch caches are readable outside the ref that saved them.
+        save-if: ${{ github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' }}
 
     - name: Track Cargo cache reuse
       uses: ./.github/actions/rust-cache/report

@@ -178,9 +178,11 @@ Cargo dependency/configuration hashes; it can restore compatible caches from
 older lockfiles. Native profile environment variables apply to the whole job,
 including cache restore/save and all Cargo commands.
 
-Both `main` and `develop` pushes populate caches visible to PRs targeting those
-branches. A PR cache is scoped to that PR and does not warm unrelated PRs.
-Develop pushes run validation without desktop/demo packaging. Cache warming
+Only `main` and `develop` runs save caches, which PRs targeting those branches and
+release tags restore. PRs and tags never save: GitHub scopes their caches to the
+PR or tag itself, so the saves would only fill the repository's cache limit.
+Develop pushes run validation without desktop/demo packaging, so desktop
+packaging restores no compiled dependencies. Cache warming
 starts once this workflow reaches the base branch; the first run for a new
 compiler or profile can still be cold.
 
