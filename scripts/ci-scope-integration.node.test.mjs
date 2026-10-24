@@ -13,7 +13,76 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
-import { readChangedPaths } from "./ci-scope.mjs";
+import { appIndependent, readChangedPaths } from "./ci-scope.mjs";
+
+const repositoryRoot = new URL("..", import.meta.url);
+
+/**
+ * Listing a script as app-independent is only safe while nothing the app validation jobs run can
+ * reach it. Collect what those jobs execute: their workflows and composite actions, the package
+ * scripts those invoke (expanded recursively), the build and test configuration, and every
+ * non-test app source under scripts/, webui/, playwright/ and worktree-dashboard/. None of it may
+ * name an app-independent script.
+ */
+test("app-independent scripts are never run by app validation", () => {
+  /** Whether a path skips app validation under the scope policy. */
+  const independent = (path) =>
+    appIndependent.some((pattern) => pattern.test(path));
+  /** Read a repository file as text. */
+  const read = (path) => readFileSync(new URL(path, repositoryRoot), "utf8");
+  const tracked = execFileSync("git", ["ls-files", "-z"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+  const sources = new Map(
+    [
+      ".github/workflows/ci.yml",
+      ".github/workflows/native-validation.yml",
+      ".github/workflows/wasm.yml",
+      ".github/workflows/browser-demo.yml",
+      "vite.config.ts",
+      "playwright.config.ts",
+      ...tracked.filter(
+        (path) =>
+          path.startsWith(".github/actions/") ||
+          /^tsconfig[^/]*\.json$/.test(path) ||
+          (/^(scripts|webui|playwright|worktree-dashboard)\//.test(path) &&
+            /\.(c?m?[jt]sx?|d\.mts|json|sh|html)$/.test(path) &&
+            !path.endsWith(".node.test.mjs") &&
+            !independent(path)),
+      ),
+    ].map((path) => [path, read(path)]),
+  );
+  const packageScripts = JSON.parse(read("package.json")).scripts;
+  const pending = [...sources.values()];
+  const expanded = new Set();
+  while (pending.length) {
+    for (const [, name] of pending
+      .pop()
+      .matchAll(/\bpnpm (?:run )?([\w:-]+)/g)) {
+      if (packageScripts[name] && !expanded.has(name)) {
+        expanded.add(name);
+        sources.set(`package.json#${name}`, packageScripts[name]);
+        pending.push(packageScripts[name]);
+      }
+    }
+  }
+  const scripts = tracked.filter(
+    (path) =>
+      path.startsWith("scripts/") &&
+      !path.endsWith(".node.test.mjs") &&
+      independent(path),
+  );
+  assert.ok(scripts.includes("scripts/update-deps.sh"));
+  for (const script of scripts) {
+    const name = script.slice("scripts/".length);
+    for (const [source, contents] of sources) {
+      assert.ok(!contents.includes(name), `${source} runs ${script}`);
+    }
+  }
+});
 
 /** The actual acquisition command includes deleted and renamed packaging inputs. */
 test("workflow diff captures both sides of renames and removed files", (t) => {
