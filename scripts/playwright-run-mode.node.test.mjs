@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  needsTestWasmBuild,
   resolvePlaywrightRunMode,
   resolvePlaywrightViteMode,
 } from "./playwright-run-mode.mjs";
@@ -84,5 +85,31 @@ test("non-test commands skip native backend preparation", () => {
       needsBackend: false,
       targetsEmbeddedDemo: true,
     },
+  );
+});
+
+/**
+ * Verify only local test runs that serve freshly built frontends rebuild the dev WASM packages:
+ * `preview` serves a prebuilt distribution and CI restores its own WASM builds.
+ */
+test("rebuilds dev WASM only for local runs that do not serve a prebuilt distribution", () => {
+  for (const viteMode of ["dev", "e2e"]) {
+    assert.equal(
+      needsTestWasmBuild({ isTestRun: true, viteMode, ci: false }),
+      true,
+      viteMode,
+    );
+  }
+  assert.equal(
+    needsTestWasmBuild({ isTestRun: true, viteMode: "preview", ci: false }),
+    false,
+  );
+  assert.equal(
+    needsTestWasmBuild({ isTestRun: true, viteMode: "dev", ci: true }),
+    false,
+  );
+  assert.equal(
+    needsTestWasmBuild({ isTestRun: false, viteMode: "dev", ci: false }),
+    false,
   );
 });

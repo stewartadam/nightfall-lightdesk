@@ -28,6 +28,7 @@ import {
 import { extractPlaywrightCliOptions } from "./playwright-cli-options.mjs";
 import { sharedBrowsersPath } from "./playwright-path.mjs";
 import {
+  needsTestWasmBuild,
   resolvePlaywrightRunMode,
   resolvePlaywrightViteMode,
 } from "./playwright-run-mode.mjs";
@@ -93,11 +94,9 @@ function buildE2eFrontend() {
 /**
  * Rebuilds the dev WASM bridge and browser demo runtime before the frontend
  * starts, since day-to-day dev setup only refreshes the bridge while many
- * specs run against the embedded demo engine. CI restores both packages from
- * its own cached builds, so the step is skipped there.
+ * specs run against the embedded demo engine.
  */
 function buildTestWasm() {
-  if (process.env.CI) return Promise.resolve({ code: 0 });
   return runOwnedCommand(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["run", "--silent", "wasm", "--dev"],
@@ -137,7 +136,13 @@ try {
   // Each run builds into its own directory, so concurrent runs in one
   // worktree never replace the bundle another run's preview server serves.
   if (runRoot) process.env.NIGHTFALL_E2E_OUT_DIR = join(runRoot, "e2e-build");
-  const wasmOutcome = isTestRun ? await buildTestWasm() : undefined;
+  const wasmOutcome = needsTestWasmBuild({
+    isTestRun,
+    viteMode: process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE,
+    ci: Boolean(process.env.CI),
+  })
+    ? await buildTestWasm()
+    : undefined;
   if (wasmOutcome && (wasmOutcome.code !== 0 || wasmOutcome.signal)) {
     outcome = wasmOutcome;
   }
