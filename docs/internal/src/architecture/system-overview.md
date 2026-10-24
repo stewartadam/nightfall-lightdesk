@@ -217,12 +217,11 @@ The other services bring outside input into the show:
 
 - Art-Net and sACN input receive DMX from another console. The engine merges incoming DMX into the DMX input layer at priority -128, or passes it straight through to an output. For more information, see [priorities and merging](../concepts/priorities-and-merging.md).
 - MIDI and OSC input receive messages from controllers and other software. Mappings turn them into actions, such as Go on a clip or a master level, which run through the same commands as the UI. MIDI input also feeds tap tempo.
-- Timecode objects provide a clock that timelines can follow.
+- Timecode objects provide a clock that timelines can follow. A timecode advances on the engine's own clock, or follows an external source: MIDI timecode, Art-Net timecode, or SMPTE linear timecode (LTC) from an audio input.
 - Timeline audio plays through the engine's audio service on the native hosts. Set `NIGHTFALL_TIMELINE_AUDIO_ENABLED=0` to keep it silent while you develop.
 - Beat detection analyzes a timeline's audio files to build its beat grid. It uses a machine learning model whose weights you install on request.
 
-> [!WARNING]
-> A timecode object can name an external source, such as MIDI timecode, SMPTE linear timecode (LTC), or Art-Net timecode, but the engine doesn't read any external source yet. Every timecode advances from the engine's own clock, whatever its source setting says.
+Each external source's input service decodes frames on its own thread and stores the latest one in an `ExternalTimecodeFeed`, without waking the engine. In each render pass, a timecode that is started and follows that source reads the feed and chases it, extrapolating from the last frame. When frames stop, the timecode freewheels on the engine clock for its freewheel time, 0.5 seconds by default, then returns to the last received frame and holds there. The browser demo has no input services, so its timecodes always follow the engine clock.
 
 ## Where the showfile fits
 
