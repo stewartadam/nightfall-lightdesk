@@ -71,7 +71,7 @@ pub fn clear_stale_input_channels(
 }
 
 /// Clears stale console channel owners and transport assertion layer entries, then releases
-/// stale input universes so passthrough bindings stop re-sending their last frame.
+/// stale input universes so passthrough routes stop re-sending their last frame.
 fn clear_stale_input_state(
     input_universes: &mut InputDmxUniverses,
     universes: &mut ConsoleDmxUniverses,
@@ -104,7 +104,7 @@ mod tests {
     };
     use nightfall_fixtures::prelude::TRANSPORT_INPUT_LAYER_PRIORITY;
     use nightfall_fixtures::prelude::{ConsoleChannelOrigin, Parameter, ParameterAssertionSource};
-    use nightfall_io::BindingTransport;
+    use nightfall_io::RouteTransport;
 
     use super::*;
     /// Installs the command lifecycle resources required by the stale-input system.
@@ -137,14 +137,14 @@ mod tests {
                 1,
                 200,
                 ConsoleChannelOrigin::InputTransport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 1,
                 },
             );
         }
         {
             let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
-            input_universes.set_universe(BindingTransport::Sacn, 1, [0; 512], past);
+            input_universes.set_universe(RouteTransport::Sacn, 1, [0; 512], past);
         }
 
         app.update();
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(universes.get_value(1, 1), Some(200));
     }
 
-    /// Verifies Hold keeps a stopped source's last frame available to passthrough bindings.
+    /// Verifies Hold keeps a stopped source's last frame available to passthrough routes.
     #[test]
     fn hold_policy_keeps_stale_passthrough_source_active() {
         let mut app = App::new();
@@ -169,7 +169,7 @@ mod tests {
         {
             let past = Instant::now() - Duration::from_millis(50);
             let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
-            input_universes.set_universe(BindingTransport::Sacn, 1, [0; 512], past);
+            input_universes.set_universe(RouteTransport::Sacn, 1, [0; 512], past);
         }
 
         app.update();
@@ -177,7 +177,7 @@ mod tests {
         let input_universes = app.world().resource::<InputDmxUniverses>();
         assert!(
             input_universes
-                .active_universe(BindingTransport::Sacn, 1)
+                .active_universe(RouteTransport::Sacn, 1)
                 .is_some()
         );
     }
@@ -199,13 +199,13 @@ mod tests {
             let now = Instant::now();
             let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
             input_universes.set_universe(
-                BindingTransport::Sacn,
+                RouteTransport::Sacn,
                 1,
                 [0; 512],
                 now - Duration::from_millis(50),
             );
             input_universes.set_universe(
-                BindingTransport::Sacn,
+                RouteTransport::Sacn,
                 2,
                 [0; 512],
                 now + Duration::from_secs(60),
@@ -217,12 +217,12 @@ mod tests {
         let input_universes = app.world().resource::<InputDmxUniverses>();
         assert!(
             input_universes
-                .active_universe(BindingTransport::Sacn, 1)
+                .active_universe(RouteTransport::Sacn, 1)
                 .is_none()
         );
         assert!(
             input_universes
-                .active_universe(BindingTransport::Sacn, 2)
+                .active_universe(RouteTransport::Sacn, 2)
                 .is_some()
         );
     }
@@ -248,14 +248,14 @@ mod tests {
                 9,
                 111,
                 ConsoleChannelOrigin::InputTransport {
-                    transport: BindingTransport::ArtNet,
+                    transport: RouteTransport::ArtNet,
                     universe: 3,
                 },
             );
         }
         {
             let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
-            input_universes.set_universe(BindingTransport::ArtNet, 3, [0; 512], past);
+            input_universes.set_universe(RouteTransport::ArtNet, 3, [0; 512], past);
         }
 
         app.update();
@@ -312,7 +312,7 @@ mod tests {
             owners.absolute.insert(
                 parameter,
                 ParameterAssertionSource {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 1,
                 },
             );
@@ -320,7 +320,7 @@ mod tests {
         {
             let past = Instant::now() - Duration::from_millis(50);
             let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
-            input_universes.set_universe(BindingTransport::Sacn, 1, [0; 512], past);
+            input_universes.set_universe(RouteTransport::Sacn, 1, [0; 512], past);
         }
 
         app.update();
@@ -372,7 +372,7 @@ mod tests {
                 1,
                 200,
                 ConsoleChannelOrigin::InputTransport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 1,
                 },
             );
@@ -394,7 +394,7 @@ mod tests {
             owners.absolute.insert(
                 parameter,
                 ParameterAssertionSource {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 1,
                 },
             );
@@ -402,7 +402,7 @@ mod tests {
         {
             let past = Instant::now() - Duration::from_millis(750);
             let mut input_universes = app.world_mut().resource_mut::<InputDmxUniverses>();
-            input_universes.set_universe(BindingTransport::Sacn, 1, [0; 512], past);
+            input_universes.set_universe(RouteTransport::Sacn, 1, [0; 512], past);
         }
 
         let command = CommandEnvelope::new(
@@ -432,7 +432,7 @@ mod tests {
         assert!(
             app.world()
                 .resource::<InputDmxUniverses>()
-                .active_universe(BindingTransport::Sacn, 1)
+                .active_universe(RouteTransport::Sacn, 1)
                 .is_none()
         );
     }

@@ -12,32 +12,32 @@ export type UniverseKey = number | "*";
 
 type UniverseOverlapFlags = { inputOverlap: boolean; outputOverlap: boolean };
 
-export type BindingConflictColumn = "source" | "target";
+export type RouteConflictColumn = "source" | "target";
 
-type BindingEndpointReference = {
+type RouteEndpointReference = {
   rowId: string;
-  column: BindingConflictColumn;
+  column: RouteConflictColumn;
 };
 
 type UniverseTargetState = {
-  wildcardOwners: BindingEndpointReference[];
-  addressOwners: Map<number, BindingEndpointReference[]>;
+  wildcardOwners: RouteEndpointReference[];
+  addressOwners: Map<number, RouteEndpointReference[]>;
 };
 
 type TransportTargetState = {
-  inputWildcardOwners: BindingEndpointReference[];
-  inputAddressOwners: Map<number, BindingEndpointReference[]>;
-  outputWildcardOwners: BindingEndpointReference[];
-  outputAddressOwners: Map<number, BindingEndpointReference[]>;
+  inputWildcardOwners: RouteEndpointReference[];
+  inputAddressOwners: Map<number, RouteEndpointReference[]>;
+  outputWildcardOwners: RouteEndpointReference[];
+  outputAddressOwners: Map<number, RouteEndpointReference[]>;
 };
 
-type FixtureTargetState = Map<string, BindingEndpointReference[]>;
+type FixtureTargetState = Map<string, RouteEndpointReference[]>;
 
-export type BindingOverlapAnalysis = {
+export type RouteOverlapAnalysis = {
   universeIds: Set<number>;
   overlapByUniverse: Map<UniverseKey, UniverseOverlapFlags>;
-  bindingUniverses: Map<string, Set<UniverseKey>>;
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>;
+  routeUniverses: Map<string, Set<UniverseKey>>;
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>;
 };
 
 const MAX_UNIVERSE_RANGE_EXPANSION = 64;
@@ -156,27 +156,27 @@ function ensureOverlapFlags(
   return existing;
 }
 
-function markBindingConflictColumn(
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
-  reference: BindingEndpointReference,
+function markRouteConflictColumn(
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
+  reference: RouteEndpointReference,
 ) {
-  const columns = conflictColumnsByBinding.get(reference.rowId) ?? new Set();
+  const columns = conflictColumnsByRoute.get(reference.rowId) ?? new Set();
   columns.add(reference.column);
-  conflictColumnsByBinding.set(reference.rowId, columns);
+  conflictColumnsByRoute.set(reference.rowId, columns);
 }
 
-function markBindingConflictColumns(
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
-  references: BindingEndpointReference[],
+function markRouteConflictColumns(
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
+  references: RouteEndpointReference[],
 ) {
   for (const reference of references) {
-    markBindingConflictColumn(conflictColumnsByBinding, reference);
+    markRouteConflictColumn(conflictColumnsByRoute, reference);
   }
 }
 
 function allUniverseTargetOwners(
   entry: UniverseTargetState,
-): BindingEndpointReference[] {
+): RouteEndpointReference[] {
   return [
     ...entry.wildcardOwners,
     ...Array.from(entry.addressOwners.values()).flat(),
@@ -184,19 +184,19 @@ function allUniverseTargetOwners(
 }
 
 function registerUniverseTargetAddress(
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
   entry: UniverseTargetState,
   address: number | undefined,
-  owner: BindingEndpointReference,
-): BindingEndpointReference[] {
+  owner: RouteEndpointReference,
+): RouteEndpointReference[] {
   const conflictingOwners =
     address === undefined
       ? allUniverseTargetOwners(entry)
       : [...entry.wildcardOwners, ...(entry.addressOwners.get(address) ?? [])];
 
   if (conflictingOwners.length > 0) {
-    markBindingConflictColumns(conflictColumnsByBinding, conflictingOwners);
-    markBindingConflictColumn(conflictColumnsByBinding, owner);
+    markRouteConflictColumns(conflictColumnsByRoute, conflictingOwners);
+    markRouteConflictColumn(conflictColumnsByRoute, owner);
   }
 
   if (address === undefined) {
@@ -212,19 +212,19 @@ function registerUniverseTargetAddress(
 
 function registerInputTarget(
   overlapsByUniverse: Map<UniverseKey, UniverseOverlapFlags>,
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
   inputTargets: Map<UniverseKey, UniverseTargetState>,
   universeKey: UniverseKey,
   address: number | undefined,
-  owner: BindingEndpointReference,
+  owner: RouteEndpointReference,
 ) {
   const overlapFlags = ensureOverlapFlags(overlapsByUniverse, universeKey);
   const entry = inputTargets.get(universeKey) ?? {
     wildcardOwners: [],
-    addressOwners: new Map<number, BindingEndpointReference[]>(),
+    addressOwners: new Map<number, RouteEndpointReference[]>(),
   };
   const conflictingOwners = registerUniverseTargetAddress(
-    conflictColumnsByBinding,
+    conflictColumnsByRoute,
     entry,
     address,
     owner,
@@ -235,15 +235,15 @@ function registerInputTarget(
 }
 
 function registerFixtureInputTarget(
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
   fixtureTargets: FixtureTargetState,
   targetKey: string,
-  owner: BindingEndpointReference,
+  owner: RouteEndpointReference,
 ) {
   const owners = fixtureTargets.get(targetKey) ?? [];
   if (owners.length > 0) {
-    markBindingConflictColumns(conflictColumnsByBinding, owners);
-    markBindingConflictColumn(conflictColumnsByBinding, owner);
+    markRouteConflictColumns(conflictColumnsByRoute, owners);
+    markRouteConflictColumn(conflictColumnsByRoute, owner);
   }
 
   owners.push(owner);
@@ -252,19 +252,19 @@ function registerFixtureInputTarget(
 
 function registerOutputConsoleTarget(
   overlapsByUniverse: Map<UniverseKey, UniverseOverlapFlags>,
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
   outputConsoleTargets: Map<UniverseKey, UniverseTargetState>,
   universeKey: UniverseKey,
   address: number | undefined,
-  owner: BindingEndpointReference,
+  owner: RouteEndpointReference,
 ) {
   const overlapFlags = ensureOverlapFlags(overlapsByUniverse, universeKey);
   const entry = outputConsoleTargets.get(universeKey) ?? {
     wildcardOwners: [],
-    addressOwners: new Map<number, BindingEndpointReference[]>(),
+    addressOwners: new Map<number, RouteEndpointReference[]>(),
   };
   const conflictingOwners = registerUniverseTargetAddress(
-    conflictColumnsByBinding,
+    conflictColumnsByRoute,
     entry,
     address,
     owner,
@@ -274,23 +274,23 @@ function registerOutputConsoleTarget(
   outputConsoleTargets.set(universeKey, entry);
 }
 
-function registerOutputTransportBinding(
+function registerOutputTransportRoute(
   overlapsByUniverse: Map<UniverseKey, UniverseOverlapFlags>,
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
   outputTransportStats: Map<
     UniverseKey,
     Map<
       string,
       {
-        consoleOwners: BindingEndpointReference[];
-        otherOwners: BindingEndpointReference[];
+        consoleOwners: RouteEndpointReference[];
+        otherOwners: RouteEndpointReference[];
       }
     >
   >,
   universeKey: UniverseKey,
   transport: string,
   isConsoleSource: boolean,
-  owner: BindingEndpointReference,
+  owner: RouteEndpointReference,
 ) {
   const overlapFlags = ensureOverlapFlags(overlapsByUniverse, universeKey);
   const statsByTransport = outputTransportStats.get(universeKey) ?? new Map();
@@ -310,7 +310,7 @@ function registerOutputTransportBinding(
     (stat.otherOwners.length > 0 || stat.consoleOwners.length > 1)
   ) {
     overlapFlags.outputOverlap = true;
-    markBindingConflictColumns(conflictColumnsByBinding, [
+    markRouteConflictColumns(conflictColumnsByRoute, [
       ...stat.consoleOwners,
       ...stat.otherOwners,
     ]);
@@ -319,21 +319,21 @@ function registerOutputTransportBinding(
 
 function registerTransportTarget(
   overlapsByUniverse: Map<UniverseKey, UniverseOverlapFlags>,
-  conflictColumnsByBinding: Map<string, Set<BindingConflictColumn>>,
+  conflictColumnsByRoute: Map<string, Set<RouteConflictColumn>>,
   transportTargets: Map<string, TransportTargetState>,
   universeKey: UniverseKey,
   transport: string,
   address: number | undefined,
   direction: "input" | "output",
-  owner: BindingEndpointReference,
+  owner: RouteEndpointReference,
 ) {
   const overlapFlags = ensureOverlapFlags(overlapsByUniverse, universeKey);
   const targetKey = `${transport}|${universeKey}`;
   const entry = transportTargets.get(targetKey) ?? {
     inputWildcardOwners: [],
-    inputAddressOwners: new Map<number, BindingEndpointReference[]>(),
+    inputAddressOwners: new Map<number, RouteEndpointReference[]>(),
     outputWildcardOwners: [],
-    outputAddressOwners: new Map<number, BindingEndpointReference[]>(),
+    outputAddressOwners: new Map<number, RouteEndpointReference[]>(),
   };
 
   const isInput = direction === "input";
@@ -356,7 +356,7 @@ function registerTransportTarget(
         addressOwners: entry.inputAddressOwners,
       };
   const sameDirectionConflicts = registerUniverseTargetAddress(
-    conflictColumnsByBinding,
+    conflictColumnsByRoute,
     ownEntry,
     address,
     owner,
@@ -375,7 +375,7 @@ function registerTransportTarget(
   }
   if (crossDirectionConflicts.length > 0) {
     overlapFlags.outputOverlap = true;
-    markBindingConflictColumns(conflictColumnsByBinding, [
+    markRouteConflictColumns(conflictColumnsByRoute, [
       ...crossDirectionConflicts,
       owner,
     ]);
@@ -384,17 +384,14 @@ function registerTransportTarget(
   transportTargets.set(targetKey, entry);
 }
 
-export function computeBindingOverlapAnalysis(
-  snapshot: types.BindingsSnapshot,
+export function computeRouteOverlapAnalysis(
+  snapshot: types.RoutesSnapshot,
   activeUniverses: number[],
-): BindingOverlapAnalysis {
+): RouteOverlapAnalysis {
   const universeIds = new Set<number>(activeUniverses);
   const overlapsByUniverse = new Map<UniverseKey, UniverseOverlapFlags>();
-  const bindingUniverses = new Map<string, Set<UniverseKey>>();
-  const conflictColumnsByBinding = new Map<
-    string,
-    Set<BindingConflictColumn>
-  >();
+  const routeUniverses = new Map<string, Set<UniverseKey>>();
+  const conflictColumnsByRoute = new Map<string, Set<RouteConflictColumn>>();
 
   const inputTargets = new Map<UniverseKey, UniverseTargetState>();
   const fixtureInputTargets: FixtureTargetState = new Map();
@@ -405,83 +402,83 @@ export function computeBindingOverlapAnalysis(
     Map<
       string,
       {
-        consoleOwners: BindingEndpointReference[];
-        otherOwners: BindingEndpointReference[];
+        consoleOwners: RouteEndpointReference[];
+        otherOwners: RouteEndpointReference[];
       }
     >
   >();
 
-  for (const binding of snapshot.input) {
+  for (const route of snapshot.input) {
     addKnownUniverses(
       universeIds,
-      collectUniversesFromInputSource(binding.source),
+      collectUniversesFromInputSource(route.source),
     );
     addKnownUniverses(
       universeIds,
-      collectUniversesFromInputTarget(binding.target),
-    );
-  }
-  for (const binding of snapshot.output) {
-    addKnownUniverses(
-      universeIds,
-      collectUniversesFromOutputSource(binding.source),
-    );
-    addKnownUniverses(
-      universeIds,
-      collectUniversesFromOutputTarget(binding.target),
+      collectUniversesFromInputTarget(route.target),
     );
   }
-  for (const binding of snapshot.disabled) {
+  for (const route of snapshot.output) {
     addKnownUniverses(
       universeIds,
-      collectUniversesFromInputSource(binding.data.source),
+      collectUniversesFromOutputSource(route.source),
+    );
+    addKnownUniverses(
+      universeIds,
+      collectUniversesFromOutputTarget(route.target),
+    );
+  }
+  for (const route of snapshot.disabled) {
+    addKnownUniverses(
+      universeIds,
+      collectUniversesFromInputSource(route.data.source),
     );
   }
 
-  snapshot.input.forEach((binding, index) => {
+  snapshot.input.forEach((route, index) => {
     const rowId = `input-${index}`;
     const keys = new Set<UniverseKey>([
-      ...collectUniversesFromInputSource(binding.source),
-      ...collectUniversesFromInputTarget(binding.target),
+      ...collectUniversesFromInputSource(route.source),
+      ...collectUniversesFromInputTarget(route.target),
     ]);
-    bindingUniverses.set(
+    routeUniverses.set(
       rowId,
       new Set(getExpandedUniversesForKeys(keys, universeIds)),
     );
 
-    if (binding.target.type === "Console") {
+    if (route.target.type === "Console") {
       const targetUniverses = getExpandedUniversesForKeys(keys, universeIds);
       for (const universeKey of targetUniverses) {
         registerInputTarget(
           overlapsByUniverse,
-          conflictColumnsByBinding,
+          conflictColumnsByRoute,
           inputTargets,
           universeKey,
-          binding.target.data.address ?? undefined,
+          route.target.data.address ?? undefined,
           { rowId, column: "target" },
         );
       }
     }
 
-    if (binding.target.type === "Transport") {
+    if (route.target.type === "Transport") {
       const targetUniverses = getExpandedUniversesForKeys(keys, universeIds);
       for (const universeKey of targetUniverses) {
         registerTransportTarget(
           overlapsByUniverse,
-          conflictColumnsByBinding,
+          conflictColumnsByRoute,
           transportTargets,
           universeKey,
-          binding.target.data.target,
-          binding.target.data.address ?? undefined,
+          route.target.data.target,
+          route.target.data.address ?? undefined,
           "input",
           { rowId, column: "target" },
         );
       }
     }
 
-    for (const targetKey of collectFixtureInputTargetKeys(binding.target)) {
+    for (const targetKey of collectFixtureInputTargetKeys(route.target)) {
       registerFixtureInputTarget(
-        conflictColumnsByBinding,
+        conflictColumnsByRoute,
         fixtureInputTargets,
         targetKey,
         { rowId, column: "source" },
@@ -489,51 +486,51 @@ export function computeBindingOverlapAnalysis(
     }
   });
 
-  snapshot.output.forEach((binding, index) => {
+  snapshot.output.forEach((route, index) => {
     const rowId = `output-${index}`;
     const keys = new Set<UniverseKey>([
-      ...collectUniversesFromOutputSource(binding.source),
-      ...collectUniversesFromOutputTarget(binding.target),
+      ...collectUniversesFromOutputSource(route.source),
+      ...collectUniversesFromOutputTarget(route.target),
     ]);
-    bindingUniverses.set(
+    routeUniverses.set(
       rowId,
       new Set(getExpandedUniversesForKeys(keys, universeIds)),
     );
 
     const targetUniverses = getExpandedUniversesForKeys(keys, universeIds);
 
-    if (binding.target.type === "Console") {
+    if (route.target.type === "Console") {
       for (const universeKey of targetUniverses) {
         registerOutputConsoleTarget(
           overlapsByUniverse,
-          conflictColumnsByBinding,
+          conflictColumnsByRoute,
           outputConsoleTargets,
           universeKey,
-          binding.target.data.address ?? undefined,
+          route.target.data.address ?? undefined,
           { rowId, column: "target" },
         );
       }
     }
 
-    if (binding.target.type === "Transport") {
-      const isConsoleSource = binding.source.type === "Console";
+    if (route.target.type === "Transport") {
+      const isConsoleSource = route.source.type === "Console";
       for (const universeKey of targetUniverses) {
-        registerOutputTransportBinding(
+        registerOutputTransportRoute(
           overlapsByUniverse,
-          conflictColumnsByBinding,
+          conflictColumnsByRoute,
           outputTransportStats,
           universeKey,
-          binding.target.data.target,
+          route.target.data.target,
           isConsoleSource,
           { rowId, column: "target" },
         );
         registerTransportTarget(
           overlapsByUniverse,
-          conflictColumnsByBinding,
+          conflictColumnsByRoute,
           transportTargets,
           universeKey,
-          binding.target.data.target,
-          binding.target.data.address ?? undefined,
+          route.target.data.target,
+          route.target.data.address ?? undefined,
           "output",
           { rowId, column: "target" },
         );
@@ -541,24 +538,24 @@ export function computeBindingOverlapAnalysis(
     }
   });
 
-  snapshot.disabled.forEach((binding, index) => {
+  snapshot.disabled.forEach((route, index) => {
     const rowId = `disabled-${index}`;
     const keys = new Set<UniverseKey>(
-      collectUniversesFromInputSource(binding.data.source),
+      collectUniversesFromInputSource(route.data.source),
     );
-    bindingUniverses.set(
+    routeUniverses.set(
       rowId,
       new Set(getExpandedUniversesForKeys(keys, universeIds)),
     );
 
-    if (binding.data.source.type !== "Console") return;
+    if (route.data.source.type !== "Console") return;
     for (const universeKey of getExpandedUniversesForKeys(keys, universeIds)) {
       registerInputTarget(
         overlapsByUniverse,
-        conflictColumnsByBinding,
+        conflictColumnsByRoute,
         inputTargets,
         universeKey,
-        binding.data.source.data.address ?? undefined,
+        route.data.source.data.address ?? undefined,
         { rowId, column: "source" },
       );
     }
@@ -567,7 +564,7 @@ export function computeBindingOverlapAnalysis(
   return {
     universeIds,
     overlapByUniverse: overlapsByUniverse,
-    bindingUniverses,
-    conflictColumnsByBinding,
+    routeUniverses,
+    conflictColumnsByRoute,
   };
 }

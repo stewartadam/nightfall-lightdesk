@@ -1105,7 +1105,7 @@ fn parse_patch_add_command<'i>(command_str: &'i str) -> Option<CommandAst<'i>> {
     patch::parse_patch_add_command_from_tokens(command_str, &tokens)
 }
 
-/// Parses an `rm patch` command that removes matching patch bindings.
+/// Parses an `rm patch` command that removes matching DMX routes.
 #[cfg(test)]
 fn parse_rm_patch_command<'i>(command_str: &'i str) -> Option<CommandAst<'i>> {
     let tokens = lex_command(command_str);

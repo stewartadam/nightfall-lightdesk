@@ -26,7 +26,7 @@ use std::time::Duration;
 use bevy_ecs::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::{BindingTransport, OutputTransport};
+use nightfall_io::{OutputTransport, RouteTransport};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use web_time::Instant;
@@ -217,21 +217,21 @@ impl UniverseSource<'_> {
     }
 }
 
-/// Returns the operator-facing label of a binding (input) transport.
-pub(crate) fn binding_transport_label(transport: BindingTransport) -> &'static str {
+/// Returns the operator-facing label of a route (input) transport.
+pub(crate) fn route_transport_label(transport: RouteTransport) -> &'static str {
     match transport {
-        BindingTransport::Sacn => "sACN",
-        BindingTransport::ArtNet => "Art-Net",
-        BindingTransport::Udmx => "USB",
+        RouteTransport::Sacn => "sACN",
+        RouteTransport::ArtNet => "Art-Net",
+        RouteTransport::Udmx => "USB",
     }
 }
 
 /// Returns the sort rank of an input transport, so inputs list in a stable family order.
-fn input_transport_rank(transport: BindingTransport) -> u8 {
+fn input_transport_rank(transport: RouteTransport) -> u8 {
     match transport {
-        BindingTransport::Sacn => 0,
-        BindingTransport::ArtNet => 1,
-        BindingTransport::Udmx => 2,
+        RouteTransport::Sacn => 0,
+        RouteTransport::ArtNet => 1,
+        RouteTransport::Udmx => 2,
     }
 }
 
@@ -287,7 +287,7 @@ pub(crate) fn collect_universes<'a>(
                     key: DmxUniverseKey {
                         universe_id,
                         io_mode: DmxIoMode::Input,
-                        transport: binding_transport_label(transport).to_string(),
+                        transport: route_transport_label(transport).to_string(),
                     },
                     output_transport: None,
                     channels,

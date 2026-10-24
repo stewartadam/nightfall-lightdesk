@@ -235,8 +235,8 @@ export interface LayerObjectNavigationRequest {
   layerIndex: number;
   requestId: number;
 }
-export interface PatchBindingNavigationRequest {
-  bindingId: string;
+export interface DmxRouteNavigationRequest {
+  routeId: string;
   requestId: number;
 }
 export interface SequenceNavigationRequest {
@@ -380,16 +380,17 @@ export function getParametersImmediate(): ParameterOutputSnapshot {
 export function setParametersImmediate(map: ParameterOutputMap): void {
   parametersImmediateHolder.current = map;
 }
-export const bindings = atom<types.BindingsSnapshot>({
+export const routes = atom<types.RoutesSnapshot>({
   input: [],
   output: [],
   disabled: [],
 });
-export const bindingValidationSettings = atom<types.BindingValidationSettings>({
-  mode: "Strict" as types.BindingValidationMode,
+export const routeValidationSettings = atom<types.RouteValidationSettings>({
+  mode: "Strict" as types.RouteValidationMode,
 });
-export const patchBindingNavigationRequest =
-  atom<PatchBindingNavigationRequest | null>(null);
+export const dmxRouteNavigationRequest = atom<DmxRouteNavigationRequest | null>(
+  null,
+);
 export const programmerState = atom<ProgrammerRow[]>([]);
 
 /** Active fixture selection in the programmer (resolved UIDs) */
@@ -961,7 +962,7 @@ export function clearSelectionFlattenConfirmation(): void {
 }
 
 let nextLayerNavigationRequestId = 1;
-let nextPatchBindingNavigationRequestId = 1;
+let nextDmxRouteNavigationRequestId = 1;
 let nextSequenceNavigationRequestId = 1;
 let nextSceneObjectNavigationRequestId = 1;
 
@@ -997,23 +998,23 @@ export function clearLayerObjectNavigationRequest(requestId: number): void {
   }
 }
 
-/** Requests one-shot navigation to a patch binding. */
-export function requestPatchBindingNavigation(bindingId: string): number {
-  const requestId = nextPatchBindingNavigationRequestId++;
-  setStoreAction(patchBindingNavigationRequest, "Request Patch Binding", {
-    bindingId,
+/** Requests one-shot navigation to a DMX route. */
+export function requestDmxRouteNavigation(routeId: string): number {
+  const requestId = nextDmxRouteNavigationRequestId++;
+  setStoreAction(dmxRouteNavigationRequest, "Request DMX Route Navigation", {
+    routeId,
     requestId,
   });
   return requestId;
 }
 
-/** Clears the patch binding navigation request only if the id still matches. */
-export function clearPatchBindingNavigationRequest(requestId: number): void {
-  const current = patchBindingNavigationRequest.get();
+/** Clears the DMX route navigation request only if the id still matches. */
+export function clearDmxRouteNavigationRequest(requestId: number): void {
+  const current = dmxRouteNavigationRequest.get();
   if (current?.requestId === requestId) {
     setStoreAction(
-      patchBindingNavigationRequest,
-      "Clear Patch Binding Navigation",
+      dmxRouteNavigationRequest,
+      "Clear DMX Route Navigation",
       null,
     );
   }
@@ -1125,9 +1126,9 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     getFixtureById,
     getParametersImmediate,
     setParametersImmediate,
-    bindings,
-    bindingValidationSettings,
-    patchBindingNavigationRequest,
+    routes,
+    routeValidationSettings,
+    dmxRouteNavigationRequest,
     programmerState,
     selectionFlattenConfirmation,
     requestSelectionFlattenConfirmation,

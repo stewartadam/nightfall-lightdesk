@@ -19,7 +19,7 @@ use bevy_ecs::prelude::*;
 use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
 use nightfall_engine::prelude::*;
 use nightfall_io::prelude::*;
-use nightfall_io::{BindingTransport, SacnOutputIdentity};
+use nightfall_io::{RouteTransport, SacnOutputIdentity};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 mod service;
@@ -81,7 +81,7 @@ fn sync_sacn_input_binding(
 
     disable_network_input_after_bind_failure(
         NetworkInputBindStatus::Failed,
-        BindingTransport::Sacn,
+        RouteTransport::Sacn,
         5568,
         settings.as_mut(),
         notifications,
@@ -91,7 +91,7 @@ fn sync_sacn_input_binding(
 /// Disable network input and emit an IO observation after sACN listener binding fails.
 fn disable_network_input_after_bind_failure(
     status: NetworkInputBindStatus,
-    transport: BindingTransport,
+    transport: RouteTransport,
     port: u16,
     settings: &mut IoRuntimeSettings,
     mut notifications: MessageWriter<NotificationEnvelope<IoRuntimeNotification>>,
@@ -176,7 +176,7 @@ fn accept_frame(
         "Applying sACN frame"
     );
     Some(AcceptedDmxFrame {
-        transport: BindingTransport::Sacn,
+        transport: RouteTransport::Sacn,
         universe: frame.universe_id,
         data: frame.data,
         received_at: frame.received_at,
@@ -225,7 +225,7 @@ mod tests {
                  notifications: MessageWriter<NotificationEnvelope<IoRuntimeNotification>>| {
                     disable_network_input_after_bind_failure(
                         NetworkInputBindStatus::Failed,
-                        BindingTransport::Sacn,
+                        RouteTransport::Sacn,
                         5568,
                         settings.as_mut(),
                         notifications,
@@ -251,7 +251,7 @@ mod tests {
                 matches!(
                     notification.notification,
                     IoRuntimeNotification::InputBindFailed {
-                        transport: BindingTransport::Sacn,
+                        transport: RouteTransport::Sacn,
                         port: 5568
                     }
                 )
@@ -323,7 +323,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawSacnFrame>();
 
         app.insert_resource(SacnEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -332,11 +332,9 @@ mod tests {
             cid: Some(local_cid),
         });
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: 2,
                 address: 1,
             },
@@ -370,7 +368,7 @@ mod tests {
 
         app.insert_resource(SacnEventReceiver(rx));
         app.insert_resource(InputUniverseVisibilityMode::AllDetected);
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -379,11 +377,9 @@ mod tests {
             cid: Some(local_cid),
         });
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: 2,
                 address: 1,
             },
@@ -407,7 +403,7 @@ mod tests {
         assert_eq!(universes.get_value(2, 1), Some(99));
         let input_universes = app.world().resource::<InputDmxUniverses>();
         assert_eq!(
-            input_universes.is_self_frame(BindingTransport::Sacn, 2),
+            input_universes.is_self_frame(RouteTransport::Sacn, 2),
             Some(true)
         );
     }
@@ -426,7 +422,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawSacnFrame>();
         app.insert_resource(SacnEventReceiver(rx));
 
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
         let input_layer = spawn_transport_input_layer(&mut app);
@@ -447,11 +443,9 @@ mod tests {
             ))
             .id();
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: 2,
                 address: 1,
             },

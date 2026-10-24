@@ -22,7 +22,7 @@ use nightfall_engine::prelude::{
     ClientEventSink, CommandEnvelope, CommandOrigin, OutboundFrame, ReplyTarget,
 };
 use nightfall_fixtures::prelude::{
-    BindingValidationMode, BindingValidationSettings, InputDmxUniverses, InputUniverseStaleTimeout,
+    InputDmxUniverses, InputUniverseStaleTimeout, RouteValidationMode, RouteValidationSettings,
 };
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, ExternalControlState, InputSignalLossPolicy,
@@ -55,7 +55,7 @@ fn settings_command_app() -> (App, Receiver<OutboundFrame>) {
     app.init_resource::<ExternalControlState>();
     app.init_resource::<nightfall_desk::prelude::TelemetryState>();
     app.init_resource::<nightfall_desk::prelude::ReportedGraphics>();
-    app.init_resource::<BindingValidationSettings>();
+    app.init_resource::<RouteValidationSettings>();
     app.init_resource::<InputUniverseVisibilityMode>();
     app.init_resource::<InputUniverseStaleTimeout>();
     app.init_resource::<InputDmxUniverses>();
@@ -217,19 +217,19 @@ fn broadcasts_clamped_dmx_output_rate() {
 }
 
 #[test]
-fn updates_binding_validation_mode_from_settings_command() {
+fn updates_route_validation_mode_from_settings_command() {
     let (mut app, _rx) = settings_command_app();
 
     submit_settings_command(
         &mut app,
-        SettingsCommand::SetBindingValidationMode(BindingValidationMode::Permissive),
+        SettingsCommand::SetRouteValidationMode(RouteValidationMode::Permissive),
     );
 
     app.update();
 
     assert_eq!(
-        app.world().resource::<BindingValidationSettings>().mode,
-        BindingValidationMode::Permissive
+        app.world().resource::<RouteValidationSettings>().mode,
+        RouteValidationMode::Permissive
     );
 }
 

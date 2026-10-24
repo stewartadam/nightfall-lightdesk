@@ -6,22 +6,22 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-.toolbar-binding-preview {
+.toolbar-route-preview {
   display: grid;
   gap: 10px;
   padding: 12px 8px;
   font-size: 11px;
 }
-.toolbar-binding-preview:focus-visible {
+.toolbar-route-preview:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.toolbar-binding-heading {
+.toolbar-route-heading {
   margin-bottom: 5px;
   color: var(--muted);
   font-weight: 600;
 }
-.toolbar-binding-row {
+.toolbar-route-row {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -29,6 +29,6 @@
   padding: 4px 0;
   font-variant-numeric: tabular-nums;
 }
-.toolbar-binding-row span:last-child {
+.toolbar-route-row span:last-child {
   color: var(--muted);
 }

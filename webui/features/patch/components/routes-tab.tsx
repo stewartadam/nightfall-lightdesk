@@ -24,7 +24,6 @@ import DataGrid, {
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
-import { computeBindingOverlapAnalysis } from "../../../lib/binding-overlap";
 import type {
   GridCell,
   GridSelection,
@@ -43,31 +42,32 @@ import {
   type VisibilityGridColumn,
 } from "../../../lib/datagrid-column-visibility";
 import { filterColumnsFromMetadata } from "../../../lib/datagrid-filtering";
-import { sendRemovePatchBinding } from "../../../lib/fixture-service";
+import { sendRemoveDmxRoutes } from "../../../lib/fixture-service";
+import { computeRouteOverlapAnalysis } from "../../../lib/route-overlap";
 import { useSharedStore } from "../../../lib/use-shared-store";
-import { bindings, dmxUniverseList, fixtures } from "../../../state/appStores";
+import { dmxUniverseList, fixtures, routes } from "../../../state/appStores";
 import {
-  type BindingDeleteFilter,
-  type BindingRow,
   type ConflictTooltipState,
   DEFAULT_COLUMNS,
-  isBindingConflictColumn,
-  toDisabledBindingRow,
-  toInputBindingRow,
-  toOutputBindingRow,
-} from "../model/bindings-model";
+  isRouteConflictColumn,
+  type RouteDeleteFilter,
+  type RouteRow,
+  toDisabledRouteRow,
+  toInputRouteRow,
+  toOutputRouteRow,
+} from "../model/routes-model";
 
-export interface PatchBindingsTabProps {
+export interface DmxRoutesTabProps {
   panelId: string;
   onSelectionCountChange?: (count: number) => void;
   onDeleteActionChange?: (action: (() => void) | null) => void;
-  navigateToBinding?: { bindingId: string; requestId: number } | null;
+  navigateToRoute?: { routeId: string; requestId: number } | null;
   onNavigateHandled?: (requestId: number) => void;
   onColumnVisibilityControlChange?: (control: JSX.Element | null) => void;
 }
 
-export default function PatchBindingsTab(props: PatchBindingsTabProps) {
-  const $bindings = useStore(bindings);
+export default function DmxRoutesTab(props: DmxRoutesTabProps) {
+  const $routes = useStore(routes);
   const $fixtures = useSharedStore(fixtures);
   const $dmxUniverseList = useStore(dmxUniverseList);
   const [columns, setColumns] =
@@ -84,25 +84,25 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
   let conflictTooltipId = 0;
   const { clearSelection, handleGridSelectionChange } =
     createRowSelectionHelpers(selection, setSelection);
-  /** Returns binding rows targeted by row markers, active cells, or cell ranges. */
+  /** Returns route rows targeted by row markers, active cells, or cell ranges. */
   const selectedRows = (): number[] =>
     getEditTargetRowIndices(selection(), displayRows().length);
 
-  const rows = createMemo<BindingRow[]>(() => {
-    const snapshot = $bindings();
+  const rows = createMemo<RouteRow[]>(() => {
+    const snapshot = $routes();
     const fixtureMap = $fixtures();
-    const rows: BindingRow[] = [];
+    const rows: RouteRow[] = [];
 
-    (snapshot.input ?? []).forEach((binding, index) => {
-      rows.push(toInputBindingRow(binding, fixtureMap, `input-${index}`));
+    (snapshot.input ?? []).forEach((route, index) => {
+      rows.push(toInputRouteRow(route, fixtureMap, `input-${index}`));
     });
 
-    (snapshot.output ?? []).forEach((binding, index) => {
-      rows.push(toOutputBindingRow(binding, fixtureMap, `output-${index}`));
+    (snapshot.output ?? []).forEach((route, index) => {
+      rows.push(toOutputRouteRow(route, fixtureMap, `output-${index}`));
     });
 
-    (snapshot.disabled ?? []).forEach((binding, index) => {
-      rows.push(toDisabledBindingRow(binding, fixtureMap, `disabled-${index}`));
+    (snapshot.disabled ?? []).forEach((route, index) => {
+      rows.push(toDisabledRouteRow(route, fixtureMap, `disabled-${index}`));
     });
 
     return rows;
@@ -115,17 +115,17 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
     filteredRows: displayRows,
     setFilters: setTableFilters,
   } = createDataGridFilterState({
-    scope: `${props.panelId}:bindings`,
+    scope: `${props.panelId}:routes`,
     rows,
     columns: filterColumns,
     onFiltersChange: clearSelection,
   });
 
-  const deleteSelectedBindings = () => {
+  const deleteSelectedRoutes = () => {
     const rows = displayRows();
     const filters = selectedRows()
       .map((rowIndex) => rows[rowIndex]?.deleteFilter ?? null)
-      .filter((filter): filter is BindingDeleteFilter => filter !== null);
+      .filter((filter): filter is RouteDeleteFilter => filter !== null);
 
     if (filters.length === 0) {
       clearSelection();
@@ -133,7 +133,7 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
     }
 
     for (const filter of filters) {
-      sendRemovePatchBinding(
+      sendRemoveDmxRoutes(
         filter.source,
         filter.target,
         filter.priority,
@@ -149,21 +149,18 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
   });
 
   createEffect(() => {
-    props.onDeleteActionChange?.(deleteSelectedBindings);
+    props.onDeleteActionChange?.(deleteSelectedRoutes);
   });
 
-  const bindingConflictColumns = createMemo(() => {
+  const routeConflictColumns = createMemo(() => {
     const activeUniverses = $dmxUniverseList().map(
       (universe) => universe.universe_id,
     );
-    const analysis = computeBindingOverlapAnalysis(
-      $bindings(),
-      activeUniverses,
-    );
-    return analysis.conflictColumnsByBinding;
+    const analysis = computeRouteOverlapAnalysis($routes(), activeUniverses);
+    return analysis.conflictColumnsByRoute;
   });
 
-  /** Clears any pending or visible patch binding conflict tooltip. */
+  /** Clears any pending or visible DMX route conflict tooltip. */
   const clearConflictTooltip = () => {
     if (conflictTooltipTimeoutId !== undefined) {
       clearTimeout(conflictTooltipTimeoutId);
@@ -172,15 +169,15 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
     setConflictTooltip(undefined);
   };
 
-  /** Describes why a binding row carries a conflict warning glyph. */
-  const conflictTooltipContentForRow = (row: BindingRow): string => {
+  /** Describes why a route row carries a conflict warning glyph. */
+  const conflictTooltipContentForRow = (row: RouteRow): string => {
     if (row.kind.startsWith("Input")) {
-      return "This input binding overlaps another input route on at least one universe/address.";
+      return "This input route overlaps another input route on at least one universe/address.";
     }
     if (row.kind.startsWith("Output")) {
-      return "This output binding overlaps another output route on at least one universe/address.";
+      return "This output route overlaps another output route on at least one universe/address.";
     }
-    return "This binding overlaps another binding on at least one universe/address.";
+    return "This route overlaps another route on at least one universe/address.";
   };
 
   /** Returns the conflict tooltip content for one grid cell, when applicable. */
@@ -189,16 +186,16 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
     const rowData = displayRows()[row];
     const columnId = String(displayColumns()[col]?.id);
     if (
-      !isBindingConflictColumn(columnId) ||
+      !isRouteConflictColumn(columnId) ||
       !rowData ||
-      !bindingConflictColumns().get(rowData.id)?.has(columnId)
+      !routeConflictColumns().get(rowData.id)?.has(columnId)
     ) {
       return undefined;
     }
     return conflictTooltipContentForRow(rowData);
   };
 
-  /** Schedules a delayed tooltip for conflicted binding value cells. */
+  /** Schedules a delayed tooltip for conflicted route value cells. */
   const onCellHovered = (cell: Item | undefined, element?: HTMLElement) => {
     clearConflictTooltip();
     if (!cell || !element) return;
@@ -217,13 +214,13 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
   };
 
   createEffect(() => {
-    const navigateRequest = props.navigateToBinding;
+    const navigateRequest = props.navigateToRoute;
     if (!navigateRequest) {
       return;
     }
 
     const rowIndex = displayRows().findIndex(
-      (row) => row.id === navigateRequest.bindingId,
+      (row) => row.id === navigateRequest.routeId,
     );
     if (rowIndex < 0) {
       props.onNavigateHandled?.(navigateRequest.requestId);
@@ -284,18 +281,14 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
           case "source":
             return {
               ...makeSafeTextCell(item.source),
-              themeOverride: bindingConflictColumns()
-                .get(item.id)
-                ?.has("source")
+              themeOverride: routeConflictColumns().get(item.id)?.has("source")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
             };
           case "target":
             return {
               ...makeSafeTextCell(item.target),
-              themeOverride: bindingConflictColumns()
-                .get(item.id)
-                ?.has("target")
+              themeOverride: routeConflictColumns().get(item.id)?.has("target")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
             };
@@ -319,15 +312,15 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
     }),
   );
 
-  /** Draws conflict warning glyphs for patch binding rows. */
+  /** Draws conflict warning glyphs for DMX route rows. */
   const conflictCellDecorations = createMemo(() => {
     const columns = displayColumns();
     const rows = displayRows();
     const drawDecorations: DataGridCellDecorationCallback = (args) => {
       const row = rows[args.row];
       const columnId = String(columns[args.col]?.id);
-      if (!row || !isBindingConflictColumn(columnId)) return;
-      if (!bindingConflictColumns().get(row.id)?.has(columnId)) return;
+      if (!row || !isRouteConflictColumn(columnId)) return;
+      if (!routeConflictColumns().get(row.id)?.has(columnId)) return;
 
       drawConflictWarningIcon(args);
     };
@@ -335,9 +328,9 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
     return drawDecorations;
   });
 
-  /** Tracks patch binding conflicts that require decoration canvas redraws. */
+  /** Tracks DMX route conflicts that require decoration canvas redraws. */
   const conflictDecorationInvalidateKey = createMemo(() =>
-    Array.from(bindingConflictColumns())
+    Array.from(routeConflictColumns())
       .flatMap(([rowId, columns]) =>
         Array.from(columns).map((column) => `${rowId}:${column}`),
       )
@@ -351,7 +344,7 @@ export default function PatchBindingsTab(props: PatchBindingsTabProps) {
         when={displayRows().length > 0}
         fallback={
           <div class="h-full p-4 text-center text-gray-500 text-sm">
-            No bindings. Use patch commands or the wizard to create fixture
+            No routes. Use patch commands or the wizard to create fixture
             patches.
           </div>
         }

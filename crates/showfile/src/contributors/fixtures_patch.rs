@@ -19,13 +19,13 @@ use nightfall_input_midi::prelude::*;
 use nightfall_input_osc::prelude::*;
 
 use super::{ShowfileContribution, ShowfileLoadContributor, ShowfileSaveContributor};
-use crate::{BindingsSnapshot, ShowfileLoadDomain, ShowfileLoadPhase};
+use crate::{RoutesSnapshot, ShowfileLoadDomain, ShowfileLoadPhase};
 
 /// Fixture patch state used as owned save output or borrowed load input.
 pub(crate) struct FixturesPatchSnapshot<'a> {
     pub(super) fixtures: Cow<'a, [Fixture]>,
     pub(super) color_path_defaults: Cow<'a, [ColorPathDefault]>,
-    pub(super) bindings: Cow<'a, BindingsSnapshot>,
+    pub(super) routes: Cow<'a, RoutesSnapshot>,
     #[cfg(feature = "midi")]
     pub(super) midi_mappings: Cow<'a, [MidiMapping]>,
     #[cfg(feature = "midi")]
@@ -34,12 +34,12 @@ pub(crate) struct FixturesPatchSnapshot<'a> {
     pub(super) osc_mappings: Cow<'a, [OscMapping]>,
 }
 
-/// Save contributor for fixture patch data and input/output bindings.
+/// Save contributor for fixture patch data and input/output routes.
 pub(crate) struct FixturesPatchSaveContributor<'a> {
     fixture_data_provider: &'a FixtureDataProviderExt,
-    input_bindings: &'a InputBindings,
-    output_bindings: &'a OutputBindings,
-    disabled_bindings: &'a DisabledBindings,
+    input_routes: &'a InputRoutes,
+    output_routes: &'a OutputRoutes,
+    disabled_routes: &'a DisabledRoutes,
     #[cfg(feature = "midi")]
     midi_mappings: &'a MidiMappings,
     #[cfg(feature = "osc")]
@@ -47,20 +47,20 @@ pub(crate) struct FixturesPatchSaveContributor<'a> {
 }
 
 impl<'a> FixturesPatchSaveContributor<'a> {
-    /// Build a contributor that snapshots fixtures, patch bindings, and IO mappings.
+    /// Build a contributor that snapshots fixtures, DMX routes, and IO mappings.
     pub(crate) fn new(
         fixture_data_provider: &'a FixtureDataProviderExt,
-        input_bindings: &'a InputBindings,
-        output_bindings: &'a OutputBindings,
-        disabled_bindings: &'a DisabledBindings,
+        input_routes: &'a InputRoutes,
+        output_routes: &'a OutputRoutes,
+        disabled_routes: &'a DisabledRoutes,
         #[cfg(feature = "midi")] midi_mappings: &'a MidiMappings,
         #[cfg(feature = "osc")] osc_mappings: &'a OscMappings,
     ) -> Self {
         Self {
             fixture_data_provider,
-            input_bindings,
-            output_bindings,
-            disabled_bindings,
+            input_routes,
+            output_routes,
+            disabled_routes,
             #[cfg(feature = "midi")]
             midi_mappings,
             #[cfg(feature = "osc")]
@@ -70,7 +70,7 @@ impl<'a> FixturesPatchSaveContributor<'a> {
 }
 
 impl ShowfileSaveContributor for FixturesPatchSaveContributor<'_> {
-    /// Copy fixture patch state into the stable showfile fixture and binding fields.
+    /// Copy fixture patch state into the stable showfile fixture and route fields.
     fn save_contribution(&self) -> ShowfileContribution<'static> {
         let mut fixtures: Vec<_> = self
             .fixture_data_provider
@@ -83,10 +83,10 @@ impl ShowfileSaveContributor for FixturesPatchSaveContributor<'_> {
         ShowfileContribution::FixturesPatch(FixturesPatchSnapshot {
             fixtures: Cow::Owned(fixtures),
             color_path_defaults: Cow::Owned(Vec::new()),
-            bindings: Cow::Owned(BindingsSnapshot {
-                input: self.input_bindings.bindings.clone(),
-                output: self.output_bindings.bindings.clone(),
-                disabled: self.disabled_bindings.bindings.clone(),
+            routes: Cow::Owned(RoutesSnapshot {
+                input: self.input_routes.routes.clone(),
+                output: self.output_routes.routes.clone(),
+                disabled: self.disabled_routes.routes.clone(),
             }),
             #[cfg(feature = "midi")]
             midi_mappings: Cow::Owned(self.midi_mappings.mappings().to_vec()),
@@ -104,12 +104,12 @@ impl ShowfileSaveContributor for FixturesPatchSaveContributor<'_> {
     }
 }
 
-/// Load contributor for fixture patch data and input/output bindings.
+/// Load contributor for fixture patch data and input/output routes.
 pub(crate) struct FixturesPatchLoadContributor<'a> {
     fixture_data_provider: &'a mut FixtureDataProviderExt,
-    input_bindings: &'a mut InputBindings,
-    output_bindings: &'a mut OutputBindings,
-    disabled_bindings: &'a mut DisabledBindings,
+    input_routes: &'a mut InputRoutes,
+    output_routes: &'a mut OutputRoutes,
+    disabled_routes: &'a mut DisabledRoutes,
     #[cfg(feature = "midi")]
     midi_mappings: &'a mut MidiMappings,
     #[cfg(feature = "osc")]
@@ -117,20 +117,20 @@ pub(crate) struct FixturesPatchLoadContributor<'a> {
 }
 
 impl<'a> FixturesPatchLoadContributor<'a> {
-    /// Build a contributor that restores fixtures, patch bindings, and IO mappings.
+    /// Build a contributor that restores fixtures, DMX routes, and IO mappings.
     pub(crate) fn new(
         fixture_data_provider: &'a mut FixtureDataProviderExt,
-        input_bindings: &'a mut InputBindings,
-        output_bindings: &'a mut OutputBindings,
-        disabled_bindings: &'a mut DisabledBindings,
+        input_routes: &'a mut InputRoutes,
+        output_routes: &'a mut OutputRoutes,
+        disabled_routes: &'a mut DisabledRoutes,
         #[cfg(feature = "midi")] midi_mappings: &'a mut MidiMappings,
         #[cfg(feature = "osc")] osc_mappings: &'a mut OscMappings,
     ) -> Self {
         Self {
             fixture_data_provider,
-            input_bindings,
-            output_bindings,
-            disabled_bindings,
+            input_routes,
+            output_routes,
+            disabled_routes,
             #[cfg(feature = "midi")]
             midi_mappings,
             #[cfg(feature = "osc")]
@@ -153,7 +153,7 @@ impl<'a> FixturesPatchLoadContributor<'a> {
 }
 
 impl ShowfileLoadContributor for FixturesPatchLoadContributor<'_> {
-    /// Register fixtures and bindings as the fixture patch load domain.
+    /// Register fixtures and routes as the fixture patch load domain.
     fn domain(&self) -> ShowfileLoadDomain {
         ShowfileLoadDomain::FixturesPatch
     }
@@ -181,9 +181,9 @@ impl ShowfileLoadContributor for FixturesPatchLoadContributor<'_> {
                     }
                 }
 
-                self.input_bindings.bindings = contribution.bindings.input.clone();
-                self.output_bindings.bindings = contribution.bindings.output.clone();
-                self.disabled_bindings.bindings = contribution.bindings.disabled.clone();
+                self.input_routes.routes = contribution.routes.input.clone();
+                self.output_routes.routes = contribution.routes.output.clone();
+                self.disabled_routes.routes = contribution.routes.disabled.clone();
                 self.fixture_data_provider
                     .replace_color_path_defaults(contribution.color_path_defaults.to_vec());
                 #[cfg(feature = "midi")]

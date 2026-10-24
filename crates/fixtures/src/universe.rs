@@ -16,8 +16,8 @@ use std::{
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall_dmx::prelude::*;
-use nightfall_io::BindingTransport;
 use nightfall_io::OutputTransport;
+use nightfall_io::RouteTransport;
 use web_time::Instant;
 
 use crate::output_frames::ChannelWindow;
@@ -45,18 +45,17 @@ impl Default for InputUniverseStaleTimeout {
 /// The `u16` values are universe IDs.
 #[derive(Default, Resource)]
 pub struct InputDmxUniverses {
-    universes:
-        HashMap<BindingTransport, HashMap<u16, [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE]>>,
-    last_seen: HashMap<(BindingTransport, u16), Instant>,
-    last_is_self: HashMap<(BindingTransport, u16), bool>,
-    released: HashSet<(BindingTransport, u16)>,
+    universes: HashMap<RouteTransport, HashMap<u16, [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE]>>,
+    last_seen: HashMap<(RouteTransport, u16), Instant>,
+    last_is_self: HashMap<(RouteTransport, u16), bool>,
+    released: HashSet<(RouteTransport, u16)>,
 }
 
 impl InputDmxUniverses {
     /// Stores the latest raw DMX data for a transport + universe.
     pub fn set_universe(
         &mut self,
-        transport: BindingTransport,
+        transport: RouteTransport,
         universe_id: u16,
         data: [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE],
         received_at: Instant,
@@ -67,7 +66,7 @@ impl InputDmxUniverses {
     /// Stores the latest raw DMX data for a transport + universe and marks whether it is local.
     pub fn set_universe_with_self_flag(
         &mut self,
-        transport: BindingTransport,
+        transport: RouteTransport,
         universe_id: u16,
         data: [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE],
         received_at: Instant,
@@ -86,7 +85,7 @@ impl InputDmxUniverses {
         &self,
     ) -> impl Iterator<
         Item = (
-            BindingTransport,
+            RouteTransport,
             u16,
             &[ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE],
         ),
@@ -101,7 +100,7 @@ impl InputDmxUniverses {
     /// Returns an immutable view of a transport/universe, creating a zeroed fallback on miss.
     pub fn get_universe(
         &self,
-        transport: BindingTransport,
+        transport: RouteTransport,
         universe_id: u16,
     ) -> [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE] {
         self.universes
@@ -118,7 +117,7 @@ impl InputDmxUniverses {
     /// last frame and age for stale-input reporting.
     pub fn active_universe(
         &self,
-        transport: BindingTransport,
+        transport: RouteTransport,
         universe_id: u16,
     ) -> Option<&[ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE]> {
         if self.released.contains(&(transport, universe_id)) {
@@ -132,7 +131,7 @@ impl InputDmxUniverses {
     /// Returns a mutable universe buffer, creating it if absent.
     pub fn get_universe_mut(
         &mut self,
-        transport: BindingTransport,
+        transport: RouteTransport,
         universe_id: u16,
     ) -> &mut [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE] {
         self.universes
@@ -145,7 +144,7 @@ impl InputDmxUniverses {
     /// Returns age in milliseconds for the latest frame of a transport + universe.
     pub fn frame_age_ms(
         &self,
-        transport: BindingTransport,
+        transport: RouteTransport,
         universe_id: u16,
         now: Instant,
     ) -> Option<u32> {
@@ -155,13 +154,13 @@ impl InputDmxUniverses {
     }
 
     /// Returns whether the latest frame for a transport + universe was detected as local.
-    pub fn is_self_frame(&self, transport: BindingTransport, universe_id: u16) -> Option<bool> {
+    pub fn is_self_frame(&self, transport: RouteTransport, universe_id: u16) -> Option<bool> {
         self.last_is_self.get(&(transport, universe_id)).copied()
     }
 
     /// Releases received universes whose latest frame is at least `timeout` old.
     ///
-    /// Released sources stop feeding passthrough bindings until their next frame is stored.
+    /// Released sources stop feeding passthrough routes until their next frame is stored.
     pub fn release_stale(&mut self, now: Instant, timeout: Duration) {
         for (source, last_seen) in &self.last_seen {
             if now.saturating_duration_since(*last_seen) >= timeout {
@@ -183,11 +182,11 @@ impl InputDmxUniverses {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConsoleChannelOrigin {
     /// Channel currently owned by output routing from parameter state.
-    OutputBinding,
-    /// Channel currently owned by input binding from a transport universe.
+    OutputRoute,
+    /// Channel currently owned by input route from a transport universe.
     InputTransport {
         /// Input transport.
-        transport: BindingTransport,
+        transport: RouteTransport,
         /// Input universe ID.
         universe: u16,
     },
@@ -247,16 +246,16 @@ fn write_channel_window(
 ///
 /// Holds two numbering spaces:
 /// - console universes, keyed by console numbering: fixture values at their console
-///   addresses, manual `ch` writes, and input bindings targeting the console;
+///   addresses, manual `ch` writes, and input routes targeting the console;
 /// - output buffers, keyed by concrete transport and on-the-wire universe numbering, holding
 ///   direct fixture→transport values.
 ///
 /// Neither is sent as-is: [`crate::output_frames::compose_output_frames`] combines them
 /// according to the routing plan, so console space only reaches the wire through
-/// console→transport bindings.
+/// console→transport routes.
 ///
 /// Wire channels held by `ch <transport>:U.A` commands are kept separately, by output target
-/// ID: they survive binding re-resolution and override every routed source until released.
+/// ID: they survive route re-resolution and override every routed source until released.
 /// [`Self::resolve_held_wire_values`] maps them onto concrete output frames.
 #[derive(Default, Resource)]
 pub struct ConsoleDmxUniverses {
@@ -461,16 +460,16 @@ impl ConsoleDmxUniverses {
         true
     }
 
-    /// Removes every value written by output bindings after the bindings were re-resolved.
+    /// Removes every value written by output routes after the routes were re-resolved.
     ///
-    /// Output buffers are dropped entirely, console channels owned by output bindings are
+    /// Output buffers are dropped entirely, console channels owned by output routes are
     /// zeroed and unowned, and console universes left without any owned channel are removed.
-    /// The next [`dmx_universes`] run rewrites values for the bindings that still apply.
-    pub fn clear_output_binding_values(&mut self) {
+    /// The next [`dmx_universes`] run rewrites values for the routes that still apply.
+    pub fn clear_output_route_values(&mut self) {
         self.output_universes.clear();
         self.universes.retain(|_, universe| {
             for (value, origin) in universe.values.iter_mut().zip(universe.origins.iter_mut()) {
-                if *origin == Some(ConsoleChannelOrigin::OutputBinding) {
+                if *origin == Some(ConsoleChannelOrigin::OutputRoute) {
                     *value = 0;
                     *origin = None;
                 }
@@ -645,7 +644,7 @@ pub(crate) fn parameter_dmx_bytes(parameter: &Parameter) -> Vec<ChannelDmxValue>
 
 /// Writes parameter values into console space and each resolved transport output buffer.
 ///
-/// Console-space values are keyed by console universe numbering (from console bindings),
+/// Console-space values are keyed by console universe numbering (from console routes),
 /// while transport buffers are keyed by on-the-wire universe numbering. Every byte lands on
 /// the address laid out for it by the fixture's wire layout, so explicit footprint slots and
 /// gaps are honored in both spaces.
@@ -680,7 +679,7 @@ pub fn dmx_universes(
                     console_address.universe,
                     *address,
                     *byte,
-                    ConsoleChannelOrigin::OutputBinding,
+                    ConsoleChannelOrigin::OutputRoute,
                 );
             }
         }
@@ -700,7 +699,7 @@ pub fn dmx_universes(
                     destination.universe,
                     *address,
                     std::slice::from_ref(byte),
-                    ConsoleChannelOrigin::OutputBinding,
+                    ConsoleChannelOrigin::OutputRoute,
                 );
             }
         }
@@ -720,20 +719,20 @@ pub fn dmx_universes_debug(universes: ResMut<ConsoleDmxUniverses>) {
 mod tests {
     use super::*;
 
-    /// Clearing output-binding values keeps manual writes, drops fixture-owned channels,
+    /// Clearing output-route values keeps manual writes, drops fixture-owned channels,
     /// removes universes left without owned channels, and drops output buffers.
     #[test]
-    fn clear_output_binding_values_keeps_only_non_binding_channels() {
+    fn clear_output_route_values_keeps_only_non_route_channels() {
         let mut universes = ConsoleDmxUniverses::default();
         let sacn = OutputTransport::Sacn {
             mode: nightfall_io::SacnDelivery::Multicast,
         };
-        universes.set_values(1, 1, &[10, 20], ConsoleChannelOrigin::OutputBinding);
+        universes.set_values(1, 1, &[10, 20], ConsoleChannelOrigin::OutputRoute);
         universes.set_value(1, 5, 55, ConsoleChannelOrigin::ManualCommand);
-        universes.set_values(2, 1, &[30], ConsoleChannelOrigin::OutputBinding);
-        universes.set_output_values(&sacn, 3, 1, &[40], ConsoleChannelOrigin::OutputBinding);
+        universes.set_values(2, 1, &[30], ConsoleChannelOrigin::OutputRoute);
+        universes.set_output_values(&sacn, 3, 1, &[40], ConsoleChannelOrigin::OutputRoute);
 
-        universes.clear_output_binding_values();
+        universes.clear_output_route_values();
 
         assert_eq!(universes.get_value(1, 1), Some(0));
         assert_eq!(universes.get_origin(1, 1), None);
@@ -747,7 +746,7 @@ mod tests {
         let mut universes = ConsoleDmxUniverses::default();
         let mut input_universes = InputDmxUniverses::default();
 
-        let source = (BindingTransport::Sacn, 1);
+        let source = (RouteTransport::Sacn, 1);
         let now = Instant::now();
         let past = now - Duration::from_millis(1500);
 
@@ -777,7 +776,7 @@ mod tests {
         let mut universes = ConsoleDmxUniverses::default();
         let mut input_universes = InputDmxUniverses::default();
 
-        let source = (BindingTransport::ArtNet, 3);
+        let source = (RouteTransport::ArtNet, 3);
         let now = Instant::now();
         let past = now - Duration::from_millis(1500);
 
@@ -810,14 +809,14 @@ mod tests {
         let past = now - Duration::from_millis(250);
 
         input_universes.set_universe(
-            BindingTransport::Sacn,
+            RouteTransport::Sacn,
             1,
             [0; MAX_CHANNELS_PER_UNIVERSE],
             past,
         );
 
         let age_ms = input_universes
-            .frame_age_ms(BindingTransport::Sacn, 1, now)
+            .frame_age_ms(RouteTransport::Sacn, 1, now)
             .unwrap();
         assert!(age_ms >= 250);
     }
@@ -827,15 +826,15 @@ mod tests {
         let mut input_universes = InputDmxUniverses::default();
         let now = Instant::now();
 
-        let target = input_universes.get_universe_mut(BindingTransport::ArtNet, 7);
+        let target = input_universes.get_universe_mut(RouteTransport::ArtNet, 7);
         target[0] = 123;
 
         assert_eq!(
-            input_universes.frame_age_ms(BindingTransport::ArtNet, 7, now),
+            input_universes.frame_age_ms(RouteTransport::ArtNet, 7, now),
             None
         );
         assert_eq!(
-            input_universes.is_self_frame(BindingTransport::ArtNet, 7),
+            input_universes.is_self_frame(RouteTransport::ArtNet, 7),
             None
         );
     }
@@ -846,26 +845,26 @@ mod tests {
         let now = Instant::now();
 
         input_universes.set_universe_with_self_flag(
-            BindingTransport::Sacn,
+            RouteTransport::Sacn,
             11,
             [0; MAX_CHANNELS_PER_UNIVERSE],
             now,
             true,
         );
         assert_eq!(
-            input_universes.is_self_frame(BindingTransport::Sacn, 11),
+            input_universes.is_self_frame(RouteTransport::Sacn, 11),
             Some(true)
         );
 
         input_universes.set_universe_with_self_flag(
-            BindingTransport::Sacn,
+            RouteTransport::Sacn,
             11,
             [0; MAX_CHANNELS_PER_UNIVERSE],
             now,
             false,
         );
         assert_eq!(
-            input_universes.is_self_frame(BindingTransport::Sacn, 11),
+            input_universes.is_self_frame(RouteTransport::Sacn, 11),
             Some(false)
         );
     }
@@ -875,8 +874,8 @@ mod tests {
     fn release_stale_deactivates_only_stale_sources() {
         let mut input_universes = InputDmxUniverses::default();
         let now = Instant::now();
-        let stale = (BindingTransport::Sacn, 1);
-        let fresh = (BindingTransport::ArtNet, 2);
+        let stale = (RouteTransport::Sacn, 1);
+        let fresh = (RouteTransport::ArtNet, 2);
 
         input_universes.set_universe(
             stale.0,
@@ -908,7 +907,7 @@ mod tests {
     fn new_frame_reactivates_released_source() {
         let mut input_universes = InputDmxUniverses::default();
         let now = Instant::now();
-        let source = (BindingTransport::Sacn, 1);
+        let source = (RouteTransport::Sacn, 1);
 
         input_universes.set_universe(
             source.0,

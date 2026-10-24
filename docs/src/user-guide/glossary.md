@@ -11,6 +11,7 @@
 | Console DMX | Nightfall's internal universe/channel address space before transport routing. |
 | Cue | Stored fixture instructions within a sequence. |
 | Cue part | A subset of cue programming with its own timing overrides. |
+| DMX route | A connection in Patch that carries DMX: from fixtures or console channels to an output, or from an input to fixtures, console channels, another output, or `disabled` to ignore it. |
 | Element | An independently addressable cell or part of a fixture. |
 | Fixture | A patched light with a profile, operating mode, and optional DMX assignment. |
 | Fixture profile | The definition translating fixture attributes to the channels and ranges of a mode. |
@@ -20,7 +21,6 @@
 | Layer | One contribution to the composed fixture output. |
 | LTP | Latest takes precedence: the most recently asserted applicable value wins a merge. |
 | Master | A control that scales intensity or playback rate for a defined scope. |
-| Patch binding | A route between console channels, fixtures, or external input/output targets. |
 | Programmer | The working selection and live instructions used to create looks. |
 | Release | Removal of a playback's contribution, potentially with a transition. |
 | Sequence | Ordered cues with timing, tracking, setup, and release behavior. |

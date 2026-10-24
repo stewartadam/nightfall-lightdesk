@@ -19,11 +19,11 @@ use nightfall_dmx::MAX_CHANNELS_PER_UNIVERSE;
 use serde::{Deserialize, Serialize};
 use web_time::Instant;
 
-/// Transport identifier used in binding declarations.
+/// Transport identifier used in route declarations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(rename_all = "lowercase")]
-pub enum BindingTransport {
+pub enum RouteTransport {
     /// Streaming ACN (E1.31).
     Sacn,
     /// Art-Net protocol.
@@ -126,7 +126,7 @@ impl ArtNetRecentFramesByUniverse {
 #[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Message))]
 pub struct AcceptedDmxFrame {
     /// Protocol that delivered the frame.
-    pub transport: BindingTransport,
+    pub transport: RouteTransport,
     /// Source universe identifier.
     pub universe: u16,
     /// Decoded channel data, padded to a complete universe by the adapter.
@@ -153,7 +153,7 @@ pub enum IoRuntimeNotification {
     /// A network listener could not bind, causing network input to be disabled.
     InputBindFailed {
         /// Protocol whose listener failed.
-        transport: BindingTransport,
+        transport: RouteTransport,
         /// UDP port requested by the listener.
         port: u16,
     },

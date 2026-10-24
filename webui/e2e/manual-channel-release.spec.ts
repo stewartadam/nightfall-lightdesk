@@ -16,7 +16,7 @@ test.setTimeout(60_000);
 
 type AppStoresWindow = Window & {
   appStores?: {
-    bindings?: { get: () => BindingsSnapshot };
+    routes?: { get: () => RoutesSnapshot };
     layerStack?: { get: () => LayerState[] };
     dmxUniverseList: { get: () => DmxUniverseKey[] };
     dmxUniverseChannels: {
@@ -35,11 +35,11 @@ type DmxUniverseKey = {
   transport: string;
 };
 
-type BindingsSnapshot = {
-  output: OutputBinding[];
+type RoutesSnapshot = {
+  output: OutputRoute[];
 };
 
-type OutputBinding = {
+type OutputRoute = {
   source: { type: string };
   target: {
     type: string;
@@ -211,8 +211,8 @@ async function waitForManualLayerAssertionCount(page: Page, count: number) {
  */
 async function firstFixtureOutputChannel(page: Page) {
   return page.evaluate(() => {
-    const bindings = (window as AppStoresWindow).appStores?.bindings?.get();
-    const binding = bindings?.output.find((entry) => {
+    const routes = (window as AppStoresWindow).appStores?.routes?.get();
+    const route = routes?.output.find((entry) => {
       const target = entry.target.data;
       return (
         entry.source.type === "Fixture" &&
@@ -221,15 +221,13 @@ async function firstFixtureOutputChannel(page: Page) {
       );
     });
 
-    if (!binding?.target.data || binding.target.data.address === undefined) {
-      throw new Error(
-        "expected a fixture output binding with universe/address",
-      );
+    if (!route?.target.data || route.target.data.address === undefined) {
+      throw new Error("expected a fixture output route with universe/address");
     }
 
     return {
-      universe: binding.target.data.universe?.start ?? 1,
-      address: binding.target.data.address,
+      universe: route.target.data.universe?.start ?? 1,
+      address: route.target.data.address,
     };
   });
 }
@@ -297,14 +295,14 @@ test("global release clears manual channel assertion layer", async ({
   await page.waitForFunction(() => {
     const stores = (window as AppStoresWindow).appStores;
     return (
-      typeof stores?.bindings?.get === "function" &&
+      typeof stores?.routes?.get === "function" &&
       typeof stores.layerStack?.get === "function"
     );
   });
   await expect
     .poll(async () => {
       return page.evaluate(() => {
-        return (window as AppStoresWindow).appStores?.bindings?.get().output
+        return (window as AppStoresWindow).appStores?.routes?.get().output
           .length;
       });
     })

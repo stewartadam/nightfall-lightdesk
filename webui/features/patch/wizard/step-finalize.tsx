@@ -87,7 +87,7 @@ export function StepFinalize() {
               <div class="bg-neutral-800 rounded-lg p-4">
                 <div class="text-sm text-gray-400 mb-1">Preserved</div>
                 <div class="text-gray-100">
-                  Fixture IDs, labels, patch bindings, and 3D placement
+                  Fixture IDs, labels, DMX routes, and 3D placement
                 </div>
               </div>
             }

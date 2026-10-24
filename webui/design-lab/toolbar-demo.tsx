@@ -42,7 +42,7 @@ const toolModes = [
 const groupingOptions = ["None", "Fixture", "Universe"] as const;
 type Grouping = (typeof groupingOptions)[number];
 
-const sampleBindings = [
+const sampleRoutes = [
   { fixture: "Wash left", universe: "Universe 1", address: "001" },
   { fixture: "Wash right", universe: "Universe 1", address: "017" },
   { fixture: "Wash left", universe: "Universe 2", address: "001" },
@@ -54,18 +54,18 @@ export function ToolbarDemo() {
   const [toolMode, setToolMode] =
     createSignal<(typeof toolModes)[number]["label"]>("Camera");
   const [grouping, setGrouping] = createSignal<Grouping>("None");
-  /** Regroups the same sample bindings when a grouping tab is selected. */
-  const bindingGroups = () => {
-    const groups = new Map<string, typeof sampleBindings>();
-    for (const binding of sampleBindings) {
+  /** Regroups the same sample routes when a grouping tab is selected. */
+  const routeGroups = () => {
+    const groups = new Map<string, typeof sampleRoutes>();
+    for (const route of sampleRoutes) {
       const key =
         grouping() === "Fixture"
-          ? binding.fixture
+          ? route.fixture
           : grouping() === "Universe"
-            ? binding.universe
-            : "All bindings";
+            ? route.universe
+            : "All routes";
       const rows = groups.get(key) ?? [];
-      rows.push(binding);
+      rows.push(route);
       groups.set(key, rows);
     }
     return [...groups];
@@ -151,7 +151,7 @@ export function ToolbarDemo() {
         </p>
       </div>
       <div class="property-section" role="group" aria-label="Grouping toolbar">
-        <div class="section-label">Tab switcher · DMX I/O</div>
+        <div class="section-label">Tab switcher · DMX Routes</div>
         <PanelToolbar
           left={
             <>
@@ -160,37 +160,33 @@ export function ToolbarDemo() {
                 id={`${id}-group`}
                 density="compact"
                 label="Group by"
-                contentId={`${id}-bindings`}
+                contentId={`${id}-routes`}
                 options={groupingOptions.map((key) => ({ key, label: key }))}
                 value={grouping()}
                 onChange={setGrouping}
               />
             </>
           }
-          right={<span class="toolbar-readout">3 bindings</span>}
+          right={<span class="toolbar-readout">3 routes</span>}
         />
         <div
-          class="toolbar-binding-preview"
-          id={`${id}-bindings`}
+          class="toolbar-route-preview"
+          id={`${id}-routes`}
           role="tabpanel"
           aria-labelledby={`${id}-group-${grouping()}`}
           // biome-ignore lint/a11y/noNoninteractiveTabindex: The static tab panel must be reachable after its tab for keyboard readers.
           tabIndex={0}
         >
-          <For each={bindingGroups()}>
-            {([label, bindings]) => (
-              <div
-                class="toolbar-binding-group"
-                role="group"
-                aria-label={label}
-              >
-                <div class="toolbar-binding-heading">{label}</div>
-                <For each={bindings}>
-                  {(binding) => (
-                    <div class="toolbar-binding-row">
-                      <span>{binding.fixture}</span>
+          <For each={routeGroups()}>
+            {([label, routes]) => (
+              <div class="toolbar-route-group" role="group" aria-label={label}>
+                <div class="toolbar-route-heading">{label}</div>
+                <For each={routes}>
+                  {(route) => (
+                    <div class="toolbar-route-row">
+                      <span>{route.fixture}</span>
                       <span>
-                        {binding.universe} · {binding.address}
+                        {route.universe} · {route.address}
                       </span>
                     </div>
                   )}

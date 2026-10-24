@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::prelude::BindingValidationMode;
+use nightfall_fixtures::prelude::RouteValidationMode;
 use nightfall_io::prelude::{
     ExternalControlSettings, InputSignalLossPolicy, InputUniverseVisibilityMode,
     NetworkDmxOutputTargets, UsbDmxOutputTargets,
@@ -319,7 +319,7 @@ pub enum SettingsCommand {
     /// Set network DMX packets sent per second; clamped to 1..=60 Hz
     SetDmxOutputRate(u32),
     /// Set patch overlap validation mode
-    SetBindingValidationMode(BindingValidationMode),
+    SetRouteValidationMode(RouteValidationMode),
     /// Set the selected audio device (None = system default)
     SetAudioDevice(Option<String>),
     /// Set cue renumbering behavior when sequence steps are reordered in UI

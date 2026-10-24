@@ -363,9 +363,9 @@ async function seedCues(page: Page) {
 }
 
 /**
- * Seeds patch binding stores for migrated panel table tests.
+ * Seeds DMX route stores for migrated panel table tests.
  */
-async function seedPatchBindingTableStores(page: Page) {
+async function seedDmxRouteTableStores(page: Page) {
   await page.evaluate(() => {
     const stores = (window as any).appStores;
     stores.fixtures.set({
@@ -381,7 +381,7 @@ async function seedPatchBindingTableStores(page: Page) {
         elements: [],
       },
     });
-    stores.bindings.set({
+    stores.routes.set({
       input: [
         {
           source: {
@@ -748,13 +748,13 @@ test("TanStack readonly boolean cells do not intercept row selection", async ({
   await expect(markerCell).toHaveAttribute("data-selected", "true");
 });
 
-test("TanStack migrated patch binding group tables render and resize columns", async ({
+test("TanStack migrated DMX route group tables render and resize columns", async ({
   page,
 }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem("nightfall-patch-panel:active-tab", "bindings");
+    window.localStorage.setItem("nightfall-patch-panel:active-tab", "routes");
     window.localStorage.setItem(
-      "nightfall-patch-panel:bindings-group-by",
+      "nightfall-patch-panel:routes-group-by",
       "none",
     );
   });
@@ -766,14 +766,14 @@ test("TanStack migrated patch binding group tables render and resize columns", a
     title: "Patch",
   });
   await disconnectBackend(page);
-  await seedPatchBindingTableStores(page);
+  await seedDmxRouteTableStores(page);
   await expect
     .poll(() =>
       page.evaluate(() => ({
         fixtureLabel: (window as any).appStores.fixtures.get().fixturee2e1
           ?.identifiers?.label,
-        inputCount: (window as any).appStores.bindings.get().input.length,
-        outputCount: (window as any).appStores.bindings.get().output.length,
+        inputCount: (window as any).appStores.routes.get().input.length,
+        outputCount: (window as any).appStores.routes.get().output.length,
       })),
     )
     .toEqual({
@@ -783,45 +783,45 @@ test("TanStack migrated patch binding group tables render and resize columns", a
     });
   const patchPanel = page.locator("main#app");
 
-  const bindingsGrid = page
+  const routesGrid = page
     .locator('[data-grid-kind="tanstack"]')
     .filter({
       has: page.locator('[data-grid-header-id="tanstack-header-source"]'),
     })
     .last();
-  await expect(bindingsGrid).toBeVisible();
+  await expect(routesGrid).toBeVisible();
   await expect(
-    bindingsGrid.locator('[data-grid-header-id="tanstack-header-target"]'),
+    routesGrid.locator('[data-grid-header-id="tanstack-header-target"]'),
   ).toBeVisible();
   await expectPatchConflictCellPresentation(
-    bindingsGrid
+    routesGrid
       .locator('[data-grid-column-key="source"]')
       .filter({ hasText: /sACN 1\.(?:1|\*)/ })
       .first(),
   );
   await expectPatchConflictCellPresentation(
-    bindingsGrid
+    routesGrid
       .locator('[data-grid-column-key="source"]')
       .filter({ hasText: /sACN 2\.(?:1|\*)/ })
       .first(),
   );
   await expectPatchConflictCellPresentation(
-    bindingsGrid
+    routesGrid
       .locator('[data-grid-column-key="target"]')
       .filter({ hasText: "sACN 1.1" })
       .first(),
   );
-  const deleteBindingsButton = page.getByRole("button", {
-    name: "Delete selected bindings",
+  const deleteRoutesButton = page.getByRole("button", {
+    name: "Delete selected routes",
   });
-  await expect(deleteBindingsButton).toBeDisabled();
-  await bindingsGrid.locator("#tanstack-cell-0-0").click();
-  await expect(deleteBindingsButton).toBeEnabled();
-  await expect(deleteBindingsButton).toContainText("1");
+  await expect(deleteRoutesButton).toBeDisabled();
+  await routesGrid.locator("#tanstack-cell-0-0").click();
+  await expect(deleteRoutesButton).toBeEnabled();
+  await expect(deleteRoutesButton).toContainText("1");
   await page.keyboard.press("Shift+ArrowDown");
-  await expect(deleteBindingsButton).toContainText("2");
+  await expect(deleteRoutesButton).toContainText("2");
 
-  const sourceHeader = bindingsGrid.locator(
+  const sourceHeader = routesGrid.locator(
     '[data-grid-header-id="tanstack-header-source"]',
   );
   await expect(sourceHeader).toBeVisible();
@@ -868,7 +868,7 @@ test("TanStack migrated patch binding group tables render and resize columns", a
   let menu = page.locator('[data-menu-kind="context"]');
   await expect(menu).toBeVisible();
   await expect(
-    menu.getByRole("menuitem", { name: "Show binding" }),
+    menu.getByRole("menuitem", { name: "Show route" }),
   ).toBeVisible();
   await page.mouse.click(5, 5);
   await expect(menu).not.toBeVisible();
@@ -923,7 +923,7 @@ test("TanStack migrated patch binding group tables render and resize columns", a
   menu = page.locator('[data-menu-kind="context"]');
   await expect(menu).toBeVisible();
   await expect(
-    menu.getByRole("menuitem", { name: "Show binding" }),
+    menu.getByRole("menuitem", { name: "Show route" }),
   ).toBeVisible();
   await page.mouse.click(5, 5);
   await expect(menu).not.toBeVisible();

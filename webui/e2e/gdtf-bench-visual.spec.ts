@@ -940,12 +940,12 @@ test("Argo 6 FX patches its pixel and liquid breaks", async ({
   await expect
     .poll(() =>
       page.evaluate(() =>
-        (window as any).appStores.bindings.get().output.map((binding: any) => {
+        (window as any).appStores.routes.get().output.map((route: any) => {
           const dmxBreak =
-            binding.source.type === "FixtureBreak"
-              ? binding.source.data.dmx_break
+            route.source.type === "FixtureBreak"
+              ? route.source.data.dmx_break
               : 1;
-          const { universe, address } = binding.target.data;
+          const { universe, address } = route.target.data;
           return `${dmxBreak}@${universe.start}.${address}`;
         }),
       ),
@@ -962,7 +962,7 @@ test("Argo 6 FX patches its pixel and liquid breaks", async ({
   );
   await panel
     .getByRole("tablist", { name: "Patch views" })
-    .getByRole("tab", { name: "DMX I/O" })
+    .getByRole("tab", { name: "DMX Routes" })
     .click();
   await expect(panel.getByText("Fixture 1 break 2")).toBeVisible();
   await expect(panel.getByText("Fixture 1 break 3")).toBeVisible();

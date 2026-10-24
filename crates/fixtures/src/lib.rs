@@ -11,9 +11,6 @@
 #![warn(missing_docs)]
 
 pub mod ast_conv;
-pub mod binding_resolution;
-pub mod binding_validation;
-pub mod bindings;
 pub mod compositor;
 pub mod data_provider_ext;
 pub mod events;
@@ -27,6 +24,9 @@ pub mod parameter_index;
 pub mod parameter_state;
 pub mod physical;
 pub mod placement;
+pub mod route_resolution;
+pub mod route_validation;
+pub mod routes;
 pub mod selection;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
@@ -48,8 +48,8 @@ use nightfall_io::OutputTransport;
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::bindings::DmxRange;
 use crate::placement::{PlacementPosition, PlacementRotation};
+use crate::routes::DmxRange;
 
 /// Runtime actions owned by fixture-level DMX processing.
 #[derive(Debug, Clone, PartialEq)]
@@ -106,17 +106,6 @@ impl EngineOperation for DmxOperation {}
 pub mod prelude {
     pub use nightfall_dmx::prelude::ParameterValuePolarity;
 
-    pub use crate::binding_validation::{
-        BindingValidationIssue, BindingValidationMode, BindingValidationSettings,
-    };
-    pub use crate::bindings::{
-        ConsoleDmxAddress, ConsoleDmxAddresses, ConsoleParameterAddress, DisabledBinding,
-        DisabledBindings, DmxRange, InputBinding, InputBindings, InputSource, InputTarget,
-        OutputBinding, OutputBindings, OutputDestination, OutputSource, OutputTarget,
-        ResolvedConsoleDestination, ResolvedConsoleTarget, ResolvedInputBinding,
-        ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource, ResolvedInputTarget,
-        ResolvedOutputDestinations, ResolvedTransportTarget,
-    };
     pub use crate::compositor::{
         FixtureCompositorPlugin, MANUAL_ASSERTION_LAYER_PRIORITY, ManualAssertionLayer,
         TRANSPORT_INPUT_LAYER_PRIORITY, TransportInputAssertionOwners, TransportInputLayer,
@@ -130,7 +119,7 @@ pub mod prelude {
     };
     pub use crate::input_apply::{ParameterAssertion, ParameterAssertionSource};
     pub use crate::output_frames::{
-        ChannelWindow, OutputBindingRoute, OutputDmxFrame, OutputDmxFrames, OutputFrameKey,
+        ChannelWindow, OutputDmxFrame, OutputDmxFrames, OutputFrameFeed, OutputFrameKey,
         OutputRouting, output_transport_label,
     };
     pub use crate::parameter::{Parameter, ParameterValues};
@@ -138,6 +127,17 @@ pub mod prelude {
     pub use crate::parameter_state::ParameterStateProjection;
     pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
+    pub use crate::route_validation::{
+        RouteValidationIssue, RouteValidationMode, RouteValidationSettings,
+    };
+    pub use crate::routes::{
+        ConsoleDmxAddress, ConsoleDmxAddresses, ConsoleParameterAddress, DisabledRoute,
+        DisabledRoutes, DmxRange, InputRoute, InputRoutes, InputSource, InputTarget,
+        OutputDestination, OutputRoute, OutputRoutes, OutputSource, OutputTarget,
+        ResolvedConsoleDestination, ResolvedConsoleTarget, ResolvedInputDestination,
+        ResolvedInputRoute, ResolvedInputRoutes, ResolvedInputSource, ResolvedInputTarget,
+        ResolvedOutputDestinations, ResolvedTransportTarget,
+    };
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
     pub use crate::universe::{
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,
@@ -145,9 +145,9 @@ pub mod prelude {
     };
     pub use crate::wire_layout::{PlacedParameter, WireLayout};
     pub use crate::{
-        BindingEndpoint, DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
+        DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
         FixturePlacementRotationUpdate, FixturePlugin, HeldTransportDmxChannelState,
-        ManualDmxChannelState,
+        ManualDmxChannelState, RouteEndpoint,
     };
 }
 
@@ -177,12 +177,12 @@ impl Plugin for FixturePlugin {
         );
 
         app.init_resource::<data_provider_ext::FixtureDataProviderExt>();
-        app.init_resource::<bindings::InputBindings>();
-        app.init_resource::<bindings::OutputBindings>();
-        app.init_resource::<bindings::DisabledBindings>();
-        app.init_resource::<bindings::ResolvedInputBindings>();
-        app.init_resource::<bindings::ConsoleDmxAddresses>();
-        app.init_resource::<binding_validation::BindingValidationSettings>();
+        app.init_resource::<routes::InputRoutes>();
+        app.init_resource::<routes::OutputRoutes>();
+        app.init_resource::<routes::DisabledRoutes>();
+        app.init_resource::<routes::ResolvedInputRoutes>();
+        app.init_resource::<routes::ConsoleDmxAddresses>();
+        app.init_resource::<route_validation::RouteValidationSettings>();
         app.init_resource::<parameter_state::ParameterStateProjection>();
         app.init_resource::<websocket::ParameterStateRequests>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
@@ -202,8 +202,8 @@ impl Plugin for FixturePlugin {
             let mut registry = app.world_mut().resource_mut::<UndoRegistry>();
             registry.register::<FixtureCommand>();
             registry.register_operation::<undo::RestoreFixtureSnapshot>();
-            registry.register_operation::<undo::RestoreBindingSnapshot>();
-            registry.register_operation::<undo::RestorePatchBindingsSnapshot>();
+            registry.register_operation::<undo::RestoreFixtureRoutesSnapshot>();
+            registry.register_operation::<undo::RestoreDmxRoutesSnapshot>();
             registry.register_operation::<undo::RestoreOffsetSnapshot>();
             registry.register_operation::<undo::RestoreColorPathDefaultsSnapshot>();
             registry.register_operation::<DmxOperation>();
@@ -211,8 +211,8 @@ impl Plugin for FixturePlugin {
 
         // Register event dispatchers for undo helper commands
         register_engine_operation::<undo::RestoreFixtureSnapshot>(app);
-        register_engine_operation::<undo::RestoreBindingSnapshot>(app);
-        register_engine_operation::<undo::RestorePatchBindingsSnapshot>(app);
+        register_engine_operation::<undo::RestoreFixtureRoutesSnapshot>(app);
+        register_engine_operation::<undo::RestoreDmxRoutesSnapshot>(app);
         register_engine_operation::<undo::RestoreOffsetSnapshot>(app);
         register_engine_operation::<undo::RestoreColorPathDefaultsSnapshot>(app);
 
@@ -223,8 +223,8 @@ impl Plugin for FixturePlugin {
                 transport_holds::handle_set_transport_dmx_channels,
                 events::handle_restore_fixture_snapshot
                     .after(nightfall_undo::systems::handle_undo_commands),
-                events::handle_restore_binding_snapshot,
-                events::handle_restore_patch_bindings_snapshot,
+                events::handle_restore_fixture_routes_snapshot,
+                events::handle_restore_dmx_routes_snapshot,
                 events::handle_restore_offset_snapshot,
                 events::handle_restore_color_path_defaults_snapshot,
             )
@@ -242,10 +242,10 @@ impl Plugin for FixturePlugin {
         app.add_systems(
             Update,
             (
-                binding_validation::validate_bindings_on_change
-                    .before(binding_resolution::derive_console_addresses),
-                binding_resolution::derive_console_addresses,
-                binding_resolution::resolve_input_bindings,
+                route_validation::validate_routes_on_change
+                    .before(route_resolution::derive_console_addresses),
+                route_resolution::derive_console_addresses,
+                route_resolution::resolve_input_routes,
             )
                 .chain()
                 .in_set(InputHandling),
@@ -254,7 +254,7 @@ impl Plugin for FixturePlugin {
         app.add_systems(
             Render,
             (
-                binding_resolution::resolve_output_bindings,
+                route_resolution::resolve_output_routes,
                 output_frames::update_input_routing,
                 universe::dmx_universes,
                 transport_holds::resolve_transport_holds,
@@ -280,9 +280,9 @@ impl Plugin for FixturePlugin {
             (
                 universe_stream::send_dmx_universes.after(DmxOutput),
                 websocket::send_input_contribution_trace,
-                websocket::send_bindings_on_change,
+                websocket::send_routes_on_change,
                 websocket::send_color_path_defaults_on_change,
-                websocket::send_binding_validation_settings_on_change,
+                websocket::send_route_validation_settings_on_change,
                 websocket::send_parameter_state.after(DmxOutput),
             )
                 .in_set(ClientOutput),
@@ -342,11 +342,11 @@ pub struct FixturePlacementUpdateEntry {
     pub rotation: Option<FixturePlacementRotationUpdate>,
 }
 
-/// Binding endpoint reference for patch commands (fixture IDs, transports, console, disabled).
+/// Route endpoint reference for patch commands (fixture IDs, transports, console, disabled).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
-pub enum BindingEndpoint {
+pub enum RouteEndpoint {
     /// Console endpoint (optionally scoped to a universe range and address)
     Console {
         /// Optional universe range
@@ -439,24 +439,24 @@ pub enum FixtureCommand {
         transport: Option<OutputTransport>,
     },
 
-    /// Add a patch binding (input/output/disabled)
-    PatchBinding {
-        /// Binding source endpoint
-        source: BindingEndpoint,
-        /// Binding target endpoint
-        target: BindingEndpoint,
-        /// Binding priority (lower runs first)
+    /// Add a DMX route (input/output/disabled)
+    AddDmxRoute {
+        /// Route source endpoint
+        source: RouteEndpoint,
+        /// Route target endpoint
+        target: RouteEndpoint,
+        /// Route priority (lower runs first)
         priority: i32,
         /// Give every fixture the same address instead of packing them one after another
         clone: bool,
     },
 
-    /// Remove patch bindings matching the filter
-    RemovePatchBinding {
+    /// Remove DMX routes matching the filter
+    RemoveDmxRoutes {
         /// Optional source filter
-        source: Option<BindingEndpoint>,
+        source: Option<RouteEndpoint>,
         /// Optional target filter
-        target: Option<BindingEndpoint>,
+        target: Option<RouteEndpoint>,
         /// Optional priority filter
         priority: Option<i32>,
         /// Optional clone filter

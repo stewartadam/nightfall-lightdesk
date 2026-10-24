@@ -114,7 +114,7 @@ async function submitCommand(page: Page, command: string): Promise<void> {
     .toBe("success");
 }
 
-/** Reads the created fixture, its console binding, and its programmer intensity by label. */
+/** Reads the created fixture, its console route, and its programmer intensity by label. */
 async function readCreatedFixture(page: Page, label: string) {
   return page.evaluate((fixtureLabel) => {
     const stores = (window as any).appStores;
@@ -131,15 +131,15 @@ async function readCreatedFixture(page: Page, label: string) {
             .sort((a, b) => Number(a) - Number(b))
             .map((key) => Number(value[key]).toString(16).padStart(2, "0"))
             .join("");
-    const consoleBinding = stores.bindings
+    const consoleRoute = stores.routes
       .get()
       .output.find(
-        (binding: any) =>
-          binding.source.type === "Fixture" &&
-          binding.source.data.uids.some(
+        (route: any) =>
+          route.source.type === "Fixture" &&
+          route.source.data.uids.some(
             (candidate: any) => toHex(candidate) === toHex(uid),
           ) &&
-          binding.target.type === "Console",
+          route.target.type === "Console",
       );
     const row = stores.parameters.get().get(uid);
     return {
@@ -149,7 +149,7 @@ async function readCreatedFixture(page: Page, label: string) {
       model: fixture.model as string,
       mode: fixture.mode as string,
       placementY: fixture.placement?.position?.y ?? null,
-      hasConsoleBinding: Boolean(consoleBinding),
+      hasConsoleRoute: Boolean(consoleRoute),
       intensity: Number(row?.raw?.Intensity ?? 0),
     };
   }, label);
@@ -285,7 +285,7 @@ test("embedded demo patches a built-in fixture through the patch wizard", async 
       model: "Moving Head Spot 16ch",
       mode: "Spot",
       placementY: 0.5,
-      hasConsoleBinding: true,
+      hasConsoleRoute: true,
     });
   const created = await readCreatedFixture(page, label);
   if (!created) throw new Error("Created fixture was unavailable");

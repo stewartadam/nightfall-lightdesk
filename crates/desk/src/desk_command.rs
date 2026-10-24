@@ -47,8 +47,8 @@ pub struct ShowfileImportOptions {
     pub variables: ShowfileImportPolicy,
     /// Import policy for desk settings.
     pub settings: ShowfileImportPolicy,
-    /// Import policy for input, output, and disabled bindings.
-    pub bindings: ShowfileImportPolicy,
+    /// Import policy for input, output, and disabled routes.
+    pub routes: ShowfileImportPolicy,
     /// Import policy for MIDI mappings.
     pub midi_mappings: ShowfileImportPolicy,
     /// Import policy for OSC mappings.
@@ -93,7 +93,7 @@ impl Default for ShowfileImportOptions {
             fixtures: ShowfileImportPolicy::Merge,
             variables: ShowfileImportPolicy::Merge,
             settings: ShowfileImportPolicy::Skip,
-            bindings: ShowfileImportPolicy::Merge,
+            routes: ShowfileImportPolicy::Merge,
             midi_mappings: ShowfileImportPolicy::Merge,
             osc_mappings: ShowfileImportPolicy::Merge,
             scene_objects: ShowfileImportPolicy::Merge,

@@ -144,8 +144,8 @@ impl AstConvert for FixtureAstConverter {
                 _ => Err(DispatchError::NotApplicable),
             },
             ast::CommandAst::PatchAdd(patch_ast) => {
-                let source = binding_endpoint_from_ast(&patch_ast.source)?;
-                let target = binding_endpoint_from_ast(&patch_ast.target)?;
+                let source = route_endpoint_from_ast(&patch_ast.source)?;
+                let target = route_endpoint_from_ast(&patch_ast.target)?;
                 let priority = patch_ast
                     .priority
                     .as_ref()
@@ -154,7 +154,7 @@ impl AstConvert for FixtureAstConverter {
                     .unwrap_or(0);
                 let clone = patch_ast.clone.is_some();
 
-                Ok(vec![Box::new(FixtureCommand::PatchBinding {
+                Ok(vec![Box::new(FixtureCommand::AddDmxRoute {
                     source,
                     target,
                     priority,
@@ -165,12 +165,12 @@ impl AstConvert for FixtureAstConverter {
                 let source = patch_ast
                     .source
                     .as_ref()
-                    .map(binding_endpoint_from_ast)
+                    .map(route_endpoint_from_ast)
                     .transpose()?;
                 let target = patch_ast
                     .target
                     .as_ref()
-                    .map(binding_endpoint_from_ast)
+                    .map(route_endpoint_from_ast)
                     .transpose()?;
                 let priority = patch_ast
                     .priority
@@ -179,7 +179,7 @@ impl AstConvert for FixtureAstConverter {
                     .transpose()?;
                 let clone = patch_ast.clone.as_ref().map(|_| true);
 
-                Ok(vec![Box::new(FixtureCommand::RemovePatchBinding {
+                Ok(vec![Box::new(FixtureCommand::RemoveDmxRoutes {
                     source,
                     target,
                     priority,
@@ -198,7 +198,7 @@ impl AstConvert for FixtureAstConverter {
                 match &channel_ast.transport {
                     Some(transport) => {
                         Ok(vec![Box::new(FixtureCommand::SetTransportDmxChannels {
-                            target: binding_target_from_ast(transport)?,
+                            target: route_target_from_ast(transport)?,
                             channels,
                             value,
                         })])
@@ -232,16 +232,16 @@ impl AstConvert for FixtureAstConverter {
     }
 }
 
-fn binding_endpoint_from_ast(
+fn route_endpoint_from_ast(
     endpoint: &ast::PatchEndpointAst,
-) -> Result<BindingEndpoint, DispatchError> {
+) -> Result<RouteEndpoint, DispatchError> {
     match endpoint {
-        ast::PatchEndpointAst::Console(console) => Ok(BindingEndpoint::Console {
+        ast::PatchEndpointAst::Console(console) => Ok(RouteEndpoint::Console {
             universe: dmx_range_from_ast(console.range.as_ref())?,
             address: address_from_ast(console.address.as_ref())?,
         }),
-        ast::PatchEndpointAst::Transport(transport) => Ok(BindingEndpoint::Transport {
-            target: binding_target_from_ast(&transport.transport)?,
+        ast::PatchEndpointAst::Transport(transport) => Ok(RouteEndpoint::Transport {
+            target: route_target_from_ast(&transport.transport)?,
             universe: dmx_range_from_ast(transport.range.as_ref())?,
             address: address_from_ast(transport.address.as_ref())?,
         }),
@@ -258,7 +258,7 @@ fn binding_endpoint_from_ast(
                             .to_string(),
                     ));
                 }
-                return Ok(BindingEndpoint::FixtureBreak {
+                return Ok(RouteEndpoint::FixtureBreak {
                     ids: fixture_ids_from_ast(&fixture.ids)?,
                     dmx_break,
                 });
@@ -278,7 +278,7 @@ fn binding_endpoint_from_ast(
                 }
             }
 
-            Ok(BindingEndpoint::Fixture {
+            Ok(RouteEndpoint::Fixture {
                 ids: fixture_ids_from_ast(&fixture.ids)?,
                 element: element_from_target.or(element_from_ids),
                 param: fixture
@@ -288,12 +288,12 @@ fn binding_endpoint_from_ast(
                     .map(|param| param.name.0.to_string()),
             })
         }
-        ast::PatchEndpointAst::Disabled(_) => Ok(BindingEndpoint::Disabled),
+        ast::PatchEndpointAst::Disabled(_) => Ok(RouteEndpoint::Disabled),
     }
 }
 
 /// Validates a transport target ID from patch or `ch` syntax and normalizes it to lowercase.
-pub fn binding_target_from_ast(transport: &ast::TransportNameAst) -> Result<String, DispatchError> {
+pub fn route_target_from_ast(transport: &ast::TransportNameAst) -> Result<String, DispatchError> {
     let target = transport.0.to_ascii_lowercase();
     if target == "udmx" || is_valid_network_dmx_target_id(&target) {
         return Ok(target);
@@ -395,7 +395,7 @@ fn fixture_element_from_ids(
         ast::TermAst::FixtureMap(map) => match &map.elements {
             ast::ElementSelectorAst::Single(index) => parse_element_u32(*index).map(Some),
             ast::ElementSelectorAst::Range { .. } => Err(DispatchError::ConversionFailed(
-                "fixture element ranges are not supported in bindings".to_string(),
+                "fixture element ranges are not supported in routes".to_string(),
             )),
         },
         _ => Ok(None),

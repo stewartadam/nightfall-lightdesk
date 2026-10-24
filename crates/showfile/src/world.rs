@@ -55,9 +55,9 @@ pub struct ShowfileSaveState<'w, 's> {
     timecode_data_provider: Res<'w, DataProvider<Timecode>>,
     timeline_data_provider: Res<'w, DataProvider<Timeline>>,
     board_data_provider: Res<'w, DataProvider<Board>>,
-    input_bindings: Res<'w, InputBindings>,
-    output_bindings: Res<'w, OutputBindings>,
-    disabled_bindings: Res<'w, DisabledBindings>,
+    input_routes: Res<'w, InputRoutes>,
+    output_routes: Res<'w, OutputRoutes>,
+    disabled_routes: Res<'w, DisabledRoutes>,
     #[cfg(feature = "midi")]
     midi_mappings: Res<'w, MidiMappings>,
     #[cfg(feature = "osc")]
@@ -82,9 +82,9 @@ pub fn snapshot_from_save_state(
     );
     let fixtures_patch_contributor = FixturesPatchSaveContributor::new(
         &showfile_save_state.fixture_data_provider,
-        &showfile_save_state.input_bindings,
-        &showfile_save_state.output_bindings,
-        &showfile_save_state.disabled_bindings,
+        &showfile_save_state.input_routes,
+        &showfile_save_state.output_routes,
+        &showfile_save_state.disabled_routes,
         #[cfg(feature = "midi")]
         &showfile_save_state.midi_mappings,
         #[cfg(feature = "osc")]

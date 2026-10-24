@@ -18,7 +18,6 @@ import {
 } from "solid-js";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { fixtureWireLayout } from "../../../lib/dmx";
 import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
@@ -27,13 +26,14 @@ import {
   fetchFixtureProfile,
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
-  bindings,
   dmxUniverseList,
   fixtureLibrary,
   fixtureProfile,
   fixtures,
+  routes,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { usePatchWizard } from "./wizard-context";
@@ -61,17 +61,17 @@ function computeSourceWidth(
 }
 
 function collectConsolePatchOccupancy(
-  snapshot: types.BindingsSnapshot,
+  snapshot: types.RoutesSnapshot,
   fixtureMap: Record<string, types.Fixture>,
 ): Map<string, { label: string }> {
   const occupied = new Map<string, { label: string }>();
 
-  for (const binding of snapshot.output) {
-    if (binding.source.type !== "Fixture") continue;
-    if (binding.target.type !== "Console") continue;
+  for (const route of snapshot.output) {
+    if (route.source.type !== "Fixture") continue;
+    if (route.target.type !== "Console") continue;
 
-    const sourceData = binding.source.data;
-    const targetData = binding.target.data;
+    const sourceData = route.source.data;
+    const targetData = route.target.data;
     const universes = targetData.universe
       ? Array.from(
           { length: targetData.universe.end - targetData.universe.start + 1 },
@@ -101,9 +101,9 @@ function collectConsolePatchOccupancy(
       );
       if (channelWidth <= 0) continue;
 
-      const startAddress = binding.clone ? baseAddress : runningAddress;
+      const startAddress = route.clone ? baseAddress : runningAddress;
       const endAddress = startAddress + channelWidth - 1;
-      if (!binding.clone) {
+      if (!route.clone) {
         runningAddress = endAddress + 1;
       }
 
@@ -127,10 +127,10 @@ export function StepConfigure() {
   const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
-  const $bindings = useStore(bindings);
+  const $routes = useStore(routes);
 
   const occupiedConsoleAddresses = createMemo(() =>
-    collectConsolePatchOccupancy($bindings(), $fixtures()),
+    collectConsolePatchOccupancy($routes(), $fixtures()),
   );
 
   /**

@@ -12,7 +12,7 @@ use bevy::ecs::system::RunSystemOnce;
 use nightfall_clips::Clip;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_fixture_model::prelude::*;
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePolicy};
 #[cfg(feature = "object-library")]
 use nightfall_object_library::manager::{decode_object_path, encode_showfile_object_path};
@@ -53,9 +53,9 @@ fn setup_world() -> World {
     world.insert_resource(DataProvider::<Timecode>::default());
     world.insert_resource(DataProvider::<Timeline>::default());
     world.insert_resource(DataProvider::<Board>::default());
-    world.insert_resource(InputBindings::default());
-    world.insert_resource(OutputBindings::default());
-    world.insert_resource(DisabledBindings::default());
+    world.insert_resource(InputRoutes::default());
+    world.insert_resource(OutputRoutes::default());
+    world.insert_resource(DisabledRoutes::default());
     #[cfg(feature = "midi")]
     world.insert_resource(MidiMappings::default());
     #[cfg(feature = "osc")]
@@ -1586,9 +1586,9 @@ fn merge_showfile_snapshots_rejects_fx_module_merge_policy() {
     assert!(err.contains("fx modules import policy Merge is not supported"));
 }
 
-/// Verifies importing the same plain binding lists does not duplicate entries.
+/// Verifies importing the same plain route lists does not duplicate entries.
 #[test]
-fn merge_showfile_snapshots_deduplicates_plain_binding_lists() {
+fn merge_showfile_snapshots_deduplicates_plain_route_lists() {
     let mut world = setup_world();
     seed_world(&mut world);
     let current = collect_snapshot(&mut world);
@@ -1602,12 +1602,9 @@ fn merge_showfile_snapshots_deduplicates_plain_binding_lists() {
     let merged =
         merge_showfile_snapshots(current.clone(), incoming, &options).expect("merge succeeds");
 
-    assert_eq!(merged.bindings.input.len(), current.bindings.input.len());
-    assert_eq!(merged.bindings.output.len(), current.bindings.output.len());
-    assert_eq!(
-        merged.bindings.disabled.len(),
-        current.bindings.disabled.len()
-    );
+    assert_eq!(merged.routes.input.len(), current.routes.input.len());
+    assert_eq!(merged.routes.output.len(), current.routes.output.len());
+    assert_eq!(merged.routes.disabled.len(), current.routes.disabled.len());
 }
 
 /// Verifies imported timeline audio is copied from the source show-data directory.
@@ -2310,28 +2307,25 @@ fn seed_world(world: &mut World) {
         .resource::<GlobalVariables>()
         .set("global-rate", VariableValue::Float(1.25));
 
-    world
-        .resource_mut::<InputBindings>()
-        .bindings
-        .push(InputBinding {
-            source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
-                universe: Some(DmxRange::single(1)),
-                address: Some(10),
-            },
-            target: InputTarget::Fixture {
-                uids: vec![fixture_uid],
-                element: None,
-                param: None,
-            },
-            priority: 0,
-            clone: false,
-        });
+    world.resource_mut::<InputRoutes>().routes.push(InputRoute {
+        source: InputSource::Transport {
+            transport: RouteTransport::Sacn,
+            universe: Some(DmxRange::single(1)),
+            address: Some(10),
+        },
+        target: InputTarget::Fixture {
+            uids: vec![fixture_uid],
+            element: None,
+            param: None,
+        },
+        priority: 0,
+        clone: false,
+    });
 
     world
-        .resource_mut::<OutputBindings>()
-        .bindings
-        .push(OutputBinding {
+        .resource_mut::<OutputRoutes>()
+        .routes
+        .push(OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![fixture_uid],
                 element: None,
@@ -2347,11 +2341,11 @@ fn seed_world(world: &mut World) {
         });
 
     world
-        .resource_mut::<DisabledBindings>()
-        .bindings
-        .push(DisabledBinding::Input {
+        .resource_mut::<DisabledRoutes>()
+        .routes
+        .push(DisabledRoute::Input {
             source: InputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: Some(DmxRange::single(3)),
                 address: None,
             },
@@ -2457,9 +2451,9 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     timeline_data_provider,
                     board_data_provider,
                     active_fx_module_ids: _,
-                    input_bindings,
-                    output_bindings,
-                    disabled_bindings,
+                    input_routes,
+                    output_routes,
+                    disabled_routes,
                     #[cfg(feature = "midi")]
                     midi_mappings,
                     #[cfg(feature = "osc")]
@@ -2485,9 +2479,9 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
                     board_data_provider.as_mut(),
-                    input_bindings.as_mut(),
-                    output_bindings.as_mut(),
-                    disabled_bindings.as_mut(),
+                    input_routes.as_mut(),
+                    output_routes.as_mut(),
+                    disabled_routes.as_mut(),
                     #[cfg(feature = "midi")]
                     midi_mappings.as_mut(),
                     #[cfg(feature = "osc")]
@@ -2525,9 +2519,9 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     timeline_data_provider,
                     board_data_provider,
                     active_fx_module_ids: _,
-                    input_bindings,
-                    output_bindings,
-                    disabled_bindings,
+                    input_routes,
+                    output_routes,
+                    disabled_routes,
                     #[cfg(feature = "midi")]
                     midi_mappings,
                     #[cfg(feature = "osc")]
@@ -2553,9 +2547,9 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
                     board_data_provider.as_mut(),
-                    input_bindings.as_mut(),
-                    output_bindings.as_mut(),
-                    disabled_bindings.as_mut(),
+                    input_routes.as_mut(),
+                    output_routes.as_mut(),
+                    disabled_routes.as_mut(),
                     #[cfg(feature = "midi")]
                     midi_mappings.as_mut(),
                     #[cfg(feature = "osc")]
@@ -2659,15 +2653,15 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     timeline_data_provider,
                     board_data_provider,
                     active_fx_module_ids,
-                    input_bindings,
-                    output_bindings,
-                    disabled_bindings,
+                    input_routes,
+                    output_routes,
+                    disabled_routes,
                     #[cfg(feature = "midi")]
                     midi_mappings,
                     #[cfg(feature = "osc")]
                     osc_mappings,
                     all_entities,
-                    resolved_input_bindings,
+                    resolved_input_routes,
                     console_dmx_addresses,
                     console_dmx_universes,
                     input_dmx_universes,
@@ -2701,15 +2695,15 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     timeline_data_provider.as_mut(),
                     board_data_provider.as_mut(),
                     active_fx_module_ids.as_deref_mut(),
-                    input_bindings.as_mut(),
-                    output_bindings.as_mut(),
-                    disabled_bindings.as_mut(),
+                    input_routes.as_mut(),
+                    output_routes.as_mut(),
+                    disabled_routes.as_mut(),
                     #[cfg(feature = "midi")]
                     midi_mappings.as_mut(),
                     #[cfg(feature = "osc")]
                     osc_mappings.as_mut(),
                     &*all_entities,
-                    resolved_input_bindings.as_deref_mut(),
+                    resolved_input_routes.as_deref_mut(),
                     console_dmx_addresses.as_deref_mut(),
                     console_dmx_universes.as_deref_mut(),
                     input_dmx_universes.as_deref_mut(),
@@ -2832,7 +2826,7 @@ fn load_into_fresh_world_stabilizes_authored_group_ids() {
 }
 
 #[test]
-fn roundtrip_preserves_patch_bindings_and_domain_counts() {
+fn roundtrip_preserves_dmx_routes_and_domain_counts() {
     let mut source_world = setup_world();
     seed_world(&mut source_world);
     let source_snapshot = collect_snapshot(&mut source_world);
@@ -2853,14 +2847,14 @@ fn roundtrip_preserves_patch_bindings_and_domain_counts() {
     assert_eq!(restored_snapshot.timecodes.len(), 1);
     assert_eq!(restored_snapshot.timelines.len(), 1);
     assert_eq!(restored_snapshot.clips.len(), 1);
-    assert_eq!(restored_snapshot.bindings.input.len(), 1);
-    assert_eq!(restored_snapshot.bindings.output.len(), 1);
-    assert_eq!(restored_snapshot.bindings.disabled.len(), 1);
+    assert_eq!(restored_snapshot.routes.input.len(), 1);
+    assert_eq!(restored_snapshot.routes.output.len(), 1);
+    assert_eq!(restored_snapshot.routes.disabled.len(), 1);
 
     let fixture_uid = restored_snapshot.fixtures[0].identifiers.uid;
-    match &restored_snapshot.bindings.output[0].source {
+    match &restored_snapshot.routes.output[0].source {
         OutputSource::Fixture { uids, .. } => assert_eq!(uids, &vec![fixture_uid]),
-        _ => panic!("expected fixture source in output binding"),
+        _ => panic!("expected fixture source in output route"),
     }
 }
 
@@ -3199,7 +3193,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
-            bindings: BindingsSnapshot {
+            routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
                 disabled: vec![],
@@ -3280,7 +3274,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
             variables: HashMap::new(),
-            bindings: BindingsSnapshot {
+            routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
                 disabled: vec![],
@@ -3349,7 +3343,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),
-            bindings: BindingsSnapshot {
+            routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
                 disabled: vec![],
@@ -4134,7 +4128,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         metadata: ShowfileMetadata::default(),
         fixtures: vec![fixture_a, fixture_b],
         variables: HashMap::new(),
-        bindings: BindingsSnapshot {
+        routes: RoutesSnapshot {
             input: vec![],
             output: vec![],
             disabled: vec![],
@@ -4218,7 +4212,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             variables: HashMap::new(),
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
-            bindings: BindingsSnapshot {
+            routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
                 disabled: vec![],
@@ -4316,7 +4310,7 @@ fn load_materializes_timecodes_and_timelines() {
             variables: HashMap::new(),
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
-            bindings: BindingsSnapshot {
+            routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
                 disabled: vec![],

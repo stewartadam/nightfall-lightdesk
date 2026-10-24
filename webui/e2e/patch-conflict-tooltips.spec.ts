@@ -9,18 +9,18 @@
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { prepareStoreSeededTestApp } from "./showfile-startup";
 
-type PatchBindingGroup = "none" | "fixture" | "universe";
+type DmxRouteGroup = "none" | "fixture" | "universe";
 
 /**
- * Opens the app directly to the patch bindings tab with the requested grouping.
+ * Opens the app directly to the DMX routes tab with the requested grouping.
  */
-async function openPatchBindingsPanel(page: Page, groupBy: PatchBindingGroup) {
+async function openDmxRoutesPanel(page: Page, groupBy: DmxRouteGroup) {
   await page.setViewportSize({ width: 2200, height: 1200 });
   await page.addInitScript((groupBy) => {
     window.localStorage.removeItem("nightfall-ui-layouts");
-    window.localStorage.setItem("nightfall-patch-panel:active-tab", "bindings");
+    window.localStorage.setItem("nightfall-patch-panel:active-tab", "routes");
     window.localStorage.setItem(
-      "nightfall-patch-panel:bindings-group-by",
+      "nightfall-patch-panel:routes-group-by",
       groupBy,
     );
   }, groupBy);
@@ -103,9 +103,9 @@ async function addPanel(
 }
 
 /**
- * Returns the visible patch bindings grid for the active grouping.
+ * Returns the visible DMX routes grid for the active grouping.
  */
-function patchBindingsGrid(page: Page, headerId: string): Locator {
+function dmxRoutesGrid(page: Page, headerId: string): Locator {
   return page
     .locator('[data-grid-kind="tanstack"]')
     .filter({
@@ -180,13 +180,13 @@ async function seedPatchFixture(page: Page) {
 }
 
 /**
- * Seeds duplicate fixture output bindings that overlap on the same transport endpoint.
+ * Seeds duplicate fixture output routes that overlap on the same transport endpoint.
  */
-async function seedDuplicateFixtureOutputBindings(page: Page) {
+async function seedDuplicateFixtureOutputRoutes(page: Page) {
   await seedPatchFixture(page);
   await page.evaluate(() => {
     const stores = (window as any).appStores;
-    stores.bindings.set({
+    stores.routes.set({
       input: [],
       output: [
         {
@@ -234,13 +234,13 @@ async function seedDuplicateFixtureOutputBindings(page: Page) {
 }
 
 /**
- * Seeds duplicate fixture input bindings that target the same fixture parameter.
+ * Seeds duplicate fixture input routes that target the same fixture parameter.
  */
-async function seedDuplicateFixtureInputBindings(page: Page) {
+async function seedDuplicateFixtureInputRoutes(page: Page) {
   await seedPatchFixture(page);
   await page.evaluate(() => {
     const stores = (window as any).appStores;
-    stores.bindings.set({
+    stores.routes.set({
       input: [
         {
           source: {
@@ -288,13 +288,13 @@ async function seedDuplicateFixtureInputBindings(page: Page) {
 }
 
 /**
- * Seeds duplicate input bindings that overlap on the same console target endpoint.
+ * Seeds duplicate input routes that overlap on the same console target endpoint.
  */
-async function seedDuplicateConsoleInputBindings(page: Page) {
+async function seedDuplicateConsoleInputRoutes(page: Page) {
   await page.evaluate(() => {
     const stores = (window as any).appStores;
     stores.fixtures.set({});
-    stores.bindings.set({
+    stores.routes.set({
       input: [
         {
           source: {
@@ -343,92 +343,92 @@ async function seedDuplicateConsoleInputBindings(page: Page) {
 
 test.describe("patch conflict tooltips", () => {
   /**
-   * Covers flat binding, fixture summary, and universe summary output conflict tooltips.
+   * Covers flat route, fixture summary, and universe summary output conflict tooltips.
    */
   test("explains duplicate fixture output conflicts on hover", async ({
     page,
   }) => {
-    await openPatchBindingsPanel(page, "none");
-    await seedDuplicateFixtureOutputBindings(page);
+    await openDmxRoutesPanel(page, "none");
+    await seedDuplicateFixtureOutputRoutes(page);
 
-    const flatGrid = patchBindingsGrid(page, "source");
+    const flatGrid = dmxRoutesGrid(page, "source");
     await expect(flatGrid).toBeVisible();
     await expectConflictTooltip(
       page,
       flatGrid.getByRole("gridcell", { name: "sACN 1.1" }).first(),
-      "This output binding overlaps another output route on at least one universe/address.",
+      "This output route overlaps another output route on at least one universe/address.",
     );
 
     await page
       .locator("main#app")
       .getByRole("tab", { name: "Fixture", exact: true })
       .click();
-    const fixturesGrid = patchBindingsGrid(page, "fixture");
+    const fixturesGrid = dmxRoutesGrid(page, "fixture");
     await expect(fixturesGrid).toBeVisible();
     await expectConflictTooltip(
       page,
       fixturesGrid.getByRole("gridcell", { name: "DMX - 2x" }),
-      "Fixture 501 (E2E Patch Fixture) has overlapping DMX output bindings.",
+      "Fixture 501 (E2E Patch Fixture) has overlapping DMX output routes.",
     );
 
     await page
       .locator("main#app")
       .getByRole("tab", { name: "Universe" })
       .click();
-    const universesGrid = patchBindingsGrid(page, "universe");
+    const universesGrid = dmxRoutesGrid(page, "universe");
     await expect(universesGrid).toBeVisible();
     await expectConflictTooltip(
       page,
       universesGrid.getByRole("gridcell", { name: "DMX - 2" }),
-      "Universe 1 has overlapping output bindings on at least one address.",
+      "Universe 1 has overlapping output routes on at least one address.",
     );
   });
 
   /**
-   * Covers the fixture summary tooltip for duplicate input bindings targeting one fixture parameter.
+   * Covers the fixture summary tooltip for duplicate input routes targeting one fixture parameter.
    */
   test("explains duplicate fixture input conflicts on hover", async ({
     page,
   }) => {
-    await openPatchBindingsPanel(page, "fixture");
-    await seedDuplicateFixtureInputBindings(page);
+    await openDmxRoutesPanel(page, "fixture");
+    await seedDuplicateFixtureInputRoutes(page);
 
-    const fixturesGrid = patchBindingsGrid(page, "fixture");
+    const fixturesGrid = dmxRoutesGrid(page, "fixture");
     await expect(fixturesGrid).toBeVisible();
     await expectConflictTooltip(
       page,
       fixturesGrid.getByRole("gridcell", { name: "In - 2x" }),
-      "Fixture 501 (E2E Patch Fixture) has overlapping input bindings.",
+      "Fixture 501 (E2E Patch Fixture) has overlapping input routes.",
     );
   });
 
   /**
-   * Covers flat binding and universe summary input conflict tooltips.
+   * Covers flat route and universe summary input conflict tooltips.
    */
   test("explains duplicate console input conflicts on hover", async ({
     page,
   }) => {
-    await openPatchBindingsPanel(page, "none");
-    await seedDuplicateConsoleInputBindings(page);
+    await openDmxRoutesPanel(page, "none");
+    await seedDuplicateConsoleInputRoutes(page);
 
-    const flatGrid = patchBindingsGrid(page, "source");
+    const flatGrid = dmxRoutesGrid(page, "source");
     await expect(flatGrid).toBeVisible();
     await expectConflictTooltip(
       page,
       flatGrid.getByRole("gridcell", { name: "Console 50.5" }).first(),
-      "This input binding overlaps another input route on at least one universe/address.",
+      "This input route overlaps another input route on at least one universe/address.",
     );
 
     await page
       .locator("main#app")
       .getByRole("tab", { name: "Universe" })
       .click();
-    const universesGrid = patchBindingsGrid(page, "universe");
+    const universesGrid = dmxRoutesGrid(page, "universe");
     await expect(universesGrid).toBeVisible();
     await expectConflictTooltip(
       page,
       universesGrid.getByRole("gridcell", { name: "In - 2" }),
-      "Universe 50 has overlapping input bindings on at least one address.",
+      "Universe 50 has overlapping input routes on at least one address.",
     );
   });
 });

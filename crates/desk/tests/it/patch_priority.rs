@@ -16,19 +16,19 @@ use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::FixtureCommand;
 use nightfall_fixtures::ast_conv::FixtureAstConverter;
-use nightfall_fixtures::binding_resolution::resolve_input_bindings;
 use nightfall_fixtures::output_frames::{
     OutputDmxFrames, OutputRouting, compose_output_frames, update_input_routing,
 };
 use nightfall_fixtures::prelude::*;
+use nightfall_fixtures::route_resolution::resolve_input_routes;
 use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
 use nightfall_io::prelude::*;
 use web_time::Instant;
 
-/// Creates an app that runs fixture commands, resolves input bindings, and composes wire frames.
+/// Creates an app that runs fixture commands, resolves input routes, and composes wire frames.
 ///
-/// Binding validation is permissive because strict validation rejects overlapping targets, and
-/// priority only arbitrates between bindings that are allowed to overlap.
+/// Route validation is permissive because strict validation rejects overlapping targets, and
+/// priority only arbitrates between routes that are allowed to overlap.
 fn patch_pipeline_app() -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<FixtureCommand>>();
@@ -39,18 +39,18 @@ fn patch_pipeline_app() -> App {
     app.add_message::<SuppressFixtureChangedSnapshot>();
     app.init_resource::<CommandTracker>();
     app.init_resource::<FixtureDataProviderExt>();
-    app.init_resource::<InputBindings>();
-    app.init_resource::<OutputBindings>();
-    app.init_resource::<DisabledBindings>();
-    app.insert_resource(BindingValidationSettings {
-        mode: BindingValidationMode::Permissive,
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
+    app.insert_resource(RouteValidationSettings {
+        mode: RouteValidationMode::Permissive,
     });
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<ConsoleDmxUniverses>();
     app.init_resource::<InputDmxUniverses>();
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
     app.init_resource::<OutputRouting>();
     app.init_resource::<OutputDmxFrames>();
     let (sender, _receiver) = async_channel::unbounded();
@@ -59,7 +59,7 @@ fn patch_pipeline_app() -> App {
         Update,
         (
             crud_events,
-            resolve_input_bindings,
+            resolve_input_routes,
             update_input_routing,
             compose_output_frames,
         )
@@ -98,14 +98,14 @@ fn artnet_value_after_patch_commands(patch_commands: &[&str]) -> u8 {
         data[0] = value;
         app.world_mut()
             .resource_mut::<InputDmxUniverses>()
-            .set_universe(BindingTransport::Sacn, universe, data, Instant::now());
+            .set_universe(RouteTransport::Sacn, universe, data, Instant::now());
     }
     app.update();
 
     assert_eq!(
-        app.world().resource::<InputBindings>().bindings.len(),
+        app.world().resource::<InputRoutes>().routes.len(),
         patch_commands.len(),
-        "every patch command should add an input binding"
+        "every patch command should add an input route"
     );
     let artnet = OutputTransport::ArtNet {
         mode: ArtNetDelivery::Broadcast,

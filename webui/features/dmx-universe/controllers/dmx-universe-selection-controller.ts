@@ -21,7 +21,7 @@ import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dmxUniverseChannels, dmxUniverseList } from "../../../state/appStores";
 import { $ioSettings } from "../../../state/settings";
 import { DmxIoMode, InputUniverseVisibilityMode } from "../../../types";
-import { outputSpaceSelection } from "../model/output-binding-follow";
+import { outputSpaceSelection } from "../model/output-route-follow";
 
 const TRANSPORT_SORT_ORDER = [
   CONSOLE_TRANSPORT,

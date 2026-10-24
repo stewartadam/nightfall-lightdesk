@@ -215,7 +215,7 @@ impl AstConvert for ProgrammerAstConverter {
                                     })?;
                             match &dmx_target.transport {
                                 Some(transport) => Some(ReleaseTarget::TransportChannels {
-                                    target: nightfall_fixtures::ast_conv::binding_target_from_ast(
+                                    target: nightfall_fixtures::ast_conv::route_target_from_ast(
                                         transport,
                                     )?,
                                     channels,

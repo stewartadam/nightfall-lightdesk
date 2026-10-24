@@ -13,7 +13,7 @@ use nightfall_dmx::prelude::{Attribute, ParameterValue, Percentage};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::FixtureCommand;
 use nightfall_fixtures::ast_conv::FixtureAstConverter;
-use nightfall_fixtures::prelude::{BindingEndpoint, DmxRange};
+use nightfall_fixtures::prelude::{DmxRange, RouteEndpoint};
 
 // ============================================================================
 // AST Alias Equality Tests
@@ -1184,7 +1184,7 @@ fn test_store_fixture_unknown_model_error() {
 }
 
 #[test]
-fn test_patch_binding_transport_to_console_conversion() {
+fn test_dmx_route_transport_to_console_conversion() {
     let ast = generate_ast("patch sacn:1 @ console:5")
         .expect("Failed to parse 'patch sacn:1 @ console:5'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
@@ -1194,7 +1194,7 @@ fn test_patch_binding_transport_to_console_conversion() {
     assert!(cmd.is_some(), "Command is not a FixtureCommand");
 
     match cmd.unwrap() {
-        FixtureCommand::PatchBinding {
+        FixtureCommand::AddDmxRoute {
             source,
             target,
             priority,
@@ -1204,7 +1204,7 @@ fn test_patch_binding_transport_to_console_conversion() {
             assert!(!*clone, "Expected clone to be false");
             assert_eq!(
                 *source,
-                BindingEndpoint::Transport {
+                RouteEndpoint::Transport {
                     target: "sacn".to_string(),
                     universe: Some(DmxRange { start: 1, end: 1 }),
                     address: None,
@@ -1212,32 +1212,32 @@ fn test_patch_binding_transport_to_console_conversion() {
             );
             assert_eq!(
                 *target,
-                BindingEndpoint::Console {
+                RouteEndpoint::Console {
                     universe: Some(DmxRange { start: 5, end: 5 }),
                     address: None,
                 }
             );
         }
-        other => panic!("Expected PatchBinding command, got {:?}", other),
+        other => panic!("Expected AddDmxRoute command, got {:?}", other),
     }
 }
 
 /// Verifies `break N` converts to a whole-fixture break endpoint, and that
 /// break 1 or an element-qualified break is rejected.
 #[test]
-fn test_patch_binding_fixture_break_conversion() {
+fn test_dmx_route_fixture_break_conversion() {
     let ast = generate_ast("patch fix 12 break 2 @ artnet:2.1")
         .expect("Failed to parse fixture break patch");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
     match commands[0].as_any().downcast_ref::<FixtureCommand>() {
-        Some(FixtureCommand::PatchBinding { source, .. }) => assert_eq!(
+        Some(FixtureCommand::AddDmxRoute { source, .. }) => assert_eq!(
             *source,
-            BindingEndpoint::FixtureBreak {
+            RouteEndpoint::FixtureBreak {
                 ids: vec![12],
                 dmx_break: 2,
             }
         ),
-        other => panic!("Expected PatchBinding command, got {:?}", other),
+        other => panic!("Expected AddDmxRoute command, got {:?}", other),
     }
 
     for input in [
@@ -1253,7 +1253,7 @@ fn test_patch_binding_fixture_break_conversion() {
 }
 
 #[test]
-fn test_patch_binding_transport_to_transport_compact_syntax_conversion() {
+fn test_dmx_route_transport_to_transport_compact_syntax_conversion() {
     let ast = generate_ast("patch sacn@sacn").expect("Failed to parse 'patch sacn@sacn'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 
@@ -1262,7 +1262,7 @@ fn test_patch_binding_transport_to_transport_compact_syntax_conversion() {
     assert!(cmd.is_some(), "Command is not a FixtureCommand");
 
     match cmd.unwrap() {
-        FixtureCommand::PatchBinding {
+        FixtureCommand::AddDmxRoute {
             source,
             target,
             priority,
@@ -1272,7 +1272,7 @@ fn test_patch_binding_transport_to_transport_compact_syntax_conversion() {
             assert!(!*clone, "Expected clone to be false");
             assert_eq!(
                 *source,
-                BindingEndpoint::Transport {
+                RouteEndpoint::Transport {
                     target: "sacn".to_string(),
                     universe: None,
                     address: None,
@@ -1280,21 +1280,21 @@ fn test_patch_binding_transport_to_transport_compact_syntax_conversion() {
             );
             assert_eq!(
                 *target,
-                BindingEndpoint::Transport {
+                RouteEndpoint::Transport {
                     target: "sacn".to_string(),
                     universe: None,
                     address: None,
                 }
             );
         }
-        other => panic!("Expected PatchBinding command, got {:?}", other),
+        other => panic!("Expected AddDmxRoute command, got {:?}", other),
     }
 }
 
 #[test]
-fn test_patch_binding_transport_to_fixture_clone_conversion() {
+fn test_dmx_route_transport_to_fixture_clone_conversion() {
     let ast = generate_ast("patch artnet:3.78 @ fix 311>315 .1 param intensity prio 2 /clone")
-        .expect("Failed to parse patch binding with fixture target");
+        .expect("Failed to parse DMX route with fixture target");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
@@ -1302,7 +1302,7 @@ fn test_patch_binding_transport_to_fixture_clone_conversion() {
     assert!(cmd.is_some(), "Command is not a FixtureCommand");
 
     match cmd.unwrap() {
-        FixtureCommand::PatchBinding {
+        FixtureCommand::AddDmxRoute {
             source,
             target,
             priority,
@@ -1312,7 +1312,7 @@ fn test_patch_binding_transport_to_fixture_clone_conversion() {
             assert!(*clone, "Expected clone to be true");
             assert_eq!(
                 *source,
-                BindingEndpoint::Transport {
+                RouteEndpoint::Transport {
                     target: "artnet".to_string(),
                     universe: Some(DmxRange { start: 3, end: 3 }),
                     address: Some(78),
@@ -1320,19 +1320,19 @@ fn test_patch_binding_transport_to_fixture_clone_conversion() {
             );
             assert_eq!(
                 *target,
-                BindingEndpoint::Fixture {
+                RouteEndpoint::Fixture {
                     ids: vec![311, 312, 313, 314, 315],
                     element: Some(1),
                     param: Some("intensity".to_string()),
                 }
             );
         }
-        other => panic!("Expected PatchBinding command, got {:?}", other),
+        other => panic!("Expected AddDmxRoute command, got {:?}", other),
     }
 }
 
 #[test]
-fn test_patch_binding_transport_to_disabled_conversion() {
+fn test_dmx_route_transport_to_disabled_conversion() {
     let ast = generate_ast("patch artnet:1>5 @ disabled")
         .expect("Failed to parse 'patch artnet:1>5 @ disabled'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
@@ -1342,7 +1342,7 @@ fn test_patch_binding_transport_to_disabled_conversion() {
     assert!(cmd.is_some(), "Command is not a FixtureCommand");
 
     match cmd.unwrap() {
-        FixtureCommand::PatchBinding {
+        FixtureCommand::AddDmxRoute {
             source,
             target,
             priority,
@@ -1352,20 +1352,20 @@ fn test_patch_binding_transport_to_disabled_conversion() {
             assert!(!*clone, "Expected clone to be false");
             assert_eq!(
                 *source,
-                BindingEndpoint::Transport {
+                RouteEndpoint::Transport {
                     target: "artnet".to_string(),
                     universe: Some(DmxRange { start: 1, end: 5 }),
                     address: None,
                 }
             );
-            assert_eq!(*target, BindingEndpoint::Disabled);
+            assert_eq!(*target, RouteEndpoint::Disabled);
         }
-        other => panic!("Expected PatchBinding command, got {:?}", other),
+        other => panic!("Expected AddDmxRoute command, got {:?}", other),
     }
 }
 
 #[test]
-fn test_patch_binding_fixture_to_fixture_clone_conversion() {
+fn test_dmx_route_fixture_to_fixture_clone_conversion() {
     let ast = generate_ast("patch fix 211 @ fix 311>315 /clone")
         .expect("Failed to parse 'patch fix 211 @ fix 311>315 /clone'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
@@ -1375,7 +1375,7 @@ fn test_patch_binding_fixture_to_fixture_clone_conversion() {
     assert!(cmd.is_some(), "Command is not a FixtureCommand");
 
     match cmd.unwrap() {
-        FixtureCommand::PatchBinding {
+        FixtureCommand::AddDmxRoute {
             source,
             target,
             priority,
@@ -1385,7 +1385,7 @@ fn test_patch_binding_fixture_to_fixture_clone_conversion() {
             assert!(*clone, "Expected clone to be true");
             assert_eq!(
                 *source,
-                BindingEndpoint::Fixture {
+                RouteEndpoint::Fixture {
                     ids: vec![211],
                     element: None,
                     param: None,
@@ -1393,19 +1393,19 @@ fn test_patch_binding_fixture_to_fixture_clone_conversion() {
             );
             assert_eq!(
                 *target,
-                BindingEndpoint::Fixture {
+                RouteEndpoint::Fixture {
                     ids: vec![311, 312, 313, 314, 315],
                     element: None,
                     param: None,
                 }
             );
         }
-        other => panic!("Expected PatchBinding command, got {:?}", other),
+        other => panic!("Expected AddDmxRoute command, got {:?}", other),
     }
 }
 
 #[test]
-fn test_rm_patch_binding_disabled_conversion() {
+fn test_rm_dmx_route_disabled_conversion() {
     let ast = generate_ast("rm patch @ disabled").expect("Failed to parse 'rm patch @ disabled'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 
@@ -1414,7 +1414,7 @@ fn test_rm_patch_binding_disabled_conversion() {
     assert!(cmd.is_some(), "Command is not a FixtureCommand");
 
     match cmd.unwrap() {
-        FixtureCommand::RemovePatchBinding {
+        FixtureCommand::RemoveDmxRoutes {
             source,
             target,
             priority,
@@ -1423,14 +1423,14 @@ fn test_rm_patch_binding_disabled_conversion() {
             assert!(source.is_none(), "Expected no source filter");
             assert!(priority.is_none(), "Expected no priority filter");
             assert!(clone.is_none(), "Expected no clone filter");
-            assert_eq!(target, &Some(BindingEndpoint::Disabled));
+            assert_eq!(target, &Some(RouteEndpoint::Disabled));
         }
-        other => panic!("Expected RemovePatchBinding command, got {:?}", other),
+        other => panic!("Expected RemoveDmxRoutes command, got {:?}", other),
     }
 }
 
 #[test]
-fn test_rm_patch_binding_exact_conversion() {
+fn test_rm_dmx_route_exact_conversion() {
     let ast = generate_ast("rm patch fix 421 @ artnet:1.17")
         .expect("Failed to parse 'rm patch fix 421 @ artnet:1.17'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
@@ -1440,7 +1440,7 @@ fn test_rm_patch_binding_exact_conversion() {
     assert!(cmd.is_some(), "Command is not a FixtureCommand");
 
     match cmd.unwrap() {
-        FixtureCommand::RemovePatchBinding {
+        FixtureCommand::RemoveDmxRoutes {
             source,
             target,
             priority,
@@ -1448,7 +1448,7 @@ fn test_rm_patch_binding_exact_conversion() {
         } => {
             assert_eq!(
                 source,
-                &Some(BindingEndpoint::Fixture {
+                &Some(RouteEndpoint::Fixture {
                     ids: vec![421],
                     element: None,
                     param: None,
@@ -1456,7 +1456,7 @@ fn test_rm_patch_binding_exact_conversion() {
             );
             assert_eq!(
                 target,
-                &Some(BindingEndpoint::Transport {
+                &Some(RouteEndpoint::Transport {
                     target: "artnet".to_string(),
                     universe: Some(DmxRange { start: 1, end: 1 }),
                     address: Some(17),
@@ -1465,12 +1465,12 @@ fn test_rm_patch_binding_exact_conversion() {
             assert!(priority.is_none(), "Expected no priority filter");
             assert!(clone.is_none(), "Expected no clone filter");
         }
-        other => panic!("Expected RemovePatchBinding command, got {:?}", other),
+        other => panic!("Expected RemoveDmxRoutes command, got {:?}", other),
     }
 }
 
 #[test]
-fn test_patch_binding_fixture_element_selector_mismatch_errors() {
+fn test_dmx_route_fixture_element_selector_mismatch_errors() {
     let ast = generate_ast("patch console @ fix 311.2 .1 param intensity")
         .expect("Failed to parse element mismatch patch");
     let result = FixtureAstConverter::convert(&ast);
@@ -1490,7 +1490,7 @@ fn test_patch_binding_fixture_element_selector_mismatch_errors() {
 }
 
 #[test]
-fn test_patch_binding_fixture_element_ranges_in_ids_errors() {
+fn test_dmx_route_fixture_element_ranges_in_ids_errors() {
     let ast = generate_ast("patch console @ fix 311>315 . 1>2")
         .expect("Failed to parse element range patch");
     let result = FixtureAstConverter::convert(&ast);
@@ -1501,7 +1501,7 @@ fn test_patch_binding_fixture_element_ranges_in_ids_errors() {
     match result {
         Err(nightfall_engine::prelude::DispatchError::ConversionFailed(msg)) => {
             assert!(
-                msg.contains("fixture element ranges are not supported in bindings"),
+                msg.contains("fixture element ranges are not supported in routes"),
                 "Expected fixture element range unsupported error, got '{msg}'"
             );
         }

@@ -8,7 +8,7 @@
 
 //! Raw values held on output transport wire universes by `ch <transport>:U.A @ V`.
 //!
-//! Console `ch U.A` writes go through console space and reach the wire only where a binding
+//! Console `ch U.A` writes go through console space and reach the wire only where a route
 //! routes them. A transport hold addresses the wire directly: the named output's universe
 //! carries the held value over everything patched there until `release ch <transport>:U.A`.
 //! Holds are kept by output target ID, so they follow the output if its delivery settings
@@ -21,8 +21,8 @@ use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
 use nightfall_engine::prelude::*;
 use nightfall_io::{NetworkDmxOutputTargets, OutputTransport, UsbDmxOutputTargets};
 
-use crate::binding_resolution::output_transport_from_target_id;
 use crate::prelude::*;
+use crate::route_resolution::output_transport_from_target_id;
 
 /// Resolves output transport target IDs (`sacn`, `udmx`, configured names) to the configured
 /// output they name.

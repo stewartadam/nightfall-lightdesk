@@ -6,25 +6,25 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-type RowWithBindingId = {
+type RowWithRouteId = {
   rowKind: string;
-  binding?: {
+  route?: {
     id: string;
   };
 };
 
-export function getBindingIdForAltFollow<Row extends RowWithBindingId>(
+export function getRouteIdForAltFollow<Row extends RowWithRouteId>(
   row: Row | undefined,
   altKeyPressed: boolean,
 ): string | null {
-  if (row?.rowKind !== "binding" || !altKeyPressed) {
+  if (row?.rowKind !== "route" || !altKeyPressed) {
     return null;
   }
 
-  const bindingId = row.binding?.id;
-  if (!bindingId) {
+  const routeId = row.route?.id;
+  if (!routeId) {
     return null;
   }
 
-  return bindingId;
+  return routeId;
 }

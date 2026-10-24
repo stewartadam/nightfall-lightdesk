@@ -18,12 +18,12 @@ import {
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import {
   sendFixtureColorPathDefault,
   sendFixturePlacementUpdate,
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   colorPathDefaults,

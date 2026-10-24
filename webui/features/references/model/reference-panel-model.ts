@@ -54,7 +54,7 @@ export const DOMAIN_OPTIONS: Array<{
   { value: ReferenceDomain.FxModule, label: "FX Modules" },
   { value: ReferenceDomain.Flow, label: "Flows" },
   { value: ReferenceDomain.Master, label: "Masters" },
-  { value: ReferenceDomain.PatchBinding, label: "Patch Bindings" },
+  { value: ReferenceDomain.DmxRoute, label: "DMX Routes" },
 ];
 
 /** Names the object family of a reference's owner, as shown in the Source column. */
@@ -76,8 +76,8 @@ export function referenceDomainLabel(domain: ReferenceDomain): string {
       return "Flow";
     case ReferenceDomain.Master:
       return "Master";
-    case ReferenceDomain.PatchBinding:
-      return "Patch Binding";
+    case ReferenceDomain.DmxRoute:
+      return "DMX Route";
   }
 }
 
