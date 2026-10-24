@@ -1,0 +1,41 @@
+{
+  "id": "akai.apc-mini",
+  "name": "Akai APC Mini",
+  "source": {
+    "project": "QLC+",
+    "file": "Akai-APCMini.qxi",
+    "authors": "Maikel Boerebach",
+    "license": "Apache-2.0"
+  },
+  "ports": {
+    "match": ["apc mini"],
+    "exclude": ["mk2"]
+  },
+  "feedback": false,
+  "init": [],
+  "release": [],
+  "colors": [
+    { "name": "Off", "value": 0, "swatch": "#000000" },
+    { "name": "Green", "value": 1, "swatch": "#00ff00" },
+    {
+      "name": "Green Blinking",
+      "value": 2,
+      "swatch": "#00ff00",
+      "blink": true
+    },
+    { "name": "Red", "value": 3, "swatch": "#ff0000" },
+    { "name": "Red Blinking", "value": 4, "swatch": "#ff0000", "blink": true },
+    { "name": "Yellow", "value": 5, "swatch": "#ffff00" },
+    {
+      "name": "Yellow Blinking",
+      "value": 6,
+      "swatch": "#ffff00",
+      "blink": true
+    }
+  ],
+  "defaults": {
+    "off": "Off",
+    "on": "Green",
+    "held": "Green Blinking"
+  }
+}
