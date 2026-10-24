@@ -165,6 +165,7 @@ function FxEditorPanelContent(props: FxEditorPanelProps) {
                     size="compact"
                     variant="primary"
                     disabled={!isDirty()}
+                    data-guide-target="fx-save"
                   >
                     Save
                   </Button>

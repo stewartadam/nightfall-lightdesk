@@ -241,6 +241,7 @@ export function Control(props: ControlProps): JSX.Element {
     >
       {/* Vertical slider */}
       <Mappable
+        data-guide="clip-control"
         class="flex min-h-0 flex-1 w-full justify-center pb-2 pt-1"
         label={`control ${props.index} fader`}
         choices={faderChoices}

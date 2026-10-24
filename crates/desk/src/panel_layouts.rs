@@ -196,6 +196,7 @@ mod tests {
             panels: Vec::new(),
             created_at: 1.0,
             updated_at: 1.0,
+            transient: false,
         }
     }
 

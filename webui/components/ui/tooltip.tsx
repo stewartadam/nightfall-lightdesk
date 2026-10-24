@@ -50,6 +50,10 @@ export interface TooltipProps {
    * sized by its parent, such as `absolute top-1 right-1` or `block w-full`.
    */
   class?: string;
+  /** Allow users to select and copy tooltip text, keeping it open while hovered. */
+  selectable?: boolean;
+  /** Optional surface styling for contextual hints without changing ordinary tooltips. */
+  surfaceClass?: string;
 }
 
 /** Controls whose tap does something of its own, so a tap must not toggle their tooltip. */
@@ -119,6 +123,8 @@ export default function Tooltip(props: TooltipProps) {
   onCleanup(() => clearTimeout(flashTimeoutId));
 
   const wantsVisible = () => visible() || forceVisible() || flashing();
+  /** Enables pointer access and hover retention for controls or selectable text. */
+  const acceptsPointer = () => props.interactive || props.selectable;
   const OFFSET_PX = 10;
   const VIEWPORT_PADDING_PX = 8;
   const POINTER_SIZE_PX = 8;
@@ -281,7 +287,7 @@ export default function Tooltip(props: TooltipProps) {
     if (event?.pointerType === "touch") return;
     clearOpenTimer();
     clearCloseTimer();
-    if (!props.interactive) {
+    if (!acceptsPointer()) {
       setVisible(false);
       return;
     }
@@ -293,14 +299,14 @@ export default function Tooltip(props: TooltipProps) {
 
   /** Keeps an interactive tooltip visible while its surface is hovered. */
   const handleTooltipPointerEnter = () => {
-    if (!props.interactive) return;
+    if (!acceptsPointer()) return;
     clearCloseTimer();
     setVisible(true);
   };
 
   /** Begins closing after the pointer leaves interactive tooltip content. */
   const handleTooltipPointerLeave = () => {
-    if (!props.interactive) return;
+    if (!acceptsPointer()) return;
     handlePointerLeave();
   };
 
@@ -379,7 +385,7 @@ export default function Tooltip(props: TooltipProps) {
 
   /** Returns whether focus moved between the trigger and interactive surface. */
   const retainsInteractiveFocus = (relatedTarget: EventTarget | null) => {
-    if (!props.interactive || !(relatedTarget instanceof Node)) return false;
+    if (!acceptsPointer() || !(relatedTarget instanceof Node)) return false;
     return (
       Boolean(triggerRef?.contains(relatedTarget)) ||
       Boolean(tooltipRef?.contains(relatedTarget))
@@ -429,12 +435,13 @@ export default function Tooltip(props: TooltipProps) {
       }
       clearExitTimer();
       setMounted(true);
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
           setRenderedVisible(true);
           updateTooltipPosition();
-        }),
-      );
+        });
+      });
+      onCleanup(() => cancelAnimationFrame(frame));
       return;
     }
 
@@ -454,14 +461,18 @@ export default function Tooltip(props: TooltipProps) {
 
     const handleViewportChange = () => updateTooltipPosition();
     const content = props.content();
+    const anchor = props.anchorRect?.();
+    const placement = props.position;
     void content;
-    resetTooltipPosition();
-    requestAnimationFrame(updateTooltipPosition);
+    void anchor;
+    void placement;
+    const frame = requestAnimationFrame(updateTooltipPosition);
 
     window.addEventListener("scroll", handleViewportChange, true);
     window.addEventListener("resize", handleViewportChange);
 
     onCleanup(() => {
+      cancelAnimationFrame(frame);
       window.removeEventListener("scroll", handleViewportChange, true);
       window.removeEventListener("resize", handleViewportChange);
     });
@@ -490,10 +501,10 @@ export default function Tooltip(props: TooltipProps) {
           <span
             ref={tooltipRef}
             style={tooltipStyle()}
-            class="relative overflow-visible px-2 py-1 text-xs text-white bg-gray-800 border border-gray-600 rounded shadow-[var(--shadow-elevation-low)] whitespace-pre transition-[opacity,transform] duration-150 ease-out"
+            class={`relative overflow-visible px-2 py-1 text-xs text-white bg-gray-800 border border-gray-600 rounded shadow-[var(--shadow-elevation-low)] whitespace-pre transition-[opacity,transform] duration-150 ease-out ${props.surfaceClass ?? ""}`}
             classList={{
-              "pointer-events-none": !props.interactive,
-              "pointer-events-auto select-text": props.interactive,
+              "pointer-events-none": !acceptsPointer(),
+              "pointer-events-auto select-text": acceptsPointer(),
               "opacity-100 scale-100": renderedVisible(),
               "opacity-0 scale-95": !renderedVisible(),
               "origin-bottom": position() === "top",
@@ -502,6 +513,8 @@ export default function Tooltip(props: TooltipProps) {
               "origin-left": position() === "right",
             }}
             data-slot="surface"
+            data-placement={position()}
+            data-visible={renderedVisible()}
             role="tooltip"
             onPointerEnter={handleTooltipPointerEnter}
             onPointerLeave={handleTooltipPointerLeave}

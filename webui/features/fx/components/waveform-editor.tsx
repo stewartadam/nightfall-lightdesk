@@ -222,6 +222,7 @@ export function WaveformEditor(props: WaveformEditorProps) {
                 type="number"
                 step="0.1"
                 min="0.1"
+                aria-label="Rate"
                 value={props.waveform.rate_secs.toFixed(2)}
                 disabled={isDisabled("rate")}
                 onInput={(e) => {

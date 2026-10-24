@@ -54,3 +54,9 @@ export function getCommandShortcutKeys(command: UiAction): string[] {
 }
 
 export const DEFAULT_CATEGORY = "General";
+
+/** Shortcut that opens the command palette, also shown as the palette's own hint. */
+export const OPEN_COMMAND_PALETTE_SHORTCUT = "$mod+Shift+p";
+
+/** Clears the programmer from anywhere, including while a text input has focus. */
+export const CLEAR_PROGRAMMER_SHORTCUT = "Shift+Escape";
