@@ -68,6 +68,20 @@ const documentation = [
   /^scripts\/ci-scope/,
   /^\.github\/workflows\/ci\.yml$/,
 ];
+// Paths no WASM, native, WebUI or product-flow job reads: the manual, contributor prose, agent
+// and editor configuration, repository metadata, workflows outside PR validation, script tests,
+// and developer scripts that no build or test step executes. Every other path is an app input,
+// so a new file is validated in full until it is listed here.
+export const appIndependent = [
+  /^docs\//,
+  /^(AGENTS|CLAUDE|CONTRIBUTING|README)\.md$/,
+  /^\.(agents|claude|vscode)\//,
+  /^\.github\/(ISSUE_TEMPLATE\/|(copilot-instructions|desktop-release-notes|pull_request_template)\.md$|dependabot\.yml$)/,
+  /^\.github\/workflows\/(README\.md|(desktop-updates|playwright-full|pr-commands|release-notes)\.yml)$/,
+  /^scripts\/(?!ci-scope)[^/]+\.node\.test\.mjs$/,
+  /^scripts\/(check-commit-signoff|claude-worktree-hook|fetch-gdtf-bench|generate-app-icons|install-fx-module|release-notes|seed-data-dir-from-main)\.mjs$/,
+  /^scripts\/(profile-perf|test-desktop-updater|update-deps|verify_showfile_roundtrip)\.sh$/,
+];
 
 /**
  * Reduce a Cargo.lock to the parts that can change a distribution: every external package
@@ -143,12 +157,17 @@ export function lockfileChangesOnlyWorkspaceEdges(base, head) {
  * change that only rewires workspace packages (`workspaceOnlyLockfile`) is left to the Rust
  * tests, because no workspace package compiles a different set of external packages.
  *
- * Browser previews build the demo for every same-repository PR once a preview target is
- * configured. Fork PRs never receive the deployment credential, so they never select one.
+ * The WASM packages, native backend, WebUI checks and Chromium product flows (`app`) run for every
+ * push and manual run, but only for PRs that change an app input: any path outside
+ * `appIndependent`. Rust tests always imply `app`, because the native job runs them.
  *
- * Draft PRs select only their preview, and reach selection only when opened: the workflow skips
- * source acquisition for later draft pushes, so CI validates nothing until the PR is marked
- * ready for review. The `/republish` PR command refreshes a draft's preview through a manual run
+ * Browser previews build the demo for every same-repository PR that changes an app input or the
+ * manual, once a preview target is configured. Fork PRs never receive the deployment credential,
+ * so they never select one.
+ *
+ * Draft PRs select only their preview, under the same path rule, and reach selection only when
+ * opened: the workflow skips source acquisition for later draft pushes, so CI validates nothing
+ * until the PR is marked ready for review. The `/republish` PR command refreshes a draft's preview through a manual run
  * whose preview PR number likewise selects only that PR's preview.
  *
  * Documentation builds only for PRs that touch the mdBook sources or the workflow that builds them.
@@ -157,8 +176,8 @@ export function lockfileChangesOnlyWorkspaceEdges(base, head) {
  *
  * Rust tests, doctests and Clippy run for every push and manual run, but only for PRs that touch
  * Rust sources, their build and lint configuration, or files the Rust code embeds. Native
- * validation still builds the headless backend for every ready PR because the Chromium product flows
- * run against it.
+ * validation still builds the headless backend whenever `app` is selected because the Chromium
+ * product flows run against it.
  */
 export function selectScope({
   event,
@@ -175,6 +194,9 @@ export function selectScope({
   /** Whether any changed path is an mdBook input. */
   const touchesDocumentation = () =>
     paths.some((path) => documentation.some((pattern) => pattern.test(path)));
+  /** Whether any changed path can change what the app builds or runs. */
+  const touchesApp = () =>
+    paths.some((path) => !appIndependent.some((pattern) => pattern.test(path)));
   /**
    * Select nothing but the given PR's preview, when a preview target can receive it, plus the
    * documentation build that preview publishes when the PR changes the books.
@@ -187,6 +209,7 @@ export function selectScope({
     preview_pr: enabled ? pr : "",
     docs: enabled && touchesDocumentation(),
     rust: false,
+    app: false,
   });
   if (event === "workflow_dispatch" && previewPr) {
     if (!/^[1-9][0-9]*$/.test(previewPr)) {
@@ -195,7 +218,12 @@ export function selectScope({
     return previewOnly(previewTarget, previewPr);
   }
   if (event === "pull_request" && draft) {
-    return previewOnly(previewTarget && sameRepository, pullRequest);
+    return previewOnly(
+      previewTarget &&
+        sameRepository &&
+        (touchesApp() || touchesDocumentation()),
+      pullRequest,
+    );
   }
   let desktopPackage = false;
   let browserPackage = false;
@@ -203,6 +231,7 @@ export function selectScope({
   let desktopCheck = false;
   let docs = false;
   let rust = event !== "pull_request";
+  let app = event !== "pull_request";
   if (event === "workflow_dispatch") {
     if (!["all", "desktop", "browser"].includes(distribution)) {
       throw new Error(`Unknown distribution: ${distribution}`);
@@ -215,7 +244,9 @@ export function selectScope({
     desktopPackage = ref.startsWith("refs/tags/v");
     browserPackage = ref === "refs/heads/main";
   } else if (event === "pull_request") {
-    browserPreview = previewTarget && sameRepository;
+    app = touchesApp();
+    docs = touchesDocumentation();
+    browserPreview = previewTarget && sameRepository && (app || docs);
     for (const path of paths) {
       const rewiresWorkspace = path === "Cargo.lock" && workspaceOnlyLockfile;
       if (
@@ -233,7 +264,7 @@ export function selectScope({
         desktopCheck = true;
       if (rustTests.some((pattern) => pattern.test(path))) rust = true;
     }
-    docs = touchesDocumentation();
+    app ||= rust;
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
   }
@@ -245,6 +276,7 @@ export function selectScope({
     preview_pr: browserPreview ? pullRequest : "",
     docs,
     rust,
+    app,
   };
 }
 
