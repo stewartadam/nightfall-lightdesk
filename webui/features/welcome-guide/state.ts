@@ -6,8 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-// SPDX-License-Identifier: MPL-2.0
-
 import { atom, type WritableAtom } from "nanostores";
 import { bestEffortPersistentAtom } from "../../lib/best-effort-persistent-atom";
 import { guideLessons } from "./lesson-store";

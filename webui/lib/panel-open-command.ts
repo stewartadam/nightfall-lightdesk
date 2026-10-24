@@ -385,22 +385,21 @@ export function openOrFocusPanel(
     return "focused";
   }
 
-  if (typeof target === "object") {
-    const reference = api.getPanel(target.besidePanel);
+  const reference =
+    typeof target === "object" ? api.getPanel(target.besidePanel) : undefined;
+  if (reference) {
     const openedPanel = api.addPanel({
       id: panelId,
       component: componentName,
       title,
       params,
-      position: reference
-        ? { direction: "within", referencePanel: reference.id }
-        : undefined,
+      position: { direction: "within", referencePanel: reference.id },
     }) as FocusablePanel | undefined;
     expandPanelEdgeGroup(api, openedPanel);
     return "opened";
   }
 
-  const placement = target;
+  const placement = typeof target === "object" ? "default" : target;
   const activeGroup = activeGroupForApi(api);
   const size = panelSizeForPlacement(api, placement, activeGroup);
   const openedPanel = api.addPanel({

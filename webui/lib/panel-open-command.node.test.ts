@@ -520,7 +520,7 @@ test("openOrFocusPanel opens beside a named panel's group", () => {
   assert.deepEqual(added[0].params, { initialTimelineUid: "1" });
 });
 
-/** A beside target whose panel is closed falls back to Dockview's default placement. */
+/** A beside target whose panel is closed opens exactly where the palette's default placement would. */
 test("openOrFocusPanel uses default placement when the beside panel is closed", () => {
   const added: AddedPanelParams[] = [];
   const api = createDockApi({
@@ -532,6 +532,9 @@ test("openOrFocusPanel uses default placement when the beside panel is closed", 
   openOrFocusPanel(api, "panel-Timeline-1", "Timeline", "Timeline 1", {
     besidePanel: "panel-TimelinesPanel",
   });
+  openOrFocusPanel(api, "panel-Timeline-2", "Timeline", "Timeline 2");
 
-  assert.equal(added[0].position, undefined);
+  const { id: _besideId, title: _besideTitle, ...beside } = added[0];
+  const { id: _defaultId, title: _defaultTitle, ...placed } = added[1];
+  assert.deepEqual(beside, placed);
 });

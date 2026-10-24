@@ -79,6 +79,16 @@ export async function enterLessonLayout(
   return { previousLayoutId };
 }
 
+/**
+ * Picks a layout of the user's own to leave the Lesson layout for when the one they came from
+ * is unknown or was deleted: the first saved layout shown in the switcher.
+ */
+export function fallbackReturnLayoutId(): string | undefined {
+  return getShowfilePanelLayouts().find(
+    (layout) => layout.shownInSwitcher && !layout.transient,
+  )?.id;
+}
+
 /** Switches back to the layout the user had before starting lessons, if it still exists. */
 export async function leaveLessonLayout(
   api: DockviewApi,

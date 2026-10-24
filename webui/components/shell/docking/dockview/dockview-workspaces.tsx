@@ -327,7 +327,11 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     );
   });
 
-  shell.setDockviewLayoutReset(() => current.handle?.reset());
+  shell.setDockviewLayoutReset(() => {
+    if (!current.handle) return false;
+    current.handle.reset();
+    return true;
+  });
 
   /** Releases shell references after all owned Dockviews are torn down. */
   onCleanup(() => {
