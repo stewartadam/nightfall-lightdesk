@@ -10,7 +10,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "docs-navigation.spec.ts",
+  testMatch: "docs-*.spec.ts",
   outputDir: "../test-results/playwright",
   use: { browserName: "chromium", headless: true },
 });

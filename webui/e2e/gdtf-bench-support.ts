@@ -9,7 +9,7 @@
 /**
  * Shared setup for specs that drive real GDTF bench archives in the native
  * visualizer. Archives come from NIGHTFALL_GDTF_BENCH_DIR (see
- * docs/src/developer-reference/gdtf-regression-testing.md).
+ * docs/internal/src/contributing/gdtf-regression-testing.md).
  */
 
 import { copyFile, mkdir } from "node:fs/promises";
