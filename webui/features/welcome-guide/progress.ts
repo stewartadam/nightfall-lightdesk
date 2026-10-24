@@ -35,9 +35,10 @@ export type GuideObservation =
   | { type: "panel"; component: PanelComponentName }
   | { type: "sequence-editor"; sequenceId: number }
   | {
-      type: "timeline-playing" | "timeline-stopped" | "intensity" | "clear";
+      type: "timeline-playing" | "timeline-stopped" | "clear";
     }
   | { type: "selection"; fixtureIds: readonly number[] }
+  | { type: "intensity"; fixtureIds: readonly number[] }
   | { type: "fixture-edit-selected"; fixtureId: number }
   | { type: "patch-view"; view: PatchTab }
   | { type: "timeline-action-selected"; trackId: string; actionId: string }
@@ -48,7 +49,7 @@ export type GuideObservation =
       positionMs: number;
       toleranceMs: number;
     }
-  | { type: "color"; color: "Red" | "Blue" }
+  | { type: "color"; color: "Red" | "Blue"; fixtureIds: readonly number[] }
   | { type: "cue"; sequenceId: number; id: number }
   | { type: "cue-manual"; sequenceId: number; id: number }
   | { type: "clip-sequence"; clipId: number; sequenceId: number }
@@ -144,18 +145,19 @@ export function guideCompletionToken(
     Object.values(state.fixtures).find(
       (fixture) => fixture.identifiers.id === id,
     )?.identifiers.uid;
-  const expectedFixtures = Object.values(state.fixtures)
-    .filter(
-      (fixture) =>
-        fixture.identifiers.id >= 310 && fixture.identifiers.id <= 313,
-    )
-    .map((fixture) => fixture.identifiers.uid);
-  /** Requires all four intended strips, so unrelated programmer edits cannot complete a step. */
-  const allRowsMatch = (match: (row: ProgrammerRow) => boolean) =>
-    expectedFixtures.length === 4 &&
-    expectedFixtures.every((uid) => {
+  /**
+   * Requires every fixture the step names to exist and have a matching Programmer row, so
+   * unrelated programmer edits cannot complete a step.
+   */
+  const allRowsMatch = (
+    fixtureIds: readonly number[],
+    match: (row: ProgrammerRow) => boolean,
+  ) =>
+    fixtureIds.length > 0 &&
+    fixtureIds.every((id) => {
+      const uid = fixtureUid(id);
       const row = state.programmer.find((entry) => entry.fixtureUid === uid);
-      return row !== undefined && match(row);
+      return uid !== undefined && row !== undefined && match(row);
     });
   switch (observation.type) {
     case "command-palette":
@@ -260,7 +262,7 @@ export function guideCompletionToken(
     case "patch-view":
       return state.patchView === observation.view ? observation.view : "";
     case "intensity":
-      return allRowsMatch((row) => {
+      return allRowsMatch(observation.fixtureIds, (row) => {
         const value =
           row.attributes.Intensity ?? row.attributes.VirtualIntensity;
         return (
@@ -272,7 +274,7 @@ export function guideCompletionToken(
         ? "intensity"
         : "";
     case "color":
-      return allRowsMatch((row) =>
+      return allRowsMatch(observation.fixtureIds, (row) =>
         ["Red", "Green", "Blue"].every((attribute) => {
           const value = row.attributes[attribute];
           return (

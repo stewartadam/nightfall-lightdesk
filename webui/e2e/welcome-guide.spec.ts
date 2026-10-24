@@ -342,7 +342,7 @@ test("floating lessons provide context, selectable commands and manual placement
   await hint.locator("code").click({ clickCount: 3 });
   await expect
     .poll(() => page.evaluate(() => window.getSelection()?.toString().trim()))
-    .toBe("fix 310>313");
+    .toBe("fix 370>373");
   await page.screenshot({
     path: testInfo.outputPath("guide-emphasized-hint.png"),
   });
@@ -350,7 +350,7 @@ test("floating lessons provide context, selectable commands and manual placement
     name: "Command input",
     exact: true,
   });
-  await command.fill("fix 310>313");
+  await command.fill("fix 370>373");
   await command.press("Enter");
   await expect(hint.locator("code")).toHaveText("@ 100");
   const introduction = guide.getByText(
@@ -418,7 +418,7 @@ test("guide accepts stored cue identity without its suggested label", async ({
     name: "Command input",
     exact: true,
   });
-  await command.fill("fix 310>313 @ 100 red @ 100 green @ 0 blue @ 0");
+  await command.fill("fix 370>373 @ 100 red @ 100 green @ 0 blue @ 0");
   await command.press("Enter");
   await page.getByRole("button", { name: "Open Welcome Guide" }).click();
   const guide = page.getByTestId("welcome-guide");
@@ -1077,7 +1077,7 @@ for (const platform of ["MacIntel", "Win32"]) {
       guide.getByRole("heading", { name: "Open the Programmer", exact: true }),
     ).toBeVisible();
     await paletteInput.press("Enter");
-    await expect(guide.locator("code")).toHaveText("fix 310>313");
+    await expect(guide.locator("code")).toHaveText("fix 370>373");
   });
 }
 
@@ -1371,7 +1371,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
     name: "Command input",
     exact: true,
   });
-  await command.fill("fix 310>313");
+  await command.fill("fix 370>373");
   await command.press("Enter");
   await expect(
     guide.getByRole("heading", { name: "Bring up the lights" }),
@@ -1489,7 +1489,7 @@ test("first lights builds its own Red and Blue sequence", async ({
     .click();
   const input = page.locator("#header-cmdline");
   for (const command of [
-    "fix 310>313",
+    "fix 370>373",
     "@ 100",
     "red @ 100 green @ 0 blue @ 0",
   ]) {
@@ -2007,6 +2007,93 @@ test("lesson launch reveals the card after the layout transition", async ({
   for (const frame of shown) {
     expect(Math.abs(frame.x - final.x)).toBeLessThan(1);
     expect(Math.abs(frame.y - final.y)).toBeLessThan(1);
+  }
+});
+
+/**
+ * Runs an action that opens a panel and records, on every frame, the guide's step heading, card
+ * position and highlight box, until the expected next step has been showing for a while.
+ */
+async function recordStepMotion(
+  page: Page,
+  action: () => Promise<void>,
+  nextStep: string,
+) {
+  await page.evaluate(() => {
+    const state = window as unknown as {
+      guideMotion: Array<{ step: string; card: string; highlight: string }>;
+      sampleGuideMotion: boolean;
+    };
+    state.guideMotion = [];
+    state.sampleGuideMotion = true;
+    /** Serializes a box so frames can be compared exactly. */
+    const key = (box: DOMRect | undefined) =>
+      box ? `${box.x},${box.y},${box.width},${box.height}` : "";
+    /** Records the step heading, card and highlight on every frame. */
+    const sample = () => {
+      if (!state.sampleGuideMotion) return;
+      const card = document.querySelector('[data-testid="welcome-guide"]');
+      state.guideMotion.push({
+        step: card?.querySelector("h2")?.textContent ?? "",
+        card: key(card?.getBoundingClientRect()),
+        highlight: key(
+          document
+            .querySelector('[data-testid="guide-target"] .nf-guide-highlight')
+            ?.getBoundingClientRect(),
+        ),
+      });
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await action();
+  await expectStep(page, nextStep, { target: true });
+  // Watch the new step over enough rendered frames to catch late layout, however slow the runner.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (step) =>
+          (
+            window as unknown as { guideMotion: Array<{ step: string }> }
+          ).guideMotion.filter((frame) => frame.step === step).length,
+        nextStep,
+      ),
+    )
+    .toBeGreaterThanOrEqual(20);
+  const frames = await page.evaluate(() => {
+    const state = window as unknown as {
+      guideMotion: Array<{ step: string; card: string; highlight: string }>;
+      sampleGuideMotion: boolean;
+    };
+    state.sampleGuideMotion = false;
+    return state.guideMotion;
+  });
+  return frames.filter((frame) => frame.step === nextStep);
+}
+
+/**
+ * A step that opens a panel advances only once the next target has mounted and laid out, so the
+ * next step's card and highlight appear where they stay instead of jumping as the panel fills in.
+ */
+test("opening a panel advances once its content has laid out", async ({
+  page,
+}) => {
+  await openSample(page);
+  await startLesson(page, /Transports and output/);
+  for (const [panel, nextStep] of [
+    ["Open I/O Transports", "Network targets"],
+    ["Open Console DMX", "The show’s DMX, kept local"],
+  ]) {
+    await reachStep(page, panel);
+    const frames = await recordStepMotion(
+      page,
+      () => paletteCommand(page, panel),
+      nextStep,
+    );
+    const highlights = frames.map((frame) => frame.highlight).filter(Boolean);
+    expect(highlights.length).toBeGreaterThan(0);
+    expect(new Set(highlights)).toEqual(new Set([highlights[0]]));
+    expect(new Set(frames.map((frame) => frame.card)).size).toBe(1);
   }
 });
 

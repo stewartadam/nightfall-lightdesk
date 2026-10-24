@@ -56,6 +56,39 @@ function revealInScroller(element: HTMLElement): boolean {
   return false;
 }
 
+/** Frames a target's position must hold before it counts as laid out. */
+const SETTLED_FRAMES = 3;
+
+/**
+ * Resolves once an element matching the selector is visible and has kept the same position and
+ * size for a few frames, or after the timeout when it never settles. Lets a step wait for a
+ * freshly opened panel to mount and lay out its content.
+ */
+export function whenTargetSettles(
+  selector: string,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const deadline = performance.now() + timeoutMs;
+    let previous = "";
+    let stable = 0;
+    /** Compares the target's box with the previous frame's until it holds still. */
+    const check = () => {
+      const rect = [...document.querySelectorAll<HTMLElement>(selector)]
+        .map((element) => element.getBoundingClientRect())
+        .find((box) => box.width > 0 && box.height > 0);
+      const key = rect
+        ? `${rect.x},${rect.y},${rect.width},${rect.height}`
+        : "";
+      stable = key && key === previous ? stable + 1 : 0;
+      previous = key;
+      if (stable >= SETTLED_FRAMES || performance.now() >= deadline) resolve();
+      else requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+  });
+}
+
 /** Highlights a visible control and optionally focuses it once when its lesson step begins. */
 export function GuideTarget(props: GuideTargetProps) {
   const [bounds, setBounds] = createSignal<DOMRect | null>(null);

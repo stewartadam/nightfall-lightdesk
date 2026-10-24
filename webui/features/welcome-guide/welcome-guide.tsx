@@ -57,7 +57,7 @@ import {
 } from "./cleanup";
 import { visibleGuideContent } from "./content";
 import { GuideContentItem } from "./guide-content";
-import { GuideTarget } from "./guide-target";
+import { GuideTarget, whenTargetSettles } from "./guide-target";
 import {
   enterLessonLayout,
   findLessonLayoutId,
@@ -66,7 +66,7 @@ import {
   removeLessonLayout,
 } from "./lesson-layout";
 import { guideLessons } from "./lesson-store";
-import type { GuidePrerequisite } from "./lessons";
+import type { GuidePrerequisite, GuideStep } from "./lessons";
 import {
   collapseCoveringEdgeGroups,
   type GuidePanel,
@@ -118,6 +118,8 @@ const COMMAND_INPUT = "#header-cmdline";
 const ANCHOR_GRACE_MS = 400;
 /** Longest a launching lesson's card stays hidden while it waits for the first step's target. */
 const REVEAL_TIMEOUT_MS = 1000;
+/** Longest a step that opened a panel waits for the next step's target to lay out. */
+const PANEL_SETTLE_TIMEOUT_MS = 1000;
 
 /** Hosts the lesson library and floating instructions; all engine actions remain user initiated. */
 export default function WelcomeGuide() {
@@ -236,12 +238,14 @@ export default function WelcomeGuide() {
     lessons().find((entry) => entry.id === lessonId()),
   );
   /** Resolves the current instruction, leaving completion outside the action steps. */
-  const step = createMemo(() => {
-    const instruction = lesson()?.steps[index()];
+  const step = createMemo(() => stepAt(index()));
+  /** Returns a step of the current lesson, adapted for runtimes without disk storage. */
+  function stepAt(position: number): GuideStep | undefined {
+    const instruction = lesson()?.steps[position];
     return instruction && !hasDiskStorage(capabilities())
       ? { ...instruction, ...instruction.diskStorageUnavailable }
       : instruction;
-  });
+  }
   const [visitedPanels, setVisitedPanels] = createSignal(new Set<string>());
   let visitedStep = "";
   /** Remembers prerequisite panels visited during this step, even when they share a tab group. */
@@ -335,21 +339,26 @@ export default function WelcomeGuide() {
     }
     return undefined;
   });
-  /** Resolves authored object identities to clip tiles, inspect buttons, sequence cards, or Trigger cells. */
-  const actionSelector = createMemo(() => {
-    if (step()?.targetSampleTimeline) {
+  /**
+   * Resolves a step's authored object identities to clip tiles, inspect buttons, sequence cards,
+   * or Trigger cells, falling back to its plain target selector.
+   */
+  const selectorFor = (
+    instruction: GuideStep | undefined,
+  ): string | undefined => {
+    if (instruction?.targetSampleTimeline) {
       const timeline = sampleTimeline();
       if (!timeline) return undefined;
       return `[data-workspace-active="true"] [data-panel-kind="timeline-list"] [data-crud-select-id="${CSS.escape(normalizeTimelineUid(timeline.identifiers.uid))}"]`;
     }
-    const actionTarget = step()?.targetTimelineAction;
+    const actionTarget = instruction?.targetTimelineAction;
     if (actionTarget) {
       const timeline = sampleTimeline();
       if (!timeline) return undefined;
       const uid = CSS.escape(normalizeTimelineUid(timeline.identifiers.uid));
       return `[data-timeline-surface="true"][data-timeline-uid="${uid}"] [data-timeline-action="true"][data-track-id="${CSS.escape(actionTarget.trackId)}"][data-action-id="${CSS.escape(actionTarget.actionId)}"]:not([data-drag-preview]) [data-timeline-action-chip="true"]`;
     }
-    const fxTarget = step()?.targetFx;
+    const fxTarget = instruction?.targetFx;
     if (fxTarget) {
       const effect = Object.values(fxMap()).find(
         (entry) => entry.identifiers.id === fxTarget.id,
@@ -358,7 +367,7 @@ export default function WelcomeGuide() {
       const uid = CSS.escape(effect.identifiers.uid);
       return `[data-crud-select-id="${uid}"], [data-grid-row-key="${uid}"][data-grid-column-key="label"]`;
     }
-    const fixtureTarget = step()?.targetPatchFixture;
+    const fixtureTarget = instruction?.targetPatchFixture;
     if (fixtureTarget) {
       const fixture = Object.values(fixtureMap()).find(
         (entry) => entry.identifiers.id === fixtureTarget.id,
@@ -367,7 +376,7 @@ export default function WelcomeGuide() {
       const uid = CSS.escape(fixture.identifiers.uid);
       return `[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"][aria-selected="false"], [data-panel-kind="patch"] [data-grid-row-key="${uid}"][data-grid-column-key="id"]`;
     }
-    const clipTarget = step()?.targetClip;
+    const clipTarget = instruction?.targetClip;
     if (clipTarget) {
       const clip = Object.values(clipMap()).find(
         ([entry]) => entry.identifiers.id === clipTarget.id,
@@ -377,8 +386,8 @@ export default function WelcomeGuide() {
         ? `[aria-label="Inspect clip ${clipTarget.id}"]`
         : `[data-crud-select-id="${clip.identifiers.uid}"]`;
     }
-    const target = step()?.targetSequence;
-    if (!target) return step()?.target;
+    const target = instruction?.targetSequence;
+    if (!target) return instruction?.target;
     const sequence = Object.values(sequenceMap()).find(
       (entry) => entry.identifiers.id === target.id,
     );
@@ -391,7 +400,9 @@ export default function WelcomeGuide() {
     return cue
       ? `[data-grid-column-key="trigger"][data-grid-row-key="${cue.identifiers.uid}:cue"]`
       : undefined;
-  });
+  };
+  /** Resolves the current step's action target. */
+  const actionSelector = createMemo(() => selectorFor(step()));
   /** Aims the card at the step's action, or at what reveals a missing panel while prerequisites are unmet. */
   const targetSelector = createMemo(() =>
     blocked() ? prerequisiteSelector() : actionSelector(),
@@ -597,9 +608,33 @@ export default function WelcomeGuide() {
       target?.type !== "sample-panels"
     );
   });
-  useGuideProgress(observation, held, revisited, workspace, () =>
-    guideStepIndex.set(guideStepIndex.get() + 1),
-  );
+  /**
+   * Moves to the next step. When this step opened a panel, waits until the next step's target
+   * has mounted and stopped moving, so the card and highlight don't chase the panel's content
+   * while it lays out. Skips the move if the user navigated or left the lesson meanwhile.
+   */
+  const advanceStep = () => {
+    const from = guideStepIndex.get();
+    const lessonAtAdvance = guideLessonId.get();
+    const type = observation()?.type;
+    const nextTarget = selectorFor(stepAt(from + 1));
+    const opensPanel =
+      type === "panel" ||
+      type === "sequence-editor" ||
+      type === "sample-panels";
+    if (!opensPanel || !nextTarget) {
+      guideStepIndex.set(from + 1);
+      return;
+    }
+    void whenTargetSettles(nextTarget, PANEL_SETTLE_TIMEOUT_MS).then(() => {
+      if (
+        guideStepIndex.get() === from &&
+        guideLessonId.get() === lessonAtAdvance
+      )
+        guideStepIndex.set(from + 1);
+    });
+  };
+  useGuideProgress(observation, held, revisited, workspace, advanceStep);
 
   /** Floats the card over the app during lessons and while a lesson launches. */
   const floatingCard = () => Boolean(lesson()) || revealPending();

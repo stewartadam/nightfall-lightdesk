@@ -102,6 +102,8 @@ export interface GuideLesson {
   leavesShowUnchanged?: boolean;
   steps: GuideStep[];
 }
+/** The four pixel strips Your first lights selects, colors and stores in its sequence. */
+const FIRST_LIGHTS_FIXTURES = [370, 371, 372, 373];
 export const GUIDE_LESSONS: GuideLesson[] = [
   {
     id: "basics",
@@ -476,12 +478,12 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         focusTarget: true,
         observe: {
           type: "selection",
-          fixtureIds: [310, 311, 312, 313],
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
         },
         content: [
           {
             type: "text",
-            text: "The demo pixel strips include fixtures 310–313. The > operator selects an inclusive range.",
+            text: "The demo pixel strips include fixtures 370–373. The > operator selects an inclusive range.",
           },
           {
             type: "prerequisite",
@@ -491,7 +493,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
             type: "action",
             title: "Type this command, then press Enter:",
             body: "Look for the four selected pixel strips in the Programmer.",
-            command: "fix 310>313",
+            command: "fix 370>373",
           },
         ],
       },
@@ -501,6 +503,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         target: "#header-cmdline",
         observe: {
           type: "intensity",
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
         },
         content: [
           {
@@ -535,6 +538,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         observe: {
           type: "color",
           color: "Red",
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
         },
         content: [
           {
@@ -586,6 +590,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         observe: {
           type: "color",
           color: "Blue",
+          fixtureIds: FIRST_LIGHTS_FIXTURES,
         },
         content: [
           {
@@ -1231,7 +1236,11 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Give the strips a red base",
         target: "#header-cmdline",
         focusTarget: true,
-        observe: { type: "color", color: "Red" },
+        observe: {
+          type: "color",
+          color: "Red",
+          fixtureIds: [310, 311, 312, 313],
+        },
         content: [
           {
             type: "text",

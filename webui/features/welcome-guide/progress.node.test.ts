@@ -83,9 +83,17 @@ test("guide ignores unrelated fixture selection and partial intensity edits", ()
       Intensity: { value: 1, isPercentage: true, isRelative: false },
     },
   }));
-  assert.equal(guideCompletionToken({ type: "intensity" }, state), "intensity");
+  const intensity = {
+    type: "intensity",
+    fixtureIds: strips.fixtureIds,
+  } as const;
+  assert.equal(guideCompletionToken(intensity, state), "intensity");
+  assert.equal(
+    guideCompletionToken({ type: "intensity", fixtureIds: [320] }, state),
+    "",
+  );
   state.programmer[3].attributes.Intensity.value = 0.5;
-  assert.equal(guideCompletionToken({ type: "intensity" }, state), "");
+  assert.equal(guideCompletionToken(intensity, state), "");
 });
 
 /** Only stored instructions for the requested sequence and cue matter, regardless of label. */
