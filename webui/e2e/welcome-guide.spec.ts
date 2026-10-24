@@ -809,6 +809,12 @@ test("welcome basics toggles a clip and opens properties", async ({
     .getByRole("dialog", { name: "Settings", exact: true })
     .evaluate((element) => Number(getComputedStyle(element).zIndex));
   expect(highlightLayer).toBeGreaterThan(settingsLayer);
+  // The card moves into the Settings dialog so its top layer neither covers nor disables it.
+  await expect(
+    page
+      .getByRole("dialog", { name: "Settings", exact: true })
+      .getByTestId("welcome-guide"),
+  ).toBeVisible();
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await expect
     .poll(() =>
@@ -1005,6 +1011,23 @@ for (const platform of ["MacIntel", "Win32"]) {
     await expect(
       guide.getByRole("heading", { name: "Open the Programmer", exact: true }),
     ).toBeVisible();
+    // The card joins the palette's top layer, so the modal neither covers nor disables it.
+    await expect(
+      page.locator(
+        'dialog[open]:has([data-dialog-kind="command-palette"]) [data-testid="welcome-guide"]',
+      ),
+    ).toBeVisible();
+    expect(
+      await guide.evaluate((card) => {
+        const rect = card.getBoundingClientRect();
+        return card.contains(
+          document.elementFromPoint(
+            rect.x + rect.width / 2,
+            rect.y + rect.height / 2,
+          ),
+        );
+      }),
+    ).toBe(true);
     await page.screenshot({
       path: testInfo.outputPath("guide-programmer-step.png"),
     });
@@ -1905,6 +1928,88 @@ async function expectStep(
     await expect(page.getByTestId("guide-target").first()).toBeVisible();
 }
 
+/**
+ * Starting a lesson keeps the card and target highlight out of sight while the Lesson layout
+ * slides in, then shows the card already beside its first target so it never jumps after appearing.
+ */
+test("lesson launch reveals the card after the layout transition", async ({
+  page,
+}, testInfo) => {
+  await openSample(page);
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await expect(
+    guide.getByRole("button", { name: /Patching fixtures/ }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    const state = window as unknown as {
+      guideFrames: Array<Record<string, unknown>>;
+      sampleGuideFrames: boolean;
+    };
+    state.guideFrames = [];
+    state.sampleGuideFrames = true;
+    /** Records the card, highlight and layout entrance state on every frame. */
+    const sample = () => {
+      if (!state.sampleGuideFrames) return;
+      const card = document.querySelector<HTMLElement>(
+        '[data-testid="welcome-guide"]',
+      );
+      const rect = card?.getBoundingClientRect();
+      state.guideFrames.push({
+        cardShown:
+          !!card &&
+          card.classList.contains("nf-guide-floating") &&
+          getComputedStyle(card).visibility !== "hidden",
+        x: rect?.x,
+        y: rect?.y,
+        highlight: !!document.querySelector('[data-testid="guide-target"]'),
+        entering: document
+          .getAnimations()
+          .some(
+            (animation) =>
+              animation instanceof CSSAnimation &&
+              animation.animationName === "nf-layout-enter" &&
+              animation.playState === "running",
+          ),
+      });
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await guide.getByRole("button", { name: /Patching fixtures/ }).click();
+  await expectStep(page, "Open Patch", { target: true });
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: testInfo.outputPath("lesson-launch.png") });
+  const frames = await page.evaluate(() => {
+    const state = window as unknown as {
+      guideFrames: Array<{
+        cardShown: boolean;
+        x: number;
+        y: number;
+        highlight: boolean;
+        entering: boolean;
+      }>;
+      sampleGuideFrames: boolean;
+    };
+    state.sampleGuideFrames = false;
+    return state.guideFrames;
+  });
+  expect(frames.some((frame) => frame.entering)).toBe(true);
+  expect(frames.filter((frame) => frame.cardShown && frame.entering)).toEqual(
+    [],
+  );
+  expect(frames.filter((frame) => frame.highlight && !frame.cardShown)).toEqual(
+    [],
+  );
+  const shown = frames.filter((frame) => frame.cardShown);
+  expect(shown.length).toBeGreaterThan(0);
+  const final = shown[shown.length - 1];
+  for (const frame of shown) {
+    expect(Math.abs(frame.x - final.x)).toBeLessThan(1);
+    expect(Math.abs(frame.y - final.y)).toBeLessThan(1);
+  }
+});
+
 /** Detected steps label the forward button Skip and advance as soon as the action happens. */
 test("observed steps offer Skip instead of Continue", async ({ page }) => {
   await openSample(page);
@@ -2319,10 +2424,10 @@ test("lessons never take over a user layout named Lesson", async ({ page }) => {
 });
 
 /**
- * Lessons start from the default panels in their own layout. The save step returns to the
- * user's layout so the saved show reopens in it.
+ * Lessons start from the default panels in their own layout and stay in it through the save
+ * step, since saving leaves the transient Lesson layout out of the show.
  */
-test("lessons use the Lesson layout and return to the user's layout to save", async ({
+test("lessons use the Lesson layout through the save step", async ({
   page,
 }, testInfo) => {
   await openSample(page);
@@ -2349,12 +2454,30 @@ test("lessons use the Lesson layout and return to the user's layout to save", as
     activeLayout(page).locator('[data-component="ClipList"]'),
   ).toBeHidden();
   await page.screenshot({ path: testInfo.outputPath("lesson-layout.png") });
+  await reachStep(page, "Edits apply as you work");
+  // The undo card sits above the status bar buttons rather than beside them.
+  const undoTarget = page.locator('[data-guide-target="undo-redo"]');
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      const target = (await undoTarget.boundingBox())!;
+      return card.y + card.height <= target.y;
+    })
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("undo-step.png") });
   await reachStep(page, "Keep a saved version of your show");
-  await expect(userLayout).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    activeLayout(page).locator('[data-component="ClipList"]'),
-  ).toBeVisible();
+  await expect(lessonLayout).toHaveAttribute("aria-pressed", "true");
+  await expect(userLayout).toHaveAttribute("aria-pressed", "false");
+  await expect(guide).not.toContainText("switched back to your own layout");
   await page.screenshot({ path: testInfo.outputPath("save-step.png") });
+  await reachStep(page, "Discover keyboard shortcuts");
+  await guide.getByRole("button", { name: NEXT_STEP }).click();
+  await expect(
+    guide.getByRole("button", { name: "Finish lesson", exact: true }),
+  ).toBeVisible();
+  // Looking around changes nothing, so the last page doesn't suggest saving.
+  await expect(guide).not.toContainText("Save your practice show");
+  await page.screenshot({ path: testInfo.outputPath("final-page.png") });
 });
 
 /** Finishing a lesson switches back to the layout the user had before it and deletes the Lesson layout, with no separate return button. */

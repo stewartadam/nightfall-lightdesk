@@ -32,6 +32,7 @@ import {
   activeLayoutId,
   getLayoutSession,
   layoutEditPending,
+  layoutTransitioning,
   onLayoutSessionInvalidated,
   rememberLayoutSession,
 } from "../../../../state/layout-switcher";
@@ -123,6 +124,7 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
   /** Retires the outgoing visual layer and removes workspaces with no retained layout. */
   const finishPresentation = () => {
     if (switching()) return;
+    layoutTransitioning.set(false);
     setPresented(current);
     setWorkspaces((entries) =>
       entries.filter(
@@ -226,6 +228,7 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
         return true;
       }
       setSwitching(true);
+      layoutTransitioning.set(true);
       const startedGeneration = generation;
       const previous = current;
 
@@ -331,6 +334,7 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     shell.setDockviewLayoutReset(undefined);
     disposed = true;
     cancelEntrance();
+    layoutTransitioning.set(false);
     generation += 1;
     for (const entry of workspaces()) {
       if (!entry.handle && entry !== initial)

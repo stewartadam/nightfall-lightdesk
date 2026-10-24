@@ -17,8 +17,10 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { Portal } from "solid-js/web";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useUiAction } from "../../components/providers/command-registry";
+import { overlayHost } from "../../components/ui/modal/dialog-stack";
 import { Button } from "../../components/ui/visual-language/button";
 import { hasDiskStorage } from "../../lib/disk-storage";
 import { getLogger } from "../../lib/logger";
@@ -46,7 +48,7 @@ import {
   timecodes,
   timelines,
 } from "../../state/appStores";
-import { activeLayoutId } from "../../state/layout-switcher";
+import { activeLayoutId, whenLayoutSettled } from "../../state/layout-switcher";
 import { normalizeTimelineUid } from "../timeline";
 import {
   clearProgrammerCompletely,
@@ -114,6 +116,8 @@ export function GuideInvitation() {
 const COMMAND_INPUT = "#header-cmdline";
 /** How long the card keeps its anchor after the target vanishes, so a step about to advance doesn't jump. */
 const ANCHOR_GRACE_MS = 400;
+/** Longest a launching lesson's card stays hidden while it waits for the first step's target. */
+const REVEAL_TIMEOUT_MS = 1000;
 
 /** Hosts the lesson library and floating instructions; all engine actions remain user initiated. */
 export default function WelcomeGuide() {
@@ -143,16 +147,21 @@ export default function WelcomeGuide() {
     closeSettings,
     hideShortcutsPopup,
   } = useAppShell();
-  const activeLayout = useStore(activeLayoutId);
-  const returnLayoutId = useStore(guideReturnLayoutId);
   const [startingLesson, setStartingLesson] = createSignal(false);
+  /**
+   * Hides the card and the target highlight while a lesson launches, until the layout switch has
+   * settled and the card has been placed beside the first step's target.
+   */
+  const [revealPending, setRevealPending] = createSignal(false);
   /**
    * Starts a lesson from the default arrangement in the Lesson layout,
    * remembering the user's own layout so they can return to it.
+   * The lesson begins only once the switch's entrance animation has finished.
    */
   const startLesson = async (id: string) => {
     if (startingLesson()) return;
     setStartingLesson(true);
+    setRevealPending(true);
     try {
       const api = dockviewApi();
       const entered = api
@@ -168,12 +177,14 @@ export default function WelcomeGuide() {
         entered.previousLayoutId !== findLessonLayoutId()
       )
         guideReturnLayoutId.set(entered.previousLayoutId);
+      await whenLayoutSettled();
     } catch (error) {
       log.error("Failed to prepare the Lesson layout", error);
     } finally {
+      // Start before clearing the flag, so the reveal never sees a launch without a lesson.
+      startGuideLesson(id);
       setStartingLesson(false);
     }
-    startGuideLesson(id);
   };
   let returning = false;
   /**
@@ -230,16 +241,6 @@ export default function WelcomeGuide() {
     return instruction && !hasDiskStorage(capabilities())
       ? { ...instruction, ...instruction.diskStorageUnavailable }
       : instruction;
-  });
-  /**
-   * Returns to the user's own layout for steps that save the show, because a save also records
-   * which layout is showing and the show would otherwise reopen in the Lesson layout.
-   */
-  createEffect(() => {
-    if (!opened() || !step()?.userLayout || !hasDiskStorage(capabilities()))
-      return;
-    const id = returnLayoutId();
-    if (id && id !== activeLayout()) void returnToLayout();
   });
   const [visitedPanels, setVisitedPanels] = createSignal(new Set<string>());
   let visitedStep = "";
@@ -403,6 +404,37 @@ export default function WelcomeGuide() {
     () => step()?.placement,
     () => step()?.keepVisible,
   );
+  /**
+   * Reveals a launching lesson's card once it sits beside the first step's target, so it appears
+   * in place instead of sliding there. The placement must hold for two frames, since the card's
+   * first placement can precede the resize from swapping the library for the lesson content.
+   */
+  createEffect(() => {
+    if (!revealPending() || startingLesson()) return;
+    if (!opened() || !lesson()) {
+      setRevealPending(false);
+      return;
+    }
+    const placed = floating.placed();
+    const target = anchor();
+    floating.position();
+    if (
+      placed?.step !== `${lessonId()}:${index()}` ||
+      placed.anchor !== target ||
+      (!target && targetSelector())
+    )
+      return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setRevealPending(false));
+    });
+    onCleanup(() => cancelAnimationFrame(frame));
+  });
+  /** Stops waiting for a first target that never appears, so the card cannot stay hidden. */
+  createEffect(() => {
+    if (!revealPending() || startingLesson()) return;
+    const timer = setTimeout(() => setRevealPending(false), REVEAL_TIMEOUT_MS);
+    onCleanup(() => clearTimeout(timer));
+  });
   const { draggable } = createDraggable();
   void draggable;
   /** Copies the current lesson command exactly, without submitting it to the app. */
@@ -569,234 +601,261 @@ export default function WelcomeGuide() {
     guideStepIndex.set(guideStepIndex.get() + 1),
   );
 
-  return (
-    <Show when={opened()}>
-      <aside
-        ref={setCard}
-        class="nf-welcome-guide"
-        classList={{ "nf-guide-floating": Boolean(lesson()) }}
-        use:draggable={{
-          disabled: !lesson(),
-          handle: ".nf-guide-move",
-          position: lesson() ? floating.position() : { x: 0, y: 0 },
-          bounds: { left: 12, right: 12, top: 12, bottom: 12 },
-          onDrag: ({ offsetX, offsetY }) =>
-            floating.move({ x: offsetX, y: offsetY }),
-        }}
-        aria-label="Welcome guide"
-        data-testid="welcome-guide"
-      >
-        <Show when={lesson() && floating.pointer()}>
-          {(pointer) => (
-            <span
-              aria-hidden="true"
-              class="nf-guide-pointer"
-              data-side={pointer().side}
-              style={pointer().style}
-            />
-          )}
-        </Show>
-        <header class="nf-guide-header">
-          <div class="nf-guide-title">
-            <Show when={lesson()} fallback={<span>LEARN NIGHTFALL</span>}>
-              <button
-                type="button"
-                class="nf-guide-move"
-                aria-label="Move guide"
-                title="Drag to move, or use arrow keys when focused"
-                onKeyDown={floating.onKeyDown}
-              >
-                ⠿ LEARN NIGHTFALL ·{" "}
-                <span class="nf-guide-current-lesson">{lesson()?.title}</span>
-              </button>
-            </Show>
-          </div>
-          <div class="nf-guide-header-actions">
-            <Button
-              size="compact"
-              onClick={closeWelcomeGuide}
-              aria-label="Exit welcome guide"
+  /** Floats the card over the app during lessons and while a lesson launches. */
+  const floatingCard = () => Boolean(lesson()) || revealPending();
+  const [cardHost, setCardHost] = createSignal<HTMLElement>(overlayHost());
+  /**
+   * Moves the floating card into the frontmost modal dialog while one is open, since a modal
+   * dialog's top layer would otherwise cover it and make it inert.
+   */
+  createEffect(() => {
+    if (!opened() || !floatingCard()) return;
+    const update = () => {
+      const next = overlayHost();
+      if (next !== untrack(cardHost)) setCardHost(next);
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["open"],
+    });
+    onCleanup(() => observer.disconnect());
+  });
+  /** The card itself, docked beside the app for the lesson library and floating during lessons. */
+  const cardView = () => (
+    <aside
+      ref={setCard}
+      class="nf-welcome-guide"
+      classList={{
+        "nf-guide-floating": Boolean(lesson()) || revealPending(),
+        "nf-guide-revealing": revealPending(),
+      }}
+      use:draggable={{
+        disabled: !lesson(),
+        handle: ".nf-guide-move",
+        position: lesson() ? floating.position() : { x: 0, y: 0 },
+        bounds: { left: 12, right: 12, top: 12, bottom: 12 },
+        onDrag: ({ offsetX, offsetY }) =>
+          floating.move({ x: offsetX, y: offsetY }),
+      }}
+      aria-label="Welcome guide"
+      data-testid="welcome-guide"
+    >
+      <Show when={lesson() && floating.pointer()}>
+        {(pointer) => (
+          <span
+            aria-hidden="true"
+            class="nf-guide-pointer"
+            data-side={pointer().side}
+            style={pointer().style}
+          />
+        )}
+      </Show>
+      <header class="nf-guide-header">
+        <div class="nf-guide-title">
+          <Show when={lesson()} fallback={<span>LEARN NIGHTFALL</span>}>
+            <button
+              type="button"
+              class="nf-guide-move"
+              aria-label="Move guide"
+              title="Drag to move, or use arrow keys when focused"
+              onKeyDown={floating.onKeyDown}
             >
-              Exit
-            </Button>
-          </div>
-          <Show when={lesson()}>
-            <div
-              class="nf-guide-header-progress"
-              role="progressbar"
-              aria-label="Lesson progress"
-              aria-valuemin={0}
-              aria-valuemax={lesson()!.steps.length}
-              aria-valuenow={Math.min(index(), lesson()!.steps.length)}
-            >
-              <span
-                style={{
-                  width: `${Math.min(index() / lesson()!.steps.length, 1) * 100}%`,
-                }}
-              />
-            </div>
+              ⠿ LEARN NIGHTFALL ·{" "}
+              <span class="nf-guide-current-lesson">{lesson()?.title}</span>
+            </button>
           </Show>
-        </header>
-        <div class="nf-guide-body">
-          <Show
-            when={lesson()}
-            fallback={
-              <>
-                <h2>Start with the orientation</h2>
-                <p>
-                  Module 1 shows you around the workspace. Module 2 walks you
-                  through making your first lights. Then choose what to learn
-                  next. You can leave at any time and return using Guide.
-                </p>
-                <p
-                  class="nf-guide-note"
-                  data-testid="guide-layout-notice"
-                  role="status"
-                >
-                  {startingLesson()
-                    ? `Switching to the ${LESSON_LAYOUT_NAME} layout…`
-                    : `Lessons open in a separate ${LESSON_LAYOUT_NAME} layout with the default panels, so your own layout stays as it is. Finishing a lesson brings your layout back.`}
-                </p>
-                <For each={lessons()}>
-                  {(entry) => (
-                    <button
-                      class="nf-guide-lesson"
-                      type="button"
-                      disabled={startingLesson()}
-                      onClick={() => void startLesson(entry.id)}
-                    >
-                      <span class="nf-guide-lesson-meta">
-                        {entry.label ?? "Follow-on lesson"} · {entry.duration}
-                      </span>
-                      <strong>{entry.title}</strong>
-                      <span>{entry.introduction}</span>
-                      <Show when={completed().includes(entry.id)}>
-                        <span class="nf-guide-success">
-                          Completed · Take again
-                        </span>
-                      </Show>
-                    </button>
-                  )}
-                </For>
-              </>
-            }
+        </div>
+        <div class="nf-guide-header-actions">
+          <Button
+            size="compact"
+            onClick={closeWelcomeGuide}
+            aria-label="Exit welcome guide"
           >
-            {(current) => (
-              <>
-                <h2 ref={heading} tabIndex={-1} aria-live="polite">
-                  {step()?.title ?? "Ready to explore"}
-                </h2>
-                <Show when={step()}>
-                  {(instruction) => (
-                    <>
-                      <For each={content()}>
-                        {(item) => (
-                          <GuideContentItem
-                            item={item}
-                            panelVisible={panelVisible}
-                            panelOpen={panelOpen}
-                            timelineVisible={timelineVisible}
-                            canOpenPanels={Boolean(dockviewApi())}
-                            canOpenTimeline={Boolean(
-                              dockviewApi() && sampleTimeline(),
-                            )}
-                            openPanel={openPanel}
-                            openTimeline={openSampleTimeline}
-                            copyCommand={copyCommand}
-                            playbackRunning={playbackRunning()}
-                          />
-                        )}
-                      </For>
-                      <GuideTarget
-                        stepId={instruction().id}
-                        selector={targetSelector()}
-                        focusTarget={
-                          !blocked() &&
-                          (instruction().focusTarget ??
-                            instruction().target === COMMAND_INPUT)
+            Exit
+          </Button>
+        </div>
+        <Show when={lesson()}>
+          <div
+            class="nf-guide-header-progress"
+            role="progressbar"
+            aria-label="Lesson progress"
+            aria-valuemin={0}
+            aria-valuemax={lesson()!.steps.length}
+            aria-valuenow={Math.min(index(), lesson()!.steps.length)}
+          >
+            <span
+              style={{
+                width: `${Math.min(index() / lesson()!.steps.length, 1) * 100}%`,
+              }}
+            />
+          </div>
+        </Show>
+      </header>
+      <div class="nf-guide-body">
+        <Show
+          when={lesson()}
+          fallback={
+            <>
+              <h2>Start with the orientation</h2>
+              <p>
+                Module 1 shows you around the workspace. Module 2 walks you
+                through making your first lights. Then choose what to learn
+                next. You can leave at any time and return using Guide.
+              </p>
+              <p
+                class="nf-guide-note"
+                data-testid="guide-layout-notice"
+                role="status"
+              >
+                {startingLesson()
+                  ? `Switching to the ${LESSON_LAYOUT_NAME} layout…`
+                  : `Lessons open in a separate ${LESSON_LAYOUT_NAME} layout with the default panels, so your own layout stays as it is. Finishing a lesson brings your layout back.`}
+              </p>
+              <For each={lessons()}>
+                {(entry) => (
+                  <button
+                    class="nf-guide-lesson"
+                    type="button"
+                    disabled={startingLesson()}
+                    onClick={() => void startLesson(entry.id)}
+                  >
+                    <span class="nf-guide-lesson-meta">
+                      {entry.label ?? "Follow-on lesson"} · {entry.duration}
+                    </span>
+                    <strong>{entry.title}</strong>
+                    <span>{entry.introduction}</span>
+                    <Show when={completed().includes(entry.id)}>
+                      <span class="nf-guide-success">
+                        Completed · Take again
+                      </span>
+                    </Show>
+                  </button>
+                )}
+              </For>
+            </>
+          }
+        >
+          {(current) => (
+            <>
+              <h2 ref={heading} tabIndex={-1} aria-live="polite">
+                {step()?.title ?? "Ready to explore"}
+              </h2>
+              <Show when={step()}>
+                {(instruction) => (
+                  <>
+                    <For each={content()}>
+                      {(item) => (
+                        <GuideContentItem
+                          item={item}
+                          panelVisible={panelVisible}
+                          panelOpen={panelOpen}
+                          timelineVisible={timelineVisible}
+                          canOpenPanels={Boolean(dockviewApi())}
+                          canOpenTimeline={Boolean(
+                            dockviewApi() && sampleTimeline(),
+                          )}
+                          openPanel={openPanel}
+                          openTimeline={openSampleTimeline}
+                          copyCommand={copyCommand}
+                          playbackRunning={playbackRunning()}
+                        />
+                      )}
+                    </For>
+                    <GuideTarget
+                      stepId={instruction().id}
+                      selector={targetSelector()}
+                      focusTarget={
+                        !revealPending() &&
+                        !blocked() &&
+                        (instruction().focusTarget ??
+                          instruction().target === COMMAND_INPUT)
+                      }
+                      holdHighlight={revealPending()}
+                      onBounds={followTarget}
+                    />
+                    <GuideTarget
+                      stepId={instruction().id}
+                      selector={blocked() ? undefined : clipHighlightSelector()}
+                      holdHighlight={revealPending()}
+                    />
+                    <Show when={!blocked() && !instruction().observe}>
+                      <p class="nf-guide-note">
+                        Take time to explore, then continue when you’re ready.
+                      </p>
+                    </Show>
+                    <div class="nf-guide-navigation">
+                      <Button
+                        size="compact"
+                        disabled={index() === 0}
+                        onClick={() => moveTo(index() - 1)}
+                      >
+                        Back
+                      </Button>
+                      <span
+                        class="nf-guide-step-count"
+                        role="status"
+                        aria-label="Current step"
+                      >
+                        {`${Math.min(index() + 1, current().steps.length)}/${current().steps.length}`}
+                      </span>
+                      <Show
+                        when={instruction().observe}
+                        fallback={
+                          <Button
+                            size="compact"
+                            variant="primary"
+                            onClick={advance}
+                          >
+                            Continue
+                          </Button>
                         }
-                        onBounds={followTarget}
-                      />
-                      <GuideTarget
-                        stepId={instruction().id}
-                        selector={
-                          blocked() ? undefined : clipHighlightSelector()
-                        }
-                      />
-                      <Show when={!blocked() && !instruction().observe}>
-                        <p class="nf-guide-note">
-                          Take time to explore, then continue when you’re ready.
-                        </p>
-                      </Show>
-                      <div class="nf-guide-navigation">
+                      >
                         <Button
                           size="compact"
-                          disabled={index() === 0}
-                          onClick={() => moveTo(index() - 1)}
+                          onClick={advance}
+                          title="Move on without completing this step"
                         >
-                          Back
+                          Skip
                         </Button>
-                        <span
-                          class="nf-guide-step-count"
-                          role="status"
-                          aria-label="Current step"
-                        >
-                          {`${Math.min(index() + 1, current().steps.length)}/${current().steps.length}`}
-                        </span>
-                        <Show
-                          when={instruction().observe}
-                          fallback={
-                            <Button
-                              size="compact"
-                              variant="primary"
-                              onClick={advance}
-                            >
-                              Continue
-                            </Button>
-                          }
-                        >
-                          <Button
-                            size="compact"
-                            onClick={advance}
-                            title="Move on without completing this step"
-                          >
-                            Skip
-                          </Button>
-                        </Show>
-                      </div>
-                    </>
-                  )}
-                </Show>
-                <Show when={index() >= current().steps.length}>
-                  <p>You’ve reached the end of this lesson.</p>
-                  <Show when={playbackRunning() || programmerHeld()}>
-                    <div class="nf-guide-action">
-                      <p>
-                        {playbackRunning() && programmerHeld()
-                          ? "Playback is still running and the Programmer still holds values."
-                          : playbackRunning()
-                            ? "Playback is still running."
-                            : "The Programmer still holds values."}{" "}
-                        Reset before starting another lesson so it doesn’t
-                        affect what you see.
-                      </p>
-                      <div class="nf-guide-shortcuts">
-                        <Show when={playbackRunning()}>
-                          <Button size="compact" onClick={stopAllPlayback}>
-                            Stop all playback
-                          </Button>
-                        </Show>
-                        <Show when={programmerHeld()}>
-                          <Button
-                            size="compact"
-                            onClick={clearProgrammerCompletely}
-                          >
-                            Clear programmer
-                          </Button>
-                        </Show>
-                      </div>
+                      </Show>
                     </div>
-                  </Show>
+                  </>
+                )}
+              </Show>
+              <Show when={index() >= current().steps.length}>
+                <p>You’ve reached the end of this lesson.</p>
+                <Show when={playbackRunning() || programmerHeld()}>
+                  <div class="nf-guide-action">
+                    <p>
+                      {playbackRunning() && programmerHeld()
+                        ? "Playback is still running and the Programmer still holds values."
+                        : playbackRunning()
+                          ? "Playback is still running."
+                          : "The Programmer still holds values."}{" "}
+                      Reset before starting another lesson so it doesn’t affect
+                      what you see.
+                    </p>
+                    <div class="nf-guide-shortcuts">
+                      <Show when={playbackRunning()}>
+                        <Button size="compact" onClick={stopAllPlayback}>
+                          Stop all playback
+                        </Button>
+                      </Show>
+                      <Show when={programmerHeld()}>
+                        <Button
+                          size="compact"
+                          onClick={clearProgrammerCompletely}
+                        >
+                          Clear programmer
+                        </Button>
+                      </Show>
+                    </div>
+                  </div>
+                </Show>
+                <Show when={!current().leavesShowUnchanged}>
                   <Show
                     when={!hasDiskStorage(capabilities())}
                     fallback={
@@ -812,20 +871,30 @@ export default function WelcomeGuide() {
                       completion badges.
                     </p>
                   </Show>
-                  <div class="nf-guide-navigation">
-                    <Button size="compact" onClick={() => moveTo(index() - 1)}>
-                      Back
-                    </Button>
-                    <Button variant="primary" size="compact" onClick={finish}>
-                      Finish lesson
-                    </Button>
-                  </div>
                 </Show>
-              </>
-            )}
-          </Show>
-        </div>
-      </aside>
+                <div class="nf-guide-navigation">
+                  <Button size="compact" onClick={() => moveTo(index() - 1)}>
+                    Back
+                  </Button>
+                  <Button variant="primary" size="compact" onClick={finish}>
+                    Finish lesson
+                  </Button>
+                </div>
+              </Show>
+            </>
+          )}
+        </Show>
+      </div>
+    </aside>
+  );
+
+  return (
+    <Show when={opened()}>
+      <Show when={floatingCard()} fallback={cardView()}>
+        <Show when={cardHost()} keyed>
+          {(mount) => <Portal mount={mount}>{cardView()}</Portal>}
+        </Show>
+      </Show>
     </Show>
   );
 }

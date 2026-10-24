@@ -87,11 +87,6 @@ export interface GuideStep {
    * suggested command straight away.
    */
   focusTarget?: boolean;
-  /**
-   * Runs the step in the layout the user had before the lesson. Saving the show records which
-   * layout is showing, so a save from the Lesson layout would reopen the show in it.
-   */
-  userLayout?: boolean;
   observe?: GuideObservation;
   /** Runs when the user moves past this step with Continue or Skip. */
   onAdvance?: GuideAdvanceAction[];
@@ -103,6 +98,8 @@ export interface GuideLesson {
   title: string;
   duration: string;
   introduction: string;
+  /** Marks a lesson that only looks around, so its ending doesn't suggest saving changes. */
+  leavesShowUnchanged?: boolean;
   steps: GuideStep[];
 }
 export const GUIDE_LESSONS: GuideLesson[] = [
@@ -111,6 +108,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
     label: "Module 1 · Orientation",
     title: "Welcome to Nightfall",
     duration: "6–8 min",
+    leavesShowUnchanged: true,
     introduction:
       "Get oriented: play the sample show, inspect properties, find your way around, and personalize Nightfall.",
     steps: [
@@ -356,6 +354,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "undo-redo",
         title: "Edits apply as you work",
         target: '[data-guide-target="undo-redo"]',
+        placement: "above",
         content: [
           {
             type: "text",
@@ -389,7 +388,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           ],
         },
         observe: { type: "save-showfile" },
-        userLayout: true,
         title: "Keep a saved version of your show",
         target:
           '[data-component="DropdownMenuItem"]:has([data-guide-target="save-showfile"]), [aria-label="Menu"]:not([aria-expanded="true"])',
@@ -397,10 +395,6 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             type: "text",
             text: "Nightfall automatically saves your showfile changes to a draft. Save Showfile explicitly updates the saved version of the whole show. A draft lets you recover work made since that saved version.",
-          },
-          {
-            type: "text",
-            text: "A save also remembers which layout is showing, so the guide has switched back to your own layout for the rest of this lesson.",
           },
           {
             type: "action",

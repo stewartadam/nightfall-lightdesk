@@ -215,6 +215,10 @@
   overflow: visible;
   user-select: text;
 }
+/* A launching lesson's card stays measurable for placement but unseen until it is in place. */
+.nf-welcome-guide.nf-guide-revealing {
+  visibility: hidden;
+}
 .nf-guide-pointer {
   position: absolute;
   width: 12px;

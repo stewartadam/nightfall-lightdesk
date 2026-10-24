@@ -210,6 +210,11 @@ export function useFloatingGuide(
 ) {
   const [position, setPosition] = createSignal({ x: 12, y: 80 });
   const [size, setSize] = createSignal({ width: 360, height: 400 });
+  /** The step and target anchor the card's current position was computed for. */
+  const [placed, setPlaced] = createSignal<{
+    step: string;
+    anchor: DOMRect | null;
+  }>();
   /** Aims a tip from the nearest card edge toward the actual action, including after dragging. */
   const pointer = createMemo(() => {
     const target = anchor();
@@ -283,8 +288,14 @@ export function useFloatingGuide(
     const card = element();
     if (!card) return;
     setSize({ width: card.offsetWidth, height: card.offsetHeight });
+    const placedFor = { step: untrack(step), anchor: anchor() };
+    /** Moves the card and records which step and anchor the new position belongs to. */
+    const settle = (point: { x: number; y: number }) => {
+      setPosition(point);
+      setPlaced(placedFor);
+    };
     if (manual) {
-      setPosition(clamp(untrack(position)));
+      settle(clamp(untrack(position)));
       return;
     }
     const visualizer = document
@@ -295,7 +306,7 @@ export function useFloatingGuide(
     const width = card.offsetWidth;
     const height = card.offsetHeight;
     if (!target) {
-      setPosition(clamp({ x: window.innerWidth - width - MARGIN, y: 80 }));
+      settle(clamp({ x: window.innerWidth - width - MARGIN, y: 80 }));
       return;
     }
     const targetElement = selector()
@@ -369,8 +380,10 @@ export function useFloatingGuide(
       current.y === bounded.y &&
       covered({ ...current, width, height }, protect) === 0 &&
       (!dialog || gap({ ...current, width, height }, dialog) <= 64)
-    )
+    ) {
+      setPlaced(placedFor);
       return;
+    }
     // When a menu opens over a card already placed for this step, such as a cell's Trigger menu,
     // slide the card just clear of it rather than re-anchoring it somewhere else entirely.
     if (placedGeometry) {
@@ -409,7 +422,7 @@ export function useFloatingGuide(
           placing += 1;
           placedGeometry = geometry;
           placedPopovers = new Set(popoverElements);
-          setPosition(nudges[0]);
+          settle(nudges[0]);
           return;
         }
       }
@@ -466,7 +479,7 @@ export function useFloatingGuide(
       }
       placedGeometry = geometry;
       placedPopovers = new Set(popoverElements);
-      setPosition(best.point);
+      settle(best.point);
     })();
   };
   /** Resets manual placement when the lesson advances. */
@@ -525,5 +538,5 @@ export function useFloatingGuide(
       y: position().y + direction[1] * delta,
     });
   };
-  return { position, pointer, move, onKeyDown };
+  return { position, placed, pointer, move, onKeyDown };
 }

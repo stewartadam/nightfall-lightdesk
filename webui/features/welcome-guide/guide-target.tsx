@@ -15,6 +15,8 @@ interface GuideTargetProps {
   selector?: string;
   focusTarget?: boolean;
   highlight?: boolean;
+  /** Keeps tracking and revealing the target but holds its highlight back until this is false. */
+  holdHighlight?: boolean;
   onBounds?: (bounds: DOMRect | null) => void;
 }
 
@@ -200,7 +202,9 @@ export function GuideTarget(props: GuideTargetProps) {
     <Show when={host()} keyed>
       {(mount) => (
         <Portal mount={mount}>
-          <Show when={props.highlight !== false && bounds()}>
+          <Show
+            when={props.highlight !== false && !props.holdHighlight && bounds()}
+          >
             {(rect) => (
               <div
                 class="nf-guide-anchor"
