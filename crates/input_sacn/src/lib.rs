@@ -122,12 +122,7 @@ impl Plugin for InputSacnPlugin {
 
         app.insert_resource(SacnEventReceiver(sacn_rx));
         app.add_systems(Update, sync_sacn_input_binding.after(EventHandling));
-        app.add_systems(
-            Render,
-            sacn_event_system
-                .in_set(DmxInputSet::Ingress)
-                .in_set(LayerGeneration),
-        );
+        app.add_systems(Render, sacn_event_system.in_set(DmxInputSet::Ingress));
     }
 }
 
