@@ -90,6 +90,21 @@ When a diagram needs precise layout that Mermaid can't produce, such as a dense 
 - Give the diagram a solid background so it stays readable in the dark book themes.
 - Keep Mermaid as the default. A draw.io diagram is harder to review, because pull requests show its source as XML.
 
+When a page explains how frames move through a queue over several steps, write the steps as a `queue-steps` list. The book turns it into an animation the reader steps through, and GitHub shows the numbered steps. Write the list in HTML, with no blank lines inside the block:
+
+```html
+<div class="queue-steps" data-lane-label="Outbox, front of the queue on the left" data-frames='{"d1": ["Delta seq 1", "delta"], "k2": ["Keyframe 2", "snap"]}'>
+<ol>
+<li data-queue="d1"><strong>A delta waits.</strong> The client hasn't read delta 1 yet.</li>
+<li data-queue="k2"><strong>A keyframe replaces it.</strong> Keyframe 2 takes the delta's place.</li>
+</ol>
+</div>
+```
+
+- `data-frames` maps each frame id to its label and its message class: `nd` for non-droppable, `snap` for a droppable snapshot, or `delta`.
+- Each list item is one step. `data-queue` lists the queued frames from front to back, `data-incoming` the frames being published, `data-flash` the frames to highlight, and `data-delivered` the frames the client has received.
+- Start each step with a short bold title, and write the rest as the caption. The step text must explain the step on its own, because it is all GitHub shows.
+
 Screenshots are PNG files no larger than 1000 by 500 pixels and about 100 KB. Name them in lowercase with hyphens, and give each one alt text of 155 characters or fewer.
 
 ## Callouts
