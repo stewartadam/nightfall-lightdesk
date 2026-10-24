@@ -302,17 +302,19 @@ test("rejects squashed develop promotions", (t) => {
   );
 });
 
-/** Notes deleted after merge and GitHub failures stop generation rather than silently skipping a PR. */
-test("fails on invalid merged PR notes and unavailable metadata", (t) => {
+/** A merged PR without a valid declaration warns and is omitted, while GitHub failures still stop generation. */
+test("omits merged PRs with invalid notes and fails on unavailable metadata", (t) => {
   const { commit } = repositoryFixture(t);
   const sha = commit("feature");
-  assert.throws(
-    () =>
-      collectReleaseNotes("owner/repo", "v0.1.0", "HEAD", () => [
-        pull(7, sha, ""),
-      ]),
-    /PR #7/,
-  );
+  const warn = t.mock.method(console, "warn", () => {});
+  const report = collectReleaseNotes("owner/repo", "v0.1.0", "HEAD", () => [
+    pull(7, sha, ""),
+  ]);
+  assert.deepEqual(report.notes, []);
+  assert.deepEqual(report.omitted, [
+    { number: 7, reason: "no valid Notes declaration" },
+  ]);
+  assert.match(warn.mock.calls[0].arguments[0], /^::warning::PR #7 /);
   assert.throws(
     () =>
       collectReleaseNotes("owner/repo", "v0.1.0", "HEAD", () => {
