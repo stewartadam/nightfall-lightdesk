@@ -180,7 +180,7 @@ export function ActionPicker(props: ActionPickerProps): JSX.Element {
         return targetSelect(parameter, targets.cues());
       case "Macro":
         return targetSelect(parameter, targets.macros());
-      case "Control":
+      case "Fader":
       case "Integer":
       case "Number":
         return (
@@ -188,8 +188,8 @@ export function ActionPicker(props: ActionPickerProps): JSX.Element {
             density="compact"
             type="number"
             aria-label={parameter.label}
-            min={kind.type === "Control" ? 1 : kind.data.min}
-            max={kind.type === "Control" ? undefined : kind.data.max}
+            min={kind.type === "Fader" ? 1 : kind.data.min}
+            max={kind.type === "Fader" ? undefined : kind.data.max}
             step={kind.type === "Number" ? "any" : 1}
             value={String(draft()[parameter.name] ?? "")}
             onChange={(event) => {

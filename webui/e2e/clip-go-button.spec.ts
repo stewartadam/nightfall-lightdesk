@@ -12,20 +12,20 @@ import { waitForDockviewApp } from "./showfile-startup";
 
 const COMMAND_INPUT_PLACEHOLDER = "Type a command or search...";
 
-type ControlSnapshot = {
+type FaderSnapshot = {
   index: number;
   assigned_clip_id: number | null;
 };
 
-type ClipControlScenario = {
+type ClipFaderScenario = {
   inactiveSequenceId: number;
   activeSequenceId: number;
   inactiveFxId: number;
   activeFxId: number;
 };
 
-/** Opens the control scenario against a blank backend and instruments worker commands. */
-async function openOwnedClipControlApp(
+/** Opens the fader scenario against a blank backend and instruments worker commands. */
+async function openOwnedClipFaderApp(
   page: Page,
   backendPort: number,
 ): Promise<void> {
@@ -60,7 +60,7 @@ async function openOwnedClipControlApp(
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
-      Boolean((window as any).appStores?.controls?.get) &&
+      Boolean((window as any).appStores?.faders?.get) &&
       Boolean((window as any).appStores?.cues?.get) &&
       Boolean((window as any).appStores?.sequences?.get) &&
       Boolean((window as any).appStores?.clips?.get) &&
@@ -94,11 +94,9 @@ async function openPanel(page: Page, panelName: string): Promise<void> {
 }
 
 /**
- * Seeds live controls with known active and inactive sequence/fx assignments.
+ * Seeds live faders with known active and inactive sequence/fx assignments.
  */
-async function seedClipControlScenario(
-  page: Page,
-): Promise<ClipControlScenario> {
+async function seedClipFaderScenario(page: Page): Promise<ClipFaderScenario> {
   return page.evaluate(async () => {
     type AppStoresWindow = Window & {
       __workerMessages?: unknown[];
@@ -106,7 +104,7 @@ async function seedClipControlScenario(
         clips?: {
           get: () => Record<string, [{ identifiers: { id: number } }, boolean]>;
         };
-        controls?: { get: () => ControlSnapshot[] };
+        faders?: { get: () => FaderSnapshot[] };
         send?: (data: object) => Promise<void>;
         sendAndAwait?: (data: object) => Promise<{
           outcome: { type: string };
@@ -118,7 +116,7 @@ async function seedClipControlScenario(
       !stores?.send ||
       !stores.sendAndAwait ||
       !stores.clips ||
-      !stores.controls
+      !stores.faders
     ) {
       throw new Error("clip stores did not initialize");
     }
@@ -154,7 +152,7 @@ async function seedClipControlScenario(
       const result = await stores.sendAndAwait?.(message);
       if (result?.outcome.type !== "Succeeded") {
         throw new Error(
-          `failed to store control data: ${JSON.stringify(result)}`,
+          `failed to store fader data: ${JSON.stringify(result)}`,
         );
       }
     };
@@ -167,7 +165,7 @@ async function seedClipControlScenario(
           identifiers: {
             uid: cueUid,
             id: baseId + 10,
-            label: "Clip Control Cue",
+            label: "Clip Fader Cue",
           },
           trigger: { type: "Manual" },
           transitions: {},
@@ -186,7 +184,7 @@ async function seedClipControlScenario(
           identifiers: {
             uid: sequenceUid,
             id: baseId + 10,
-            label: "Clip Control Sequence",
+            label: "Clip Fader Sequence",
           },
           steps: [cueUid],
           wrap: false,
@@ -213,7 +211,7 @@ async function seedClipControlScenario(
           identifiers: {
             uid: fxUid,
             id: baseId + 11,
-            label: "Clip Control FX",
+            label: "Clip Fader FX",
           },
           selection: {
             source: { type: "Resolved", data: [] },
@@ -227,22 +225,22 @@ async function seedClipControlScenario(
     const clipDefinitions = [
       {
         id: inactiveSequenceId,
-        label: "Inactive Sequence Control",
+        label: "Inactive Sequence Fader",
         source: { type: "Sequence", data: sequenceUid },
       },
       {
         id: activeSequenceId,
-        label: "Active Sequence Control",
+        label: "Active Sequence Fader",
         source: { type: "Sequence", data: sequenceUid },
       },
       {
         id: inactiveFxId,
-        label: "Inactive FX Control",
+        label: "Inactive FX Fader",
         source: { type: "Fx", data: fxUid },
       },
       {
         id: activeFxId,
-        label: "Active FX Control",
+        label: "Active FX Fader",
         source: { type: "Fx", data: fxUid },
       },
     ];
@@ -276,9 +274,9 @@ async function seedClipControlScenario(
         command: { type, data: { type: "Single", data: id } },
       });
 
-    /** Sends a control command through the same websocket path used by the UI. */
-    const sendControlCommand = (command: object) =>
-      stores.send?.({ module: "ControlCommand", command });
+    /** Sends a fader command through the same websocket path used by the UI. */
+    const sendFaderCommand = (command: object) =>
+      stores.send?.({ module: "FaderCommand", command });
 
     /** Waits until an arbitrary browser-side condition becomes true. */
     const waitForCondition = (description: string, predicate: () => boolean) =>
@@ -318,44 +316,43 @@ async function seedClipControlScenario(
       );
     });
 
-    await sendControlCommand({
+    await sendFaderCommand({
       type: "AssignClip",
       data: {
-        control_index: 1,
+        fader_index: 1,
         clip_id: inactiveSequenceId,
       },
     });
-    await sendControlCommand({
+    await sendFaderCommand({
       type: "AssignClip",
       data: {
-        control_index: 2,
+        fader_index: 2,
         clip_id: activeSequenceId,
       },
     });
-    await sendControlCommand({
+    await sendFaderCommand({
       type: "AssignClip",
       data: {
-        control_index: 3,
+        fader_index: 3,
         clip_id: inactiveFxId,
       },
     });
-    await sendControlCommand({
+    await sendFaderCommand({
       type: "AssignClip",
       data: {
-        control_index: 4,
+        fader_index: 4,
         clip_id: activeFxId,
       },
     });
-    await sendControlCommand({
+    await sendFaderCommand({
       type: "ClearClip",
-      data: { control_index: 5 },
+      data: { fader_index: 5 },
     });
 
-    await waitForCondition("control assignments did not apply", () => {
-      const controls = stores.controls?.get?.() ?? [];
+    await waitForCondition("fader assignments did not apply", () => {
+      const faders = stores.faders?.get?.() ?? [];
       const assignedId = (index: number) =>
-        controls.find((control) => control.index === index)?.assigned_clip_id ??
-        null;
+        faders.find((fader) => fader.index === index)?.assigned_clip_id ?? null;
 
       return (
         assignedId(1) === inactiveSequenceId &&
@@ -377,24 +374,24 @@ async function seedClipControlScenario(
   });
 }
 
-/** Verifies control buttons in the default Go mode issue Start, Go, or no command from owned state. */
-test("each control has a go button with per-target start and go behavior", async ({
+/** Verifies fader buttons in the default Go mode issue Start, Go, or no command from owned state. */
+test("each fader has a go button with per-target start and go behavior", async ({
   backendSlot,
   page,
 }) => {
-  await openOwnedClipControlApp(page, backendSlot.backendPort);
-  const scenario = await seedClipControlScenario(page);
+  await openOwnedClipFaderApp(page, backendSlot.backendPort);
+  const scenario = await seedClipFaderScenario(page);
 
   await openPanel(page, "Clips");
 
   const firstDropzone = page.locator('[data-clip-dropzone-index="1"]');
-  const firstGoButton = page.locator('[data-control-button-index="1"]');
-  const secondGoButton = page.locator('[data-control-button-index="2"]');
-  const thirdGoButton = page.locator('[data-control-button-index="3"]');
-  const fourthGoButton = page.locator('[data-control-button-index="4"]');
-  const fifthGoButton = page.locator('[data-control-button-index="5"]');
+  const firstGoButton = page.locator('[data-fader-button-index="1"]');
+  const secondGoButton = page.locator('[data-fader-button-index="2"]');
+  const thirdGoButton = page.locator('[data-fader-button-index="3"]');
+  const fourthGoButton = page.locator('[data-fader-button-index="4"]');
+  const fifthGoButton = page.locator('[data-fader-button-index="5"]');
   const secondSliderHandle = page
-    .locator('[data-control-index="2"]')
+    .locator('[data-fader-index="2"]')
     .locator(".vertical-range-slider .noUi-handle");
 
   await expect(firstGoButton).toBeVisible();
@@ -443,17 +440,17 @@ test("each control has a go button with per-target start and go behavior", async
                   module?: string;
                   command?: {
                     type?: string;
-                    data?: { control_index?: number };
+                    data?: { fader_index?: number };
                   };
                 };
               } | null;
               if (
-                candidate?.data?.module !== "ControlCommand" ||
+                candidate?.data?.module !== "FaderCommand" ||
                 candidate.data.command?.type !== "PressButton"
               ) {
                 return [];
               }
-              return [candidate.data.command.data?.control_index];
+              return [candidate.data.command.data?.fader_index];
             }) ?? []
           );
         }),
@@ -503,46 +500,46 @@ async function isClipRunning(page: Page, id: number): Promise<boolean> {
   }, id);
 }
 
-/** Picks a button mode for a control slot from its mode menu. */
+/** Picks a button mode for a fader from its mode menu. */
 async function pickButtonMode(
   page: Page,
-  controlIndex: number,
+  faderIndex: number,
   mode: string,
 ): Promise<void> {
   await page
-    .getByRole("button", { name: `Button mode of control ${controlIndex}` })
+    .getByRole("button", { name: `Button mode of fader ${faderIndex}` })
     .click();
-  await page.locator(`[data-control-button-mode-option="${mode}"]`).click();
+  await page.locator(`[data-fader-button-mode-option="${mode}"]`).click();
   await expect(
-    page.locator(`[data-control-button-index="${controlIndex}"]`),
-  ).toHaveAttribute("data-control-button-mode", mode);
+    page.locator(`[data-fader-button-index="${faderIndex}"]`),
+  ).toHaveAttribute("data-fader-button-mode", mode);
 }
 
 /**
- * Verifies the mode menu changes what the slot's button does: Toggle starts and then stops
- * an effect clip, Release stops a running one, and the backend's control snapshot reports
- * each slot's chosen mode.
+ * Verifies the mode menu changes what the fader's button does: Toggle starts and then stops
+ * an effect clip, Release stops a running one, and the backend's fader snapshot reports
+ * each fader's chosen mode.
  */
-test("a slot's button mode decides what its button does", async ({
+test("a fader's button mode decides what its button does", async ({
   backendSlot,
   page,
 }) => {
-  await openOwnedClipControlApp(page, backendSlot.backendPort);
-  const scenario = await seedClipControlScenario(page);
+  await openOwnedClipFaderApp(page, backendSlot.backendPort);
+  const scenario = await seedClipFaderScenario(page);
   await openPanel(page, "Clips");
 
-  const thirdButton = page.locator('[data-control-button-index="3"]');
-  const fourthButton = page.locator('[data-control-button-index="4"]');
+  const thirdButton = page.locator('[data-fader-button-index="3"]');
+  const fourthButton = page.locator('[data-fader-button-index="4"]');
   await expect(thirdButton).toHaveText("Go");
 
-  await page.getByRole("button", { name: "Button mode of control 3" }).click();
+  await page.getByRole("button", { name: "Button mode of fader 3" }).click();
   await expect(
-    page.locator('[data-menu-kind="control-button-mode"]'),
+    page.locator('[data-menu-kind="fader-button-mode"]'),
   ).toBeVisible();
   await page.screenshot({
-    path: test.info().outputPath("control-button-mode-menu.png"),
+    path: test.info().outputPath("fader-button-mode-menu.png"),
   });
-  await page.locator('[data-control-button-mode-option="Toggle"]').click();
+  await page.locator('[data-fader-button-mode-option="Toggle"]').click();
   await expect(thirdButton).toHaveText("Toggle");
 
   await thirdButton.click();
@@ -562,61 +559,61 @@ test("a slot's button mode decides what its button does", async ({
   await expect
     .poll(() =>
       page.evaluate(() =>
-        (window as any).appStores.controls
+        (window as any).appStores.faders
           .get()
           .slice(0, 4)
-          .map((control: { button_mode: string }) => control.button_mode),
+          .map((fader: { button_mode: string }) => fader.button_mode),
       ),
     )
     .toEqual(["Go", "Go", "Toggle", "Release"]);
-  await page.locator(".controls").screenshot({
-    path: test.info().outputPath("control-button-modes.png"),
+  await page.locator(".faders").screenshot({
+    path: test.info().outputPath("fader-button-modes.png"),
   });
 });
 
-/** Reads the level shown by a control slot's fader handle. */
-async function faderLevel(page: Page, controlIndex: number): Promise<number> {
+/** Reads the level shown by a fader's slider handle. */
+async function faderLevel(page: Page, faderIndex: number): Promise<number> {
   const value = await page
-    .locator(`[data-control-index="${controlIndex}"]`)
+    .locator(`[data-fader-index="${faderIndex}"]`)
     .locator(".vertical-range-slider .noUi-handle")
     .getAttribute("aria-valuenow");
   return Number(value);
 }
 
 /**
- * Verifies two slots assigned to the same idle clip keep showing the same level: raising one
+ * Verifies two faders assigned to the same idle clip keep showing the same level: raising one
  * starts the clip and raises the other, pulling either to zero releases it for both, and
  * raising one again brings the other back up with it.
  */
-test("slots sharing a clip move together", async ({ backendSlot, page }) => {
-  await openOwnedClipControlApp(page, backendSlot.backendPort);
-  const scenario = await seedClipControlScenario(page);
+test("faders sharing a clip move together", async ({ backendSlot, page }) => {
+  await openOwnedClipFaderApp(page, backendSlot.backendPort);
+  const scenario = await seedClipFaderScenario(page);
   const clipId = scenario.inactiveFxId;
   await page.evaluate(
     (clipId) =>
       (window as any).appStores.sendAndAwait({
-        module: "ControlCommand",
+        module: "FaderCommand",
         command: {
           type: "AssignClip",
-          data: { control_index: 5, clip_id: clipId },
+          data: { fader_index: 5, clip_id: clipId },
         },
       }),
     clipId,
   );
   await openPanel(page, "Clips");
 
-  const handle = (controlIndex: number) =>
+  const handle = (faderIndex: number) =>
     page
-      .locator(`[data-control-index="${controlIndex}"]`)
+      .locator(`[data-fader-index="${faderIndex}"]`)
       .locator(".vertical-range-slider .noUi-handle");
-  /** Raises a slot from zero so its clip starts at a level above one percent. */
-  const raise = async (controlIndex: number) => {
-    await handle(controlIndex).press("ArrowUp");
+  /** Raises a fader from zero so its clip starts at a level above one percent. */
+  const raise = async (faderIndex: number) => {
+    await handle(faderIndex).press("ArrowUp");
     await expect.poll(() => isClipRunning(page, clipId)).toBe(true);
-    await handle(controlIndex).press("PageUp");
-    await expect.poll(() => faderLevel(page, controlIndex)).toBeGreaterThan(1);
+    await handle(faderIndex).press("PageUp");
+    await expect.poll(() => faderLevel(page, faderIndex)).toBeGreaterThan(1);
   };
-  /** Waits until both slots show the same level and returns it. */
+  /** Waits until both faders show the same level and returns it. */
   const sharedLevel = async () => {
     await expect
       .poll(
@@ -636,16 +633,16 @@ test("slots sharing a clip move together", async ({ backendSlot, page }) => {
 
   await raise(3);
   expect(await sharedLevel()).toBeGreaterThan(1);
-  // Neither slot has a physical fader, so neither shows a hardware position marker.
-  for (const controlIndex of [3, 5]) {
+  // Neither fader has a physical fader, so neither shows a hardware position marker.
+  for (const faderIndex of [3, 5]) {
     await expect(
       page
-        .locator(`[data-control-index="${controlIndex}"]`)
+        .locator(`[data-fader-index="${faderIndex}"]`)
         .locator(".vertical-slider-value-marker"),
     ).toHaveCount(0);
   }
-  await page.locator(".controls").screenshot({
-    path: test.info().outputPath("control-shared-clip-sync.png"),
+  await page.locator(".faders").screenshot({
+    path: test.info().outputPath("fader-shared-clip-sync.png"),
   });
 });
 
@@ -657,32 +654,32 @@ test("a Flash button plays its clip only while held", async ({
   backendSlot,
   page,
 }) => {
-  await openOwnedClipControlApp(page, backendSlot.backendPort);
-  const scenario = await seedClipControlScenario(page);
+  await openOwnedClipFaderApp(page, backendSlot.backendPort);
+  const scenario = await seedClipFaderScenario(page);
   await openPanel(page, "Clips");
 
-  const button = page.locator('[data-control-button-index="3"]');
+  const button = page.locator('[data-fader-button-index="3"]');
   await pickButtonMode(page, 3, "Flash");
   await expect(button).toHaveText("Flash");
-  await expect(button).toHaveAttribute("data-control-button-flashing", "false");
-  await page.locator(".controls").screenshot({
-    path: test.info().outputPath("control-flash-idle.png"),
+  await expect(button).toHaveAttribute("data-fader-button-flashing", "false");
+  await page.locator(".faders").screenshot({
+    path: test.info().outputPath("fader-flash-idle.png"),
   });
 
   const box = await button.boundingBox();
   expect(box).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.down();
-  await expect(button).toHaveAttribute("data-control-button-flashing", "true");
+  await expect(button).toHaveAttribute("data-fader-button-flashing", "true");
   await expect
     .poll(() => isClipRunning(page, scenario.inactiveFxId))
     .toBe(true);
-  await page.locator(".controls").screenshot({
-    path: test.info().outputPath("control-flash-held.png"),
+  await page.locator(".faders").screenshot({
+    path: test.info().outputPath("fader-flash-held.png"),
   });
 
   await page.mouse.up();
-  await expect(button).toHaveAttribute("data-control-button-flashing", "false");
+  await expect(button).toHaveAttribute("data-fader-button-flashing", "false");
   await expect
     .poll(() => isClipRunning(page, scenario.inactiveFxId))
     .toBe(false);

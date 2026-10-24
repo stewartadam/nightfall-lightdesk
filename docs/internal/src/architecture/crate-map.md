@@ -170,7 +170,7 @@ The `desk` crate is the largest cross-plugin crate, at about 20,000 lines. It ho
 
 - The `DeskCommand` entry point, including `Eval`, which runs a line of the desk command language, and the requests to create, save, load, and import showfiles.
 - Clip storage, and the lifecycle of running playbacks that every playback domain shares.
-- Masters, control slots with their faders and buttons, and the actions that drive them.
+- Masters, faders with their levels and buttons, and the actions that drive them.
 - Groups and blueprints.
 - Console settings and the showfile's shared panel layouts.
 - The adjustments after the merge: virtual dimmers, virtual relations, and each playback's intensity level.

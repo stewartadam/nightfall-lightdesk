@@ -806,18 +806,18 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "assign",
-        title: "Put First Lights on control 6",
+        title: "Put First Lights on fader 6",
         target: '[data-clip-dropzone-index="6"]',
         highlightClipId: 50,
         observe: {
           type: "assigned",
           clipId: 50,
-          control: 6,
+          fader: 6,
         },
         content: [
           {
             type: "text",
-            text: "Clip 50 starts playback of your new sequence. A control slot gives it a fader and a Go button.",
+            text: "Clip 50 starts playback of your new sequence. A fader gives it a level slider and a Go button.",
           },
           {
             type: "prerequisite",
@@ -825,8 +825,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            title: "Drop First Lights on control 6.",
-            body: "Drag clip 50: First Lights onto control 6’s Drop target. You might need to scroll right, depending on your screen size.",
+            title: "Drop First Lights on fader 6.",
+            body: "Drag clip 50: First Lights onto fader 6’s Drop target. You might need to scroll right, depending on your screen size.",
           },
         ],
       },
@@ -834,7 +834,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "go",
         title: "Start First Lights",
         keepVisible: ["visualizer"],
-        target: '[data-control-button-index="6"]:not(:disabled)',
+        target: '[data-fader-button-index="6"]:not(:disabled)',
         observe: {
           type: "clip-playing",
           clipId: 50,
@@ -850,7 +850,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            body: "Raise control 6’s fader or press its Go button to start the clip.",
+            body: "Raise fader 6’s fader or press its Go button to start the clip.",
           },
         ],
       },
@@ -858,7 +858,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "advance",
         title: "Advance to blue",
         keepVisible: ["visualizer"],
-        target: '[data-control-button-index="6"]:not(:disabled)',
+        target: '[data-fader-button-index="6"]:not(:disabled)',
         observe: {
           type: "cue-playing",
           clipId: 50,
@@ -880,7 +880,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Control the level",
         keepVisible: ["visualizer"],
         target:
-          '[data-control-index="6"] .noUi-target:not([disabled]) [role="slider"]',
+          '[data-fader-index="6"] .noUi-target:not([disabled]) [role="slider"]',
         content: [
           {
             type: "text",
@@ -888,8 +888,8 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           },
           {
             type: "action",
-            title: "Try a few levels on control 6.",
-            body: "Move control 6’s fader down and up. Watch the blue pixel strips dim and brighten. Reducing it to zero stops the clip, so it will re-start at cue 1, Red.",
+            title: "Try a few levels on fader 6.",
+            body: "Move fader 6’s fader down and up. Watch the blue pixel strips dim and brighten. Reducing it to zero stops the clip, so it will re-start at cue 1, Red.",
           },
         ],
       },

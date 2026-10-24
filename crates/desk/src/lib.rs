@@ -11,7 +11,7 @@
 //! Plugin crates can't depend on each other, so behavior that touches several of them lives
 //! here: the `DeskCommand` entry point (including `Eval` for the command language and the
 //! showfile requests), clip storage and the shared lifecycle of running playbacks, masters and
-//! control slots, groups and Blueprints, console settings and shared panel layouts, virtual
+//! faders, groups and Blueprints, console settings and shared panel layouts, virtual
 //! dimmers and relations, per-playback intensity, notifications and diagnostics, and delayed
 //! commands. Code that concerns one domain only belongs in that domain's crate.
 
@@ -40,8 +40,8 @@ pub mod ast_conv;
 pub mod automation_actions;
 pub mod blueprint_command;
 mod clips;
-pub mod controls;
 pub mod desk_command;
+pub mod faders;
 pub mod group_command;
 pub mod instances;
 pub mod launch_quantize;
@@ -58,17 +58,17 @@ pub mod websocket;
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::automation_actions::{
-        CONTROL_BUTTON_ACTION_ID, CONTROL_GO_ACTION_ID, CONTROL_LEVEL_ACTION_ID,
-        ControlActionArguments, MASTER_LEVEL_ACTION_ID, MASTER_OFF_ACTION_ID, MASTER_ON_ACTION_ID,
-        MASTER_TOGGLE_ACTION_ID, MasterActionArguments, control_button_action, control_go_action,
-        control_level_action, master_level_action, master_toggle_action,
-    };
-    pub use crate::controls::{
-        ControlAssignment, ControlButtonMode, ControlCommand, ControlSlotConfig, ControlSnapshot,
-        ControlUpdate, Controls, HeldButtonEffect, HeldButtonEffects,
+        FADER_BUTTON_ACTION_ID, FADER_GO_ACTION_ID, FADER_LEVEL_ACTION_ID, FaderActionArguments,
+        MASTER_LEVEL_ACTION_ID, MASTER_OFF_ACTION_ID, MASTER_ON_ACTION_ID, MASTER_TOGGLE_ACTION_ID,
+        MasterActionArguments, fader_button_action, fader_go_action, fader_level_action,
+        master_level_action, master_toggle_action,
     };
     pub use crate::desk_command::{
         DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
+    };
+    pub use crate::faders::{
+        FaderAssignment, FaderButtonMode, FaderCommand, FaderConfig, FaderSnapshot, FaderUpdate,
+        Faders, HeldButtonEffect, HeldButtonEffects,
     };
     pub use crate::group_command::GroupCommand;
     pub use crate::group_command::GroupOperation;
@@ -147,8 +147,8 @@ impl Plugin for DeskPlugin {
         register_engine_operation::<PlaybackOperation>(app);
         register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
-        register_ingress_command::<ControlCommand>(app);
-        app.add_message::<ControlUpdate>();
+        register_ingress_command::<FaderCommand>(app);
+        app.add_message::<FaderUpdate>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         #[cfg(feature = "fx-module-host")]
@@ -170,11 +170,8 @@ impl Plugin for DeskPlugin {
             app,
             websocket::deserialize_playback_command,
         );
-        register_command_deserializer::<ControlCommand>(
-            app,
-            websocket::deserialize_control_command,
-        );
-        register_update_deserializer(app, "ControlUpdate", websocket::deserialize_control_update);
+        register_command_deserializer::<FaderCommand>(app, websocket::deserialize_fader_command);
+        register_update_deserializer(app, "FaderUpdate", websocket::deserialize_fader_update);
         register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::DeskAstConverter>(
@@ -193,7 +190,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<crate::settings::ReportedGraphics>();
         app.init_resource::<AvailableAudioDevices>();
         app.init_resource::<AvailableUsbDmxDevices>();
-        app.init_resource::<Controls>();
+        app.init_resource::<Faders>();
         app.init_resource::<HeldButtonEffects>();
         app.init_resource::<NetworkInterfaceState>();
         app.init_resource::<UiNotificationState>();
@@ -233,8 +230,8 @@ impl Plugin for DeskPlugin {
         app.add_systems(
             Update,
             (
-                controls::expand_control_button_commands,
-                controls::end_released_flashes,
+                faders::expand_fader_button_commands,
+                faders::end_released_flashes,
             )
                 .chain()
                 .after(systems::event_handlers::desk_events::expand_pending_eval_commands)
@@ -290,8 +287,8 @@ impl Plugin for DeskPlugin {
                 event_handlers::clip_events::handle_clip_speed_commands
                     .before(event_handlers::instance_events::handle_playback_control_updates),
                 event_handlers::instance_events::handle_playback_control_updates,
-                controls::handle_control_commands,
-                controls::handle_control_updates,
+                faders::handle_fader_commands,
+                faders::handle_fader_updates,
                 #[cfg(feature = "fx-module-host")]
                 event_handlers::forward_fx_module_runtime_notifications,
                 event_handlers::desk_events::handle_eval,
@@ -326,7 +323,7 @@ impl Plugin for DeskPlugin {
                 masters::handle_master_updates,
             )
                 .chain()
-                .after(controls::handle_control_commands)
+                .after(faders::handle_fader_commands)
                 .in_set(EventHandling),
         );
 
@@ -364,7 +361,7 @@ impl Plugin for DeskPlugin {
         app.add_systems(
             Render,
             (
-                controls::resolve_held_button_effects,
+                faders::resolve_held_button_effects,
                 systems::instance_controls::apply_playback_intensity,
             )
                 .chain()
@@ -400,7 +397,7 @@ impl Plugin for DeskPlugin {
         );
 
         // WebSocket forwarding systems owned by the desk plugin
-        app.add_systems(Update, controls::sync_control_state.after(EventHandling));
+        app.add_systems(Update, faders::sync_fader_state.after(EventHandling));
 
         app.add_systems(
             PostUpdate,
@@ -413,7 +410,7 @@ impl Plugin for DeskPlugin {
                 // These read removals, which only last two updates.
                 websocket::send_clips_on_change,
                 websocket::send_instances_on_change,
-                websocket::send_controls_on_change,
+                websocket::send_faders_on_change,
                 websocket::send_armed_launches_on_change,
             )
                 .in_set(ClientFeedback),

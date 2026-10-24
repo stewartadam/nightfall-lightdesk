@@ -20,8 +20,8 @@ import { libraryDefinitionId } from "../../lib/fixture-service";
 import {
   activeInstances,
   clips,
-  controls,
   cues,
+  faders,
   fixtureLibrary,
   fixtures,
   fx,
@@ -86,7 +86,7 @@ export function useGuideSnapshot(
   const clipMap = useStore(clips);
   const fxMap = useStore(fx);
   const stepFxMap = useStore(stepFx);
-  const controlList = useStore(controls);
+  const faderList = useStore(faders);
   const instances = useStore(activeInstances);
   const timelineMap = useStore(timelines);
   const clocks = useStore(timecodes);
@@ -112,7 +112,7 @@ export function useGuideSnapshot(
     clips: clipMap(),
     fx: fxMap(),
     stepFx: stepFxMap(),
-    controls: controlList(),
+    faders: faderList(),
     instances: instances(),
     timelines: timelineMap(),
     timecodes: clocks(),

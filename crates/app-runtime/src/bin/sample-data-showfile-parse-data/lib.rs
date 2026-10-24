@@ -323,7 +323,7 @@ fn add_input_mappings(world: &mut World) {
             },
             behavior: nightfall_actions::ControlBehavior::Press,
             led: Default::default(),
-            action: control_level_action(1),
+            action: fader_level_action(1),
         }]);
 
     #[cfg(feature = "osc")]
@@ -338,7 +338,7 @@ fn add_input_mappings(world: &mut World) {
             release_value: None,
             range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
-            action: control_level_action(2),
+            action: fader_level_action(2),
         }]);
 }
 

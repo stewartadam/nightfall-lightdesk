@@ -10,11 +10,10 @@ import type { Page } from "./playwright-fixtures";
 import { expect, test } from "./playwright-fixtures";
 import { prepareStoreSeededTestApp } from "./showfile-startup";
 
-const CONTROLS_HEIGHT_STORAGE_KEY = "nightfall-clip-panel:controls-height";
-const CONTROLS_COLLAPSED_STORAGE_KEY =
-  "nightfall-clip-panel:controls-collapsed";
+const FADERS_HEIGHT_STORAGE_KEY = "nightfall-clip-panel:faders-height";
+const FADERS_COLLAPSED_STORAGE_KEY = "nightfall-clip-panel:faders-collapsed";
 
-/** Opens the clip panel through the command palette for controls tests. */
+/** Opens the clip panel through the command palette for faders tests. */
 async function openClipPanel(page: Page) {
   await page.addInitScript(() => window.localStorage.clear());
   await page.goto("/?e2e=1");
@@ -30,15 +29,15 @@ async function openClipPanel(page: Page) {
   await page.keyboard.press("Enter");
 }
 
-/** Returns the disclosure toggle in the controls section header. */
+/** Returns the disclosure toggle in the faders section header. */
 function controlsToggle(page: Page) {
   return page
-    .locator("[data-clip-controls-section]")
-    .getByRole("button", { name: "Controls", exact: true });
+    .locator("[data-clip-faders-section]")
+    .getByRole("button", { name: "Faders", exact: true });
 }
 
-/** Seeds control 3 with a known clip assignment for deterministic control UI checks. */
-async function seedAssignedControl(page: Page, value = 0) {
+/** Seeds fader 3 with a known clip assignment for deterministic fader UI checks. */
+async function seedAssignedFader(page: Page, value = 0) {
   await page.evaluate((value) => {
     const stores = (window as any).appStores;
     const clipUid = "82828282828282828282828282828282";
@@ -55,7 +54,7 @@ async function seedAssignedControl(page: Page, value = 0) {
         false,
       ],
     });
-    stores.controls.set([
+    stores.faders.set([
       {
         index: 3,
         assigned_clip_id: 2,
@@ -69,22 +68,22 @@ async function seedAssignedControl(page: Page, value = 0) {
   }, value);
 }
 
-/** Verifies assigned controls keep an operable scenario-owned handle. */
-test("assigned clip controls keep an enabled, visible handle", async ({
+/** Verifies assigned faders keep an operable scenario-owned handle. */
+test("assigned clip faders keep an enabled, visible handle", async ({
   page,
 }) => {
   await openClipPanel(page);
-  await seedAssignedControl(page);
+  await seedAssignedFader(page);
 
-  const assignedControl = page.locator('[data-control-index="3"]');
-  await expect(assignedControl).toBeVisible();
-  await expect(assignedControl.getByText("128/0/0")).toBeVisible();
+  const assignedFader = page.locator('[data-fader-index="3"]');
+  await expect(assignedFader).toBeVisible();
+  await expect(assignedFader.getByText("128/0/0")).toBeVisible();
 
-  const sliderTarget = assignedControl.locator(".vertical-range-slider");
+  const sliderTarget = assignedFader.locator(".vertical-range-slider");
   await expect(sliderTarget).not.toHaveClass(/is-disabled/);
   await expect(sliderTarget).not.toHaveAttribute("disabled", "");
 
-  const sliderHandle = assignedControl.locator(
+  const sliderHandle = assignedFader.locator(
     ".vertical-range-slider .noUi-handle",
   );
   await expect(sliderHandle).toBeVisible();
@@ -108,25 +107,25 @@ test("assigned clip controls keep an enabled, visible handle", async ({
       }),
     )
     .toBe(true);
-  await assignedControl.screenshot({
-    path: test.info().outputPath("shared-clip-control.png"),
+  await assignedFader.screenshot({
+    path: test.info().outputPath("shared-clip-fader.png"),
   });
 });
 
-/** Verifies the clip controls can be resized and collapsed by an operator. */
-test("clip controls section resizes and collapses", async ({ page }) => {
+/** Verifies the clip faders can be resized and collapsed by an operator. */
+test("clip faders section resizes and collapses", async ({ page }) => {
   await openClipPanel(page);
-  await seedAssignedControl(page);
+  await seedAssignedFader(page);
 
-  const controlsSection = page.locator("[data-clip-controls-section]");
-  const resizeHandle = page.locator("[data-clip-controls-resize-handle]");
+  const fadersSection = page.locator("[data-clip-faders-section]");
+  const resizeHandle = page.locator("[data-clip-faders-resize-handle]");
   const toggleButton = controlsToggle(page);
-  const assignedControl = page.locator('[data-control-index="3"]');
+  const assignedFader = page.locator('[data-fader-index="3"]');
 
-  await expect(controlsSection).toBeVisible();
-  await expect(assignedControl).toBeVisible();
+  await expect(fadersSection).toBeVisible();
+  await expect(assignedFader).toBeVisible();
 
-  const sectionBeforeResize = await controlsSection.boundingBox();
+  const sectionBeforeResize = await fadersSection.boundingBox();
   const handleBox = await resizeHandle.boundingBox();
   expect(sectionBeforeResize).toBeTruthy();
   expect(handleBox).toBeTruthy();
@@ -144,47 +143,47 @@ test("clip controls section resizes and collapses", async ({ page }) => {
   await page.mouse.up();
 
   await expect
-    .poll(async () => (await controlsSection.boundingBox())?.height ?? 0)
+    .poll(async () => (await fadersSection.boundingBox())?.height ?? 0)
     .toBeGreaterThan((sectionBeforeResize?.height ?? 0) + 40);
   await expect
     .poll(() =>
       page.evaluate((storageKey) => {
         const stored = window.localStorage.getItem(storageKey);
         return stored ? Number(stored) : 0;
-      }, CONTROLS_HEIGHT_STORAGE_KEY),
+      }, FADERS_HEIGHT_STORAGE_KEY),
     )
     .toBeGreaterThan(sectionBeforeResize?.height ?? 0);
 
   await toggleButton.click();
   await expect(toggleButton).toHaveAttribute("aria-expanded", "false");
-  await expect(assignedControl).toBeHidden();
+  await expect(assignedFader).toBeHidden();
   await expect
-    .poll(async () => (await controlsSection.boundingBox())?.height ?? 0)
+    .poll(async () => (await fadersSection.boundingBox())?.height ?? 0)
     .toBeLessThan(60);
   await expect
     .poll(() =>
       page.evaluate(
         (storageKey) => window.localStorage.getItem(storageKey),
-        CONTROLS_COLLAPSED_STORAGE_KEY,
+        FADERS_COLLAPSED_STORAGE_KEY,
       ),
     )
     .toBe("true");
 
   await toggleButton.click();
   await expect(toggleButton).toHaveAttribute("aria-expanded", "true");
-  await expect(assignedControl).toBeVisible();
+  await expect(assignedFader).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(
         (storageKey) => window.localStorage.getItem(storageKey),
-        CONTROLS_COLLAPSED_STORAGE_KEY,
+        FADERS_COLLAPSED_STORAGE_KEY,
       ),
     )
     .toBe("false");
 });
 
 /** Prevents mounting, remounting and backend value refreshes from sending rounded console edits. */
-test("fractional control values remain passive until the operator edits", async ({
+test("fractional fader values remain passive until the operator edits", async ({
   page,
 }, testInfo) => {
   await openClipPanel(page);
@@ -201,23 +200,23 @@ test("fractional control values remain passive until the operator edits", async 
       update: object,
       shouldLog?: boolean,
     ) => {
-      if (module === "ControlUpdate") {
+      if (module === "FaderUpdate") {
         (window as any).__faderConsoleUpdates.push(update);
         return true;
       }
       return original(module, update, shouldLog);
     };
   });
-  await seedAssignedControl(page, 42.4);
+  await seedAssignedFader(page, 42.4);
   await toggle.click();
-  const control = page.locator('[data-control-index="3"]');
-  const handle = control.getByRole("slider");
+  const fader = page.locator('[data-fader-index="3"]');
+  const handle = fader.getByRole("slider");
   await expect(handle).toHaveAttribute("aria-valuenow", "42.0");
   expect(
     await page.evaluate(() => (window as any).__faderConsoleUpdates),
   ).toEqual([]);
 
-  await seedAssignedControl(page, 37.6);
+  await seedAssignedFader(page, 37.6);
   await expect(handle).toHaveAttribute("aria-valuenow", "38.0");
   await toggle.click();
   await expect(handle).toHaveCount(0);
@@ -231,39 +230,39 @@ test("fractional control values remain passive until the operator edits", async 
   await expect
     .poll(() => page.evaluate(() => (window as any).__faderConsoleUpdates))
     .toEqual([
-      { type: "SetConsoleValue", data: { control_index: 3, value: 39 } },
+      { type: "SetConsoleValue", data: { fader_index: 3, value: 39 } },
     ]);
-  await control.screenshot({
-    path: testInfo.outputPath("fractional-control-keyboard.png"),
+  await fader.screenshot({
+    path: testInfo.outputPath("fractional-fader-keyboard.png"),
   });
 });
 
 /** Keeps faders and actions inside both resize limits and honors motion preferences. */
-test("clip controls fill bounded heights and animate only toggles", async ({
+test("clip faders fill bounded heights and animate only toggles", async ({
   page,
 }) => {
   await openClipPanel(page);
-  await seedAssignedControl(page);
-  const section = page.locator("[data-clip-controls-section]");
-  const resize = page.locator("[data-clip-controls-resize-handle]");
+  await seedAssignedFader(page);
+  const section = page.locator("[data-clip-faders-section]");
+  const resize = page.locator("[data-clip-faders-resize-handle]");
   const toggle = controlsToggle(page);
-  const control = page.locator('[data-control-index="3"]');
-  const track = control.locator(".vertical-range-slider");
+  const fader = page.locator('[data-fader-index="3"]');
+  const track = fader.locator(".vertical-range-slider");
   await resize.focus();
   for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowDown");
   expect((await section.boundingBox())?.height).toBe(300);
   const shortTrack = (await track.boundingBox())!;
   expect(shortTrack.height).toBeGreaterThan(50);
   const smallSection = (await section.boundingBox())!;
-  const smallControl = (await control.boundingBox())!;
-  expect(smallControl.y + smallControl.height).toBeLessThanOrEqual(
+  const smallFader = (await fader.boundingBox())!;
+  expect(smallFader.y + smallFader.height).toBeLessThanOrEqual(
     smallSection.y + smallSection.height,
   );
   await expect(
-    control.getByRole("button", { name: "Go control 3" }),
+    fader.getByRole("button", { name: "Go fader 3" }),
   ).toBeInViewport();
   await section.screenshot({
-    path: test.info().outputPath("controls-minimum.png"),
+    path: test.info().outputPath("faders-minimum.png"),
   });
 
   for (let i = 0; i < 50; i++) await page.keyboard.press("ArrowUp");
@@ -277,14 +276,14 @@ test("clip controls fill bounded heights and animate only toggles", async ({
     await section.evaluate((el) => getComputedStyle(el).transitionDuration),
   ).toBe("0s");
   await section.screenshot({
-    path: test.info().outputPath("controls-maximum.png"),
+    path: test.info().outputPath("faders-maximum.png"),
   });
 
   await toggle.click();
   await expect
     .poll(() => section.evaluate((el) => el.getAnimations().length))
     .toBeGreaterThan(0);
-  await expect(control).toHaveCount(0);
+  await expect(fader).toHaveCount(0);
   await expect.poll(async () => (await section.boundingBox())?.height).toBe(46);
   await toggle.click();
   await expect
@@ -295,9 +294,9 @@ test("clip controls fill bounded heights and animate only toggles", async ({
     .toBe(tallSection.height);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await toggle.click();
-  await expect(control).toHaveCount(0);
+  await expect(fader).toHaveCount(0);
   expect(await section.evaluate((el) => el.getAnimations().length)).toBe(0);
   await toggle.click();
-  await expect(control).toBeVisible();
+  await expect(fader).toBeVisible();
   expect((await section.boundingBox())?.height).toBe(tallSection.height);
 });

@@ -207,7 +207,7 @@ test("binding descriptions name what each edge does", () => {
 
 /** Binding problems are explained from what the touched OSC control actually sent. */
 test("OSC binding problems describe what the control sent", () => {
-  const fader = { id: "control.level", arguments: { control_index: 1 } };
+  const fader = { id: "fader.level", arguments: { fader_index: 1 } };
   const problem = (
     gesture: OscGesture,
     kind: types.ActionInputKind,

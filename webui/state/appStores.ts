@@ -225,7 +225,7 @@ export type BlueprintDependencyMap = { [uid: string]: string[] };
 
 /** Active instances indexed by instance_id (UUID string) */
 export type ActiveInstancesMap = { [instanceId: string]: types.InstanceInfo };
-export type ControlState = types.ControlSnapshot;
+export type FaderState = types.FaderSnapshot;
 export interface LayerNavigationRequest {
   layerIndex: number;
   fixtureUid: string;
@@ -451,7 +451,8 @@ export const sceneObjectNavigationRequest =
 
 /** Active instances map (instance_id -> InstanceInfo) */
 export const activeInstances = deepMap<ActiveInstancesMap>({});
-export const controls = atom<ControlState[]>([]);
+/** Backend-owned fader bank snapshots, ordered by fader index. */
+export const faders = atom<FaderState[]>([]);
 export const engineMetrics = atom<EngineMetrics | null>(null);
 
 // Bindable action catalog published by backend domains
@@ -1184,7 +1185,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     referenceListWatch,
     inputContributionTrace,
     activeInstances,
-    controls,
+    faders,
     armedLaunches,
     showTempo,
     undoState,

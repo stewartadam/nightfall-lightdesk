@@ -7,29 +7,29 @@
  */
 
 import { Collapsible } from "../../../components/ui/collapsible";
-import { MIN_CONTROLS_HEIGHT } from "../state/controls-layout";
-import { Controls, type ControlsProps } from "./controls";
+import { MIN_FADERS_HEIGHT } from "../state/faders-layout";
+import { Faders, type FadersProps } from "./faders";
 
-interface ClipControlsSectionProps {
+interface ClipFadersSectionProps {
   collapsed: boolean;
   transitioning: boolean;
   height: number;
   visibleHeight: number;
-  clipStates: ControlsProps["clipStates"];
+  clipStates: FadersProps["clipStates"];
   onResizeStart: (event: PointerEvent) => void;
   onResizeKeyDown: (event: KeyboardEvent) => void;
   onToggleCollapsed: () => void;
 }
 
-/** Renders the props-driven resizable controls section beneath the clip list. */
-export function ClipControlsSection(props: ClipControlsSectionProps) {
+/** Renders the props-driven resizable faders section beneath the clip list. */
+export function ClipFadersSection(props: ClipFadersSectionProps) {
   return (
     <div
       class="flex min-h-0 shrink-0 flex-col overflow-hidden border-t border-neutral-700 bg-neutral-900"
       classList={{
         "transition-[height] duration-200 ease-in-out": props.transitioning,
       }}
-      data-clip-controls-section=""
+      data-clip-faders-section=""
       data-collapsed={props.collapsed}
       style={{ height: `${props.visibleHeight}px` }}
     >
@@ -39,11 +39,11 @@ export function ClipControlsSection(props: ClipControlsSectionProps) {
           "cursor-row-resize": !props.collapsed,
           "cursor-default": props.collapsed,
         }}
-        data-clip-controls-resize-handle=""
-        aria-label="Resize controls"
+        data-clip-faders-resize-handle=""
+        aria-label="Resize faders"
         role="separator"
         aria-orientation="horizontal"
-        aria-valuemin={MIN_CONTROLS_HEIGHT}
+        aria-valuemin={MIN_FADERS_HEIGHT}
         aria-valuenow={props.height}
         tabIndex={props.collapsed ? -1 : 0}
         onPointerDown={props.onResizeStart}
@@ -57,13 +57,13 @@ export function ClipControlsSection(props: ClipControlsSectionProps) {
         forceMount={props.transitioning}
         open={!props.collapsed}
         onOpenChange={props.onToggleCollapsed}
-        title="Controls"
+        title="Faders"
         class="flex min-h-0 flex-1 flex-col"
         headerClass="h-9 shrink-0 border-b border-neutral-800 px-3"
         triggerClass="flex-1 self-stretch text-xs font-medium uppercase tracking-wide"
         contentClass="mt-0 min-h-0 flex-1 overflow-hidden p-3"
       >
-        <Controls controlCount={10} clipStates={props.clipStates} />
+        <Faders faderCount={10} clipStates={props.clipStates} />
       </Collapsible>
     </div>
   );

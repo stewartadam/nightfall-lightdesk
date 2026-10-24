@@ -38,7 +38,7 @@ async function clipRunning(page: Page): Promise<boolean> {
 }
 
 /**
- * Opens a fresh show with an FX clip on control slot 1, a slow tempo so a bar lasts eight
+ * Opens a fresh show with an FX clip on fader 1, a slow tempo so a bar lasts eight
  * seconds, and the Tempo and Clips panels open.
  */
 async function openQuantizeScenario(
@@ -83,10 +83,10 @@ async function openQuantizeScenario(
     },
   });
   await sendCommand(page, {
-    module: "ControlCommand",
+    module: "FaderCommand",
     command: {
       type: "AssignClip",
-      data: { control_index: 1, clip_id: CLIP_ID },
+      data: { fader_index: 1, clip_id: CLIP_ID },
     },
   });
   await sendCommand(page, {
@@ -100,10 +100,10 @@ async function openQuantizeScenario(
 }
 
 /**
- * Verifies that with launch quantize set to Bar a slot press arms the clip, which pulses until
+ * Verifies that with launch quantize set to Bar a fader button press arms the clip, which pulses until
  * Launch armed clips now fires it; the mode is reported back to every client.
  */
-test("launch quantize arms slot presses until launched", async ({
+test("launch quantize arms fader button presses until launched", async ({
   backendSlot,
   page,
 }, testInfo) => {
@@ -130,9 +130,9 @@ test("launch quantize arms slot presses until launched", async ({
     return sinceDownbeat > 0.2 && sinceDownbeat < 2;
   });
 
-  const slotButton = page.locator('[data-control-button-index="1"]');
-  await slotButton.click();
-  await expect(slotButton).toHaveAttribute("data-launch-armed", "Start");
+  const faderButton = page.locator('[data-fader-button-index="1"]');
+  await faderButton.click();
+  await expect(faderButton).toHaveAttribute("data-launch-armed", "Start");
   expect(await clipRunning(page)).toBe(false);
   await page.mouse.move(780, 280);
   await page.waitForTimeout(600);
@@ -144,7 +144,7 @@ test("launch quantize arms slot presses until launched", async ({
     .getByRole("button", { name: "Launch armed clips now", exact: true })
     .click();
   await expect.poll(() => clipRunning(page)).toBe(true);
-  await expect(slotButton).not.toHaveAttribute("data-launch-armed");
+  await expect(faderButton).not.toHaveAttribute("data-launch-armed");
 
   await mode.getByRole("radio", { name: "Off" }).click();
   await expect

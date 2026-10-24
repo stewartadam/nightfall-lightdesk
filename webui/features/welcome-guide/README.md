@@ -14,7 +14,7 @@ content: [
   },
   { type: "text", text: "Look at the values in the Programmer." },
   { type: "details", title: "Learn more", text: "Additional explanation." },
-]
+];
 ```
 
 - **Text** blocks contain explanatory copy.

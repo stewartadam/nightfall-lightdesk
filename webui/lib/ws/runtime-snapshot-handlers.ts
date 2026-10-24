@@ -8,7 +8,7 @@
 
 import {
   applyActiveInstancesSnapshot,
-  applyControlsSnapshot,
+  applyFadersSnapshot,
   applyMetricsSnapshot,
   applyUndoStateSnapshot,
 } from "../../state/runtime-snapshots";
@@ -27,8 +27,8 @@ export function registerRuntimeSnapshotHandlers(
     applyActiveInstancesSnapshot(message.data);
   });
 
-  registry.register("Controls", (message) => {
-    applyControlsSnapshot(message.data);
+  registry.register("Faders", (message) => {
+    applyFadersSnapshot(message.data);
   });
 
   registry.register("UndoState", (message) => {

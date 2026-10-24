@@ -42,7 +42,7 @@ function sampleState(): GuideSnapshot {
     clips: {},
     selection: [],
     programmer: [],
-    controls: [],
+    faders: [],
     instances: {},
     timecodes: {},
   } as unknown as GuideSnapshot;

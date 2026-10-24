@@ -9,13 +9,13 @@
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { reducedMotion } from "../../../state/reduced-motion";
 import {
-  COLLAPSED_CONTROLS_HEIGHT,
-  clampControlsHeight,
-  loadControlsCollapsed,
-  loadControlsHeight,
-  persistControlsCollapsed,
-  persistControlsHeight,
-} from "../state/controls-layout";
+  COLLAPSED_FADERS_HEIGHT,
+  clampFadersHeight,
+  loadFadersCollapsed,
+  loadFadersHeight,
+  persistFadersCollapsed,
+  persistFadersHeight,
+} from "../state/faders-layout";
 
 interface ResizeStart {
   pointerId: number;
@@ -24,13 +24,13 @@ interface ResizeStart {
   panelHeight: number | undefined;
 }
 
-/** Owns persisted clip controls sizing, collapse state, and resize listeners. */
-export function createClipControlsController(
+/** Owns persisted clip faders sizing, collapse state, and resize listeners. */
+export function createClipFadersController(
   panelElement: () => HTMLDivElement | undefined,
 ) {
   let resizeStart: ResizeStart | undefined;
-  const [height, setHeight] = createSignal(loadControlsHeight());
-  const [collapsed, setCollapsedSignal] = createSignal(loadControlsCollapsed());
+  const [height, setHeight] = createSignal(loadFadersHeight());
+  const [collapsed, setCollapsedSignal] = createSignal(loadFadersCollapsed());
 
   const [transitioning, setTransitioning] = createSignal(false);
   let transitionTimer: ReturnType<typeof setTimeout> | undefined;
@@ -43,24 +43,24 @@ export function createClipControlsController(
 
   /** Computes the section height rendered for expanded and collapsed states. */
   const visibleHeight = createMemo(() =>
-    collapsed() ? COLLAPSED_CONTROLS_HEIGHT : height(),
+    collapsed() ? COLLAPSED_FADERS_HEIGHT : height(),
   );
 
   /** Applies and persists a height clamped to the current panel bounds. */
   const applyHeight = (nextHeight: number, panelHeight?: number) => {
     finishTransition();
-    const clampedHeight = clampControlsHeight(nextHeight, panelHeight);
+    const clampedHeight = clampFadersHeight(nextHeight, panelHeight);
     setHeight(clampedHeight);
-    persistControlsHeight(clampedHeight);
+    persistFadersHeight(clampedHeight);
   };
 
-  /** Applies and persists the controls collapsed state. */
+  /** Applies and persists the faders collapsed state. */
   const setCollapsed = (nextCollapsed: boolean) => {
     setCollapsedSignal(nextCollapsed);
-    persistControlsCollapsed(nextCollapsed);
+    persistFadersCollapsed(nextCollapsed);
   };
 
-  /** Tracks pointer movement while a controls resize is active. */
+  /** Tracks pointer movement while a faders resize is active. */
   const handleResizeMove = (event: PointerEvent) => {
     if (!resizeStart || event.pointerId !== resizeStart.pointerId) return;
     event.preventDefault();
@@ -85,7 +85,7 @@ export function createClipControlsController(
     removeResizeListeners();
   };
 
-  /** Begins pointer tracking for an expanded controls. */
+  /** Begins pointer tracking for an expanded faders. */
   const handleResizeStart = (event: PointerEvent) => {
     if (collapsed()) return;
     event.preventDefault();
@@ -100,7 +100,7 @@ export function createClipControlsController(
     window.addEventListener("pointercancel", handleResizeEnd);
   };
 
-  /** Changes controls height in fixed keyboard increments. */
+  /** Changes faders height in fixed keyboard increments. */
   const handleResizeKeyDown = (event: KeyboardEvent) => {
     if (collapsed()) return;
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -124,7 +124,7 @@ export function createClipControlsController(
     const panel = panelElement();
     if (!panel) return;
     const observer = new ResizeObserver(() => {
-      const nextHeight = clampControlsHeight(
+      const nextHeight = clampFadersHeight(
         height(),
         panel.getBoundingClientRect().height,
       );

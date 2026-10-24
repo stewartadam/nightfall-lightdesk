@@ -35,6 +35,7 @@ pub(crate) fn migrate_showfile_json(showfile: &mut Value, version: u32) -> Resul
             19 => control_assignments_to_slots(showfile)?,
             20 => bindings_to_routes(showfile)?,
             21 => speed_names::migrate_v21_to_v22(showfile)?,
+            22 => control_slots_to_faders(showfile)?,
             _ => return Err(format!("no migration from showfile version {version}")),
         }
         version += 1;
@@ -146,6 +147,54 @@ fn bindings_to_routes(showfile: &mut Value) -> Result<(), String> {
         object.insert("routes".to_string(), bindings);
     }
     Ok(())
+}
+
+/// Schema 22 → 23: control slots are saved as faders.
+///
+/// `controlSlots` moves to `faders` unchanged, and every persisted action reference to a
+/// `control.level`, `control.go` or `control.button` action becomes the matching `fader.*`
+/// action with its `control_index` argument renamed to `fader_index`. References are found
+/// wherever they are stored (controller mappings, timelines, boards), so the whole document
+/// is walked.
+fn control_slots_to_faders(showfile: &mut Value) -> Result<(), String> {
+    let Some(object) = showfile.as_object_mut() else {
+        return Err("showfile root is not an object".to_string());
+    };
+    if let Some(slots) = object.remove("controlSlots") {
+        object.insert("faders".to_string(), slots);
+    }
+    rename_control_action_references(showfile);
+    Ok(())
+}
+
+/// Recursively rewrites schema 22 control action references to fader action references.
+///
+/// Only objects shaped like a control action reference, a control action ID next to an
+/// `arguments` object holding `control_index`, are rewritten, so unrelated objects that
+/// happen to use the same `id` string are left alone.
+fn rename_control_action_references(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            let renamed = match object.get("id").and_then(Value::as_str) {
+                Some("control.level") => Some("fader.level"),
+                Some("control.go") => Some("fader.go"),
+                Some("control.button") => Some("fader.button"),
+                _ => None,
+            };
+            if let Some(renamed) = renamed
+                && let Some(Value::Object(arguments)) = object.get_mut("arguments")
+                && let Some(index) = arguments.remove("control_index")
+            {
+                arguments.insert("fader_index".to_string(), index);
+                object.insert("id".to_string(), Value::from(renamed));
+            }
+            object
+                .values_mut()
+                .for_each(rename_control_action_references);
+        }
+        Value::Array(items) => items.iter_mut().for_each(rename_control_action_references),
+        _ => {}
+    }
 }
 
 /// Reads a persisted output binding source.
@@ -395,5 +444,65 @@ mod tests {
         bindings_to_routes(&mut showfile).unwrap();
 
         assert_eq!(showfile, json!({"routes": bindings, "variables": {}}));
+    }
+
+    /// Schema 22 control slots move to `faders`, and control action references in mappings
+    /// and timelines become fader actions with a `fader_index` argument, while unrelated
+    /// action references and other objects using a control action ID are left alone.
+    #[test]
+    fn schema_22_control_slots_become_faders() {
+        let slots = json!([{"assignment": {"Clip": 3}, "buttonMode": "Flash"}]);
+        let mut showfile = json!({
+            "controlSlots": slots.clone(),
+            "midiMappings": [
+                {"action": {"id": "control.level", "arguments": {"control_index": 1}}},
+                {"action": {"id": "master.level", "arguments": {"master": "abc"}}}
+            ],
+            "oscMappings": [
+                {"action": {"id": "control.button", "arguments": {"control_index": 2}}}
+            ],
+            "panel": {"id": "control.go"},
+            "timelines": [{"tracks": [{"actions": [
+                {"kind": {"id": "control.go", "arguments": {"control_index": 4}}}
+            ]}]}]
+        });
+
+        control_slots_to_faders(&mut showfile).unwrap();
+
+        assert_eq!(
+            showfile,
+            json!({
+                "faders": slots,
+                "midiMappings": [
+                    {"action": {"id": "fader.level", "arguments": {"fader_index": 1}}},
+                    {"action": {"id": "master.level", "arguments": {"master": "abc"}}}
+                ],
+                "oscMappings": [
+                    {"action": {"id": "fader.button", "arguments": {"fader_index": 2}}}
+                ],
+                "panel": {"id": "control.go"},
+                "timelines": [{"tracks": [{"actions": [
+                    {"kind": {"id": "fader.go", "arguments": {"fader_index": 4}}}
+                ]}]}]
+            })
+        );
+    }
+
+    /// A schema 19 showfile carries its control assignments through every later step into
+    /// `faders`, keeping the Go button mode the schema 20 step added.
+    #[test]
+    fn schema_19_control_assignments_reach_faders() {
+        let mut showfile = json!({
+            "metadata": {"showfileVersion": 19},
+            "controlAssignments": [{"Clip": 3}]
+        });
+
+        migrate_showfile_json(&mut showfile, 19).expect("migrate");
+
+        assert_eq!(
+            showfile["faders"],
+            json!([{"assignment": {"Clip": 3}, "buttonMode": "Go"}])
+        );
+        assert!(showfile.get("controlSlots").is_none());
     }
 }

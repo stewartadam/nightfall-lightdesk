@@ -114,7 +114,7 @@ export type AnyCommand =
   | types.ProgrammerCommand
   | types.SceneObjectCommand
   | types.SettingsCommand
-  | types.ControlCommand
+  | types.FaderCommand
   | types.StepFxCommand
   | types.TempoCommand
   | types.TimecodeCommand

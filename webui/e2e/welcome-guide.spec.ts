@@ -1603,7 +1603,7 @@ test("first lights builds its own Red and Blue sequence", async ({
   ).toBeVisible();
   await page.getByRole("tab", { name: "Properties", exact: true }).click();
   await expect(
-    guide.getByRole("heading", { name: "Put First Lights on control 6" }),
+    guide.getByRole("heading", { name: "Put First Lights on fader 6" }),
   ).toBeVisible();
   const state = await page.evaluate(() => {
     const stores = (window as any).appStores;
@@ -1660,14 +1660,12 @@ test("first lights builds its own Red and Blue sequence", async ({
     .locator(`[data-crud-select-id="${clipUid}"]`)
     .dragTo(activeLayout(page).locator('[data-clip-dropzone-index="6"]'));
   await expect(
-    activeLayout(page).locator('[data-control-button-index="6"]'),
+    activeLayout(page).locator('[data-fader-button-index="6"]'),
   ).toBeEnabled();
   await expect(
     guide.getByRole("heading", { name: "Start First Lights" }),
   ).toBeVisible();
-  const goTarget = activeLayout(page).locator(
-    '[data-control-button-index="6"]',
-  );
+  const goTarget = activeLayout(page).locator('[data-fader-button-index="6"]');
   const scrollChange = await goTarget.evaluate((element) => {
     let scroller = element.parentElement;
     while (
@@ -1711,7 +1709,7 @@ test("first lights builds its own Red and Blue sequence", async ({
   await page.screenshot({
     path: testInfo.outputPath("guide-scrolled-controls.png"),
   });
-  await activeLayout(page).locator('[data-control-button-index="6"]').click();
+  await activeLayout(page).locator('[data-fader-button-index="6"]').click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -1723,12 +1721,12 @@ test("first lights builds its own Red and Blue sequence", async ({
   await expect(
     guide.getByRole("heading", { name: "Advance to blue" }),
   ).toBeVisible();
-  await activeLayout(page).locator('[data-control-button-index="6"]').click();
+  await activeLayout(page).locator('[data-fader-button-index="6"]').click();
   await expect(
     guide.getByRole("heading", { name: "Control the level" }),
   ).toBeVisible();
   const fader = activeLayout(page).locator(
-    '[data-control-index="6"] [role="slider"]',
+    '[data-fader-index="6"] [role="slider"]',
   );
   await fader.focus();
   await fader.press("Home");
@@ -2260,7 +2258,7 @@ test("collapsing Properties advances after the layout is reset", async ({
   ).toBeVisible();
   await page.getByRole("tab", { name: "Properties", exact: true }).click();
   await expect(
-    guide.getByRole("heading", { name: "Put First Lights on control 6" }),
+    guide.getByRole("heading", { name: "Put First Lights on fader 6" }),
   ).toBeVisible();
 });
 

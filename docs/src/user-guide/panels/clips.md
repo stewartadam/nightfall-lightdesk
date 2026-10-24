@@ -2,7 +2,7 @@
 
 {{#include ../../includes/human-review-disclaimer.md}}
 
-Clips provides reusable playback definitions and control slots. Open it from the Command Palette. Use **Add clip** to create an ID and label, then select the clip and open Properties.
+Clips provides reusable playback definitions and a bank of faders. Open it from the Command Palette. Use **Add clip** to create an ID and label, then select the clip and open Properties.
 
 ## Configure and play
 
@@ -10,9 +10,9 @@ Choose a source kind and an existing source object: a Sequence or an FX variant.
 
 Right-click a clip for **Start Clip**, **Stop Clip**, and **Show Properties**. The State column distinguishes Active from Idle. For sequence playback, Go advances cues; starting and advancing are separate operations.
 
-The controls area accepts drag-and-drop assignments so frequently used clips have dedicated controls. It can also host master controls. Check each control's label before operating it.
+The **Faders** section below the clip list accepts drag-and-drop assignments, so frequently used clips get a dedicated fader and button. A fader can also hold a master. Check each fader's label before operating it.
 
-Each control's button has a mode, chosen from the arrow next to it and saved with the show:
+Each fader's button has a mode, chosen from the arrow next to it and saved with the show:
 
 | Mode | Clip | Master |
 |---|---|---|
@@ -25,8 +25,8 @@ Each control's button has a mode, chosen from the arrow next to it and saved wit
 
 Letting go of Flash or Swop returns the clip to its fader level, and stops it again if the flash started it; a flashed master goes back to its earlier level unless it was moved meanwhile. The button lights up while held. When the button is held from several places, such as the screen and a MIDI pad, the flash lasts until the last one lets go, and a device that disconnects lets go of anything it held. Swop takes out everything other playbacks contribute, colour and movement included, so the swopped clip shows on its own; the Programmer and effect editor previews stay live.
 
-While a Flash or Swop is held, the clip it plays is tagged **Flash** or **Swop** in yellow, and every playback a Swop takes out is tagged **Swopped** in grey. The tags show on the slots, as the state in the Status Display and in the Layers panel, so a button stuck down by a controller that never let go cannot silently blank the stage. Run **Release held buttons** from the command palette to let go of every held Flash and Swop at once.
+While a Flash or Swop is held, the clip it plays is tagged **Flash** or **Swop** in yellow, and every playback a Swop takes out is tagged **Swopped** in grey. The tags show on the faders, as the state in the Status Display and in the Layers panel, so a button stuck down by a controller that never let go cannot silently blank the stage. Run **Release held buttons** from the command palette to let go of every held Flash and Swop at once.
 
-A MIDI or OSC button mapped to the control's button follows the same mode, so changing the mode changes what the controller does too. To keep a controller button on Go whatever the mode, map it to **Go control** instead.
+A MIDI or OSC button mapped to the fader's button follows the same mode, so changing the mode changes what the controller does too. To keep a controller button on Go whatever the mode, map it to **Go fader** instead.
 
 Use [Status Display](status-display.md) to inspect running instances and [Layers](layers.md) to see their contribution to fixtures. Clear Programmer before evaluating playback. After changing a clip's source, stop its existing playback and start again to verify the intended definition.

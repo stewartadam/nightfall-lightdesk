@@ -39,7 +39,7 @@ When you start a clip, Nightfall creates a running **playback** for it, also cal
 
 Many things can start or control a playback:
 
-- The **Clips** panel, a control slot fader or button, or a board button.
+- The **Clips** panel, a fader or its button, or a board button.
 - A typed command, such as `clip 1 go`.
 - A mapped MIDI or OSC control.
 - A timeline action at a point in a song.
