@@ -13,6 +13,7 @@
 | Cue part | A subset of cue programming with its own timing overrides. |
 | DMX route | A connection in Patch that carries DMX: from fixtures or console channels to an output, or from an input to fixtures, console channels, another output, or `disabled` to ignore it. |
 | Element | An independently addressable cell or part of a fixture. |
+| Fader | One numbered strip in the Clips panel's fader bank, with a level and a button, that a clip or master can be assigned to. MIDI and OSC controls map to it by number. |
 | Fixture | A patched light with a profile, operating mode, and optional DMX assignment. |
 | Fixture profile | The definition translating fixture attributes to the channels and ranges of a mode. |
 | Group | A reusable fixture selection, including its ordering. |

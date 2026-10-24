@@ -36,14 +36,14 @@ import {
 import { clips, dockApi } from "../../../state/appStores";
 import * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
-import { ClipControlsSection } from "../components/clip-controls-section";
 import { ClipEditorDialogs } from "../components/clip-editor-dialogs";
+import { ClipFadersSection } from "../components/clip-faders-section";
 import { ClipListToolbar } from "../components/clip-list-toolbar";
 import { ClipListView } from "../components/clip-list-view";
 import ClipProperties from "../components/clip-properties";
 import { toggleClipPlayback } from "../services/clip-commands";
-import { createClipControlsController } from "./clip-controls-controller";
 import { createClipCrudController } from "./clip-crud-controller";
+import { createClipFadersController } from "./clip-faders-controller";
 
 interface ClipListControllerProps {
   panelId: string;
@@ -71,7 +71,7 @@ export function ClipListController(props: ClipListControllerProps) {
 
   const selectedCount = createMemo(() => selectedClipUids().length);
   const selectedUidSet = createMemo(() => new Set(selectedClipUids()));
-  const controls = createClipControlsController(() => panelRootRef);
+  const faders = createClipFadersController(() => panelRootRef);
   const propertiesClipUid = createMemo(() => {
     if (selectedCount() === 1) {
       return selectedClipUids()[0] ?? null;
@@ -473,15 +473,15 @@ export function ClipListController(props: ClipListControllerProps) {
         onCancelCardLabelEdit={() => crud.setEditingCardLabelUid(null)}
       />
 
-      <ClipControlsSection
-        collapsed={controls.collapsed()}
-        transitioning={controls.transitioning()}
-        height={controls.height()}
-        visibleHeight={controls.visibleHeight()}
+      <ClipFadersSection
+        collapsed={faders.collapsed()}
+        transitioning={faders.transitioning()}
+        height={faders.height()}
+        visibleHeight={faders.visibleHeight()}
         clipStates={$clips}
-        onResizeStart={controls.handleResizeStart}
-        onResizeKeyDown={controls.handleResizeKeyDown}
-        onToggleCollapsed={controls.toggleCollapsed}
+        onResizeStart={faders.handleResizeStart}
+        onResizeKeyDown={faders.handleResizeKeyDown}
+        onToggleCollapsed={faders.toggleCollapsed}
       />
     </div>
   );

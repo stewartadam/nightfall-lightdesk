@@ -10,8 +10,7 @@ import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
-const CONTROLS_COLLAPSED_STORAGE_KEY =
-  "nightfall-clip-panel:controls-collapsed";
+const FADERS_COLLAPSED_STORAGE_KEY = "nightfall-clip-panel:faders-collapsed";
 
 type TargetChangeContext = {
   clipId: number;
@@ -32,7 +31,7 @@ async function openOwnedClipTargetChangeApp(
     // Collapsed controls leave the clip grid tall enough that its cards are
     // not covered by the scroll-edge indicators, which reject pointer input.
     window.localStorage.setItem(controlsCollapsedKey, "true");
-  }, CONTROLS_COLLAPSED_STORAGE_KEY);
+  }, FADERS_COLLAPSED_STORAGE_KEY);
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);

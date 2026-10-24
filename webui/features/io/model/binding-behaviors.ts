@@ -28,7 +28,7 @@ export function actionBehaviors(
  *
  * Follows the operator's usual intent rather than asking: a fader follows an absolute
  * action ("use the slider"), and a button drives an action built for held buttons when the
- * target offers one, such as a control slot's button, or else fires a trigger on press
+ * target offers one, such as a fader's button, or else fires a trigger on press
  * ("button on"). Release, Hold, and Flash stay one click away for operators who want them.
  */
 export function recommendedBinding<

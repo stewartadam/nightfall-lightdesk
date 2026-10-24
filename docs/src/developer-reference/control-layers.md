@@ -8,7 +8,7 @@ and whether it must be tracked, undoable, or bindable.
 |---|---|---|---|---|
 | **Action** | Named, described, bindable entry point (`ActionId` + typed arguments) | MIDI/OSC mappings, keybindings, timeline events, command palette | Through the command it lowers to | Through the command it lowers to |
 | **Command** (`IngressCommand`) | Wire-level user intent, such as `ClipCommand::GoClip` | Web UI JSON, the desk command language, actions | Yes (`CommandTracker`, `CommandResult`) | Yes, when the type is registered with `UndoRegistry` |
-| **Update** | Untracked continuous state, such as `ControlUpdate` | Web UI `sendUpdate`, absolute actions | No | No |
+| **Update** | Untracked continuous state, such as `FaderUpdate` | Web UI `sendUpdate`, absolute actions | No | No |
 | **Engine operation** (`EngineOperation`) | Resolved internal work, such as `ClipOperation::Start` | Command handlers and engine systems | Inherits the command's lifecycle, or is detached | At the operation stage, when registered |
 | **Message** | Internal Bevy notification | Engine systems | No | No |
 
@@ -44,7 +44,7 @@ controls can drive it:
 - `Momentary`: reacts to both press and release.
 - `Absolute`: consumes a normalized value from a fader or knob.
 
-Parameter kinds (`Clip`, `Master`, `Control`, `Timeline`, `Cue`, `Panel`,
+Parameter kinds (`Clip`, `Master`, `Fader`, `Timeline`, `Cue`, `Panel`,
 `Integer`, `Number`, `Text`) tell clients which picker to render and which UI
 target a click can capture.
 

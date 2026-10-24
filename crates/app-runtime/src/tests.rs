@@ -37,7 +37,7 @@ use nightfall_cues::prelude::{
 use nightfall_desk::{
     prelude::{
         FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
-        ToastLevel, UiNotification, UiNotificationState, control_level_action,
+        ToastLevel, UiNotification, UiNotificationState, fader_level_action,
     },
     resources::log_config::{LogConfig, TracingTarget},
 };
@@ -744,17 +744,17 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
 /// Verify sample faders reference the intended clips and survive the portable snapshot path.
 #[test]
 fn world_factory_sample_data_seeds_fader_assignments() {
-    use nightfall_desk::prelude::{ControlAssignment, ControlSlotConfig, Controls};
+    use nightfall_desk::prelude::{FaderAssignment, FaderConfig, Faders};
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
         .build(WorldBootstrap::SampleData {
             showfile_name: None,
         })
         .expect("sample world");
-    let assignments = app.world().resource::<Controls>().slot_configs();
+    let assignments = app.world().resource::<Faders>().fader_configs();
     assert_eq!(
         &assignments[..5],
-        &[1, 2, 100, 102, 30].map(|id| ControlSlotConfig::assigned(ControlAssignment::Clip(id)))
+        &[1, 2, 100, 102, 30].map(|id| FaderConfig::assigned(FaderAssignment::Clip(id)))
     );
     assert!(
         assignments[5..]
@@ -765,7 +765,7 @@ fn world_factory_sample_data_seeds_fader_assignments() {
     for id in [1, 2, 100, 102, 30] {
         assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
     }
-    assert_eq!(snapshot.control_slots, assignments);
+    assert_eq!(snapshot.faders, assignments);
 }
 
 /// Verifies every seeded cue stores resolved fixture refs, since the cue editor only
@@ -1362,7 +1362,7 @@ fn sample_data_build_seeds_default_midi_mapping() {
                     channel: 0,
                     controller: 36,
                 }
-            && mapping.action == control_level_action(1)
+            && mapping.action == fader_level_action(1)
     }));
 }
 
@@ -2443,17 +2443,17 @@ async fn automation_eval_action_expands_and_completes() {
     assert_eq!(outcome, Some(CommandOutcome::succeeded()));
 }
 
-/// Verifies a mapped control Go starts the control's assigned clip like the UI Go button.
+/// Verifies a mapped fader Go starts the fader's assigned clip like the UI Go button.
 #[tokio::test]
 async fn automation_control_go_starts_assigned_clip() {
     use nightfall_actions::{ActionInvocation, ActionSurface};
     use nightfall_clips::MaterializedClip;
-    use nightfall_desk::prelude::control_go_action;
+    use nightfall_desk::prelude::fader_go_action;
 
     let mut app = sample_app();
     let outcome = run_action(
         &mut app,
-        ActionInvocation::trigger(control_go_action(1), ActionSurface::Midi),
+        ActionInvocation::trigger(fader_go_action(1), ActionSurface::Midi),
     );
     app.update();
 
@@ -2461,7 +2461,7 @@ async fn automation_control_go_starts_assigned_clip() {
     let mut clips = app.world_mut().query::<&MaterializedClip>();
     assert!(
         clips.iter(app.world()).any(|clip| clip.clip_id == 1),
-        "control 1's clip should be running after Go"
+        "fader 1's clip should be running after Go"
     );
 }
 

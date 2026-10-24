@@ -22,11 +22,11 @@ pub(crate) struct ResyncSettingsParams<'w> {
     network_interface_state: Res<'w, NetworkInterfaceState>,
 }
 
-/// Resync state needed to send backend-owned control snapshots.
+/// Resync state needed to send backend-owned fader snapshots.
 #[derive(SystemParam)]
-pub(crate) struct ResyncControlParams<'w, 's> {
+pub(crate) struct ResyncFaderParams<'w, 's> {
     masters: Res<'w, DataProvider<Master>>,
-    controls: Res<'w, Controls>,
+    faders: Res<'w, Faders>,
     instance_index: Res<'w, InstanceIndex>,
     controls_query: Query<'w, 's, &'static InstanceControls>,
     held_buttons: Res<'w, HeldButtonEffects>,
@@ -43,7 +43,7 @@ pub(crate) fn handle_resync_state(
     mut layer_stack_publication: ResMut<LayerStackPublication>,
     instance_query: Query<super::instances::InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
-    control_params: ResyncControlParams,
+    fader_params: ResyncFaderParams,
     undo_manager: Res<UndoManager>,
     mut pending_ui_notifications: Option<ResMut<UiNotificationState>>,
     every_client: Res<ClientEventSink>,
@@ -53,23 +53,23 @@ pub(crate) fn handle_resync_state(
     };
 
     send_groups(group_data_provider, &broadcaster);
-    send_masters(&control_params.masters, &broadcaster);
+    send_masters(&fader_params.masters, &broadcaster);
     send_clips(exec_query, materialized_clips, &broadcaster);
     send_instances(
         instance_query,
         materialized_clips,
         exec_query,
-        &control_params.held_buttons,
+        &fader_params.held_buttons,
         &broadcaster,
     );
-    send_controls(
-        &control_params.controls,
+    send_faders(
+        &fader_params.faders,
         &exec_query,
-        &control_params.masters,
+        &fader_params.masters,
         &materialized_clips,
-        &control_params.instance_index,
-        &control_params.controls_query,
-        &control_params.held_buttons,
+        &fader_params.instance_index,
+        &fader_params.controls_query,
+        &fader_params.held_buttons,
         &broadcaster,
     );
     send_blueprints(blueprint_data_provider, &broadcaster);

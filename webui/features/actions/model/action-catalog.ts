@@ -124,8 +124,8 @@ export function formatArgument(
       return names.cue(normalizeActionUid(value)) ?? "Unknown cue";
     case "Panel":
       return names.panel(String(value)) ?? String(value);
-    case "Control":
-      return `Control ${value}`;
+    case "Fader":
+      return `Fader ${value}`;
     case "Integer":
     case "Number":
     case "Text":

@@ -38,7 +38,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "CommandNotice",
   "CommandResult",
   "ControllerMappingMode",
-  "Controls",
+  "Faders",
   "CueCommand",
   "CueDefinitionRemoved",
   "CueDefinitionUpdated",

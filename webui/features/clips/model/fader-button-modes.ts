@@ -6,43 +6,43 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { ControlButtonMode } from "../../../types";
+import { FaderButtonMode } from "../../../types";
 
-/** Display text for one control slot button mode. */
-export interface ControlButtonModeText {
-  /** Short label shown on the slot's button. */
+/** Display text for one fader button mode. */
+export interface FaderButtonModeText {
+  /** Short label shown on the fader's button. */
   label: string;
   /** One-line explanation shown in the mode picker and the button's tooltip. */
   description: string;
 }
 
 /** Labels and descriptions for every button mode the backend offers. */
-export const CONTROL_BUTTON_MODE_TEXT: Record<
-  ControlButtonMode,
-  ControlButtonModeText
+export const FADER_BUTTON_MODE_TEXT: Record<
+  FaderButtonMode,
+  FaderButtonModeText
 > = {
-  [ControlButtonMode.Go]: {
+  [FaderButtonMode.Go]: {
     label: "Go",
     description: "Start or advance the clip, or toggle the master",
   },
-  [ControlButtonMode.GoBack]: {
+  [FaderButtonMode.GoBack]: {
     label: "Back",
     description: "Step the running sequence back one cue",
   },
-  [ControlButtonMode.Flash]: {
+  [FaderButtonMode.Flash]: {
     label: "Flash",
     description: "Play the clip at full while held, or push the master to full",
   },
-  [ControlButtonMode.Swop]: {
+  [FaderButtonMode.Swop]: {
     label: "Swop",
     description:
       "Play the clip at full and take out every other playback while held",
   },
-  [ControlButtonMode.Toggle]: {
+  [FaderButtonMode.Toggle]: {
     label: "Toggle",
     description: "Start the clip, or stop it if it is running",
   },
-  [ControlButtonMode.Release]: {
+  [FaderButtonMode.Release]: {
     label: "Release",
     description: "Stop the running clip",
   },

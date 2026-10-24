@@ -46,11 +46,11 @@ function entry(
 }
 
 const catalog = [
-  entry("control.level", "Control level", "absolute" as types.ActionInputKind, [
+  entry("fader.level", "Fader level", "absolute" as types.ActionInputKind, [
     {
-      name: "control_index",
-      label: "Control",
-      kind: { type: "Control" },
+      name: "fader_index",
+      label: "Fader",
+      kind: { type: "Fader" },
       required: true,
     },
   ]),
@@ -84,11 +84,11 @@ test("formatActionReference renders catalog labels with resolved arguments", () 
   );
   assert.equal(
     formatActionReference(
-      { id: "control.level", arguments: { control_index: 4 } },
+      { id: "fader.level", arguments: { fader_index: 4 } },
       catalog,
       names,
     ),
-    "Control level: Control 4",
+    "Fader level: Fader 4",
   );
 });
 

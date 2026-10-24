@@ -123,9 +123,9 @@ pub fn send_instances(
     );
 }
 
-/// Send backend-owned controls to UI
-pub fn send_controls(
-    controls: &Controls,
+/// Send backend-owned faders to UI
+pub fn send_faders(
+    faders: &Faders,
     clips: &Query<&Clip>,
     masters: &DataProvider<Master>,
     materialized_clips: &Query<&MaterializedClip>,
@@ -134,7 +134,7 @@ pub fn send_controls(
     held_buttons: &HeldButtonEffects,
     broadcaster: &ClientEventSink,
 ) {
-    let snapshots = controls.snapshots(
+    let snapshots = faders.snapshots(
         clips,
         masters,
         materialized_clips,
@@ -144,12 +144,12 @@ pub fn send_controls(
     );
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::Controls(&snapshots),
+        &DeskWsMessage::Faders(&snapshots),
     );
-    tracing::trace!("Sending {} controls to websocket clients", snapshots.len());
+    tracing::trace!("Sending {} faders to websocket clients", snapshots.len());
 }
 
-/// Send instances when they spawn, despawn, stop, or update metadata/controls.
+/// Send instances when they spawn, despawn, stop, or update metadata/faders.
 pub fn send_instances_on_change(
     instance_query: Query<InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
@@ -187,9 +187,9 @@ pub fn send_instances_on_change(
     );
 }
 
-/// Send controls when backend-owned state or linked playback state changes.
-pub fn send_controls_on_change(
-    controls: Res<Controls>,
+/// Send faders when backend-owned state or linked playback state changes.
+pub fn send_faders_on_change(
+    faders: Res<Faders>,
     clips: Query<&Clip>,
     masters: Res<DataProvider<Master>>,
     materialized_clips: Query<&MaterializedClip>,
@@ -205,7 +205,7 @@ pub fn send_controls_on_change(
     removed_materialized_clips.clear();
     let materialized_changed = !added_materialized_clips.is_empty() || materialized_removed;
 
-    if !controls.is_changed()
+    if !faders.is_changed()
         && !masters.is_changed()
         && changed_instance_controls.is_empty()
         && !materialized_changed
@@ -214,8 +214,8 @@ pub fn send_controls_on_change(
         return;
     }
 
-    send_controls(
-        &controls,
+    send_faders(
+        &faders,
         &clips,
         &masters,
         &materialized_clips,

@@ -35,7 +35,7 @@ test("recommendedBinding follows faders and presses buttons", () => {
 });
 
 /**
- * Verifies a button is suggested to hold a momentary action, such as a control slot's
+ * Verifies a button is suggested to hold a momentary action, such as a fader's
  * button, over a trigger listed before it, while a fader still follows the level.
  */
 test("recommendedBinding prefers momentary actions for buttons", () => {
