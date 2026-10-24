@@ -13,6 +13,7 @@ import {
   createMemo,
   createSignal,
   For,
+  on,
   onCleanup,
   Show,
   untrack,
@@ -60,6 +61,7 @@ import { GuideContentItem } from "./guide-content";
 import { GuideTarget, whenTargetSettles } from "./guide-target";
 import {
   enterLessonLayout,
+  fallbackReturnLayoutId,
   findLessonLayoutId,
   LESSON_LAYOUT_NAME,
   leaveLessonLayout,
@@ -191,21 +193,41 @@ export default function WelcomeGuide() {
   let returning = false;
   /**
    * Switches back to the layout the user had before lessons began, if the guide switched away from it.
-   * Ignores repeated requests while a switch is already running.
+   * When that layout is unknown or gone while the Lesson layout is showing, falls back to the user's
+   * first saved layout so they are never left in Lesson. Ignores repeated requests while a switch runs.
    */
   const returnToLayout = async () => {
     const api = dockviewApi();
-    const id = guideReturnLayoutId.get();
-    if (!api || !id || returning) return;
+    if (!api || returning) return;
+    const inLesson =
+      activeLayoutId.get() !== null &&
+      activeLayoutId.get() === findLessonLayoutId();
+    const remembered = guideReturnLayoutId.get();
+    if (!remembered && !inLesson) return;
     returning = true;
     try {
-      if (id === activeLayoutId.get() || (await leaveLessonLayout(api, id)))
-        guideReturnLayoutId.set(null);
-      else pushToast("error", "Could not switch back to your layout.");
+      const fallback = inLesson ? fallbackReturnLayoutId() : undefined;
+      const left =
+        remembered === activeLayoutId.get() ||
+        (remembered !== null && (await leaveLessonLayout(api, remembered))) ||
+        (fallback !== undefined && (await leaveLessonLayout(api, fallback)));
+      if (left) guideReturnLayoutId.set(null);
+      else if (inLesson)
+        pushToast("error", "Could not switch back to your layout.");
     } finally {
       returning = false;
     }
   };
+  /** Leaves the Lesson layout and removes it whenever a lesson ends, whether finished, exited or replaced by the menu. */
+  createEffect(
+    on(
+      lessonId,
+      (id, previous) => {
+        if (previous && !id) void returnToLayout().then(removeLessonLayout);
+      },
+      { defer: true },
+    ),
+  );
   const [workspace, setWorkspace] = createSignal<GuidePanelSnapshot>({
     panels: [],
   });
@@ -221,8 +243,15 @@ export default function WelcomeGuide() {
   /** Identifies a panel for prerequisite tracking, telling timeline editors apart. */
   const panelKeys = (panel: GuidePanel) => [
     panel.component,
-    ...(panel.timelineUid ? [`timeline:${panel.timelineUid}`] : []),
+    ...(panel.timelineUid
+      ? [`timeline:${normalizeTimelineUid(panel.timelineUid)}`]
+      : []),
   ];
+  /** Keys the sample timeline's editor the same way panelKeys does, whichever uid form the store uses. */
+  const sampleTimelineKey = createMemo(() => {
+    const uid = sampleTimeline()?.identifiers.uid;
+    return uid ? `timeline:${normalizeTimelineUid(uid)}` : undefined;
+  });
   /** Lists active panels that something else currently covers, which keeps their prerequisite unmet. */
   const coveredPanels = createMemo(
     () =>
@@ -265,18 +294,20 @@ export default function WelcomeGuide() {
     visiblePanels().some((panel) => panel.component === name);
   /** Distinguishes the sample timeline from other open timeline editors. */
   const timelineVisible = () =>
-    visiblePanels().some(
-      (panel) =>
+    visiblePanels().some((panel) => {
+      const key = sampleTimelineKey();
+      return (
         panel.component === "Timeline" &&
-        panel.timelineUid === sampleTimeline()?.identifiers.uid,
-    );
+        key !== undefined &&
+        panelKeys(panel).includes(key)
+      );
+    });
   /** Accepts a panel shown during this step that nothing currently covers. */
   const panelReady = (key: string) =>
     visitedPanels().has(key) && !coveredPanels().has(key);
   /** Requires every panel in a prerequisite block before revealing subsequent content. */
   const prerequisiteReady = (item: GuidePrerequisite) =>
-    (!item.sampleTimeline ||
-      panelReady(`timeline:${sampleTimeline()?.identifiers.uid}`)) &&
+    (!item.sampleTimeline || panelReady(sampleTimelineKey() ?? "timeline:")) &&
     (item.panels ?? []).every(panelReady);
   /** Stops the rendered sequence at the first unmet prerequisite. */
   const content = createMemo(() =>
@@ -320,7 +351,7 @@ export default function WelcomeGuide() {
     );
     if (!item) return undefined;
     const timeline = sampleTimeline();
-    const timelineKey = `timeline:${timeline?.identifiers.uid}`;
+    const timelineKey = sampleTimelineKey() ?? "timeline:";
     const pending =
       item.sampleTimeline && !panelReady(timelineKey)
         ? workspace().panels.find((panel) =>
@@ -582,13 +613,17 @@ export default function WelcomeGuide() {
     () => programmerSelectionList().length > 0 || programmerRows().length > 0,
   );
 
-  /** Records lesson completion only when the user explicitly finishes the lesson, then restores their own layout and removes the Lesson layout. */
+  /** Records lesson completion only when the user explicitly finishes the lesson; ending it restores their own layout. */
   const finish = () => {
     const id = lessonId();
     if (id && !completed().includes(id))
       guideCompleted.set([...completed(), id]);
     guideLessonId.set(null);
-    void returnToLayout().then(removeLessonLayout);
+  };
+  /** Ends any running lesson and hides the guide; reopening it always shows the lesson menu. */
+  const exit = () => {
+    guideLessonId.set(null);
+    closeWelcomeGuide();
   };
 
   /** Observes the current step from its start, so actions finished while prerequisites settle still count. */
@@ -645,6 +680,7 @@ export default function WelcomeGuide() {
    */
   createEffect(() => {
     if (!opened() || !floatingCard()) return;
+    /** Moves the card into the frontmost open dialog, or back to the page once none is open. */
     const update = () => {
       const next = overlayHost();
       if (next !== untrack(cardHost)) setCardHost(next);
@@ -704,11 +740,7 @@ export default function WelcomeGuide() {
           </Show>
         </div>
         <div class="nf-guide-header-actions">
-          <Button
-            size="compact"
-            onClick={closeWelcomeGuide}
-            aria-label="Exit welcome guide"
-          >
+          <Button size="compact" onClick={exit} aria-label="Exit welcome guide">
             Exit
           </Button>
         </div>

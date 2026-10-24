@@ -333,9 +333,14 @@ test("Stop guidance prefers above the timeline", async ({ page }, testInfo) => {
       return card.y + card.height <= target.y;
     })
     .toBe(true);
-  const card = (await guide.boundingBox())!;
-  const target = (await stop.boundingBox())!;
-  expect(card.x + card.width / 2).toBeCloseTo(target.x + target.width / 2, 0);
+  // The card can briefly keep its pre-move offset, so wait for it to center over Stop.
+  await expect
+    .poll(async () => {
+      const card = (await guide.boundingBox())!;
+      const target = (await stop.boundingBox())!;
+      return Math.abs(card.x + card.width / 2 - (target.x + target.width / 2));
+    })
+    .toBeLessThan(0.5);
   await page.screenshot({ path: testInfo.outputPath("guide-stop-above.png") });
 });
 
@@ -1082,5 +1087,24 @@ test("finishing a lesson restores the user's layout and removes the Lesson layou
   await expect(
     activeLayout(page).locator('[data-component="ClipList"]'),
   ).toBeVisible();
+  await expect(lessonLayout).toHaveCount(0);
+});
+
+/** Exiting mid-lesson ends it like finishing does, so the user is never left in the Lesson layout. */
+test("exiting a lesson restores the user's layout and removes the Lesson layout", async ({
+  page,
+}) => {
+  await openSample(page);
+  const userLayout = page.getByRole("button", { name: /^Layout 1: / });
+  const lessonLayout = page.getByRole("button", {
+    name: /^Layout \d+: Lesson$/,
+  });
+  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  const guide = page.getByTestId("welcome-guide");
+  await openLesson(guide, /Welcome to Nightfall/);
+  await expect(lessonLayout).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Exit welcome guide" }).click();
+  await expect(guide).toBeHidden();
+  await expect(userLayout).toHaveAttribute("aria-pressed", "true");
   await expect(lessonLayout).toHaveCount(0);
 });
