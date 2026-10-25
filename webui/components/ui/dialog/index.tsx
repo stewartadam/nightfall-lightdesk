@@ -55,6 +55,12 @@ export interface DialogProps {
   onDismiss?: () => void;
   /** Default action run by Enter when focus has no Enter behavior of its own. */
   onSubmit?: () => void;
+  /**
+   * Lets Escape dismiss a `required` dialog without adding a close button or
+   * outside-click dismissal, for blocking notices that may hide content the
+   * user needs to read underneath.
+   */
+  dismissOnEscape?: boolean;
   /** Locks every dismissal path and the default action while work cannot be cancelled. */
   busy?: boolean;
   /** Accessible name for the header close button. */
@@ -86,12 +92,19 @@ export function Dialog(props: DialogProps) {
   const dismiss = () => {
     if (canDismiss()) props.onDismiss?.();
   };
+  /** Reports whether Escape may close the dialog, which `dismissOnEscape` extends to required dialogs. */
+  const canEscape = () =>
+    canDismiss() || (!!props.dismissOnEscape && !props.busy);
+  /** Closes through the caller's handler when Escape is allowed to dismiss. */
+  const dismissFromEscape = () => {
+    if (canEscape()) props.onDismiss?.();
+  };
   return (
     <Modal
       isOpen={props.isOpen}
       usePortal={props.usePortal}
-      onEscape={dismiss}
-      closeOnEscape={canDismiss()}
+      onEscape={dismissFromEscape}
+      closeOnEscape={canEscape()}
       blockBackgroundKeys={props.blockBackgroundKeys}
       onEnter={
         props.onSubmit
