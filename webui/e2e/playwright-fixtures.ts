@@ -162,6 +162,7 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
               name: "nightfall.e2eAutoOpenStartupShowfile",
               value: "default",
             },
+            { name: "nightfall.guide.v1.dismissed", value: "true" },
           ],
         },
       ],

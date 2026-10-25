@@ -55,7 +55,8 @@ test("settings, tile and timeline menus share their visual treatment", async ({
   const labels = (await dropdown.getByRole("button").allInnerTexts()).map(
     (text) => text.split("\n")[0].trim(),
   );
-  expect(labels.slice(-6)).toEqual([
+  expect(labels.slice(-7)).toEqual([
+    "Welcome Guide",
     "User Guide",
     "Give Feedback",
     "Troubleshooting",

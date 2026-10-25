@@ -50,6 +50,7 @@ fn project_links() -> Result<ProjectLinks, String> {
 }
 
 const MENU_ID_APP_FEEDBACK: &str = "app.feedback";
+const MENU_ID_APP_WELCOME_GUIDE: &str = "app.welcome_guide";
 const MENU_ID_APP_REPORT_BUG: &str = "app.report_bug";
 const MENU_ID_APP_DIAGNOSTICS: &str = "app.diagnostics";
 const MENU_ACTION_EVENT: &str = "nightfall:menu-action";
@@ -505,7 +506,7 @@ pub(super) fn build_troubleshooting_menu<R: Runtime>(
         .build()
 }
 
-/// Build the native Help menu with the user guide, feedback, and troubleshooting.
+/// Build the native Help menu with the welcome guide, user guide, feedback, and troubleshooting.
 pub(super) fn build_help_menu<R: Runtime>(
     app: &tauri::AppHandle<R>,
     use_platform_id: bool,
@@ -516,6 +517,12 @@ pub(super) fn build_help_menu<R: Runtime>(
     } else {
         SubmenuBuilder::new(app, "Help")
     }
+    .item(&menu_item(
+        app,
+        MENU_ID_APP_WELCOME_GUIDE,
+        "Welcome Guide",
+        None,
+    )?)
     .item(&menu_item(
         app,
         MENU_ID_APP_DOCUMENTATION,
@@ -811,6 +818,7 @@ pub(super) fn dispatch_menu_action<R: Runtime + 'static>(
             Ok(())
         }
         MENU_ID_APP_ABOUT
+        | MENU_ID_APP_WELCOME_GUIDE
         | MENU_ID_APP_REPORT_BUG
         | MENU_ID_APP_DIAGNOSTICS
         | MENU_ID_APP_SETTINGS

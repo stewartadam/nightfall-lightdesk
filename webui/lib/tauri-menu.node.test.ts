@@ -25,6 +25,18 @@ test("native Export Showfile dispatches independently of Save", () => {
   assert.deepEqual(calls, ["export"]);
 });
 
+/** The native Help menu's Welcome Guide item opens the guide. */
+test("handleTauriMenuAction opens the welcome guide", () => {
+  const calls: string[] = [];
+
+  handleTauriMenuAction(TAURI_MENU_ACTIONS.welcomeGuide, {
+    openAbout: () => calls.push("about"),
+    openWelcomeGuide: () => calls.push("welcome-guide"),
+  });
+
+  assert.deepEqual(calls, ["welcome-guide"]);
+});
+
 /** Native menu actions reach the matching shell handler. */
 test("handleTauriMenuAction dispatches supported menu actions", () => {
   const calls: string[] = [];

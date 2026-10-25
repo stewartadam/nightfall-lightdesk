@@ -2288,3 +2288,39 @@ test("command steps focus the command input", async ({ page }) => {
     "",
   );
 });
+
+/** First launch shows the invitation; dismissing it hides it and the app menu still opens the guide. */
+test("first launch invites the user and Help reopens the guide", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("nightfall.e2e.guideReset")) {
+      sessionStorage.setItem("nightfall.e2e.guideReset", "1");
+      localStorage.removeItem("nightfall.guide.v1.dismissed");
+    }
+  });
+  await openSample(page);
+  const invitation = page.getByRole("complementary", {
+    name: "Welcome to Nightfall",
+  });
+  await expect(invitation).toContainText("New to Nightfall?");
+  await page.screenshot({
+    path: testInfo.outputPath("guide-first-launch-invitation.png"),
+  });
+  await invitation.getByRole("button", { name: "Explore on my own" }).click();
+  await expect(invitation).toHaveCount(0);
+  await page.reload();
+  await waitForDockviewApp(page);
+  await expect(invitation).toHaveCount(0);
+
+  await page.locator('[title="Menu"]').click();
+  const welcomeItem = page
+    .locator('[data-menu-kind="dropdown"]')
+    .getByRole("button", { name: "Welcome Guide" });
+  await expect(welcomeItem).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("guide-app-menu-entry.png"),
+  });
+  await welcomeItem.click();
+  await expect(page.getByTestId("welcome-guide")).toBeVisible();
+});
