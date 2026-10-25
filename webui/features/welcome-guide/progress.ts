@@ -46,6 +46,8 @@ export type GuideObservation =
       step: PatchWizardStep;
       /** Library model the wizard must have chosen, when the step names one. */
       model?: string;
+      /** Fixture mode the wizard must have chosen, when the step names one. */
+      mode?: string;
       quantity?: number;
       firstFixtureId?: number;
       /** Console universe the wizard must assign, which also requires Assign Console DMX. */
@@ -102,6 +104,7 @@ export interface GuideSnapshot {
   patchWizard?: {
     step: PatchWizardStep;
     model?: string;
+    mode?: string;
     quantity: number;
     firstFixtureId: number;
     /** Console universe the fixtures will be patched to, or null without Assign Console DMX. */
@@ -289,6 +292,7 @@ export function guideCompletionToken(
         wizard.step === observation.step &&
         (observation.model === undefined ||
           wizard.model === observation.model) &&
+        (observation.mode === undefined || wizard.mode === observation.mode) &&
         (observation.quantity === undefined ||
           wizard.quantity === observation.quantity) &&
         (observation.firstFixtureId === undefined ||

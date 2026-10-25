@@ -724,6 +724,13 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
    * each request once, within the reveal window.
    */
   let handledRevealId: number | undefined;
+  /** Numbers this view's scroll requests so the grid acts on each one. */
+  let scrollRequestId = 0;
+  /** Asks the grid to scroll a row into view in the given column, under a fresh request id. */
+  const scrollToRow = (column: number, row: number) => {
+    scrollRequestId += 1;
+    setScrollRequest({ cell: [column, row], requestId: scrollRequestId });
+  };
   /**
    * Scrolls to the fixtures Patch was asked to reveal, selecting them when requested, once all of
    * them have arrived. Rows hidden by a filter are skipped, and expired requests are dropped.
@@ -757,12 +764,12 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
       displayColumns().findIndex((entry) => entry.id === request.column),
     );
     // The grid lays out newly arrived rows on the next frame; scrolling sooner clamps short of them.
-    requestAnimationFrame(() =>
-      setScrollRequest({
-        cell: [column, indices[0]],
-        requestId: request.requestId,
-      }),
-    );
+    // Scrolling to the last fixture and then the first shows the whole range when it fits, and
+    // otherwise keeps the first fixture in view.
+    requestAnimationFrame(() => {
+      scrollToRow(column, indices[indices.length - 1]);
+      requestAnimationFrame(() => scrollToRow(column, indices[0]));
+    });
   });
 
   createEffect(() => {

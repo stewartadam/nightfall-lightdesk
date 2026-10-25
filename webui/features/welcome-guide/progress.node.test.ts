@@ -282,6 +282,11 @@ test("guide observes the Add fixture wizard and the fixtures it patches", () => 
   assert.equal(guideCompletionToken(mode, state), "");
   state.patchWizard.model = "12-segment RGBW Bar";
   assert.equal(guideCompletionToken(mode, state), "mode-selection");
+  const single = { ...mode, mode: "Single" } as const;
+  state.patchWizard.mode = "Segments";
+  assert.equal(guideCompletionToken(single, state), "");
+  state.patchWizard.mode = "Single";
+  assert.equal(guideCompletionToken(single, state), "mode-selection");
   state.patchWizard = { ...state.patchWizard, step: "review", quantity: 2 };
   assert.equal(guideCompletionToken(review, state), "");
   state.patchWizard.firstFixtureId = 701;

@@ -927,8 +927,8 @@ fn test_fixture_placement_combined_conversion() {
 // Store Fixture Command Tests
 #[test]
 fn test_store_fixture_rgbw_bar_conversion() {
-    let ast = generate_ast("store fix 1 \"Generic\" \"12-segment RGBW Bar\" RGBW")
-        .expect("Failed to parse 'store fix 1 \"Generic\" \"12-segment RGBW Bar\" RGBW'");
+    let ast = generate_ast("store fix 1 \"Generic\" \"12-segment RGBW Bar\" Segments")
+        .expect("Failed to parse 'store fix 1 \"Generic\" \"12-segment RGBW Bar\" Segments'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
@@ -966,7 +966,7 @@ fn test_store_fixture_rgbw_bar_conversion() {
 /// Verifies fixture store ranges instantiate the requested fixture for each ID.
 #[test]
 fn test_store_fixture_range_conversion() {
-    let ast = generate_ast("store fix 1>3 \"Generic\" \"12-segment RGBW Bar\" RGBW")
+    let ast = generate_ast("store fix 1>3 \"Generic\" \"12-segment RGBW Bar\" Segments")
         .expect("Failed to parse fixture store range");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 
