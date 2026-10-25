@@ -113,3 +113,6 @@ debug = true
 
 [workspace.lints.clippy]
 collapsible_if = { level = "allow", priority = 0 }
+
+[patch.crates-io]
+gdtf = { git = "https://github.com/stewartadam/gdtf-rs", rev = "8f84434c99b252501efc0d9e30bce8bd7999bba3" }

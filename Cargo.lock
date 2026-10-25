@@ -3434,8 +3434,7 @@ dependencies = [
 [[package]]
 name = "gdtf"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b2e57ee0756c8ddeb1bce03f4ce3fdb1b7b81efddd31e96fe92278acd147b7c"
+source = "git+https://github.com/stewartadam/gdtf-rs?rev=8f84434c99b252501efc0d9e30bce8bd7999bba3#8f84434c99b252501efc0d9e30bce8bd7999bba3"
 dependencies = [
  "quick-xml 0.41.0",
  "serde",
@@ -5540,6 +5539,7 @@ dependencies = [
  "open-fixture-library",
  "quick-xml 0.42.0",
  "serde",
+ "serde_ignored",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
@@ -6307,6 +6307,7 @@ dependencies = [
  "phf_shared",
  "proc-macro2",
  "pulley-interpreter",
+ "quick-xml 0.42.0",
  "rand 0.10.3",
  "regex",
  "regex-automata",
@@ -7573,6 +7574,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -8561,6 +8563,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
