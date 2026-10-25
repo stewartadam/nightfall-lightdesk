@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from "uuid";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
+  type DataGridEditCommitContext,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -55,6 +56,10 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { useSharedStore } from "../../../lib/use-shared-store";
+import {
+  fanNumbersByColumn,
+  parseNumericFanInput,
+} from "../../../lib/value-fan";
 import {
   orderedUidListsEqual,
   replaceFixtureUidsInSelection,
@@ -321,6 +326,12 @@ function isNoopEdit(columnId: string, row: FixtureRow, value: number): boolean {
   );
 }
 
+/** Returns whether a column edits a fixture's position or rotation. */
+function isPlacementColumn(columnId: string): boolean {
+  const { position, rotation } = buildPlacementUpdate(columnId, 0);
+  return position !== undefined || rotation !== undefined;
+}
+
 function buildPlacementUpdate(
   columnId: string,
   value: number,
@@ -560,9 +571,16 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     event.preventDefault();
   };
 
+  /**
+   * Applies placement edits to fixtures in one batch. When `useSelection` is
+   * set, each edit expands to the selected rows of its column. Numeric fan
+   * input such as `0>3` is spread across each column's target rows in table
+   * order; other input applies the edited value to every target.
+   */
   const applyPlacementEdits = (
     edits: readonly DataGridCellEdit[],
     useSelection: boolean,
+    inputValue?: string,
   ) => {
     const startMs = performance.now();
     const rowData = displayRows();
@@ -570,60 +588,59 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     const fixtureMap = fixtures.get();
     let nextFixtureMap: typeof fixtureMap | null = null;
     const updates: types.FixturePlacementUpdateEntry[] = [];
-    let rowsSelected = 0;
 
+    const targets: { cell: Item; columnId: string; value: number }[] = [];
     for (const edit of edits) {
       const [col, row] = edit.cell;
       const columnId = displayColumns()[col]?.id;
-      if (!columnId) continue;
+      if (!columnId || !isPlacementColumn(columnId)) continue;
 
       const value = parseEditedNumber(edit.newValue);
-      if (value === null) {
-        continue;
-      }
-
-      if (row >= rowData.length) {
-        continue;
-      }
-
-      const { position, rotation } = buildPlacementUpdate(columnId, value);
-      if (!position && !rotation) {
-        continue;
-      }
+      if (value === null || row >= rowData.length) continue;
 
       const rowsToEdit = useSelection
         ? getRowsToEdit(selection(), col, row, rowData.length)
         : [row];
-      rowsSelected += rowsToEdit.length;
-
       for (const targetRow of rowsToEdit) {
-        const fixtureRow = rowData[targetRow];
-        if (!fixtureRow) continue;
-
-        if (isNoopEdit(columnId, fixtureRow, value)) {
-          continue;
-        }
-
-        const fixture =
-          nextFixtureMap?.[fixtureRow.uid] ?? fixtureMap[fixtureRow.uid];
-        if (!fixture) continue;
-
-        const updatedFixture = applyPlacementUpdate(
-          fixture,
-          position,
-          rotation,
-        );
-        if (!nextFixtureMap) {
-          nextFixtureMap = { ...fixtureMap };
-        }
-        nextFixtureMap[fixtureRow.uid] = updatedFixture;
-        updates.push({
-          id: fixtureRow.id,
-          position,
-          rotation,
-        });
+        targets.push({ cell: [col, targetRow], columnId, value });
       }
     }
+    const fanWaypoints =
+      inputValue === undefined ? null : parseNumericFanInput(inputValue);
+    const fanValues = fanWaypoints
+      ? fanNumbersByColumn(
+          targets.map((target) => target.cell),
+          fanWaypoints,
+        )
+      : null;
+
+    for (const [targetIndex, { cell, columnId, value }] of targets.entries()) {
+      const fixtureRow = rowData[cell[1]];
+      const targetValue = fanValues?.[targetIndex] ?? value;
+      if (!fixtureRow || isNoopEdit(columnId, fixtureRow, targetValue)) {
+        continue;
+      }
+
+      const { position, rotation } = buildPlacementUpdate(
+        columnId,
+        targetValue,
+      );
+      const fixture =
+        nextFixtureMap?.[fixtureRow.uid] ?? fixtureMap[fixtureRow.uid];
+      if (!fixture) continue;
+
+      const updatedFixture = applyPlacementUpdate(fixture, position, rotation);
+      if (!nextFixtureMap) {
+        nextFixtureMap = { ...fixtureMap };
+      }
+      nextFixtureMap[fixtureRow.uid] = updatedFixture;
+      updates.push({
+        id: fixtureRow.id,
+        position,
+        rotation,
+      });
+    }
+    const rowsSelected = targets.length;
 
     if (updates.length === 0) {
       const totalMs = performance.now() - startMs;
@@ -644,12 +661,27 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     );
   };
 
-  const handleCellEdited = (cell: Item, newValue: GridCell) => {
-    applyPlacementEdits([{ cell, newValue }], true);
+  /** Applies a single typed edit to every selected fixture row. */
+  const handleCellEdited = (
+    cell: Item,
+    newValue: GridCell,
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    applyPlacementEdits([{ cell, newValue }], true, context?.inputValue);
   };
 
-  const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {
-    applyPlacementEdits(edits, false);
+  /** Applies a multi-cell range or paste edit as one placement batch. */
+  const handleCellsEdited = (
+    edits: readonly DataGridCellEdit[],
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    applyPlacementEdits(
+      edits,
+      false,
+      context?.inputValue ?? edits[0]?.inputValue,
+    );
   };
 
   const deleteSelectedFixtures = () => {
