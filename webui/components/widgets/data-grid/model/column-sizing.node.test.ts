@@ -64,7 +64,7 @@ test("sizeColumnsToContent measures all provider rows and preserves fixed column
     nestedColumnGroups: false,
   });
 
-  assert.equal(sized[0]?.width, 146);
+  assert.equal(sized[0]?.width, 147);
   assert.equal(sized[1]?.width, 75);
 });
 
@@ -142,7 +142,7 @@ test("sizeColumnsToContent uses custom renderer measurements", () => {
     nestedColumnGroups: false,
   });
 
-  assert.equal(sized[0]?.width, 275);
+  assert.equal(sized[0]?.width, 276);
 });
 
 /** Verifies rich extensions measure the text and chrome they render instead of copy data. */
@@ -179,7 +179,7 @@ test("sizeColumnsToContent uses rich cell extension measurements", () => {
     nestedColumnGroups: false,
   });
 
-  assert.equal(sized[0]?.width, 226);
+  assert.equal(sized[0]?.width, 227);
 });
 
 /**
@@ -220,6 +220,6 @@ test("sizeColumnsToContent reserves both sides for floating boolean indicators",
     nestedColumnGroups: false,
   });
 
-  assert.equal(sized[0]?.width, 66);
-  assert.equal(sized[1]?.width, 98);
+  assert.equal(sized[0]?.width, 67);
+  assert.equal(sized[1]?.width, 99);
 });

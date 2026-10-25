@@ -623,6 +623,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
           }}
         />
         <Tooltip
+          class="absolute top-0 left-0"
           content={() => conflictTooltip()?.content ?? ""}
           position="bottom"
           anchorRect={() => conflictTooltip()?.anchorRect}

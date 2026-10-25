@@ -372,6 +372,7 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
           }}
         />
         <Tooltip
+          class="absolute top-0 left-0"
           content={() => conflictTooltip()?.content ?? ""}
           position="bottom"
           anchorRect={() => conflictTooltip()?.anchorRect}

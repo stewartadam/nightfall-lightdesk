@@ -58,8 +58,8 @@ export const dataGridDarkTheme = {
 
   headerFontStyle: "bold 14px",
   baseFontStyle: "13px",
-  fontFamily:
-    "Inter, Roboto, -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Ubuntu, noto, arial, sans-serif",
+  // Matches --font-sans in styles/theme.css, so canvas-measured column widths fit the DOM text.
+  fontFamily: `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`,
   cellHorizontalPadding: 8,
   checkboxMaxSize: 18,
 };

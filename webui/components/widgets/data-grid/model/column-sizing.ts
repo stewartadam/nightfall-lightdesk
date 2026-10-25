@@ -35,6 +35,8 @@ import type { DataGridRichCellExtension } from "./types";
 const DEFAULT_MIN_COLUMN_WIDTH = 36;
 const DEFAULT_MAX_COLUMN_WIDTH = 400;
 const CELL_HORIZONTAL_PADDING = 16;
+/** Right border every body cell draws inside its width, which text cannot use. */
+const CELL_BORDER_WIDTH = 1;
 const CELL_CONTENT_GAP = 4;
 const PREFIX_BADGE_WIDTH = 18;
 const BOOLEAN_CONTROL_WIDTH = 18;
@@ -330,7 +332,9 @@ export function sizeColumnsToContent(
     }
     widths[columnIndex] = clampContentWidth(
       column,
-      widest > 0 ? widest : (column.width ?? DEFAULT_MIN_COLUMN_WIDTH),
+      widest > 0
+        ? widest + CELL_BORDER_WIDTH
+        : (column.width ?? DEFAULT_MIN_COLUMN_WIDTH),
     );
   }
 

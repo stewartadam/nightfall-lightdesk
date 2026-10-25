@@ -33,6 +33,7 @@ import {
   requestDmxRouteNavigation,
   routeValidationSettings,
 } from "../../../state/appStores";
+import { ROUTE_VALIDATION_SETTING } from "../../../state/settings-request";
 import PatchFixtureListTab from "../components/fixture-list-tab";
 import PatchFixturesTab from "../components/fixtures-tab";
 import DmxRoutesTab from "../components/routes-tab";
@@ -192,7 +193,7 @@ export default function PatchPanel(props: PatchPanelProps) {
 
   return (
     <div
-      class="flex flex-col h-full"
+      class="flex h-full flex-col overflow-hidden"
       data-panel-kind="patch"
       data-panel-id={props.id}
     >
@@ -280,7 +281,12 @@ export default function PatchPanel(props: PatchPanelProps) {
                 size="labeled"
                 label={validationModeLabel()}
                 tooltip={validationModeTooltip()}
-                onClick={openSettings}
+                onClick={() =>
+                  openSettings({
+                    tab: "general",
+                    setting: ROUTE_VALIDATION_SETTING,
+                  })
+                }
               >
                 {validationModeLabel()}
               </ToolbarButton>

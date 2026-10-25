@@ -45,6 +45,8 @@ interface SettingsRowProps {
   details?: JSX.Element;
   /** Extra words a settings search finds this row by, beyond its title and description. */
   keywords?: string;
+  /** Key other surfaces pass to `openSettings` to open Settings with this row's control focused. */
+  setting?: string;
   class?: string;
   "data-testid"?: string;
   /** Renders the control, given the ids that tie it to the row's title and description. */
@@ -79,6 +81,7 @@ export function SettingsRow(props: SettingsRowProps) {
     <div
       class={`nf-settings-row ${props.class ?? ""}`}
       data-testid={props["data-testid"]}
+      data-setting={props.setting}
       hidden={!visible()}
     >
       <div class="nf-settings-row-text">

@@ -12,7 +12,6 @@ import { useAppShell } from "../../components/providers/app-shell";
 import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
 import { setTelemetryConsent } from "./privacy-settings";
-import { requestSettingsTab } from "./settings-tab-request";
 
 /**
  * Asks once per page load whether this computer may send anonymous reports. Nothing is shared
@@ -55,8 +54,7 @@ export function TelemetryConsentPrompt() {
           label: "Customize",
           dismissOnClick: false,
           onClick: () => {
-            requestSettingsTab("privacy");
-            openSettings();
+            openSettings({ tab: "privacy" });
           },
         },
       ],
