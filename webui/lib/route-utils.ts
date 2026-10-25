@@ -449,6 +449,50 @@ function groupConsoleLocations(
   return locations;
 }
 
+/** Console channels one fixture spans in one console universe, first to last patched byte. */
+export type ConsoleFixtureSpan = {
+  uid: string;
+  universe: number;
+  start: number;
+  end: number;
+};
+
+/**
+ * Lists the console channels each fixture spans per console universe, from its first to
+ * its last patched byte, so footprint gaps between parameters count as used.
+ *
+ * Addresses come from the same priority-ordered console layout as the patch map, so a
+ * parameter patched by several routes only counts where the winning route puts it.
+ */
+export function collectConsoleFixtureSpans(
+  snapshot: types.RoutesSnapshot,
+  fixtures: Record<string, types.Fixture>,
+): ConsoleFixtureSpan[] {
+  const spans = new Map<string, ConsoleFixtureSpan>();
+  for (const parameter of resolveConsoleAddresses(
+    snapshot,
+    fixtures,
+  ).values()) {
+    if (parameter.addresses.length === 0) continue;
+    const start = Math.min(...parameter.addresses);
+    const end = Math.max(...parameter.addresses);
+    const key = `${parameter.uid}:${parameter.universe}`;
+    const span = spans.get(key);
+    if (span) {
+      span.start = Math.min(span.start, start);
+      span.end = Math.max(span.end, end);
+    } else {
+      spans.set(key, {
+        uid: parameter.uid,
+        universe: parameter.universe,
+        start,
+        end,
+      });
+    }
+  }
+  return Array.from(spans.values());
+}
+
 /**
  * Resolves the console-space byte addresses of each fixture element parameter selected by
  * fixture→console routes, keyed by `uid:elementId:parameterIndex`.

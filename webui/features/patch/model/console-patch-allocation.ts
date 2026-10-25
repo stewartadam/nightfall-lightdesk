@@ -6,8 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { fixtureWireLayout } from "../../../lib/dmx";
-import { normalizeFixtureUid } from "../../../lib/route-utils";
+import { collectConsoleFixtureSpans } from "../../../lib/route-utils";
 import type * as types from "../../../types";
 
 /** Number of channels in one console DMX universe. */
@@ -32,75 +31,27 @@ function occupancyKey(universe: number, address: number): string {
   return `${universe}:${address}`;
 }
 
-/** Picks the universe of the Nth fixture of a route the way the engine's patch layout does. */
-function mapUniverseByIndex(universes: number[], index: number): number {
-  if (universes.length === 0) return 1;
-  return universes[Math.min(index, universes.length - 1)];
-}
-
 /**
- * Collects every console channel used by fixture→console routes, labelled with the
- * fixture that uses it.
- *
- * Fixtures are laid out like the engine lays out a route: the Nth fixture lands in the
- * Nth universe of the route's range (the last universe takes the rest), each universe
- * starts at the route address, and fixtures sharing a universe are packed one after
- * another unless the route clones them onto the same address.
+ * Collects every console channel that fixture→console routes patch, labelled with the
+ * fixture that uses it. Each fixture's span counts whole, gaps between its parameters
+ * included, so a new fixture is never placed inside another one's footprint.
  */
 export function collectConsolePatchOccupancy(
   snapshot: types.RoutesSnapshot,
   fixtureMap: Record<string, types.Fixture>,
 ): ConsoleOccupancy {
   const occupied: ConsoleOccupancy = new Map();
-
-  for (const route of snapshot.output) {
-    if (route.source.type !== "Fixture") continue;
-    if (route.target.type !== "Console") continue;
-
-    const sourceData = route.source.data;
-    const targetData = route.target.data;
-    const range = targetData.universe;
-    const universes = range
-      ? Array.from(
-          { length: range.end - range.start + 1 },
-          (_, index) => range.start + index,
-        )
-      : [1];
-    const baseAddress = targetData.address ?? 1;
-
-    let runningAddress = baseAddress;
-    let lastUniverse = universes[0] ?? 1;
-
-    for (const [index, uid] of sourceData.uids.entries()) {
-      const fixture = fixtureMap[normalizeFixtureUid(uid)];
-      if (!fixture) continue;
-
-      const universe = mapUniverseByIndex(universes, index);
-      if (universe !== lastUniverse) {
-        runningAddress = baseAddress;
-        lastUniverse = universe;
-      }
-
-      const footprint = fixtureWireLayout(fixture, {
-        elementId: sourceData.element,
-        parameterName: sourceData.param || undefined,
-      }).footprint;
-      if (footprint <= 0) continue;
-
-      const startAddress = route.clone ? baseAddress : runningAddress;
-      const endAddress = startAddress + footprint - 1;
-      if (!route.clone) {
-        runningAddress = endAddress + 1;
-      }
-
-      const label =
-        fixture.identifiers.label || `Fixture ${fixture.identifiers.id}`;
-      for (let address = startAddress; address <= endAddress; address += 1) {
-        occupied.set(occupancyKey(universe, address), { label });
-      }
+  for (const { uid, universe, start, end } of collectConsoleFixtureSpans(
+    snapshot,
+    fixtureMap,
+  )) {
+    const fixture = fixtureMap[uid];
+    const label =
+      fixture?.identifiers.label || `Fixture ${fixture?.identifiers.id ?? uid}`;
+    for (let address = start; address <= end; address += 1) {
+      occupied.set(occupancyKey(universe, address), { label });
     }
   }
-
   return occupied;
 }
 
@@ -238,17 +189,26 @@ export function findFirstFreeConsolePatch(
 
 /**
  * Formats the console channels a patch spans, as `start-end` within one universe or
- * `universe.start-universe.end` across several.
+ * `universe.start-universe.end` across several. With `qualified`, universes are always
+ * named, as `universe.start–universe.end`, or `universe.start` for a single channel.
  */
 export function formatConsolePatchSpan(
   placements: ConsolePatchPlacement[],
   footprint: number,
+  options: { qualified?: boolean } = {},
 ): string {
   const first = placements[0];
   const last = placements[placements.length - 1];
   if (!first || !last) return "";
   const endAddress = last.address + Math.max(footprint, 1) - 1;
-  return first.universe === last.universe
+  const sameUniverse = first.universe === last.universe;
+  if (options.qualified) {
+    const start = `${first.universe}.${first.address}`;
+    return sameUniverse && endAddress === first.address
+      ? start
+      : `${start}–${last.universe}.${endAddress}`;
+  }
+  return sameUniverse
     ? `${first.address}-${endAddress}`
     : `${first.universe}.${first.address}-${last.universe}.${endAddress}`;
 }

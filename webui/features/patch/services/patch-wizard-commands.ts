@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from "uuid";
 import { findFixtureVersionConflictIds } from "../../../lib/asset-version";
 import { commandSucceeded } from "../../../lib/command-result";
 import {
+  computeFixtureChannelCount,
   createFixtureFromLibrary,
   createFixturesFromLibrary,
   sendAddDmxRoute,
@@ -35,7 +36,6 @@ export type PatchWizardCommandOptions = {
   libraryFixtureInfo: types.AvailableFixtureInfo;
   geometry: types.FixtureGeometry | null;
   baseFixtureId: number;
-  channelCount: number;
   forceUpdateExisting?: boolean;
 };
 
@@ -126,7 +126,7 @@ export async function executePatchWizardCommands(
     ) {
       const placements = layoutConsolePatch(
         { universe: universeId, address: startAddress },
-        options.channelCount,
+        Math.max(computeFixtureChannelCount(options.profileFixture), 1),
         instances.length,
       );
       instances.forEach(({ id }, index) => {

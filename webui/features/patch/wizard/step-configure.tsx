@@ -111,7 +111,7 @@ export function StepConfigure() {
     }
     return layoutConsolePatch(
       { universe: universeId, address: startAddress },
-      footprint,
+      Math.max(footprint, 1),
       quantity,
     );
   });
@@ -232,6 +232,7 @@ export function StepConfigure() {
     updateState({ label: value });
   };
 
+  /** Turns console DMX assignment on or off for the new fixtures. */
   const handleAssignConsoleDmxChange = (checked: boolean) => {
     updateState({ assignConsoleDmx: checked });
   };

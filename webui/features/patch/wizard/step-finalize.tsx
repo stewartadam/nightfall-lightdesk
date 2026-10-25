@@ -15,7 +15,10 @@ import {
 } from "../../../lib/fixture-service";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
-import { layoutConsolePatch } from "../model/console-patch-allocation";
+import {
+  formatConsolePatchSpan,
+  layoutConsolePatch,
+} from "../model/console-patch-allocation";
 import { usePatchWizard } from "./wizard-context";
 
 export function StepFinalize() {
@@ -53,18 +56,16 @@ export function StepFinalize() {
   const patchSpan = createMemo(() => {
     const { universeId, startAddress, quantity } = state();
     if (universeId === null || startAddress === null) return null;
-    const footprint = channelCount();
-    const start = `${universeId}.${startAddress}`;
-    if (footprint === null) return start;
-    const placements = layoutConsolePatch(
-      { universe: universeId, address: startAddress },
+    const footprint = channelCount() ?? 1;
+    return formatConsolePatchSpan(
+      layoutConsolePatch(
+        { universe: universeId, address: startAddress },
+        footprint,
+        quantity,
+      ),
       footprint,
-      quantity,
+      { qualified: true },
     );
-    const last = placements[placements.length - 1];
-    const end = last.address + Math.max(footprint, 1) - 1;
-    if (last.universe === universeId && end === startAddress) return start;
-    return `${start}–${last.universe}.${end}`;
   });
 
   return (

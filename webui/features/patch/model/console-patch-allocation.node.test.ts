@@ -184,4 +184,20 @@ test("formatConsolePatchSpan shows the universe only when the patch spans severa
     ),
     "1.489-2.12",
   );
+  assert.equal(
+    formatConsolePatchSpan(
+      layoutConsolePatch({ universe: 3, address: 7 }, 1, 1),
+      1,
+      { qualified: true },
+    ),
+    "3.7",
+  );
+  assert.equal(
+    formatConsolePatchSpan(
+      layoutConsolePatch({ universe: 3, address: 7 }, 12, 2),
+      12,
+      { qualified: true },
+    ),
+    "3.7–3.30",
+  );
 });
