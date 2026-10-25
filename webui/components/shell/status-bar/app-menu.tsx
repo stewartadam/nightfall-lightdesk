@@ -7,6 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { BookOpenIcon } from "@squidlab/phosphor-solid/book-open";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
@@ -16,7 +17,7 @@ import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { type JSX, Show } from "solid-js";
 import { hasDiskStorage } from "../../../lib/disk-storage";
-import { openFeedbackPage } from "../../../lib/feedback";
+import { openDocumentation, openFeedbackPage } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
 import {
   newShowfile,
@@ -152,6 +153,9 @@ export default function AppMenu(props: {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
       </Show>
+      <DropdownMenuItem icon={BookOpenIcon} onClick={openDocumentation}>
+        Documentation
+      </DropdownMenuItem>
       <DropdownMenuItem
         icon={QuestionIcon}
         onClick={() => openFeedbackPage("feedback")}

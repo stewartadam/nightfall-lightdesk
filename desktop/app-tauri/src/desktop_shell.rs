@@ -33,6 +33,13 @@ struct ProjectLinks {
     bug_report: String,
 }
 
+/// Fills the user guide address template with the guide folder for an app version. Pre-releases
+/// and builds share their stable version's guide, so `0.1.0-alpha.4` opens the `0.1.0` guide.
+fn documentation_url(template: &str, version: &semver::Version) -> String {
+    let guide = format!("{}.{}.{}", version.major, version.minor, version.patch);
+    template.replace("{version}", &guide)
+}
+
 /// Loads the bundled project links without depending on the working directory.
 fn project_links() -> Result<ProjectLinks, String> {
     serde_json::from_str(include_str!("../../../config/project-links.json"))
@@ -670,7 +677,10 @@ pub(super) fn dispatch_menu_action<R: Runtime + 'static>(
             Ok(())
         }
         MENU_ID_WINDOW_CLOSE => close_focused_window(app).map_err(|error| error.to_string()),
-        MENU_ID_APP_DOCUMENTATION => open_url_in_browser(&project_links()?.documentation),
+        MENU_ID_APP_DOCUMENTATION => open_url_in_browser(&documentation_url(
+            &project_links()?.documentation,
+            &app.package_info().version,
+        )),
         MENU_ID_APP_FEEDBACK => open_url_in_browser(&project_links()?.feedback),
         MENU_ID_APP_QUIT => {
             app.exit(0);
@@ -829,6 +839,24 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
         .build(tauri::generate_context!())
         .expect("Error building the tauri application")
         .run(move |_app, event| defer_exit_until_backend_stops(event, &backend_stopped));
+}
+
+#[cfg(test)]
+mod project_link_tests {
+    /// The Help menu opens the installed version's guide, with pre-releases sharing the stable guide.
+    #[test]
+    fn documentation_url_targets_the_stable_version_guide() {
+        let template = super::project_links().unwrap().documentation;
+        let version = |value: &str| semver::Version::parse(value).unwrap();
+        assert_eq!(
+            super::documentation_url(&template, &version("0.1.0-alpha.4")),
+            "https://nightfall.live/docs/0.1.0/"
+        );
+        assert_eq!(
+            super::documentation_url(&template, &version("1.2.3+build.7")),
+            "https://nightfall.live/docs/1.2.3/"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ const TAURI_MENU_ACTION_EVENT = "nightfall:menu-action";
 
 export const TAURI_MENU_ACTIONS = {
   about: "app.about",
+  documentation: "app.documentation",
   settings: "app.settings",
   diagnostics: "app.diagnostics",
   reportBug: "app.report_bug",
