@@ -6,10 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Main crate for the nightfall programmer interface
+//! The programmer: the operator's working selection and live values.
 //!
-//! This crate provides the core functionality for managing lighting cues and programmer operations
-//! in the nightfall lighting control system.
+//! [`ProgrammerPlugin`] holds the active fixture selection and the values set on it, paints them
+//! into the programmer layer that the compositor merges with playbacks, and handles clearing and
+//! releasing them. It also stores programmer contents into cues, Blueprints, and groups, and
+//! recalls them back into the programmer.
 
 #![warn(missing_docs)]
 

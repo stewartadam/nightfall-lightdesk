@@ -6,7 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! sACN input handling crate
+//! sACN input: DMX universes received over the network.
+//!
+//! A process-lifetime listener thread receives sACN (E1.31) packets and feeds their DMX frames to
+//! the input routes that drive fixture parameters. If the listener can't bind, network input is
+//! turned off and the failure is reported. The crate also builds the `send-sacn` test tool.
 
 #![warn(missing_docs)]
 

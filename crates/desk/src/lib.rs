@@ -6,6 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Desk behavior that spans several show domains.
+//!
+//! Domain crates can't depend on each other, so behavior that touches several of them lives
+//! here: the `DeskCommand` entry point (including `Eval` for the command language and the
+//! showfile requests), clip storage and the shared lifecycle of running playbacks, masters and
+//! control slots, groups and Blueprints, console settings and shared panel layouts, virtual
+//! dimmers and relations, per-playback intensity, notifications and diagnostics, and delayed
+//! commands. Code that concerns one domain only belongs in that domain's crate.
+
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;

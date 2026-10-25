@@ -6,6 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Undo and redo for engine commands.
+//!
+//! Domains register each undoable command type with the [`dispatcher::UndoRegistry`], which
+//! builds the command's inverse before the command runs. The [`manager::UndoManager`] commits
+//! the inverses once the command finishes, grouped so that one operation undoes as a unit. Its
+//! history stays linear: a new change after an undo keeps the undone states reachable instead
+//! of discarding them. Undo and redo replay the stored inverses through their domains.
+
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::{EnginePlugin, prelude::*};

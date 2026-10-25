@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides cues and sequences
+//! Cues and sequences: their definitions, playback, and runtime state.
+//!
+//! [`CuePlugin`] stores cue, sequence, and color path definitions, handles their commands and
+//! undo, and plays sequences started by clips. Playing a sequence materializes it into a layer
+//! for the compositor, applying tracking, release, transitions, and lookahead. The crate also
+//! plans sequence playback for timeline seeking and serves cue editor previews.
 #![warn(missing_docs)]
 
 use bevy_app::prelude::*;

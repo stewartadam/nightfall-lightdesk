@@ -6,6 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! The native host: assembles the engine and runs it, for the desktop app and
+//! `nightfall-headless`.
+//!
+//! This crate chooses the native plugin set and Cargo features, then runs the session loop that
+//! swaps showfiles by building a fresh engine world. It owns showfile storage on disk, drafts and
+//! revisions, the sample shows, logging, diagnostics bundles, and error and usage reports.
+
 use bevy::prelude::World;
 
 #[cfg(feature = "beat-detection")]

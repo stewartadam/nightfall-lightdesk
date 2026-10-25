@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Art-Net input handling crate
+//! Art-Net input: DMX universes and timecode received over the network.
+//!
+//! A process-lifetime listener thread receives Art-Net packets. DMX frames feed the input routes
+//! that drive fixture parameters, and ArtTimeCode packets feed the timecodes that follow Art-Net.
+//! The crate also builds the `send-artnet`, `send-artnet-timecode`, `listen-artnet`, and
+//! `listen-scan` tools for testing without other hardware or software.
 
 #![warn(missing_docs)]
 

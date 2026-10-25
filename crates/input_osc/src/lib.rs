@@ -6,10 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! OSC input handling crate.
+//! OSC input: messages received over UDP, mapped to actions.
 //!
-//! Provides UDP OSC ingest, configurable mappings, and dispatch to clip or
-//! eval command flows.
+//! [`InputOscPlugin`] listens for OSC packets on a UDP port. Each mapping binds an OSC address to
+//! a registered action, adapting the message's arguments to the input that action expects, so
+//! OSC can start clips, move masters, or run a line of the command language.
 
 #![warn(missing_docs)]
 

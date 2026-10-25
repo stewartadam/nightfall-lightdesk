@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Shared clip contracts and identifier lookup utilities.
+//! Clip contracts shared by every playback domain.
+//!
+//! A clip is a playable reference to a sequence, FX, Step FX, flow, or FX module, with options
+//! for how it plays. This crate defines the clip model, [`ClipCommand`], the bindable
+//! clip actions, lookups by identifier, and the index from clips to their running instances.
+//! It doesn't store clips; the `desk` crate does.
 #![warn(missing_docs)]
 
 mod actions;
