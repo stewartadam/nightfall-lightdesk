@@ -54,3 +54,6 @@ export function getCommandShortcutKeys(command: UiAction): string[] {
 }
 
 export const DEFAULT_CATEGORY = "General";
+
+/** Shortcut that opens the command palette, also shown as the palette's own hint. */
+export const OPEN_COMMAND_PALETTE_SHORTCUT = "$mod+Shift+p";
