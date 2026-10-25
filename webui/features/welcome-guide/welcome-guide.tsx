@@ -145,12 +145,8 @@ export default function WelcomeGuide() {
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
   );
-  const {
-    dockviewApi,
-    resetDockviewLayout,
-    closeSettings,
-    hideShortcutsPopup,
-  } = useAppShell();
+  const { dockviewApi, resetActiveLayout, closeSettings, hideShortcutsPopup } =
+    useAppShell();
   const [startingLesson, setStartingLesson] = createSignal(false);
   /**
    * Hides the card and the target highlight while a lesson launches, until the layout switch has
@@ -169,7 +165,7 @@ export default function WelcomeGuide() {
     try {
       const api = dockviewApi();
       const entered = api
-        ? await enterLessonLayout(api, resetDockviewLayout)
+        ? await enterLessonLayout(api, resetActiveLayout)
         : null;
       if (!entered)
         pushToast(
