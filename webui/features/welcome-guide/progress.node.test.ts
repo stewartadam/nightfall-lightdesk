@@ -270,6 +270,7 @@ test("guide observes the Add fixture wizard and the fixtures it patches", () => 
     quantity: 2,
     firstFixtureId: 701,
     universeId: 21,
+    startAddress: 1,
   } as const;
   assert.equal(guideCompletionToken(mode, state), "");
   state.patchWizard = {
@@ -278,6 +279,7 @@ test("guide observes the Add fixture wizard and the fixtures it patches", () => 
     quantity: 1,
     firstFixtureId: 321,
     universeId: 1,
+    startAddress: 97,
   };
   assert.equal(guideCompletionToken(mode, state), "");
   state.patchWizard.model = "12-segment RGBW Bar";
@@ -292,6 +294,8 @@ test("guide observes the Add fixture wizard and the fixtures it patches", () => 
   state.patchWizard.firstFixtureId = 701;
   assert.equal(guideCompletionToken(review, state), "");
   state.patchWizard.universeId = 21;
+  assert.equal(guideCompletionToken(review, state), "");
+  state.patchWizard.startAddress = 1;
   assert.equal(guideCompletionToken(review, state), "review");
 
   const patched = {

@@ -52,6 +52,8 @@ export type GuideObservation =
       firstFixtureId?: number;
       /** Console universe the wizard must assign, which also requires Assign Console DMX. */
       universeId?: number;
+      /** Console start address the wizard must assign to the first fixture. */
+      startAddress?: number;
     }
   | { type: "fixtures-patched"; fixtureIds: readonly number[]; model: string }
   | { type: "fixtures-removed"; fixtureIds: readonly number[] }
@@ -109,6 +111,8 @@ export interface GuideSnapshot {
     firstFixtureId: number;
     /** Console universe the fixtures will be patched to, or null without Assign Console DMX. */
     universeId: number | null;
+    /** Console start address of the first fixture, or null without Assign Console DMX. */
+    startAddress: number | null;
   };
   panel?: string;
   openPanels?: {
@@ -298,7 +302,9 @@ export function guideCompletionToken(
         (observation.firstFixtureId === undefined ||
           wizard.firstFixtureId === observation.firstFixtureId) &&
         (observation.universeId === undefined ||
-          wizard.universeId === observation.universeId)
+          wizard.universeId === observation.universeId) &&
+        (observation.startAddress === undefined ||
+          wizard.startAddress === observation.startAddress)
         ? observation.step
         : "";
     }

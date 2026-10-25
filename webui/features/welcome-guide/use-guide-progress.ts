@@ -66,6 +66,7 @@ export function useGuideSnapshot(
       quantity,
       assignConsoleDmx,
       universeId,
+      startAddress,
     } = wizard.state();
     return {
       step: wizard.currentStep(),
@@ -76,6 +77,7 @@ export function useGuideSnapshot(
       quantity,
       firstFixtureId: wizard.baseFixtureId(),
       universeId: assignConsoleDmx ? universeId : null,
+      startAddress: assignConsoleDmx ? startAddress : null,
     };
   };
   const programmer = useStore(programmerState);

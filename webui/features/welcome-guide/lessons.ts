@@ -1064,22 +1064,33 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "address",
         title: "Choose where their DMX starts",
         target: '[aria-label="Patch Wizard"] input[aria-label="Universe"]',
+        parts: [
+          {
+            target: '[aria-label="Patch Wizard"] input[aria-label="Universe"]',
+            until: { type: "patch-wizard", step: "configure", universeId: 21 },
+          },
+          {
+            target:
+              '[aria-label="Patch Wizard"] input[aria-label="Start address"]',
+          },
+        ],
         observe: {
           type: "patch-wizard",
           step: "review",
           quantity: PRACTICE_FIXTURES.length,
           firstFixtureId: PRACTICE_FIXTURES[0],
           universeId: 21,
+          startAddress: 1,
         },
         content: [
           {
             type: "text",
-            text: "The patch is the universe and start address where the first bar’s DMX begins. Each next bar starts right after the one before. Universe 1 is nearly full of pixel strips, so the suggested address leaves room for only one bar, and the wizard flags the overlap in red.",
+            text: "The patch is the universe and start address where the first bar’s DMX begins. Each next bar starts right after the one before. The wizard suggests the first channels with room for every bar, and Next available finds them again after you change the quantity or mode.",
           },
           {
             type: "action",
-            title: "Patch them to universe 21",
-            body: "Set the universe to 21. The wizard moves the address to 1, the first free one. Then click Next.",
+            title: "Patch them to 21.1",
+            body: "Give the practice bars a universe of their own: set the universe to 21, then the start address to 1. Then click Next.",
           },
           {
             type: "details",

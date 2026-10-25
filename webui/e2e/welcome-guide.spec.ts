@@ -2442,12 +2442,18 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
   ).toBeVisible();
 
   await expectStep(page, "Choose where their DMX starts", { target: true });
-  await expect(wizard.getByText(/conflicts with/)).toBeVisible();
-  await shot("address-conflict");
-  await wizard.getByLabel("Universe", { exact: true }).fill("21");
-  await expect(wizard.getByLabel("Start address", { exact: true })).toHaveValue(
-    "1",
-  );
+  const universe = wizard.getByLabel("Universe", { exact: true });
+  const startAddress = wizard.getByLabel("Start address", { exact: true });
+  await expect(universe).not.toHaveValue("");
+  await expect(wizard.getByText(/conflicts with/)).toBeHidden();
+  await expectHighlightOn(universe);
+  await shot("address-suggested");
+  const suggestedAddress = await startAddress.inputValue();
+  await universe.fill("21");
+  await expect(startAddress).toHaveValue(suggestedAddress);
+  await expectHighlightOn(startAddress);
+  await shot("address-universe");
+  await startAddress.fill("1");
   await expect(wizard.getByText(/conflicts with/)).toBeHidden();
   await guide.getByText("Learn more", { exact: true }).click();
   await expect(
