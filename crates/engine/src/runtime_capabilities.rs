@@ -84,6 +84,8 @@ pub struct RuntimeCapabilities {
     pub usb_dmx_output: bool,
     /// Whether incomplete flow authoring and execution are enabled for this process.
     pub experimental_flows: bool,
+    /// Whether the engine can sign in to GDTF Share and fetch fixture profiles from it.
+    pub gdtf_share: bool,
 }
 
 impl Default for RuntimeCapabilities {
@@ -102,6 +104,7 @@ impl Default for RuntimeCapabilities {
             network_dmx_output: false,
             usb_dmx_output: false,
             experimental_flows: false,
+            gdtf_share: false,
         }
     }
 }
@@ -123,6 +126,7 @@ impl RuntimeCapabilities {
             network_dmx_output: false,
             usb_dmx_output: false,
             experimental_flows: false,
+            gdtf_share: false,
         }
     }
 }

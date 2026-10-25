@@ -41,7 +41,7 @@ crossbeam-channel = { version = "0.5.17" }
 crossbeam-utils = { version = "0.8.23" }
 crypto-common = { version = "0.1.7", default-features = false, features = ["std"] }
 derive_more = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
-digest = { version = "0.10.7", features = ["std"] }
+digest-93f6ce9d446188ac = { package = "digest", version = "0.10.7", features = ["std"] }
 disqualified = { version = "1.1.0" }
 either = { version = "1.19.0", default-features = false, features = ["use_std"] }
 erased-serde = { version = "0.4.10", default-features = false, features = ["std"] }
@@ -94,6 +94,7 @@ tracing = { version = "0.1.44", features = ["log"] }
 tracing-core = { version = "0.1.36" }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
+url = { version = "2.5.8", features = ["serde"] }
 uuid = { version = "1.29.0", features = ["js", "serde", "v4", "v5"] }
 wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
 wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
@@ -116,7 +117,7 @@ crc32fast = { version = "1.5.3" }
 crypto-common = { version = "0.1.7", default-features = false, features = ["std"] }
 derive_more = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
 derive_more-impl = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
-digest = { version = "0.10.7", features = ["std"] }
+digest-93f6ce9d446188ac = { package = "digest", version = "0.10.7", features = ["std"] }
 erased-serde = { version = "0.4.10", default-features = false, features = ["std"] }
 fastrand = { version = "2.5.0" }
 flate2 = { version = "1.1.10", features = ["zlib-rs"] }
@@ -153,6 +154,7 @@ time = { version = "0.3.55", features = ["formatting", "local-offset", "macros",
 toml_datetime = { version = "1.1.2", features = ["serde"] }
 toml_parser = { version = "1.1.5" }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
+url = { version = "2.5.8", features = ["serde"] }
 uuid = { version = "1.29.0", features = ["js", "serde", "v4", "v5"] }
 wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
 wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
@@ -198,14 +200,15 @@ winapi = { version = "0.3.9", default-features = false, features = ["cfg", "cons
 windows = { version = "0.62.2", features = ["Wdk_System_SystemInformation", "Wdk_System_SystemServices", "Wdk_System_Threading", "Win32_Devices_HumanInterfaceDevice", "Win32_Devices_Properties", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Com_StructuredStorage", "Win32_System_DataExchange", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Ole", "Win32_System_Performance", "Win32_System_Power", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_RemoteDesktop", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Variant", "Win32_System_WinRT", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_Ime", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Input_Pointer", "Win32_UI_Input_Touch", "Win32_UI_Shell_Common", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_TextServices", "Win32_UI_WindowsAndMessaging"] }
 windows-core = { version = "0.62.2" }
 windows-sys-4db8c43aad08e7ae = { package = "windows-sys", version = "0.60.2", features = ["Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Controls", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
-windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
 cc = { version = "1.10.0", default-features = false, features = ["parallel"] }
 getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
-windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
+digest-a6292c17cd707f01 = { package = "digest", version = "0.11.3", features = ["alloc", "mac", "oid"] }
 event-listener = { version = "5.4.2" }
 event-listener-strategy = { version = "0.5.4" }
 futures-lite = { version = "2.6.1" }
@@ -217,6 +220,8 @@ linux-raw-sys = { version = "0.12.1", features = ["auxvec", "elf", "if_ether", "
 miniz_oxide = { version = "0.8.9", features = ["simd"] }
 mio = { version = "1.2.4", features = ["net", "os-ext"] }
 nix = { version = "0.31.3", features = ["net", "signal"] }
+num-complex = { version = "0.4.6" }
+num-rational = { version = "0.4.2", features = ["num-bigint-std"] }
 rustix = { version = "1.1.5", features = ["event", "fs", "mm", "net", "param", "pipe", "process", "stdio", "termios", "time"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3.0.9", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }

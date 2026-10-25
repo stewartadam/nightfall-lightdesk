@@ -73,6 +73,7 @@ import {
   TimelinePlacementPreference,
 } from "../../types";
 import { createBeatModelDownload } from "../beat-detection";
+import { GdtfShareSettings } from "../gdtf-share";
 import { KeybindingsSettings } from "../keybindings";
 import {
   type QualityPreset,
@@ -914,6 +915,9 @@ export function SettingsOverlay() {
                 )}
               </SettingsRow>
             </SettingsSection>
+            <Show when={capabilities()?.gdtf_share}>
+              <GdtfShareSettings />
+            </Show>
           </TabPane>
 
           <TabPane tab="visualizer">

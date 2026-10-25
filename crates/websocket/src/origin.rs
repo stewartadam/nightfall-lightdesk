@@ -75,7 +75,7 @@ pub(crate) async fn reject_foreign_origins(request: Request, next: Next) -> Resp
 /// loopback address but reports the LAN address they used in `X-Forwarded-Host`, so a phone
 /// browsing through it still counts as remote. A request without peer information counts as
 /// remote, so a missing extension never grants local trust.
-pub(crate) fn is_local_client(peer: Option<SocketAddr>, headers: &HeaderMap, uri: &Uri) -> bool {
+pub fn is_local_client(peer: Option<SocketAddr>, headers: &HeaderMap, uri: &Uri) -> bool {
     peer.is_some_and(|peer| peer.ip().is_loopback())
         && request_host(headers, uri, true).is_none_or(|host| {
             host.parse::<Authority>()
