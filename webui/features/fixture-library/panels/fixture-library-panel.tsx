@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 /**
  * Fixture Library Explorer Panel
@@ -25,7 +26,10 @@ import {
   createSignal,
   Show,
 } from "solid-js";
-import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import {
+  ToggleToolbarButton,
+  ToolbarButton,
+} from "../../../components/ui/toolbar-button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
 } from "../../../components/widgets/data-grid";
@@ -63,9 +67,11 @@ import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
 import type {
+  AvailableFixtureInfo,
   FixtureLibraryCommand,
   FixtureLibraryEntry,
 } from "../../../types";
+import { GdtfShareBrowser } from "../../gdtf-share";
 import { usePropertiesInspector } from "../../property-inspector";
 import FixtureLibraryProperties from "../components/fixture-library-properties";
 import {
@@ -90,6 +96,21 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   const canManageLibrary = createMemo(
     () => capabilities()?.fixture_library === "Native",
   );
+
+  /** Whether the engine can search GDTF Share and install fixtures from it. */
+  const gdtfShareAvailable = createMemo(() =>
+    Boolean(capabilities()?.gdtf_share),
+  );
+
+  /** Whether the panel shows GDTF Share search in place of the library list. */
+  const [searchingOnline, setSearchingOnline] = createSignal(false);
+  const [onlineQuery, setOnlineQuery] = createSignal("");
+
+  /** Leaves GDTF Share search and shows a library entry in the properties panel. */
+  const showLibraryCopy = (fixture: AvailableFixtureInfo) => {
+    setSearchingOnline(false);
+    setFixtureLibrarySelectedFixture(fixture);
+  };
 
   // Row selection state (for row checkboxes)
   const [selection, setSelection] = createSignal<GridSelection>(
@@ -310,6 +331,16 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
           onFiltersChange={setTableFilters}
         />
         <ColumnVisibilityMenu scope={panelId} columns={columns} />
+        <Show when={gdtfShareAvailable()}>
+          <ToggleToolbarButton
+            label="Search GDTF Share"
+            pressed={searchingOnline()}
+            onClick={() => setSearchingOnline(!searchingOnline())}
+            data-testid="fixture-library-search-online"
+          >
+            <CloudArrowDownIcon class="size-4" aria-hidden />
+          </ToggleToolbarButton>
+        </Show>
         <Show when={canManageLibrary()}>
           <ToolbarButton label="Upload fixture" onClick={triggerUpload}>
             <PlusIcon class="size-4" aria-hidden />
@@ -326,7 +357,16 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
 
       {/* Data grid */}
       <div class="flex-1 overflow-hidden">
-        {fixtures().length === 0 ? (
+        {searchingOnline() ? (
+          <div class="h-full p-3">
+            <GdtfShareBrowser
+              query={onlineQuery()}
+              onQueryChange={setOnlineQuery}
+              onUse={showLibraryCopy}
+              useLabel="Show"
+            />
+          </div>
+        ) : fixtures().length === 0 ? (
           <div class="p-4 text-center text-gray-500">
             {$fixtureLibrary().length === 0
               ? "No fixtures in library"

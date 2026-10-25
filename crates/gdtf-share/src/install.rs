@@ -11,9 +11,11 @@
 //! The fixture library watches its folder, so a saved archive appears in the library
 //! without any further step.
 
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
+use quick_xml::Reader;
+use quick_xml::events::Event;
 use serde::Serialize;
 
 use crate::account::{AccountError, GdtfShareAccount};
@@ -25,6 +27,8 @@ use crate::catalog::GdtfShareFixture;
 pub struct GdtfShareInstall {
     /// File name inside the fixture library folder.
     pub file_name: String,
+    /// Lowercase `FixtureTypeID` the archive declares, which the library reports for it.
+    pub fixture_type_id: Option<String>,
 }
 
 /// How much of an install's download has arrived.
@@ -110,29 +114,64 @@ pub async fn install(
         .await?;
     let file_name = fixture.file_name();
     let path = library_dir.join(&file_name);
-    tokio::task::spawn_blocking(move || {
-        check_archive(&bytes)?;
-        save(&path, &bytes).map_err(|error| AccountError::Storage(error.to_string()))
+    let fixture_type_id = tokio::task::spawn_blocking(move || {
+        let fixture_type_id = check_archive(&bytes)?;
+        save(&path, &bytes).map_err(|error| AccountError::Storage(error.to_string()))?;
+        Ok::<_, AccountError>(fixture_type_id)
     })
     .await
     .map_err(|error| AccountError::Storage(error.to_string()))??;
     tracing::info!(rid, file_name, "Installed a GDTF Share fixture");
-    Ok(GdtfShareInstall { file_name })
+    Ok(GdtfShareInstall {
+        file_name,
+        fixture_type_id,
+    })
 }
 
-/// Checks that `bytes` are a zip archive holding a GDTF `description.xml`.
-fn check_archive(bytes: &[u8]) -> Result<(), AccountError> {
-    let archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| {
-        AccountError::Share(crate::client::ShareError::Protocol(
-            "the download is not a GDTF archive".into(),
-        ))
-    })?;
-    if archive.index_for_name("description.xml").is_none() {
-        return Err(AccountError::Share(crate::client::ShareError::Protocol(
-            "the download has no GDTF description".into(),
-        )));
+/// Checks that `bytes` are a zip archive holding a GDTF `description.xml`, and returns
+/// the lowercase `FixtureTypeID` it declares, if any.
+fn check_archive(bytes: &[u8]) -> Result<Option<String>, AccountError> {
+    /// A download that is not a usable GDTF archive.
+    fn not_gdtf(reason: &str) -> AccountError {
+        AccountError::Share(crate::client::ShareError::Protocol(reason.into()))
     }
-    Ok(())
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|_| not_gdtf("the download is not a GDTF archive"))?;
+    let mut description = String::new();
+    archive
+        .by_name("description.xml")
+        .map_err(|_| not_gdtf("the download has no GDTF description"))?
+        .read_to_string(&mut description)
+        .map_err(|_| not_gdtf("the download's GDTF description is unreadable"))?;
+    Ok(fixture_type_id(&description))
+}
+
+/// Reads the `FixtureTypeID` attribute of the first `FixtureType` element, lowercased,
+/// leaving out the nil id some exporters write.
+fn fixture_type_id(description: &str) -> Option<String> {
+    let mut reader = Reader::from_str(description);
+    let fixture_type = loop {
+        match reader.read_event().ok()? {
+            Event::Start(element) | Event::Empty(element)
+                if element.name().as_ref() == "FixtureType" =>
+            {
+                break element;
+            }
+            Event::Eof => return None,
+            _ => {}
+        }
+    };
+    let value = fixture_type
+        .try_get_attribute("FixtureTypeID")
+        .ok()??
+        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+        .ok()?;
+    let id = value.trim().to_ascii_lowercase();
+    (!id.is_empty()
+        && id
+            .chars()
+            .any(|character| character.is_ascii_hexdigit() && character != '0'))
+    .then_some(id)
 }
 
 /// Writes `bytes` to `path` through a uniquely named temporary file in the same folder.

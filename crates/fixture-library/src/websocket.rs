@@ -286,6 +286,10 @@ fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
             FixtureSource::BuiltIn { .. } => BUILTIN_SOURCE_FORMAT.to_string(),
         },
         asset_etag: profile.revision.clone(),
+        gdtf_fixture_type_id: match &profile.source {
+            FixtureSource::Gdtf(metadata) => metadata.fixture_type_id.clone(),
+            FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
+        },
     }
 }
 

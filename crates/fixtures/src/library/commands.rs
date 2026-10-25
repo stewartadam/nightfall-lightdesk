@@ -143,6 +143,9 @@ pub struct AvailableFixtureInfo {
     pub source_format: String,
     /// Deterministic content fingerprint of the fixture source file
     pub asset_etag: String,
+    /// Lowercase GDTF `FixtureTypeID`, shared by every revision of a GDTF fixture type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_fixture_type_id: Option<String>,
 }
 
 /// Response for ListAvailableFixtures command

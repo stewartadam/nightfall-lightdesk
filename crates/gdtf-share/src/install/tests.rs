@@ -60,3 +60,20 @@ fn progress_steps_by_percent_or_by_64_kib() {
     assert_eq!(unknown(65_535).step(), 0);
     assert_eq!(unknown(65_536).step(), 1);
 }
+
+/// The fixture type id comes from the `FixtureType` element, lowercased, and a missing or
+/// nil id reads as none.
+#[test]
+fn reads_the_fixture_type_id() {
+    let description = r#"<GDTF><FixtureType Name="Spot" FixtureTypeID="AB12CD34-0000-4000-8000-000000000001" RefFT=""><DMXModes/></FixtureType></GDTF>"#;
+    assert_eq!(
+        fixture_type_id(description).as_deref(),
+        Some("ab12cd34-0000-4000-8000-000000000001")
+    );
+    assert_eq!(
+        fixture_type_id(r#"<FixtureType FixtureTypeID="00000000-0000-0000-0000-000000000000">"#),
+        None
+    );
+    assert_eq!(fixture_type_id(r#"<FixtureType Name="Spot">"#), None);
+    assert_eq!(check_archive(&gdtf_archive("Spot")).unwrap(), None);
+}
