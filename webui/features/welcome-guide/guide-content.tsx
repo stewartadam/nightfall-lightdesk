@@ -8,16 +8,14 @@
 
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { For, Match, Show, Switch } from "solid-js";
-import {
-  CLEAR_PROGRAMMER_SHORTCUT,
-  OPEN_COMMAND_PALETTE_SHORTCUT,
-} from "../../components/providers/command-registry";
+import { OPEN_COMMAND_PALETTE_SHORTCUT } from "../../components/shell/command-palette/commands/open-command-palette";
 import { KbdShortcut } from "../../components/ui/kbd";
 import { Button } from "../../components/ui/visual-language/button";
 import {
   type PanelComponentName,
   panelDefinitionByName,
 } from "../../lib/panel-definitions";
+import { CLEAR_PROGRAMMER_SHORTCUT } from "../command-line/controllers/command-line-controller";
 import { stopAllPlayback } from "./cleanup";
 import type { GuideContent } from "./lessons";
 
