@@ -68,13 +68,12 @@ fi
 env -u PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD pnpm run playwright:install
 
 # The pre-push hook runs Rust tests through nextest; match CI's pinned version.
-if ! cargo nextest --version 2>/dev/null | grep -q '^cargo-nextest 0\.9\.146 '; then
-  curl -fsSL https://get.nexte.st/0.9.146/linux | tar zxf - -C "$HOME/.cargo/bin"
+nextest_version=$(jq -r '."cargo-nextest"' config/cargo-tools.json)
+if ! cargo nextest --version 2>/dev/null | grep -qF "cargo-nextest $nextest_version "; then
+  curl -fsSL "https://get.nexte.st/$nextest_version/linux" | tar zxf - -C "$HOME/.cargo/bin"
 fi
 
-if ! command -v typeshare >/dev/null 2>&1; then
-  cargo install --locked typeshare-cli --version 1.13.3
-fi
+pnpm run setup:tools typeshare-cli
 
 if [ ! -f .env ]; then
   node scripts/setup-env.mjs

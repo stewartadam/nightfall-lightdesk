@@ -21,6 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { cargoToolVersion } from "./cargo-tools.mjs";
 
 export const projectRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -332,9 +333,10 @@ export function collectRust(
     cwd: projectRoot,
     encoding: "utf8",
   }).trim();
-  if (version !== "cargo-about 0.8.4")
+  const pinned = cargoToolVersion("cargo-about");
+  if (version !== `cargo-about ${pinned}`)
     throw new Error(
-      "Install cargo-about 0.8.4: cargo install cargo-about --locked --version 0.8.4",
+      `Install cargo-about ${pinned}: pnpm run setup:tools cargo-about`,
     );
   const args = [
     "about",

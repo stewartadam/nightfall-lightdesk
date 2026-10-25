@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { cargoToolVersion } from "./cargo-tools.mjs";
 import {
   collectRust,
   documentFor,
@@ -273,7 +274,8 @@ test("Cargo collection reads its output file and removes temporary reports", () 
   /** Emulate cargo-about's version and file-output contract without invoking Cargo. */
   const run = (command, args, options) => {
     assert.equal(command, "cargo");
-    if (args[1] === "--version") return "cargo-about 0.8.4\n";
+    if (args[1] === "--version")
+      return `cargo-about ${cargoToolVersion("cargo-about")}\n`;
     const outputIndex = args.indexOf("--output-file");
     assert.notEqual(outputIndex, -1);
     reportPath = args[outputIndex + 1];
@@ -322,7 +324,8 @@ test("Cargo collection cleans up failed and malformed reports", () => {
     let reportPath;
     /** Simulate a collector failure after it creates a partial output file. */
     const run = (_command, args) => {
-      if (args[1] === "--version") return "cargo-about 0.8.4";
+      if (args[1] === "--version")
+        return `cargo-about ${cargoToolVersion("cargo-about")}`;
       reportPath = args[args.indexOf("--output-file") + 1];
       writeFileSync(reportPath, "invalid JSON");
       if (!malformed) throw new Error("collector failed");

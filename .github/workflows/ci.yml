@@ -55,13 +55,18 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           : > .ci-changed-files
-          rm -f .ci-base-Cargo.lock
+          rm -f .ci-base-Cargo.lock .ci-base-cargo-tools.json
           if [[ "$EVENT_NAME" == pull_request ]]; then
             git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
             # Selection compares lockfiles to tell dependency changes from workspace rewiring.
             if ! git diff --quiet HEAD^1 HEAD -- Cargo.lock &&
               git cat-file -e HEAD^1:Cargo.lock 2> /dev/null; then
               git show HEAD^1:Cargo.lock > .ci-base-Cargo.lock
+            fi
+            # Selection compares tool pins to validate only what the changed tools affect.
+            if ! git diff --quiet HEAD^1 HEAD -- config/cargo-tools.json &&
+              git cat-file -e HEAD^1:config/cargo-tools.json 2> /dev/null; then
+              git show HEAD^1:config/cargo-tools.json > .ci-base-cargo-tools.json
             fi
           fi
       # A manual preview run checks out the PR's branch without its base, so the PR's file list
@@ -366,7 +371,7 @@ jobs:
       - uses: ./.github/actions/cargo-tools
         with:
           typeshare: true
-      - run: cargo install --locked cargo-hakari --version 0.9.39
+          cargo-hakari: true
       - name: Run source pre-commit hooks
         run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 
@@ -383,11 +388,9 @@ jobs:
           path: .ci-source
       - name: Restore credential-free source
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
-      - name: Install mdBook
-        # Keep in sync with the version in CONTRIBUTING.md.
-        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: ./.github/actions/cargo-tools
         with:
-          tool: mdbook@0.5.4
+          mdbook: true
       - name: Build every mdBook
         # mdBook exits successfully on broken includes, so any logged error or warning fails the job.
         env:
@@ -405,7 +408,7 @@ jobs:
             out="$RUNNER_TEMP/books/${book//\//_}"
             if ! mdbook build --dest-dir "$out" "$book" 2>&1 | tee "$RUNNER_TEMP/mdbook.log"; then
               status=1
-            elif grep -Eq '\[(ERROR|WARN)\]' "$RUNNER_TEMP/mdbook.log"; then
+            elif grep -Eq '^ *(ERROR|WARN) ' "$RUNNER_TEMP/mdbook.log"; then
               echo "::error::mdBook reported problems while building $book"
               status=1
             else

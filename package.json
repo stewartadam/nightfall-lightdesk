@@ -30,6 +30,7 @@
     "lint": "biome check webui/ --formatter-enabled=false",
     "package:notices": "node scripts/distribution-notices.mjs",
     "package:sample-audio": "node scripts/package-sample-audio.mjs",
+    "setup:tools": "node scripts/setup-tools.mjs",
     "playwright:install": "node scripts/run-playwright.mjs install chromium firefox",
     "tauri": "tauri",
     "test": "pnpm run test:scripts && pnpm run test:webui-node",
