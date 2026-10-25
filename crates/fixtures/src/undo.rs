@@ -41,6 +41,10 @@ pub struct FixtureSnapshot {
     pub parameters: Vec<ParameterSnapshot>,
     /// Fixture and fixture-element color path defaults owned by this fixture.
     pub color_path_defaults: Vec<ColorPathDefault>,
+    /// Every DMX route as it was before the fixture was deleted, restored with the fixture.
+    ///
+    /// `None` when the snapshot undoes a fixture update, which leaves routes alone.
+    pub routes: Option<DmxRoutesSnapshot>,
 }
 
 /// Snapshot of route configuration for a fixture.
@@ -316,9 +320,13 @@ impl Undoable for FixtureCommand {
                 }
             }
             FixtureCommand::DeleteFixture(id) => {
-                // Capture full fixture state before deletion
+                // Capture full fixture state before deletion, including the routes that
+                // deleting the fixture prunes
                 fixtures.inner.from_id(*id).ok().map(|fixture_ref| {
-                    let snapshot = snapshot_fixture(ctx, &fixture_ref);
+                    let snapshot = FixtureSnapshot {
+                        routes: Some(snapshot_dmx_routes(ctx)),
+                        ..snapshot_fixture(ctx, &fixture_ref)
+                    };
                     Box::new(RestoreFixtureSnapshot(snapshot)) as Box<dyn Undoable>
                 })
             }
@@ -495,6 +503,7 @@ fn snapshot_fixture(ctx: &UndoContext, fixture: &Fixture) -> FixtureSnapshot {
             .into_iter()
             .filter(|default| default.fixture.fixture_uid == fixture.identifiers.uid)
             .collect(),
+        routes: None,
     }
 }
 
@@ -680,6 +689,25 @@ mod tests {
         };
         data_provider.set_color_path_default(element_ref.clone(), Some(ColorPathId(2)));
         world.insert_resource(data_provider);
+        let output_route = OutputRoute {
+            source: OutputSource::Fixture {
+                uids: vec![fixture_uid],
+                element: None,
+                param: None,
+            },
+            target: OutputTarget::Transport {
+                target: "sacn".to_string(),
+                universe: Some(DmxRange::single(1)),
+                address: Some(1),
+            },
+            priority: 0,
+            clone: false,
+        };
+        world.insert_resource(InputRoutes::default());
+        world.insert_resource(OutputRoutes {
+            routes: vec![output_route.clone()],
+        });
+        world.insert_resource(DisabledRoutes::default());
 
         let ctx = UndoContext { world: &world };
         let inverse = FixtureCommand::DeleteFixture(1)
@@ -710,6 +738,12 @@ mod tests {
                 color_path_id: ColorPathId(2),
             }]
         );
+        let routes = restore
+            .0
+            .routes
+            .as_ref()
+            .expect("delete fixture inverse should capture the routes the delete prunes");
+        assert_eq!(routes.output_routes, vec![output_route]);
     }
 
     #[test]

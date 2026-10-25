@@ -136,7 +136,7 @@ pub mod prelude {
         OutputDestination, OutputRoute, OutputRoutes, OutputSource, OutputTarget,
         ResolvedConsoleDestination, ResolvedConsoleTarget, ResolvedInputDestination,
         ResolvedInputRoute, ResolvedInputRoutes, ResolvedInputSource, ResolvedInputTarget,
-        ResolvedOutputDestinations, ResolvedTransportTarget,
+        ResolvedOutputDestinations, ResolvedTransportTarget, retain_route_fixtures,
     };
     pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
     pub use crate::universe::{

@@ -555,7 +555,8 @@ async function routeReferenceCount(
 }
 
 /**
- * Verifies visualizer delete sends related commands under one undo group.
+ * Verifies visualizer delete sends related commands under one undo group and leaves route
+ * cleanup to the engine's fixture delete instead of sending its own route removals.
  */
 async function expectDeleteCommandsToShareBatch(
   page: Page,
@@ -582,9 +583,8 @@ async function expectDeleteCommandsToShareBatch(
     (envelope: any) => envelope.command.type === "ClearProgrammerSelection",
   );
 
-  expect(removeRoute).toBeTruthy();
+  expect(removeRoute).toBeUndefined();
   expect(deleteFixture).toBeTruthy();
   expect(clearSelection).toBeTruthy();
-  expect(removeRoute.undo_id).toBe(deleteFixture.undo_id);
   expect(clearSelection.undo_id).toBe(deleteFixture.undo_id);
 }

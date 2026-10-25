@@ -52,10 +52,16 @@ pub fn handle_set_dmx_channels(
 }
 
 /// Handle RestoreFixtureSnapshot commands to recreate a deleted fixture.
+///
+/// Snapshots taken before a delete also carry the DMX routes, which replace the live routes
+/// so the fixture comes back patched exactly as before.
 pub fn handle_restore_fixture_snapshot(
     mut commands: Commands,
     mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreFixtureSnapshot>>,
     mut data_provider: ResMut<FixtureDataProviderExt>,
+    mut input_routes: ResMut<InputRoutes>,
+    mut output_routes: ResMut<OutputRoutes>,
+    mut disabled_routes: ResMut<DisabledRoutes>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
@@ -112,6 +118,11 @@ pub fn handle_restore_fixture_snapshot(
         for default in &snapshot.color_path_defaults {
             data_provider
                 .set_color_path_default(default.fixture.clone(), Some(default.color_path_id));
+        }
+        if let Some(routes) = &snapshot.routes {
+            input_routes.routes = routes.input_routes.clone();
+            output_routes.routes = routes.output_routes.clone();
+            disabled_routes.routes = routes.disabled_routes.clone();
         }
         succeed_action(&mut responder, event.command_id);
     }
