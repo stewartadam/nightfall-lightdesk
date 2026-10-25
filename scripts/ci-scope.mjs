@@ -19,7 +19,8 @@ const sharedPackaging = [
   /^about\.toml$/,
   /^config\/(notices\/|project-links\.json$)/,
   /^scripts\/.*notices/,
-  /^scripts\/(package-sample-audio|check-distribution-wasm)/,
+  /^scripts\/(package-sample-audio|check-distribution-wasm|cargo-tools\.mjs$)/,
+  /^\.github\/actions\/cargo-tools\//,
   /^scripts\/ci-scope/,
   /^\.github\/workflows\/(ci|wasm)\.yml$/,
   /^\.github\/actions\/wasm-assets\//,
@@ -57,7 +58,7 @@ const rustTests = [
   /^\.pre-commit-config\.yaml$/,
   /^scripts\/ci-scope/,
   /^\.github\/workflows\/(ci|native-validation)\.yml$/,
-  /^\.github\/actions\/rust-cache\//,
+  /^\.github\/actions\/(rust-cache|cargo-tools)\//,
   // Files outside crates/ that Rust code embeds with include_str! or include_bytes!.
   /^webui\/public\/nightfall-demo\.nightfall-show\//,
   /^webui\/assets\/models\/beat-this\/NOTICE\.md$/,
@@ -65,6 +66,7 @@ const rustTests = [
 ];
 const documentation = [
   /^docs\//,
+  /^\.github\/actions\/cargo-tools\//,
   /^scripts\/ci-scope/,
   /^\.github\/workflows\/ci\.yml$/,
 ];
@@ -74,6 +76,7 @@ const documentation = [
 // so a new file is validated in full until it is listed here.
 export const appIndependent = [
   /^docs\//,
+  /^playwright\/(docs\.config\.ts|tests\/docs-[^/]+\.spec\.ts)$/,
   /^(AGENTS|CLAUDE|CONTRIBUTING|README)\.md$/,
   /^\.(agents|claude|vscode)\//,
   /^\.github\/(ISSUE_TEMPLATE\/|(copilot-instructions|desktop-release-notes|pull_request_template)\.md$|dependabot\.yml$)/,
@@ -82,6 +85,30 @@ export const appIndependent = [
   /^scripts\/(check-commit-signoff|claude-worktree-hook|fetch-gdtf-bench|generate-app-icons|install-fx-module|release-notes|seed-data-dir-from-main)\.mjs$/,
   /^scripts\/(profile-perf|test-desktop-updater|update-deps|verify_showfile_roundtrip)\.sh$/,
 ];
+
+/** The manifest that pins the Cargo tools local setup and CI install. */
+export const cargoToolsManifest = "config/cargo-tools.json";
+// What each pinned Cargo tool validates when its version changes. A tool missing here, or a
+// manifest change selection can't compare, validates everything.
+const cargoToolScopes = {
+  mdbook: ["docs"],
+  "cargo-nextest": ["rust"],
+  "cargo-hakari": ["rust"],
+  "typeshare-cli": ["app"],
+  "cargo-about": ["app", "packaging"],
+};
+
+/**
+ * Name the tools whose pins differ between two revisions of the Cargo tools manifest, including
+ * tools added or removed.
+ */
+export function changedCargoTools(base, head) {
+  const before = JSON.parse(base);
+  const after = JSON.parse(head);
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((name) => before[name] !== after[name])
+    .sort();
+}
 
 /**
  * Reduce a Cargo.lock to the parts that can change a distribution: every external package
@@ -174,6 +201,10 @@ export function lockfileChangesOnlyWorkspaceEdges(base, head) {
  * A preview whose PR touches them also publishes the built books beside the demo, including on
  * draft and manual preview runs, which otherwise build nothing but the demo.
  *
+ * A change to the Cargo tools manifest validates what the changed pins affect (`cargoTools`):
+ * mdBook selects the documentation build, nextest and hakari the Rust tests, typeshare the app,
+ * and cargo-about the app and packaging. Without a base manifest to compare, every scope runs.
+ *
  * Rust tests, doctests and Clippy run for every push and manual run, but only for PRs that touch
  * Rust sources, their build and lint configuration, or files the Rust code embeds. Native
  * validation still builds the headless backend whenever `app` is selected because the Chromium
@@ -190,13 +221,25 @@ export function selectScope({
   pullRequest = "",
   previewPr = "",
   workspaceOnlyLockfile = false,
+  cargoTools = null,
 }) {
-  /** Whether any changed path is an mdBook input. */
+  const tools = paths.includes(cargoToolsManifest) ? (cargoTools ?? ["*"]) : [];
+  /** Whether a changed tool pin validates the given scope. */
+  const toolsTouch = (scope) =>
+    tools.some((name) => cargoToolScopes[name]?.includes(scope) ?? true);
+  const filePaths = paths.filter((path) => path !== cargoToolsManifest);
+  /** Whether any changed path or tool pin is an mdBook input. */
   const touchesDocumentation = () =>
-    paths.some((path) => documentation.some((pattern) => pattern.test(path)));
-  /** Whether any changed path can change what the app builds or runs. */
+    toolsTouch("docs") ||
+    filePaths.some((path) =>
+      documentation.some((pattern) => pattern.test(path)),
+    );
+  /** Whether any changed path or tool pin can change what the app builds or runs. */
   const touchesApp = () =>
-    paths.some((path) => !appIndependent.some((pattern) => pattern.test(path)));
+    toolsTouch("app") ||
+    filePaths.some(
+      (path) => !appIndependent.some((pattern) => pattern.test(path)),
+    );
   /**
    * Select nothing but the given PR's preview, when a preview target can receive it, plus the
    * documentation build that preview publishes when the PR changes the books.
@@ -247,7 +290,9 @@ export function selectScope({
     app = touchesApp();
     docs = touchesDocumentation();
     browserPreview = previewTarget && sameRepository && (app || docs);
-    for (const path of paths) {
+    rust = toolsTouch("rust");
+    desktopPackage = browserPackage = toolsTouch("packaging");
+    for (const path of filePaths) {
       const rewiresWorkspace = path === "Cargo.lock" && workspaceOnlyLockfile;
       if (
         !rewiresWorkspace &&
@@ -308,6 +353,13 @@ if (
         readFileSync(".ci-base-Cargo.lock", "utf8"),
         readFileSync("Cargo.lock", "utf8"),
       ),
+    cargoTools:
+      existsSync(".ci-base-cargo-tools.json") && existsSync(cargoToolsManifest)
+        ? changedCargoTools(
+            readFileSync(".ci-base-cargo-tools.json", "utf8"),
+            readFileSync(cargoToolsManifest, "utf8"),
+          )
+        : null,
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,

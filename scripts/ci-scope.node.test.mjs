@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  changedCargoTools,
   lockfileChangesOnlyWorkspaceEdges,
   readChangedPaths,
   selectScope as selectFullScope,
@@ -410,6 +411,9 @@ test("app validation runs only for PRs that can change the app", () => {
     [".github/pull_request_template.md", false],
     [".github/workflows/release-notes.yml", false],
     [".github/workflows/README.md", false],
+    ["playwright/docs.config.ts", false],
+    ["playwright/tests/docs-developer-guide.spec.ts", false],
+    ["playwright/tests/clip-go-button.spec.ts", true],
     ["scripts/ci-scope.mjs", true],
     ["scripts/ci-scope.node.test.mjs", true],
     ["scripts/ci-scope-integration.node.test.mjs", true],
@@ -582,6 +586,64 @@ test("documentation builds only for PRs that touch the manual", () => {
   ]) {
     assert.equal(selectScope({ event, ref }).docs, false, `${event} ${ref}`);
   }
+});
+
+/** Pins compare by tool, so a docs-only tool bump validates only the docs. */
+test("Cargo tool pins validate what the changed tools affect", () => {
+  assert.deepEqual(
+    changedCargoTools(
+      '{"mdbook": "0.4.49", "cargo-nextest": "0.9.146"}',
+      '{"mdbook": "0.5.4", "cargo-nextest": "0.9.146", "cargo-about": "0.8.4"}',
+    ),
+    ["cargo-about", "mdbook"],
+  );
+  /** Select a ready PR that changes the manifest and, optionally, other paths. */
+  const select = (cargoTools, paths = []) =>
+    selectFullScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths: ["config/cargo-tools.json", ...paths],
+      cargoTools,
+    });
+  const quiet = {
+    desktop_check: false,
+    desktop_package: false,
+    browser_package: false,
+    browser_preview: false,
+    preview_pr: "",
+    docs: false,
+    rust: false,
+    app: false,
+  };
+  assert.deepEqual(select(["mdbook"]), { ...quiet, docs: true });
+  assert.deepEqual(select(["cargo-nextest"]), {
+    ...quiet,
+    rust: true,
+    app: true,
+  });
+  assert.deepEqual(select(["typeshare-cli"]), { ...quiet, app: true });
+  assert.deepEqual(select(["cargo-about"]), {
+    ...quiet,
+    desktop_package: true,
+    browser_package: true,
+    app: true,
+  });
+  assert.deepEqual(select(["mdbook"], ["crates/engine/src/lib.rs"]), {
+    ...quiet,
+    docs: true,
+    rust: true,
+    app: true,
+  });
+  const unknown = {
+    ...quiet,
+    desktop_package: true,
+    browser_package: true,
+    docs: true,
+    rust: true,
+    app: true,
+  };
+  assert.deepEqual(select(null), unknown);
+  assert.deepEqual(select(["a-new-tool"]), unknown);
 });
 
 /**

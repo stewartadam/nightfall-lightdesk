@@ -5,10 +5,10 @@ their compiled code. The notice inventory describes the software shipped in a
 build. Generated inventories stay out of Git. Reviewed license supplements and
 the generation policy are checked in under `config/notices/` and `about.toml`.
 
-Install the pinned Rust license collector before building web or desktop assets:
+Install the pinned Rust license collector before building web or desktop assets. `config/cargo-tools.json` pins its version:
 
 ```sh
-cargo install cargo-about --locked --version 0.8.4
+pnpm run setup:tools cargo-about
 ```
 
 `pnpm run build` and `pnpm run demo:build` generate these files in
