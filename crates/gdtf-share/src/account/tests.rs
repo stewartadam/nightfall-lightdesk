@@ -162,3 +162,52 @@ async fn environment_account_cannot_be_changed() {
     ));
     assert_eq!(share.login_count(), 0);
 }
+
+/// Lists the mock API's fixtures with the account's session.
+async fn list(account: &GdtfShareAccount) -> Result<usize, AccountError> {
+    account
+        .with_session(|client, session| async move {
+            client.list(&session).await.map(|entries| entries.len())
+        })
+        .await
+}
+
+/// Requests reuse the sign-in's session, and an expired one is replaced by logging in
+/// once more.
+#[tokio::test]
+async fn requests_reuse_the_session_until_it_expires() {
+    let share = MockShare::start().await;
+    let account = account(&share, mock_keychain());
+    account.sign_in(valid_credentials()).await.unwrap();
+    list(&account).await.unwrap();
+    list(&account).await.unwrap();
+    assert_eq!((share.login_count(), share.list_count()), (1, 2));
+
+    share.expire_sessions();
+    list(&account).await.unwrap();
+    list(&account).await.unwrap();
+    assert_eq!((share.login_count(), share.list_count()), (2, 5));
+}
+
+/// A remembered account logs in on its first request after a restart.
+#[tokio::test]
+async fn remembered_account_logs_in_on_first_request() {
+    let share = MockShare::start().await;
+    let keychain = mock_keychain();
+    account(&share, keychain.clone())
+        .sign_in(valid_credentials())
+        .await
+        .unwrap();
+    let restarted = account(&share, keychain);
+    list(&restarted).await.unwrap();
+    assert_eq!((share.login_count(), share.list_count()), (2, 1));
+}
+
+/// Without an account, requests fail without contacting GDTF Share.
+#[tokio::test]
+async fn requests_need_an_account() {
+    let share = MockShare::start().await;
+    let account = account(&share, mock_keychain());
+    assert!(matches!(list(&account).await, Err(AccountError::SignedOut)));
+    assert_eq!((share.login_count(), share.list_count()), (0, 0));
+}

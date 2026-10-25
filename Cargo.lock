@@ -5840,6 +5840,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tower",
@@ -5847,6 +5848,7 @@ dependencies = [
  "typeshare",
  "windows-native-keyring-store",
  "zbus-secret-service-keyring-store",
+ "zip 9.0.5",
 ]
 
 [[package]]

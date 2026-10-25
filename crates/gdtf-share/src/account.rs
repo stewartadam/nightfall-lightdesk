@@ -13,7 +13,7 @@ use std::sync::{Arc, OnceLock};
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::client::{ShareClient, ShareError};
+use crate::client::{Session, ShareClient, ShareError};
 use crate::credentials::{CredentialVault, Credentials};
 
 /// Where the signed-in account's credentials came from.
@@ -55,6 +55,12 @@ pub enum AccountError {
     /// The keychain failed while removing the saved account.
     #[error("The system keychain failed: {0}")]
     Keychain(String),
+    /// No account is signed in, so GDTF Share cannot be searched or downloaded from.
+    #[error("Sign in to GDTF Share in Settings first.")]
+    SignedOut,
+    /// A fixture list or archive could not be saved on this computer.
+    #[error("Could not save to this computer: {0}")]
+    Storage(String),
 }
 
 /// The account as currently known, loaded lazily from the keychain.
@@ -63,6 +69,8 @@ struct AccountState {
     loaded: bool,
     keychain_available: bool,
     credentials: Option<(Credentials, GdtfShareCredentialSource)>,
+    /// Open session for `credentials`, reused until GDTF Share ends it.
+    session: Option<Session>,
 }
 
 /// Opens the credential vault; called once, on the blocking pool.
@@ -78,6 +86,8 @@ pub struct GdtfShareAccount {
     vault: Arc<OnceLock<CredentialVault>>,
     environment: Option<Credentials>,
     state: Mutex<AccountState>,
+    /// Held while logging in for a request, so expired sessions are renewed once.
+    login: Mutex<()>,
 }
 
 impl GdtfShareAccount {
@@ -103,6 +113,7 @@ impl GdtfShareAccount {
             vault: Arc::new(OnceLock::new()),
             environment,
             state: Mutex::new(AccountState::default()),
+            login: Mutex::new(()),
         }
     }
 
@@ -181,8 +192,9 @@ impl GdtfShareAccount {
         if self.environment.is_some() {
             return Err(AccountError::ManagedByEnvironment);
         }
-        self.client.login(&credentials).await?;
+        let session = self.client.login(&credentials).await?;
         let mut state = self.state.lock().await;
+        state.session = Some(session);
         self.ensure_loaded(&mut state).await;
         let saved = credentials.clone();
         let source = match self.with_vault(move |vault| vault.save(&saved)).await {
@@ -211,7 +223,78 @@ impl GdtfShareAccount {
             .await
             .map_err(AccountError::Keychain)?;
         state.credentials = None;
+        state.session = None;
         Ok(Self::describe(&state))
+    }
+
+    /// Whether an account is signed in, without contacting GDTF Share.
+    pub async fn is_signed_in(&self) -> bool {
+        self.status().await.user.is_some()
+    }
+
+    /// Runs `request` with a signed-in session.
+    ///
+    /// The session from the last sign-in or request is reused. Without one, or when GDTF
+    /// Share reports a reused one expired, the account logs in again with its saved
+    /// credentials and `request` runs once more.
+    pub async fn with_session<T, Fut>(
+        &self,
+        request: impl Fn(ShareClient, Session) -> Fut,
+    ) -> Result<T, AccountError>
+    where
+        Fut: Future<Output = Result<T, ShareError>>,
+    {
+        let (credentials, cached) = {
+            let mut state = self.state.lock().await;
+            self.ensure_loaded(&mut state).await;
+            let Some((credentials, _)) = &state.credentials else {
+                return Err(AccountError::SignedOut);
+            };
+            (credentials.clone(), state.session.clone())
+        };
+        let expired = match cached {
+            Some(session) => match request(self.client.clone(), session.clone()).await {
+                Err(ShareError::SessionExpired) => {
+                    tracing::debug!("GDTF Share session expired; logging in again");
+                    Some(session)
+                }
+                result => return result.map_err(AccountError::from),
+            },
+            None => None,
+        };
+        let session = self.renew_session(&credentials, expired).await?;
+        Ok(request(self.client.clone(), session).await?)
+    }
+
+    /// Logs in again in place of the `expired` session (or none), once for every request
+    /// that finds it expired at the same time.
+    ///
+    /// Requests that waited for another one's login use the session it opened.
+    async fn renew_session(
+        &self,
+        credentials: &Credentials,
+        expired: Option<Session>,
+    ) -> Result<Session, AccountError> {
+        let _login = self.login.lock().await;
+        let current = self.state.lock().await.session.clone();
+        if let Some(current) = current
+            && expired
+                .as_ref()
+                .is_none_or(|expired| expired.cookie() != current.cookie())
+        {
+            return Ok(current);
+        }
+        let session = self.client.login(credentials).await?;
+        let mut state = self.state.lock().await;
+        // Keep the session only if the account was not changed during the login.
+        if state
+            .credentials
+            .as_ref()
+            .is_some_and(|(current, _)| current.user == credentials.user)
+        {
+            state.session = Some(session.clone());
+        }
+        Ok(session)
     }
 }
 

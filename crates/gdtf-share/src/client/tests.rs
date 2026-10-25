@@ -6,19 +6,17 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::sync::{Arc, atomic::AtomicUsize};
-
 use axum::{Router, http::StatusCode, routing::post};
 
 use super::*;
-use crate::testing::{COOKIE, MockShare, valid_credentials};
+use crate::testing::{COOKIE, MockShare, gdtf_archive, list_entry, valid_credentials};
 
 /// A successful login returns the session cookie without its attributes.
 #[tokio::test]
 async fn login_returns_the_session_cookie() {
     let share = MockShare::start().await;
     let session = share.client().login(&valid_credentials()).await.unwrap();
-    assert_eq!(session.cookie(), COOKIE);
+    assert_eq!(session.cookie(), format!("{COOKIE}-1"));
     assert!(!format!("{session:?}").contains("mock-session"));
 }
 
@@ -44,7 +42,7 @@ async fn non_json_reply_is_a_protocol_error() {
         "/login.php",
         post(|| async { (StatusCode::SERVICE_UNAVAILABLE, "<html>maintenance</html>") }),
     );
-    let share = MockShare::serve(router, Arc::new(AtomicUsize::new(0))).await;
+    let share = MockShare::serve(router).await;
     let error = share
         .client()
         .login(&valid_credentials())
@@ -60,7 +58,7 @@ async fn login_without_cookie_is_a_protocol_error() {
         "/login.php",
         post(|| async { axum::Json(serde_json::json!({ "result": true })) }),
     );
-    let share = MockShare::serve(router, Arc::new(AtomicUsize::new(0))).await;
+    let share = MockShare::serve(router).await;
     let error = share
         .client()
         .login(&valid_credentials())
@@ -94,4 +92,56 @@ fn session_cookie_joins_every_cookie_pair() {
         Some("PHPSESSID=one; lang=en")
     );
     assert_eq!(session_cookie(&reqwest::header::HeaderMap::new()), None);
+}
+
+/// A session that is not the mock API's own, as left behind by an expired login.
+fn stale_session() -> Session {
+    Session {
+        cookie: format!("{COOKIE}-stale"),
+    }
+}
+
+/// The list is read from the reply envelope, skipping entries the engine cannot read.
+#[tokio::test]
+async fn list_skips_unreadable_entries() {
+    let share = MockShare::start().await;
+    share.set_list(serde_json::json!([
+        list_entry(1, "id", "Acme", "Spot", "1.0", &[("Basic", 8)]),
+        { "fixture": "no revision id" },
+    ]));
+    let client = share.client();
+    let session = client.login(&valid_credentials()).await.unwrap();
+    let entries = client.list(&session).await.unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].modes[0].dmxfootprint, 8);
+}
+
+/// GDTF Share's `Unauthorized.` envelope is an expired session; other envelopes keep
+/// their message.
+#[tokio::test]
+async fn error_envelopes_are_told_apart() {
+    let share = MockShare::start().await;
+    let client = share.client();
+    let error = client.list(&stale_session()).await.unwrap_err();
+    assert!(matches!(error, ShareError::SessionExpired), "{error:?}");
+
+    let session = client.login(&valid_credentials()).await.unwrap();
+    let error = client.download(&session, 5).await.unwrap_err();
+    assert!(
+        matches!(&error, ShareError::Refused(message) if message == "File not found."),
+        "{error:?}"
+    );
+}
+
+/// A download returns the archive bytes unchanged.
+#[tokio::test]
+async fn download_returns_the_archive() {
+    let share = MockShare::start().await;
+    share.add_file(3, gdtf_archive("Spot"));
+    let client = share.client();
+    let session = client.login(&valid_credentials()).await.unwrap();
+    assert_eq!(
+        client.download(&session, 3).await.unwrap(),
+        gdtf_archive("Spot")
+    );
 }
