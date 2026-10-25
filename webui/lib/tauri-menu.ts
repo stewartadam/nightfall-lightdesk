@@ -40,6 +40,7 @@ export const TAURI_MENU_SHORTCUTS = {
   loadShowfile: "$mod+o",
   saveShowfile: "$mod+s",
 } as const;
+
 export interface TauriMenuActionHandlers {
   openAbout: () => void;
   openSettings: () => void;
@@ -53,6 +54,8 @@ export interface TauriMenuActionHandlers {
   showKeyboardShortcuts: () => void;
   undo: () => void;
   redo: () => void;
+  /** Runs a web-defined menu item, identified by its `web.` menu id. */
+  webMenuAction: (id: string) => void;
 }
 
 /**
@@ -100,6 +103,8 @@ export function handleTauriMenuAction(
       handlers.redo?.();
       return;
     default:
+      if (action.startsWith(WEB_MENU_ID_PREFIX))
+        handlers.webMenuAction?.(action);
       return;
   }
 }
@@ -136,4 +141,63 @@ export async function invokeTauriMenuAction(action: string): Promise<void> {
 
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("perform_menu_action", { actionId: action });
+}
+
+/** Prefix of native menu ids whose items the web UI defines and runs itself. */
+export const WEB_MENU_ID_PREFIX = "web.";
+
+/** One entry of a native menu whose contents the web UI defines; see `set_view_menu`. */
+export type DesktopMenuEntry =
+  | {
+      kind: "item";
+      /** Menu id starting with {@link WEB_MENU_ID_PREFIX}, echoed back when chosen. */
+      id: string;
+      label: string;
+      /** Native accelerator in Tauri syntax, from {@link toTauriAccelerator}. */
+      accelerator?: string;
+      /** Shows a check mark beside the item when set. */
+      checked?: boolean;
+    }
+  | { kind: "separator" }
+  | { kind: "submenu"; label: string; items: DesktopMenuEntry[] };
+
+/** Accelerator spellings of the modifiers a native menu can safely claim from the webview. */
+const ACCELERATOR_MODIFIERS: Record<string, string> = {
+  $mod: "CmdOrCtrl",
+  Control: "Ctrl",
+  Meta: "Super",
+  Alt: "Alt",
+};
+
+/**
+ * Converts a web shortcut such as `$mod+Shift+p` into a native menu accelerator such as
+ * `CmdOrCtrl+Shift+P`, so a native item advertises and handles the same key as the web UI.
+ *
+ * Returns undefined for shortcuts a native accelerator would break: chords, keys without a
+ * Command, Control, Alt or Meta modifier (the menu would swallow them from text fields), and
+ * keys other than letters, digits and function keys.
+ */
+export function toTauriAccelerator(shortcut: string): string | undefined {
+  const steps = shortcut.trim().split(/\s+/);
+  if (steps.length !== 1) return undefined;
+  const keys = steps[0].split("+");
+  const key = keys.pop()?.replace(/^Key(?=[A-Za-z]$)|^Digit(?=\d$)/, "");
+  if (!key || !/^([A-Za-z0-9]|F([1-9]|1\d|2[0-4]))$/.test(key))
+    return undefined;
+  if (!keys.some((modifier) => modifier in ACCELERATOR_MODIFIERS))
+    return undefined;
+  const modifiers = keys.map((modifier) =>
+    modifier === "Shift" ? "Shift" : ACCELERATOR_MODIFIERS[modifier],
+  );
+  if (modifiers.some((modifier) => modifier === undefined)) return undefined;
+  return [...modifiers, key.toUpperCase()].join("+");
+}
+
+/** Replaces the desktop app's native View menu with web-defined entries. */
+export async function setDesktopViewMenu(
+  entries: DesktopMenuEntry[],
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_view_menu", { entries });
 }

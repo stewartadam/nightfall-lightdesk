@@ -41,7 +41,7 @@ test("documentation opens the guide for this app version", async ({
     .getByRole("region", { name: "Application status bar" })
     .getByRole("button", { name: "Menu", exact: true })
     .click();
-  const item = page.getByRole("button", { name: "Documentation", exact: true });
+  const item = page.getByRole("button", { name: "User Guide", exact: true });
   await expect(item).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("app-menu-docs.png") });
   const menuPopup = page.waitForEvent("popup");
@@ -53,7 +53,7 @@ test("documentation opens the guide for this app version", async ({
   await page.keyboard.press("ControlOrMeta+Shift+P");
   const input = page.getByPlaceholder("Type a command or search...");
   await expect(input).toBeFocused();
-  await input.fill("Open Documentation");
+  await input.fill("Open User Guide");
   await expect(
     page.locator('[data-command-id="app.documentation"]'),
   ).toBeVisible();

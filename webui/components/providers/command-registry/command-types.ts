@@ -12,7 +12,7 @@ import type { AppIcon } from "../../ui/icon";
 /** Describes what invoked a UI action. */
 export interface UiActionExecutionContext {
   /** Surface that invoked the action. */
-  source: "palette" | "shortcut" | "keybinding" | "midi" | "osc";
+  source: "palette" | "menu" | "shortcut" | "keybinding" | "midi" | "osc";
   /** Originating DOM event, when the action was invoked from the browser. */
   event?: KeyboardEvent | MouseEvent;
 }
