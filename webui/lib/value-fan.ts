@@ -67,17 +67,24 @@ export function resolveFanNumber(
 }
 
 /**
- * Returns the numeric value each of `count` ordered edit targets receives.
- * Fan input (`0>3`) is spread across the targets; any other input gives every
- * target the same `fallback` value.
+ * Spreads fan waypoints across target cells, giving each cell its value in the
+ * returned array. Cells are fanned per column in the order given, so a range
+ * covering several columns fans each column from the first to the last
+ * waypoint independently.
  */
-export function fannedNumbersForTargets(
-  count: number,
-  fallback: number,
-  input: string | undefined,
+export function fanNumbersByColumn(
+  cells: readonly (readonly [col: number, row: number])[],
+  waypoints: readonly number[],
 ): number[] {
-  const waypoints = input === undefined ? null : parseNumericFanInput(input);
-  return Array.from({ length: count }, (_, offset) =>
-    waypoints ? resolveFanNumber(waypoints, offset, count) : fallback,
-  );
+  const columnCounts = new Map<number, number>();
+  for (const [col] of cells) {
+    columnCounts.set(col, (columnCounts.get(col) ?? 0) + 1);
+  }
+
+  const columnOffsets = new Map<number, number>();
+  return cells.map(([col]) => {
+    const offset = columnOffsets.get(col) ?? 0;
+    columnOffsets.set(col, offset + 1);
+    return resolveFanNumber(waypoints, offset, columnCounts.get(col) ?? 1);
+  });
 }

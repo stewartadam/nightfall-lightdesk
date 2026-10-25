@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  fannedNumbersForTargets,
+  fanNumbersByColumn,
   parseNumericFanInput,
   resolveFanNumber,
 } from "./value-fan";
@@ -44,9 +44,21 @@ test("resolveFanNumber interpolates evenly across targets", () => {
   assert.equal(resolveFanNumber([0, 0.3], 1, 4), 0.1);
 });
 
-/** Verifies target values fall back to the plain edit value when input is not a fan. */
-test("fannedNumbersForTargets fans only fan input", () => {
-  assert.deepEqual(fannedNumbersForTargets(3, 0, "0>3"), [0, 1.5, 3]);
-  assert.deepEqual(fannedNumbersForTargets(3, 7, "7"), [7, 7, 7]);
-  assert.deepEqual(fannedNumbersForTargets(2, 7, undefined), [7, 7]);
+/** Verifies each column of a multi-column range fans independently in the given order. */
+test("fanNumbersByColumn fans each column across its own cells", () => {
+  assert.deepEqual(
+    fanNumbersByColumn(
+      [
+        [6, 0],
+        [7, 0],
+        [6, 1],
+        [7, 1],
+        [6, 2],
+        [7, 2],
+      ],
+      [0, 3],
+    ),
+    [0, 0, 1.5, 1.5, 3, 3],
+  );
+  assert.deepEqual(fanNumbersByColumn([[2, 5]], [4, 9]), [4]);
 });

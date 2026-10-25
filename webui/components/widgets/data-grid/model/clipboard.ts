@@ -11,14 +11,7 @@ import type {
   GridSelection,
   Item,
 } from "../../../../lib/data-grid-types";
-import {
-  CompactSelection,
-  GridCellKind,
-} from "../../../../lib/data-grid-types";
-import {
-  parseNumericFanInput,
-  resolveFanNumber,
-} from "../../../../lib/value-fan";
+import { CompactSelection } from "../../../../lib/data-grid-types";
 import {
   canEditTextCell,
   canEditTimeCell,
@@ -305,11 +298,7 @@ function inlineEditColumnCells(
   );
 }
 
-/**
- * Builds inline text-edit commits, fanning typed values across multi-column
- * cell selections. Numeric fan input such as `0>3` is spread across the
- * selected number cells of each column in row order.
- */
+/** Builds inline text-edit commits, fanning typed values across multi-column cell selections. */
 export function inlineEditEditsForSelection(
   options: InlineEditCommitOptions,
 ): DataGridCellEdit[] {
@@ -335,35 +324,12 @@ export function inlineEditEditsForSelection(
         ? columnCells
         : [];
   const targets = selectedCells.length > 1 ? selectedCells : [options.editCell];
-  const editableTargets = targets.flatMap((cell) => {
+
+  return targets.flatMap((cell) => {
     const original = options.getCellContent(cell);
     if (!canEditTextCell(original) && !canEditTimeCell(original)) return [];
     if (options.value === cellDisplayValue(original)) return [];
-    return [{ cell, original }];
-  });
-  const fanWaypoints = parseNumericFanInput(options.value);
-  const fanColumnCounts = new Map<number, number>();
-  if (fanWaypoints) {
-    for (const { cell, original } of editableTargets) {
-      if (original.kind !== GridCellKind.Number) continue;
-      fanColumnCounts.set(cell[0], (fanColumnCounts.get(cell[0]) ?? 0) + 1);
-    }
-  }
-  const fanColumnOffsets = new Map<number, number>();
-
-  return editableTargets.flatMap(({ cell, original }) => {
-    let newValue = makeEditedCell(original, options.value);
-    if (fanWaypoints && original.kind === GridCellKind.Number) {
-      const [col] = cell;
-      const offset = fanColumnOffsets.get(col) ?? 0;
-      fanColumnOffsets.set(col, offset + 1);
-      const data = resolveFanNumber(
-        fanWaypoints,
-        offset,
-        fanColumnCounts.get(col) ?? 1,
-      );
-      newValue = { ...original, data, displayData: String(data) };
-    }
+    const newValue = makeEditedCell(original, options.value);
     if (
       newValue === original &&
       (!canEditTimeCell(original) ||

@@ -43,7 +43,10 @@ import type {
   GridSelection,
   Item,
 } from "../../../../lib/data-grid-types";
-import { CompactSelection } from "../../../../lib/data-grid-types";
+import {
+  CompactSelection,
+  GridCellKind,
+} from "../../../../lib/data-grid-types";
 import {
   emptyGridSelection,
   getEditTargetRowIndices,
@@ -69,7 +72,10 @@ import {
   updateSceneObjectsFromLibrary,
 } from "../../../../lib/scene-object-service";
 import { useSharedStore } from "../../../../lib/use-shared-store";
-import { fannedNumbersForTargets } from "../../../../lib/value-fan";
+import {
+  fanNumbersByColumn,
+  parseNumericFanInput,
+} from "../../../../lib/value-fan";
 import {
   orderedUidListsEqual,
   replaceKnownUidsInSelection,
@@ -416,12 +422,17 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     }
   };
 
+  /**
+   * Applies a typed transform edit to one scene object, or to every selected
+   * row of the column when `useSelection` is set. Fan waypoints spread across
+   * those rows in table order instead of applying the edited value to each.
+   */
   const applySceneObjectEdit = (
     cell: Item,
     newValue: GridCell,
     useSelection: boolean,
     batchId = uuidv4().replace(/-/g, ""),
-    inputValue?: string,
+    fanWaypoints?: readonly number[] | null,
   ) => {
     const [col, row] = cell;
     const columnId = gridColumns()[col]?.id;
@@ -441,11 +452,12 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     const rowsToEdit = useSelection
       ? getRowsToEdit(selection(), col, row, rowData.length)
       : [row];
-    const targetValues = fannedNumbersForTargets(
-      rowsToEdit.length,
-      value,
-      useSelection ? inputValue : undefined,
-    );
+    const targetValues = fanWaypoints
+      ? fanNumbersByColumn(
+          rowsToEdit.map((targetRow) => [col, targetRow] as const),
+          fanWaypoints,
+        )
+      : rowsToEdit.map(() => value);
 
     if (columnId === "scale") {
       for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
@@ -543,23 +555,49 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     }
   };
 
-  /**
-   * Applies a single typed edit to every selected scene object row, fanning
-   * range input such as `0>3` across the selected rows in table order.
-   */
+  /** Applies a single typed edit to every selected scene object row. */
   const handleCellEdited = (
     cell: Item,
     newValue: GridCell,
     _selection?: GridSelection,
     context?: DataGridEditCommitContext,
   ) => {
-    applySceneObjectEdit(cell, newValue, true, undefined, context?.inputValue);
+    const inputValue = context?.inputValue;
+    applySceneObjectEdit(
+      cell,
+      newValue,
+      true,
+      undefined,
+      inputValue === undefined ? null : parseNumericFanInput(inputValue),
+    );
   };
 
-  const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {
+  /**
+   * Applies a multi-cell range or paste edit as one batch, spreading numeric
+   * fan input such as `0>3` down each edited column in table order.
+   */
+  const handleCellsEdited = (
+    edits: readonly DataGridCellEdit[],
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
     const batchId = uuidv4().replace(/-/g, "");
-    for (const edit of edits) {
-      applySceneObjectEdit(edit.cell, edit.newValue, false, batchId);
+    const inputValue = context?.inputValue ?? edits[0]?.inputValue;
+    const fanWaypoints =
+      inputValue === undefined ? null : parseNumericFanInput(inputValue);
+    const fanValues = fanWaypoints
+      ? fanNumbersByColumn(
+          edits.map((edit) => edit.cell),
+          fanWaypoints,
+        )
+      : null;
+    for (const [editIndex, edit] of edits.entries()) {
+      const fanValue = fanValues?.[editIndex];
+      const newValue: GridCell =
+        fanValue === undefined
+          ? edit.newValue
+          : { kind: GridCellKind.Number, data: fanValue, allowOverlay: true };
+      applySceneObjectEdit(edit.cell, newValue, false, batchId);
     }
   };
 

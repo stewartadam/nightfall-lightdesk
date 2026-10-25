@@ -56,7 +56,10 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { useSharedStore } from "../../../lib/use-shared-store";
-import { fannedNumbersForTargets } from "../../../lib/value-fan";
+import {
+  fanNumbersByColumn,
+  parseNumericFanInput,
+} from "../../../lib/value-fan";
 import {
   orderedUidListsEqual,
   replaceFixtureUidsInSelection,
@@ -568,9 +571,16 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     event.preventDefault();
   };
 
+  /**
+   * Applies placement edits to fixtures in one batch. When `useSelection` is
+   * set, each edit expands to the selected rows of its column. Numeric fan
+   * input such as `0>3` is spread across each column's target rows in table
+   * order; other input applies the edited value to every target.
+   */
   const applyPlacementEdits = (
     edits: readonly DataGridCellEdit[],
     useSelection: boolean,
+    inputValue?: string,
   ) => {
     const startMs = performance.now();
     const rowData = displayRows();
@@ -578,69 +588,59 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     const fixtureMap = fixtures.get();
     let nextFixtureMap: typeof fixtureMap | null = null;
     const updates: types.FixturePlacementUpdateEntry[] = [];
-    let rowsSelected = 0;
 
+    const targets: { cell: Item; columnId: string; value: number }[] = [];
     for (const edit of edits) {
       const [col, row] = edit.cell;
       const columnId = displayColumns()[col]?.id;
-      if (!columnId) continue;
+      if (!columnId || !isPlacementColumn(columnId)) continue;
 
       const value = parseEditedNumber(edit.newValue);
-      if (value === null) {
-        continue;
-      }
-
-      if (row >= rowData.length) {
-        continue;
-      }
-
-      if (!isPlacementColumn(columnId)) {
-        continue;
-      }
+      if (value === null || row >= rowData.length) continue;
 
       const rowsToEdit = useSelection
         ? getRowsToEdit(selection(), col, row, rowData.length)
         : [row];
-      const targetValues = fannedNumbersForTargets(
-        rowsToEdit.length,
-        value,
-        useSelection ? edit.inputValue : undefined,
-      );
-      rowsSelected += rowsToEdit.length;
-
-      for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
-        const fixtureRow = rowData[targetRow];
-        const targetValue = targetValues[targetIndex];
-        if (!fixtureRow || targetValue === undefined) continue;
-
-        if (isNoopEdit(columnId, fixtureRow, targetValue)) {
-          continue;
-        }
-
-        const { position, rotation } = buildPlacementUpdate(
-          columnId,
-          targetValue,
-        );
-        const fixture =
-          nextFixtureMap?.[fixtureRow.uid] ?? fixtureMap[fixtureRow.uid];
-        if (!fixture) continue;
-
-        const updatedFixture = applyPlacementUpdate(
-          fixture,
-          position,
-          rotation,
-        );
-        if (!nextFixtureMap) {
-          nextFixtureMap = { ...fixtureMap };
-        }
-        nextFixtureMap[fixtureRow.uid] = updatedFixture;
-        updates.push({
-          id: fixtureRow.id,
-          position,
-          rotation,
-        });
+      for (const targetRow of rowsToEdit) {
+        targets.push({ cell: [col, targetRow], columnId, value });
       }
     }
+    const fanWaypoints =
+      inputValue === undefined ? null : parseNumericFanInput(inputValue);
+    const fanValues = fanWaypoints
+      ? fanNumbersByColumn(
+          targets.map((target) => target.cell),
+          fanWaypoints,
+        )
+      : null;
+
+    for (const [targetIndex, { cell, columnId, value }] of targets.entries()) {
+      const fixtureRow = rowData[cell[1]];
+      const targetValue = fanValues?.[targetIndex] ?? value;
+      if (!fixtureRow || isNoopEdit(columnId, fixtureRow, targetValue)) {
+        continue;
+      }
+
+      const { position, rotation } = buildPlacementUpdate(
+        columnId,
+        targetValue,
+      );
+      const fixture =
+        nextFixtureMap?.[fixtureRow.uid] ?? fixtureMap[fixtureRow.uid];
+      if (!fixture) continue;
+
+      const updatedFixture = applyPlacementUpdate(fixture, position, rotation);
+      if (!nextFixtureMap) {
+        nextFixtureMap = { ...fixtureMap };
+      }
+      nextFixtureMap[fixtureRow.uid] = updatedFixture;
+      updates.push({
+        id: fixtureRow.id,
+        position,
+        rotation,
+      });
+    }
+    const rowsSelected = targets.length;
 
     if (updates.length === 0) {
       const totalMs = performance.now() - startMs;
@@ -661,24 +661,27 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     );
   };
 
-  /**
-   * Applies a single typed edit to every selected fixture row, fanning range
-   * input such as `0>3` across the selected rows in table order.
-   */
+  /** Applies a single typed edit to every selected fixture row. */
   const handleCellEdited = (
     cell: Item,
     newValue: GridCell,
     _selection?: GridSelection,
     context?: DataGridEditCommitContext,
   ) => {
-    applyPlacementEdits(
-      [{ cell, newValue, inputValue: context?.inputValue }],
-      true,
-    );
+    applyPlacementEdits([{ cell, newValue }], true, context?.inputValue);
   };
 
-  const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {
-    applyPlacementEdits(edits, false);
+  /** Applies a multi-cell range or paste edit as one placement batch. */
+  const handleCellsEdited = (
+    edits: readonly DataGridCellEdit[],
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    applyPlacementEdits(
+      edits,
+      false,
+      context?.inputValue ?? edits[0]?.inputValue,
+    );
   };
 
   const deleteSelectedFixtures = () => {
