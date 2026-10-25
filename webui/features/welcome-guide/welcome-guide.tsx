@@ -569,20 +569,6 @@ export default function WelcomeGuide() {
   });
   const { draggable } = createDraggable();
   void draggable;
-  /** Copies the current lesson command exactly, without submitting it to the app. */
-  const copyCommand = async (command: string) => {
-    if (!navigator.clipboard?.writeText) {
-      pushToast("error", "Clipboard access unavailable");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(command);
-      pushToast("success", "Copied command");
-    } catch (error) {
-      log.error("Failed to copy guide command", error);
-      pushToast("error", "Could not copy command");
-    }
-  };
   /** Locates the drag source by sample clip identity in either card or list view. */
   const clipHighlightSelector = createMemo(() => {
     const id = step()?.highlightClipId;
@@ -916,7 +902,6 @@ export default function WelcomeGuide() {
                           )}
                           openPanel={openPanel}
                           openTimeline={openSampleTimeline}
-                          copyCommand={copyCommand}
                           playbackRunning={playbackRunning()}
                         />
                       )}
@@ -1011,16 +996,6 @@ export default function WelcomeGuide() {
                       </Show>
                     </div>
                   </div>
-                </Show>
-                <Show
-                  when={
-                    !current().leavesShowUnchanged &&
-                    hasDiskStorage(capabilities())
-                  }
-                >
-                  <p>
-                    Save your practice show if you want to keep these changes.
-                  </p>
                 </Show>
                 <div class="nf-guide-navigation">
                   <Button size="compact" onClick={() => moveTo(index() - 1)}>

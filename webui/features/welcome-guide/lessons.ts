@@ -138,8 +138,15 @@ const FIRST_LIGHTS_FIXTURES = [370, 371, 372, 373];
 const PRACTICE_FIXTURE_MODEL = "12-segment RGBW Bar";
 /** IDs the Patch lesson gives its practice fixtures, unused in the sample show. */
 const PRACTICE_FIXTURES = [701, 702, 703, 704];
-/** Depth that moves the practice fixtures out of the sample riser to the front of the stage. */
-const PRACTICE_FIXTURE_Z = 3;
+/** Height that moves the practice fixtures out of the sample riser to the top of the stage. */
+const PRACTICE_FIXTURE_Y = 3;
+/** The Patch panel's Fixtures view tab. */
+const PATCH_FIXTURES_TAB =
+  '[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"]';
+/** The Add fixture wizard's Next button, highlighted once a wizard step's choices are made. */
+const PATCH_WIZARD_NEXT = '[data-guide-target="patch-wizard-next"]';
+/** Pos X fan that spreads the practice fixtures evenly across the stage, typed as `-2>2`. */
+const PRACTICE_FIXTURE_X_FAN = [-2, 2];
 /** Mode the practice bars are patched in: one RGBW channel group per segment. */
 const PRACTICE_FIXTURE_MODE = "Segments";
 /** The practice bar's other mode, which drives the whole bar as one segment. */
@@ -932,7 +939,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "Patching tells Nightfall which lights are in your rig and how to reach them. Patch lists every fixture in the show.",
+            text: "Patching tells Nightfall which lights are in your rig and where to reach them. The Patch panel lists every fixture in the show.",
           },
           {
             type: "action",
@@ -942,7 +949,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "select-row",
-        title: "Select a fixture row",
+        title: "Select a patched fixture",
         placement: "above",
         keepVisible: ["row", "visualizer"],
         targetPatchFixture: { id: 310 },
@@ -950,29 +957,33 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "Each row is one fixture. Fixture 310 is a Generic RGBPixelTape 120ch RGB in RGB mode: 40 pixels of red, green, and blue that use 120 DMX channels.",
+            text: "Each row is one fixture in the rig and also includes the fixture's position and orientation for the 3D visualizer.",
           },
           { type: "prerequisite", panels: ["PatchEditor", "Visualizer"] },
           {
             type: "action",
-            body: "Click fixture 310’s ID. The Visualizer highlights the fixtures you select in Patch, so you can see which light you’re editing. This doesn’t select it in the Programmer, so your commands won’t change it.",
+            body: "Click the row for fixture 310 to highlight it in the Visualizer.",
+          },
+          {
+            type: "text",
+            text: "Selecting rows in the patch doesn’t select them in the Programmer, so your commands won’t change it.",
           },
         ],
       },
       {
         id: "add-fixture",
         title: "Add fixtures",
-        target: '[data-panel-kind="patch"] [aria-label="Add fixture"]',
+        target: `${PATCH_FIXTURES_TAB}[aria-selected="false"], [data-panel-kind="patch"] [aria-label="Add fixture"]`,
         observe: { type: "patch-wizard", step: "fixture-selection" },
         content: [
           {
             type: "text",
-            text: "The Add fixture wizard patches new lights: you pick a fixture definition and mode, then choose how many to add and where their DMX starts.",
+            text: "The Add fixture wizard patches new lights: you pick a fixture, its DMX channel mapping (mode), and where to send its channel values (DMX address).",
           },
           { type: "prerequisite", panels: ["PatchEditor"] },
           {
             type: "action",
-            body: "Click Add fixture (+) in the Patch toolbar.",
+            body: "Click Add fixture (+) to add new lights.",
           },
         ],
       },
@@ -980,6 +991,17 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         id: "pick-definition",
         title: "Pick a fixture definition",
         target: `[aria-label="Patch Wizard"] [data-grid-row-key^='["Generic","${PRACTICE_FIXTURE_MODEL}",'][data-grid-column-key="model"]`,
+        parts: [
+          {
+            target: `[aria-label="Patch Wizard"] [data-grid-row-key^='["Generic","${PRACTICE_FIXTURE_MODEL}",'][data-grid-column-key="model"]`,
+            until: {
+              type: "patch-wizard",
+              step: "fixture-selection",
+              model: PRACTICE_FIXTURE_MODEL,
+            },
+          },
+          { target: PATCH_WIZARD_NEXT },
+        ],
         observe: {
           type: "patch-wizard",
           step: "mode-selection",
@@ -988,11 +1010,11 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "A fixture definition describes one model of light: its parts, its attributes, and the DMX channels each mode uses.",
+            text: "A fixture definition describes a lighting fixture: its 3D parts, its attributes the console can set, and the DMX channels mapping for each of its modes.",
           },
           {
             type: "action",
-            body: `Click Generic ${PRACTICE_FIXTURE_MODEL}, then click Next. In a larger library, type in the filter above the list to find a fixture.`,
+            body: `Click Generic ${PRACTICE_FIXTURE_MODEL}, then click Next.`,
           },
         ],
       },
@@ -1001,16 +1023,14 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         title: "Pick a mode",
         parts: [
           {
-            target: `[aria-label="Patch Wizard"] [data-mode="${PRACTICE_FIXTURE_SINGLE_MODE}"]`,
+            target: `[aria-label="Patch Wizard"] [data-mode="${PRACTICE_FIXTURE_MODE}"]`,
             until: {
               type: "patch-wizard",
               step: "mode-selection",
-              mode: PRACTICE_FIXTURE_SINGLE_MODE,
+              mode: PRACTICE_FIXTURE_MODE,
             },
           },
-          {
-            target: `[aria-label="Patch Wizard"] [data-mode="${PRACTICE_FIXTURE_MODE}"]`,
-          },
+          { target: PATCH_WIZARD_NEXT },
         ],
         observe: {
           type: "patch-wizard",
@@ -1020,11 +1040,19 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: `A mode sets which DMX channels a fixture uses and in what order. This bar has two: ${PRACTICE_FIXTURE_MODE} controls each of its 12 segments on its own with 48 channels, and ${PRACTICE_FIXTURE_SINGLE_MODE} lights the whole bar in one color with 4. Pick the mode the physical light is set to, or its channels won’t line up.`,
+            text: `A mode sets which DMX channels a fixture uses and in what order.`,
+          },
+          {
+            type: "text",
+            text: `This bar can run in two modes: ${PRACTICE_FIXTURE_MODE} controls each of its 12 RGBW segments individually using a 48 DMX channels, whereas ${PRACTICE_FIXTURE_SINGLE_MODE} uses only 4 DMX channels but is limited by having all 12 segments show the same color.`,
           },
           {
             type: "action",
-            body: `Click ${PRACTICE_FIXTURE_SINGLE_MODE} and see the channel count change. Then choose ${PRACTICE_FIXTURE_MODE}, so each segment can show its own color, and click Next.`,
+            body: `Choose ${PRACTICE_FIXTURE_MODE}, so each segment can have its own color, and click Next.`,
+          },
+          {
+            type: "text",
+            text: `You will need to pick the mode the physical light is set to, or else the DMX channels sent by the console won't line up.`,
           },
         ],
       },
@@ -1062,7 +1090,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
       },
       {
         id: "address",
-        title: "Choose where their DMX starts",
+        title: "Choose their DMX address",
         target: '[aria-label="Patch Wizard"] input[aria-label="Universe"]',
         parts: [
           {
@@ -1072,7 +1100,14 @@ export const GUIDE_LESSONS: GuideLesson[] = [
           {
             target:
               '[aria-label="Patch Wizard"] input[aria-label="Start address"]',
+            until: {
+              type: "patch-wizard",
+              step: "configure",
+              universeId: 21,
+              startAddress: 1,
+            },
           },
+          { target: PATCH_WIZARD_NEXT },
         ],
         observe: {
           type: "patch-wizard",
@@ -1085,17 +1120,17 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "The patch is the universe and start address where the first bar’s DMX begins. Each next bar starts right after the one before. The wizard suggests the first channels with room for every bar, and Next available finds them again after you change the quantity or mode.",
+            text: "Choose the DMX address of the first bar. The DMX addresses the subsequent bars are configured sequentially.",
           },
           {
             type: "action",
             title: "Patch them to 21.1",
-            body: "Give the practice bars a universe of their own: set the universe to 21, then the start address to 1. Then click Next.",
+            body: "Give the RGB bars a universe of their own: set the universe to 21 and address to 1, then click Next.",
           },
           {
             type: "details",
             title: "Learn more",
-            text: "A DMX universe holds 512 channels, numbered as addresses 1 to 512. A fixture uses one address for each channel in its mode, starting at its start address. Fixtures that share an address respond to the same value, so the wizard won’t continue while new fixtures overlap existing ones.",
+            text: "A DMX universe holds 512 channels, which are sent down a DMX cable to control your physical lights. You can create as many universes as you need for your lights.",
             guidePage: "user-guide/dmx-patching.html",
           },
         ],
@@ -1113,7 +1148,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         content: [
           {
             type: "text",
-            text: "Review shows the definition, the fixture IDs, and the console DMX range the bars will use.",
+            text: "Review summarizes the definition, the fixture IDs, and the console DMX range the bars will use.",
           },
           {
             type: "action",
@@ -1127,22 +1162,38 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         placement: "above",
         keepVisible: ["visualizer"],
         target:
-          '[data-panel-kind="patch"] [data-grid-header-id="tanstack-header-pos_z"]',
+          '[data-panel-kind="patch"] [data-grid-header-id="tanstack-header-pos_x"]',
+        parts: [
+          {
+            target:
+              '[data-panel-kind="patch"] [data-grid-header-id="tanstack-header-pos_x"]',
+            until: {
+              type: "fixtures-placed",
+              fixtureIds: PRACTICE_FIXTURES,
+              x: PRACTICE_FIXTURE_X_FAN,
+            },
+          },
+          {
+            target:
+              '[data-panel-kind="patch"] [data-grid-header-id="tanstack-header-pos_y"]',
+          },
+        ],
         observe: {
           type: "fixtures-placed",
           fixtureIds: PRACTICE_FIXTURES,
-          z: PRACTICE_FIXTURE_Z,
+          x: PRACTICE_FIXTURE_X_FAN,
+          y: PRACTICE_FIXTURE_Y,
         },
         content: [
           {
             type: "text",
-            text: "Patch selects your new bars, and the Visualizer highlights them. Each uses 48 channels: 12 segments of red, green, blue, and white. New fixtures start at the center of the stage, hidden inside the riser, so move them downstage.",
+            text: "New fixtures start at the center of the stage, stacked diagonally.",
           },
           { type: "prerequisite", panels: ["PatchEditor", "Visualizer"] },
           {
             type: "action",
-            title: `Set Pos Z to ${PRACTICE_FIXTURE_Z}`,
-            body: `In the Pos Z column, click fixture 701’s cell and Shift-click 704’s. Type ${PRACTICE_FIXTURE_Z} and press Enter to move all four.`,
+            title: `Set 3D coordinates for fixtures 701 - 704`,
+            body: `Select the Pos X cells for 701-704 and type -2>2 to distribute them. Set Pos Y to ${PRACTICE_FIXTURE_Y} on each of them to raise them above the front of the stage.`,
           },
         ],
       },
@@ -1208,8 +1259,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
         keepVisible: ["panel"],
         parts: [
           {
-            target:
-              '[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"]',
+            target: PATCH_FIXTURES_TAB,
             until: { type: "patch-view", view: "fixtures" },
           },
           {

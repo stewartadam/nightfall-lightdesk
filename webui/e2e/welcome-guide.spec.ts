@@ -392,13 +392,11 @@ test("floating lessons provide context, selectable commands and manual placement
   await command.fill("@ 100");
   await command.press("Enter");
   await expect(hint.locator("code")).toHaveText("red @ 100 green @ 0 blue @ 0");
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await guide
-    .getByRole("button", { name: "Copy command", exact: true })
+    .getByRole("button", { name: "Type command", exact: true })
     .click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe("red @ 100 green @ 0 blue @ 0");
+  await expect(command).toHaveValue("red @ 100 green @ 0 blue @ 0");
+  await expect(command).toBeFocused();
   await expect(hint).toHaveCSS("animation-name", "none");
   await expect(guide.getByRole("button", { name: "All lessons" })).toHaveCount(
     0,
@@ -501,12 +499,14 @@ test("guide content waits for prerequisites and renders text after actions", asy
     action.y + action.height,
   );
   await guide
-    .getByRole("button", { name: "Copy command", exact: true })
+    .getByRole("button", { name: "Type command", exact: true })
     .click();
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe("@ 100");
+  const commandInput = page.getByRole("textbox", {
+    name: "Command input",
+    exact: true,
+  });
+  await expect(commandInput).toHaveValue("@ 100");
+  await expect(commandInput).toBeFocused();
   await page.screenshot({
     path: testInfo.outputPath("guide-prerequisite-ready.png"),
   });
@@ -2390,7 +2390,7 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
 
   await expectStep(page, "Open Patch", { target: true });
   await paletteCommand(page, "Open Patch");
-  await expectStep(page, "Select a fixture row", { target: true });
+  await expectStep(page, "Select a patched fixture", { target: true });
   await expect(
     guide.getByRole("button", { name: "Skip", exact: true }),
   ).toBeVisible();
@@ -2402,8 +2402,18 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
     (window as any).appStores.programmerSelection.get(),
   );
   expect(programmerSelection).toEqual([]);
+  const addFixture = patch.getByRole("button", {
+    name: "Add fixture",
+    exact: true,
+  });
+  await expectHighlightOn(addFixture);
+  await patch.locator('[role="tab"][id$="-routes"]').click();
+  await expectHighlightOn(patch.locator('[role="tab"][id$="-fixtures"]'));
+  await shot("add-fixtures-tab");
+  await patch.locator('[role="tab"][id$="-fixtures"]').click();
+  await expectHighlightOn(addFixture);
   await shot("add-fixtures");
-  await patch.getByRole("button", { name: "Add fixture", exact: true }).click();
+  await addFixture.click();
 
   await expectStep(page, "Pick a fixture definition", { target: true });
   const barEntry = wizard
@@ -2413,20 +2423,22 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
   await expectHighlightOn(barEntry);
   await shot("pick-definition");
   await barEntry.click();
-  await wizard.getByRole("button", { name: "Next", exact: true }).click();
+  const next = wizard.getByRole("button", { name: "Next", exact: true });
+  await expectHighlightOn(next);
+  await shot("pick-definition-next");
+  await next.click();
 
   await expectStep(page, "Pick a mode", { target: true });
   const modes = wizard.getByRole("region", { name: "Fixture modes" });
-  await expectHighlightOn(modes.getByRole("button", { name: "Single" }));
-  await shot("pick-mode-single");
-  await modes.getByRole("button", { name: "Single" }).click();
-  await expect(wizard.getByText("4 DMX channels")).toBeVisible();
-  await shot("pick-mode-single-selected");
   await expectHighlightOn(modes.getByRole("button", { name: "Segments" }));
+  await shot("pick-mode");
   await modes.getByRole("button", { name: "Segments" }).click();
-  await expect(wizard.getByText("48 DMX channels")).toBeVisible();
-  await shot("pick-mode-segments");
-  await wizard.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(
+    wizard.getByText("48 DMX channels", { exact: true }),
+  ).toBeVisible();
+  await expectHighlightOn(next);
+  await shot("pick-mode-next");
+  await next.click();
 
   await expectStep(page, "Choose quantity and IDs", { target: true });
   await expectHighlightOn(wizard.getByLabel("Quantity", { exact: true }));
@@ -2441,7 +2453,7 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
     wizard.getByText("New fixtures get IDs 701–704.", { exact: false }),
   ).toBeVisible();
 
-  await expectStep(page, "Choose where their DMX starts", { target: true });
+  await expectStep(page, "Choose their DMX address", { target: true });
   const universe = wizard.getByLabel("Universe", { exact: true });
   const startAddress = wizard.getByLabel("Start address", { exact: true });
   await expect(universe).not.toHaveValue("");
@@ -2455,6 +2467,7 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
   await shot("address-universe");
   await startAddress.fill("1");
   await expect(wizard.getByText(/conflicts with/)).toBeHidden();
+  await expectHighlightOn(next);
   await guide.getByText("Learn more", { exact: true }).click();
   await expect(
     guide.getByRole("link", { name: "Read more in the user guide" }),
@@ -2539,23 +2552,40 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
     [21, 145],
   ]);
   await expectHighlightOn(
-    patch.locator('[data-grid-header-id="tanstack-header-pos_z"]'),
+    patch.locator('[data-grid-header-id="tanstack-header-pos_x"]'),
   );
   await shot("place");
-  await (await patchCell(701, "pos_z")).click();
-  await (await patchCell(704, "pos_z")).click({ modifiers: ["Shift"] });
+  await (await patchCell(701, "pos_x")).click();
+  await (await patchCell(704, "pos_x")).click({ modifiers: ["Shift"] });
+  await page.keyboard.type("-2>2");
+  await page.keyboard.press("Enter");
+  await expectHighlightOn(
+    patch.locator('[data-grid-header-id="tanstack-header-pos_y"]'),
+  );
+  await shot("place-height");
+  await (await patchCell(701, "pos_y")).click();
+  await (await patchCell(704, "pos_y")).click({ modifiers: ["Shift"] });
   await page.keyboard.type("3");
   await page.keyboard.press("Enter");
   await expectStep(page, "Switch to the DMX Routes view", { target: true });
-  const depths = await page.evaluate(() =>
+  const positions = await page.evaluate(() =>
     (Object.values((window as any).appStores.fixtures.get()) as any[])
       .filter(
         (fixture) =>
           fixture.identifiers.id >= 701 && fixture.identifiers.id <= 704,
       )
-      .map((fixture) => fixture.placement?.position.z),
+      .sort((a, b) => a.identifiers.id - b.identifiers.id)
+      .map((fixture) => [
+        Math.round(fixture.placement?.position.x * 100) / 100,
+        fixture.placement?.position.y,
+      ]),
   );
-  expect(depths).toEqual([3, 3, 3, 3]);
+  expect(positions).toEqual([
+    [-2, 3],
+    [-0.67, 3],
+    [0.67, 3],
+    [2, 3],
+  ]);
 
   await expectStep(page, "Switch to the DMX Routes view", { target: true });
   await shot("routes-tab");
@@ -2563,7 +2593,12 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
 
   await expectStep(page, "Light up your new bars", { target: true });
   await shot("routes-and-command");
-  await submitCommand(page, "fix 701>704 @ 100 white @ 100");
+  await guide
+    .getByRole("button", { name: "Type command", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Command input", exact: true })
+    .press("Enter");
 
   await expectStep(page, "Clear the Programmer", { target: true });
   await expect(

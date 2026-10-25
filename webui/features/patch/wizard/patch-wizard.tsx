@@ -335,6 +335,7 @@ export function PatchWizard() {
                   type="button"
                   onClick={goToNextStep}
                   disabled={!canGoNext()}
+                  data-guide-target="patch-wizard-next"
                   variant="primary"
                 >
                   Next

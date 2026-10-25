@@ -319,18 +319,36 @@ test("guide observes the Add fixture wizard and the fixtures it patches", () => 
   state.fixtures["702"].model = "12-segment RGBW Bar";
   assert.equal(guideCompletionToken(patched, state), "patched");
 
-  const placed = { type: "fixtures-placed", fixtureIds: [701, 702], z: 3 };
-  /** Builds an unrotated stage placement at the origin raised to depth `z`. */
-  const at = (z: number) => ({
-    position: { x: 0, y: 0, z },
+  const spread = {
+    type: "fixtures-placed",
+    fixtureIds: [701, 702, 703],
+    x: [-2, 2],
+  } as const;
+  const raised = { ...spread, y: 3 } as const;
+  /** Builds an unrotated stage placement at `x` across and `y` high. */
+  const at = (x: number, y: number) => ({
+    position: { x, y, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
   });
-  assert.equal(guideCompletionToken(placed as never, state), "");
-  state.fixtures["701"].placement = at(3);
-  state.fixtures["702"].placement = at(0);
-  assert.equal(guideCompletionToken(placed as never, state), "");
-  state.fixtures["702"].placement = at(3);
-  assert.equal(guideCompletionToken(placed as never, state), "placed");
+  state.fixtures["703"] = {
+    identifiers: { id: 703, uid: "703" },
+    model: "12-segment RGBW Bar",
+  } as never;
+  assert.equal(guideCompletionToken(spread, state), "");
+  state.fixtures["701"].placement = at(-2, 0);
+  state.fixtures["702"].placement = at(0, 0);
+  state.fixtures["703"].placement = at(-2, 0);
+  assert.equal(guideCompletionToken(spread, state), "");
+  state.fixtures["703"].placement = at(2, 0);
+  assert.equal(guideCompletionToken(spread, state), "placed");
+  assert.equal(guideCompletionToken(raised, state), "");
+  for (const [uid, x] of [
+    ["701", -2],
+    ["702", 0],
+    ["703", 2],
+  ] as const)
+    state.fixtures[uid].placement = at(x, 3);
+  assert.equal(guideCompletionToken(raised, state), "placed");
 });
 
 /** Step FX steps read the open editor's stored effect for selection, phase, and speed. */

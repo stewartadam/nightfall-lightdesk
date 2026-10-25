@@ -8,6 +8,7 @@
 
 import { durationToMs } from "../../lib/duration";
 import type { PanelComponentName } from "../../lib/panel-definitions";
+import { resolveFanNumber } from "../../lib/value-fan";
 import type {
   ActiveInstancesMap,
   ClipMap,
@@ -57,7 +58,14 @@ export type GuideObservation =
     }
   | { type: "fixtures-patched"; fixtureIds: readonly number[]; model: string }
   | { type: "fixtures-removed"; fixtureIds: readonly number[] }
-  | { type: "fixtures-placed"; fixtureIds: readonly number[]; z: number }
+  | {
+      type: "fixtures-placed";
+      fixtureIds: readonly number[];
+      /** Fan waypoints the fixtures' Pos X must follow, in fixture ID order, as typed `-2>2`. */
+      x?: readonly number[];
+      /** Pos Y every fixture must have. */
+      y?: number;
+    }
   | { type: "timeline-action-selected"; trackId: string; actionId: string }
   | {
       type: "timeline-action-position";
@@ -318,16 +326,25 @@ export function guideCompletionToken(
       )
         ? "patched"
         : "";
-    case "fixtures-placed":
-      return observation.fixtureIds.every((id) =>
-        Object.values(state.fixtures).some(
-          (fixture) =>
-            fixture.identifiers.id === id &&
-            fixture.placement?.position.z === observation.z,
-        ),
-      )
+    case "fixtures-placed": {
+      const { x, y } = observation;
+      return observation.fixtureIds.every((id, index) => {
+        const position = Object.values(state.fixtures).find(
+          (fixture) => fixture.identifiers.id === id,
+        )?.placement?.position;
+        return (
+          position !== undefined &&
+          (x === undefined ||
+            Math.abs(
+              position.x -
+                resolveFanNumber(x, index, observation.fixtureIds.length),
+            ) < 1e-3) &&
+          (y === undefined || position.y === y)
+        );
+      })
         ? "placed"
         : "";
+    }
     case "fixtures-removed":
       return Object.values(state.fixtures).some((fixture) =>
         observation.fixtureIds.includes(fixture.identifiers.id),

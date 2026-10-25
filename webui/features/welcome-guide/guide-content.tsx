@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { CopyIcon } from "@squidlab/phosphor-solid/copy";
+import { ArrowFatLinesRightIcon } from "@squidlab/phosphor-solid/arrow-fat-lines-right";
 import { For, Match, Show, Switch } from "solid-js";
 import { OPEN_COMMAND_PALETTE_SHORTCUT } from "../../components/providers/command-registry";
 import { KbdShortcut } from "../../components/ui/kbd";
@@ -16,7 +16,10 @@ import {
   type PanelComponentName,
   panelDefinitionByName,
 } from "../../lib/panel-definitions";
-import { CLEAR_PROGRAMMER_SHORTCUT } from "../command-line";
+import {
+  CLEAR_PROGRAMMER_SHORTCUT,
+  typeIntoCommandLine,
+} from "../command-line";
 import { stopAllPlayback } from "./cleanup";
 import type { GuideContent } from "./lessons";
 
@@ -58,7 +61,6 @@ export function GuideContentItem(props: {
   canOpenTimeline: boolean;
   openPanel: (name: PanelComponentName) => void;
   openTimeline: () => void;
-  copyCommand: (command: string) => void;
   playbackRunning: boolean;
 }) {
   return (
@@ -128,11 +130,11 @@ export function GuideContentItem(props: {
                   <Button
                     size="icon"
                     variant="subtle"
-                    aria-label="Copy command"
-                    title="Copy command"
-                    onClick={() => props.copyCommand(command())}
+                    aria-label="Type command"
+                    title="Type into the command line"
+                    onClick={() => typeIntoCommandLine(command())}
                   >
-                    <CopyIcon class="size-4" aria-hidden />
+                    <ArrowFatLinesRightIcon class="size-4" aria-hidden />
                   </Button>
                 </div>
               )}
