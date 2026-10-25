@@ -14,6 +14,7 @@ import {
   CompactSelection,
   type GridCell,
   GridCellKind,
+  type GridCellStateIndicator,
   type GridColumn,
   type GridSelection,
 } from "./data-grid-types";
@@ -58,8 +59,8 @@ export const dataGridDarkTheme = {
 
   headerFontStyle: "bold 14px",
   baseFontStyle: "13px",
-  fontFamily:
-    "Inter, Roboto, -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Ubuntu, noto, arial, sans-serif",
+  // Matches --font-sans in styles/theme.css, so canvas-measured column widths fit the DOM text.
+  fontFamily: `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`,
   cellHorizontalPadding: 8,
   checkboxMaxSize: 18,
 };
@@ -236,6 +237,20 @@ export function fixtureValueTransitionColor(color: string): string {
       v: hsv.v + (1 - hsv.v) * 0.25,
     }),
   );
+}
+
+const CONFLICT_WARNING_INDICATORS: GridCellStateIndicator[] = [
+  { label: "Conflict", tone: "warning", variant: "icon" },
+];
+
+/**
+ * Returns the warning icon for a cell whose value conflicts with another row. The icon is laid
+ * out before the cell text and counted by content sizing, so it never covers the value.
+ */
+export function conflictWarningIndicators(
+  conflicted: boolean,
+): GridCellStateIndicator[] | undefined {
+  return conflicted ? CONFLICT_WARNING_INDICATORS : undefined;
 }
 
 export function makeSafeTextCell(value: unknown): GridCell {

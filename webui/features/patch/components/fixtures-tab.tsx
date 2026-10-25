@@ -24,8 +24,6 @@ import { EmptyState } from "../../../components/ui/empty-state";
 import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
-  type DataGridCellDecorationCallback,
-  drawConflictWarningIcon,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -39,6 +37,7 @@ import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   applyElementBackground,
   CONFLICT_VALUE_TEXT_COLOR,
+  conflictWarningIndicators,
   makeSafeTextCell,
 } from "../../../lib/datagrid";
 import {
@@ -63,7 +62,6 @@ import {
   DISABLED_TEXT_COLOR,
   disabledRouteTouchesFixture,
   type FixtureDisplayRow,
-  fixtureDisplayCellHasConflict,
   fixtureOutputOccupancyKey,
   fixtureUidsFromInputSource,
   fixtureUidsFromInputTarget,
@@ -396,6 +394,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
                 data: "",
                 displayData: `In - ${item.routeCounts.input}x`,
                 allowOverlay: false,
+                stateIndicators: conflictWarningIndicators(item.inputOverlap),
                 themeOverride:
                   themeOverride ??
                   (item.inputOverlap
@@ -408,6 +407,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
                 data: "",
                 displayData: `DMX - ${item.routeCounts.output}x`,
                 allowOverlay: false,
+                stateIndicators: conflictWarningIndicators(item.outputOverlap),
                 themeOverride:
                   themeOverride ??
                   (item.outputOverlap
@@ -442,6 +442,9 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
               themeOverride: item.conflictColumns.has("source")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
+              stateIndicators: conflictWarningIndicators(
+                item.conflictColumns.has("source"),
+              ),
             };
             break;
           case "target":
@@ -450,6 +453,9 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
               themeOverride: item.conflictColumns.has("target")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
+              stateIndicators: conflictWarningIndicators(
+                item.conflictColumns.has("target"),
+              ),
             };
             break;
           case "priority":
@@ -475,40 +481,6 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
         return applyElementBackground(cell, isChild);
       },
     }),
-  );
-
-  /** Draws conflict warning glyphs for fixture summary rows. */
-  const conflictCellDecorations = createMemo(() => {
-    const columns = displayColumns();
-    const rows = displayRows();
-    const drawDecorations: DataGridCellDecorationCallback = (args) => {
-      const row = rows[args.row];
-      if (!row) return;
-
-      if (fixtureDisplayCellHasConflict(row, String(columns[args.col]?.id))) {
-        drawConflictWarningIcon(args);
-      }
-    };
-
-    return drawDecorations;
-  });
-
-  /** Tracks fixture summary conflicts that require decoration canvas redraws. */
-  const conflictDecorationInvalidateKey = createMemo(() =>
-    displayRows()
-      .flatMap((row) => {
-        if (row.rowKind === "route") {
-          return Array.from(row.conflictColumns).map(
-            (column) => `${row.fixtureUid}:${row.route.id}:${column}`,
-          );
-        }
-
-        return [
-          row.inputOverlap ? `${row.fixtureUid}:source` : undefined,
-          row.outputOverlap ? `${row.fixtureUid}:target` : undefined,
-        ].filter((key): key is string => key !== undefined);
-      })
-      .join("|"),
   );
 
   /** Navigates from a grouped fixture row to its route detail row. */
@@ -609,8 +581,6 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
           width="100%"
           height="100%"
           freezeColumns={1}
-          cellDecorations={conflictCellDecorations()}
-          decorationInvalidateKey={conflictDecorationInvalidateKey()}
           onCellClicked={handleCellClicked}
           onCellContextMenu={handleCellContextMenu}
           onCellHovered={onCellHovered}
@@ -623,6 +593,7 @@ export default function PatchFixturesTab(props: PatchFixturesTabProps) {
           }}
         />
         <Tooltip
+          class="absolute top-0 left-0"
           content={() => conflictTooltip()?.content ?? ""}
           position="bottom"
           anchorRect={() => conflictTooltip()?.anchorRect}

@@ -502,18 +502,20 @@ fn builtin_catalog_profiles_instantiate_in_their_advertised_mode() {
     assert_eq!(keys.len(), profiles.len(), "catalog keys must be unique");
 
     for profile in profiles {
-        let fixture = profile
-            .create_fixture(7, profile.mode)
-            .unwrap_or_else(|| panic!("{} should instantiate", profile.model));
-        assert_eq!(fixture.identifiers.id, 7);
-        assert_eq!(fixture.make, profile.make);
-        assert_eq!(fixture.model, profile.model);
-        assert_eq!(fixture.mode, profile.mode);
-        assert!(
-            !fixture.elements.is_empty(),
-            "{} has no elements",
-            profile.model
-        );
+        for mode in profile.mode_names() {
+            let fixture = profile
+                .create_fixture(7, &mode)
+                .unwrap_or_else(|| panic!("{} {mode} should instantiate", profile.model));
+            assert_eq!(fixture.identifiers.id, 7);
+            assert_eq!(fixture.make, profile.make);
+            assert_eq!(fixture.model, profile.model);
+            assert_eq!(fixture.mode, mode);
+            assert!(
+                !fixture.elements.is_empty(),
+                "{} {mode} has no elements",
+                profile.model
+            );
+        }
         assert!(
             find_builtin_fixture_profile(profile.make, profile.model)
                 .is_some_and(|found| std::ptr::eq(found, profile)),
@@ -521,6 +523,28 @@ fn builtin_catalog_profiles_instantiate_in_their_advertised_mode() {
             profile.model
         );
     }
+}
+
+/// Verifies the RGBW bar offers per-segment control by default and a single-segment mode that
+/// drives the whole bar from four channels, and that library creation honors the requested mode.
+#[test]
+fn rgbw_bar_offers_segments_and_single_modes() {
+    let profile = find_builtin_fixture_profile("Generic", "12-segment RGBW Bar")
+        .expect("RGBW bar should be cataloged");
+    assert_eq!(profile.mode_names(), vec!["Segments", "Single"]);
+    assert_eq!(profile.default_mode(), "Segments");
+
+    let single = create_fixture_from_library(1, "Generic", "12-segment RGBW Bar", "Single")
+        .expect("single mode should instantiate");
+    assert_eq!(single.mode, "Single");
+    assert_eq!(single.elements.len(), 1);
+    assert_eq!(footprint(&single), 4);
+
+    let default = create_fixture_from_library(2, "Generic", "12-segment RGBW Bar", "")
+        .expect("empty mode should select the default");
+    assert_eq!(default.mode, "Segments");
+    assert_eq!(footprint(&default), 48);
+    assert!(create_fixture_from_library(3, "Generic", "12-segment RGBW Bar", "RGBW").is_none());
 }
 
 /// Verifies a built-in profile refuses modes it never advertised.
@@ -549,7 +573,7 @@ fn moving_head_template() -> Result<LibraryFixtureTemplate, CommandError> {
         .expect("moving head spot should be cataloged");
     Ok(LibraryFixtureTemplate {
         fixture: profile
-            .create_fixture(0, profile.mode)
+            .create_fixture(0, profile.default_mode())
             .expect("moving head spot should instantiate"),
         asset_etag: profile.asset_etag.to_string(),
     })

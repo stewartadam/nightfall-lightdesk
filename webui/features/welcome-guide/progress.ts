@@ -8,6 +8,7 @@
 
 import { durationToMs } from "../../lib/duration";
 import type { PanelComponentName } from "../../lib/panel-definitions";
+import { resolveFanNumber } from "../../lib/value-fan";
 import type {
   ActiveInstancesMap,
   ClipMap,
@@ -21,7 +22,7 @@ import type {
   TimelineMap,
 } from "../../state/appStores";
 import { type ControlSnapshot, InstanceDisplayKind } from "../../types";
-import type { PatchTab } from "../patch";
+import type { PatchTab, PatchWizardStep } from "../patch";
 import { normalizeTimelineUid } from "../timeline";
 
 export type GuideObservation =
@@ -41,6 +42,30 @@ export type GuideObservation =
   | { type: "intensity"; fixtureIds: readonly number[] }
   | { type: "fixture-edit-selected"; fixtureId: number }
   | { type: "patch-view"; view: PatchTab }
+  | {
+      type: "patch-wizard";
+      step: PatchWizardStep;
+      /** Library model the wizard must have chosen, when the step names one. */
+      model?: string;
+      /** Fixture mode the wizard must have chosen, when the step names one. */
+      mode?: string;
+      quantity?: number;
+      firstFixtureId?: number;
+      /** Console universe the wizard must assign, which also requires Assign Console DMX. */
+      universeId?: number;
+      /** Console start address the wizard must assign to the first fixture. */
+      startAddress?: number;
+    }
+  | { type: "fixtures-patched"; fixtureIds: readonly number[]; model: string }
+  | { type: "fixtures-removed"; fixtureIds: readonly number[] }
+  | {
+      type: "fixtures-placed";
+      fixtureIds: readonly number[];
+      /** Fan waypoints the fixtures' Pos X must follow, in fixture ID order, as typed `-2>2`. */
+      x?: readonly number[];
+      /** Pos Y every fixture must have. */
+      y?: number;
+    }
   | { type: "timeline-action-selected"; trackId: string; actionId: string }
   | {
       type: "timeline-action-position";
@@ -85,6 +110,18 @@ export interface GuideSnapshot {
   /** Fixtures picked in Patch or the Visualizer for editing, separate from programmer selection. */
   editSelection?: string[];
   patchView?: PatchTab;
+  /** The open Add fixture wizard's page and choices; absent while the wizard is closed. */
+  patchWizard?: {
+    step: PatchWizardStep;
+    model?: string;
+    mode?: string;
+    quantity: number;
+    firstFixtureId: number;
+    /** Console universe the fixtures will be patched to, or null without Assign Console DMX. */
+    universeId: number | null;
+    /** Console start address of the first fixture, or null without Assign Console DMX. */
+    startAddress: number | null;
+  };
   panel?: string;
   openPanels?: {
     component: string;
@@ -261,6 +298,59 @@ export function guideCompletionToken(
     }
     case "patch-view":
       return state.patchView === observation.view ? observation.view : "";
+    case "patch-wizard": {
+      const wizard = state.patchWizard;
+      return wizard &&
+        wizard.step === observation.step &&
+        (observation.model === undefined ||
+          wizard.model === observation.model) &&
+        (observation.mode === undefined || wizard.mode === observation.mode) &&
+        (observation.quantity === undefined ||
+          wizard.quantity === observation.quantity) &&
+        (observation.firstFixtureId === undefined ||
+          wizard.firstFixtureId === observation.firstFixtureId) &&
+        (observation.universeId === undefined ||
+          wizard.universeId === observation.universeId) &&
+        (observation.startAddress === undefined ||
+          wizard.startAddress === observation.startAddress)
+        ? observation.step
+        : "";
+    }
+    case "fixtures-patched":
+      return observation.fixtureIds.every((id) =>
+        Object.values(state.fixtures).some(
+          (fixture) =>
+            fixture.identifiers.id === id &&
+            fixture.model === observation.model,
+        ),
+      )
+        ? "patched"
+        : "";
+    case "fixtures-placed": {
+      const { x, y } = observation;
+      return observation.fixtureIds.every((id, index) => {
+        const position = Object.values(state.fixtures).find(
+          (fixture) => fixture.identifiers.id === id,
+        )?.placement?.position;
+        return (
+          position !== undefined &&
+          (x === undefined ||
+            Math.abs(
+              position.x -
+                resolveFanNumber(x, index, observation.fixtureIds.length),
+            ) < 1e-3) &&
+          (y === undefined || position.y === y)
+        );
+      })
+        ? "placed"
+        : "";
+    }
+    case "fixtures-removed":
+      return Object.values(state.fixtures).some((fixture) =>
+        observation.fixtureIds.includes(fixture.identifiers.id),
+      )
+        ? ""
+        : "removed";
     case "intensity":
       return allRowsMatch(observation.fixtureIds, (row) => {
         const value =

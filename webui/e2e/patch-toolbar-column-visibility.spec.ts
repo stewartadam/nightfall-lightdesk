@@ -115,3 +115,59 @@ test("patch column visibility control is right aligned in the main toolbar", asy
     fullPage: true,
   });
 });
+
+/**
+ * In DMX Routes, the toolbar stays in view however the panel is scrolled, every route cell's text
+ * fits its content-sized column, and the validation mode button opens Settings on that setting.
+ */
+test("patch routes view keeps its toolbar, fits cells, and links its validation setting", async ({
+  page,
+}, testInfo) => {
+  const patchPanel = await openPatchPanel(page);
+  await patchPanel.locator('[role="tab"][id$="-routes"]').click();
+  await expect(patchPanel.locator('[role="gridcell"]').first()).toBeVisible();
+
+  const scrollable = await patchPanel.evaluate((panel) => {
+    const viewport = panel.closest(".nf-scroll-viewport");
+    return viewport ? viewport.scrollHeight - viewport.clientHeight : 0;
+  });
+  expect(scrollable).toBeLessThanOrEqual(0);
+
+  for (const groupBy of ["None", "Fixture", "Universe"]) {
+    await patchPanel
+      .getByRole("tablist", { name: "Group by" })
+      .getByRole("tab", { name: groupBy, exact: true })
+      .click();
+    await expect(patchPanel.locator('[role="gridcell"]').first()).toBeVisible();
+    if (groupBy !== "None") {
+      await patchPanel.locator('[role="gridcell"]').first().click();
+      await expect(
+        patchPanel
+          .locator('[role="gridcell"][data-grid-column-key="type"]')
+          .filter({ hasText: /^Output$/ })
+          .first(),
+      ).toBeVisible();
+    }
+    const clipped = await patchPanel.evaluate((panel) =>
+      [...panel.querySelectorAll<HTMLElement>('[role="gridcell"] .truncate')]
+        .filter((text) => text.scrollWidth > text.clientWidth)
+        .map((text) => text.textContent),
+    );
+    expect(clipped, `clipped cells grouped by ${groupBy}`).toEqual([]);
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("patch-routes-columns.png"),
+  });
+
+  await patchPanel
+    .getByRole("button", { name: /^(Strict|Permissive) Mode$/ })
+    .click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toBeVisible();
+  await expect(
+    settings.getByLabel("Overlap validation mode", { exact: true }),
+  ).toBeFocused();
+  await page.screenshot({
+    path: testInfo.outputPath("patch-validation-setting.png"),
+  });
+});

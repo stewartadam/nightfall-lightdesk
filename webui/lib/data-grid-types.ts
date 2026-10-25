@@ -51,12 +51,14 @@ type GridCellStateIndicatorTone =
   | "tracked"
   | "lookahead"
   | "conflict"
-  | "error";
+  | "error"
+  | "warning";
 
 export interface GridCellStateIndicator {
   label: string;
   tone: GridCellStateIndicatorTone;
-  variant?: "dot" | "tag";
+  /** Dots and tags are compact state markers; icons show the tone's glyph, such as a warning sign. */
+  variant?: "dot" | "tag" | "icon";
   text?: string;
 }
 

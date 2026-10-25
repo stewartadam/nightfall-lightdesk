@@ -24,8 +24,10 @@ import {
 } from "./cell-provider";
 import { cellDisplayValue, findCustomRenderer } from "./cell-utils";
 import {
+  COORDINATE_AXIS_ACCENT_WIDTH,
   columnId,
   columnWidth,
+  coordinateAxisForColumn,
   type DataGridColumnDef,
   groupColumns,
 } from "./column-model";
@@ -35,11 +37,14 @@ import type { DataGridRichCellExtension } from "./types";
 const DEFAULT_MIN_COLUMN_WIDTH = 36;
 const DEFAULT_MAX_COLUMN_WIDTH = 400;
 const CELL_HORIZONTAL_PADDING = 16;
+/** Right border every body cell draws inside its width, which text cannot use. */
+const CELL_BORDER_WIDTH = 1;
 const CELL_CONTENT_GAP = 4;
 const PREFIX_BADGE_WIDTH = 18;
 const BOOLEAN_CONTROL_WIDTH = 18;
 const DROPDOWN_HORIZONTAL_CHROME = 36;
 const STATE_DOT_WIDTH = 8;
+const STATE_ICON_WIDTH = 14;
 const STATE_TAG_HORIZONTAL_PADDING = 8;
 const BODY_FONT = `${dataGridDarkTheme.baseFontStyle} ${dataGridDarkTheme.fontFamily}`;
 const HEADER_FONT = `600 13px ${dataGridDarkTheme.fontFamily}`;
@@ -111,6 +116,7 @@ function stateIndicatorText(
     case "conflict":
       return "Mix";
     case "error":
+    case "warning":
       return "!";
   }
 }
@@ -126,16 +132,20 @@ function measureCellAdornments(
     widths.push(PREFIX_BADGE_WIDTH);
   }
   for (const indicator of cell.stateIndicators ?? []) {
-    widths.push(
-      indicator.variant === "tag"
-        ? measureText(
-            context,
-            cache,
-            stateIndicatorText(indicator),
-            STATE_TAG_FONT,
-          ) + STATE_TAG_HORIZONTAL_PADDING
-        : STATE_DOT_WIDTH,
-    );
+    if (indicator.variant === "tag") {
+      widths.push(
+        measureText(
+          context,
+          cache,
+          stateIndicatorText(indicator),
+          STATE_TAG_FONT,
+        ) + STATE_TAG_HORIZONTAL_PADDING,
+      );
+    } else {
+      widths.push(
+        indicator.variant === "icon" ? STATE_ICON_WIDTH : STATE_DOT_WIDTH,
+      );
+    }
   }
   if (widths.length === 0) return 0;
   return (
@@ -328,9 +338,14 @@ export function sizeColumnsToContent(
         ),
       );
     }
+    const accentWidth = coordinateAxisForColumn(columnId(column))
+      ? COORDINATE_AXIS_ACCENT_WIDTH
+      : 0;
     widths[columnIndex] = clampContentWidth(
       column,
-      widest > 0 ? widest : (column.width ?? DEFAULT_MIN_COLUMN_WIDTH),
+      widest > 0
+        ? widest + CELL_BORDER_WIDTH + accentWidth
+        : (column.width ?? DEFAULT_MIN_COLUMN_WIDTH),
     );
   }
 

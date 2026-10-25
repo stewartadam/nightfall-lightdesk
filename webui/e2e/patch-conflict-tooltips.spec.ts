@@ -115,32 +115,26 @@ function dmxRoutesGrid(page: Page, headerId: string): Locator {
 }
 
 /**
- * Verifies a patch conflict cell uses conflict text and draws a warning decoration.
+ * Verifies a patch conflict cell uses conflict text and shows a warning icon laid out ahead of
+ * its value, so the icon never covers the text and the text is not clipped.
  */
 async function expectPatchConflictCellPresentation(cell: Locator) {
   await expect(cell).toHaveCSS("color", "rgb(239, 68, 68)");
-  await expect
-    .poll(() =>
-      cell.locator("canvas").evaluate((canvasElement) => {
-        const canvas = canvasElement as HTMLCanvasElement;
-        const context = canvas.getContext("2d");
-        if (!context || canvas.width <= 0 || canvas.height <= 0) {
-          return false;
-        }
-
-        const pixels = context.getImageData(
-          0,
-          0,
-          canvas.width,
-          canvas.height,
-        ).data;
-        for (let index = 3; index < pixels.length; index += 4) {
-          if (pixels[index] !== 0) return true;
-        }
-        return false;
-      }),
-    )
-    .toBe(true);
+  const icon = cell.getByRole("img", { name: "Conflict", exact: true });
+  await expect(icon).toBeVisible();
+  const layout = await cell.evaluate((element) => {
+    const iconElement = element.querySelector('[aria-label="Conflict"]');
+    const text = element.querySelector<HTMLElement>(".truncate");
+    if (!iconElement || !text) return undefined;
+    return {
+      iconRight: iconElement.getBoundingClientRect().right,
+      textLeft: text.getBoundingClientRect().left,
+      clipped: text.scrollWidth > text.clientWidth,
+    };
+  });
+  expect(layout).toBeDefined();
+  expect(layout!.iconRight).toBeLessThanOrEqual(layout!.textLeft);
+  expect(layout!.clipped).toBe(false);
 }
 
 /**

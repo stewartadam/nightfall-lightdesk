@@ -253,6 +253,104 @@ test("guide observes Patch edit selection and view", () => {
   assert.equal(guideCompletionToken(none, state), "selected:");
 });
 
+/**
+ * Add fixture wizard steps advance only on the named page with the lesson's choices, and the
+ * patched and removed checks require every practice fixture with the lesson's model.
+ */
+test("guide observes the Add fixture wizard and the fixtures it patches", () => {
+  const state = sampleState();
+  const mode = {
+    type: "patch-wizard",
+    step: "mode-selection",
+    model: "12-segment RGBW Bar",
+  } as const;
+  const review = {
+    type: "patch-wizard",
+    step: "review",
+    quantity: 2,
+    firstFixtureId: 701,
+    universeId: 21,
+    startAddress: 1,
+  } as const;
+  assert.equal(guideCompletionToken(mode, state), "");
+  state.patchWizard = {
+    step: "mode-selection",
+    model: "100-segment LED Bar",
+    quantity: 1,
+    firstFixtureId: 321,
+    universeId: 1,
+    startAddress: 97,
+  };
+  assert.equal(guideCompletionToken(mode, state), "");
+  state.patchWizard.model = "12-segment RGBW Bar";
+  assert.equal(guideCompletionToken(mode, state), "mode-selection");
+  const single = { ...mode, mode: "Single" } as const;
+  state.patchWizard.mode = "Segments";
+  assert.equal(guideCompletionToken(single, state), "");
+  state.patchWizard.mode = "Single";
+  assert.equal(guideCompletionToken(single, state), "mode-selection");
+  state.patchWizard = { ...state.patchWizard, step: "review", quantity: 2 };
+  assert.equal(guideCompletionToken(review, state), "");
+  state.patchWizard.firstFixtureId = 701;
+  assert.equal(guideCompletionToken(review, state), "");
+  state.patchWizard.universeId = 21;
+  assert.equal(guideCompletionToken(review, state), "");
+  state.patchWizard.startAddress = 1;
+  assert.equal(guideCompletionToken(review, state), "review");
+
+  const patched = {
+    type: "fixtures-patched",
+    fixtureIds: [701, 702],
+    model: "12-segment RGBW Bar",
+  } as const;
+  const removed = { type: "fixtures-removed", fixtureIds: [701, 702] } as const;
+  assert.equal(guideCompletionToken(removed, state), "removed");
+  state.fixtures["701"] = {
+    identifiers: { id: 701, uid: "701" },
+    model: "12-segment RGBW Bar",
+  } as never;
+  assert.equal(guideCompletionToken(patched, state), "");
+  assert.equal(guideCompletionToken(removed, state), "");
+  state.fixtures["702"] = {
+    identifiers: { id: 702, uid: "702" },
+    model: "100-segment LED Bar",
+  } as never;
+  assert.equal(guideCompletionToken(patched, state), "");
+  state.fixtures["702"].model = "12-segment RGBW Bar";
+  assert.equal(guideCompletionToken(patched, state), "patched");
+
+  const spread = {
+    type: "fixtures-placed",
+    fixtureIds: [701, 702, 703],
+    x: [-2, 2],
+  } as const;
+  const raised = { ...spread, y: 3 } as const;
+  /** Builds an unrotated stage placement at `x` across and `y` high. */
+  const at = (x: number, y: number) => ({
+    position: { x, y, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+  });
+  state.fixtures["703"] = {
+    identifiers: { id: 703, uid: "703" },
+    model: "12-segment RGBW Bar",
+  } as never;
+  assert.equal(guideCompletionToken(spread, state), "");
+  state.fixtures["701"].placement = at(-2, 0);
+  state.fixtures["702"].placement = at(0, 0);
+  state.fixtures["703"].placement = at(-2, 0);
+  assert.equal(guideCompletionToken(spread, state), "");
+  state.fixtures["703"].placement = at(2, 0);
+  assert.equal(guideCompletionToken(spread, state), "placed");
+  assert.equal(guideCompletionToken(raised, state), "");
+  for (const [uid, x] of [
+    ["701", -2],
+    ["702", 0],
+    ["703", 2],
+  ] as const)
+    state.fixtures[uid].placement = at(x, 3);
+  assert.equal(guideCompletionToken(raised, state), "placed");
+});
+
 /** Step FX steps read the open editor's stored effect for selection, phase, and speed. */
 test("guide observes the open Step FX editor's stored effect", () => {
   const state = sampleState();

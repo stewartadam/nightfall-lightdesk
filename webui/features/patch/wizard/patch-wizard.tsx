@@ -25,6 +25,7 @@ import {
   fixtureProfile,
   fixtures,
 } from "../../../state/appStores";
+import { revealPatchFixtures } from "../model/patch-view";
 import { executePatchWizardCommands } from "../services/patch-wizard-commands";
 import { StepConfigure } from "./step-configure";
 import { StepFinalize } from "./step-finalize";
@@ -96,6 +97,8 @@ export function PatchWizard() {
     canGoNext,
     isLastStep,
     isFirstStep,
+    baseFixtureId,
+    fixtureIdConflict,
   } = usePatchWizard();
 
   const { state } = usePatchWizard();
@@ -109,37 +112,6 @@ export function PatchWizard() {
     createSignal<number[]>([]);
   /** Tracks when the wizard is updating existing fixture definitions. */
   const isMorphMode = createMemo(() => state().morphFixtureIds.length > 0);
-
-  /** Calculate the next available fixture ID */
-  const nextFixtureId = createMemo(() => {
-    const fixtureData = $fixtures();
-    let maxId = 0;
-    for (const fixture of Object.values(fixtureData)) {
-      if (fixture.identifiers.id > maxId) {
-        maxId = fixture.identifiers.id;
-      }
-    }
-    return maxId + 1;
-  });
-
-  /** Check for ID conflicts */
-  const hasIdConflict = createMemo(() => {
-    if (isMorphMode()) return false;
-
-    const fixtureData = $fixtures();
-    const baseId = nextFixtureId();
-    const qty = state().quantity;
-    const existingIds = new Set(
-      Object.values(fixtureData).map((f) => f.identifiers.id),
-    );
-
-    for (let i = 0; i < qty; i++) {
-      if (existingIds.has(baseId + i)) {
-        return true;
-      }
-    }
-    return false;
-  });
 
   const selectedLibraryFixtureInfo = createMemo(() => {
     const fixtureDefinitionId = state().fixtureDefinitionId;
@@ -197,13 +169,19 @@ export function PatchWizard() {
     if (!profileFixture || !libraryFixtureInfo || isCreating()) return;
 
     setIsCreating(true);
+    // Captured before the await, since the suggested first ID moves once the new fixtures arrive.
+    const firstId = baseFixtureId();
+    const newFixtureIds = Array.from(
+      { length: state().quantity },
+      (_, index) => firstId + index,
+    );
     const result = await executePatchWizardCommands({
       state: state(),
       fixtures: $fixtures(),
       profileFixture,
       libraryFixtureInfo,
       geometry: selectedLibraryGeometry(),
-      baseFixtureId: nextFixtureId(),
+      baseFixtureId: firstId,
       forceUpdateExisting,
     });
 
@@ -217,6 +195,8 @@ export function PatchWizard() {
     setIsCreating(false);
     closeVersionConflictModal();
     closeWizard();
+    if (result.status === "success" && !isMorphMode())
+      revealPatchFixtures(newFixtureIds);
   };
   const handleFinish = () => {
     void finishWithOptions(false);
@@ -284,7 +264,7 @@ export function PatchWizard() {
           style={{ "flex-direction": "column", "align-items": "stretch" }}
         >
           {/* ID conflict warning */}
-          <Show when={hasIdConflict() && isLastStep()}>
+          <Show when={fixtureIdConflict() !== undefined && isLastStep()}>
             <div class="px-4 pt-3 pb-0">
               <Alert variant="warning" density="compact">
                 Warning: One or more fixture IDs already exist. Creating will
@@ -315,6 +295,7 @@ export function PatchWizard() {
                     onClick={handleFinish}
                     disabled={!canGoNext() || isCreating()}
                     variant="primary"
+                    data-guide-target="patch-wizard-finish"
                   >
                     <Show when={isCreating()}>
                       <svg
@@ -354,6 +335,7 @@ export function PatchWizard() {
                   type="button"
                   onClick={goToNextStep}
                   disabled={!canGoNext()}
+                  data-guide-target="patch-wizard-next"
                   variant="primary"
                 >
                   Next

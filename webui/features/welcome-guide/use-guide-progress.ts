@@ -16,11 +16,13 @@ import {
 } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommandPalette } from "../../components/providers/command-registry";
+import { libraryDefinitionId } from "../../lib/fixture-service";
 import {
   activeInstances,
   clips,
   controls,
   cues,
+  fixtureLibrary,
   fixtures,
   fx,
   programmerSelection,
@@ -31,7 +33,7 @@ import {
   timelines,
   visualizerEditSelection,
 } from "../../state/appStores";
-import { patchPanelActiveTab } from "../patch";
+import { patchPanelActiveTab, usePatchWizard } from "../patch";
 import type { GuidePanelSnapshot } from "./panel-tracking";
 import {
   type GuideObservation,
@@ -40,22 +42,44 @@ import {
 } from "./progress";
 
 /**
- * Advances on fresh actions, or immediately when a state-based condition is already met.
- * A step the user went Back to only advances on a fresh change, so it can be read again.
+ * Reads the application state that observations compare against. Events a single observation
+ * records while it is armed, such as a submitted command, are left out; the observation adds them.
  */
-export function useGuideProgress(
-  observation: Accessor<GuideObservation | undefined>,
-  held: Accessor<boolean>,
-  revisited: Accessor<boolean>,
+export function useGuideSnapshot(
   workspace: Accessor<GuidePanelSnapshot>,
-  advance: () => void,
-): void {
+): Accessor<GuideSnapshot> {
   const { isOpen: commandPaletteOpen } = useCommandPalette();
   const { isSettingsOpen, isShortcutsPopupVisible } = useAppShell();
   const fixtureMap = useStore(fixtures);
   const selection = useStore(programmerSelection);
   const editSelection = useStore(visualizerEditSelection);
   const patchView = useStore(patchPanelActiveTab);
+  const wizard = usePatchWizard();
+  const library = useStore(fixtureLibrary);
+  /** Summarizes the open Add fixture wizard, naming its chosen definition by library model. */
+  const patchWizard = (): GuideSnapshot["patchWizard"] => {
+    if (!wizard.isOpen() || wizard.state().morphFixtureIds.length > 0)
+      return undefined;
+    const {
+      fixtureDefinitionId,
+      fixtureMode,
+      quantity,
+      assignConsoleDmx,
+      universeId,
+      startAddress,
+    } = wizard.state();
+    return {
+      step: wizard.currentStep(),
+      model: library().find(
+        (entry) => libraryDefinitionId(entry) === fixtureDefinitionId,
+      )?.model,
+      mode: fixtureMode ?? undefined,
+      quantity,
+      firstFixtureId: wizard.baseFixtureId(),
+      universeId: assignConsoleDmx ? universeId : null,
+      startAddress: assignConsoleDmx ? startAddress : null,
+    };
+  };
   const programmer = useStore(programmerState);
   const cueMap = useStore(cues);
   const sequenceMap = useStore(sequences);
@@ -70,6 +94,43 @@ export function useGuideProgress(
   const panel = () => workspace().activeComponent;
   /** Reads open panels and their visibility from the shared workspace snapshot. */
   const openPanels = () => workspace().panels;
+  /** Collects the current state; reading it tracks every store it draws on. */
+  return () => ({
+    commandPaletteOpen: commandPaletteOpen(),
+    settingsOpen: isSettingsOpen(),
+    shortcutsOpen: isShortcutsPopupVisible(),
+    editSelection: editSelection(),
+    patchView: patchView(),
+    patchWizard: patchWizard(),
+    panel: panel(),
+    openPanels: openPanels(),
+    fixtures: fixtureMap(),
+    selection: selection(),
+    programmer: programmer(),
+    cues: cueMap(),
+    sequences: sequenceMap(),
+    clips: clipMap(),
+    fx: fxMap(),
+    stepFx: stepFxMap(),
+    controls: controlList(),
+    instances: instances(),
+    timelines: timelineMap(),
+    timecodes: clocks(),
+  });
+}
+
+/**
+ * Advances on fresh actions, or immediately when a state-based condition is already met.
+ * A step the user went Back to only advances on a fresh change, so it can be read again.
+ */
+export function useGuideProgress(
+  observation: Accessor<GuideObservation | undefined>,
+  held: Accessor<boolean>,
+  revisited: Accessor<boolean>,
+  snapshot: Accessor<GuideSnapshot>,
+  advance: () => void,
+): void {
+  const { isSettingsOpen } = useAppShell();
 
   /** Arms a new observation at entry, and cancels pending advancement on navigation or exit. */
   createEffect(() => {
@@ -154,29 +215,11 @@ export function useGuideProgress(
     /** Reads a pure completion token from the current acknowledged application snapshot. */
     const token = () =>
       guideCompletionToken(target, {
-        commandPaletteOpen: commandPaletteOpen(),
-        settingsOpen: isSettingsOpen(),
-        shortcutsOpen: isShortcutsPopupVisible(),
+        ...snapshot(),
         accentPicked: accentPicked(),
         saveShowfilePressed: saveShowfilePressed(),
         submittedCommand: submittedCommand(),
-        editSelection: editSelection(),
-        patchView: patchView(),
         selectedTimelineActions: selectedTimelineActions(),
-        panel: panel(),
-        openPanels: openPanels(),
-        fixtures: fixtureMap(),
-        selection: selection(),
-        programmer: programmer(),
-        cues: cueMap(),
-        sequences: sequenceMap(),
-        clips: clipMap(),
-        fx: fxMap(),
-        stepFx: stepFxMap(),
-        controls: controlList(),
-        instances: instances(),
-        timelines: timelineMap(),
-        timecodes: clocks(),
       });
     let previous =
       !untrack(revisited) &&

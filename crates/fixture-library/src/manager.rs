@@ -29,8 +29,8 @@ pub enum FixtureSource {
     Ofl(Box<open_fixture_library::OflFixture>),
     /// Built-in nightfall fixture definition.
     BuiltIn {
-        /// User-facing mode name exposed through the patch wizard.
-        mode: String,
+        /// User-facing mode names exposed through the patch wizard, default first.
+        modes: Vec<String>,
         /// Deterministic version string for the built-in definition.
         asset_etag: String,
     },
@@ -61,7 +61,7 @@ impl FixtureProfile {
         match &self.source {
             FixtureSource::Gdtf(metadata) => metadata.modes.clone(),
             FixtureSource::Ofl(ofl) => ofl.modes().iter().map(|m| m.name.clone()).collect(),
-            FixtureSource::BuiltIn { mode, .. } => vec![mode.clone()],
+            FixtureSource::BuiltIn { modes, .. } => modes.clone(),
         }
     }
 
@@ -617,7 +617,7 @@ fn builtin_fixture_profiles() -> impl Iterator<Item = FixtureProfile> {
         .iter()
         .map(|profile| FixtureProfile {
             source: FixtureSource::BuiltIn {
-                mode: profile.mode.to_string(),
+                modes: profile.mode_names(),
                 asset_etag: profile.asset_etag.to_string(),
             },
             make: profile.make.to_string(),

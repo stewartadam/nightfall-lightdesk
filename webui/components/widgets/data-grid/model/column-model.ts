@@ -43,6 +43,21 @@ export function columnId(column: GridColumn): string {
   return String(column.id ?? column.title);
 }
 
+export type CoordinateAxis = "x" | "y" | "z";
+
+/** Width of the axis-colored accent drawn on the right edge of coordinate cells. */
+export const COORDINATE_AXIS_ACCENT_WIDTH = 3;
+
+/** Returns a coordinate axis for conventional X/Y/Z placement columns. */
+export function coordinateAxisForColumn(
+  columnId: string | undefined,
+): CoordinateAxis | undefined {
+  if (columnId?.endsWith("_x")) return "x";
+  if (columnId?.endsWith("_y")) return "y";
+  if (columnId?.endsWith("_z")) return "z";
+  return undefined;
+}
+
 /** Resolves a column width, falling back to the grid default when unset or temporarily unavailable. */
 export function columnWidth(column: GridColumn | undefined): number {
   return column && "width" in column && typeof column.width === "number"

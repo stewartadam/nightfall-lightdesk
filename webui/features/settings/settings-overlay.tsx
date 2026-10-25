@@ -46,6 +46,11 @@ import {
   $networkInterfaceStatus,
   $settings,
 } from "../../state/settings";
+import {
+  $requestedSettings,
+  ROUTE_VALIDATION_SETTING,
+  type SettingsTab,
+} from "../../state/settings-request";
 import { compactViewport } from "../../state/viewport";
 import type {
   InputSignalLossPolicy,
@@ -75,10 +80,6 @@ import {
 } from "../visualizer";
 import { AppearanceSettings } from "./appearance-settings";
 import { PrivacySettings } from "./privacy-settings";
-import {
-  $requestedSettingsTab,
-  type SettingsTab,
-} from "./settings-tab-request";
 
 const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
 const DEFAULT_SHOWFILE_BACKUP_RETENTION = 20;
@@ -174,15 +175,32 @@ export function SettingsOverlay() {
   const [hasResults, setHasResults] = createSignal(true);
   /** Whether a search is running, which lists matches from every tab instead of one tab. */
   const searching = () => query().trim().length > 0;
-  const requestedTab = useStore($requestedSettingsTab);
+  const requested = useStore($requestedSettings);
   const tabId = createUniqueId();
-  /** Switches to a tab another surface asked for, ending any search, then forgets the request. */
+  /**
+   * Switches to the tab another surface asked for, ending any search, and focuses the requested
+   * setting's control once the tab has rendered. Then forgets the request.
+   */
   createEffect(() => {
-    const tab = requestedTab();
-    if (!tab || !isSettingsOpen()) return;
+    const target = requested();
+    if (!target || !isSettingsOpen()) return;
     setQuery("");
-    setActiveTab(tab);
-    $requestedSettingsTab.set(null);
+    setActiveTab(target.tab);
+    $requestedSettings.set(null);
+    const { setting } = target;
+    if (!setting) return;
+    // Waits past the dialog's own opening focus, which lands on the search field.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const control = document
+          .getElementById(`${tabId}-content`)
+          ?.querySelector<HTMLElement>(
+            `[data-setting="${CSS.escape(setting)}"] :is(input, select, textarea, button)`,
+          );
+        control?.scrollIntoView({ block: "nearest" });
+        control?.focus();
+      }),
+    );
   });
   /** Starts each visit to settings without the previous visit's search. */
   createEffect(() => {
@@ -533,6 +551,7 @@ export function SettingsOverlay() {
             </SettingsSection>
             <SettingsSection title="Patch">
               <SettingsRow
+                setting={ROUTE_VALIDATION_SETTING}
                 label="Overlap validation mode"
                 description="Strict blocks overlapping patches. Permissive allows overlaps but still requires unique console addresses."
               >

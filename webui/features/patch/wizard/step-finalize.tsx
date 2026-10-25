@@ -22,7 +22,7 @@ import {
 import { usePatchWizard } from "./wizard-context";
 
 export function StepFinalize() {
-  const { state } = usePatchWizard();
+  const { state, baseFixtureId } = usePatchWizard();
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
   /** Tracks when the review step is summarizing a fixture morph. */
@@ -94,6 +94,13 @@ export function StepFinalize() {
             <div class="text-gray-100">
               {state().quantity} fixture{state().quantity !== 1 ? "s" : ""}
             </div>
+            <Show when={!isMorphMode()}>
+              <div class="text-sm text-gray-400 mt-1">
+                {state().quantity > 1
+                  ? `IDs ${baseFixtureId()}–${baseFixtureId() + state().quantity - 1}`
+                  : `ID ${baseFixtureId()}`}
+              </div>
+            </Show>
           </div>
 
           {/* Patch info */}

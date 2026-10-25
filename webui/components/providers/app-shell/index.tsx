@@ -15,6 +15,10 @@ import {
   useContext,
 } from "solid-js";
 import {
+  $requestedSettings,
+  type SettingsTarget,
+} from "../../../state/settings-request";
+import {
   activeShellDialog,
   closeDiagnostics,
   openDiagnostics,
@@ -22,7 +26,8 @@ import {
 
 interface AppShellContextValue {
   isSettingsOpen: () => boolean;
-  openSettings: () => void;
+  /** Opens Settings, optionally on a given tab with one of its settings focused. */
+  openSettings: (target?: SettingsTarget) => void;
   closeSettings: () => void;
   isAboutOpen: () => boolean;
   openAbout: () => void;
@@ -73,8 +78,9 @@ export const AppShellProvider: ParentComponent = (props) => {
   /** Returns whether the settings dialog is the active shell dialog. */
   const isSettingsOpen = () => activeDialog() === "settings";
 
-  /** Opens settings as the active shell dialog. */
-  const openSettings = () => {
+  /** Opens settings as the active shell dialog, on `target` when one is given. */
+  const openSettings = (target?: SettingsTarget) => {
+    if (target) $requestedSettings.set(target);
     setActiveDialog("settings");
   };
 

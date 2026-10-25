@@ -195,7 +195,7 @@ export default function AppMenu(props: {
       <DropdownMenuSeparator />
       <DropdownMenuItem
         icon={GearIcon}
-        onClick={openSettings}
+        onClick={() => openSettings()}
         shortcut={settingsShortcut()}
       >
         Settings

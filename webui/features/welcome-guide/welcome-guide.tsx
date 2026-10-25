@@ -49,6 +49,7 @@ import {
   timelines,
 } from "../../state/appStores";
 import { activeLayoutId, whenLayoutSettled } from "../../state/layout-switcher";
+import { patchPanelActiveTab, revealPatchFixtures } from "../patch";
 import { normalizeTimelineUid } from "../timeline";
 import {
   clearProgrammerCompletely,
@@ -67,13 +68,14 @@ import {
   removeLessonLayout,
 } from "./lesson-layout";
 import { guideLessons } from "./lesson-store";
-import type { GuidePrerequisite, GuideStep } from "./lessons";
+import type { GuidePrerequisite, GuideStep, GuideStepPart } from "./lessons";
 import {
   collapseCoveringEdgeGroups,
   type GuidePanel,
   type GuidePanelSnapshot,
   trackGuidePanels,
 } from "./panel-tracking";
+import { guideCompletionToken } from "./progress";
 import {
   closeWelcomeGuide,
   guideCompleted,
@@ -86,7 +88,7 @@ import {
   startGuideLesson,
 } from "./state";
 import { useFloatingGuide } from "./use-floating-guide";
-import { useGuideProgress } from "./use-guide-progress";
+import { useGuideProgress, useGuideSnapshot } from "./use-guide-progress";
 import "./welcome-guide.css";
 
 const log = getLogger(import.meta.url);
@@ -365,13 +367,39 @@ export default function WelcomeGuide() {
     }
     return undefined;
   });
+  const guideSnapshot = useGuideSnapshot(workspace);
+  /**
+   * Finds the part of a multi-part step the user is on, starting from `from`: the first part whose
+   * `until` doesn't hold yet, or the last part.
+   */
+  const activePart = (parts: readonly GuideStepPart[], from: number) => {
+    let index = from;
+    while (index < parts.length - 1) {
+      const until = parts[index].until;
+      if (!until || !guideCompletionToken(until, guideSnapshot())) break;
+      index += 1;
+    }
+    return index;
+  };
+  /** Furthest part of the current step the user has reached; finished parts stay finished. */
+  const [reachedPart, setReachedPart] = createSignal(0);
+  /** Starts every step, including one revisited with Back, at its first part. */
+  createEffect(on(step, () => setReachedPart(0)));
+  /** Moves the current step's highlight on to the next part once its `until` holds. */
+  createEffect(() => {
+    const parts = step()?.parts;
+    if (parts?.length) setReachedPart(activePart(parts, untrack(reachedPart)));
+  });
   /**
    * Resolves a step's authored object identities to clip tiles, inspect buttons, sequence cards,
-   * or Trigger cells, falling back to its plain target selector.
+   * or Trigger cells, the reached part of a multi-part step, or else its plain target selector.
    */
   const selectorFor = (
     instruction: GuideStep | undefined,
+    part = 0,
   ): string | undefined => {
+    const parts = instruction?.parts;
+    if (parts?.length) return parts[Math.min(part, parts.length - 1)].target;
     if (instruction?.targetSampleTimeline) {
       const timeline = sampleTimeline();
       if (!timeline) return undefined;
@@ -400,7 +428,7 @@ export default function WelcomeGuide() {
       );
       if (!fixture) return undefined;
       const uid = CSS.escape(fixture.identifiers.uid);
-      return `[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"][aria-selected="false"], [data-panel-kind="patch"] [data-grid-row-key="${uid}"][data-grid-column-key="id"]`;
+      return `[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"][aria-selected="false"], [data-panel-kind="patch"] [data-grid-row-key="${uid}"][data-grid-column-key="${CSS.escape(fixtureTarget.column ?? "id")}"]`;
     }
     const clipTarget = instruction?.targetClip;
     if (clipTarget) {
@@ -428,7 +456,74 @@ export default function WelcomeGuide() {
       : undefined;
   };
   /** Resolves the current step's action target. */
-  const actionSelector = createMemo(() => selectorFor(step()));
+  const actionSelector = createMemo(() => selectorFor(step(), reachedPart()));
+  const patchView = useStore(patchPanelActiveTab);
+  /**
+   * Names the Patch fixture the current step points at while Patch shows its Fixtures view, so a
+   * reveal is requested again whenever that view comes back into sight.
+   */
+  const shownPatchFixture = createMemo(() => {
+    const id = step()?.targetPatchFixture?.id;
+    return id !== undefined &&
+      patchView() === "fixtures" &&
+      panelVisible("PatchEditor")
+      ? `${lessonId()}:${index()}:${id}`
+      : undefined;
+  });
+  /**
+   * Scrolls Patch to the step's fixture cell, since its list only renders rows near the viewport.
+   * Waits a frame and skips cells already rendered, so a reveal the wizard just made, which also
+   * selects the new fixtures, isn't replaced.
+   */
+  createEffect(
+    on(shownPatchFixture, (key) => {
+      const target = step()?.targetPatchFixture;
+      const selector = actionSelector();
+      if (!key || !target || !selector) return;
+      /** Reports a matching cell shown inside its Patch panel, not hidden or scrolled out. */
+      const cellShown = () =>
+        [...document.querySelectorAll<HTMLElement>(selector)].some((cell) => {
+          const panel = cell.closest('[data-panel-kind="patch"]');
+          if (!panel || !cell.checkVisibility()) return false;
+          const box = cell.getBoundingClientRect();
+          const bounds = panel.getBoundingClientRect();
+          return (
+            box.top >= bounds.top &&
+            box.bottom <= bounds.bottom &&
+            box.left >= bounds.left &&
+            box.right <= bounds.right
+          );
+        });
+      const frame = requestAnimationFrame(() => {
+        if (!cellShown())
+          revealPatchFixtures([target.id], {
+            select: false,
+            column: target.column,
+          });
+      });
+      onCleanup(() => cancelAnimationFrame(frame));
+    }),
+  );
+  /**
+   * Names the fixtures the current step selects in Patch while its Fixtures view shows, so they
+   * are selected again whenever that view comes back into sight.
+   */
+  const shownPatchSelection = createMemo(() =>
+    step()?.selectPatchFixtures?.length &&
+    patchView() === "fixtures" &&
+    panelVisible("PatchEditor")
+      ? `${lessonId()}:${index()}`
+      : undefined,
+  );
+  /** Selects and scrolls to the step's fixtures in Patch once the Fixtures view has mounted. */
+  createEffect(
+    on(shownPatchSelection, (key) => {
+      const ids = step()?.selectPatchFixtures;
+      if (!key || !ids) return;
+      const frame = requestAnimationFrame(() => revealPatchFixtures(ids));
+      onCleanup(() => cancelAnimationFrame(frame));
+    }),
+  );
   /** Aims the card at the step's action, or at what reveals a missing panel while prerequisites are unmet. */
   const targetSelector = createMemo(() =>
     blocked() ? prerequisiteSelector() : actionSelector(),
@@ -474,20 +569,6 @@ export default function WelcomeGuide() {
   });
   const { draggable } = createDraggable();
   void draggable;
-  /** Copies the current lesson command exactly, without submitting it to the app. */
-  const copyCommand = async (command: string) => {
-    if (!navigator.clipboard?.writeText) {
-      pushToast("error", "Clipboard access unavailable");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(command);
-      pushToast("success", "Copied command");
-    } catch (error) {
-      log.error("Failed to copy guide command", error);
-      pushToast("error", "Could not copy command");
-    }
-  };
   /** Locates the drag source by sample clip identity in either card or list view. */
   const clipHighlightSelector = createMemo(() => {
     const id = step()?.highlightClipId;
@@ -664,7 +745,7 @@ export default function WelcomeGuide() {
         guideStepIndex.set(from + 1);
     });
   };
-  useGuideProgress(observation, held, revisited, workspace, advanceStep);
+  useGuideProgress(observation, held, revisited, guideSnapshot, advanceStep);
 
   /** Floats the card over the app during lessons and while a lesson launches. */
   const floatingCard = () => Boolean(lesson()) || revealPending();
@@ -821,7 +902,6 @@ export default function WelcomeGuide() {
                           )}
                           openPanel={openPanel}
                           openTimeline={openSampleTimeline}
-                          copyCommand={copyCommand}
                           playbackRunning={playbackRunning()}
                         />
                       )}
@@ -916,23 +996,6 @@ export default function WelcomeGuide() {
                       </Show>
                     </div>
                   </div>
-                </Show>
-                <Show when={!current().leavesShowUnchanged}>
-                  <Show
-                    when={!hasDiskStorage(capabilities())}
-                    fallback={
-                      <p>
-                        Save your practice show if you want to keep these
-                        changes.
-                      </p>
-                    }
-                  >
-                    <p>
-                      Demo changes last only for this session. Reset demo
-                      restores the sample show; it does not erase your lesson
-                      completion badges.
-                    </p>
-                  </Show>
                 </Show>
                 <div class="nf-guide-navigation">
                   <Button size="compact" onClick={() => moveTo(index() - 1)}>

@@ -433,8 +433,21 @@ export function useFloatingGuide(
       ...(dialog ? [dialog] : []),
       ...(teaching ? [teaching] : []),
     ]);
+    // A target inside a dialog can rarely fit the card beside it without covering the dialog, so
+    // the card also tries the dialog's edge at the target's height, keeping it level with the target.
+    const dialogRow =
+      dialog &&
+      target.left >= dialog.left &&
+      target.right <= dialog.right &&
+      target.top >= dialog.top &&
+      target.bottom <= dialog.bottom
+        ? new DOMRect(dialog.left, target.top, dialog.width, target.height)
+        : undefined;
     const attempts = [
       { reference: target, avoid: [...protect, ...prefer] },
+      ...(dialogRow
+        ? [{ reference: dialogRow, avoid: [...protect, ...prefer] }]
+        : []),
       { reference: cluster, avoid: [...protect, ...prefer] },
       { reference: target, avoid: protect },
       { reference: cluster, avoid: protect },

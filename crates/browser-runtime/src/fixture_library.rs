@@ -139,7 +139,7 @@ fn builtin_fixture_profile(
     mode: Option<&str>,
 ) -> Result<GetFixtureProfileResponse, CommandError> {
     let profile = find_builtin_revision(make, model, revision)?;
-    let requested_mode = mode.unwrap_or(profile.mode);
+    let requested_mode = mode.unwrap_or(profile.default_mode());
     let fixture = profile.create_fixture(0, requested_mode).ok_or_else(|| {
         CommandError::new(
             "fixture_library.profile_failed",

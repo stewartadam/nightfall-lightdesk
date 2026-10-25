@@ -32,11 +32,15 @@ export function openDocumentation(): void {
     );
     return;
   }
-  const url = documentationUrl(
-    __NIGHTFALL_PROJECT_LINKS__.documentation,
-    APP_VERSION,
-  );
-  window.open(url, "_blank", "noopener,noreferrer");
+  window.open(documentationPageUrl(""), "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Builds the address of a page in the user guide for this app version, such as
+ * `user-guide/dmx-patching.html`. An empty page gives the guide's front page.
+ */
+export function documentationPageUrl(page: string): string {
+  return `${documentationUrl(__NIGHTFALL_PROJECT_LINKS__.documentation, APP_VERSION)}${page}`;
 }
 
 /** Opens an issue form with compact system information for bugs or a blank form for feedback. */

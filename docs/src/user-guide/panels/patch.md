@@ -6,7 +6,7 @@ Patch defines the fixtures in your show and their DMX routing. Open **Patch** fr
 
 ## Add or change fixtures
 
-Use the add-fixture wizard to select a library definition and mode, set quantity and label, choose a console universe and start address, and review the result before Finish. **Assign Console DMX** can be disabled when you only need a virtual fixture. A mode's channel footprint must match the physical light's mode.
+Use the add-fixture wizard to select a library definition and mode, set quantity, first fixture ID, and label, choose a console universe and start address, and review the result before Finish. **Assign Console DMX** can be disabled when you only need a virtual fixture. A mode's channel footprint must match the physical light's mode. For how universes, addresses, and fixture IDs relate, see [Patching fixtures with DMX](../dmx-patching.md).
 
 The **Fixtures** tab lists IDs, labels, make/model, mode, channel width, and 3D placement. Edit labels and placement cells here. Fixture IDs identify lights in commands; DMX addresses are separate. Multi-element fixtures can expose several controllable cells under one fixture ID.
 

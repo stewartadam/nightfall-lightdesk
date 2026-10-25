@@ -20,6 +20,7 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
   type DataGridEditCommitContext,
+  type DataGridScrollRequest,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -31,7 +32,7 @@ import type {
   GroupHeaderClickedEventArgs,
   Item,
 } from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
+import { CompactSelection, GridCellKind } from "../../../lib/data-grid-types";
 import {
   emptyGridSelection,
   getEditTargetRowIndices,
@@ -70,6 +71,10 @@ import {
   visualizerEditSelection,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
+import {
+  PATCH_FIXTURE_REVEAL_WINDOW_MS,
+  patchFixtureRevealRequest,
+} from "../model/patch-view";
 
 export interface PatchFixtureListTabProps {
   panelId: string;
@@ -711,6 +716,62 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     props.onDeleteActionChange?.(deleteSelectedFixtures);
   });
 
+  const revealRequest = useStore(patchFixtureRevealRequest);
+  const [scrollRequest, setScrollRequest] =
+    createSignal<DataGridScrollRequest>();
+  /**
+   * Last reveal this view acted on. Every mounted view, including ones in hidden layouts, handles
+   * each request once, within the reveal window.
+   */
+  let handledRevealId: number | undefined;
+  /** Numbers this view's scroll requests so the grid acts on each one. */
+  let scrollRequestId = 0;
+  /** Asks the grid to scroll a row into view in the given column, under a fresh request id. */
+  const scrollToRow = (column: number, row: number) => {
+    scrollRequestId += 1;
+    setScrollRequest({ cell: [column, row], requestId: scrollRequestId });
+  };
+  /**
+   * Scrolls to the fixtures Patch was asked to reveal, selecting them when requested, once all of
+   * them have arrived. Rows hidden by a filter are skipped, and expired requests are dropped.
+   */
+  createEffect(() => {
+    const request = revealRequest();
+    if (!request || request.requestId === handledRevealId) return;
+    if (
+      performance.now() - request.requestedAt >
+      PATCH_FIXTURE_REVEAL_WINDOW_MS
+    ) {
+      handledRevealId = request.requestId;
+      return;
+    }
+    const known = new Set(rows().map((row) => row.id));
+    if (!request.fixtureIds.every((id) => known.has(id))) return;
+    handledRevealId = request.requestId;
+    const rowData = displayRows();
+    const indices = request.fixtureIds
+      .map((id) => rowData.findIndex((row) => row.id === id))
+      .filter((index) => index >= 0)
+      .sort((a, b) => a - b);
+    if (indices.length === 0) return;
+    if (request.select)
+      handleGridSelectionChange({
+        ...emptyGridSelection(),
+        rows: CompactSelection.fromArray(indices),
+      });
+    const column = Math.max(
+      0,
+      displayColumns().findIndex((entry) => entry.id === request.column),
+    );
+    // The grid lays out newly arrived rows on the next frame; scrolling sooner clamps short of them.
+    // Scrolling to the last fixture and then the first shows the whole range when it fits, and
+    // otherwise keeps the first fixture in view.
+    requestAnimationFrame(() => {
+      scrollToRow(column, indices[indices.length - 1]);
+      requestAnimationFrame(() => scrollToRow(column, indices[0]));
+    });
+  });
+
   createEffect(() => {
     props.onColumnVisibilityControlChange?.(
       <>
@@ -749,6 +810,7 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
           rowMarkers="checkbox"
           gridSelection={selection()}
           onGridSelectionChange={handleGridSelectionChange}
+          scrollRequest={scrollRequest()}
           onGroupHeaderClicked={handleGroupHeaderClicked}
           width="100%"
           height="100%"

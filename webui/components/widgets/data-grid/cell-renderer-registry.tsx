@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import type { Accessor, JSX, Setter } from "solid-js";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
@@ -455,9 +456,21 @@ function textContentAlignClass(align: GridCell["contentAlign"]): string {
   }
 }
 
-/** Renders one compact state dot or tag for a text-like grid cell. */
+/**
+ * Renders one compact state dot, tag, or icon for a text-like grid cell. Icons carry no native
+ * title because the grids that use them explain the state in their own delayed hover tooltips.
+ */
 function renderStateIndicator(indicator: GridCellStateIndicator) {
   const title = indicator.label;
+  if (indicator.variant === "icon") {
+    return (
+      <WarningIcon
+        class={`size-3.5 shrink-0 ${stateIndicatorIconClass(indicator.tone)}`}
+        role="img"
+        aria-label={title}
+      />
+    );
+  }
   if (indicator.variant === "tag") {
     return (
       <span
@@ -497,6 +510,7 @@ function stateIndicatorFallbackText(indicator: GridCellStateIndicator): string {
     case "conflict":
       return "Mix";
     case "error":
+    case "warning":
       return "!";
   }
 }
@@ -518,7 +532,14 @@ function stateIndicatorDotClass(tone: GridCellStateIndicator["tone"]): string {
       return "bg-zinc-400";
     case "error":
       return "bg-rose-400";
+    case "warning":
+      return "bg-amber-400";
   }
+}
+
+/** Maps indicator tones to dark-theme icon colors. */
+function stateIndicatorIconClass(tone: GridCellStateIndicator["tone"]): string {
+  return tone === "error" ? "text-rose-400" : "text-amber-400";
 }
 
 /** Maps indicator tones to dark-theme tag colors. */
@@ -538,6 +559,8 @@ function stateIndicatorTagClass(tone: GridCellStateIndicator["tone"]): string {
       return "border border-zinc-400/50 bg-zinc-400/15 text-zinc-200";
     case "error":
       return "border border-rose-400/60 bg-rose-400/15 text-rose-200";
+    case "warning":
+      return "border border-amber-400/60 bg-amber-400/15 text-amber-200";
   }
 }
 

@@ -86,6 +86,7 @@ export function StepSelectMode() {
                       class="w-full !justify-start"
                       variant={isSelected() ? "primary" : "subtle"}
                       aria-pressed={isSelected()}
+                      data-mode={mode}
                       onClick={() => handleModeSelect(mode)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
