@@ -232,6 +232,95 @@ mod tests {
         ));
     }
 
+    /// Builds a fixture output route patching `uids` to universe 1 of the sACN output.
+    fn sacn_output_route(uids: Vec<Uuid>) -> OutputRoute {
+        OutputRoute {
+            source: OutputSource::Fixture {
+                uids,
+                element: None,
+                param: None,
+            },
+            target: OutputTarget::Transport {
+                target: "sacn".to_string(),
+                universe: Some(DmxRange::single(1)),
+                address: Some(1),
+            },
+            priority: 0,
+            clone: false,
+        }
+    }
+
+    /// Verifies deleting a fixture drops it from every DMX route: routes naming only that
+    /// fixture disappear, shared routes keep their other fixtures, and unrelated routes stay.
+    #[test]
+    fn delete_fixture_removes_it_from_dmx_routes() {
+        let mut app = fixture_command_app();
+        let deleted = create_test_fixture(1);
+        let kept = create_test_fixture(2);
+        let (deleted_uid, kept_uid) = (deleted.identifiers.uid, kept.identifiers.uid);
+        {
+            let mut provider = app.world_mut().resource_mut::<FixtureDataProviderExt>();
+            provider.inner.add(deleted).expect("fixture should insert");
+            provider.inner.add(kept).expect("fixture should insert");
+        }
+        let console_input = InputRoute {
+            source: InputSource::Transport {
+                transport: RouteTransport::Sacn,
+                universe: Some(DmxRange::single(1)),
+                address: None,
+            },
+            target: InputTarget::Console {
+                universe: Some(DmxRange::single(1)),
+                address: None,
+            },
+            priority: 0,
+            clone: false,
+        };
+        app.world_mut().resource_mut::<InputRoutes>().routes = vec![
+            InputRoute {
+                source: InputSource::Fixture {
+                    uids: vec![kept_uid],
+                    element: None,
+                    param: None,
+                },
+                target: InputTarget::Fixture {
+                    uids: vec![deleted_uid],
+                    element: None,
+                    param: None,
+                },
+                priority: 0,
+                clone: false,
+            },
+            console_input.clone(),
+        ];
+        app.world_mut().resource_mut::<OutputRoutes>().routes = vec![
+            sacn_output_route(vec![deleted_uid]),
+            sacn_output_route(vec![deleted_uid, kept_uid]),
+        ];
+        app.world_mut().resource_mut::<DisabledRoutes>().routes = vec![DisabledRoute::Input {
+            source: InputSource::Fixture {
+                uids: vec![deleted_uid],
+                element: None,
+                param: None,
+            },
+            priority: 0,
+            clone: false,
+        }];
+
+        submit_fixture_command(&mut app, FixtureCommand::DeleteFixture(1));
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<InputRoutes>().routes,
+            vec![console_input]
+        );
+        assert_eq!(
+            app.world().resource::<OutputRoutes>().routes,
+            vec![sacn_output_route(vec![kept_uid])]
+        );
+        assert!(app.world().resource::<DisabledRoutes>().routes.is_empty());
+    }
+
     /// Builds a fixture with a fixed number of empty elements for target resolution tests.
     fn create_test_fixture_with_elements(id: u32, element_count: u32) -> Fixture {
         let mut fixture = create_test_fixture(id);

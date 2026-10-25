@@ -289,6 +289,81 @@ pub struct DisabledRoutes {
     pub routes: Vec<DisabledRoute>,
 }
 
+/// Drops the fixture UIDs rejected by `keep` from `uids`.
+///
+/// Returns whether the list still names at least one fixture. Sets `changed` when a UID was
+/// dropped.
+fn retain_uids(uids: &mut Vec<Uuid>, keep: &impl Fn(&Uuid) -> bool, changed: &mut bool) -> bool {
+    let before = uids.len();
+    uids.retain(keep);
+    *changed |= uids.len() != before;
+    !uids.is_empty()
+}
+
+impl InputSource {
+    /// Drops rejected fixtures from a fixture source and returns whether the source still
+    /// addresses anything; non-fixture sources are left untouched.
+    fn retain_fixtures(&mut self, keep: &impl Fn(&Uuid) -> bool, changed: &mut bool) -> bool {
+        match self {
+            InputSource::Fixture { uids, .. } => retain_uids(uids, keep, changed),
+            InputSource::Transport { .. } | InputSource::Console { .. } => true,
+        }
+    }
+}
+
+impl InputTarget {
+    /// Drops rejected fixtures from a fixture target and returns whether the target still
+    /// addresses anything; non-fixture targets are left untouched.
+    fn retain_fixtures(&mut self, keep: &impl Fn(&Uuid) -> bool, changed: &mut bool) -> bool {
+        match self {
+            InputTarget::Fixture { uids, .. } => retain_uids(uids, keep, changed),
+            InputTarget::Transport { .. } | InputTarget::Console { .. } | InputTarget::Disabled => {
+                true
+            }
+        }
+    }
+}
+
+impl OutputSource {
+    /// Drops rejected fixtures from a fixture source and returns whether the source still
+    /// addresses anything; console sources are left untouched.
+    fn retain_fixtures(&mut self, keep: &impl Fn(&Uuid) -> bool, changed: &mut bool) -> bool {
+        match self {
+            OutputSource::Fixture { uids, .. } | OutputSource::FixtureBreak { uids, .. } => {
+                retain_uids(uids, keep, changed)
+            }
+            OutputSource::Console { .. } => true,
+        }
+    }
+}
+
+/// Removes every fixture rejected by `keep` from the DMX routes.
+///
+/// A route that patches several fixtures keeps the remaining ones, so later fixtures in a
+/// packed route move up to fill the gap. A route left without any fixture on one of its ends
+/// is removed. Returns whether any route changed.
+pub fn retain_route_fixtures(
+    input: &mut InputRoutes,
+    output: &mut OutputRoutes,
+    disabled: &mut DisabledRoutes,
+    keep: impl Fn(&Uuid) -> bool,
+) -> bool {
+    let mut changed = false;
+    input.routes.retain_mut(|route| {
+        let source = route.source.retain_fixtures(&keep, &mut changed);
+        let target = route.target.retain_fixtures(&keep, &mut changed);
+        source && target
+    });
+    output
+        .routes
+        .retain_mut(|route| route.source.retain_fixtures(&keep, &mut changed));
+    disabled.routes.retain_mut(|route| {
+        let DisabledRoute::Input { source, .. } = route;
+        source.retain_fixtures(&keep, &mut changed)
+    });
+    changed
+}
+
 /// Resolved input route source for per-frame processing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedInputSource {

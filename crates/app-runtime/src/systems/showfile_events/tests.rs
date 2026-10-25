@@ -2859,6 +2859,43 @@ fn roundtrip_preserves_dmx_routes_and_domain_counts() {
     }
 }
 
+/// Verifies loading a showfile drops fixtures missing from it out of the DMX routes, so
+/// routes orphaned by older versions disappear while routes to existing fixtures survive.
+#[test]
+fn load_removes_dmx_routes_to_missing_fixtures() {
+    let mut source_world = setup_world();
+    seed_world(&mut source_world);
+    let mut snapshot = collect_snapshot(&mut source_world);
+    let fixture_uid = snapshot.fixtures[0].identifiers.uid;
+    let missing_uid = uuid::Uuid::from_u128(0xdead_0001);
+    let route_to = |uids: Vec<uuid::Uuid>| OutputRoute {
+        source: OutputSource::Fixture {
+            uids,
+            element: None,
+            param: None,
+        },
+        target: OutputTarget::Transport {
+            target: "artnet".to_string(),
+            universe: Some(DmxRange::single(4)),
+            address: Some(1),
+        },
+        priority: 0,
+        clone: false,
+    };
+    snapshot.routes.output = vec![
+        route_to(vec![missing_uid]),
+        route_to(vec![missing_uid, fixture_uid]),
+    ];
+
+    let mut restored_world = setup_world();
+    apply_snapshot(&mut restored_world, snapshot);
+
+    assert_eq!(
+        restored_world.resource::<OutputRoutes>().routes,
+        vec![route_to(vec![fixture_uid])]
+    );
+}
+
 /// Verifies Blueprint definitions and stable cue applications survive serialization and load.
 #[test]
 fn roundtrip_preserves_blueprint_applications() {

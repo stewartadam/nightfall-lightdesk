@@ -180,6 +180,15 @@ impl ShowfileLoadContributor for FixturesPatchLoadContributor<'_> {
                 self.input_routes.routes = contribution.routes.input.clone();
                 self.output_routes.routes = contribution.routes.output.clone();
                 self.disabled_routes.routes = contribution.routes.disabled.clone();
+                let fixtures = &self.fixture_data_provider.inner;
+                if retain_route_fixtures(
+                    self.input_routes,
+                    self.output_routes,
+                    self.disabled_routes,
+                    |uid| fixtures.get(*uid).is_ok(),
+                ) {
+                    tracing::info!("Removed DMX routes to fixtures missing from the showfile");
+                }
                 self.fixture_data_provider
                     .replace_color_path_defaults(contribution.color_path_defaults.to_vec());
                 #[cfg(feature = "midi")]
