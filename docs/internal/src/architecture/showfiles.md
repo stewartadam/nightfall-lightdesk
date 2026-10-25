@@ -11,30 +11,7 @@ This page uses the [running example](../README.md#a-running-example) and builds 
 
 ## What a showfile stores
 
-A showfile stores what you programmed and how the desk is set up. The following diagram shows the parts of a show folder:
-
-```mermaid
-flowchart TB
-  accTitle: Parts of a showfile
-  accDescr: A show folder holds the JSON snapshot, a manifest, timeline audio, scene objects, and optionally packaged fixture profiles and FX modules. The snapshot holds the rig, the programming, the controls, and the settings.
-  subgraph folder[Show folder]
-    subgraph files[Files beside the snapshot]
-      manifest[Manifest]
-      audio[Timeline audio]
-      objects[Scene objects]
-      profiles[Fixture profiles]
-      modules[FX modules]
-    end
-    subgraph snapshot[showfile.json.gz]
-      rig[Rig]
-      programming[Programming]
-      controls[Controls]
-      settings[Settings]
-    end
-  end
-```
-
-The snapshot groups its objects the way the [concept map](../concepts/concept-map.md) does:
+A showfile stores what you programmed and how the desk is set up. Its JSON snapshot groups objects the way the [concept map](../concepts/concept-map.md) does:
 
 | Group | Contents |
 |-------|----------|
@@ -44,8 +21,6 @@ The snapshot groups its objects the way the [concept map](../concepts/concept-ma
 | Settings | Desk settings, IO settings, and version metadata. |
 
 The files beside the snapshot hold what doesn't fit in JSON. The manifest records file hashes and sizes so the show list loads without reading every snapshot. Timeline audio and 3D object bundles are copied into the folder, and a show can also package the fixture profiles and FX modules it uses. [The show folder on disk](#the-show-folder-on-disk) lists the exact paths.
-
-In the running example, `Par 1` is one entry in the fixture list, with its profile embedded so the show opens on a machine that doesn't have the profile installed. Its patch at console universe 1, address 1 and the bindings that route that universe to an output are in the patch bindings. `First sequence` is in the sequence list, `Red` and `Blue` are in the cue list, and `First playback` is in the clip list.
 
 A showfile stores definitions, never live state. These things are not saved:
 
