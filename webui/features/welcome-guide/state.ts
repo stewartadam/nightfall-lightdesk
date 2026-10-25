@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+import { atom, type WritableAtom } from "nanostores";
+import { bestEffortPersistentAtom } from "../../lib/best-effort-persistent-atom";
+import { guideLessons } from "./lesson-store";
+
+/** Keeps invitation dismissal separate from lesson progress and show data. */
+export const guideDismissed = bestEffortPersistentAtom<boolean>(
+  "nightfall.guide.v1.dismissed",
+  false,
+  { encode: JSON.stringify, decode: (value) => value === "true" },
+);
+type GuideSession = {
+  open: WritableAtom<boolean>;
+  lessonId: WritableAtom<string | null>;
+  stepIndex: WritableAtom<number>;
+  returnLayoutId: WritableAtom<string | null>;
+};
+
+const hotData = import.meta.hot?.data as
+  | { guideSession?: GuideSession }
+  | undefined;
+const session = hotData?.guideSession ?? {
+  open: atom(false),
+  lessonId: atom<string | null>(null),
+  stepIndex: atom(0),
+  returnLayoutId: atom<string | null>(null),
+};
+// Sessions carried over from an older module version may predate newer fields.
+session.returnLayoutId ??= atom<string | null>(null);
+// Preserve store identity when lesson edits re-evaluate this module and its importers.
+if (hotData) hotData.guideSession = session;
+
+export const guideOpen = session.open;
+export const guideLessonId = session.lessonId;
+export const guideStepIndex = session.stepIndex;
+/** The user's own layout from before lessons switched to the Lesson layout. */
+export const guideReturnLayoutId = session.returnLayoutId;
+export const guideCompleted = bestEffortPersistentAtom<string[]>(
+  "nightfall.guide.v1.completed",
+  [],
+  {
+    encode: JSON.stringify,
+    /** Discards malformed or obsolete lesson progress without breaking startup. */
+    decode: (value) => {
+      try {
+        const parsed: unknown = JSON.parse(value);
+        return Array.isArray(parsed)
+          ? parsed.filter((id): id is string =>
+              guideLessons.get().some((lesson) => lesson.id === id),
+            )
+          : [];
+      } catch {
+        return [];
+      }
+    },
+  },
+);
+
+/** Opens the lesson menu while preserving completed lessons and show data. */
+export function openWelcomeGuide(): void {
+  guideDismissed.set(true);
+  guideLessonId.set(null);
+  guideStepIndex.set(0);
+  guideOpen.set(true);
+}
+
+/** Hides the guide while preserving its current session position. */
+export function closeWelcomeGuide(): void {
+  guideDismissed.set(true);
+  guideOpen.set(false);
+}
+
+/** Starts directly at the first instruction without changing engine state. */
+export function startGuideLesson(id: string): void {
+  guideLessonId.set(id);
+  guideStepIndex.set(0);
+}

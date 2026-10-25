@@ -37,11 +37,11 @@ import PatchFixtureListTab from "../components/fixture-list-tab";
 import PatchFixturesTab from "../components/fixtures-tab";
 import DmxRoutesTab from "../components/routes-tab";
 import PatchUniversesTab from "../components/universes-tab";
+import { type PatchTab, patchPanelActiveTab } from "../model/patch-view";
 import { usePatchWizard } from "../wizard";
 
 export interface PatchPanelProps extends BasePanelComponentProps {}
 
-type PatchTab = "fixtures" | "routes";
 type RoutesGroupBy = "none" | "fixture" | "universe";
 
 const TABS: { key: PatchTab; label: string }[] = [
@@ -55,16 +55,8 @@ const ROUTES_GROUP_OPTIONS: { key: RoutesGroupBy; label: string }[] = [
   { key: "universe", label: "Universe" },
 ];
 
-const PATCH_PANEL_ACTIVE_TAB_STORAGE_KEY = "nightfall-patch-panel:active-tab";
 const PATCH_PANEL_ROUTES_GROUP_STORAGE_KEY =
   "nightfall-patch-panel:routes-group-by";
-
-/**
- * Returns whether a stored value is a supported patch panel tab.
- */
-function isPatchTab(value: string): value is PatchTab {
-  return value === "fixtures" || value === "routes";
-}
 
 /**
  * Returns whether a stored value is a supported routes grouping mode.
@@ -72,15 +64,6 @@ function isPatchTab(value: string): value is PatchTab {
 function isRoutesGroupBy(value: string): value is RoutesGroupBy {
   return value === "none" || value === "fixture" || value === "universe";
 }
-
-const patchPanelActiveTab = bestEffortPersistentAtom<PatchTab>(
-  PATCH_PANEL_ACTIVE_TAB_STORAGE_KEY,
-  "fixtures",
-  {
-    decode: (value) => (isPatchTab(value) ? value : "fixtures"),
-    encode: (value) => value,
-  },
-);
 
 const patchPanelRoutesGroupBy = bestEffortPersistentAtom<RoutesGroupBy>(
   PATCH_PANEL_ROUTES_GROUP_STORAGE_KEY,

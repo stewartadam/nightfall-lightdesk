@@ -219,7 +219,7 @@ export function FxListView(props: FxListViewProps) {
                 icon={ListDashesIcon}
                 onClick={controller.handleCreateStep}
               >
-                Step FX
+                <span data-guide-target="add-step-fx">Step FX</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 icon={CubeIcon}

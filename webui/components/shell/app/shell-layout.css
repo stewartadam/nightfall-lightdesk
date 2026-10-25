@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Dialogs can live in provider hosts or portals outside the app's DOM subtree. */
+.nf-dialog-backdrop {
+  right: var(--app-viewport-right, 0px);
+  bottom: var(--app-viewport-bottom, 0px);
+}
+
+.nf-dialog-backdrop .nf-dialog-surface {
+  max-height: calc(var(--app-viewport-height, 100dvh) - 32px);
+}
+
+@media (max-width: 760px) {
+  .nf-app-shell {
+    flex-direction: column;
+  }
+}

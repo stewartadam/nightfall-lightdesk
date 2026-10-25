@@ -43,6 +43,9 @@ import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
 
 const log = getLogger(import.meta.url);
+
+/** Clears the programmer from anywhere, including while a text input has focus. */
+export const CLEAR_PROGRAMMER_SHORTCUT = "Shift+Escape";
 const commandSequenceRunner = new CommandSequenceRunner(commandClient);
 
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
@@ -292,7 +295,7 @@ export function createCommandLineController(
 
     useKeyboardShortcut(
       {
-        key: "Shift+Escape",
+        key: CLEAR_PROGRAMMER_SHORTCUT,
         /** Clears the programmer even while an editable element has focus. */
         handler: () => clearProgrammer(),
         description: "Clear programmer",
