@@ -12,7 +12,10 @@ import { join } from "node:path";
 import test from "node:test";
 import * as types from "../types/index";
 import { fixtureElementIdsInDmxOrder } from "./dmx";
-import { buildFixturePatchMapFromRoutes } from "./route-utils";
+import {
+  buildFixturePatchMapFromRoutes,
+  collectConsoleFixtureSpans,
+} from "./route-utils";
 
 /**
  * Builds parameter metadata for route utility tests.
@@ -874,4 +877,29 @@ test("buildFixturePatchMapFromRoutes lays wired layouts out in DMX order", () =>
       );
     }
   }
+});
+
+/**
+ * Verifies console fixture spans cover each fixture from its first to its last patched
+ * byte, gaps between explicit slots included, and that a parameter patched by several
+ * console routes only counts where the highest-priority route puts it.
+ */
+test("collectConsoleFixtureSpans spans whole footprints at the winning console address", () => {
+  const fixtures = {
+    a: makeInterleavedFixture("a"),
+    b: makeRgbFixture("b", 2),
+  };
+  const snapshot: types.RoutesSnapshot = {
+    input: [],
+    disabled: [],
+    output: [
+      consoleRoute(["a", "b"], 1, 11),
+      { ...consoleRoute(["b"], 4, 1), priority: 5 },
+    ],
+  };
+
+  assert.deepEqual(collectConsoleFixtureSpans(snapshot, fixtures), [
+    { uid: "a", universe: 1, start: 11, end: 18 },
+    { uid: "b", universe: 4, start: 1, end: 3 },
+  ]);
 });

@@ -14,6 +14,7 @@ import {
   useContext,
 } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import type { ConsolePatchProblem } from "../model/console-patch-allocation";
 
 const log = getLogger(import.meta.url);
 
@@ -46,16 +47,6 @@ export interface PatchWizardState {
   quantity: number;
   label: string;
   morphFixtureIds: number[];
-}
-
-interface PatchConflictInfo {
-  hasConflict: boolean;
-  /** Universe where the conflict occurs */
-  conflictingUniverse?: number;
-  /** Details about the first conflicting address, if any */
-  conflictingAddress?: number;
-  /** Label/name of the fixture that owns the conflicting address */
-  conflictingFixtureLabel?: string;
 }
 
 const initialState: PatchWizardState = {
@@ -92,9 +83,9 @@ interface PatchWizardContextValue {
   state: () => PatchWizardState;
   updateState: (updates: Partial<PatchWizardState>) => void;
   resetState: () => void;
-  /** Patch conflict info set by the configure step */
-  patchConflict: () => PatchConflictInfo;
-  setPatchConflict: (info: PatchConflictInfo) => void;
+  /** First reason the configured console patch cannot be applied, set by the configure step. */
+  patchProblem: () => ConsolePatchProblem | null;
+  setPatchProblem: (problem: ConsolePatchProblem | null) => void;
 }
 
 const PatchWizardContext = createContext<PatchWizardContextValue>();
@@ -104,9 +95,8 @@ export const PatchWizardProvider: ParentComponent = (props) => {
   const [currentStep, setCurrentStep] =
     createSignal<WizardStep>("fixture-selection");
   const [state, setState] = createSignal<PatchWizardState>({ ...initialState });
-  const [patchConflict, setPatchConflict] = createSignal<PatchConflictInfo>({
-    hasConflict: false,
-  });
+  const [patchProblem, setPatchProblem] =
+    createSignal<ConsolePatchProblem | null>(null);
 
   /** Returns the step sequence for either patching new fixtures or morphing existing ones. */
   const activeSteps = createMemo<WizardStep[]>(() =>
@@ -147,7 +137,7 @@ export const PatchWizardProvider: ParentComponent = (props) => {
           s.universeId !== null &&
           s.startAddress !== null &&
           s.quantity > 0 &&
-          !patchConflict().hasConflict
+          patchProblem() === null
         );
       case "review":
         return true;
@@ -169,7 +159,7 @@ export const PatchWizardProvider: ParentComponent = (props) => {
       quantity: morphFixtureIds.length || initialState.quantity,
       morphFixtureIds,
     });
-    setPatchConflict({ hasConflict: false });
+    setPatchProblem(null);
     setIsOpen(true);
   };
 
@@ -233,8 +223,8 @@ export const PatchWizardProvider: ParentComponent = (props) => {
     state,
     updateState,
     resetState,
-    patchConflict,
-    setPatchConflict,
+    patchProblem,
+    setPatchProblem,
   };
 
   return (

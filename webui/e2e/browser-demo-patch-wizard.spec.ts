@@ -264,13 +264,38 @@ test("embedded demo patches a built-in fixture through the patch wizard", async 
   await expect(
     dialog.getByRole("checkbox", { name: "Assign Console DMX" }),
   ).toBeChecked();
-  // The sample patches its six spots to console universe 9 (96 channels), so Auto
-  // places the new spot right after them.
-  await dialog.getByRole("spinbutton", { name: "Universe" }).fill("9");
-  await dialog.getByRole("button", { name: "Auto", exact: true }).click();
+  const universeInput = dialog.getByRole("spinbutton", { name: "Universe" });
+  const addressInput = dialog.getByRole("spinbutton", {
+    name: "Start address",
+  });
+  const nextAvailableButton = dialog.getByRole("button", {
+    name: "Next available",
+    exact: true,
+  });
+  const quantityInput = dialog.getByRole("spinbutton", { name: "Quantity" });
+  // The sample uses channels 1-480 of universe 1, so the patch starts on the first
+  // free 16-channel span at 1.481.
+  await expect(universeInput).toHaveValue("1");
+  await expect(addressInput).toHaveValue("481");
+  // Forty spots starting at 1.481 run into the fixtures patched to universe 2, and
+  // Next available moves the whole patch to the first span that fits them all.
+  await quantityInput.fill("40");
   await expect(
-    dialog.getByRole("spinbutton", { name: "Start address" }),
-  ).toHaveValue("97");
+    dialog.getByText("Universe 2 Address 1 conflicts with"),
+  ).toBeVisible();
+  await nextAvailableButton.click();
+  await expect(universeInput).toHaveValue("20");
+  await expect(addressInput).toHaveValue("389");
+  await expect(dialog.getByText("conflicts with")).toHaveCount(0);
+  await dialog.locator(".nf-dialog-surface").screenshot({
+    path: testInfo.outputPath("demo-patch-wizard-next-available.png"),
+  });
+  await quantityInput.fill("1");
+  // Typing a universe keeps the address. The sample patches its six spots to console
+  // universe 9 (96 channels), so 9.97 is free.
+  await universeInput.fill("9");
+  await expect(addressInput).toHaveValue("389");
+  await addressInput.fill("97");
   await dialog.locator(".nf-dialog-surface").screenshot({
     path: testInfo.outputPath("demo-patch-wizard-configure.png"),
   });

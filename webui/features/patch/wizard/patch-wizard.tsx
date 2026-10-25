@@ -18,10 +18,7 @@ import {
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
-import {
-  computeFixtureChannelCount,
-  libraryDefinitionId,
-} from "../../../lib/fixture-service";
+import { libraryDefinitionId } from "../../../lib/fixture-service";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtureLibrary,
@@ -144,15 +141,6 @@ export function PatchWizard() {
     return false;
   });
 
-  /** Get channel count from profile fixture metadata for address offset calculation */
-  const channelCount = createMemo(() => {
-    const profile = $fixtureProfile();
-    if (profile?.fixture) {
-      return computeFixtureChannelCount(profile.fixture);
-    }
-    return null;
-  });
-
   const selectedLibraryFixtureInfo = createMemo(() => {
     const fixtureDefinitionId = state().fixtureDefinitionId;
     if (!fixtureDefinitionId) return null;
@@ -216,7 +204,6 @@ export function PatchWizard() {
       libraryFixtureInfo,
       geometry: selectedLibraryGeometry(),
       baseFixtureId: nextFixtureId(),
-      channelCount: channelCount() ?? 1,
       forceUpdateExisting,
     });
 
