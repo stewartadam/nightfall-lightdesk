@@ -154,7 +154,7 @@ export default function AppMenu(props: {
         <DropdownMenuSeparator />
       </Show>
       <DropdownMenuItem icon={BookOpenIcon} onClick={openDocumentation}>
-        Documentation
+        User Guide
       </DropdownMenuItem>
       <DropdownMenuItem
         icon={QuestionIcon}

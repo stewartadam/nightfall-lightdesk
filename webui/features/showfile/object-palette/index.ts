@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+export { OPEN_OBJECT_PALETTE_SHORTCUT } from "./open-showfile-object-palette";
 export {
   ShowfileObjectPaletteProvider,
   useShowfileObjectPalette,

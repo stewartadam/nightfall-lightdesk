@@ -24,10 +24,12 @@ import {
 } from "../../../features/settings";
 import { ShowfileDialogs } from "../../../features/showfile";
 import { GuideInvitation, WelcomeGuide } from "../../../features/welcome-guide";
+import { isTauriRuntime } from "../../../lib/tauri";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
 import ShellOverlayHosts from "../../overlays/shell-hosts";
 import { useAppShell } from "../../providers/app-shell";
+import DesktopViewMenu from "../bridges/desktop-view-menu";
 import TauriMenuBridge from "../bridges/tauri-menu";
 import ExportShowfileCommand from "../command-palette/commands/export-showfile-command";
 import FeedbackCommands from "../command-palette/commands/feedback-commands";
@@ -54,6 +56,9 @@ function ShellRuntime() {
       <MappingModeController />
       <KeybindingController />
       <TauriMenuBridge />
+      <Show when={isTauriRuntime()}>
+        <DesktopViewMenu />
+      </Show>
       <ConnectionOverlay />
       <ShellOverlayHosts />
       <PatchWizard />

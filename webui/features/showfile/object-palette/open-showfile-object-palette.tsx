@@ -9,13 +9,16 @@
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { useShowfileObjectPalette } from "./provider";
 
+/** Shortcut that opens the showfile object palette, also shown beside menu items that open it. */
+export const OPEN_OBJECT_PALETTE_SHORTCUT = "$mod+p";
+
 /** Registers the global shortcut that opens the showfile object palette. */
 export default function OpenShowfileObjectPalette() {
   const { showPalette } = useShowfileObjectPalette();
 
   useKeyboardShortcut(
     {
-      key: "$mod+p",
+      key: OPEN_OBJECT_PALETTE_SHORTCUT,
       handler: (event?: KeyboardEvent) => {
         event?.preventDefault();
         showPalette();

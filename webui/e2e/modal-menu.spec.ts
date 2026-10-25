@@ -204,6 +204,7 @@ test("status menu displays hotkeys and opens keyboard shortcuts", async ({
     await expect(menu.getByRole("button", { name })).toBeVisible();
     await expect(hint(name)).toHaveCount(0);
   }
+  await expect(menu.getByRole("button", { name: "User Guide" })).toBeVisible();
   await expect(hint("Settings")).toHaveText(
     formatShortcutHint("$mod+,", applePlatform),
   );

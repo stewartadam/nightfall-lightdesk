@@ -21,7 +21,7 @@ export default function FeedbackCommands() {
   onMount(() => {
     useUiAction({
       id: "app.documentation",
-      name: "Open Documentation",
+      name: "Open User Guide",
       description: "Read the user guide for this version of Nightfall",
       icon: BookOpenIcon,
       execute: openDocumentation,

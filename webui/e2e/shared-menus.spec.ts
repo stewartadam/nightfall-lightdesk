@@ -56,7 +56,7 @@ test("settings, tile and timeline menus share their visual treatment", async ({
     (text) => text.split("\n")[0].trim(),
   );
   expect(labels.slice(-6)).toEqual([
-    "Documentation",
+    "User Guide",
     "Give Feedback",
     "Troubleshooting",
     "Settings",

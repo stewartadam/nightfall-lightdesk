@@ -11,9 +11,8 @@ import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
 import { createMemo, createSignal, For, onCleanup } from "solid-js";
-import { boardDisplayName, sortBoardsById } from "../../../features/boards";
+import { boardDisplayName } from "../../../features/boards";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
-import { activateStoredLayout } from "../../../lib/layout-activation";
 import {
   deleteNamedLayout,
   reorderLayouts,
@@ -27,7 +26,6 @@ import {
 } from "../../../lib/layoutStorage";
 import { currentShowfileRevision } from "../../../lib/showfile-loading";
 import { isTauriRuntime } from "../../../lib/tauri";
-import { boards, pushToast } from "../../../state/appStores";
 import {
   activeBoardWorkspace,
   activeLayoutId,
@@ -36,34 +34,24 @@ import {
 } from "../../../state/layout-switcher";
 import { useAppShell } from "../../providers/app-shell";
 import { DropdownMenu, DropdownMenuItem } from "../../ui/dropdown-menu";
-import { hasOpenDialog } from "../../ui/modal/dialog-stack";
 import { ToggleToolbarButton, ToolbarButton } from "../../ui/toolbar-button";
 import DeleteConfirmModal from "../../widgets/delete-confirm-dialog";
 import "./layout-switcher.css";
+import {
+  recallSwitcherLayout,
+  showSwitcherBoard,
+  useSwitcherEntries,
+} from "./switcher-entries";
 
 /** Provides persistent layout shortcuts with independent working arrangements for this session. */
 export default function LayoutSwitcher() {
   const { dockviewApi, showLayoutManager } = useAppShell();
   const storage = useStore(layoutStorageStore);
-  /** Selects visible layouts in saved switcher order. */
-  const slots = createMemo(() =>
-    storage().layouts.filter((layout) => layout.shownInSwitcher),
-  );
+  const { layouts: slots, boards: boardSlots } = useSwitcherEntries();
   const activeLayout = useStore(activeLayoutId);
-  const $boards = useStore(boards);
   const shownBoard = useStore(activeBoardWorkspace);
   /** Layout whose slot reads as pressed: none while a board fills the workspace. */
   const activeSlot = () => (shownBoard() ? null : activeLayout());
-  /**
-   * Lists boards shown in the switcher in ID order after the layouts, each opening as a full
-   * workspace. The board filling the workspace keeps its slot even if another device hides it.
-   */
-  const boardSlots = createMemo(() =>
-    sortBoardsById($boards()).filter(
-      (board) =>
-        board.shown_in_switcher || shownBoard() === board.identifiers.uid,
-    ),
-  );
   const busy = useStore(busyLayoutIds);
   const modified = useStore(modifiedLayoutIds);
   const [deleting, setDeleting] = createSignal<StoredPanelLayout | null>(null);
@@ -171,18 +159,9 @@ export default function LayoutSwitcher() {
       animateOrder(undefined),
     );
   };
-  /**
-   * Activates the layout's retained working arrangement. User-initiated
-   * switches are ignored while a dialog is open so the workspace behind it
-   * never changes underneath the user.
-   */
-  const recall = async (layout: { id: string }) => {
-    const api = dockviewApi();
-    if (!api || hasOpenDialog() || busy().includes(layout.id)) return;
-    activeBoardWorkspace.set(null);
-    if (!(await activateStoredLayout(api, layout.id)))
-      pushToast("error", "Could not load layout.");
-  };
+  /** Activates the layout's retained working arrangement in this window's workspace. */
+  const recall = (layout: { id: string }) =>
+    recallSwitcherLayout(dockviewApi(), layout.id);
 
   for (let index = 0; index < 10; index += 1) {
     useKeyboardShortcut(
@@ -340,10 +319,7 @@ export default function LayoutSwitcher() {
                 label={`Board: ${boardDisplayName(board)}`}
                 tooltip={`Show board ${boardDisplayName(board)}`}
                 disabled={!dockviewApi()}
-                onClick={() => {
-                  if (!hasOpenDialog())
-                    activeBoardWorkspace.set(board.identifiers.uid);
-                }}
+                onClick={() => showSwitcherBoard(board.identifiers.uid)}
               >
                 <SquaresFourIcon class="size-4 opacity-60" aria-hidden />
                 <span class="truncate">{boardDisplayName(board)}</span>
