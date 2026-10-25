@@ -215,8 +215,21 @@ test("parseKeptBranch ignores reports for other branches", () => {
   assert.equal(parseKeptBranch(output, "feature"), null);
 });
 
+/**
+ * Removes the `GIT_*` variables a Git hook exports, such as `GIT_DIR`, until the test ends, so
+ * fixture commands touch only the temporary repository and never the repository being pushed.
+ */
+function isolateFromHookGitEnvironment(t) {
+  const gitEnvironment = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key.startsWith("GIT_")),
+  );
+  for (const key of Object.keys(gitEnvironment)) delete process.env[key];
+  t.after(() => Object.assign(process.env, gitEnvironment));
+}
+
 /** The local-changes check sees untracked files in a real git worktree. */
 test("removeWorktree detects untracked files with real git", async (t) => {
+  isolateFromHookGitEnvironment(t);
   const repo = await mkdtemp(join(tmpdir(), "nightfall-worktree-remove-"));
   t.after(() => rm(repo, { recursive: true, force: true }));
   await execFileAsync("git", ["init", "--quiet", repo]);
