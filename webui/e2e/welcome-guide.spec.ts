@@ -2324,3 +2324,205 @@ test("first launch invites the user and Help reopens the guide", async ({
   await welcomeItem.click();
   await expect(page.getByTestId("welcome-guide")).toBeVisible();
 });
+
+/**
+ * Walks the Patch lesson end to end: reading a row, adding four RGBW bars as 701–704 through the
+ * Add fixture wizard, finding their routes, lighting them, clearing, and deleting them again.
+ * Screenshots each step's card beside its target.
+ */
+test("patch lesson adds, lights and removes practice fixtures", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await openSample(page);
+  await page.evaluate(() =>
+    localStorage.setItem("nightfall-patch-panel:active-tab", "fixtures"),
+  );
+  let shots = 0;
+  /** Captures the whole app once the step's highlight has settled. */
+  const shot = async (name: string) => {
+    await expect(page.getByTestId("guide-target").first()).toBeVisible();
+    shots += 1;
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `patch-${String(shots).padStart(2, "0")}-${name}.png`,
+      ),
+    });
+  };
+  const guide = await startLesson(page, /Patching fixtures/);
+  const wizard = page.getByRole("dialog", { name: "Patch Wizard" });
+  const patch = activeLayout(page).locator('[data-panel-kind="patch"]');
+
+  await expectStep(page, "Open Patch", { target: true });
+  await paletteCommand(page, "Open Patch");
+  await expectStep(page, "Read a fixture row", { target: true });
+  await shot("read-row");
+  await guide.getByRole("button", { name: NEXT_STEP }).click();
+
+  await expectStep(page, "Add fixtures", { target: true });
+  await shot("add-fixtures");
+  await patch.getByRole("button", { name: "Add fixture", exact: true }).click();
+
+  await expectStep(page, "Pick a fixture definition", { target: true });
+  await expect(wizard.getByLabel("Filter fixtures")).toBeFocused();
+  await wizard.getByLabel("Filter fixtures").fill("RGBW Bar");
+  await wizard
+    .locator('[data-grid-column-key="model"]')
+    .filter({ hasText: /^12-segment RGBW Bar$/ })
+    .first()
+    .click();
+  await shot("pick-definition");
+  await wizard.getByRole("button", { name: "Next", exact: true }).click();
+
+  await expectStep(page, "Pick a mode", { target: true });
+  await shot("pick-mode");
+  await wizard.getByRole("button", { name: "Next", exact: true }).click();
+
+  await expectStep(page, "Choose quantity and IDs", { target: true });
+  await wizard.getByLabel("Quantity", { exact: true }).fill("4");
+  await wizard.getByLabel("First fixture ID", { exact: true }).fill("701");
+  await expect(
+    wizard.getByText("New fixtures get IDs 701–704.", { exact: false }),
+  ).toBeVisible();
+
+  await expectStep(page, "Choose where their DMX starts", { target: true });
+  await expect(wizard.getByText(/conflicts with/)).toBeVisible();
+  await shot("address-conflict");
+  await wizard.getByLabel("Universe", { exact: true }).fill("21");
+  await expect(wizard.getByLabel("Start address", { exact: true })).toHaveValue(
+    "1",
+  );
+  await expect(wizard.getByText(/conflicts with/)).toBeHidden();
+  await guide.getByText("Learn more", { exact: true }).click();
+  await shot("address");
+  await wizard.getByRole("button", { name: "Next", exact: true }).click();
+
+  await expectStep(page, "Add them to the show", { target: true });
+  await expect(wizard.getByText("IDs 701–704")).toBeVisible();
+  await shot("finish");
+  await wizard.getByRole("button", { name: "Finish", exact: true }).click();
+  await expect(wizard).toBeHidden();
+
+  await expectStep(page, "Place them on stage", { target: true });
+  const patched = await page.evaluate(() =>
+    (Object.values((window as any).appStores.fixtures.get()) as any[])
+      .filter(
+        (fixture) =>
+          fixture.identifiers.id >= 701 && fixture.identifiers.id <= 704,
+      )
+      .map((fixture) => [fixture.identifiers.id, fixture.model])
+      .sort(),
+  );
+  expect(patched).toEqual(
+    [701, 702, 703, 704].map((id) => [id, "12-segment RGBW Bar"]),
+  );
+  const routed = await page.evaluate(() => {
+    const stores = (window as any).appStores;
+    const fixtures = Object.values(stores.fixtures.get()) as any[];
+    const uidOf = (id: number) =>
+      fixtures
+        .find((fixture) => fixture.identifiers.id === id)
+        ?.identifiers.uid.replace(/-/g, "");
+    return [701, 702, 703, 704].map((id) => {
+      const route = stores.routes
+        .get()
+        .output.find((entry: any) =>
+          entry.source.data.uids?.some(
+            (uid: string | number[]) =>
+              (typeof uid === "string"
+                ? uid.replace(/-/g, "")
+                : Array.from(uid, (byte) =>
+                    byte.toString(16).padStart(2, "0"),
+                  ).join("")) === uidOf(id),
+          ),
+        );
+      return [route?.target.data.universe?.start, route?.target.data.address];
+    });
+  });
+  expect(routed).toEqual([
+    [21, 1],
+    [21, 49],
+    [21, 97],
+    [21, 145],
+  ]);
+  await shot("place");
+  /** Finds a practice fixture's cell in Patch by its user-facing ID and column key. */
+  const patchCell = async (id: number, column: string) => {
+    const uid = await page.evaluate(
+      (fixtureId) =>
+        (Object.values((window as any).appStores.fixtures.get()) as any[]).find(
+          (fixture) => fixture.identifiers.id === fixtureId,
+        )?.identifiers.uid as string,
+      id,
+    );
+    return patch.locator(
+      `[data-grid-row-key="${uid}"][data-grid-column-key="${column}"]`,
+    );
+  };
+  await (await patchCell(701, "pos_z")).click();
+  await (await patchCell(704, "pos_z")).click({ modifiers: ["Shift"] });
+  await page.keyboard.type("3");
+  await page.keyboard.press("Enter");
+  await expectStep(page, "Switch to the DMX Routes view", { target: true });
+  const depths = await page.evaluate(() =>
+    (Object.values((window as any).appStores.fixtures.get()) as any[])
+      .filter(
+        (fixture) =>
+          fixture.identifiers.id >= 701 && fixture.identifiers.id <= 704,
+      )
+      .map((fixture) => fixture.placement?.position.z),
+  );
+  expect(depths).toEqual([3, 3, 3, 3]);
+
+  await expectStep(page, "Switch to the DMX Routes view", { target: true });
+  await shot("routes-tab");
+  await patch.locator('[role="tab"][id$="-routes"]').click();
+
+  await expectStep(page, "Light up your new bars", { target: true });
+  await shot("routes-and-command");
+  await submitCommand(page, "fix 701>704 @ 100 white @ 100");
+
+  await expectStep(page, "Clear the Programmer");
+  const openProgrammer = guide.getByRole("button", {
+    name: "Open Programmer",
+    exact: true,
+  });
+  if (await openProgrammer.isVisible()) await openProgrammer.click();
+  await shot("clear");
+  const clear = page
+    .getByRole("button", { name: "Clear programmer", exact: true })
+    .first();
+  await clear.click();
+  await clear.click();
+
+  await expectStep(page, "Remove the practice bars (optional)", {
+    target: true,
+  });
+  const openPatch = guide.getByRole("button", { name: /^(Open|Show) Patch$/ });
+  if (await openPatch.isVisible()) await openPatch.click();
+  await shot("remove-tab");
+  await patch.locator('[role="tab"][id$="-fixtures"]').click();
+  const idCell = (id: number) =>
+    patch
+      .locator('[data-grid-column-key="id"]')
+      .filter({ hasText: new RegExp(`^${id}$`) })
+      .first();
+  await idCell(701).click();
+  await idCell(704).click({ modifiers: ["Shift"] });
+  await shot("remove-selected");
+  await patch
+    .getByRole("button", { name: "Delete selected fixtures", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Finish lesson" }),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("patch-99-done.png") });
+  const left = await page.evaluate(
+    () =>
+      (Object.values((window as any).appStores.fixtures.get()) as any[]).filter(
+        (fixture) =>
+          fixture.identifiers.id >= 701 && fixture.identifiers.id <= 704,
+      ).length,
+  );
+  expect(left).toBe(0);
+});

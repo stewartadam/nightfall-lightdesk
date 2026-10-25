@@ -49,6 +49,7 @@ import {
   timelines,
 } from "../../state/appStores";
 import { activeLayoutId, whenLayoutSettled } from "../../state/layout-switcher";
+import { patchPanelActiveTab, revealPatchFixtures } from "../patch";
 import { normalizeTimelineUid } from "../timeline";
 import {
   clearProgrammerCompletely,
@@ -400,7 +401,7 @@ export default function WelcomeGuide() {
       );
       if (!fixture) return undefined;
       const uid = CSS.escape(fixture.identifiers.uid);
-      return `[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"][aria-selected="false"], [data-panel-kind="patch"] [data-grid-row-key="${uid}"][data-grid-column-key="id"]`;
+      return `[data-panel-kind="patch"] [role="tablist"][aria-label="Patch views"] [role="tab"][id$="-fixtures"][aria-selected="false"], [data-panel-kind="patch"] [data-grid-row-key="${uid}"][data-grid-column-key="${CSS.escape(fixtureTarget.column ?? "id")}"]`;
     }
     const clipTarget = instruction?.targetClip;
     if (clipTarget) {
@@ -429,6 +430,53 @@ export default function WelcomeGuide() {
   };
   /** Resolves the current step's action target. */
   const actionSelector = createMemo(() => selectorFor(step()));
+  const patchView = useStore(patchPanelActiveTab);
+  /**
+   * Names the Patch fixture the current step points at while Patch shows its Fixtures view, so a
+   * reveal is requested again whenever that view comes back into sight.
+   */
+  const shownPatchFixture = createMemo(() => {
+    const id = step()?.targetPatchFixture?.id;
+    return id !== undefined &&
+      patchView() === "fixtures" &&
+      panelVisible("PatchEditor")
+      ? `${lessonId()}:${index()}:${id}`
+      : undefined;
+  });
+  /**
+   * Scrolls Patch to the step's fixture cell, since its list only renders rows near the viewport.
+   * Waits a frame and skips cells already rendered, so a reveal the wizard just made, which also
+   * selects the new fixtures, isn't replaced.
+   */
+  createEffect(
+    on(shownPatchFixture, (key) => {
+      const target = step()?.targetPatchFixture;
+      const selector = actionSelector();
+      if (!key || !target || !selector) return;
+      /** Reports a matching cell shown inside its Patch panel, not hidden or scrolled out. */
+      const cellShown = () =>
+        [...document.querySelectorAll<HTMLElement>(selector)].some((cell) => {
+          const panel = cell.closest('[data-panel-kind="patch"]');
+          if (!panel || !cell.checkVisibility()) return false;
+          const box = cell.getBoundingClientRect();
+          const bounds = panel.getBoundingClientRect();
+          return (
+            box.top >= bounds.top &&
+            box.bottom <= bounds.bottom &&
+            box.left >= bounds.left &&
+            box.right <= bounds.right
+          );
+        });
+      const frame = requestAnimationFrame(() => {
+        if (!cellShown())
+          revealPatchFixtures([target.id], {
+            select: false,
+            column: target.column,
+          });
+      });
+      onCleanup(() => cancelAnimationFrame(frame));
+    }),
+  );
   /** Aims the card at the step's action, or at what reveals a missing panel while prerequisites are unmet. */
   const targetSelector = createMemo(() =>
     blocked() ? prerequisiteSelector() : actionSelector(),

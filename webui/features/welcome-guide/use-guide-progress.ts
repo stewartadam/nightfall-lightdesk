@@ -16,11 +16,13 @@ import {
 } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommandPalette } from "../../components/providers/command-registry";
+import { libraryDefinitionId } from "../../lib/fixture-service";
 import {
   activeInstances,
   clips,
   controls,
   cues,
+  fixtureLibrary,
   fixtures,
   fx,
   programmerSelection,
@@ -31,7 +33,7 @@ import {
   timelines,
   visualizerEditSelection,
 } from "../../state/appStores";
-import { patchPanelActiveTab } from "../patch";
+import { patchPanelActiveTab, usePatchWizard } from "../patch";
 import type { GuidePanelSnapshot } from "./panel-tracking";
 import {
   type GuideObservation,
@@ -56,6 +58,24 @@ export function useGuideProgress(
   const selection = useStore(programmerSelection);
   const editSelection = useStore(visualizerEditSelection);
   const patchView = useStore(patchPanelActiveTab);
+  const wizard = usePatchWizard();
+  const library = useStore(fixtureLibrary);
+  /** Summarizes the open Add fixture wizard, naming its chosen definition by library model. */
+  const patchWizard = (): GuideSnapshot["patchWizard"] => {
+    if (!wizard.isOpen() || wizard.state().morphFixtureIds.length > 0)
+      return undefined;
+    const { fixtureDefinitionId, quantity, assignConsoleDmx, universeId } =
+      wizard.state();
+    return {
+      step: wizard.currentStep(),
+      model: library().find(
+        (entry) => libraryDefinitionId(entry) === fixtureDefinitionId,
+      )?.model,
+      quantity,
+      firstFixtureId: wizard.baseFixtureId(),
+      universeId: assignConsoleDmx ? universeId : null,
+    };
+  };
   const programmer = useStore(programmerState);
   const cueMap = useStore(cues);
   const sequenceMap = useStore(sequences);
@@ -162,6 +182,7 @@ export function useGuideProgress(
         submittedCommand: submittedCommand(),
         editSelection: editSelection(),
         patchView: patchView(),
+        patchWizard: patchWizard(),
         selectedTimelineActions: selectedTimelineActions(),
         panel: panel(),
         openPanels: openPanels(),

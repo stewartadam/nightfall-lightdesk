@@ -60,8 +60,16 @@ function describePatchProblem(
 
 export function StepConfigure() {
   const formId = createUniqueId();
-  const { state, updateState, setPatchProblem, patchProblem } =
-    usePatchWizard();
+  const {
+    state,
+    updateState,
+    setPatchProblem,
+    patchProblem,
+    nextFixtureId,
+    baseFixtureId,
+    firstFixtureIdValid,
+    fixtureIdConflict,
+  } = usePatchWizard();
   const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
@@ -208,6 +216,16 @@ export function StepConfigure() {
     }
   };
 
+  /**
+   * Stores the typed first fixture ID as entered, so the wizard can flag one that isn't a whole
+   * number from 1, or returns to the suggested ID when the field is cleared.
+   */
+  const handleFirstFixtureIdChange = (value: string) => {
+    updateState({
+      firstFixtureId: value.trim() === "" ? null : Number(value),
+    });
+  };
+
   const handleLabelChange = (value: string) => {
     updateState({ label: value });
   };
@@ -257,6 +275,59 @@ export function StepConfigure() {
           }
           class="w-20"
         />
+      </div>
+
+      <div>
+        <label
+          for={`${formId}-first-id`}
+          class="block text-sm font-medium text-gray-300 mb-2"
+        >
+          First fixture ID
+        </label>
+        <Input
+          density="compact"
+          type="number"
+          min="1"
+          id={`${formId}-first-id`}
+          placeholder={String(nextFixtureId())}
+          value={state().firstFixtureId ?? ""}
+          onInput={(e) =>
+            handleFirstFixtureIdChange((e.target as HTMLInputElement).value)
+          }
+          aria-invalid={
+            !firstFixtureIdValid() || fixtureIdConflict() !== undefined
+          }
+          class="w-24"
+        />
+        <Show
+          when={firstFixtureIdValid()}
+          fallback={
+            <p class="mt-1 text-sm text-red-400">
+              Fixture IDs are whole numbers from 1.
+            </p>
+          }
+        >
+          <p class="mt-1 text-sm text-gray-500">
+            <Show
+              when={state().quantity > 1}
+              fallback={`The new fixture gets ID ${baseFixtureId()}.`}
+            >
+              New fixtures get IDs {baseFixtureId()}–
+              {baseFixtureId() + state().quantity - 1}.
+            </Show>{" "}
+            You type fixture IDs to select lights; they are separate from DMX
+            addresses.
+          </p>
+          <Show when={fixtureIdConflict()}>
+            {(id) => (
+              <p class="mt-1 text-sm text-red-400">
+                Fixture {id()} already exists. Choose a first fixture ID that
+                leaves room for {state().quantity} new fixture
+                {state().quantity !== 1 ? "s" : ""}.
+              </p>
+            )}
+          </Show>
+        </Show>
       </div>
 
       <div>
