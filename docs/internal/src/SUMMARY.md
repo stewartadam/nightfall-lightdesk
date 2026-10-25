@@ -8,8 +8,17 @@
 - [Priorities and merging](concepts/priorities-and-merging.md)
 - [Concept map](concepts/concept-map.md)
 
+# How it's built
+
+- [How the pieces fit together](architecture/system-overview.md)
+- [How the engine and the web UI talk](architecture/client-protocol.md)
+- [Web UI architecture](architecture/web-ui.md)
+- [Crate map](architecture/crate-map.md)
+
 # Engine internals
 
+- [The frame loop](engine/frame-loop.md)
+- [From command to state change](engine/command-path.md)
 - [Control layers](engine/control-layers.md)
 
 # Working on Nightfall
