@@ -35,7 +35,9 @@ function failureSummary(current: FatalErrorPresentation): string {
 /**
  * Explains a failure that stopped startup or the workspace, or that happened
  * while nothing else could show it, offering a reload and a prefilled bug
- * report. Recoverable failures can also be dismissed to keep working.
+ * report. Recoverable failures can also be dismissed to keep working, and
+ * Escape hides any failure so content beneath it, such as the dev server's
+ * error overlay, can be read.
  */
 function FatalErrorDialog() {
   /** Reloads the page, which restarts the engine connection and showfile load. */
@@ -47,6 +49,8 @@ function FatalErrorDialog() {
           kind="required"
           isOpen
           title={fatalErrorTitle(current())}
+          dismissOnEscape
+          onDismiss={() => setFailure(null)}
           onSubmit={reload}
           class="max-w-xl"
         >
