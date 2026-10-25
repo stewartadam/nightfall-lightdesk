@@ -19,7 +19,7 @@ const DIAGRAM_PAGES = [
   { path: "architecture/client-protocol.html", diagrams: 4 },
   { path: "architecture/web-ui.html", diagrams: 5 },
   { path: "architecture/crate-map.html", diagrams: 1 },
-  { path: "architecture/showfiles.html", diagrams: 4 },
+  { path: "architecture/showfiles.html", diagrams: 3 },
   { path: "engine/frame-loop.html", diagrams: 4 },
   { path: "engine/command-path.html", diagrams: 2 },
   { path: "domains/fixtures-and-output.html", diagrams: 6 },
