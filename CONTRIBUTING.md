@@ -164,7 +164,7 @@ wrapper rebuilds both packages before every local test run.
 
 Production web and Tauri builds generate dependency notices. Install their
 pinned collector with `cargo install cargo-about --locked --version 0.8.4`.
-See [distribution notices](docs/src/developer-reference/distribution-notices.md)
+See [distribution notices](docs/internal/src/contributing/distribution-notices.md)
 for packaging and dependency-update requirements.
 
 Run `cargo install --locked typeshare-cli --version 1.13.3` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env`; it chooses a backend port and configures the shared Playwright browser location. It overwrites that file, so run it once for a new checkout rather than over an environment you have customized.
@@ -604,7 +604,7 @@ They share `webui/e2e/optics-harness.ts` (Node side) and `webui/e2e/fixtures/opt
 Performance specs are opt-in because their timings depend on the machine. `optical-playback-perf.spec.ts` and `visualizer-playback-perf.spec.ts` fail on the percentile and ratio budgets in `webui/e2e/perf-budgets.ts` (p99 frame interval, share of skipped, late or dropped frames) rather than on single outliers. They measure the display's refresh interval first and count a frame as skipped when its interval exceeds 1.5 refreshes. The production visualizer caps its own rendering at 60 FPS, so `visualizer-playback-perf.spec.ts` budgets the renderer's frames at the slower of 60 Hz and the display. Its frame-pacing counters keep their fixed 25 ms and 60 Hz thresholds. Every performance spec attaches its measurements.
 
 - `pnpm run visualizer:perf` runs the synthetic workload of 300 moving optical sources (`optical-playback-perf.spec.ts`) through the High preset's fog, surface, shadow and bloom passes on the embedded-demo target, and checks both its own frame pacing and a Chromium presentation trace over twelve seconds at the display's measured refresh rate. It requires WebGPU: it is skipped when the browser exposes no adapter and fails if the renderer falls back to WebGL.
-- `gdtf-bench-argo-perf.spec.ts` measures the Ayrton Argo 6 FX close-up (337 beams) at High quality in both renderer modes on the native target and records its frame rate; it only fails if rendering stops. It needs the curated GDTF bench (see [GDTF regression testing](docs/src/developer-reference/gdtf-regression-testing.md)); never copy or commit the archives into this repository:
+- `gdtf-bench-argo-perf.spec.ts` measures the Ayrton Argo 6 FX close-up (337 beams) at High quality in both renderer modes on the native target and records its frame rate; it only fails if rendering stops. It needs the curated GDTF bench (see [GDTF regression testing](docs/internal/src/contributing/gdtf-regression-testing.md)); never copy or commit the archives into this repository:
 
   ```sh
   NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench NIGHTFALL_VISUALIZER_PERF=1 pnpm run test:webui-playwright webui/e2e/gdtf-bench-argo-perf.spec.ts
@@ -642,7 +642,7 @@ Performance specs are opt-in because their timings depend on the machine. `optic
 The user-facing manual is an mdBook in `docs/`. Its navigation lives in `docs/src/SUMMARY.md`; add a navigation entry for every new user-facing page. The [panel guide](docs/src/user-guide/panels/index.md) covers first-release panels, with Flows excluded.
 
 ```sh
-cargo install --locked mdbook --version 0.4.49
+cargo install --locked mdbook --version 0.5.4
 mdbook build docs
 mdbook serve docs --open
 ```
@@ -651,12 +651,14 @@ With the worktree dashboard running, `wt service start -s docs` (or the dashboar
 
 CI builds every book under `docs/` on PRs that change it, with the same mdBook version (keep the version in `.github/workflows/ci.yml` in sync), and fails on any error or warning mdBook logs.
 
-Internal design decisions, BRDs, and developer reference live in a separate mdBook in `docs/internal/`, with navigation in `docs/internal/src/SUMMARY.md`. Keep internal content in that source tree so it is excluded from the user manual, including its search index and downloadable output.
+Internal design decisions, BRDs, and developer reference live in the Developer Guide, a separate mdBook in `docs/internal/`, with navigation in `docs/internal/src/SUMMARY.md`. Keep internal content in that source tree so it is excluded from the user manual, including its search index and downloadable output. Follow the guide's [writing style](docs/internal/src/contributing/writing-style.md) page when adding to either book. Developer Guide pages can include Mermaid diagrams in `mermaid` code blocks; the page loads a pinned Mermaid build from jsDelivr to render them.
 
 ```sh
 mdbook build docs/internal
 mdbook serve docs/internal --port 3001 --open
 ```
+
+`playwright/tests/docs-*.spec.ts` check both built books, including that every Developer Guide diagram renders. Build both books first, then run `pnpm exec playwright test --config playwright/docs.config.ts`.
 
 Add `{{#include ../includes/human-review-disclaimer.md}}` immediately below the title of new user-guide pages (use `../../includes/` for panel pages). Keep this shared disclaimer on each page until a human has reviewed its accuracy and completeness, then remove the include from that page.
 

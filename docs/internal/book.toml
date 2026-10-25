@@ -1,0 +1,10 @@
+[book]
+authors = ["Stewart Adam"]
+language = "en"
+src = "src"
+title = "Nightfall Developer Guide"
+
+[output.html]
+git-repository-url = "https://github.com/stewartadam/nightfall-lightdesk"
+additional-css = ["theme/guide.css"]
+additional-js = ["theme/mermaid-init.js", "theme/sortable-tables.js"]
