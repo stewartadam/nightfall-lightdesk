@@ -76,6 +76,11 @@ Publication (fresh runner; contents: write; no Apple credentials)
   the `TAURI_SIGNING_PUBLIC_KEY` variable, removes the decoded key on exit, and
   writes `latest.json`. A second runner, which never sees the key, checks that the
   manifest names the published version and replaces it on the `updater` release.
+- **Website release:** when that workflow succeeds for a release, `website-release.yml`
+  asks nightfall.live to publish the same tag. Its one job holds only the release bot's
+  GitHub App key, mints a token limited to dispatching events to nightfall.live, checks
+  the tag and commit formats, and sends them as a `lightdesk-release` dispatch. It
+  checks out nothing and runs no repository code.
 - **Publish:** another fresh runner downloads the installers, notices, and release
   notes as data. It requires exactly the four installers, the macOS update archive, and one combined notices file,
   rejects empty files and links, computes checksums, and uploads them to a draft
