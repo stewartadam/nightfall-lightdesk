@@ -22,7 +22,7 @@ export const UI_ACTION_PREFIX = "ui.";
 /** A UI action as remembered for binding, without the handler of any one mount. */
 export type UiActionDescriptor = Pick<
   UiAction,
-  "id" | "name" | "description" | "category" | "icon"
+  "id" | "name" | "description" | "category" | "icon" | "shortcut"
 >;
 
 /** Result of running a UI action by ID. */
@@ -68,6 +68,7 @@ function rememberAction(action: UiAction): void {
     description: action.description,
     category: action.category,
     icon: action.icon,
+    shortcut: action.shortcut,
   };
   const catalog = $uiActionCatalog.get();
   $uiActionCatalog.set(

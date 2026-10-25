@@ -26,6 +26,19 @@ export const TAURI_MENU_ACTIONS = {
   commandPalette: "view.command_palette",
   keyboardShortcuts: "view.keyboard_shortcuts",
 } as const;
+
+/**
+ * Keys the desktop app binds to its window and showfile menu actions, in keyboard shortcut
+ * syntax. The native menu accelerators in `desktop_shell.rs` must match these; the web UI binds
+ * them itself only where the native menu cannot, and labels its own menu items with them.
+ */
+export const TAURI_MENU_SHORTCUTS = {
+  newWindow: "$mod+n",
+  closeWindow: "$mod+Shift+w",
+  newShowfile: "$mod+Shift+n",
+  loadShowfile: "$mod+o",
+  saveShowfile: "$mod+s",
+} as const;
 export interface TauriMenuActionHandlers {
   openAbout: () => void;
   openSettings: () => void;
