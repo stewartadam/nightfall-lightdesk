@@ -7,10 +7,10 @@
  */
 
 import { useKeyboardShortcut } from "../../../../lib/keyboardShortcuts";
-import {
-  OPEN_COMMAND_PALETTE_SHORTCUT,
-  useCommandPalette,
-} from "../../../providers/command-registry";
+import { useCommandPalette } from "../../../providers/command-registry";
+
+/** Shortcut that opens the command palette, also shown as the palette's own hint. */
+export const OPEN_COMMAND_PALETTE_SHORTCUT = "$mod+Shift+p";
 
 /** Registers global shortcuts that open the command palette from app surfaces. */
 function OpenCommandPalette() {

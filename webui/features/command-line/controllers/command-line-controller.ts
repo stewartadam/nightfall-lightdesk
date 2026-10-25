@@ -7,7 +7,6 @@
  */
 
 import { createSignal } from "solid-js";
-import { CLEAR_PROGRAMMER_SHORTCUT } from "../../../components/providers/command-registry";
 import {
   type CommandSequenceProgress,
   CommandSequenceRunner,
@@ -44,6 +43,9 @@ import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
 
 const log = getLogger(import.meta.url);
+
+/** Clears the programmer from anywhere, including while a text input has focus. */
+export const CLEAR_PROGRAMMER_SHORTCUT = "Shift+Escape";
 const commandSequenceRunner = new CommandSequenceRunner(commandClient);
 
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
