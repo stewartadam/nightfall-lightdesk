@@ -1,0 +1,47 @@
+name: Website release
+
+# Once installed apps are offered a release, nightfall.live opens one PR that points its
+# downloads, user guide and browser demo at the same tag.
+on:
+  workflow_run:
+    workflows: [Desktop updates]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Ask nightfall.live to publish the release
+    # Desktop updates skips, and still succeeds for, releases whose tag is not a version.
+    if: >-
+      github.event.workflow_run.event == 'release' && github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    # Holds only the release bot's key and sends one dispatch; it never checks out source or
+    # runs repository code. See docs/ci-security.md.
+    steps:
+      - name: Mint a token that can only dispatch to nightfall.live
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: nightfall.live
+          permission-contents: write
+      - name: Send the release to nightfall.live
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          WEBSITE_REPO: ${{ github.repository_owner }}/nightfall.live
+          # A release-triggered run reports the release tag as its branch.
+          RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
+          [[ "$RELEASE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          jq -n --arg tag "$RELEASE_TAG" --arg commit "$RELEASE_COMMIT" \
+            '{event_type: "lightdesk-release", client_payload: {tag: $tag, commit: $commit}}' \
+            | gh api --method POST "repos/$WEBSITE_REPO/dispatches" --input -
+          echo "Asked nightfall.live to publish $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

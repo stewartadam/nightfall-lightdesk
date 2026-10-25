@@ -149,6 +149,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       if (
         file !== "release.yml" &&
         key !== "desktop-updates.yml/sign" &&
+        key !== "website-release.yml/notify" &&
         !["release", "preview", "symbols"].includes(id)
       ) {
         assert.doesNotMatch(JSON.stringify(job), /secrets\./);
@@ -292,6 +293,90 @@ test("debug symbols upload same-run artifacts with a pinned, verified tool", () 
     assert.equal(step.with?.["run-id"], undefined);
     assert.equal(step.with?.["github-token"], undefined);
     assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
+  }
+});
+
+/** The website notifier holds only the release bot's key and sends the published tag as data. */
+test("website notification dispatches a validated tag with a pinned token action", () => {
+  const website = workflows["website-release.yml"];
+  assert.deepEqual(website.on, {
+    workflow_run: { workflows: ["Desktop updates"], types: ["completed"] },
+  });
+  const notify = website.jobs.notify;
+  assert.equal(
+    notify.if,
+    "github.event.workflow_run.event == 'release' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')",
+  );
+  assert.deepEqual(notify.permissions ?? {}, {});
+  assert.deepEqual(
+    notify.steps.filter((step) => step.uses).map((step) => step.uses),
+    [
+      "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+    ],
+  );
+  assert.deepEqual(JSON.stringify(notify).match(/secrets\.[A-Z_]+/g), [
+    "secrets.RELEASE_APP_PRIVATE_KEY",
+  ]);
+  const token = notify.steps.find((step) => step.id === "token").with;
+  assert.equal(token.repositories, "nightfall.live");
+  assert.deepEqual(
+    Object.keys(token).filter((name) => name.startsWith("permission-")),
+    ["permission-contents"],
+  );
+  for (const step of notify.steps) {
+    assert.equal(step.with?.["github-token"], undefined);
+    assert.doesNotMatch(
+      step.run ?? "",
+      /\b(?:node|npm|npx|pnpm|cargo|rustup|git)\s/,
+    );
+  }
+});
+
+/** The dispatch step refuses anything but a version tag and a full commit SHA. */
+test("website notification rejects malformed release tags and commits", (t) => {
+  const directory = fixtureDirectory(t);
+  const step = workflows["website-release.yml"].jobs.notify.steps.find(
+    (candidate) => candidate.env?.RELEASE_TAG,
+  );
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, "gh"),
+    ["#!/usr/bin/env bash", 'cat > "$GH_CAPTURE"'].join("\n"),
+    { mode: 0o755 },
+  );
+  /** Runs the step's script with a stand-in `gh` that records the dispatch body. */
+  const dispatch = (environment) =>
+    spawnSync("bash", ["-c", step.run], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        GH_CAPTURE: join(directory, "body.json"),
+        GITHUB_STEP_SUMMARY: join(directory, "summary"),
+        WEBSITE_REPO: "owner/nightfall.live",
+        RELEASE_TAG: "v0.1.0-alpha.5",
+        RELEASE_COMMIT: "a".repeat(40),
+        ...environment,
+      },
+      encoding: "utf8",
+    });
+  assert.equal(dispatch({}).status, 0);
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(directory, "body.json"), "utf8")),
+    {
+      event_type: "lightdesk-release",
+      client_payload: { tag: "v0.1.0-alpha.5", commit: "a".repeat(40) },
+    },
+  );
+  rmSync(join(directory, "body.json"));
+  for (const environment of [
+    { RELEASE_TAG: "develop" },
+    { RELEASE_TAG: "v0.1.0;id" },
+    { RELEASE_COMMIT: "abc123" },
+  ]) {
+    assert.notEqual(dispatch(environment).status, 0);
+    assert.equal(existsSync(join(directory, "body.json")), false);
   }
 });
 

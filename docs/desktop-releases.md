@@ -79,6 +79,17 @@ On a version tag, the macOS signing job also archives the stapled app as `…-aa
 
 Keep a backup of the private key and its password outside GitHub. Installed apps accept only packages signed with this key, so losing it means they can no longer update.
 
+## Website release
+
+When the Desktop updates workflow succeeds for a published release, the **Website release** workflow (`website-release.yml`) sends the tag and commit to nightfall.live. nightfall.live then opens one pull request that moves its downloads page, user guide and browser demo to that release. The demo comes from the tested browser-demo artifact that CI built when the tagged commit landed on `main`, so a release published more than seven days after that merge needs a fresh one: re-run all jobs of that `main` push's CI run, then re-run nightfall.live's Release workflow for the tag. nightfall.live only accepts the demo from a successful `main` push, since manual preview runs upload untested builds under the same name.
+
+The workflow authenticates as a GitHub App installed on this repository and nightfall.live, with Contents (read and write), Pull requests (read and write) and Actions (read) repository permissions. Both repositories hold the same two settings:
+
+| Setting | Kind | Value |
+| --- | --- | --- |
+| `RELEASE_APP_CLIENT_ID` | Repository variable | The App's client ID |
+| `RELEASE_APP_PRIVATE_KEY` | Repository secret | A private key generated for the App |
+
 ## Local workflow checks
 
 ```sh
