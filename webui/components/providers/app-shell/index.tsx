@@ -48,8 +48,12 @@ interface AppShellContextValue {
   dockviewApi: () => DockviewApi | undefined;
   setDockviewApi: (api: DockviewApi | undefined) => void;
   /** Rebuilds the active workspace in the default arrangement; returns false when no workspace is mounted. */
-  resetDockviewLayout: () => boolean;
-  setDockviewLayoutReset: (reset: (() => boolean) | undefined) => void;
+  resetActiveLayout: () => boolean;
+  /**
+   * Stores the callback resetActiveLayout runs; the workspace owner registers it on mount and
+   * clears it with undefined on unmount. The callback returns false when it couldn't reset.
+   */
+  registerLayoutResetHandler: (reset: (() => boolean) | undefined) => void;
 }
 
 const AppShellContext = createContext<AppShellContextValue>();
@@ -166,15 +170,16 @@ export const AppShellProvider: ParentComponent = (props) => {
     setDockviewApiSignal(api);
   };
 
-  let dockviewLayoutReset: (() => boolean) | undefined;
-  /** Records how the workspace owner rebuilds the active workspace's default arrangement. */
-  const setDockviewLayoutReset = (reset: (() => boolean) | undefined) => {
-    dockviewLayoutReset = reset;
+  // A callback rather than a value: the workspace owner supplies how to reset, the shell only triggers it.
+  let layoutResetHandler: (() => boolean) | undefined;
+  /** Records the workspace owner's callback for rebuilding the active workspace's default arrangement. */
+  const registerLayoutResetHandler = (reset: (() => boolean) | undefined) => {
+    layoutResetHandler = reset;
   };
 
   /** Rebuilds the active workspace's default arrangement, when a workspace owner is mounted. */
-  const resetDockviewLayout = () => {
-    return dockviewLayoutReset?.() ?? false;
+  const resetActiveLayout = () => {
+    return layoutResetHandler?.() ?? false;
   };
 
   return (
@@ -206,8 +211,8 @@ export const AppShellProvider: ParentComponent = (props) => {
         hideLayoutManager,
         dockviewApi,
         setDockviewApi,
-        resetDockviewLayout,
-        setDockviewLayoutReset,
+        resetActiveLayout,
+        registerLayoutResetHandler,
       }}
     >
       {props.children}

@@ -327,7 +327,8 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     );
   });
 
-  shell.setDockviewLayoutReset(() => {
+  // Lets code outside the Dockview tree, such as the welcome guide, reset the active workspace.
+  shell.registerLayoutResetHandler(() => {
     if (!current.handle) return false;
     current.handle.reset();
     return true;
@@ -335,7 +336,7 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
 
   /** Releases shell references after all owned Dockviews are torn down. */
   onCleanup(() => {
-    shell.setDockviewLayoutReset(undefined);
+    shell.registerLayoutResetHandler(undefined);
     disposed = true;
     cancelEntrance();
     layoutTransitioning.set(false);
