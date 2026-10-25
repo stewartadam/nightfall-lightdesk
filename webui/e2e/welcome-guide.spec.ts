@@ -2394,6 +2394,12 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
   );
   await expect(wizard.getByText(/conflicts with/)).toBeHidden();
   await guide.getByText("Learn more", { exact: true }).click();
+  await expect(
+    guide.getByRole("link", { name: "Read more in the user guide" }),
+  ).toHaveAttribute(
+    "href",
+    /^https:\/\/nightfall\.live\/docs\/\d+\.\d+\.\d+\/user-guide\/dmx-patching\.html$/,
+  );
   await shot("address");
   await wizard.getByRole("button", { name: "Next", exact: true }).click();
 

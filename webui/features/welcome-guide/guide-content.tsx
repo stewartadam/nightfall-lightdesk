@@ -11,6 +11,7 @@ import { For, Match, Show, Switch } from "solid-js";
 import { OPEN_COMMAND_PALETTE_SHORTCUT } from "../../components/providers/command-registry";
 import { KbdShortcut } from "../../components/ui/kbd";
 import { Button } from "../../components/ui/visual-language/button";
+import { documentationPageUrl } from "../../lib/feedback";
 import {
   type PanelComponentName,
   panelDefinitionByName,
@@ -157,6 +158,20 @@ export function GuideContentItem(props: {
             <p>
               <GuideText text={item().text} />
             </p>
+            <Show when={item().guidePage}>
+              {(page) => (
+                <p>
+                  <a
+                    href={documentationPageUrl(page())}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="underline"
+                  >
+                    Read more in the user guide
+                  </a>
+                </p>
+              )}
+            </Show>
           </details>
         )}
       </Match>

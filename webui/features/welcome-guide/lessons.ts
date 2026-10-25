@@ -25,7 +25,16 @@ export type GuideContent =
         Record<PanelComponentName | "sampleTimeline", PanelComponentName>
       >;
     }
-  | { type: "details"; title: string; text: string }
+  | {
+      type: "details";
+      title: string;
+      text: string;
+      /**
+       * User guide page that covers the topic in depth, as a path inside the guide such as
+       * `user-guide/dmx-patching.html`; linked for the running app version.
+       */
+      guidePage?: string;
+    }
   | { type: "stop-playback" };
 
 export type GuidePrerequisite = Extract<GuideContent, { type: "prerequisite" }>;
@@ -1028,6 +1037,7 @@ export const GUIDE_LESSONS: GuideLesson[] = [
             type: "details",
             title: "Learn more",
             text: "A DMX universe holds 512 channels, numbered as addresses 1 to 512. A fixture uses one address for each channel in its mode, starting at its start address. Fixtures that share an address respond to the same value, so the wizard won’t continue while new fixtures overlap existing ones.",
+            guidePage: "user-guide/dmx-patching.html",
           },
         ],
       },
