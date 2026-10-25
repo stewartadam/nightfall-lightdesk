@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  configuredCrateRoles,
+  configuredCrateLayers,
   configuredExceptionEdges,
   exceptionDiff,
   forbiddenEdges,
@@ -19,10 +19,10 @@ import {
   violatedRule,
 } from "./check-crate-boundaries.mjs";
 
-/** Builds a complete crate-role configuration for validation tests. */
-function roleConfiguration(overrides = {}) {
+/** Builds a complete crate-layer configuration for validation tests. */
+function layerConfiguration(overrides = {}) {
   return {
-    roles: {
+    layers: {
       foundation: [],
       infrastructure: [],
       domain: [],
@@ -93,7 +93,7 @@ test("violatedRule enforces the complete layer ordering", () => {
       ["infrastructure", "infrastructure"],
       ["integration", "domain"],
       ["composition", "domain"],
-    ].map(([fromRole, toRole]) => violatedRule(fromRole, toRole)),
+    ].map(([fromLayer, toLayer]) => violatedRule(fromLayer, toLayer)),
     [
       "foundation-crate-must-not-depend-on-runtime-crate",
       "infrastructure-crate-must-not-depend-on-domain-or-higher",
@@ -108,35 +108,35 @@ test("violatedRule enforces the complete layer ordering", () => {
   );
 });
 
-/** Verifies every workspace package must have an intentional role. */
+/** Verifies every workspace package must have an intentional layer. */
 test("validateClassifications rejects unclassified workspace crates", () => {
   assert.throws(
     () => validateClassifications({ packages: [pkg("nightfall-new-domain")] }),
-    /role classification is missing/,
+    /layer classification is missing/,
   );
 });
 
-/** Verifies crate-role configuration is complete and unambiguous. */
-test("configuredCrateRoles validates architectural role assignments", () => {
+/** Verifies crate-layer configuration is complete and unambiguous. */
+test("configuredCrateLayers validates architectural layer assignments", () => {
   assert.equal(
-    configuredCrateRoles(
-      roleConfiguration({ domain: ["nightfall-example"] }),
+    configuredCrateLayers(
+      layerConfiguration({ domain: ["nightfall-example"] }),
     ).get("nightfall-example"),
     "domain",
   );
   assert.throws(
-    () => configuredCrateRoles({ roles: { foundation: [] } }),
-    /invalid role groups/,
+    () => configuredCrateLayers({ layers: { foundation: [] } }),
+    /invalid layer groups/,
   );
   assert.throws(
     () =>
-      configuredCrateRoles(
-        roleConfiguration({
+      configuredCrateLayers(
+        layerConfiguration({
           foundation: ["nightfall-example"],
           domain: ["nightfall-example"],
         }),
       ),
-    /assigned to multiple architectural roles/,
+    /assigned to multiple architectural layers/,
   );
 });
 

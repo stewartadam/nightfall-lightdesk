@@ -1,6 +1,6 @@
 {
-  "note": "Architectural role assignments for every Cargo workspace crate.",
-  "roles": {
+  "note": "Architectural layer assignments for every Cargo workspace crate.",
+  "layers": {
     "foundation": [
       "open-fixture-library",
       "nightfall",

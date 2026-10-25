@@ -100,7 +100,7 @@ repos:
       entry: pnpm run check:crate-boundaries
       language: system
       pass_filenames: false
-      files: (^|/)Cargo\.toml$|^scripts/check-crate-boundaries\.mjs$|^config/architecture/(crate-boundary-exceptions|crate-roles)\.json$|^docs/backend-crate-boundaries\.md$
+      files: (^|/)Cargo\.toml$|^scripts/check-crate-boundaries\.mjs$|^config/architecture/(crate-boundary-exceptions|crate-layers)\.json$
       stages: [pre-commit]
 
     # The DCO check on pull requests needs a sign-off matching the commit author.

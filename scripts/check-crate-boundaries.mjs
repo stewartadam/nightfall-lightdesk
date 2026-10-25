@@ -18,15 +18,15 @@ const exceptionsPath = join(
   architectureConfigRoot,
   "crate-boundary-exceptions.json",
 );
-const crateRolesPath = join(architectureConfigRoot, "crate-roles.json");
-const ARCHITECTURAL_ROLES = [
+const crateLayersPath = join(architectureConfigRoot, "crate-layers.json");
+const ARCHITECTURAL_LAYERS = [
   "foundation",
   "infrastructure",
   "domain",
   "integration",
   "composition",
 ];
-const CRATE_ROLES = loadCrateRoles();
+const CRATE_LAYERS = loadCrateLayers();
 
 /** Runs cargo metadata and returns parsed workspace package data. */
 function cargoMetadata() {
@@ -45,42 +45,42 @@ function cargoMetadata() {
   return JSON.parse(result.stdout);
 }
 
-/** Loads and validates architectural role assignments for workspace crates. */
-function loadCrateRoles() {
-  const configuration = JSON.parse(readFileSync(crateRolesPath, "utf8"));
-  return configuredCrateRoles(configuration);
+/** Loads and validates architectural layer assignments for workspace crates. */
+function loadCrateLayers() {
+  const configuration = JSON.parse(readFileSync(crateLayersPath, "utf8"));
+  return configuredCrateLayers(configuration);
 }
 
-/** Validates configured role groups and returns a crate-to-role lookup. */
-export function configuredCrateRoles(configuration) {
+/** Validates configured layer groups and returns a crate-to-layer lookup. */
+export function configuredCrateLayers(configuration) {
   if (
     !configuration ||
     typeof configuration !== "object" ||
-    !configuration.roles ||
-    typeof configuration.roles !== "object" ||
-    Array.isArray(configuration.roles)
+    !configuration.layers ||
+    typeof configuration.layers !== "object" ||
+    Array.isArray(configuration.layers)
   ) {
-    throw new Error("crate role configuration requires a roles object");
+    throw new Error("crate layer configuration requires a layers object");
   }
 
-  const configuredRoleNames = Object.keys(configuration.roles);
-  const missingRoles = ARCHITECTURAL_ROLES.filter(
-    (role) => !configuredRoleNames.includes(role),
+  const configuredLayerNames = Object.keys(configuration.layers);
+  const missingLayers = ARCHITECTURAL_LAYERS.filter(
+    (layer) => !configuredLayerNames.includes(layer),
   );
-  const unknownRoles = configuredRoleNames.filter(
-    (role) => !ARCHITECTURAL_ROLES.includes(role),
+  const unknownLayers = configuredLayerNames.filter(
+    (layer) => !ARCHITECTURAL_LAYERS.includes(layer),
   );
-  if (missingRoles.length > 0 || unknownRoles.length > 0) {
+  if (missingLayers.length > 0 || unknownLayers.length > 0) {
     throw new Error(
-      `crate role configuration has invalid role groups (missing: ${missingRoles.join(", ") || "none"}; unknown: ${unknownRoles.join(", ") || "none"})`,
+      `crate layer configuration has invalid layer groups (missing: ${missingLayers.join(", ") || "none"}; unknown: ${unknownLayers.join(", ") || "none"})`,
     );
   }
 
-  const crateRoles = new Map();
-  for (const role of ARCHITECTURAL_ROLES) {
-    const packageNames = configuration.roles[role];
+  const crateLayers = new Map();
+  for (const layer of ARCHITECTURAL_LAYERS) {
+    const packageNames = configuration.layers[layer];
     if (!Array.isArray(packageNames)) {
-      throw new Error(`crate role group must be an array: ${role}`);
+      throw new Error(`crate layer group must be an array: ${layer}`);
     }
     for (const packageName of packageNames) {
       if (
@@ -88,31 +88,31 @@ export function configuredCrateRoles(configuration) {
         !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(packageName)
       ) {
         throw new Error(
-          `crate role group contains an invalid crate name: ${role}`,
+          `crate layer group contains an invalid crate name: ${layer}`,
         );
       }
-      const previousRole = crateRoles.get(packageName);
-      if (previousRole) {
+      const previousLayer = crateLayers.get(packageName);
+      if (previousLayer) {
         throw new Error(
-          `crate is assigned to multiple architectural roles: ${packageName} (${previousRole}, ${role})`,
+          `crate is assigned to multiple architectural layers: ${packageName} (${previousLayer}, ${layer})`,
         );
       }
-      crateRoles.set(packageName, role);
+      crateLayers.set(packageName, layer);
     }
   }
-  return crateRoles;
+  return crateLayers;
 }
 
-/** Returns the configured architectural role for a workspace crate. */
-function crateRole(packageName, crateRoles = CRATE_ROLES) {
-  return crateRoles.get(packageName) ?? null;
+/** Returns the configured architectural layer for a workspace crate. */
+function crateLayer(packageName, crateLayers = CRATE_LAYERS) {
+  return crateLayers.get(packageName) ?? null;
 }
 
-/** Fails if any workspace package lacks an explicit architectural role. */
-export function validateClassifications(metadata, crateRoles = CRATE_ROLES) {
+/** Fails if any workspace package lacks an explicit architectural layer. */
+export function validateClassifications(metadata, crateLayers = CRATE_LAYERS) {
   const unclassified = metadata.packages
     .map((pkg) => pkg.name)
-    .filter((packageName) => crateRole(packageName, crateRoles) === null)
+    .filter((packageName) => crateLayer(packageName, crateLayers) === null)
     .sort((left, right) => left.localeCompare(right));
   if (unclassified.length === 0) {
     return;
@@ -123,7 +123,7 @@ export function validateClassifications(metadata, crateRoles = CRATE_ROLES) {
     console.error(`  ${packageName}`);
   }
   throw new Error(
-    "crate-boundary role classification is missing for one or more workspace crates",
+    "crate-boundary layer classification is missing for one or more workspace crates",
   );
 }
 
@@ -138,37 +138,37 @@ function edgeKey(edge) {
 }
 
 /** Describes the boundary rule violated by a local dependency edge, if any. */
-export function violatedRule(fromRole, toRole) {
-  if (fromRole === "foundation" && toRole !== "foundation") {
+export function violatedRule(fromLayer, toLayer) {
+  if (fromLayer === "foundation" && toLayer !== "foundation") {
     return "foundation-crate-must-not-depend-on-runtime-crate";
   }
   if (
-    fromRole === "infrastructure" &&
-    ["domain", "integration", "composition"].includes(toRole)
+    fromLayer === "infrastructure" &&
+    ["domain", "integration", "composition"].includes(toLayer)
   ) {
     return "infrastructure-crate-must-not-depend-on-domain-or-higher";
   }
-  if (fromRole === "domain" && toRole === "domain") {
+  if (fromLayer === "domain" && toLayer === "domain") {
     return "domain-crate-must-not-depend-on-domain-crate";
   }
   if (
-    fromRole === "domain" &&
-    ["integration", "composition"].includes(toRole)
+    fromLayer === "domain" &&
+    ["integration", "composition"].includes(toLayer)
   ) {
     return "domain-crate-must-not-depend-on-integration-or-composition";
   }
-  if (fromRole === "integration" && toRole === "composition") {
+  if (fromLayer === "integration" && toLayer === "composition") {
     return "integration-crate-must-not-depend-on-composition-crate";
   }
   return null;
 }
 
 /** Extracts all currently forbidden local dependency edges from cargo metadata. */
-export function forbiddenEdges(metadata, crateRoles = CRATE_ROLES) {
+export function forbiddenEdges(metadata, crateLayers = CRATE_LAYERS) {
   const packageNames = new Set(metadata.packages.map((pkg) => pkg.name));
   const edges = [];
   for (const pkg of metadata.packages) {
-    const fromRole = crateRole(pkg.name, crateRoles);
+    const fromLayer = crateLayer(pkg.name, crateLayers);
     for (const dependency of pkg.dependencies) {
       if (dependency.kind !== null) {
         continue;
@@ -176,16 +176,16 @@ export function forbiddenEdges(metadata, crateRoles = CRATE_ROLES) {
       if (!isWorkspaceDependency(dependency, packageNames)) {
         continue;
       }
-      const toRole = crateRole(dependency.name, crateRoles);
-      const rule = violatedRule(fromRole, toRole);
+      const toLayer = crateLayer(dependency.name, crateLayers);
+      const rule = violatedRule(fromLayer, toLayer);
       if (!rule) {
         continue;
       }
       edges.push({
         from: pkg.name,
         to: dependency.name,
-        fromRole,
-        toRole,
+        fromLayer,
+        toLayer,
         rule,
       });
     }

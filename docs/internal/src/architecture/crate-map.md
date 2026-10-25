@@ -2,35 +2,35 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-The Rust side of Nightfall is a Cargo workspace of 55 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`. Crate names don't always reveal a crate's job. This page lists every crate by its role, with a one-line description, and says which crates also compile to WebAssembly (WASM) for the browser. It ends with the folders outside `crates/`. For more detail on one crate, read the doc comment at the top of its `src/lib.rs`, or run `cargo doc -p <package> --open`.
+The Rust side of Nightfall is a Cargo workspace of 55 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`. Crate names don't always reveal a crate's job. This page lists every crate by its layer, with a one-line description, and says which crates also compile to WebAssembly (WASM) for the browser. It ends with the folders outside `crates/`. For more detail on one crate, read the doc comment at the top of its `src/lib.rs`, or run `cargo doc -p <package> --open`.
 
 For how the crates combine into running programs, see [how the pieces fit together](system-overview.md).
 
 > [!NOTE]
 > This page is maintained by hand. When you add, remove, or repurpose a crate, update its row here and the crate's own doc comment.
 
-## Roles and dependency rules
+## Layers and dependency rules
 
-Every crate has an architectural role, assigned in `config/architecture/crate-roles.json`. The `check:crate-boundaries` script reads that file and fails when a crate depends on a crate in a role it must not use. A new crate without a role also fails the check. The roles form layers, from shared building blocks at the bottom to the programs that assemble them at the top:
+Every crate belongs to an architectural layer, assigned in `config/architecture/crate-layers.json`. The `check:crate-boundaries` script reads that file and fails when a crate depends on a crate in a layer it must not use. A new crate without a layer also fails the check. The layers run from shared building blocks at the bottom to the programs that assemble them at the top:
 
 ```mermaid
 flowchart TB
-  accTitle: Crate roles and allowed dependencies
-  accDescr: Composition crates may depend on integration crates, which may depend on domain crates, which may depend on infrastructure crates, which may depend on foundation crates. Each role may also depend on any role further down. Domain crates may not depend on other domain crates.
-  composition[Composition: hosts and tools]
-  integration[Integration: desk, showfile, boards, references, WASM bridge]
-  domain[Domain: show domains and IO transports]
-  infrastructure[Infrastructure: engine core and shared runtime services]
-  foundation[Foundation: shared contracts and pure logic]
-  composition --> integration --> domain --> infrastructure --> foundation
+  accTitle: Crate layers and allowed dependencies
+  accDescr: Host crates may depend on cross-plugin crates, which may depend on plugin crates, which may depend on engine core crates, which may depend on base crates. Each layer may also depend on any layer further down. Plugin crates may not depend on other plugin crates.
+  hosts[Hosts: programs and tools]
+  crossPlugin[Cross-plugin: desk, showfile, boards, references, WASM bridge]
+  plugins[Plugins: show domains and IO transports]
+  engineCore[Engine core: engine runtime and shared services]
+  base[Base: shared contracts and pure logic]
+  hosts --> crossPlugin --> plugins --> engineCore --> base
 ```
 
-An arrow means "may depend on." A crate may also depend on any role further down, so a domain crate may use foundation crates directly. The check enforces these rules:
+An arrow means "may depend on." A crate may also depend on any layer further down, so a plugin crate may use base crates directly. The check enforces these rules:
 
-- Foundation crates depend only on other foundation crates.
-- Infrastructure crates don't depend on domain, integration, or composition crates.
-- Domain crates don't depend on other domain crates, or on integration or composition crates.
-- Integration crates don't depend on composition crates.
+- Base crates depend only on other base crates.
+- Engine core crates don't depend on plugin, cross-plugin, or host crates.
+- Plugin crates don't depend on other plugin crates, or on cross-plugin or host crates.
+- Cross-plugin crates don't depend on host crates.
 - The Art-Net and sACN input crates don't reach `fixtures`, `compositor`, or `desk` through any chain of dependencies.
 
 `config/architecture/crate-boundary-exceptions.json` lists the edges that break a rule on purpose, each with a reason. Today they are:
@@ -46,7 +46,7 @@ The check rejects any new edge that breaks a rule, and also any listed exception
 
 ## Reading the tables
 
-Each table below covers one role. The **WASM** column says where the crate compiles to the `wasm32` target:
+Each table below covers one layer. The **WASM** column says where the crate compiles to the `wasm32` target:
 
 - **Bridge and demo:** part of both the WASM bridge and the browser demo engine.
 - **Demo:** part of the browser demo engine only.
@@ -59,9 +59,9 @@ The column follows from the `nightfall-browser-runtime` and `nightfall-wasm-brid
 
 When a crate's package name differs from its folder name, the table shows the package name in parentheses. Otherwise the package name is the folder name with a `nightfall-` prefix and dashes, for example `input_midi` is `nightfall-input-midi`.
 
-## Foundation: shared contracts and pure logic
+## Base: shared contracts and pure logic
 
-Foundation crates hold data types and algorithms with no engine runtime. Most don't use Bevy at all, which is what lets the web UI reuse them through the WASM bridge.
+Base crates hold data types and algorithms with no engine runtime. Most don't use Bevy at all, which is what lets the web UI reuse them through the WASM bridge.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
@@ -82,9 +82,9 @@ Foundation crates hold data types and algorithms with no engine runtime. Most do
 | `open-fixture-library` (`open-fixture-library`) | No | Data structures and parser for Open Fixture Library (OFL) JSON files. |
 | `workspace-hack` | No | Empty crate generated by `cargo hakari` so every build enables the same third-party features. Native targets only. |
 
-## Infrastructure: engine core and shared runtime services
+## Engine core: engine runtime and shared services
 
-Infrastructure crates build the engine's runtime that every domain plugs into.
+Engine core crates build the engine's runtime that every plugin plugs into.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
@@ -101,9 +101,9 @@ Infrastructure crates build the engine's runtime that every domain plugs into.
 | `timecode` | Demo | Timecode objects and the generators that advance them. |
 | `websocket` | No | Native websocket and HTTP server: client connections, per-client queues, origin checks, pairing, and serving the built web UI. |
 
-## Domain: show domains
+## Plugins: show domains
 
-Domain crates each own one area of the show. They add themselves to the engine as Bevy plugins.
+Plugin crates each own one area of the show. They add themselves to the engine as Bevy plugins.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
@@ -118,9 +118,9 @@ Domain crates each own one area of the show. They add themselves to the engine a
 | `object-library` | No | Finds `.robj` object bundles in the data directory and watches for changes. |
 | `audio` | No | Audio playback service for timeline audio. |
 
-## Domain: IO transports
+## Plugins: IO transports
 
-The IO crates are domain crates too. Each one runs a process-lifetime service on its own thread.
+The IO crates are plugin crates too. Each one runs a process-lifetime service on its own thread.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
@@ -133,9 +133,9 @@ The IO crates are domain crates too. Each one runs a process-lifetime service on
 | `output_sacn` | No | sACN DMX output. |
 | `output_usb` | No | DMX output through uDMX USB interfaces. |
 
-## Integration: crates that coordinate domains
+## Cross-plugin: crates that coordinate plugins
 
-Integration crates combine several domains, which domain crates can't do themselves.
+Cross-plugin crates combine several plugins, which plugin crates can't do themselves.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
@@ -146,9 +146,9 @@ Integration crates combine several domains, which domain crates can't do themsel
 | `showfile` | Demo | The versioned showfile JSON format, migrations, applying a showfile to an engine world, and snapshots of a world. |
 | `wasm-bridge` | Bridge | Functions the web UI calls in WASM. See [what the WASM bridge exports](#what-the-wasm-bridge-exports). |
 
-## Composition: hosts and tools
+## Hosts: programs and tools
 
-Composition crates assemble the others into programs.
+Host crates assemble the others into programs.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
@@ -159,7 +159,7 @@ Composition crates assemble the others into programs.
 
 ## What the WASM bridge exports
 
-The `wasm-bridge` crate is the only Rust code the web UI calls directly. It isn't a WASM build of the domain crates. It exports a small set of functions, and each one calls into the crates listed below, so only the code those functions reach is compiled to WebAssembly. A change to one of these crates can change what the UI computes, so rebuild the bridge after you change one.
+The `wasm-bridge` crate is the only Rust code the web UI calls directly. It isn't a WASM build of the plugin crates. It exports a small set of functions, and each one calls into the crates listed below, so only the code those functions reach is compiled to WebAssembly. A change to one of these crates can change what the UI computes, so rebuild the bridge after you change one.
 
 | Export | Functions | Crates it calls |
 |--------|-----------|-----------------|
@@ -175,7 +175,7 @@ The `wasm-bridge` crate is the only Rust code the web UI calls directly. It isn'
 
 ## What lives in `desk` and why
 
-The `desk` crate is the largest integration crate, at about 20,000 lines. It holds the behavior that belongs to the console as a whole rather than to one domain:
+The `desk` crate is the largest cross-plugin crate, at about 20,000 lines. It holds the behavior that belongs to the console as a whole rather than to one domain:
 
 - The `DeskCommand` entry point, including `Eval`, which runs a line of the desk command language, and the requests to create, save, load, and import showfiles.
 - Clip storage, and the lifecycle of running playbacks that every playback domain shares.
@@ -186,9 +186,9 @@ The `desk` crate is the largest integration crate, at about 20,000 lines. It hol
 - User notifications, diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
 - Commands that wait a set time before they run, and the release of stale input values.
 
-The domain rules explain why this code collects in `desk`. A domain crate can't depend on another domain crate, so behavior that touches several domains, such as a master that scales playbacks from any domain, needs a crate above them. The result is a crate that many others use: `programmer`, `output_artnet`, and `output_sacn` depend on it through boundary exceptions, and the browser demo compiles all of it.
+The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as a master that scales playbacks from any of them, needs a crate above them. The result is a crate that many others use: `programmer`, `output_artnet`, and `output_sacn` depend on it through boundary exceptions, and the browser demo compiles all of it.
 
-Before you add code to `desk`, check whether it concerns one domain only. If it does, put it in that domain's crate. Add to `desk` only when the code needs several domains at once.
+Before you add code to `desk`, check whether it concerns one plugin only. If it does, put it in that plugin's crate. Add to `desk` only when the code needs several plugins at once.
 
 ## Folders outside `crates`
 
@@ -211,7 +211,7 @@ The rest of the repository holds the web UI, the desktop shell, and the tooling 
 | Concept | Where to look |
 |---------|---------------|
 | Workspace members | `Cargo.toml` |
-| Crate roles | `config/architecture/crate-roles.json` |
+| Crate layers | `config/architecture/crate-layers.json` |
 | Allowed boundary exceptions | `config/architecture/crate-boundary-exceptions.json` |
 | Boundary check | `scripts/check-crate-boundaries.mjs` |
 | Browser demo dependencies | `crates/browser-runtime/Cargo.toml`, `scripts/check-browser-demo-dependencies.mjs` |
