@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from "uuid";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
+  type DataGridEditCommitContext,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -55,6 +56,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { useSharedStore } from "../../../lib/use-shared-store";
+import { fannedNumbersForTargets } from "../../../lib/value-fan";
 import {
   orderedUidListsEqual,
   replaceFixtureUidsInSelection,
@@ -319,6 +321,12 @@ function isNoopEdit(columnId: string, row: FixtureRow, value: number): boolean {
     (columnId === "rot_y" && row.rotY === value) ||
     (columnId === "rot_z" && row.rotZ === value)
   );
+}
+
+/** Returns whether a column edits a fixture's position or rotation. */
+function isPlacementColumn(columnId: string): boolean {
+  const { position, rotation } = buildPlacementUpdate(columnId, 0);
+  return position !== undefined || rotation !== undefined;
 }
 
 function buildPlacementUpdate(
@@ -586,24 +594,33 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
         continue;
       }
 
-      const { position, rotation } = buildPlacementUpdate(columnId, value);
-      if (!position && !rotation) {
+      if (!isPlacementColumn(columnId)) {
         continue;
       }
 
       const rowsToEdit = useSelection
         ? getRowsToEdit(selection(), col, row, rowData.length)
         : [row];
+      const targetValues = fannedNumbersForTargets(
+        rowsToEdit.length,
+        value,
+        useSelection ? edit.inputValue : undefined,
+      );
       rowsSelected += rowsToEdit.length;
 
-      for (const targetRow of rowsToEdit) {
+      for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
         const fixtureRow = rowData[targetRow];
-        if (!fixtureRow) continue;
+        const targetValue = targetValues[targetIndex];
+        if (!fixtureRow || targetValue === undefined) continue;
 
-        if (isNoopEdit(columnId, fixtureRow, value)) {
+        if (isNoopEdit(columnId, fixtureRow, targetValue)) {
           continue;
         }
 
+        const { position, rotation } = buildPlacementUpdate(
+          columnId,
+          targetValue,
+        );
         const fixture =
           nextFixtureMap?.[fixtureRow.uid] ?? fixtureMap[fixtureRow.uid];
         if (!fixture) continue;
@@ -644,8 +661,20 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     );
   };
 
-  const handleCellEdited = (cell: Item, newValue: GridCell) => {
-    applyPlacementEdits([{ cell, newValue }], true);
+  /**
+   * Applies a single typed edit to every selected fixture row, fanning range
+   * input such as `0>3` across the selected rows in table order.
+   */
+  const handleCellEdited = (
+    cell: Item,
+    newValue: GridCell,
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    applyPlacementEdits(
+      [{ cell, newValue, inputValue: context?.inputValue }],
+      true,
+    );
   };
 
   const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {

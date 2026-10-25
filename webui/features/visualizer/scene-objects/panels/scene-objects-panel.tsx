@@ -23,6 +23,7 @@ import CrudPanelSearch, {
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
+  type DataGridEditCommitContext,
   type DataGridScrollRequest,
 } from "../../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../../components/widgets/data-grid/extensions/column-visibility-menu";
@@ -68,6 +69,7 @@ import {
   updateSceneObjectsFromLibrary,
 } from "../../../../lib/scene-object-service";
 import { useSharedStore } from "../../../../lib/use-shared-store";
+import { fannedNumbersForTargets } from "../../../../lib/value-fan";
 import {
   orderedUidListsEqual,
   replaceKnownUidsInSelection,
@@ -419,6 +421,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     newValue: GridCell,
     useSelection: boolean,
     batchId = uuidv4().replace(/-/g, ""),
+    inputValue?: string,
   ) => {
     const [col, row] = cell;
     const columnId = gridColumns()[col]?.id;
@@ -438,15 +441,24 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     const rowsToEdit = useSelection
       ? getRowsToEdit(selection(), col, row, rowData.length)
       : [row];
+    const targetValues = fannedNumbersForTargets(
+      rowsToEdit.length,
+      value,
+      useSelection ? inputValue : undefined,
+    );
 
     if (columnId === "scale") {
-      for (const targetRow of rowsToEdit) {
+      for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
         const sceneObject = rowData[targetRow];
-        if (!sceneObject) continue;
+        const targetValue = targetValues[targetIndex];
+        if (!sceneObject || targetValue === undefined) continue;
 
         const currentSceneObject =
           sceneObjects.get()[sceneObject.identifiers.uid] ?? sceneObject;
-        const updatedSceneObject = withUpdatedScale(currentSceneObject, value);
+        const updatedSceneObject = withUpdatedScale(
+          currentSceneObject,
+          targetValue,
+        );
         if (!updatedSceneObject) continue;
 
         setStoreAction(sceneObjects, "Update Scene Object Scale", {
@@ -461,14 +473,19 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
       return;
     }
 
-    const { position, rotation } = buildPlacementUpdate(columnId, value);
-    if (!position && !rotation) {
+    const placementProbe = buildPlacementUpdate(columnId, value);
+    if (!placementProbe.position && !placementProbe.rotation) {
       return;
     }
 
-    for (const targetRow of rowsToEdit) {
+    for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
       const sceneObject = rowData[targetRow];
-      if (!sceneObject) continue;
+      const targetValue = targetValues[targetIndex];
+      if (!sceneObject || targetValue === undefined) continue;
+      const { position, rotation } = buildPlacementUpdate(
+        columnId,
+        targetValue,
+      );
       const currentSceneObject =
         sceneObjects.get()[sceneObject.identifiers.uid] ?? sceneObject;
 
@@ -526,8 +543,17 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     }
   };
 
-  const handleCellEdited = (cell: Item, newValue: GridCell) => {
-    applySceneObjectEdit(cell, newValue, true);
+  /**
+   * Applies a single typed edit to every selected scene object row, fanning
+   * range input such as `0>3` across the selected rows in table order.
+   */
+  const handleCellEdited = (
+    cell: Item,
+    newValue: GridCell,
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    applySceneObjectEdit(cell, newValue, true, undefined, context?.inputValue);
   };
 
   const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {

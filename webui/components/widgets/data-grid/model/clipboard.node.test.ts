@@ -287,6 +287,103 @@ test("inlineEditEditsForSelection fills single-column selected cells", () => {
   );
 });
 
+/** Verifies numeric fan input spreads evenly down each selected column in row order. */
+test("inlineEditEditsForSelection fans numeric ranges per column", () => {
+  const selection: GridSelection = {
+    ...emptySelection(),
+    current: {
+      cell: [1, 1],
+      range: { x: 1, y: 1, width: 2, height: 4 },
+      rangeStack: [],
+    },
+  };
+
+  const edits = inlineEditEditsForSelection({
+    selection,
+    editCell: [1, 1],
+    rowCount: 6,
+    columnCount: 5,
+    value: "0>3",
+    dirty: true,
+    getCellContent: () => numberCell(9),
+  });
+
+  assert.deepEqual(
+    edits.map((edit) => [edit.cell, numberCellData(edit.newValue)]),
+    [
+      [[1, 1], 0],
+      [[2, 1], 0],
+      [[1, 2], 1],
+      [[2, 2], 1],
+      [[1, 3], 2],
+      [[2, 3], 2],
+      [[1, 4], 3],
+      [[2, 4], 3],
+    ],
+  );
+  assert.ok(edits.every((edit) => edit.inputValue === "0>3"));
+});
+
+/** Verifies read-only cells in a fanned column are skipped without shortening the fan. */
+test("inlineEditEditsForSelection fans only across editable number cells", () => {
+  const selection: GridSelection = {
+    ...emptySelection(),
+    current: {
+      cell: [0, 0],
+      range: { x: 0, y: 0, width: 1, height: 4 },
+      rangeStack: [],
+    },
+  };
+
+  const edits = inlineEditEditsForSelection({
+    selection,
+    editCell: [0, 0],
+    rowCount: 4,
+    columnCount: 1,
+    value: "0>3",
+    dirty: true,
+    getCellContent: ([, row]) =>
+      row === 2 ? { ...numberCell(9), readonly: true } : numberCell(9),
+  });
+
+  assert.deepEqual(
+    edits.map((edit) => [edit.cell, numberCellData(edit.newValue)]),
+    [
+      [[0, 0], 0],
+      [[0, 1], 1.5],
+      [[0, 3], 3],
+    ],
+  );
+});
+
+/** Verifies a numeric fan typed into one cell keeps its first waypoint and leaves text cells literal. */
+test("inlineEditEditsForSelection applies fan start to a single number cell", () => {
+  const [numberEdit] = inlineEditEditsForSelection({
+    selection: emptySelection(),
+    editCell: [0, 0],
+    rowCount: 3,
+    columnCount: 3,
+    value: "-1.5>2",
+    dirty: true,
+    getCellContent: () => numberCell(9),
+  });
+  assert.ok(numberEdit);
+  assert.equal(numberCellData(numberEdit.newValue), -1.5);
+  assert.equal(numberEdit.inputValue, "-1.5>2");
+
+  const [textEdit] = inlineEditEditsForSelection({
+    selection: emptySelection(),
+    editCell: [0, 0],
+    rowCount: 3,
+    columnCount: 3,
+    value: "0>3",
+    dirty: true,
+    getCellContent: () => textCell("a"),
+  });
+  assert.ok(textEdit?.newValue.kind === GridCellKind.Text);
+  assert.equal(textEdit.newValue.data, "0>3");
+});
+
 /** Verifies discrete editors fill every cell in the active range selection. */
 test("discreteEditEditsForSelection fills selected range cells", () => {
   const selection: GridSelection = {
