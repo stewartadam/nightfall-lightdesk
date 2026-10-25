@@ -20,11 +20,11 @@ const exceptionsPath = join(
 );
 const crateLayersPath = join(architectureConfigRoot, "crate-layers.json");
 const ARCHITECTURAL_LAYERS = [
-  "foundation",
-  "infrastructure",
-  "domain",
-  "integration",
-  "composition",
+  "base",
+  "engine-core",
+  "plugins",
+  "cross-plugin",
+  "hosts",
 ];
 const CRATE_LAYERS = loadCrateLayers();
 
@@ -139,26 +139,23 @@ function edgeKey(edge) {
 
 /** Describes the boundary rule violated by a local dependency edge, if any. */
 export function violatedRule(fromLayer, toLayer) {
-  if (fromLayer === "foundation" && toLayer !== "foundation") {
-    return "foundation-crate-must-not-depend-on-runtime-crate";
+  if (fromLayer === "base" && toLayer !== "base") {
+    return "base-crate-must-not-depend-on-runtime-crate";
   }
   if (
-    fromLayer === "infrastructure" &&
-    ["domain", "integration", "composition"].includes(toLayer)
+    fromLayer === "engine-core" &&
+    ["plugins", "cross-plugin", "hosts"].includes(toLayer)
   ) {
-    return "infrastructure-crate-must-not-depend-on-domain-or-higher";
+    return "engine-core-crate-must-not-depend-on-plugin-or-higher";
   }
-  if (fromLayer === "domain" && toLayer === "domain") {
-    return "domain-crate-must-not-depend-on-domain-crate";
+  if (fromLayer === "plugins" && toLayer === "plugins") {
+    return "plugin-crate-must-not-depend-on-plugin-crate";
   }
-  if (
-    fromLayer === "domain" &&
-    ["integration", "composition"].includes(toLayer)
-  ) {
-    return "domain-crate-must-not-depend-on-integration-or-composition";
+  if (fromLayer === "plugins" && ["cross-plugin", "hosts"].includes(toLayer)) {
+    return "plugin-crate-must-not-depend-on-cross-plugin-or-host";
   }
-  if (fromLayer === "integration" && toLayer === "composition") {
-    return "integration-crate-must-not-depend-on-composition-crate";
+  if (fromLayer === "cross-plugin" && toLayer === "hosts") {
+    return "cross-plugin-crate-must-not-depend-on-host-crate";
   }
   return null;
 }

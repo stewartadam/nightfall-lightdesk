@@ -2,7 +2,7 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-Every change you make in Nightfall, whether you type it, click it, or press a mapped MIDI button, enters the engine as a tracked command. The engine gives the command an identity, captures how to undo it before anything changes, routes it to the domain crate that owns it, and sends exactly one result back to the client that asked. This page follows one typed command, `fixture 1 red @ 100`, from the web UI to the programmer and onto the next frame. It then shows how a bindable action takes a shorter path into the same pipeline.
+Every change you make in Nightfall, whether you type it, click it, or press a mapped MIDI button, enters the engine as a tracked command. The engine gives the command an identity, captures how to undo it before anything changes, routes it to the plugin crate that owns it, and sends exactly one result back to the client that asked. This page follows one typed command, `fixture 1 red @ 100`, from the web UI to the programmer and onto the next frame. It then shows how a bindable action takes a shorter path into the same pipeline.
 
 Read this page before you add a command or change how one is handled. Most command bugs come from skipping one of the stages below: a command that never reaches undo capture can't be undone, and a handler that forgets to finish its command leaves the web UI waiting.
 
@@ -89,7 +89,7 @@ For `fixture 1 red @ 100`, the parser enters the `Programmer` clause and produce
 
 #### Domain converters turn the AST into commands
 
-The `cmd-parse` crate knows nothing about fixtures, cues, or clips. Each domain crate that owns commands registers an AST converter when its plugin builds. Dispatch offers the AST to every converter in registration order:
+The `cmd-parse` crate knows nothing about fixtures, cues, or clips. Each plugin crate that owns commands registers an AST converter when its plugin builds. Dispatch offers the AST to every converter in registration order:
 
 - A converter that doesn't handle this kind of AST returns `NotApplicable`, and dispatch tries the next one.
 - The first converter that handles the AST returns its commands, and dispatch stops.
@@ -186,7 +186,7 @@ To add a new top-level command to the command language, follow the path of an ex
 1. Add the grammar in `cmd-parse`. Add any new keywords as tokens in the lexicon. Declare the root clause with its slots, rules, and head tokens in the clause schema list, and add a command family entry that names the clause, its completion groups, and its structural AST dispatch kind.
 1. Define the clause's slots in the slot catalog and its completion group in the completion group catalog, and map the clause to a grammar rule in `parser/structural/grammar_mapping.rs`.
 1. Add an AST node to `CommandAst`, and materialize it from the parse branch in the strict parser, matched on the new dispatch kind.
-1. Define the domain command type in the domain crate. Derive `Serialize`, `Deserialize`, and `EnginePayload`, add the `typeshare` attribute, and implement `IngressCommand`.
+1. Define the domain command type in the plugin crate. Derive `Serialize`, `Deserialize`, and `EnginePayload`, add the `typeshare` attribute, and implement `IngressCommand`.
 1. In the domain plugin, register the command with `register_ingress_command`. Register a deserializer for the web UI with `register_command_deserializer`. Push undoable commands into the pending command buffer from the deserializer. Writing the typed message directly skips undo capture.
 1. Implement `AstConvert` for a converter type in the domain's `ast_conv.rs`. Return `NotApplicable` for every AST the domain doesn't own, and register the converter with `register_converter` in the plugin.
 1. Add a handler system in the `EventHandling` set that reads `CommandEnvelope<YourCommand>` and finishes every command exactly once through the command responder.

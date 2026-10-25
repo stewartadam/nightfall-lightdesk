@@ -9,7 +9,7 @@
 //! Process-lifetime worker infrastructure for domain-specific IO services.
 //!
 //! This crate intentionally provides only generic lifecycle primitives.
-//! Domain crates own protocol- and transport-specific worker/client logic.
+//! Plugin crates own protocol- and transport-specific worker/client logic.
 
 #![warn(missing_docs)]
 

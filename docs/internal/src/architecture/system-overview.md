@@ -78,7 +78,7 @@ The message types are Rust types. The `pnpm run typeshare` script generates matc
 
 ### The WASM bridge shares engine logic with the UI
 
-Some engine logic has to run inside the UI to keep it responsive, and the UI doesn't reimplement it in TypeScript. Instead, the WASM bridge is a small Rust crate that exports functions to the UI. Each function calls logic in other Nightfall crates, and the build keeps only the code those functions reach, rather than compiling whole domain crates to WebAssembly. The bridge covers:
+Some engine logic has to run inside the UI to keep it responsive, and the UI doesn't reimplement it in TypeScript. Instead, the WASM bridge is a small Rust crate that exports functions to the UI. Each function calls logic in other Nightfall crates, and the build keeps only the code those functions reach, rather than compiling whole plugin crates to WebAssembly. The bridge covers:
 
 - Command parsing: completion and error checking as you type, and splitting a line into separate statements.
 - Selection: parsing, formatting, and resolving spatial selections on each keystroke.

@@ -23,11 +23,11 @@ import {
 function layerConfiguration(overrides = {}) {
   return {
     layers: {
-      foundation: [],
-      infrastructure: [],
-      domain: [],
-      integration: [],
-      composition: [],
+      base: [],
+      "engine-core": [],
+      plugins: [],
+      "cross-plugin": [],
+      hosts: [],
       ...overrides,
     },
   };
@@ -43,8 +43,8 @@ function pkg(name, dependencies = []) {
   return { dependencies, name };
 }
 
-/** Verifies upward and cross-domain normal edges are rejected. */
-test("forbiddenEdges rejects domain coupling and upward dependencies", () => {
+/** Verifies upward and plugin-to-plugin normal edges are rejected. */
+test("forbiddenEdges rejects plugin coupling and upward dependencies", () => {
   const metadata = {
     packages: [
       pkg("nightfall-cues", [
@@ -69,12 +69,12 @@ test("forbiddenEdges rejects domain coupling and upward dependencies", () => {
       {
         from: "nightfall-cues",
         to: "nightfall-desk",
-        rule: "domain-crate-must-not-depend-on-integration-or-composition",
+        rule: "plugin-crate-must-not-depend-on-cross-plugin-or-host",
       },
       {
         from: "nightfall-cues",
         to: "nightfall-fx",
-        rule: "domain-crate-must-not-depend-on-domain-crate",
+        rule: "plugin-crate-must-not-depend-on-plugin-crate",
       },
     ],
   );
@@ -84,22 +84,22 @@ test("forbiddenEdges rejects domain coupling and upward dependencies", () => {
 test("violatedRule enforces the complete layer ordering", () => {
   assert.deepEqual(
     [
-      ["foundation", "infrastructure"],
-      ["infrastructure", "domain"],
-      ["domain", "domain"],
-      ["domain", "integration"],
-      ["integration", "composition"],
-      ["foundation", "foundation"],
-      ["infrastructure", "infrastructure"],
-      ["integration", "domain"],
-      ["composition", "domain"],
+      ["base", "engine-core"],
+      ["engine-core", "plugins"],
+      ["plugins", "plugins"],
+      ["plugins", "cross-plugin"],
+      ["cross-plugin", "hosts"],
+      ["base", "base"],
+      ["engine-core", "engine-core"],
+      ["cross-plugin", "plugins"],
+      ["hosts", "plugins"],
     ].map(([fromLayer, toLayer]) => violatedRule(fromLayer, toLayer)),
     [
-      "foundation-crate-must-not-depend-on-runtime-crate",
-      "infrastructure-crate-must-not-depend-on-domain-or-higher",
-      "domain-crate-must-not-depend-on-domain-crate",
-      "domain-crate-must-not-depend-on-integration-or-composition",
-      "integration-crate-must-not-depend-on-composition-crate",
+      "base-crate-must-not-depend-on-runtime-crate",
+      "engine-core-crate-must-not-depend-on-plugin-or-higher",
+      "plugin-crate-must-not-depend-on-plugin-crate",
+      "plugin-crate-must-not-depend-on-cross-plugin-or-host",
+      "cross-plugin-crate-must-not-depend-on-host-crate",
       null,
       null,
       null,
@@ -111,7 +111,7 @@ test("violatedRule enforces the complete layer ordering", () => {
 /** Verifies every workspace package must have an intentional layer. */
 test("validateClassifications rejects unclassified workspace crates", () => {
   assert.throws(
-    () => validateClassifications({ packages: [pkg("nightfall-new-domain")] }),
+    () => validateClassifications({ packages: [pkg("nightfall-new-plugin")] }),
     /layer classification is missing/,
   );
 });
@@ -120,20 +120,20 @@ test("validateClassifications rejects unclassified workspace crates", () => {
 test("configuredCrateLayers validates architectural layer assignments", () => {
   assert.equal(
     configuredCrateLayers(
-      layerConfiguration({ domain: ["nightfall-example"] }),
+      layerConfiguration({ plugins: ["nightfall-example"] }),
     ).get("nightfall-example"),
-    "domain",
+    "plugins",
   );
   assert.throws(
-    () => configuredCrateLayers({ layers: { foundation: [] } }),
+    () => configuredCrateLayers({ layers: { base: [] } }),
     /invalid layer groups/,
   );
   assert.throws(
     () =>
       configuredCrateLayers(
         layerConfiguration({
-          foundation: ["nightfall-example"],
-          domain: ["nightfall-example"],
+          base: ["nightfall-example"],
+          plugins: ["nightfall-example"],
         }),
       ),
     /assigned to multiple architectural layers/,

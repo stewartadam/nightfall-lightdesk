@@ -12,7 +12,7 @@ The earlier parts of the guide avoid Bevy vocabulary. This page uses the followi
 
 - A **system** is a Rust function that the engine calls once per frame with access to the world's components and resources.
 - A **schedule** is an ordered collection of systems that runs as a unit. Bevy runs a fixed list of schedules in each frame, such as `First`, `PreUpdate`, `Update`, `PostUpdate`, and `Last`.
-- A **system set** is a named group of systems inside a schedule. Plugins order whole sets against each other, so a domain crate places its systems by joining a set instead of naming another crate's functions.
+- A **system set** is a named group of systems inside a schedule. Plugins order whole sets against each other, so a plugin crate places its systems by joining a set instead of naming another crate's functions.
 - A **message** is a typed notification that one system writes and others read later, such as a `CommandEnvelope` or an `EngineOperationEnvelope`. [Control layers](control-layers.md) explains how commands become operations.
 - A **render pass** is the part of a frame that computes and sends output. It is a custom schedule called `Render`.
 

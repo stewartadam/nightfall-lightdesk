@@ -1,7 +1,7 @@
 {
   "note": "Architectural layer assignments for every Cargo workspace crate.",
   "layers": {
-    "foundation": [
+    "base": [
       "open-fixture-library",
       "nightfall",
       "nightfall-beat-detection",
@@ -19,7 +19,7 @@
       "nightfall-waveform",
       "nightfall-workspace-hack"
     ],
-    "infrastructure": [
+    "engine-core": [
       "nightfall-actions",
       "nightfall-compositor",
       "nightfall-engine",
@@ -33,7 +33,7 @@
       "nightfall-undo",
       "nightfall-websocket"
     ],
-    "domain": [
+    "plugins": [
       "nightfall-audio",
       "nightfall-cues",
       "nightfall-fixture-library",
@@ -53,7 +53,7 @@
       "nightfall-scene-objects",
       "nightfall-timeline"
     ],
-    "integration": [
+    "cross-plugin": [
       "nightfall-boards",
       "nightfall-desk",
       "nightfall-desk-audio",
@@ -61,7 +61,7 @@
       "nightfall-showfile",
       "nightfall-wasm-bridge"
     ],
-    "composition": [
+    "hosts": [
       "app-runtime",
       "app-tauri",
       "nightfall-browser-runtime",
