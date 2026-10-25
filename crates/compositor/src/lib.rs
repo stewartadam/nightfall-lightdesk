@@ -6,7 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Compositor module for managing visual layers and rendering pipelines.
+//! Layer compositing: merges every playback's layer into one value per parameter.
+//!
+//! Each frame, the compositor system in the engine's `Render` schedule builds the layer stack
+//! from the layers that cues, FX, flows, the programmer, and other sources produced, then runs
+//! them through the [`pipeline::CompositorPipeline`]: each layer's transitions are evaluated, then
+//! the layer is merged by priority and merge rule while recording which layer set each value.
+//! [`CompositorPlugin`] registers this for one parameter type.
 #![warn(missing_docs)]
 
 use std::marker::PhantomData;

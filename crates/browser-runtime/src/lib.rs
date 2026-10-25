@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Single-threaded browser host for the reduced Nightfall engine composition.
+//! The browser demo engine: a reduced Nightfall engine that runs in a web worker.
+//!
+//! [`BrowserEngine`] builds the engine from a sample showfile with its own hand-written plugin
+//! list, leaving out native-only crates such as the network transports. The worker calls
+//! [`BrowserEngine::tick`] at the engine's frame rate, queues client commands and updates
+//! for the next tick, and drains the encoded messages that a websocket would otherwise carry.
 
 #![warn(missing_docs)]
 

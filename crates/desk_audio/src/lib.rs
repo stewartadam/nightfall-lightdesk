@@ -6,6 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Watches the system's audio output devices for the desk.
+//!
+//! [`DeskAudioPlugin`] discovers output devices on a background worker so the engine never waits
+//! on the operating system's audio APIs. When the chosen device appears or disappears, it moves
+//! timeline audio to the right device and tells the operator.
+
 use std::collections::HashMap;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};

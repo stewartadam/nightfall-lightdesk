@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides SACN output
+//! sACN DMX output, by multicast or unicast.
+//!
+//! Each render, the composed frames for every sACN output target are handed to a
+//! process-lifetime worker, which sends them on the shared schedule of DMX send times.
 
 #![warn(missing_docs)]
 

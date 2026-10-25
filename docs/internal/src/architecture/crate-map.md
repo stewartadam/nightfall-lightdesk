@@ -2,12 +2,12 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-The Rust side of Nightfall is a Cargo workspace of 54 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`. Crate names don't always reveal a crate's job, and several crates' own doc comments are out of date. This page lists every crate by its role, with a one-line description checked against the code, and says which crates also compile to WebAssembly (WASM) for the browser. It ends with the folders outside `crates/`.
+The Rust side of Nightfall is a Cargo workspace of 55 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`. Crate names don't always reveal a crate's job. This page lists every crate by its role, with a one-line description, and says which crates also compile to WebAssembly (WASM) for the browser. It ends with the folders outside `crates/`. For more detail on one crate, read the doc comment at the top of its `src/lib.rs`, or run `cargo doc -p <package> --open`.
 
 For how the crates combine into running programs, see [how the pieces fit together](system-overview.md).
 
 > [!NOTE]
-> This page is maintained by hand. When you add, remove, or repurpose a crate, update its row here.
+> This page is maintained by hand. When you add, remove, or repurpose a crate, update its row here and the crate's own doc comment.
 
 ## Roles and dependency rules
 
@@ -124,9 +124,10 @@ The IO crates are domain crates too. Each one runs a process-lifetime service on
 
 | Crate | WASM | Description |
 |-------|------|-------------|
-| `input_artnet` | No | Art-Net DMX input. Also builds the `send-artnet`, `listen-artnet`, and `listen-scan` test tools. |
+| `input_artnet` | No | Art-Net DMX and timecode input. Also builds the `send-artnet`, `send-artnet-timecode`, `listen-artnet`, and `listen-scan` test tools. |
 | `input_sacn` | No | sACN DMX input. Also builds the `send-sacn` test tool. |
-| `input_midi` | No | MIDI device discovery, MIDI input, and mappings from MIDI messages to actions. |
+| `input_midi` | No | MIDI device discovery, MIDI input, mappings from MIDI messages to actions, controller LED feedback with bundled controller profiles, and MIDI timecode (MTC) input. |
+| `input_ltc` | No | SMPTE linear timecode (LTC) decoded from a channel of an audio input device. |
 | `input_osc` | No | OSC input over UDP and mappings from OSC addresses to actions. |
 | `output_artnet` | No | Art-Net DMX output. |
 | `output_sacn` | No | sACN DMX output. |
@@ -170,7 +171,7 @@ The `wasm-bridge` crate is the only Rust code the web UI calls directly. It isn'
 | Sequence previews | `project_sequence_lookahead`, `sequence_duration_summary` | `lookahead-projection` |
 | Fixture evaluation | `FixtureChannelEvaluator`, `fixture_reading_stride` | `fixture-model` |
 | Board placement | `BoardPlacement`, `board_max_dimension` | `common` |
-| Reserved DMX target names | `reserved_network_dmx_target_keywords`, `reserved_usb_dmx_target_keywords` | `io`, without its `ecs` feature |
+| Output target names | `output_target_ids`, `reserved_network_dmx_target_keywords`, `reserved_usb_dmx_target_keywords` | `io`, without its `ecs` feature |
 
 ## What lives in `desk` and why
 

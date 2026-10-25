@@ -1,6 +1,6 @@
 [package]
 name = "nightfall"
-description = "nightfall library and component definitions (WASM-compatible)"
+description = "Show data types shared across the Nightfall engine and web UI (WASM-compatible)"
 version.workspace = true
 license.workspace = true
 edition.workspace = true

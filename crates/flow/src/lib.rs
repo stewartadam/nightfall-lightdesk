@@ -6,7 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Flow engine types, protocol definitions, and plugin wiring.
+//! Flows: node graphs that compute values and trigger actions while they play.
+//!
+//! This crate defines flow graphs, the registry of node types with the built-in nodes, the
+//! runtime that evaluates a playing flow each frame, and the protocol the flow editor uses.
+//! Nodes can render layers for the compositor, fire clip and timecode actions, and follow the
+//! show tempo. The browser demo build leaves out the FX module node, which needs the native
+//! FX module host.
 
 #![warn(missing_docs)]
 

@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Beat This model inference for beatgrid detection.
+//! The pinned Beat This model: its manifest, where its weights live in the data directory, and
+//! checksum verification of downloaded weights.
 
 use std::{
     io::Read,

@@ -6,10 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! MIDI input handling crate
+//! MIDI controllers: input, mappings to actions, LED feedback, and MIDI timecode.
 //!
-//! This crate provides MIDI device discovery, input monitoring, and configurable
-//! action mappings for triggering clip commands.
+//! [`InputMidiPlugin`] discovers MIDI devices and reads their input on a service thread. Each
+//! mapping binds a control to a registered action, so a pad or fader can start clips, move
+//! masters, or run any other bindable action. Feedback sends each mapped control the state of
+//! its action's target, with bundled controller profiles for known hardware. Incoming MIDI
+//! timecode (MTC) feeds the timecodes that follow MIDI.
 
 #![warn(missing_docs)]
 

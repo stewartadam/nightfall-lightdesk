@@ -6,6 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Native audio playback for timeline audio.
+//!
+//! [`AudioController`] plays audio files through sinks on a process-lifetime output client.
+//! Each sink can be loaded, played, paused, seeked, and kept in sync with a timeline's position,
+//! and the output can move to another device. The crate also lists the system's audio output
+//! devices.
+
 use std::{
     collections::HashMap,
     time::{Duration, Instant},

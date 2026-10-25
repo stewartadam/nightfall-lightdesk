@@ -6,7 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides fixture and parameters for the lighting desk.
+//! Patched fixtures, their parameters, and the DMX frames they produce.
+//!
+//! [`FixturePlugin`] spawns a parameter entity for each attribute of each patched fixture and
+//! keeps the indexes between them. It owns universes, patch bindings and DMX routes with their
+//! validation, the built-in fixture profiles, DMX input applied to parameters, and the
+//! composition of the output frames that the output transports send. It also publishes
+//! parameter state and universe streams to clients.
 
 #![warn(missing_docs)]
 

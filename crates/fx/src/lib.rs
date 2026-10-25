@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Crate for procedural FX
+//! FX: procedural waveform FX and Step FX, and their runtime state.
+//!
+//! [`FxPlugin`] stores FX definitions, handles their commands and undo, and plays FX started by
+//! clips by producing a layer for the compositor. Procedural FX sample a waveform across a
+//! selection, and Step FX play authored steps. The crate also runs the isolated previews that
+//! the FX editors show.
 
 #![warn(missing_docs)]
 use bevy_app::prelude::*;

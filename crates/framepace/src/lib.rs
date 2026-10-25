@@ -20,31 +20,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-//! This is a `bevy` plugin that adds framepacing and framelimiting to improve input latency and
-//! power use.
+//! Frame limiter that paces engine frames to the DMX output schedule, adapted from
+//! `bevy_framepace`.
 //!
 //! # How it works
 //!
-//! This works by sleeping the app immediately before the event loop starts. In doing so, this
-//! minimizes the time from when user input is captured (start of event loop), to when the frame is
-//! presented on screen. Graphically, it looks like this:
+//! The engine sleeps before each frame instead of running as fast as it can. Sleeping as late as
+//! possible keeps the time from receiving input to sending the resulting DMX short, even at a
+//! low frame rate, and saves power:
 //!
 //! ```none
-//!           /-- latency --\             /-- latency --\
-//!  sleep -> input -> render -> sleep -> input -> render
-//!  \----- event loop -----/    \----- event loop -----/
-//! ```
-//!
-//! One of the interesting benefits of this is that you can keep latency low even if the framerate
-//! is limited to a low value. Assuming you are able to reach the target frametime, there should be
-//! no difference in motion-to-photon latency when limited to 10fps or 120fps.
-//!
-//! ```none
-//!                same                                              same
-//!           /-- latency --\                                   /-- latency --\
-//!  sleep -> input -> render -> sleeeeeeeeeeeeeeeeeeeeeeeep -> input -> render
-//!  \----- event loop -----/    \---------------- event loop ----------------/
-//!           60 fps                           limited to 10 fps
+//!           /-- latency --\                     /-- latency --\
+//!  sleep -> input -> render -> send -> sleep -> input -> render -> send
 //! ```
 //!
 //! Render frames start a short lead before each tick of the shared grid from
