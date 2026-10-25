@@ -2,36 +2,32 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-The Rust side of Nightfall is a Cargo workspace of 55 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`. Crate names don't always reveal a crate's job. This page lists every crate by its layer, with a one-line description, and says which crates also compile to WebAssembly (WASM) for the browser. It ends with the folders outside `crates/`. For more detail on one crate, read the doc comment at the top of its `src/lib.rs`, or run `cargo doc -p <package> --open`.
+The Rust side of Nightfall is a Cargo workspace of 55 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`.
 
 For how the crates combine into running programs, see [how the pieces fit together](system-overview.md).
 
-> [!NOTE]
-> This page is maintained by hand. When you add, remove, or repurpose a crate, update its row here and the crate's own doc comment.
+## Architectural layers and crate dependency rules
 
-## Layers and dependency rules
-
-Every crate belongs to an architectural layer, assigned in `config/architecture/crate-layers.json`. The `check:crate-boundaries` script reads that file and fails when a crate depends on a crate in a layer it must not use. A new crate without a layer also fails the check. The layers run from shared building blocks at the bottom to the programs that assemble them at the top:
+Every crate belongs to an architectural layer, which defines how imports between crates are permitted within Nightfall:
 
 ```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 600
+---
 flowchart TB
-  accTitle: Crate layers and allowed dependencies
-  accDescr: Host crates may depend on cross-plugin crates, which may depend on plugin crates, which may depend on engine core crates, which may depend on base crates. Each layer may also depend on any layer further down. Plugin crates may not depend on other plugin crates.
-  hosts[Hosts: programs and tools]
-  crossPlugin[Cross-plugin: desk, showfile, boards, references, WASM bridge]
-  plugins[Plugins: show domains and IO transports]
-  engineCore[Engine core: engine runtime and shared services]
-  base[Base: shared contracts and pure logic]
+  accTitle: Crate layers, their crates, and allowed dependencies
+  accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
+  hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli"]
+  crossPlugin["<b>Cross-plugin</b><br/>boards · desk · desk-audio · references · showfile · wasm-bridge"]
+  plugins["<b>Plugins</b><br/>audio · cues · fixture-library · flow · fx · fx-module · object-library · programmer <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
+  engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · lookahead · service-host <br /> tempo · timecode · undo · websocket"]
+  base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances · io <br /> lookahead-projection · playback-planner · selection · waveform · workspace-hack"]
   hosts --> crossPlugin --> plugins --> engineCore --> base
 ```
 
-An arrow means "may depend on." A crate may also depend on any layer further down, so a plugin crate may use base crates directly. The check enforces these rules:
-
-- Base crates depend only on other base crates.
-- Engine core crates don't depend on plugin, cross-plugin, or host crates.
-- Plugin crates don't depend on other plugin crates, or on cross-plugin or host crates.
-- Cross-plugin crates don't depend on host crates.
-- The Art-Net and sACN input crates don't reach `fixtures`, `compositor`, or `desk` through any chain of dependencies.
+Every crate belongs to one of these architectural layers, manually assigned in `config/architecture/crate-layers.json`. The `check:crate-boundaries` script reads that file and fails when a crate depends on crates in layers above them. A new crate without a layer also fails the check.
 
 `config/architecture/crate-boundary-exceptions.json` lists the edges that break a rule on purpose, each with a reason. Today they are:
 
@@ -42,8 +38,6 @@ An arrow means "may depend on." A crate may also depend on any layer further dow
 - `object-library` depends on `scene-objects`, to import and export scene objects.
 - `timeline` depends on `audio`, `cues`, and `fx`, to plan and play what its tracks trigger.
 
-The check rejects any new edge that breaks a rule, and also any listed exception that no longer exists. To add an exception, add an entry with a reason to the exceptions file.
-
 ## Reading the tables
 
 Each table below covers one layer. The **WASM** column says where the crate compiles to the `wasm32` target:
@@ -53,11 +47,7 @@ Each table below covers one layer. The **WASM** column says where the crate comp
 - **Bridge:** the WASM bridge itself.
 - **Is the demo:** the browser demo engine itself.
 - **Build time:** a procedural macro, which runs inside the compiler on the build machine.
-- **No:** native builds only.
-
-The column follows from the `nightfall-browser-runtime` and `nightfall-wasm-bridge` dependency lists, with the Cargo features those crates select. It isn't a guarantee that a "No" crate can't compile to WASM, only that no WASM build includes it.
-
-When a crate's package name differs from its folder name, the table shows the package name in parentheses. Otherwise the package name is the folder name with a `nightfall-` prefix and dashes, for example `input_midi` is `nightfall-input-midi`.
+- **No:** this crate is included on native builds only.
 
 ## Base: shared contracts and pure logic
 
@@ -65,7 +55,7 @@ Base crates hold data types and algorithms with no engine runtime. Most don't us
 
 | Crate | WASM | Description |
 |-------|------|-------------|
-| `common` (`nightfall`) | Bridge and demo | Show data types shared across the engine, such as blueprints, boards, groups, value sources, transitions, and variables. |
+| `common` | Bridge and demo | Show data types shared across the engine, such as blueprints, boards, groups, value sources, transitions, and variables. |
 | `dmx` | Bridge and demo | Attributes and their metadata, percentages, and DMX value types. |
 | `fixture-model` | Bridge and demo | Profile-level fixture model: parameter value mappings, mode masters, relations, and DMX profiles. The engine and the 3D visualizer share it. |
 | `cmd-parse` | Bridge and demo | Lexer, parser, and autocomplete for the desk command language, such as `fixture 1 @ 50`. |
@@ -79,7 +69,7 @@ Base crates hold data types and algorithms with no engine runtime. Most don't us
 | `beat-detection` | No | Beat and downbeat detection from audio files with the Beat This model. Free of Bevy and networking. |
 | `config` | No | Typed startup configuration read from `NIGHTFALL_*` environment variables and `.env`. |
 | `coremidi_hotplug` | No | Notifies when macOS CoreMIDI devices change. Does nothing on other platforms. |
-| `open-fixture-library` (`open-fixture-library`) | No | Data structures and parser for Open Fixture Library (OFL) JSON files. |
+| `open-fixture-library` | No | Data structures and parser for Open Fixture Library (OFL) JSON files. |
 | `workspace-hack` | No | Empty crate generated by `cargo hakari` so every build enables the same third-party features. Native targets only. |
 
 ## Engine core: engine runtime and shared services
@@ -159,7 +149,7 @@ Host crates assemble the others into programs.
 
 ## What the WASM bridge exports
 
-The `wasm-bridge` crate is the only Rust code the web UI calls directly. It isn't a WASM build of the plugin crates. It exports a small set of functions, and each one calls into the crates listed below, so only the code those functions reach is compiled to WebAssembly. A change to one of these crates can change what the UI computes, so rebuild the bridge after you change one.
+The `wasm-bridge` exports a small set of code from Nightfall crates to WASM so the web UI can re-use its logic. It is not a WASM build of the plugin crates. A change to one of these crates can change what the UI computes, so rebuild the bridge with `pnpm run wasm:bridge` after you change one.
 
 | Export | Functions | Crates it calls |
 |--------|-----------|-----------------|
