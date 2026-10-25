@@ -23,8 +23,6 @@ import {
 import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
-  type DataGridCellDecorationCallback,
-  drawConflictWarningIcon,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -38,6 +36,7 @@ import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   applyElementBackground,
   CONFLICT_VALUE_TEXT_COLOR,
+  conflictWarningIndicators,
   makeSafeTextCell,
 } from "../../../lib/datagrid";
 import {
@@ -71,7 +70,6 @@ import {
   type UniverseDisplayRow,
   type UniverseGroupRow,
   type UniverseRouteRow,
-  universeDisplayCellHasConflict,
 } from "../model/universes-model";
 
 export interface PatchUniversesTabProps {
@@ -370,6 +368,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
               data: "",
               displayData: `In - ${item.routeCounts.input}`,
               allowOverlay: false,
+              stateIndicators: conflictWarningIndicators(item.inputOverlap),
               themeOverride: {
                 textDark: item.inputOverlap
                   ? CONFLICT_VALUE_TEXT_COLOR
@@ -383,6 +382,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
               data: "",
               displayData: `DMX - ${item.routeCounts.output}`,
               allowOverlay: false,
+              stateIndicators: conflictWarningIndicators(item.outputOverlap),
               themeOverride: {
                 textDark: item.outputOverlap
                   ? CONFLICT_VALUE_TEXT_COLOR
@@ -410,6 +410,9 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
               themeOverride: item.conflictColumns.has("source")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
+              stateIndicators: conflictWarningIndicators(
+                item.conflictColumns.has("source"),
+              ),
             };
             break;
           case "target":
@@ -418,6 +421,9 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
               themeOverride: item.conflictColumns.has("target")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
+              stateIndicators: conflictWarningIndicators(
+                item.conflictColumns.has("target"),
+              ),
             };
             break;
           case "priority":
@@ -443,40 +449,6 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
         return applyElementBackground(cell, isChild);
       },
     }),
-  );
-
-  /** Draws conflict warning glyphs for universe summary and route rows. */
-  const conflictCellDecorations = createMemo(() => {
-    const columns = displayColumns();
-    const rows = displayRows();
-    const drawDecorations: DataGridCellDecorationCallback = (args) => {
-      const row = rows[args.row];
-      if (!row) return;
-
-      if (universeDisplayCellHasConflict(row, String(columns[args.col]?.id))) {
-        drawConflictWarningIcon(args);
-      }
-    };
-
-    return drawDecorations;
-  });
-
-  /** Tracks universe conflicts that require decoration canvas redraws. */
-  const conflictDecorationInvalidateKey = createMemo(() =>
-    displayRows()
-      .flatMap((row) => {
-        if (row.rowKind === "route") {
-          return Array.from(row.conflictColumns).map(
-            (column) => `${String(row.universe)}:${row.route.id}:${column}`,
-          );
-        }
-
-        return [
-          row.inputOverlap ? `${String(row.universe)}:source` : undefined,
-          row.outputOverlap ? `${String(row.universe)}:target` : undefined,
-        ].filter((key): key is string => key !== undefined);
-      })
-      .join("|"),
   );
 
   /** Navigates from a grouped universe row to its route detail row. */
@@ -580,8 +552,6 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
           freezeColumns={1}
           onCellClicked={handleCellClicked}
           onCellContextMenu={handleCellContextMenu}
-          cellDecorations={conflictCellDecorations()}
-          decorationInvalidateKey={conflictDecorationInvalidateKey()}
           onCellHovered={onCellHovered}
           onColumnResize={(column, newSize) => {
             setColumns((prev) =>

@@ -68,6 +68,55 @@ test("sizeColumnsToContent measures all provider rows and preserves fixed column
   assert.equal(sized[1]?.width, 75);
 });
 
+/** Verifies X/Y/Z placement columns reserve the axis accent drawn on their right edge. */
+test("sizeColumnsToContent reserves the coordinate axis accent", () => {
+  const columns: GridColumn[] = [
+    { id: "pos_x", title: "" },
+    { id: "label", title: "" },
+  ];
+  const provider = textProvider(
+    [{ pos_x: "-0.667", label: "-0.667" }],
+    columns,
+  );
+
+  const sized = sizeColumnsToContent({
+    columns,
+    provider,
+    context: measurementContext(),
+    nestedColumnGroups: false,
+  });
+
+  assert.equal(sized[0]?.width, 80);
+  assert.equal(sized[1]?.width, 77);
+});
+
+/** Verifies a conflict warning icon widens its column instead of covering the cell text. */
+test("sizeColumnsToContent counts warning icons beside cell text", () => {
+  const columns: GridColumn[] = [{ id: "target", title: "" }];
+  const provider = createKeyedDataGridCellProvider({
+    rows: [{}],
+    columns,
+    rowKey: (_row, index) => index,
+    columnKey: (column) => String(column.id),
+    getCellContent: () => ({
+      kind: GridCellKind.Text,
+      data: "1.001",
+      stateIndicators: [
+        { label: "Conflict", tone: "warning", variant: "icon" },
+      ],
+    }),
+  });
+
+  const sized = sizeColumnsToContent({
+    columns,
+    provider,
+    context: measurementContext(),
+    nestedColumnGroups: false,
+  });
+
+  assert.equal(sized[0]?.width, 85);
+});
+
 /** Verifies measured widths obey per-column minimum and maximum constraints. */
 test("sizeColumnsToContent clamps content widths", () => {
   const columns: GridColumn[] = [

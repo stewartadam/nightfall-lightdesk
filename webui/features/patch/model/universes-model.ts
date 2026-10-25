@@ -200,21 +200,3 @@ export function formatGroupWithChevron(
 ): string {
   return `${isExpanded ? "▼" : "▶"} ${label}`;
 }
-
-/** Returns whether a universe tab cell represents a patch conflict. */
-export function universeDisplayCellHasConflict(
-  row: UniverseDisplayRow,
-  columnId: string | undefined,
-): boolean {
-  if (row.rowKind === "route") {
-    return (
-      (columnId === "source" || columnId === "target") &&
-      row.conflictColumns.has(columnId)
-    );
-  }
-
-  return (
-    (columnId === "source" && row.inputOverlap) ||
-    (columnId === "target" && row.outputOverlap)
-  );
-}

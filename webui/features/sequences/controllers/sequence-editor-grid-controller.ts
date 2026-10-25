@@ -17,11 +17,13 @@ import {
   createKeyedDataGridCellProvider,
   type DataGridCellDecorationCallback,
   drawActiveCuePlayIcon,
-  drawConflictWarningIcon,
 } from "../../../components/widgets/data-grid";
 import type { GridCell, GridColumn } from "../../../lib/data-grid-types";
 import { GridCellKind } from "../../../lib/data-grid-types";
-import { applyElementBackground } from "../../../lib/datagrid";
+import {
+  applyElementBackground,
+  conflictWarningIndicators,
+} from "../../../lib/datagrid";
 import {
   makeTimeCell,
   type RichTimeDisplayUnit,
@@ -260,6 +262,9 @@ export function createSequenceEditorGridController(
               displayData:
                 item.rowKind === "part" ? `    ${item.label}` : item.label,
               allowOverlay: isEditable,
+              stateIndicators: conflictWarningIndicators(
+                item.hasPartConflict === true,
+              ),
             },
             item.rowKind === "part",
             PART_ROW_BACKGROUND,
@@ -500,10 +505,6 @@ export function createSequenceEditorGridController(
         normalizePlaybackUid(row.cueUid) === materializedActiveCueUid
       ) {
         drawActiveCuePlayIcon(args);
-      }
-
-      if (columnId === "label" && row.hasPartConflict) {
-        drawConflictWarningIcon(args);
       }
 
       if (previewEnabled && row.cueUid === activeCueUid && !row.isMissing) {

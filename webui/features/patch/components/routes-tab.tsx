@@ -18,8 +18,6 @@ import {
 import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
-  type DataGridCellDecorationCallback,
-  drawConflictWarningIcon,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -32,6 +30,7 @@ import type {
 import { CompactSelection, GridCellKind } from "../../../lib/data-grid-types";
 import {
   CONFLICT_VALUE_TEXT_COLOR,
+  conflictWarningIndicators,
   createRowSelectionHelpers,
   emptyGridSelection,
   getEditTargetRowIndices,
@@ -267,8 +266,18 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
     );
   });
 
-  const cellProvider = createMemo(() =>
-    createKeyedDataGridCellProvider({
+  /** Rebuilds route cells, including conflict styling, whenever rows or their conflicts change. */
+  const cellProvider = createMemo(() => {
+    const conflictColumns = routeConflictColumns();
+    /** Styles a source or target value that overlaps another route. */
+    const conflictCell = (cell: GridCell, conflicted: boolean): GridCell => ({
+      ...cell,
+      themeOverride: conflicted
+        ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
+        : undefined,
+      stateIndicators: conflictWarningIndicators(conflicted),
+    });
+    return createKeyedDataGridCellProvider({
       rows: displayRows(),
       columns: displayColumns(),
       rowKey: (row) => row.id,
@@ -279,19 +288,15 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
           case "type":
             return makeSafeTextCell(item.kind);
           case "source":
-            return {
-              ...makeSafeTextCell(item.source),
-              themeOverride: routeConflictColumns().get(item.id)?.has("source")
-                ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
-                : undefined,
-            };
+            return conflictCell(
+              makeSafeTextCell(item.source),
+              conflictColumns.get(item.id)?.has("source") === true,
+            );
           case "target":
-            return {
-              ...makeSafeTextCell(item.target),
-              themeOverride: routeConflictColumns().get(item.id)?.has("target")
-                ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
-                : undefined,
-            };
+            return conflictCell(
+              makeSafeTextCell(item.target),
+              conflictColumns.get(item.id)?.has("target") === true,
+            );
           case "priority":
             return {
               kind: GridCellKind.Number,
@@ -309,34 +314,8 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
             return makeSafeTextCell("");
         }
       },
-    }),
-  );
-
-  /** Draws conflict warning glyphs for DMX route rows. */
-  const conflictCellDecorations = createMemo(() => {
-    const columns = displayColumns();
-    const rows = displayRows();
-    const drawDecorations: DataGridCellDecorationCallback = (args) => {
-      const row = rows[args.row];
-      const columnId = String(columns[args.col]?.id);
-      if (!row || !isRouteConflictColumn(columnId)) return;
-      if (!routeConflictColumns().get(row.id)?.has(columnId)) return;
-
-      drawConflictWarningIcon(args);
-    };
-
-    return drawDecorations;
+    });
   });
-
-  /** Tracks DMX route conflicts that require decoration canvas redraws. */
-  const conflictDecorationInvalidateKey = createMemo(() =>
-    Array.from(routeConflictColumns())
-      .flatMap(([rowId, columns]) =>
-        Array.from(columns).map((column) => `${rowId}:${column}`),
-      )
-      .sort()
-      .join("|"),
-  );
 
   return (
     <div class="relative h-full w-full">
@@ -357,8 +336,6 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
           rowMarkers="checkbox"
           gridSelection={selection()}
           onGridSelectionChange={handleGridSelectionChange}
-          cellDecorations={conflictCellDecorations()}
-          decorationInvalidateKey={conflictDecorationInvalidateKey()}
           onCellHovered={onCellHovered}
           width="100%"
           height="100%"

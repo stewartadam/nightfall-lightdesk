@@ -2586,6 +2586,19 @@ test("patch lesson adds, lights and removes practice fixtures", async ({
     [0.67, 3],
     [2, 3],
   ]);
+  await expect
+    .poll(() =>
+      patch.evaluate((panel) =>
+        [
+          ...panel.querySelectorAll<HTMLElement>(
+            '[role="gridcell"][data-grid-column-key^="pos_"] .truncate',
+          ),
+        ]
+          .filter((text) => text.scrollWidth > text.clientWidth)
+          .map((text) => text.textContent),
+      ),
+    )
+    .toEqual([]);
 
   await expectStep(page, "Switch to the DMX Routes view", { target: true });
   await shot("routes-tab");
