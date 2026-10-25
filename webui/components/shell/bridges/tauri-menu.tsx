@@ -7,6 +7,7 @@
  */
 
 import { onCleanup, onMount } from "solid-js";
+import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
@@ -144,6 +145,7 @@ export default function TauriMenuBridge() {
 
     void registerTauriMenuListener({
       openAbout,
+      openWelcomeGuide,
       openSettings,
       newShowfile: promptAndNewShowfile,
       openShowfile: showOpenShowfileModal,

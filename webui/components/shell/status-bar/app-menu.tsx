@@ -13,9 +13,11 @@ import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { GearIcon } from "@squidlab/phosphor-solid/gear";
+import { GraduationCapIcon } from "@squidlab/phosphor-solid/graduation-cap";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { type JSX, Show } from "solid-js";
+import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { hasDiskStorage } from "../../../lib/disk-storage";
 import { openDocumentation, openFeedbackPage } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
@@ -153,6 +155,9 @@ export default function AppMenu(props: {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
       </Show>
+      <DropdownMenuItem icon={GraduationCapIcon} onClick={openWelcomeGuide}>
+        Welcome Guide
+      </DropdownMenuItem>
       <DropdownMenuItem icon={BookOpenIcon} onClick={openDocumentation}>
         User Guide
       </DropdownMenuItem>

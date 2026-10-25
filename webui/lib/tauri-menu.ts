@@ -12,6 +12,7 @@ const TAURI_MENU_ACTION_EVENT = "nightfall:menu-action";
 
 export const TAURI_MENU_ACTIONS = {
   about: "app.about",
+  welcomeGuide: "app.welcome_guide",
   documentation: "app.documentation",
   settings: "app.settings",
   diagnostics: "app.diagnostics",
@@ -43,6 +44,7 @@ export const TAURI_MENU_SHORTCUTS = {
 
 export interface TauriMenuActionHandlers {
   openAbout: () => void;
+  openWelcomeGuide: () => void;
   openSettings: () => void;
   openDiagnostics: () => void;
   reportBug: () => void;
@@ -74,6 +76,9 @@ export function handleTauriMenuAction(
       return;
     case TAURI_MENU_ACTIONS.about:
       handlers.openAbout?.();
+      return;
+    case TAURI_MENU_ACTIONS.welcomeGuide:
+      handlers.openWelcomeGuide?.();
       return;
     case TAURI_MENU_ACTIONS.settings:
       handlers.openSettings?.();

@@ -34,7 +34,6 @@ import {
   openOrFocusPanelDefinition,
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
-import { isEmbeddedDemoRuntime } from "../../lib/runtime-config";
 import {
   activeInstances,
   clips,
@@ -92,12 +91,12 @@ import "./welcome-guide.css";
 
 const log = getLogger(import.meta.url);
 
-/** Offers an unobtrusive first-visit invitation in the browser demo only. */
+/** Offers an unobtrusive invitation to the guide until the user opens or dismisses it. */
 export function GuideInvitation() {
   const dismissed = useStore(guideDismissed);
   const opened = useStore(guideOpen);
   return (
-    <Show when={isEmbeddedDemoRuntime() && !dismissed() && !opened()}>
+    <Show when={!dismissed() && !opened()}>
       <aside class="nf-guide-invitation" aria-label="Welcome to Nightfall">
         <div>
           <strong>New to Nightfall?</strong>
