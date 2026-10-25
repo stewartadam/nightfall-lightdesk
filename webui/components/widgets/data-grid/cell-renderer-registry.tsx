@@ -21,6 +21,7 @@ import { GridCellKind } from "../../../lib/data-grid-types";
 import { isPrintableTextEntryEvent } from "../../../lib/keyboardShortcutEvents";
 import {
   type DropdownGridCell,
+  dropdownDisplaySwatch,
   dropdownDisplayValue,
   dropdownOptions,
   isDropdownCell,
@@ -429,6 +430,7 @@ function renderDropdownDisplayText(context: CellContentContext) {
     return (
       <DropdownCellAffordance
         text={dropdownDisplayValue(context.cell as DropdownGridCell)}
+        swatch={dropdownDisplaySwatch(context.cell as DropdownGridCell)}
       />
     );
   }

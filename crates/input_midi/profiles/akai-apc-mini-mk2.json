@@ -1,0 +1,15 @@
+{
+  "id": "akai.apc-mini-mk2",
+  "name": "Akai APC Mini mk2",
+  "ports": {
+    "match": ["apc mini mk2"],
+    "exclude": ["notes", "midiin2"]
+  },
+  "feedback": false,
+  "hint": "Pads light at full brightness. The track and scene buttons have one LED color each: any color lights them, and Light Gray makes them blink.",
+  "ledChannels": [{ "notes": [0, 63], "channel": 6 }],
+  "init": [],
+  "release": [],
+  "palette": "rgb-128",
+  "defaults": { "off": "Off", "on": "Green", "held": "Orange" }
+}

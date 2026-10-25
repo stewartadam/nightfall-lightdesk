@@ -19,6 +19,7 @@ import {
   applyIoSettingsSnapshot,
   applyMidiControlTouched,
   applyMidiDeviceListSnapshot,
+  applyMidiDeviceProfilesSnapshot,
   applyMidiLastEventSnapshot,
   applyMidiMappingDiagnosticsSnapshot,
   applyMidiMappingsSnapshot,
@@ -77,6 +78,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("MidiDeviceList", (message) => {
     applyMidiDeviceListSnapshot(message.data);
+  });
+
+  registry.register("MidiDeviceProfiles", (message) => {
+    applyMidiDeviceProfilesSnapshot(message.data);
   });
 
   registry.register("MidiMappings", (message) => {

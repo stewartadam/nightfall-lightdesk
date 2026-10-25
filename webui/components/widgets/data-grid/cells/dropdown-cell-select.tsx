@@ -9,6 +9,7 @@
 import { Show } from "solid-js";
 import {
   type DropdownGridCell,
+  dropdownDisplaySwatch,
   dropdownDisplayValue,
   dropdownOptions,
   dropdownSelectedKey,
@@ -32,6 +33,7 @@ export function DropdownCellSelect(props: {
     dropdownOptions(props.cell).map((option) => ({
       value: option.key,
       label: option.label,
+      swatch: option.swatch,
     }));
 
   /** Returns the selected Preline option key for the dropdown cell. */
@@ -44,7 +46,10 @@ export function DropdownCellSelect(props: {
     <Show
       when={editable()}
       fallback={
-        <DropdownCellAffordance text={dropdownDisplayValue(props.cell)} />
+        <DropdownCellAffordance
+          text={dropdownDisplayValue(props.cell)}
+          swatch={dropdownDisplaySwatch(props.cell)}
+        />
       }
     >
       <div
