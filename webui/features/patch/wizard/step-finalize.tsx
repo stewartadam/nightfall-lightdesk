@@ -15,6 +15,7 @@ import {
 } from "../../../lib/fixture-service";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
+import { layoutConsolePatch } from "../model/console-patch-allocation";
 import { usePatchWizard } from "./wizard-context";
 
 export function StepFinalize() {
@@ -45,11 +46,25 @@ export function StepFinalize() {
     return count !== null ? count * state().quantity : null;
   });
 
-  const endAddress = createMemo(() => {
-    const start = state().startAddress;
-    const total = totalChannels();
-    if (start === null || total === null) return null;
-    return start + total - 1;
+  /**
+   * Console channels the new fixtures span, as `universe.start–universe.end`, laid out
+   * like the routes the wizard creates.
+   */
+  const patchSpan = createMemo(() => {
+    const { universeId, startAddress, quantity } = state();
+    if (universeId === null || startAddress === null) return null;
+    const footprint = channelCount();
+    const start = `${universeId}.${startAddress}`;
+    if (footprint === null) return start;
+    const placements = layoutConsolePatch(
+      { universe: universeId, address: startAddress },
+      footprint,
+      quantity,
+    );
+    const last = placements[placements.length - 1];
+    const end = last.address + Math.max(footprint, 1) - 1;
+    if (last.universe === universeId && end === startAddress) return start;
+    return `${start}–${last.universe}.${end}`;
   });
 
   return (
@@ -100,25 +115,7 @@ export function StepFinalize() {
                   <div class="text-gray-100">Not assigned (DMX-less)</div>
                 }
               >
-                <div class="text-gray-100">
-                  {state().universeId}.{state().startAddress}
-                  <Show when={endAddress() !== null}>
-                    {(() => {
-                      const startAddr = state().startAddress ?? 0;
-                      const end = endAddress() ?? 0;
-                      const startUniverse = state().universeId ?? 0;
-                      const endUniverseOffset = Math.floor((end - 1) / 512);
-                      const endAddressInUniverse = ((end - 1) % 512) + 1;
-                      const endUniverse = startUniverse + endUniverseOffset;
-                      const spansMultiple = endUniverse > startUniverse;
-
-                      if (end === startAddr) return null;
-                      return spansMultiple
-                        ? `–${endUniverse}.${endAddressInUniverse}`
-                        : `–${startUniverse}.${endAddressInUniverse}`;
-                    })()}
-                  </Show>
-                </div>
+                <div class="text-gray-100">{patchSpan()}</div>
                 <Show
                   when={totalChannels() !== null && channelCount() !== null}
                 >

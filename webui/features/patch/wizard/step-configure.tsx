@@ -18,112 +18,50 @@ import {
 } from "solid-js";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
-import { fixtureWireLayout } from "../../../lib/dmx";
-import { CONSOLE_TRANSPORT } from "../../../lib/dmx-universe-data";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import {
   computeFixtureChannelCount,
   fetchFixtureProfile,
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
-import { normalizeFixtureUid } from "../../../lib/route-utils";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
-  dmxUniverseList,
   fixtureLibrary,
   fixtureProfile,
   fixtures,
   routes,
 } from "../../../state/appStores";
-import type * as types from "../../../types";
+import {
+  CONSOLE_UNIVERSE_SIZE,
+  type ConsolePatchProblem,
+  collectConsolePatchOccupancy,
+  findConsolePatchProblem,
+  findFirstFreeConsolePatch,
+  formatConsolePatchSpan,
+  layoutConsolePatch,
+} from "../model/console-patch-allocation";
 import { usePatchWizard } from "./wizard-context";
 
-function mapUniverseByIndex(universes: number[], index: number): number {
-  if (universes.length === 0) return 1;
-  if (universes.length === 1) return universes[0];
-  if (index < universes.length) return universes[index];
-  return universes[universes.length - 1];
-}
-
 /**
- * Returns the DMX footprint a patch selection occupies, laid out like the engine so
- * explicit footprint slots and gaps count toward the next fixture's address.
+ * Explains why the configured patch cannot be applied, naming the universe of a
+ * conflict only when it differs from the typed start universe.
  */
-function computeSourceWidth(
-  fixture: types.Fixture,
-  elementId?: number,
-  paramName?: string,
-): number {
-  return fixtureWireLayout(fixture, {
-    elementId,
-    parameterName: paramName || undefined,
-  }).footprint;
-}
-
-function collectConsolePatchOccupancy(
-  snapshot: types.RoutesSnapshot,
-  fixtureMap: Record<string, types.Fixture>,
-): Map<string, { label: string }> {
-  const occupied = new Map<string, { label: string }>();
-
-  for (const route of snapshot.output) {
-    if (route.source.type !== "Fixture") continue;
-    if (route.target.type !== "Console") continue;
-
-    const sourceData = route.source.data;
-    const targetData = route.target.data;
-    const universes = targetData.universe
-      ? Array.from(
-          { length: targetData.universe.end - targetData.universe.start + 1 },
-          (_, index) => targetData.universe!.start + index,
-        )
-      : [1];
-    const baseAddress = targetData.address ?? 1;
-
-    let runningAddress = baseAddress;
-    let lastUniverse = universes[0] ?? 1;
-
-    for (const [index, uid] of sourceData.uids.entries()) {
-      const fixtureUid = normalizeFixtureUid(uid);
-      const fixture = fixtureMap[fixtureUid];
-      if (!fixture) continue;
-
-      const universe = mapUniverseByIndex(universes, index);
-      if (universe !== lastUniverse) {
-        runningAddress = baseAddress;
-        lastUniverse = universe;
-      }
-
-      const channelWidth = computeSourceWidth(
-        fixture,
-        sourceData.element,
-        sourceData.param,
-      );
-      if (channelWidth <= 0) continue;
-
-      const startAddress = route.clone ? baseAddress : runningAddress;
-      const endAddress = startAddress + channelWidth - 1;
-      if (!route.clone) {
-        runningAddress = endAddress + 1;
-      }
-
-      const fixtureLabel =
-        fixture.identifiers.label || `Fixture ${fixture.identifiers.id}`;
-
-      for (let address = startAddress; address <= endAddress; address += 1) {
-        occupied.set(`${universe}:${address}`, { label: fixtureLabel });
-      }
-    }
+function describePatchProblem(
+  problem: ConsolePatchProblem,
+  startUniverse: number | null,
+): string {
+  if (problem.kind === "overrun") {
+    return `The fixture runs past channel ${CONSOLE_UNIVERSE_SIZE} of universe ${problem.universe}; choose a lower start address`;
   }
-
-  return occupied;
+  const universe =
+    problem.universe !== startUniverse ? `Universe ${problem.universe} ` : "";
+  return `${universe}Address ${problem.address} conflicts with ${problem.label}`;
 }
 
 export function StepConfigure() {
   const formId = createUniqueId();
-  const { state, updateState, setPatchConflict, patchConflict } =
+  const { state, updateState, setPatchProblem, patchProblem } =
     usePatchWizard();
-  const $dmxData = useStore(dmxUniverseList);
   const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
@@ -132,20 +70,6 @@ export function StepConfigure() {
   const occupiedConsoleAddresses = createMemo(() =>
     collectConsolePatchOccupancy($routes(), $fixtures()),
   );
-
-  /**
-   * Lists active console-space universe numbers for console DMX assignment defaults,
-   * falling back to console universe 1 when nothing is patched to the console yet.
-   */
-  const universeIds = createMemo(() => {
-    const ids = $dmxData()
-      .filter((universe) => universe.transport === CONSOLE_TRANSPORT)
-      .map((universe) => universe.universe_id)
-      .sort((a, b) => a - b);
-    return ids.length > 0 ? ids : [1];
-  });
-
-  const selectedUniverseId = createMemo(() => state().universeId);
 
   const selectedFixture = createMemo(() => {
     const defId = state().fixtureDefinitionId;
@@ -175,61 +99,58 @@ export function StepConfigure() {
     return null;
   });
 
-  const findNextAvailableAddress = (universeId: number): number => {
-    const occupied = untrack(() => occupiedConsoleAddresses());
-
-    let nextAddress = 1;
-    while (nextAddress <= 512) {
-      if (!occupied.has(`${universeId}:${nextAddress}`)) {
-        return nextAddress;
-      }
-      nextAddress += 1;
+  /**
+   * Console start of each new fixture for the typed universe and address, packed like
+   * the routes the wizard creates; empty until the address and fixture size are known.
+   */
+  const placements = createMemo(() => {
+    const { universeId, startAddress, quantity } = state();
+    const footprint = channelCount();
+    if (universeId === null || startAddress === null || footprint === null) {
+      return [];
     }
+    return layoutConsolePatch(
+      { universe: universeId, address: startAddress },
+      footprint,
+      quantity,
+    );
+  });
 
-    return 1;
-  };
-
+  /**
+   * While the address is automatic, keeps the universe and address on the first free
+   * channels that fit every new fixture, searching from universe 1 and re-picking when
+   * the quantity, fixture size or existing patch changes.
+   */
   createEffect(
     on(
       () => ({
-        ids: universeIds(),
         assignConsoleDmx: state().assignConsoleDmx,
+        autoAddress: state().autoAddress,
+        quantity: state().quantity,
+        footprint: channelCount(),
+        occupied: occupiedConsoleAddresses(),
       }),
-      ({ ids, assignConsoleDmx }) => {
-        if (!assignConsoleDmx) {
+      ({ assignConsoleDmx, autoAddress, quantity, footprint, occupied }) => {
+        if (!assignConsoleDmx || !autoAddress) {
           return;
         }
-
-        const currentUniverseId = untrack(() => state().universeId);
-        if (ids.length > 0 && currentUniverseId === null) {
-          const firstUniverse = ids[0];
-          const nextAddress = findNextAvailableAddress(firstUniverse);
+        const start = findFirstFreeConsolePatch(
+          occupied,
+          Math.max(footprint ?? 1, 1),
+          quantity,
+          1,
+        ) ?? { universe: 1, address: 1 };
+        const current = untrack(state);
+        if (
+          current.universeId !== start.universe ||
+          current.startAddress !== start.address
+        ) {
           updateState({
-            universeId: firstUniverse,
-            startAddress: nextAddress,
+            universeId: start.universe,
+            startAddress: start.address,
           });
         }
       },
-    ),
-  );
-
-  createEffect(
-    on(
-      () => ({
-        universeId: selectedUniverseId(),
-        assignConsoleDmx: state().assignConsoleDmx,
-      }),
-      ({ universeId, assignConsoleDmx }, prev) => {
-        if (!assignConsoleDmx || universeId === null || !prev) {
-          return;
-        }
-
-        if (prev.universeId !== null && prev.universeId !== universeId) {
-          const nextAddress = findNextAvailableAddress(universeId);
-          updateState({ startAddress: nextAddress });
-        }
-      },
-      { defer: true },
     ),
   );
 
@@ -243,101 +164,60 @@ export function StepConfigure() {
     if (!state().assignConsoleDmx) return true;
     const address = state().startAddress;
     if (address === null) return true;
-    return address >= 1 && address <= 512;
+    return address >= 1 && address <= CONSOLE_UNIVERSE_SIZE;
   });
 
-  createEffect(
-    on(
-      () => ({
-        assignConsoleDmx: state().assignConsoleDmx,
-        universeId: state().universeId,
-        startAddress: state().startAddress,
-        quantity: state().quantity,
-        channelCount: channelCount(),
-      }),
-      (deps) => {
-        const {
-          assignConsoleDmx,
-          universeId,
-          startAddress,
-          quantity,
-          channelCount,
-        } = deps;
-
-        if (!assignConsoleDmx) {
-          setPatchConflict({ hasConflict: false });
-          return;
-        }
-
-        if (
-          universeId === null ||
-          startAddress === null ||
-          channelCount === null ||
-          quantity < 1
-        ) {
-          setPatchConflict({ hasConflict: false });
-          return;
-        }
-
-        const occupied = untrack(() => occupiedConsoleAddresses());
-
-        let absoluteAddress = startAddress;
-        for (let fixtureIndex = 0; fixtureIndex < quantity; fixtureIndex += 1) {
-          for (
-            let channelIndex = 0;
-            channelIndex < channelCount;
-            channelIndex += 1
-          ) {
-            const universeOffset = Math.floor((absoluteAddress - 1) / 512);
-            const currentUniverse = universeId + universeOffset;
-            const addressInUniverse = ((absoluteAddress - 1) % 512) + 1;
-
-            const conflict = occupied.get(
-              `${currentUniverse}:${addressInUniverse}`,
-            );
-            if (conflict) {
-              setPatchConflict({
-                hasConflict: true,
-                conflictingUniverse: currentUniverse,
-                conflictingAddress: addressInUniverse,
-                conflictingFixtureLabel: conflict.label,
-              });
-              return;
-            }
-
-            absoluteAddress += 1;
-          }
-        }
-
-        setPatchConflict({ hasConflict: false });
-      },
-    ),
-  );
-
-  const handleUniverseChange = (value: string) => {
-    const universeId = Number.parseInt(value, 10);
-    if (!Number.isNaN(universeId) && universeId >= 1) {
-      updateState({ universeId });
-    }
-  };
-
-  const handleResetAddress = () => {
-    if (!state().assignConsoleDmx) {
+  /** Publishes the first overrun or conflicting channel of the configured patch to the wizard. */
+  createEffect(() => {
+    const footprint = channelCount();
+    if (!state().assignConsoleDmx || footprint === null) {
+      setPatchProblem(null);
       return;
     }
+    setPatchProblem(
+      findConsolePatchProblem(
+        occupiedConsoleAddresses(),
+        placements(),
+        footprint,
+      ),
+    );
+  });
 
-    const ids = universeIds();
-    if (ids.length === 0) return;
-
-    const currentUniverse = state().universeId ?? ids[0];
-    const nextAddress = findNextAvailableAddress(currentUniverse);
-    updateState({ universeId: currentUniverse, startAddress: nextAddress });
+  /**
+   * Switches to a typed universe and moves the address to the first free channels there
+   * that fit every new fixture, keeping the address when none fit.
+   */
+  const handleUniverseChange = (value: string) => {
+    const universeId = Number.parseInt(value, 10);
+    if (Number.isNaN(universeId) || universeId < 1) return;
+    const start = findFirstFreeConsolePatch(
+      occupiedConsoleAddresses(),
+      Math.max(channelCount() ?? 1, 1),
+      state().quantity,
+      universeId,
+      { withinUniverse: true },
+    );
+    updateState({
+      universeId,
+      startAddress: start?.address ?? state().startAddress ?? 1,
+      autoAddress: false,
+    });
   };
 
+  /** Returns the patch to the first free universe and address that fits every fixture. */
+  const handleAutoAddress = () => {
+    updateState({ autoAddress: true });
+  };
+
+  /** Applies a typed start address and stops the automatic address from replacing it. */
   const handleAddressChange = (value: string) => {
     const address = Number.parseInt(value, 10);
-    if (!Number.isNaN(address) && address >= 1 && address <= 512) {
-      updateState({ startAddress: address });
+    if (
+      !Number.isNaN(address) &&
+      address >= 1 &&
+      address <= CONSOLE_UNIVERSE_SIZE
+    ) {
+      updateState({ startAddress: address, autoAddress: false });
     }
   };
 
@@ -354,9 +234,6 @@ export function StepConfigure() {
 
   const handleAssignConsoleDmxChange = (checked: boolean) => {
     updateState({ assignConsoleDmx: checked });
-    if (!checked) {
-      setPatchConflict({ hasConflict: false });
-    }
   };
 
   return (
@@ -442,67 +319,45 @@ export function StepConfigure() {
               density="compact"
               type="number"
               min="1"
-              max="512"
+              max={CONSOLE_UNIVERSE_SIZE}
               aria-label="Start address"
               value={state().startAddress ?? ""}
               onInput={(e) =>
                 handleAddressChange((e.target as HTMLInputElement).value)
               }
               class="w-20"
-              aria-invalid={!addressValid() || patchConflict().hasConflict}
+              aria-invalid={!addressValid() || patchProblem() !== null}
             />
             <Button
               size="compact"
               type="button"
-              onClick={handleResetAddress}
-              title="Reset to next available address"
+              onClick={handleAutoAddress}
+              aria-pressed={state().autoAddress}
+              title="Use the first free universe and address that fits every fixture"
             >
               Auto
             </Button>
           </div>
 
           <Show when={totalChannelsNeeded() !== null}>
-            {(() => {
-              const startAddress = state().startAddress ?? 0;
-              const totalChannels = totalChannelsNeeded() ?? 0;
-              const endAbsolute = startAddress + totalChannels - 1;
-              const endUniverseOffset = Math.floor((endAbsolute - 1) / 512);
-              const endAddressInUniverse = ((endAbsolute - 1) % 512) + 1;
-              const startUniverse = state().universeId ?? 0;
-              const endUniverse = startUniverse + endUniverseOffset;
-              const spansMultiple = endUniverse > startUniverse;
-
-              return (
-                <p class="mt-1 text-sm text-gray-500">
-                  {state().quantity} fixture{state().quantity !== 1 ? "s" : ""}{" "}
-                  x {channelCount()} ch = {totalChannels} channels (
-                  {spansMultiple
-                    ? `${startUniverse}.${startAddress}-${endUniverse}.${endAddressInUniverse}`
-                    : `${startAddress}-${endAbsolute}`}
-                  )
-                </p>
-              );
-            })()}
+            <p class="mt-1 text-sm text-gray-500">
+              {state().quantity} fixture{state().quantity !== 1 ? "s" : ""} x{" "}
+              {channelCount()} ch = {totalChannelsNeeded()} channels (
+              {formatConsolePatchSpan(placements(), channelCount() ?? 0)})
+            </p>
           </Show>
 
           <Show when={!addressValid()}>
             <p class="mt-1 text-sm text-red-400">
-              Start address must be between 1 and 512
+              Start address must be between 1 and {CONSOLE_UNIVERSE_SIZE}
             </p>
           </Show>
-          <Show when={patchConflict().hasConflict}>
-            <p class="mt-1 text-sm text-red-400">
-              <Show
-                when={
-                  patchConflict().conflictingUniverse !== undefined &&
-                  patchConflict().conflictingUniverse !== state().universeId
-                }
-              >
-                Universe {patchConflict().conflictingUniverse}{" "}
-              </Show>
-              Address {patchConflict().conflictingAddress} conflicts with{" "}
-              {patchConflict().conflictingFixtureLabel}
-            </p>
+          <Show when={patchProblem()}>
+            {(problem) => (
+              <p class="mt-1 text-sm text-red-400">
+                {describePatchProblem(problem(), state().universeId)}
+              </p>
+            )}
           </Show>
         </div>
       </Show>

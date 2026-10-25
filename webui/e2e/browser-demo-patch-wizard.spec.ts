@@ -264,13 +264,33 @@ test("embedded demo patches a built-in fixture through the patch wizard", async 
   await expect(
     dialog.getByRole("checkbox", { name: "Assign Console DMX" }),
   ).toBeChecked();
-  // The sample patches its six spots to console universe 9 (96 channels), so Auto
-  // places the new spot right after them.
-  await dialog.getByRole("spinbutton", { name: "Universe" }).fill("9");
-  await dialog.getByRole("button", { name: "Auto", exact: true }).click();
-  await expect(
-    dialog.getByRole("spinbutton", { name: "Start address" }),
-  ).toHaveValue("97");
+  const universeInput = dialog.getByRole("spinbutton", { name: "Universe" });
+  const addressInput = dialog.getByRole("spinbutton", {
+    name: "Start address",
+  });
+  const autoButton = dialog.getByRole("button", { name: "Auto", exact: true });
+  const quantityInput = dialog.getByRole("spinbutton", { name: "Quantity" });
+  // The sample uses channels 1-480 of universe 1, so the first free 16-channel span
+  // starts at 1.481.
+  await expect(autoButton).toHaveAttribute("aria-pressed", "true");
+  await expect(universeInput).toHaveValue("1");
+  await expect(addressInput).toHaveValue("481");
+  // Forty spots no longer fit after 1.481 without running into the fixtures patched
+  // to universe 2, so Auto moves the whole patch to the first span that fits them all.
+  await quantityInput.fill("40");
+  await expect(universeInput).toHaveValue("20");
+  await expect(addressInput).toHaveValue("389");
+  await expect(dialog.getByText("conflicts with")).toHaveCount(0);
+  await dialog.locator(".nf-dialog-surface").screenshot({
+    path: testInfo.outputPath("demo-patch-wizard-auto-many.png"),
+  });
+  await quantityInput.fill("1");
+  await expect(addressInput).toHaveValue("481");
+  // The sample patches its six spots to console universe 9 (96 channels), so typing
+  // that universe moves the address right after them and turns Auto off.
+  await universeInput.fill("9");
+  await expect(addressInput).toHaveValue("97");
+  await expect(autoButton).toHaveAttribute("aria-pressed", "false");
   await dialog.locator(".nf-dialog-surface").screenshot({
     path: testInfo.outputPath("demo-patch-wizard-configure.png"),
   });
