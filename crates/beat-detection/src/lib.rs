@@ -12,7 +12,7 @@
 //! detection (such as the timeline) do not compile or wait on it.
 //!
 //! It deliberately stays free of Bevy, HTTP, and networking dependencies so it
-//! can compile early and in parallel with the domain crates. Related code lives
+//! can compile early and in parallel with the plugin crates. Related code lives
 //! elsewhere for that reason:
 //! - Timeline (`beatgrid_detection`) schedules detection and turns results into
 //!   beatgrid proposals through the `BeatgridDetector` hook.

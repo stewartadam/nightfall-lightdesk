@@ -147,7 +147,7 @@ pub enum DmxInputSet {
     Apply,
 }
 
-/// IO runtime observations that integration layers may present to an operator.
+/// IO runtime observations that cross-plugin crates may present to an operator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IoRuntimeNotification {
     /// A network listener could not bind, causing network input to be disabled.

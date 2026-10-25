@@ -385,7 +385,7 @@ impl EngineIngressMeta for EngineCommand {
 /// This parses top-level command expressions using AST-based dispatch.
 /// The AST is converted to engine commands via registered domain-specific converters.
 pub fn parse_command_string(cmd_str: &str) -> Result<Vec<DynEnginePayload>, ParseError> {
-    // Parse AST and dispatch via registered converters in domain crates
+    // Parse AST and dispatch via registered converters in plugin crates
     let ast = nightfall_cmd_parse::generate_ast(cmd_str)
         .map_err(|e| ParseError::Failure(format!("Parsing command to AST failed: {}", e)))?;
 

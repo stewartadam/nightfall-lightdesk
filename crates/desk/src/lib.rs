@@ -8,7 +8,7 @@
 
 //! Desk behavior that spans several show domains.
 //!
-//! Domain crates can't depend on each other, so behavior that touches several of them lives
+//! Plugin crates can't depend on each other, so behavior that touches several of them lives
 //! here: the `DeskCommand` entry point (including `Eval` for the command language and the
 //! showfile requests), clip storage and the shared lifecycle of running playbacks, masters and
 //! control slots, groups and Blueprints, console settings and shared panel layouts, virtual
