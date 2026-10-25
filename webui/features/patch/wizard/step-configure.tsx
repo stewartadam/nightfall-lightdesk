@@ -117,38 +117,36 @@ export function StepConfigure() {
   });
 
   /**
-   * While the address is automatic, keeps the universe and address on the first free
-   * channels that fit every new fixture, searching from universe 1 and re-picking when
-   * the quantity, fixture size or existing patch changes.
+   * Fills in the first universe and address, from universe 1, where every new fixture
+   * lands on free channels.
+   */
+  const fillNextAvailable = () => {
+    const start = findFirstFreeConsolePatch(
+      occupiedConsoleAddresses(),
+      Math.max(channelCount() ?? 1, 1),
+      state().quantity,
+      1,
+    ) ?? { universe: 1, address: 1 };
+    updateState({ universeId: start.universe, startAddress: start.address });
+  };
+
+  /**
+   * Starts the patch on the next available channels once the fixture size is known,
+   * unless a universe was already chosen.
    */
   createEffect(
     on(
       () => ({
         assignConsoleDmx: state().assignConsoleDmx,
-        autoAddress: state().autoAddress,
-        quantity: state().quantity,
         footprint: channelCount(),
-        occupied: occupiedConsoleAddresses(),
       }),
-      ({ assignConsoleDmx, autoAddress, quantity, footprint, occupied }) => {
-        if (!assignConsoleDmx || !autoAddress) {
-          return;
-        }
-        const start = findFirstFreeConsolePatch(
-          occupied,
-          Math.max(footprint ?? 1, 1),
-          quantity,
-          1,
-        ) ?? { universe: 1, address: 1 };
-        const current = untrack(state);
+      ({ assignConsoleDmx, footprint }) => {
         if (
-          current.universeId !== start.universe ||
-          current.startAddress !== start.address
+          assignConsoleDmx &&
+          footprint !== null &&
+          untrack(state).universeId === null
         ) {
-          updateState({
-            universeId: start.universe,
-            startAddress: start.address,
-          });
+          untrack(fillNextAvailable);
         }
       },
     ),
@@ -183,33 +181,15 @@ export function StepConfigure() {
     );
   });
 
-  /**
-   * Switches to a typed universe and moves the address to the first free channels there
-   * that fit every new fixture, keeping the address when none fit.
-   */
+  /** Applies a typed console universe, keeping the start address. */
   const handleUniverseChange = (value: string) => {
     const universeId = Number.parseInt(value, 10);
-    if (Number.isNaN(universeId) || universeId < 1) return;
-    const start = findFirstFreeConsolePatch(
-      occupiedConsoleAddresses(),
-      Math.max(channelCount() ?? 1, 1),
-      state().quantity,
-      universeId,
-      { withinUniverse: true },
-    );
-    updateState({
-      universeId,
-      startAddress: start?.address ?? state().startAddress ?? 1,
-      autoAddress: false,
-    });
+    if (!Number.isNaN(universeId) && universeId >= 1) {
+      updateState({ universeId });
+    }
   };
 
-  /** Returns the patch to the first free universe and address that fits every fixture. */
-  const handleAutoAddress = () => {
-    updateState({ autoAddress: true });
-  };
-
-  /** Applies a typed start address and stops the automatic address from replacing it. */
+  /** Applies a typed start address within the console universe. */
   const handleAddressChange = (value: string) => {
     const address = Number.parseInt(value, 10);
     if (
@@ -217,7 +197,7 @@ export function StepConfigure() {
       address >= 1 &&
       address <= CONSOLE_UNIVERSE_SIZE
     ) {
-      updateState({ startAddress: address, autoAddress: false });
+      updateState({ startAddress: address });
     }
   };
 
@@ -332,11 +312,10 @@ export function StepConfigure() {
             <Button
               size="compact"
               type="button"
-              onClick={handleAutoAddress}
-              aria-pressed={state().autoAddress}
-              title="Use the first free universe and address that fits every fixture"
+              onClick={fillNextAvailable}
+              title="Use the first universe and address with room for every fixture"
             >
-              Auto
+              Next available
             </Button>
           </div>
 

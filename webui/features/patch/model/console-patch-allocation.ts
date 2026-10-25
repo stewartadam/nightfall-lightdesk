@@ -153,23 +153,22 @@ function nextCandidateAddress(
  * channels all land on free channels, laid out by {@link layoutConsolePatch}.
  *
  * The search starts at address 1 of `fromUniverse` and moves through later universes
- * until the whole patch fits; a universe past every used channel always fits. With
- * `withinUniverse`, only start addresses in `fromUniverse` are tried and null is
- * returned when none fits there. Returns null for footprints wider than a universe.
+ * until the whole patch fits; a universe past every used channel always fits. Returns
+ * null for footprints wider than a universe.
  */
 export function findFirstFreeConsolePatch(
   occupied: ConsoleOccupancy,
   footprint: number,
   quantity: number,
   fromUniverse: number,
-  options: { withinUniverse?: boolean } = {},
 ): ConsolePatchPlacement | null {
   if (footprint < 1 || footprint > CONSOLE_UNIVERSE_SIZE || quantity < 1) {
     return null;
   }
-  const lastUniverse = options.withinUniverse
-    ? fromUniverse
-    : Math.max(fromUniverse, highestOccupiedUniverse(occupied) + 1);
+  const lastUniverse = Math.max(
+    fromUniverse,
+    highestOccupiedUniverse(occupied) + 1,
+  );
 
   for (let universe = fromUniverse; universe <= lastUniverse; universe += 1) {
     let address = 1;

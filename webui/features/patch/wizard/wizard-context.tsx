@@ -44,8 +44,6 @@ export interface PatchWizardState {
   assignConsoleDmx: boolean;
   universeId: number | null;
   startAddress: number | null;
-  /** Whether the console patch follows the first free channels instead of a typed address. */
-  autoAddress: boolean;
   quantity: number;
   label: string;
   morphFixtureIds: number[];
@@ -57,7 +55,6 @@ const initialState: PatchWizardState = {
   assignConsoleDmx: true,
   universeId: null,
   startAddress: null,
-  autoAddress: true,
   quantity: 1,
   label: "",
   morphFixtureIds: [],

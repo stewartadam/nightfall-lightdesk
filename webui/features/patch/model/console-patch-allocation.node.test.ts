@@ -103,19 +103,6 @@ test("findFirstFreeConsolePatch falls through to the universe after the last use
   });
 });
 
-/** Restricting the search to one universe returns null when nothing fits there. */
-test("findFirstFreeConsolePatch within one universe returns null when it is full", () => {
-  const occupied = occupy(new Map(), 1, 1, 505);
-  assert.equal(
-    findFirstFreeConsolePatch(occupied, 12, 1, 1, { withinUniverse: true }),
-    null,
-  );
-  assert.deepEqual(
-    findFirstFreeConsolePatch(occupied, 12, 1, 2, { withinUniverse: true }),
-    { universe: 2, address: 1 },
-  );
-});
-
 /** Tries every start address in order, as a reference for the skipping search. */
 function naiveFirstFree(
   occupied: ConsoleOccupancy,
