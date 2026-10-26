@@ -29,6 +29,7 @@ function managedServices() {
     "artnet-sender": EMPTY_SERVICE_STATE,
     "sacn-sender": EMPTY_SERVICE_STATE,
     docs: EMPTY_SERVICE_STATE,
+    devguide: EMPTY_SERVICE_STATE,
   };
 }
 
@@ -40,9 +41,11 @@ function observedProcesses() {
     backendPortOpen: false,
     webUiPortOpen: false,
     docsPortOpen: false,
+    devguidePortOpen: false,
     backendPid: null,
     webUiPid: null,
     docsPid: null,
+    devguidePid: null,
     artnetSenderRunning: false,
     sacnSenderRunning: false,
   };
@@ -75,6 +78,8 @@ function worktree({
     webUiUrl: port === null ? null : `http://localhost:${port + 1}`,
     docsPort: port === null ? null : port + 2,
     docsUrl: port === null ? null : `http://localhost:${port + 2}`,
+    devguidePort: port === null ? null : port + 3,
+    devguideUrl: port === null ? null : `http://localhost:${port + 3}`,
     managed: managedServices(),
     observed: observedProcesses(),
   };
@@ -131,10 +136,11 @@ test("worktree dashboard groups uninitialized worktrees at the bottom", async ({
 });
 
 /**
- * Verifies the Docs column shows a running mdBook server with its port and
- * link, and that Recycle and Stop can target it through the service API.
+ * Verifies the Docs and Developer Guide columns each show a running mdBook
+ * server with its own port and link, and that the service menus target each
+ * book through the service API.
  */
-test("worktree dashboard shows and manages the docs server", async ({
+test("worktree dashboard shows and manages the docs servers", async ({
   page,
 }) => {
   const base = worktree({
@@ -152,8 +158,20 @@ test("worktree dashboard shows and manages the docs server", async ({
         running: true,
         logPath: "/tmp/nightfall-worktree-dashboard/docs-preview-docs.log",
       },
+      devguide: {
+        ...EMPTY_SERVICE_STATE,
+        pid: 4343,
+        running: true,
+        logPath: "/tmp/nightfall-worktree-dashboard/docs-preview-devguide.log",
+      },
     },
-    observed: { ...base.observed, docsPortOpen: true, docsPid: 4242 },
+    observed: {
+      ...base.observed,
+      docsPortOpen: true,
+      docsPid: 4242,
+      devguidePortOpen: true,
+      devguidePid: 4343,
+    },
   };
 
   await page.route("**/worktree-api/worktrees", async (route) => {
@@ -191,6 +209,16 @@ test("worktree dashboard shows and manages the docs server", async ({
   await expect(
     row.getByRole("button", { name: "Open docs log file" }),
   ).toBeEnabled();
+  await expect(
+    page.getByRole("columnheader", { name: "Developer Guide" }),
+  ).toBeVisible();
+  await expect(row.getByText("3083", { exact: true })).toBeVisible();
+  await expect(
+    row.getByRole("link", { name: "Open developer guide" }),
+  ).toHaveAttribute("href", "http://localhost:3083");
+  await expect(
+    row.getByRole("button", { name: "Open developer guide log file" }),
+  ).toBeEnabled();
 
   await row.getByRole("button", { name: "Recycle..." }).click();
   await page.screenshot({
@@ -201,7 +229,9 @@ test("worktree dashboard shows and manages the docs server", async ({
   await expect.poll(() => actionRequests.length).toBe(1);
 
   await row.getByRole("button", { name: "Stop..." }).click();
-  await page.getByRole("button", { name: "Docs", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Developer Guide", exact: true })
+    .click();
   await expect.poll(() => actionRequests.length).toBe(2);
 
   expect(
@@ -211,7 +241,7 @@ test("worktree dashboard shows and manages the docs server", async ({
     ]),
   ).toEqual([
     ["recycle", "docs"],
-    ["stop", "docs"],
+    ["stop", "devguide"],
   ]);
 });
 

@@ -41,6 +41,7 @@ export const WORKTREE_MANAGED_SERVICES = [
   "artnet-sender",
   "sacn-sender",
   "docs",
+  "devguide",
 ];
 export const MANAGE_ACTIONS = ["start", "stop", "recycle"];
 export const ALL_SELECTOR = "all";
@@ -112,12 +113,15 @@ export function summarizeWorktree(worktree) {
     webUiUrl: worktree.webUiUrl,
     docsPort: worktree.docsPort,
     docsUrl: worktree.docsUrl,
+    devguidePort: worktree.devguidePort,
+    devguideUrl: worktree.devguideUrl,
     backend: statusSummary(worktree, "backend"),
     ui: statusSummary(worktree, "ui"),
     wasm: statusSummary(worktree, "wasm"),
     artnetSender: statusSummary(worktree, "artnet-sender"),
     sacnSender: statusSummary(worktree, "sacn-sender"),
     docs: statusSummary(worktree, "docs"),
+    devguide: statusSummary(worktree, "devguide"),
     managed: {
       backend: {
         running: Boolean(worktree.managed?.backend?.running),
@@ -142,6 +146,10 @@ export function summarizeWorktree(worktree) {
       docs: {
         running: Boolean(worktree.managed?.docs?.running),
         pid: worktree.managed?.docs?.pid ?? null,
+      },
+      devguide: {
+        running: Boolean(worktree.managed?.devguide?.running),
+        pid: worktree.managed?.devguide?.pid ?? null,
       },
     },
   };
@@ -186,7 +194,7 @@ export function resolveWorktreeServiceTargets(values) {
 
 /**
  * Reports whether the dashboard observed a service as live: an open port for
- * the backend, UI, and docs, or a running process for the sender examples.
+ * the backend, UI, and both books, or a running process for the sender examples.
  */
 function observedOpenForService(worktree, service) {
   if (service === "backend") {
@@ -197,6 +205,9 @@ function observedOpenForService(worktree, service) {
   }
   if (service === "docs") {
     return Boolean(worktree.observed?.docsPortOpen);
+  }
+  if (service === "devguide") {
+    return Boolean(worktree.observed?.devguidePortOpen);
   }
   if (service === "artnet-sender") {
     return Boolean(worktree.observed?.artnetSenderRunning);

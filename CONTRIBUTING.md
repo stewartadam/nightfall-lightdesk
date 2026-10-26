@@ -386,7 +386,7 @@ pnpm run dashboard:ui
 
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
 The API discovers all worktrees from `git worktree list`, reads each `.env` (`NIGHTFALL_PORT`), and provides launch/recycle controls plus direct links to each Web UI.
-The `docs` service runs `mdbook serve docs` on `NIGHTFALL_PORT + 2` so each worktree previews its own copy of the user manual; it needs `mdbook` on the dashboard's `PATH` (see [Building the documentation](#building-the-documentation)).
+The `docs` service runs `mdbook serve docs` on `NIGHTFALL_PORT + 2` and the `devguide` service runs `mdbook serve docs/internal` on `NIGHTFALL_PORT + 3`, so each worktree previews its own copy of the user manual and the Developer Guide; both need `mdbook` on the dashboard's `PATH` (see [Building the documentation](#building-the-documentation)).
 
 To run the backend and Art-Net/sACN sender examples through a Cargo wrapper such
 as Mr Boxington, set `NIGHTFALL_CARGO_COMMAND=mbx` in the target worktree's `.env`.
@@ -460,7 +460,7 @@ Use `dashboard_list_worktrees` to get paths, then pass a `worktree` path explici
 - `dashboard_sender_examples_status`
 - `dashboard_sender_examples_manage`
 
-`dashboard_worktree_manage` supports `services=[backend|ui|wasm|artnet-sender|sacn-sender|docs|all,...]`.
+`dashboard_worktree_manage` supports `services=[backend|ui|wasm|artnet-sender|sacn-sender|docs|devguide|all,...]`.
 Use `dashboard_sender_examples_manage` for a sender-focused API with
 `senders=[art-net|sacn|all,...]`.
 
@@ -657,6 +657,8 @@ Internal design decisions, BRDs, and developer reference live in the Developer G
 mdbook build docs/internal
 mdbook serve docs/internal --port 3001 --open
 ```
+
+With the worktree dashboard running, `wt service start -s devguide` (or the dashboard's Developer Guide column) serves the current worktree's Developer Guide on its own port instead.
 
 `playwright/tests/docs-*.spec.ts` check both built books, including that every Developer Guide diagram renders. Build both books first, then run `pnpm exec playwright test --config playwright/docs.config.ts`.
 

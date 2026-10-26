@@ -147,8 +147,17 @@ function formatWorktreeList(summaries) {
     summary.backend,
     summary.ui,
     summary.docs,
+    summary.devguide,
   ]);
-  const header = ["NAME", "BRANCH", "PORT", "BACKEND", "UI", "DOCS"];
+  const header = [
+    "NAME",
+    "BRANCH",
+    "PORT",
+    "BACKEND",
+    "UI",
+    "DOCS",
+    "DEVGUIDE",
+  ];
   const widths = header.map((title, column) =>
     Math.max(title.length, ...rows.map((row) => row[column].length)),
   );
@@ -170,6 +179,7 @@ function formatWorktreeStatus(summary) {
     `  backend: ${summary.backend} on port ${summary.nightfallPort ?? "-"}`,
     `  ui:      ${summary.ui}${summary.webUiUrl ? ` at ${summary.webUiUrl}` : ""}`,
     `  docs:    ${summary.docs}${summary.docsUrl ? ` at ${summary.docsUrl}` : ""}`,
+    `  devguide: ${summary.devguide}${summary.devguideUrl ? ` at ${summary.devguideUrl}` : ""}`,
     `  wasm:    ${summary.wasm}`,
     `  art-net sender: ${summary.artnetSender}`,
     `  sACN sender:    ${summary.sacnSender}`,

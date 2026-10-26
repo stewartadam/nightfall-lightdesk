@@ -45,7 +45,13 @@ import { pushToast } from "./state/appStores";
 
 import "./index.css";
 
-type ServiceName = "backend" | "ui" | "docs" | "artnet-sender" | "sacn-sender";
+type ServiceName =
+  | "backend"
+  | "ui"
+  | "docs"
+  | "devguide"
+  | "artnet-sender"
+  | "sacn-sender";
 type ServiceTarget = ServiceName | "wasm" | "both" | "senders";
 type ServiceAction = "start" | "stop" | "recycle";
 type DashboardAction =
@@ -84,14 +90,18 @@ interface WorktreeSummary {
   webUiUrl: string | null;
   docsPort: number | null;
   docsUrl: string | null;
+  devguidePort: number | null;
+  devguideUrl: string | null;
   managed: Record<ServiceName, ManagedServiceState>;
   observed: {
     backendPortOpen: boolean;
     webUiPortOpen: boolean;
     docsPortOpen: boolean;
+    devguidePortOpen: boolean;
     backendPid: number | null;
     webUiPid: number | null;
     docsPid: number | null;
+    devguidePid: number | null;
     artnetSenderRunning: boolean;
     sacnSenderRunning: boolean;
   };
@@ -166,7 +176,10 @@ const WORKTREE_SERVICE_OPTIONS: Array<{ value: ServiceTarget; label: string }> =
 
 const DOCS_SERVICE_GROUP: ServiceTargetGroup = {
   key: "docs-services",
-  options: [{ value: "docs", label: "Docs" }],
+  options: [
+    { value: "docs", label: "Docs" },
+    { value: "devguide", label: "Developer Guide" },
+  ],
 };
 
 const WORKTREE_SERVICE_OPTIONS_WITH_WASM: Array<{
@@ -304,6 +317,69 @@ function ServiceLogButton(props: ServiceLogButtonProps) {
   );
 }
 
+interface BookServiceCellProps {
+  /** Book name as shown in tooltips and accessible labels. */
+  label: string;
+  port: number | null;
+  url: string | null;
+  isReachable: boolean;
+  managed: ManagedServiceState;
+  /** Listener PID found on the book's port, used when the dashboard did not start it. */
+  observedPid: number | null;
+  logPending: boolean;
+  onOpenLog: () => void;
+}
+
+/**
+ * Renders an mdBook server's status, port, and log button, plus a link that
+ * opens the book once its port answers.
+ */
+function BookServiceCell(props: BookServiceCellProps) {
+  return (
+    <>
+      <div class="inline-flex items-center gap-2">
+        <StatusDot
+          isReachable={props.isReachable}
+          isManagedRunning={props.managed.running}
+          status={serviceStatusText(
+            props.isReachable,
+            props.managed.running,
+            props.managed.pid ?? props.observedPid,
+          )}
+        >
+          <p class="font-mono text-xs text-slate-600 dark:text-slate-300">
+            {props.port ?? "n/a"}
+          </p>
+        </StatusDot>
+        <ServiceLogButton
+          label={props.label}
+          logPath={props.managed.logPath}
+          lastError={props.managed.lastError}
+          pending={props.logPending}
+          onOpen={props.onOpenLog}
+        />
+      </div>
+      <Show when={props.isReachable && props.url}>
+        {(url) => (
+          <a
+            href={url()}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open ${props.label}`}
+            aria-label={`Open ${props.label}`}
+            class="ml-2 inline-flex items-center p-1 text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+          >
+            <ArrowSquareOutIcon
+              class="size-3 text-sky-700 dark:text-sky-300"
+              aria-hidden
+            />
+          </a>
+        )}
+      </Show>
+    </>
+  );
+}
+
 function actionKey(
   worktreeId: string,
   action: DashboardAction,
@@ -323,6 +399,7 @@ function serviceLabel(service: ServiceTarget): string {
   if (service === "senders") return "both senders";
   if (service === "ui") return "web ui";
   if (service === "docs") return "docs";
+  if (service === "devguide") return "developer guide";
   if (service === "wasm") return "wasm";
   if (service === "artnet-sender") return "art-net sender";
   if (service === "sacn-sender") return "sacn sender";
@@ -385,10 +462,13 @@ function normalizeDashboardPayload(
         canRemove: Boolean(worktree.canRemove),
         docsPort: worktree.docsPort ?? null,
         docsUrl: worktree.docsUrl ?? null,
+        devguidePort: worktree.devguidePort ?? null,
+        devguideUrl: worktree.devguideUrl ?? null,
         managed: {
           backend: normalizeManagedServiceState(managed.backend),
           ui: normalizeManagedServiceState(managed.ui),
           docs: normalizeManagedServiceState(managed.docs),
+          devguide: normalizeManagedServiceState(managed.devguide),
           "artnet-sender": normalizeManagedServiceState(
             managed["artnet-sender"],
           ),
@@ -406,6 +486,11 @@ function normalizeDashboardPayload(
           docsPortOpen: Boolean(observed.docsPortOpen),
           docsPid:
             typeof observed.docsPid === "number" ? observed.docsPid : null,
+          devguidePortOpen: Boolean(observed.devguidePortOpen),
+          devguidePid:
+            typeof observed.devguidePid === "number"
+              ? observed.devguidePid
+              : null,
           artnetSenderRunning: Boolean(observed.artnetSenderRunning),
           sacnSenderRunning: Boolean(observed.sacnSenderRunning),
         },
@@ -1046,6 +1131,9 @@ function WorktreeDashboardApp() {
                   Docs
                 </th>
                 <th scope="col" class="text-left">
+                  Developer Guide
+                </th>
+                <th scope="col" class="text-left">
                   Senders
                 </th>
                 <th scope="col" class="text-left">
@@ -1154,54 +1242,36 @@ function WorktreeDashboardApp() {
                       </Show>
                     </td>
                     <td>
-                      <div class="inline-flex items-center gap-2">
-                        <StatusDot
-                          isReachable={worktree.observed.docsPortOpen}
-                          isManagedRunning={worktree.managed.docs.running}
-                          status={serviceStatusText(
-                            worktree.observed.docsPortOpen,
-                            worktree.managed.docs.running,
-                            worktree.managed.docs.pid ??
-                              worktree.observed.docsPid,
-                          )}
-                        >
-                          <p class="font-mono text-xs text-slate-600 dark:text-slate-300">
-                            {worktree.docsPort ?? "n/a"}
-                          </p>
-                        </StatusDot>
-                        <ServiceLogButton
-                          label="docs"
-                          logPath={worktree.managed.docs.logPath}
-                          lastError={worktree.managed.docs.lastError}
-                          pending={isPendingOperation(
-                            actionKey(worktree.id, "open-log", "docs"),
-                          )}
-                          onOpen={() =>
-                            void openServiceLog(worktree.id, "docs")
-                          }
-                        />
-                      </div>
-                      <Show
-                        when={
-                          worktree.observed.docsPortOpen && worktree.docsUrl
-                        }
-                      >
-                        {(url) => (
-                          <a
-                            href={url()}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Open docs"
-                            aria-label="Open docs"
-                            class="ml-2 inline-flex items-center p-1 text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
-                          >
-                            <ArrowSquareOutIcon
-                              class="size-3 text-sky-700 dark:text-sky-300"
-                              aria-hidden
-                            />
-                          </a>
+                      <BookServiceCell
+                        label="docs"
+                        port={worktree.docsPort}
+                        url={worktree.docsUrl}
+                        isReachable={worktree.observed.docsPortOpen}
+                        managed={worktree.managed.docs}
+                        observedPid={worktree.observed.docsPid}
+                        logPending={isPendingOperation(
+                          actionKey(worktree.id, "open-log", "docs"),
                         )}
-                      </Show>
+                        onOpenLog={() =>
+                          void openServiceLog(worktree.id, "docs")
+                        }
+                      />
+                    </td>
+                    <td>
+                      <BookServiceCell
+                        label="developer guide"
+                        port={worktree.devguidePort}
+                        url={worktree.devguideUrl}
+                        isReachable={worktree.observed.devguidePortOpen}
+                        managed={worktree.managed.devguide}
+                        observedPid={worktree.observed.devguidePid}
+                        logPending={isPendingOperation(
+                          actionKey(worktree.id, "open-log", "devguide"),
+                        )}
+                        onOpenLog={() =>
+                          void openServiceLog(worktree.id, "devguide")
+                        }
+                      />
                     </td>
                     <td>
                       <div class="space-y-2">
