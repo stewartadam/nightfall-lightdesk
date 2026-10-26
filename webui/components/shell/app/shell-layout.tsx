@@ -10,7 +10,11 @@ import { useStore } from "@nanostores/solid";
 import { onCleanup, onMount, Show } from "solid-js";
 import { BoardPaletteCommands } from "../../../features/boards";
 import { ReleaseHeldButtonsCommand } from "../../../features/clips";
-import { MappingModeBanner, MappingModeController } from "../../../features/io";
+import {
+  MappingModeBanner,
+  MappingModeController,
+  MidiDeviceDetectedNotice,
+} from "../../../features/io";
 import { KeybindingController } from "../../../features/keybindings";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
@@ -54,6 +58,7 @@ function ShellRuntime() {
       <LayoutCommands />
       <BoardPaletteCommands />
       <MappingModeController />
+      <MidiDeviceDetectedNotice />
       <KeybindingController />
       <TauriMenuBridge />
       <Show when={isTauriRuntime()}>

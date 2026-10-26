@@ -40,6 +40,10 @@ import {
   runtimeCapabilities,
 } from "../../state/appStores";
 import {
+  dismissedPrompts,
+  resetDismissedPrompts,
+} from "../../state/dismissed-prompts";
+import {
   $availableAudioDevices,
   $availableNetworkInterfaces,
   $ioSettings,
@@ -125,6 +129,14 @@ const formatNetworkInterface = (iface?: NetworkInterfaceInfo): string => {
   return `${displayName}${details.length > 0 ? ` (${details.join(", ")})` : ""}`;
 };
 
+/** Describes how many prompts "Don't show this again" turned off on this device. */
+const hiddenPromptsDescription = (count: number): string => {
+  const intro =
+    "Prompts turned off with “Don't show this again” on this device.";
+  if (count === 0) return `${intro} None are hidden.`;
+  return `${intro} ${count} ${count === 1 ? "is" : "are"} hidden.`;
+};
+
 const systemDefaultLabel = (status: NetworkInterfaceStatus): string => {
   if (!status.default_interface) {
     return "System Default";
@@ -170,6 +182,7 @@ export function SettingsOverlay() {
   const showOrbitTargetIndicator = useStore(visualizerShowOrbitTargetIndicator);
   const quality = useStore(visualizerQuality);
   const darkness = useStore(visualizerDarkness);
+  const dismissed = useStore(dismissedPrompts);
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
   const [query, setQuery] = createSignal("");
   const [hasResults, setHasResults] = createSignal(true);
@@ -569,6 +582,29 @@ export function SettingsOverlay() {
                     <option value="Strict">Strict Mode</option>
                     <option value="Permissive">Permissive Mode</option>
                   </NativeSelect>
+                )}
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection title="Notifications">
+              <SettingsRow
+                label="Hidden prompts"
+                labelControl={false}
+                keywords="don't show this again dismissed reset toasts"
+                description={
+                  <span role="status">
+                    {hiddenPromptsDescription(dismissed().length)}
+                  </span>
+                }
+              >
+                {() => (
+                  <Button
+                    size="compact"
+                    disabled={dismissed().length === 0}
+                    onClick={resetDismissedPrompts}
+                    data-testid="reset-dismissed-prompts"
+                  >
+                    Show again
+                  </Button>
                 )}
               </SettingsRow>
             </SettingsSection>

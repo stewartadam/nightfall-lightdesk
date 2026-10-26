@@ -19,17 +19,25 @@ export interface MasterSnapshot {
   mode: { type: string; data?: { active: boolean } };
 }
 
-/** Opens a blank showfile on the test's isolated backend once the action catalog loads. */
+/**
+ * Opens a blank showfile on the test's isolated backend once the action catalog loads.
+ *
+ * Local storage starts empty apart from the current showfile and any `storage` entries.
+ */
 export async function openMappingApp(
   page: Page,
   backendPort: number,
+  storage: Record<string, string> = {},
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
   await page.setViewportSize({ width: 1800, height: 1100 });
-  await page.addInitScript(() => {
+  await page.addInitScript((entries) => {
     window.localStorage.clear();
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
-  });
+    for (const [key, value] of Object.entries(entries)) {
+      window.localStorage.setItem(key, value);
+    }
+  }, storage);
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);

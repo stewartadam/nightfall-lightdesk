@@ -28,13 +28,20 @@ interface StoredMidiMapping {
   action: { id: string; arguments: Record<string, unknown> };
 }
 
-/** Opens a blank showfile and waits for the backend to connect to the virtual controller. */
+/**
+ * Opens a blank showfile and waits for the backend to connect to the virtual controller.
+ *
+ * The port opens after the backend starts, so the backend announces it as newly plugged in;
+ * the new-device prompt is turned off so its toast cannot cover the controls under test.
+ */
 async function openMidiApp(
   page: Page,
   backendPort: number,
   midi: VirtualMidi,
 ): Promise<void> {
-  await openMappingApp(page, backendPort);
+  await openMappingApp(page, backendPort, {
+    "nightfall-dismissed-prompts": JSON.stringify(["midi-device-detected"]),
+  });
   await waitForMidiDevice(page, midi);
 }
 

@@ -255,7 +255,10 @@ export async function waitForMidiDevice(
  * virtual ports.
  */
 export const test = backendTest.extend<
-  { virtualMidi: VirtualMidi },
+  {
+    virtualMidi: VirtualMidi;
+    plugInVirtualMidi: () => Promise<VirtualMidi>;
+  },
   { virtualMidiExecutable: string }
 >({
   /** Builds or locates the virtual controller example once per worker. */
@@ -272,7 +275,16 @@ export const test = backendTest.extend<
   ],
 
   /** Opens this test's virtual MIDI port and closes it afterward, even when the test fails. */
-  virtualMidi: async (
+  virtualMidi: async ({ plugInVirtualMidi }, use) => {
+    await use(await plugInVirtualMidi());
+  },
+
+  /**
+   * Opens this test's virtual MIDI port only when the test calls it, so a controller can be
+   * plugged in while the app is already running. Closes the port afterward if it was opened,
+   * and skips the test where the host cannot open virtual ports.
+   */
+  plugInVirtualMidi: async (
     { backendSlot, virtualMidiExecutable },
     use,
     testInfo,
@@ -280,17 +292,23 @@ export const test = backendTest.extend<
     const unavailable = virtualMidiUnavailableReason();
     testInfo.skip(Boolean(unavailable), unavailable);
     const runRoot = process.env.NIGHTFALL_PLAYWRIGHT_RUN_ROOT?.trim();
-    const midi = await openVirtualMidi(
-      virtualMidiExecutable,
-      backendSlot.midiInputPort,
-      runRoot
-        ? join(runRoot, `worker-${testInfo.parallelIndex}-virtual-midi.jsonl`)
-        : undefined,
-    );
+    let midi: VirtualMidi | undefined;
     try {
-      await use(midi);
+      await use(async () => {
+        midi ??= await openVirtualMidi(
+          virtualMidiExecutable,
+          backendSlot.midiInputPort,
+          runRoot
+            ? join(
+                runRoot,
+                `worker-${testInfo.parallelIndex}-virtual-midi.jsonl`,
+              )
+            : undefined,
+        );
+        return midi;
+      });
     } finally {
-      await midi.close();
+      await midi?.close();
     }
   },
 });

@@ -75,6 +75,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "MasterDefinitions",
   "Metrics",
   "MidiControlTouched",
+  "MidiDeviceDetected",
   "MidiDeviceList",
   "MidiDeviceProfiles",
   "MidiLastEvent",
