@@ -17,10 +17,7 @@ pub(super) fn write_showfile_saved_feedback(
     ui_notifications: &mut MessageWriter<UiNotification>,
 ) {
     succeed_showfile_command(responder, event.command_id);
-    ui_notifications.write(UiNotification::ShowToast {
-        level: ToastLevel::Success,
-        message: "Showfile saved".to_string(),
-    });
+    ui_notifications.write(UiNotification::toast(ToastLevel::Success, "Showfile saved"));
 }
 
 /// Notifies the UI that the backend-confirmed current showfile changed.
@@ -38,10 +35,10 @@ pub(super) fn write_showfile_imported_feedback(
     ui_notifications: &mut MessageWriter<UiNotification>,
 ) {
     succeed_showfile_command(responder, event.command_id);
-    ui_notifications.write(UiNotification::ShowToast {
-        level: ToastLevel::Success,
-        message: "Showfile imported".to_string(),
-    });
+    ui_notifications.write(UiNotification::toast(
+        ToastLevel::Success,
+        "Showfile imported",
+    ));
 }
 
 /// Reports successful completion for one directly handled showfile command.

@@ -1422,6 +1422,7 @@ fn bootstrap_world_with_fallback_uses_sample_data_after_showfile_error() {
         UiNotification::ShowToast {
             level: ToastLevel::Error,
             message,
+            ..
         } if message.contains("missing showfile")
             && message.contains("loaded sample data instead")
     ));

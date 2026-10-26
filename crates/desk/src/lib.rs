@@ -87,7 +87,9 @@ pub mod prelude {
     pub use crate::systems::vdim::{
         DEFAULT_GAMMA, VDIM_AFFECTED_ATTRIBUTES, apply_vdim, gamma_correct,
     };
-    pub use crate::ui_notification::{ToastLevel, UiNotification, UiNotificationState};
+    pub use crate::ui_notification::{
+        ToastAction, ToastLevel, UiNotification, UiNotificationState,
+    };
 }
 
 /// Plugin for adding desk functionality to the app
@@ -386,7 +388,12 @@ impl Plugin for DeskPlugin {
         #[cfg(feature = "native-network-watch")]
         app.add_systems(
             Update,
-            event_handlers::settings_events::refresh_network_interface_state.in_set(EventHandling),
+            (
+                event_handlers::settings_events::refresh_network_interface_state,
+                systems::network_interface_alerts::announce_network_interface_changes,
+            )
+                .chain()
+                .in_set(EventHandling),
         );
 
         // WebSocket forwarding systems owned by the desk plugin

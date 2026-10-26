@@ -192,10 +192,7 @@ pub(super) fn bootstrap_world_with_fallback(
 
             Ok((
                 bevy_app,
-                vec![UiNotification::ShowToast {
-                    level: ToastLevel::Error,
-                    message,
-                }],
+                vec![UiNotification::toast(ToastLevel::Error, message)],
             ))
         }
         Err(error) => Err(error),
