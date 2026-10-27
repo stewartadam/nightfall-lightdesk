@@ -47,11 +47,25 @@ struct AudioOutputDeviceSnapshot {
 }
 
 /// Owns at most one discovery worker and the latest completed device snapshot.
-#[derive(Resource, Debug, Default)]
+#[derive(Resource, Debug)]
 struct AudioOutputDiscovery {
     pending: Option<JoinHandle<AudioOutputDeviceSnapshot>>,
     last_poll_at: Option<Instant>,
     snapshot: Option<AudioOutputDeviceSnapshot>,
+    /// Minimum time between OS queries started by [`Self::poll`].
+    poll_interval: Duration,
+}
+
+impl Default for AudioOutputDiscovery {
+    /// Starts with no cached snapshot and polls the OS at [`AUDIO_DEVICE_POLL_INTERVAL`].
+    fn default() -> Self {
+        Self {
+            pending: None,
+            last_poll_at: None,
+            snapshot: None,
+            poll_interval: AUDIO_DEVICE_POLL_INTERVAL,
+        }
+    }
 }
 
 impl AudioOutputDiscovery {
@@ -95,7 +109,7 @@ impl AudioOutputDiscovery {
         if self.pending.is_none()
             && self
                 .last_poll_at
-                .is_none_or(|last| now.duration_since(last) >= AUDIO_DEVICE_POLL_INTERVAL)
+                .is_none_or(|last| now.duration_since(last) >= self.poll_interval)
         {
             self.start(now, AudioOutputDeviceSnapshot::capture);
         }
@@ -385,11 +399,11 @@ mod tests {
             .insert_resource(AudioController::new(Default::default()))
             .add_message::<UiNotification>()
             .add_systems(Update, (monitor_audio_output_changes, count_updates));
-        let started = Instant::now();
+        // Joining the blocked worker would stall until its release timeout and leave it finished,
+        // so a still-running worker after these updates proves they never waited on it.
         for _ in 0..100 {
             app.update();
         }
-        assert!(started.elapsed() < Duration::from_millis(500));
         assert_eq!(app.world().resource::<UpdateCount>().0, 100);
         assert!(app.world().resource::<AvailableAudioDevices>().0.is_empty());
         assert!(
@@ -401,10 +415,11 @@ mod tests {
                 .is_finished()
         );
 
-        // Avoid starting a real OS query when consuming the synthetic result.
+        // Avoid starting a real OS query when consuming the synthetic result, however long the
+        // scheduler takes to get there.
         app.world_mut()
             .resource_mut::<AudioOutputDiscovery>()
-            .last_poll_at = Some(Instant::now());
+            .poll_interval = Duration::MAX;
         app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("usb".to_string());
         release_tx.send(()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -441,7 +456,7 @@ mod tests {
         app.insert_resource(AudioOutputDiscovery {
             snapshot: Some(snapshot(&[("usb", "USB DAC")], Some("usb"), "USB DAC")),
             last_poll_at: Some(Instant::now()),
-            ..Default::default()
+            ..manual_discovery()
         })
         .init_resource::<DeskSettings>()
         .init_resource::<AvailableAudioDevices>()
@@ -479,7 +494,7 @@ mod tests {
         let cached = snapshot(&[("usb", "USB DAC")], Some("usb"), "USB DAC");
         let mut discovery = AudioOutputDiscovery {
             snapshot: Some(cached.clone()),
-            ..Default::default()
+            ..manual_discovery()
         };
         discovery.start(Instant::now(), || panic!("simulated discovery failure"));
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -500,6 +515,15 @@ mod tests {
             discovery.snapshot,
             Some(snapshot(&[], None, "system default"))
         );
+    }
+
+    /// Builds a discovery whose `poll` never starts another real OS query once `last_poll_at` is
+    /// set, so tests stay deterministic no matter how long the scheduler stalls between calls.
+    fn manual_discovery() -> AudioOutputDiscovery {
+        AudioOutputDiscovery {
+            poll_interval: Duration::MAX,
+            ..Default::default()
+        }
     }
 
     /// Builds an audio device map for monitor planner tests.
