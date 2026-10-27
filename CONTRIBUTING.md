@@ -658,7 +658,7 @@ mdbook build docs/internal
 mdbook serve docs/internal --port 3001 --open
 ```
 
-With the worktree dashboard running, `wt service start -s devguide` (or the dashboard's Developer Guide column) serves the current worktree's Developer Guide on its own port instead.
+With the worktree dashboard running, `wt service start -s devguide` (or the second line of the dashboard's Docs column) serves the current worktree's Developer Guide on its own port instead.
 
 `playwright/tests/docs-*.spec.ts` check both built books, including that every Developer Guide diagram renders. Build both books first, then run `pnpm exec playwright test --config playwright/docs.config.ts`.
 

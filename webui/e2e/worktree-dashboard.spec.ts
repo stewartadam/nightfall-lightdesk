@@ -136,9 +136,9 @@ test("worktree dashboard groups uninitialized worktrees at the bottom", async ({
 });
 
 /**
- * Verifies the Docs and Developer Guide columns each show a running mdBook
- * server with its own port and link, and that the service menus target each
- * book through the service API.
+ * Verifies the Docs column stacks the user manual and Developer Guide mdBook
+ * servers on separate lines, each with its own port and link, and that the
+ * service menus target each book through the service API.
  */
 test("worktree dashboard shows and manages the docs servers", async ({
   page,
@@ -200,24 +200,31 @@ test("worktree dashboard shows and manages the docs servers", async ({
   await page.goto("/worktree-dashboard.html");
 
   await expect(page.getByRole("columnheader", { name: "Docs" })).toBeVisible();
-  const row = page.locator("tbody tr", { hasText: "docs-preview" });
-  await expect(row.getByText("3082", { exact: true })).toBeVisible();
-  await expect(row.getByRole("link", { name: "Open docs" })).toHaveAttribute(
-    "href",
-    "http://localhost:3082",
-  );
-  await expect(
-    row.getByRole("button", { name: "Open docs log file" }),
-  ).toBeEnabled();
   await expect(
     page.getByRole("columnheader", { name: "Developer Guide" }),
-  ).toBeVisible();
-  await expect(row.getByText("3083", { exact: true })).toBeVisible();
+  ).toHaveCount(0);
+  const row = page.locator("tbody tr", { hasText: "docs-preview" });
+  const docsCell = row.locator("td").nth(3);
+  const manualPort = docsCell.getByText("3082", { exact: true });
+  const guidePort = docsCell.getByText("3083", { exact: true });
+  await expect(manualPort).toBeVisible();
+  await expect(guidePort).toBeVisible();
+  const manualBox = await manualPort.boundingBox();
+  const guideBox = await guidePort.boundingBox();
+  expect(guideBox?.y ?? 0).toBeGreaterThan(
+    (manualBox?.y ?? 0) + (manualBox?.height ?? 0),
+  );
   await expect(
-    row.getByRole("link", { name: "Open developer guide" }),
+    docsCell.getByRole("link", { name: "Open user manual" }),
+  ).toHaveAttribute("href", "http://localhost:3082");
+  await expect(
+    docsCell.getByRole("button", { name: "Open user manual log file" }),
+  ).toBeEnabled();
+  await expect(
+    docsCell.getByRole("link", { name: "Open developer guide" }),
   ).toHaveAttribute("href", "http://localhost:3083");
   await expect(
-    row.getByRole("button", { name: "Open developer guide log file" }),
+    docsCell.getByRole("button", { name: "Open developer guide log file" }),
   ).toBeEnabled();
 
   await row.getByRole("button", { name: "Recycle..." }).click();

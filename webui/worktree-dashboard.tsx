@@ -317,7 +317,7 @@ function ServiceLogButton(props: ServiceLogButtonProps) {
   );
 }
 
-interface BookServiceCellProps {
+interface BookServiceRowProps {
   /** Book name as shown in tooltips and accessible labels. */
   label: string;
   port: number | null;
@@ -331,34 +331,33 @@ interface BookServiceCellProps {
 }
 
 /**
- * Renders an mdBook server's status, port, and log button, plus a link that
- * opens the book once its port answers.
+ * Renders one line of the Docs column: an mdBook server's status, port, and
+ * log button, plus a link that opens the book once its port answers. The
+ * status tooltip names the book so stacked rows stay distinguishable.
  */
-function BookServiceCell(props: BookServiceCellProps) {
+function BookServiceRow(props: BookServiceRowProps) {
   return (
-    <>
-      <div class="inline-flex items-center gap-2">
-        <StatusDot
-          isReachable={props.isReachable}
-          isManagedRunning={props.managed.running}
-          status={serviceStatusText(
-            props.isReachable,
-            props.managed.running,
-            props.managed.pid ?? props.observedPid,
-          )}
-        >
-          <p class="font-mono text-xs text-slate-600 dark:text-slate-300">
-            {props.port ?? "n/a"}
-          </p>
-        </StatusDot>
-        <ServiceLogButton
-          label={props.label}
-          logPath={props.managed.logPath}
-          lastError={props.managed.lastError}
-          pending={props.logPending}
-          onOpen={props.onOpenLog}
-        />
-      </div>
+    <div class="flex items-center gap-2">
+      <StatusDot
+        isReachable={props.isReachable}
+        isManagedRunning={props.managed.running}
+        status={`${props.label}: ${serviceStatusText(
+          props.isReachable,
+          props.managed.running,
+          props.managed.pid ?? props.observedPid,
+        )}`}
+      >
+        <p class="font-mono text-xs text-slate-600 dark:text-slate-300">
+          {props.port ?? "n/a"}
+        </p>
+      </StatusDot>
+      <ServiceLogButton
+        label={props.label}
+        logPath={props.managed.logPath}
+        lastError={props.managed.lastError}
+        pending={props.logPending}
+        onOpen={props.onOpenLog}
+      />
       <Show when={props.isReachable && props.url}>
         {(url) => (
           <a
@@ -367,7 +366,7 @@ function BookServiceCell(props: BookServiceCellProps) {
             rel="noopener noreferrer"
             title={`Open ${props.label}`}
             aria-label={`Open ${props.label}`}
-            class="ml-2 inline-flex items-center p-1 text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+            class="inline-flex items-center p-1 text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
           >
             <ArrowSquareOutIcon
               class="size-3 text-sky-700 dark:text-sky-300"
@@ -376,7 +375,7 @@ function BookServiceCell(props: BookServiceCellProps) {
           </a>
         )}
       </Show>
-    </>
+    </div>
   );
 }
 
@@ -1131,9 +1130,6 @@ function WorktreeDashboardApp() {
                   Docs
                 </th>
                 <th scope="col" class="text-left">
-                  Developer Guide
-                </th>
-                <th scope="col" class="text-left">
                   Senders
                 </th>
                 <th scope="col" class="text-left">
@@ -1242,36 +1238,36 @@ function WorktreeDashboardApp() {
                       </Show>
                     </td>
                     <td>
-                      <BookServiceCell
-                        label="docs"
-                        port={worktree.docsPort}
-                        url={worktree.docsUrl}
-                        isReachable={worktree.observed.docsPortOpen}
-                        managed={worktree.managed.docs}
-                        observedPid={worktree.observed.docsPid}
-                        logPending={isPendingOperation(
-                          actionKey(worktree.id, "open-log", "docs"),
-                        )}
-                        onOpenLog={() =>
-                          void openServiceLog(worktree.id, "docs")
-                        }
-                      />
-                    </td>
-                    <td>
-                      <BookServiceCell
-                        label="developer guide"
-                        port={worktree.devguidePort}
-                        url={worktree.devguideUrl}
-                        isReachable={worktree.observed.devguidePortOpen}
-                        managed={worktree.managed.devguide}
-                        observedPid={worktree.observed.devguidePid}
-                        logPending={isPendingOperation(
-                          actionKey(worktree.id, "open-log", "devguide"),
-                        )}
-                        onOpenLog={() =>
-                          void openServiceLog(worktree.id, "devguide")
-                        }
-                      />
+                      <div class="space-y-2">
+                        <BookServiceRow
+                          label="user manual"
+                          port={worktree.docsPort}
+                          url={worktree.docsUrl}
+                          isReachable={worktree.observed.docsPortOpen}
+                          managed={worktree.managed.docs}
+                          observedPid={worktree.observed.docsPid}
+                          logPending={isPendingOperation(
+                            actionKey(worktree.id, "open-log", "docs"),
+                          )}
+                          onOpenLog={() =>
+                            void openServiceLog(worktree.id, "docs")
+                          }
+                        />
+                        <BookServiceRow
+                          label="developer guide"
+                          port={worktree.devguidePort}
+                          url={worktree.devguideUrl}
+                          isReachable={worktree.observed.devguidePortOpen}
+                          managed={worktree.managed.devguide}
+                          observedPid={worktree.observed.devguidePid}
+                          logPending={isPendingOperation(
+                            actionKey(worktree.id, "open-log", "devguide"),
+                          )}
+                          onOpenLog={() =>
+                            void openServiceLog(worktree.id, "devguide")
+                          }
+                        />
+                      </div>
                     </td>
                     <td>
                       <div class="space-y-2">
