@@ -125,6 +125,7 @@ jobs:
       preview_pr: ${{ steps.select.outputs.preview_pr }}
       docs: ${{ steps.select.outputs.docs }}
       rust: ${{ steps.select.outputs.rust }}
+      native: ${{ steps.select.outputs.native }}
       app: ${{ steps.select.outputs.app }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -432,7 +433,7 @@ jobs:
   native:
     name: Native
     needs: [scope, selection]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.app == 'true' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.native == 'true' }}
     uses: ./.github/workflows/native-validation.yml
     with:
       rust-tests: ${{ needs.selection.outputs.rust == 'true' }}
@@ -486,7 +487,7 @@ jobs:
   browser-smoke:
     name: Chromium product flows
     needs: [scope, selection, native, wasm-bridge]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.app == 'true' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.native == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -562,11 +563,14 @@ jobs:
           JOB_RESULTS: ${{ toJSON(needs) }}
           DOCS: ${{ needs.selection.outputs.docs }}
           APP: ${{ needs.selection.outputs.app }}
+          NATIVE: ${{ needs.selection.outputs.native }}
         # Documentation and the app validation jobs run only when selected. The WASM packages may
         # still build for a preview, which is not part of this check.
         run: |
-          printf '%s' "$JOB_RESULTS" | jq -e --arg docs "$DOCS" --arg app "$APP" '
-            def app_job: IN("wasm-bridge", "browser-runtime", "native", "webui", "browser-smoke");
+          printf '%s' "$JOB_RESULTS" | jq -e --arg docs "$DOCS" --arg app "$APP" --arg native "$NATIVE" '
+            def app_job: IN("wasm-bridge", "browser-runtime", "webui");
+            def native_job: IN("native", "browser-smoke");
             with_entries(select(
-              ($docs != "false" or .key != "docs") and ($app != "false" or (.key | app_job | not))
+              ($docs != "false" or .key != "docs") and ($app != "false" or (.key | app_job | not)) and
+              ($native != "false" or (.key | native_job | not))
             )) | all(.[]; .result == "success")'

@@ -61,7 +61,10 @@ validation, script tests, and developer scripts no build or test step runs (such
 as `scripts/update-deps.sh`). A PR touching only those runs the source checks and
 the gate, and the gate accepts the skipped app jobs. New files count as app inputs
 until they are listed; a script test fails if a listed script is referenced from
-anything app validation runs. Ready PRs run the native job's
+anything app validation runs. PRs whose app inputs are all worktree dashboard
+files (`dashboardSources`) run the WASM packages and WebUI checks, which
+typecheck the dashboard page, but skip the native job and the Chromium product
+flows; the WASM packages come from cache unless their inputs changed. Ready PRs run the native job's
 Rust tests, doctests, desktop shell tests and Clippy only when they touch Rust inputs:
 `crates/`, `desktop/`, Cargo manifests and configuration, the toolchain, lint and hook
 configuration, the native workflow, and the files outside `crates/` that Rust embeds

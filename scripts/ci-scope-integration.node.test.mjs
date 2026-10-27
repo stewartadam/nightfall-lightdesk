@@ -13,7 +13,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
-import { appIndependent, readChangedPaths } from "./ci-scope.mjs";
+import {
+  appIndependent,
+  dashboardSources,
+  readChangedPaths,
+} from "./ci-scope.mjs";
 
 const repositoryRoot = new URL("..", import.meta.url);
 
@@ -81,6 +85,41 @@ test("app-independent scripts are never run by app validation", () => {
     for (const [source, contents] of sources) {
       assert.ok(!contents.includes(name), `${source} runs ${script}`);
     }
+  }
+});
+
+/**
+ * Dashboard-only PRs skip the native backend and Chromium product flows, which is only safe while
+ * no app source outside the dashboard loads it. The e2e build in vite.config.ts lists the page as
+ * an entry, and the WebUI typecheck that still runs for dashboard changes covers what it bundles.
+ */
+test("dashboard sources are never loaded by other app sources", () => {
+  /** Whether a path is part of the dashboard or skips app validation entirely. */
+  const exempt = (path) =>
+    [...appIndependent, ...dashboardSources].some((pattern) =>
+      pattern.test(path),
+    );
+  const tracked = execFileSync("git", ["ls-files", "-z"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+  assert.ok(tracked.some((path) => dashboardSources[0].test(path)));
+  for (const path of tracked.filter(
+    (path) =>
+      (path.startsWith(".github/") ||
+        /^(scripts|webui|playwright|crates)\//.test(path) ||
+        /^[^/]+\.(c?m?[jt]s|json|ya?ml)$/.test(path)) &&
+      /\.(c?m?[jt]sx?|json|ya?ml|html|rs)$/.test(path) &&
+      !path.includes(".node.test.") &&
+      !["package.json", "vite.config.ts", "scripts/ci-scope.mjs"].includes(
+        path,
+      ) &&
+      !exempt(path),
+  )) {
+    const contents = readFileSync(new URL(path, repositoryRoot), "utf8");
+    assert.ok(!contents.includes("worktree-dashboard"), `${path} loads it`);
   }
 });
 
@@ -153,5 +192,13 @@ test("workflow connects independent validation outputs", () => {
     jobs["browser-demo"].with["product-flows"],
     /^\$\{\{ needs\.selection\.outputs\.browser_package == 'true' \}\}$/,
   );
+  for (const job of ["native", "browser-smoke"]) {
+    assert.match(
+      jobs[job].if,
+      /needs\.selection\.outputs\.native == 'true'/,
+      job,
+    );
+  }
+  assert.match(jobs.webui.if, /needs\.selection\.outputs\.app == 'true'/);
   assert.deepEqual(jobs.selection.permissions ?? {}, {});
 });
