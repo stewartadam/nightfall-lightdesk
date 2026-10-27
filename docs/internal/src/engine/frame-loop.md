@@ -10,7 +10,7 @@ The order of these stages, and the rules that keep them apart, decide whether yo
 
 The earlier parts of the guide avoid Bevy vocabulary. This page uses the following terms:
 
-- A **system** is a Rust function that the engine calls once per frame with access to the world's components and resources.
+- A **system** is a Rust function that the engine calls once per frame with access to the Bevy world's components and resources.
 - A **schedule** is an ordered collection of systems that runs as a unit. Bevy runs a fixed list of schedules in each frame, such as `First`, `PreUpdate`, `Update`, `PostUpdate`, and `Last`.
 - A **system set** is a named group of systems inside a schedule. Plugins order whole sets against each other, so a plugin crate places its systems by joining a set instead of naming another crate's functions.
 - A **message** is a typed notification that one system writes and others read later, such as a `CommandEnvelope` or an `EngineOperationEnvelope`. [Control layers](control-layers.md) explains how commands become operations.
@@ -18,7 +18,7 @@ The earlier parts of the guide avoid Bevy vocabulary. This page uses the followi
 
 ## One frame at a glance
 
-Each frame runs the same three stages in order. The render stage runs only when the frame limiter marked the frame as a render pass:
+Each frame runs the same three stages in order. The render stage runs only when sufficient time has passed and the frame limiter marks the frame as a render pass:
 
 ```mermaid
 flowchart TB
@@ -61,8 +61,6 @@ Each set has one job:
 | `EventHandling` | Domain handlers read those messages and change world state: they spawn playbacks, store cues, change masters, and so on. |
 | `ResyncHandling` | Plugins resend their full state to clients that requested a resync. |
 
-The `ActionInvocationHandling` set belongs to the actions crate, which orders it after `InputHandling` and before `PendingCommandExpansion`. Several other sets hang off `EventHandling`, such as the desk's `DeskEventSet` clip and blueprint sets that domain plugins order their handlers against, and the app's showfile handling.
-
 Resync runs in `Update` on purpose. The resync completion message goes out before clock and layer work starts, so a slow first render after a show load doesn't delay the moment a client knows it has the full state.
 
 > [!WARNING]
@@ -72,8 +70,8 @@ Resync runs in `Update` on purpose. The resync completion message goes out befor
 
 Suppose you press Go on `First playback` while the programmer already holds `Par 1` at 50% intensity. The web UI sends a clip command, and `Update` applies it:
 
-1. `InputHandling` receives the command envelope and registers it with the command tracker, so its result can be reported later.
-1. `PendingCommandProcessing` writes it as a clip command message.
+1. `InputHandling` receives the Go command envelope and registers it with the command tracker, so its result can be reported later.
+1. `PendingCommandProcessing` writes it as a clip Go command message.
 1. In `EventHandling`, the clip handlers start the playback. They spawn a playback entity for `First sequence`, with cue `Red` materialized and ready to render.
 
 Nothing about the light has changed yet. The new playback has no clock and no layer until the next render pass.
@@ -110,12 +108,12 @@ The stages map onto the journey from [how a show becomes light](../concepts/show
 
 Some sets in `Render` skip work when nothing changed. The compositor returns early when no layer and no parameter changed since its last run, so an idle show costs less than a fading one.
 
-> [!WARNING]
-> If you add a client system that reports values produced in `DmxOutput`, order it after `DmxOutput`. Membership in `ClientOutput` alone doesn't guarantee that DMX packing has run.
-
 ### DMX output runs on its own threads
 
 The output systems in `DmxOutput` don't transmit anything themselves. The Art-Net and sACN outputs replace the frames that their worker thread sends, and each worker transmits the latest frames on its own fixed-rate clock. When a render pass runs late, the worker sends the previous frames again on its tick. The USB output passes each render pass's frames to its device thread, which writes them as they arrive.
+
+> [!WARNING]
+> Running a system under `ClientOutput` doesn't guarantee that DMX packing has run. If your system requires DMX output values, order it after `DmxOutput`.
 
 ## PostUpdate acknowledges commands
 
@@ -137,11 +135,11 @@ A frame skips its render pass only when the frame limiter woke early for input. 
 
 While the engine builds and swaps in a new world for a showfile, it pauses command processing (`InputHandling`, `ActionInvocationHandling`, `EventHandling`, and showfile handling) and client and DMX output (`ClientOutput`, `DmxOutput`, and `ClientFeedback`) in the outgoing and staged worlds. On native hosts the swap happens between two frames, so in practice neither world runs a frame while it is paused. For the whole swap, see [showfiles and loading a show](../architecture/showfiles.md).
 
-Hosts without a frame limiter render in every frame. `RenderPass` defaults to rendering, so tests and the embedded browser runtime, whose worker calls `update` on its own timer, render on every update.
+Hosts without a frame limiter render in every frame. `RenderPass` defaults to rendering, so tests and the embedded browser runtime render on every update using a worker that calls `update` on its own timer.
 
 ## The frame limiter and the shared send schedule
 
-The engine's frame rate follows the DMX output rate. The showfile's IO settings set the DMX output rate, 44 Hz by default and between 1 and 60 Hz. When the rate is 30 Hz or more, the engine renders once per output interval. Below 30 Hz, the engine renders an equal division of the output interval that keeps it at 30 frames per second or more, so clients and timeline playback stay responsive. At 20 Hz output, for example, the engine renders twice per output interval, at 40 frames per second. When a showfile load changes the output rate, the limiter follows.
+The engine's frame rate follows the DMX output rate. The showfile's IO settings set the DMX output rate between 1 and 60Hz, with 44 Hz by default. When the rate is 30 Hz or more, the engine renders once per output interval. Below 30 Hz, the engine renders an equal division of the output interval that keeps it at 30 frames per second or more, so clients and timeline playback stay responsive. At 20 Hz output, for example, the engine renders twice per output interval, at 40 frames per second. When a showfile load changes the output rate, the limiter follows.
 
 ### Every scheduler shares one schedule
 
@@ -172,25 +170,20 @@ sequenceDiagram
 
 ### Input-only frames
 
-Commands shouldn't wait up to a full frame period for the next render pass. Each command sender holds a `FrameWaker`, and queuing a command wakes the limiter. The following senders wake it:
+Commands should be processed immediately instead of waiting for the next full frame. Each command sender holds a `FrameWaker`, and queuing a command wakes the limiter. The following senders wake it:
 
 - The client bridge, for every command and every client disconnect.
 - The MIDI and OSC input services, for every incoming event.
 
-Untracked updates, such as a fader drag in the web UI, don't wake the limiter. They wait for the next frame, which keeps a stream of updates from turning into a stream of extra frames.
-
-A wake ends the limiter's sleep and starts an input-only frame. That frame runs `Update` and `PostUpdate` without `Render`, so the command is applied and acknowledged right away, and the pending render tick stays where it was. Input-only frames are cheap, because they skip all rendering. Three limits keep them from disturbing the render pass:
+A wake ends the limiter's sleep and starts an input-only frame. That frame runs `Update` and `PostUpdate` but notably not `Render`, so the command is applied and acknowledged right away, and the pending render tick stays on its original schedule. Input-only frames are cheap, because they skip all rendering. Three limits keep them from disturbing the render pass:
 
 - An input-only frame starts no sooner than 2 ms after the previous frame started, which bounds what a burst of input can cost.
 - A wake that arrives within 3 ms of the next render start waits for the render pass instead, because the render pass handles input too.
 - The last 2 ms before a render start is a precise sleep that doesn't check for wakes, so render passes start on time.
 
-A wake that arrives while a frame is running isn't lost. The waker counts wakes, and the limiter compares the count with the one it saw when the frame started.
+The input-only frame changes nothing on the DMX output or 3D visualizer. In the running example, the Go command spawns the playback and returns its result in the input-only frame, and `Par 1` starts its fade in the next render pass.
 
-The input-only frame changes nothing on the stage. In the running example, the Go command spawns the playback and returns its result in the input-only frame, and `Par 1` starts its fade in the next render pass.
-
-> [!NOTE]
-> The `fps` command sets the limiter's period directly, and `fps 0` turns the limiter off. The limiter keeps that setting until the IO settings change, for example on the next show load, which resets it to follow the DMX output rate. While the limiter is off, every frame renders and the engine doesn't sleep between frames.
+Untracked updates, such as a fader drag in the web UI, don't wake the limiter. They wait for the next frame, which keeps a stream of updates from turning into a stream of extra frames.
 
 ## The cost of one thread
 
