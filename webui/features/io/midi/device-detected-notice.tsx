@@ -25,9 +25,9 @@ function deviceList(devices: readonly string[]): string {
 
 /**
  * Tells the operator when a MIDI controller the show does not map yet connects while the app
- * runs, and offers to open MIDI settings to map it. The engine decides which devices are new and
- * announces each once, so a controller connected at startup or plugged back in stays quiet. The
- * notice offers "Don't show this again", and Settings turns it back on.
+ * runs, and offers to open the MIDI Input panel to map it. The engine decides which devices are
+ * new and announces each once, so a controller connected at startup or plugged back in stays
+ * quiet. The notice offers "Don't show this again", and Settings turns it back on.
  */
 export function MidiDeviceDetectedNotice() {
   const { dockviewApi } = useAppShell();
@@ -39,11 +39,11 @@ export function MidiDeviceDetectedNotice() {
     const several = devices.length > 1;
     pushToast(
       "info",
-      `${deviceList(devices)} ${several ? "are" : "is"} connected. Map ${several ? "their" : "its"} controls to actions in MIDI settings.`,
+      `${deviceList(devices)} ${several ? "are" : "is"} connected. Map ${several ? "their" : "its"} controls to actions in the MIDI Input panel.`,
       NOTICE_DURATION_MS,
       [
         {
-          label: "Open MIDI settings",
+          label: "Open MIDI Input",
           onClick: () =>
             openOrFocusPanelDefinition(dockviewApi(), midiPanelDefinition),
         },

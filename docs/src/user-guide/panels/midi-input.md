@@ -4,7 +4,7 @@
 
 MIDI Input lists connected MIDI devices and every MIDI binding in the show. Open it from the Command Palette. For the quickest way to bind controls, use mapping mode, described in [Controllers and keybindings](../controller-mapping.md).
 
-When you plug in a controller while Nightfall is running and the show has no bindings for it yet, a notification names it and offers **Open MIDI settings**, which opens this panel. Tick **Don't show this again** to stop these notifications on the computer or tablet you are using. To bring them back, choose **Show again** next to **Hidden prompts** in Settings, under General.
+When you plug in a controller while Nightfall is running and the show has no bindings for it yet, a notification names it and offers **Open MIDI Input**, which opens this panel. Tick **Don't show this again** to stop these notifications on the computer or tablet you are using. To bring them back, choose **Show again** next to **Hidden prompts** in Settings, under General.
 
 **Connected MIDI Devices** shows the controllers Nightfall can hear. Press a button or move a fader and **Last Input** shows the device, the control, and its channel. To bind that control from here, pick an action and a behavior beside Last Input and choose **Add Mapping**.
 

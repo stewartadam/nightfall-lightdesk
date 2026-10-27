@@ -46,9 +46,9 @@ function midiPanelTab(page: Page) {
 
 /**
  * Plugging a controller in while the app runs names it in a toast, and the toast's action opens
- * MIDI settings.
+ * the MIDI Input panel.
  */
-test("plugging in a MIDI controller offers to open MIDI settings", async ({
+test("plugging in a MIDI controller offers to open the MIDI Input panel", async ({
   page,
   backendSlot,
   plugInVirtualMidi,
@@ -62,7 +62,7 @@ test("plugging in a MIDI controller offers to open MIDI settings", async ({
     timeout: 20_000,
   });
 
-  await toast.getByRole("button", { name: "Open MIDI settings" }).click();
+  await toast.getByRole("button", { name: "Open MIDI Input" }).click();
   await expect(midiPanelTab(page)).toBeVisible();
   await expect(toast).toHaveCount(0);
 });
@@ -117,7 +117,7 @@ test("don't show this again hides the prompt until settings resets it", async ({
   await announceDevices(page, ["X-Touch"]);
   const shownAgain = detectedToast(page);
   await expect(shownAgain).toContainText("X-Touch is connected.");
-  await shownAgain.getByRole("button", { name: "Open MIDI settings" }).click();
+  await shownAgain.getByRole("button", { name: "Open MIDI Input" }).click();
   await expect(midiPanelTab(page)).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("midi-settings-opened.png"),
