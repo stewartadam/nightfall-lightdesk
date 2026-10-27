@@ -1813,6 +1813,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
                 UiNotification::ShowToast {
                     level: ToastLevel::Success,
                     message,
+                    ..
                 } if message == "Showfile saved"
             )
         }),

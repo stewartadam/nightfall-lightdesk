@@ -10,6 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import {
   createEffect,
+  createMemo,
   createSignal,
   createUniqueId,
   For,
@@ -48,6 +49,7 @@ import {
 } from "../../state/settings";
 import {
   $requestedSettings,
+  NETWORK_INTERFACE_SETTING,
   ROUTE_VALIDATION_SETTING,
   type SettingsTab,
 } from "../../state/settings-request";
@@ -162,6 +164,17 @@ export function SettingsOverlay() {
   const patchValidationSettings = useStore(routeValidationSettings);
   const networkInterfaces = useStore($availableNetworkInterfaces);
   const networkInterfaceStatus = useStore($networkInterfaceStatus);
+  /**
+   * Names the chosen interface while it is disconnected, so the selector keeps showing it instead
+   * of appearing to have switched to System default.
+   */
+  const missingNetworkInterface = createMemo(() => {
+    const selected = ioSettings().network_interface;
+    return selected &&
+      !networkInterfaces().some((item) => item.name === selected)
+      ? selected
+      : undefined;
+  });
   const audioDevices = useStore($availableAudioDevices);
   const capabilities = useStore(runtimeCapabilities);
   const modelDownload = createBeatModelDownload();
@@ -718,6 +731,7 @@ export function SettingsOverlay() {
             <SettingsSection title="Network">
               <SettingsRow
                 label="Interface"
+                setting={NETWORK_INTERFACE_SETTING}
                 description={
                   <>
                     <p>
@@ -747,6 +761,11 @@ export function SettingsOverlay() {
                     <option value="">
                       {systemDefaultLabel(networkInterfaceStatus())}
                     </option>
+                    <Show when={missingNetworkInterface()}>
+                      {(name) => (
+                        <option value={name()}>{name()} (unavailable)</option>
+                      )}
+                    </Show>
                     <For each={networkInterfaces()}>
                       {(iface) => (
                         <option value={iface.name}>

@@ -284,10 +284,7 @@ fn write_audio_output_toast(
     ui_notifications: &mut MessageWriter<UiNotification>,
     toast: AudioOutputToast,
 ) {
-    ui_notifications.write(UiNotification::ShowToast {
-        level: toast.level,
-        message: toast.message,
-    });
+    ui_notifications.write(UiNotification::toast(toast.level, toast.message));
 }
 
 /// Consumes background device discovery and queues routing changes without waiting on OS audio APIs.
@@ -457,13 +454,13 @@ mod tests {
         app.update();
         let notifications = app.world().resource::<Messages<UiNotification>>();
         assert!(cursor.read(notifications).any(|notification| matches!(notification,
-            UiNotification::ShowToast { level: ToastLevel::Warning, message } if message.contains("unavailable")
+            UiNotification::ShowToast { level: ToastLevel::Warning, message, .. } if message.contains("unavailable")
         )));
         app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("usb".to_string());
         app.update();
         let notifications = app.world().resource::<Messages<UiNotification>>();
         assert!(cursor.read(notifications).any(|notification| matches!(notification,
-            UiNotification::ShowToast { level: ToastLevel::Info, message } if message.contains("available again")
+            UiNotification::ShowToast { level: ToastLevel::Info, message, .. } if message.contains("available again")
         )));
         assert!(
             app.world()

@@ -33,3 +33,6 @@ export const $requestedSettings = atom<SettingsTarget | null>(null);
 
 /** Settings row key of the route overlap validation mode, on the General tab. */
 export const ROUTE_VALIDATION_SETTING = "route-validation-mode";
+
+/** Settings row key of the network interface Art-Net and sACN use, on the Network tab. */
+export const NETWORK_INTERFACE_SETTING = "network-interface";

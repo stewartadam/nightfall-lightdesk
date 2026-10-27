@@ -36,13 +36,13 @@ pub fn forward_fx_module_runtime_notifications(
                 module_name,
                 error,
             } => {
-                ui_notifications.write(UiNotification::ShowToast {
-                    level: ToastLevel::Error,
-                    message: format!(
+                ui_notifications.write(UiNotification::toast(
+                    ToastLevel::Error,
+                    format!(
                         "FX module {} ({}) failed to initialize: {}",
                         fx_module_id, module_name, error
                     ),
-                });
+                ));
             }
         }
     }
@@ -84,6 +84,7 @@ mod tests {
                     UiNotification::ShowToast {
                         level: ToastLevel::Error,
                         message,
+                        ..
                     } if message.contains("FX module 7 (missing-sparkle) failed to initialize")
                         && message.contains("missing module")
                 )
@@ -107,10 +108,10 @@ pub fn forward_io_runtime_notifications(
                     RouteTransport::Sacn => "sACN",
                     RouteTransport::Udmx => "uDMX",
                 };
-                ui_notifications.write(UiNotification::ShowToast {
-                    level: ToastLevel::Warning,
-                    message: format!("{protocol} input could not bind UDP {port}; network input has been disabled."),
-                });
+                ui_notifications.write(UiNotification::toast(
+                    ToastLevel::Warning,
+                    format!("{protocol} input could not bind UDP {port}; network input has been disabled."),
+                ));
             }
         }
     }
@@ -147,7 +148,7 @@ mod io_notification_tests {
             "Art-Net input could not bind UDP 6454",
             "sACN input could not bind UDP 5568",
         ]) {
-            let UiNotification::ShowToast { level, message } = notification else {
+            let UiNotification::ShowToast { level, message, .. } = notification else {
                 panic!("expected a toast")
             };
             assert_eq!(*level, ToastLevel::Warning);

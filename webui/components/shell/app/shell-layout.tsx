@@ -31,6 +31,7 @@ import ShellOverlayHosts from "../../overlays/shell-hosts";
 import { useAppShell } from "../../providers/app-shell";
 import DesktopViewMenu from "../bridges/desktop-view-menu";
 import TauriMenuBridge from "../bridges/tauri-menu";
+import ToastActionsBridge from "../bridges/toast-actions";
 import ExportShowfileCommand from "../command-palette/commands/export-showfile-command";
 import FeedbackCommands from "../command-palette/commands/feedback-commands";
 import SettingsCommand from "../command-palette/commands/settings-command";
@@ -56,6 +57,7 @@ function ShellRuntime() {
       <MappingModeController />
       <KeybindingController />
       <TauriMenuBridge />
+      <ToastActionsBridge />
       <Show when={isTauriRuntime()}>
         <DesktopViewMenu />
       </Show>

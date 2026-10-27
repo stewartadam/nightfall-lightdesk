@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type JSX, splitProps } from "solid-js";
+import { type JSX, onCleanup, onMount, splitProps } from "solid-js";
 import "./form-controls.css";
 
 interface ControlDensity {
@@ -74,9 +74,43 @@ export function Textarea(
 export function NativeSelect(
   props: JSX.SelectHTMLAttributes<HTMLSelectElement> & ControlDensity,
 ) {
-  const [local, rest] = splitProps(props, ["class", "density"]);
+  const [local, rest] = splitProps(props, ["class", "density", "ref"]);
+  let select: HTMLSelectElement | undefined;
+  /**
+   * Restores the controlled value when changing the options silently changed the selection.
+   * Browsers select the first option when the chosen one is removed and do not restore it when a
+   * replacement with the same value appears, so a list that swaps an option (such as a device
+   * going unavailable) would otherwise show a choice the caller never made. A choice the user
+   * just made is left alone while its update is in flight.
+   */
+  onMount(() => {
+    const element = select;
+    if (!element) return;
+    let shown = element.value;
+    const remember = () => {
+      shown = element.value;
+    };
+    element.addEventListener("change", remember);
+    const observer = new MutationObserver(() => {
+      if (element.value !== shown && props.value !== undefined) {
+        element.value = String(props.value);
+      }
+      shown = element.value;
+    });
+    observer.observe(element, { childList: true });
+    onCleanup(() => {
+      observer.disconnect();
+      element.removeEventListener("change", remember);
+    });
+  });
   return (
     <select
+      ref={(element) => {
+        select = element;
+        (local.ref as ((element: HTMLSelectElement) => void) | undefined)?.(
+          element,
+        );
+      }}
       class={`nf-form-control ${local.class ?? ""}`}
       data-density={local.density}
       {...rest}
