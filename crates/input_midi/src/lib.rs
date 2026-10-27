@@ -30,6 +30,7 @@ use nightfall_timecode::prelude::{ExternalTimecodeFeeds, TimecodeSource};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub mod command;
+mod detected;
 mod feedback;
 pub mod mapping;
 mod mtc;
@@ -39,6 +40,7 @@ mod undo;
 mod websocket;
 
 use command::{MidiCommand, MidiLastEvent, MidiMapping, MidiMappingUpserted, MidiSource};
+use detected::DetectedMidiDevices;
 use feedback::{MidiFeedbackCache, MidiOutput, send_midi_feedback};
 use mapping::MidiMappings;
 use service::MidiInputEvent;
@@ -88,10 +90,9 @@ impl Plugin for InputMidiPlugin {
         app.world_mut()
             .get_resource_or_init::<ExternalTimecodeFeeds>()
             .register(TimecodeSource::MidiMtc, midi_service.timecode_feed());
-        app.insert_resource(MidiDevices::read(
-            &midi_client,
-            &midi_service.output_client(),
-        ));
+        let devices = MidiDevices::read(&midi_client, &midi_service.output_client());
+        app.insert_resource(DetectedMidiDevices::new(devices.device_names()));
+        app.insert_resource(devices);
         app.insert_resource(MidiEventReceiver(midi_rx));
         app.insert_resource(MidiOutput(midi_service.output_client()));
         app.init_resource::<MidiMappings>();
@@ -274,10 +275,11 @@ fn midi_event_system(
 }
 
 /// Poll the process-wide MIDI service and record changed devices; the change publishes the
-/// device list to websocket clients.
+/// device list to websocket clients, and devices never seen before are queued for announcement.
 fn refresh_midi_devices(
     mut next_refresh_deadline: Local<Option<Instant>>,
     mut devices: ResMut<MidiDevices>,
+    mut detected: ResMut<DetectedMidiDevices>,
 ) {
     let now = Instant::now();
     if next_refresh_deadline.is_some_and(|deadline| now < deadline) {
@@ -287,10 +289,12 @@ fn refresh_midi_devices(
 
     let midi_service = service::process_midi_input_service();
     let _ = midi_service.refresh();
-    devices.set_if_neq(MidiDevices::read(
+    if devices.set_if_neq(MidiDevices::read(
         &midi_service.client(),
         &midi_service.output_client(),
-    ));
+    )) {
+        detected.observe(devices.devices().map(|(name, _)| name));
+    }
 }
 
 /// System that invokes the action bound to each MIDI control that sends a message.

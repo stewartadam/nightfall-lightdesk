@@ -25,6 +25,7 @@ import {
   clientActionInvocation,
   controllerMappingMode,
   midiControlTouches,
+  midiDetectedDevices,
   midiDeviceProfiles,
   midiDevices,
   midiLastEvent,
@@ -187,6 +188,11 @@ export function applyMidiLastEventSnapshot(
 /** Publishes one frame of MIDI controls touched while controller mapping mode is active. */
 export function applyMidiControlTouched(touches: types.MidiLastEvent[]): void {
   setStoreAction(midiControlTouches, "Receive MidiControlTouched", touches);
+}
+
+/** Publishes MIDI devices the backend announced as newly connected and not yet mapped. */
+export function applyMidiDeviceDetected(devices: string[]): void {
+  setStoreAction(midiDetectedDevices, "Receive MidiDeviceDetected", devices);
 }
 
 /** Publishes one frame of OSC messages received while controller mapping mode is active. */

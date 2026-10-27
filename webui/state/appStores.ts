@@ -481,6 +481,12 @@ export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
  */
 export const midiControlTouches = atom<types.MidiLastEvent[]>([]);
 /**
+ * MIDI devices the backend last announced as newly connected and not yet mapped by the show.
+ *
+ * Each announcement is a new value, so listeners see every one, even a repeat.
+ */
+export const midiDetectedDevices = atom<string[]>([]);
+/**
  * OSC messages the backend reported in one frame while mapping mode is active.
  *
  * Unlike `oscLastEvent`, every batch is delivered, so mapping mode arms from these.
@@ -1193,6 +1199,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     oscLastEvent,
     oscListenerStatus,
     midiControlTouches,
+    midiDetectedDevices,
     oscControlTouches,
     controllerMappingMode,
     consoleScrollback,

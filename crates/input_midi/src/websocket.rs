@@ -10,7 +10,7 @@
 //!
 //! This module provides:
 //! - Command deserializer for MidiCommand
-//! - Broadcasters for device list, mappings, and last event
+//! - Broadcasters for device list, newly detected devices, mappings, and last event
 
 use std::collections::BTreeSet;
 
@@ -21,6 +21,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::command::{MidiCommand, MidiLastEvent, MidiMapping};
+use crate::detected::DetectedMidiDevices;
 use crate::mapping::MidiMappings;
 use crate::profile::{self, MidiDeviceProfile};
 use crate::{LastMidiEvent, MidiControlTouches, MidiDevices, MidiMappingDiagnostics};
@@ -59,6 +60,9 @@ enum MidiWsMessage<'a> {
     /// Unlike `MidiLastEvent`, these are never dropped or coalesced across controls, so a
     /// mapping client reliably arms the control that was touched.
     MidiControlTouched(&'a [MidiLastEvent]),
+    /// Devices that connected while the engine runs and that the show does not map yet, so
+    /// clients can offer to set them up. Each device is announced once.
+    MidiDeviceDetected(&'a [String]),
 }
 
 /// Deserialize and dispatch MidiCommand from JSON
@@ -110,9 +114,20 @@ pub fn send_midi_state(
     diagnostics: Res<MidiMappingDiagnostics>,
     last_event: Res<LastMidiEvent>,
     mut touches: ResMut<MidiControlTouches>,
+    mut detected: ResMut<DetectedMidiDevices>,
     broadcaster: Res<ClientEventSink>,
     mut last_profiled_devices: Local<Vec<String>>,
 ) {
+    if detected.has_pending() {
+        let names = detected.take_unmapped(&mappings);
+        if !names.is_empty() {
+            broadcaster.publish(
+                DISCRIMINATOR_NON_DROPPABLE,
+                &MidiWsMessage::MidiDeviceDetected(&names),
+            );
+        }
+    }
+
     if !touches.0.is_empty() {
         broadcaster.publish(
             DISCRIMINATOR_NON_DROPPABLE,

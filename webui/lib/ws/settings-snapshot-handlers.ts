@@ -18,6 +18,7 @@ import {
   applyExternalControlStateSnapshot,
   applyIoSettingsSnapshot,
   applyMidiControlTouched,
+  applyMidiDeviceDetected,
   applyMidiDeviceListSnapshot,
   applyMidiDeviceProfilesSnapshot,
   applyMidiLastEventSnapshot,
@@ -126,6 +127,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("MidiControlTouched", (message) => {
     applyMidiControlTouched(message.data);
+  });
+
+  registry.register("MidiDeviceDetected", (message) => {
+    applyMidiDeviceDetected(message.data);
   });
 
   registry.register("OscControlTouched", (message) => {

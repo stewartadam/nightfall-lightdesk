@@ -12,5 +12,6 @@ export {
   MappingModeController,
   MappingModeToggle,
 } from "./components/mapping-mode-controller";
+export { MidiDeviceDetectedNotice } from "./midi/device-detected-notice";
 export { bindArmedSource } from "./model/mapping-bind";
 export { $mappingMode } from "./model/mapping-mode";
