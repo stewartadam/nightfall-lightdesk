@@ -67,7 +67,7 @@ const TOOLS = [
   {
     name: "dashboard_worktree_manage",
     description:
-      "Start, stop, or recycle managed services for a specific worktree (backend/ui, the docs mdBook server, and sender examples). Start/recycle may trigger long recompiles; this call may take a while and will include startup failure details when available.",
+      "Start, stop, or recycle managed services for a specific worktree (backend/ui, the docs (user manual) and devguide (Developer Guide) mdBook servers, and sender examples). Start/recycle may trigger long recompiles; this call may take a while and will include startup failure details when available.",
     inputSchema: {
       type: "object",
       properties: {
@@ -89,7 +89,7 @@ const TOOLS = [
           },
           minItems: 1,
           description:
-            "Service targets. Defaults to [backend, ui]. Use [all] to target backend, ui, wasm, sender, and docs services.",
+            "Service targets. Defaults to [backend, ui]. Use [all] to target backend, ui, wasm, sender, docs, and devguide services.",
           default: ["backend", "ui"],
         },
       },

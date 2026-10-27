@@ -40,6 +40,25 @@ const DEFAULT_BACKEND_STARTUP_CMDS = "fps 5";
 const FALLBACK_PRIMARY_BRANCHES = ["develop", "main"];
 /** @type {Promise<string[]> | null} */
 let primaryBranchesPromise = null;
+/**
+ * Defines a service that runs `mdbook serve` for the book in `bookDir` on the
+ * service's own port, so each worktree previews its own copy of that book.
+ */
+function mdbookServiceDefinition(service, bookDir) {
+  return {
+    command: process.platform === "win32" ? "mdbook.exe" : "mdbook",
+    requiresPort: true,
+    args: (env) => {
+      const port = servicePortFromEnv(service, env);
+      if (port === null) {
+        throw new Error(`${service} needs a valid NIGHTFALL_PORT in .env`);
+      }
+      return ["serve", bookDir, "--port", String(port)];
+    },
+    installHint:
+      'install mdBook as described under "Building the documentation" in CONTRIBUTING.md',
+  };
+}
 const SERVICE_DEFINITIONS = {
   backend: {
     cargo: true,
@@ -61,24 +80,12 @@ const SERVICE_DEFINITIONS = {
     cargo: true,
     args: ["run", "-p", "nightfall-input-sacn", "--bin", "send-sacn"],
   },
-  docs: {
-    command: process.platform === "win32" ? "mdbook.exe" : "mdbook",
-    requiresPort: true,
-    /** Serves the user manual on this worktree's docs port so worktrees never share one. */
-    args: (env) => {
-      const port = servicePortFromEnv("docs", env);
-      if (port === null) {
-        throw new Error("docs needs a valid NIGHTFALL_PORT in .env");
-      }
-      return ["serve", "docs", "--port", String(port)];
-    },
-    installHint:
-      'install mdBook as described under "Building the documentation" in CONTRIBUTING.md',
-  },
+  docs: mdbookServiceDefinition("docs", "docs"),
+  devguide: mdbookServiceDefinition("devguide", "docs/internal"),
 };
 const SERVICES = Object.keys(SERVICE_DEFINITIONS);
 /** Offsets from NIGHTFALL_PORT for the services that listen on a port. */
-const SERVICE_PORT_OFFSETS = { backend: 0, ui: 1, docs: 2 };
+const SERVICE_PORT_OFFSETS = { backend: 0, ui: 1, docs: 2, devguide: 3 };
 const COMPLETION_SCOPED_SERVICES = new Set(["wasm"]);
 
 mkdirSync(LOG_DIR, { recursive: true });
@@ -169,7 +176,7 @@ export function servicePortFromEnv(service, env) {
 /**
  * Builds a service's command line from the same environment used by the
  * child: Cargo services honor NIGHTFALL_CARGO_COMMAND, and services whose
- * arguments depend on the worktree (such as the docs port) resolve them here.
+ * arguments depend on the worktree (such as the docs ports) resolve them here.
  */
 export function commandForService(service, env) {
   const definition = SERVICE_DEFINITIONS[service];
@@ -1054,22 +1061,20 @@ async function collectWorktreeState() {
       const backendPort = servicePortFromEnv("backend", env.values);
       const webUiPort = servicePortFromEnv("ui", env.values);
       const docsPort = servicePortFromEnv("docs", env.values);
-      const [backendPortOpen, webUiPortOpen, docsPortOpen] = await Promise.all(
-        [backendPort, webUiPort, docsPort].map((port) =>
+      const devguidePort = servicePortFromEnv("devguide", env.values);
+      const ports = [backendPort, webUiPort, docsPort, devguidePort];
+      const portOpen = await Promise.all(
+        ports.map((port) =>
           port ? probePortOpen(port) : Promise.resolve(false),
         ),
       );
-      const [backendPid, webUiPid, docsPid] = await Promise.all([
-        backendPort && backendPortOpen
-          ? listenerPid(backendPort)
-          : Promise.resolve(null),
-        webUiPort && webUiPortOpen
-          ? listenerPid(webUiPort)
-          : Promise.resolve(null),
-        docsPort && docsPortOpen
-          ? listenerPid(docsPort)
-          : Promise.resolve(null),
-      ]);
+      const [backendPortOpen, webUiPortOpen, docsPortOpen, devguidePortOpen] =
+        portOpen;
+      const [backendPid, webUiPid, docsPid, devguidePid] = await Promise.all(
+        ports.map((port, index) =>
+          port && portOpen[index] ? listenerPid(port) : Promise.resolve(null),
+        ),
+      );
       // Reading without creating keeps a poll that overlaps a removal from
       // re-adding the removed worktree's record.
       const record = managedServices.get(worktreePath) ?? EMPTY_MANAGED_RECORD;
@@ -1090,6 +1095,8 @@ async function collectWorktreeState() {
         webUiUrl: webUiPort ? `http://localhost:${webUiPort}` : null,
         docsPort,
         docsUrl: docsPort ? `http://localhost:${docsPort}` : null,
+        devguidePort,
+        devguideUrl: devguidePort ? `http://localhost:${devguidePort}` : null,
         managed: Object.fromEntries(
           SERVICES.map((service) => [
             service,
@@ -1100,9 +1107,11 @@ async function collectWorktreeState() {
           backendPortOpen,
           webUiPortOpen,
           docsPortOpen,
+          devguidePortOpen,
           backendPid,
           webUiPid,
           docsPid,
+          devguidePid,
           artnetSenderRunning: record["artnet-sender"].running,
           sacnSenderRunning: record["sacn-sender"].running,
         },
