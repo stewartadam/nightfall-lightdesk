@@ -1113,6 +1113,22 @@ fn strict_structural_dispatch_handles_timeline_branch() {
     ));
 }
 
+/// Macro commands parse their id and a trailing `start` or `stop` keyword.
+#[test]
+fn strict_structural_dispatch_handles_macro_branch() {
+    assert!(matches!(
+        super::materialize_strict_ast_from_structural_dispatch("macro 3 start"),
+        Some(CommandAst::Macro(command))
+            if matches!(command.action, StartStopAst::Start)
+    ));
+    assert!(matches!(
+        super::materialize_strict_ast_from_structural_dispatch("macro 12 stop"),
+        Some(CommandAst::Macro(command))
+            if matches!(command.action, StartStopAst::Stop)
+    ));
+    assert!(super::materialize_strict_ast_from_structural_dispatch("macro 3 go").is_none());
+}
+
 #[test]
 fn strict_structural_dispatch_handles_flow_branch() {
     assert!(matches!(

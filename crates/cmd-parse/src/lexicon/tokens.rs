@@ -66,6 +66,7 @@ const TOKEN_SPECS: &[TokenSpec] = &[
     spec(TokenId::Flow, "flow"),
     spec(TokenId::Timecode, "timecode"),
     spec(TokenId::Timeline, "timeline"),
+    spec(TokenId::Macro, "macro"),
     spec(TokenId::Store, "store"),
     spec(TokenId::Rename, "rename"),
     spec(TokenId::Rm, "rm"),

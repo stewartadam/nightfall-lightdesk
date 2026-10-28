@@ -53,6 +53,7 @@ fn setup_world() -> World {
     world.insert_resource(DataProvider::<Timecode>::default());
     world.insert_resource(DataProvider::<Timeline>::default());
     world.insert_resource(DataProvider::<Board>::default());
+    world.insert_resource(DataProvider::<Macro>::default());
     world.insert_resource(InputRoutes::default());
     world.insert_resource(OutputRoutes::default());
     world.insert_resource(DisabledRoutes::default());
@@ -2452,6 +2453,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     timecode_data_provider,
                     timeline_data_provider,
                     board_data_provider,
+                    macro_data_provider,
                     active_fx_module_ids: _,
                     input_routes,
                     output_routes,
@@ -2481,6 +2483,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
                     board_data_provider.as_mut(),
+                    macro_data_provider.as_mut(),
                     input_routes.as_mut(),
                     output_routes.as_mut(),
                     disabled_routes.as_mut(),
@@ -2520,6 +2523,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     timecode_data_provider,
                     timeline_data_provider,
                     board_data_provider,
+                    macro_data_provider,
                     active_fx_module_ids: _,
                     input_routes,
                     output_routes,
@@ -2549,6 +2553,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
                     board_data_provider.as_mut(),
+                    macro_data_provider.as_mut(),
                     input_routes.as_mut(),
                     output_routes.as_mut(),
                     disabled_routes.as_mut(),
@@ -2654,6 +2659,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     timecode_data_provider,
                     timeline_data_provider,
                     board_data_provider,
+                    macro_data_provider,
                     active_fx_module_ids,
                     input_routes,
                     output_routes,
@@ -2678,6 +2684,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     desk_settings,
                     io_settings,
                     controller_mapping_mode: _,
+                    macro_runs: _,
                 } = &mut showfile_load_state;
 
                 load_showfile_in_place(
@@ -2696,6 +2703,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     timecode_data_provider.as_mut(),
                     timeline_data_provider.as_mut(),
                     board_data_provider.as_mut(),
+                    macro_data_provider.as_mut(),
                     active_fx_module_ids.as_deref_mut(),
                     input_routes.as_mut(),
                     output_routes.as_mut(),
@@ -3031,6 +3039,36 @@ fn roundtrip_preserves_boards() {
     assert_eq!(restored, board);
 }
 
+/// Verifies macros keep both command bodies, including blank lines, through save and load.
+#[test]
+fn roundtrip_preserves_macros() {
+    let mut source_world = setup_world();
+    let definition = Macro {
+        identifiers: Identifiers {
+            id: 3,
+            uid: Uuid::from_u128(3),
+            label: "Blackout".to_string(),
+        },
+        commands: "group 1 int 0\n\nsleep 2s; clip 4 stop".to_string(),
+        release_commands: "group 1 int 100".to_string(),
+    };
+    source_world
+        .resource_mut::<DataProvider<Macro>>()
+        .add(definition.clone())
+        .expect("macro should insert");
+    let source_snapshot = collect_snapshot(&mut source_world);
+    assert_eq!(source_snapshot.macros, vec![definition.clone()]);
+
+    let mut restored_world = setup_world();
+    apply_snapshot(&mut restored_world, source_snapshot);
+    let restored = restored_world
+        .resource::<DataProvider<Macro>>()
+        .get(definition.identifiers.uid)
+        .expect("macro should be restored")
+        .clone();
+    assert_eq!(restored, definition);
+}
+
 /// Verifies the desk-state contributor preserves variables and settings through snapshot load.
 #[test]
 fn roundtrip_preserves_desk_state_contributor_slice() {
@@ -3259,6 +3297,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             timelines: vec![],
             clips: vec![],
             boards: vec![],
+            macros: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -3340,6 +3379,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             timelines: vec![],
             clips: vec![],
             boards: vec![],
+            macros: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -3409,6 +3449,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             timelines: vec![],
             clips: vec![],
             boards: vec![],
+            macros: vec![],
             settings: DeskSettings::default(),
             io_settings: IoRuntimeSettings::default(),
         },
@@ -4194,6 +4235,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         timelines: vec![],
         clips: vec![],
         boards: vec![],
+        macros: vec![],
         settings: DeskSettings::default(),
         io_settings: IoRuntimeSettings::default(),
     };
@@ -4278,6 +4320,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             timelines: vec![],
             clips: vec![],
             boards: vec![],
+            macros: vec![],
         },
     );
 
@@ -4376,6 +4419,7 @@ fn load_materializes_timecodes_and_timelines() {
             timelines: vec![timeline],
             clips: vec![],
             boards: vec![],
+            macros: vec![],
         },
     );
 

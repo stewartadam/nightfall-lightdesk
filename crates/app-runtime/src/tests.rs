@@ -2523,3 +2523,5 @@ async fn automation_programmer_clear_completes() {
 
     assert_eq!(outcome, Some(CommandOutcome::succeeded()));
 }
+
+mod macros;

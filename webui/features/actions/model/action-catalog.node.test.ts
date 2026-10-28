@@ -69,6 +69,7 @@ const names: ActionTargetNames = {
   clip: (uid) => (uid === "abc123" ? "3: Intro" : undefined),
   master: () => undefined,
   timeline: () => undefined,
+  macro: () => undefined,
   cue: () => undefined,
   panel: () => undefined,
 };

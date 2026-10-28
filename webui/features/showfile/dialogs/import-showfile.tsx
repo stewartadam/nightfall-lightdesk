@@ -89,6 +89,7 @@ const IMPORT_ROWS: Array<{
   { key: "timelines", label: "Timelines", policies: FULL_POLICY_OPTIONS },
   { key: "clips", label: "Clips", policies: FULL_POLICY_OPTIONS },
   { key: "boards", label: "Boards", policies: FULL_POLICY_OPTIONS },
+  { key: "macros", label: "Macros", policies: FULL_POLICY_OPTIONS },
 ];
 
 /** Build the default showfile import options used by the modal. */
@@ -116,6 +117,7 @@ function defaultImportOptions(): ShowfileImportOptions {
     timelines: ShowfileImportPolicy.Skip,
     clips: ShowfileImportPolicy.Merge,
     boards: ShowfileImportPolicy.Merge,
+    macros: ShowfileImportPolicy.Merge,
   };
 }
 

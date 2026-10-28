@@ -202,6 +202,7 @@ export type SceneObjectMap = { [uid: string]: types.SceneObject };
 export type GroupMap = { [uid: string]: types.Group };
 export type MasterMap = { [uid: string]: types.Master };
 export type BoardMap = { [uid: string]: types.Board };
+export type MacroMap = { [uid: string]: types.Macro };
 /** Resolved buttons per board, keyed by board UID and then element UID. */
 export type BoardStatusMap = {
   [boardUid: string]: { [elementUid: string]: types.BoardItem[] };
@@ -320,6 +321,9 @@ export const groups = deepMap<GroupMap>({});
 export const masters = deepMap<MasterMap>({});
 export const boards = atom<BoardMap>({});
 export const boardStates = atom<BoardStatusMap>({});
+export const macros = atom<MacroMap>({});
+/** Macro bodies running right now, with the statement each one is on. */
+export const macroRuns = atom<types.MacroRunStatus[]>([]);
 export const fx = deepMap<FxMap>({});
 export const stepFx = deepMap<StepFxMap>({});
 export const fxModules = deepMap<FxModuleMap>({});
@@ -1123,6 +1127,8 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     masters,
     boards,
     boardStates,
+    macros,
+    macroRuns,
     fx,
     stepFx,
     fxModules,

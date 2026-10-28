@@ -271,6 +271,7 @@ dependencies = [
  "nightfall-input-sacn",
  "nightfall-instances",
  "nightfall-io",
+ "nightfall-macros",
  "nightfall-object-library",
  "nightfall-output-artnet",
  "nightfall-output-sacn",
@@ -5264,6 +5265,7 @@ dependencies = [
  "nightfall-framepace",
  "nightfall-fx",
  "nightfall-instances",
+ "nightfall-macros",
  "nightfall-programmer",
  "nightfall-references",
  "nightfall-scene-objects",
@@ -5870,6 +5872,26 @@ dependencies = [
  "nightfall-dmx",
  "nightfall-workspace-hack",
  "serde",
+ "uuid",
+]
+
+[[package]]
+name = "nightfall-macros"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "nightfall",
+ "nightfall-actions",
+ "nightfall-cmd-parse",
+ "nightfall-desk",
+ "nightfall-engine",
+ "nightfall-undo",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "tracing",
+ "typeshare",
  "uuid",
 ]
 

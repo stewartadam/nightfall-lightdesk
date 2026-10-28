@@ -21,6 +21,10 @@
 - [From command to state change](engine/command-path.md)
 - [Control layers](engine/control-layers.md)
 
+# Feature requirements
+
+- [Macros](requirements/macros.md)
+
 # Working on Nightfall
 
 - [Writing style](contributing/writing-style.md)

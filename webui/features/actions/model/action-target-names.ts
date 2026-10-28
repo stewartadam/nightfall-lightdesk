@@ -9,7 +9,13 @@
 import { computed, type ReadableAtom } from "nanostores";
 import type { Accessor } from "solid-js";
 import { useShallowStore } from "../../../lib/use-shallow-store";
-import { clips, cues, masters, timelines } from "../../../state/appStores";
+import {
+  clips,
+  cues,
+  macros,
+  masters,
+  timelines,
+} from "../../../state/appStores";
 import { type ActionTargetNames, normalizeActionUid } from "./action-catalog";
 
 /** Identifies one object that an action argument can reference. */
@@ -32,6 +38,8 @@ export interface ActionTargetOptions {
   timelines: () => readonly ActionTargetOption[];
   /** Cues in console ID order. */
   cues: () => readonly ActionTargetOption[];
+  /** Macros in console ID order. */
+  macros: () => readonly ActionTargetOption[];
 }
 
 /** Converts store records with identifiers into sorted picker options. */
@@ -100,11 +108,13 @@ const clipOptions = targetOptionsStore(clips, (value) =>
 const masterOptions = targetOptionsStore(masters, Object.values);
 const timelineOptions = targetOptionsStore(timelines, Object.values);
 const cueOptions = targetOptionsStore(cues, Object.values);
+const macroOptions = targetOptionsStore(macros, Object.values);
 
 const clipLabels = labelsByUidStore(clipOptions);
 const masterLabels = labelsByUidStore(masterOptions);
 const timelineLabels = labelsByUidStore(timelineOptions);
 const cueLabels = labelsByUidStore(cueOptions);
+const macroLabels = labelsByUidStore(macroOptions);
 
 /** Builds name lookups that read each label map through the given accessor. */
 function namesFrom(
@@ -116,11 +126,13 @@ function namesFrom(
   const master = read(masterLabels);
   const timeline = read(timelineLabels);
   const cue = read(cueLabels);
+  const macro = read(macroLabels);
   return {
     clip: (uid) => clip().get(uid),
     master: (uid) => master().get(uid),
     timeline: (uid) => timeline().get(uid),
     cue: (uid) => cue().get(uid),
+    macro: (uid) => macro().get(uid),
     panel: () => undefined,
   };
 }
@@ -150,6 +162,7 @@ export function useActionTargetOptions(): ActionTargetOptions {
     masters: useShallowStore(masterOptions),
     timelines: useShallowStore(timelineOptions),
     cues: useShallowStore(cueOptions),
+    macros: useShallowStore(macroOptions),
   };
 }
 

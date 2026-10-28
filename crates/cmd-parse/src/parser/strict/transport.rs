@@ -125,7 +125,8 @@ pub(super) fn parse_timecode_action(tokens: &[&LexerToken]) -> Option<(usize, Ti
     }
 }
 
-pub(super) fn parse_timeline_action(tokens: &[&LexerToken]) -> Option<(usize, StartStopAst)> {
+/// Interprets the trailing `start` or `stop` keyword shared by timeline and macro commands.
+pub(super) fn parse_start_stop_action(tokens: &[&LexerToken]) -> Option<(usize, StartStopAst)> {
     let action_index = tokens.len().checked_sub(1)?;
     let action_name = canonical_word(
         tokens.get(action_index)?,
@@ -213,7 +214,7 @@ pub(super) fn parse_simple_timeline_command_from_tokens<'i>(
         command_str,
         tokens,
         TokenId::Timeline,
-        |_, tokens| parse_timeline_action(tokens),
+        |_, tokens| parse_start_stop_action(tokens),
         |timeline_id, action| {
             CommandAst::Timeline(TimelineCommandAst {
                 _timeline: TimelineKeyword,
@@ -276,7 +277,7 @@ pub(super) fn materialize_timeline_ast<'i>(
         ctx.branch,
         crate::slots::contracts::SlotId::TimelineIdentifier,
     )?;
-    let (_, action) = parse_timeline_action(&slot_tokens(
+    let (_, action) = parse_start_stop_action(&slot_tokens(
         ctx.tokens,
         ctx.branch,
         crate::slots::contracts::SlotId::TimelineAction,
@@ -284,6 +285,28 @@ pub(super) fn materialize_timeline_ast<'i>(
     Some(CommandAst::Timeline(TimelineCommandAst {
         _timeline: TimelineKeyword,
         timeline_id,
+        action,
+    }))
+}
+
+/// Builds a `macro <id> start|stop` command from the structural parse of its two slots.
+pub(super) fn materialize_macro_ast<'i>(
+    ctx: StrictBranchContext<'i, '_>,
+) -> Option<CommandAst<'i>> {
+    let macro_id = parse_slot_identifier_expression_from_tokens(
+        ctx.command_str,
+        ctx.tokens,
+        ctx.branch,
+        crate::slots::contracts::SlotId::MacroIdentifier,
+    )?;
+    let (_, action) = parse_start_stop_action(&slot_tokens(
+        ctx.tokens,
+        ctx.branch,
+        crate::slots::contracts::SlotId::MacroAction,
+    ))?;
+    Some(CommandAst::Macro(MacroCommandAst {
+        _macro: MacroKeyword,
+        macro_id,
         action,
     }))
 }

@@ -755,6 +755,7 @@ fn command_head_token_from_lexeme(raw: &str) -> Option<TokenId> {
         "flow" => Some(TokenId::Flow),
         "timecode" => Some(TokenId::Timecode),
         "timeline" => Some(TokenId::Timeline),
+        "macro" => Some(TokenId::Macro),
         "rm" => Some(TokenId::Rm),
         "rename" => Some(TokenId::Rename),
         "store" => Some(TokenId::Store),
@@ -823,6 +824,8 @@ fn completion_group_anchor_clauses(group_id: CompletionGroupId) -> &'static [Cla
         CompletionGroupId::TimecodeAction => &[ClauseId::TimecodeAction],
         CompletionGroupId::TimelineIdentifier => &[ClauseId::TimelineIdentifier],
         CompletionGroupId::TimelineAction => &[ClauseId::TimelineAction],
+        CompletionGroupId::MacroIdentifier => &[ClauseId::MacroIdentifier],
+        CompletionGroupId::MacroAction => &[ClauseId::MacroAction],
         CompletionGroupId::LogLevel => &[ClauseId::LogLevel],
         CompletionGroupId::LogFilter => &[ClauseId::LogFilter],
         CompletionGroupId::LogFixture => &[ClauseId::LogFixture],
@@ -881,6 +884,9 @@ fn completion_group_matches_command_head(group_id: CompletionGroupId, head: Toke
         }
         CompletionGroupId::TimelineIdentifier | CompletionGroupId::TimelineAction => {
             head == TokenId::Timeline
+        }
+        CompletionGroupId::MacroIdentifier | CompletionGroupId::MacroAction => {
+            head == TokenId::Macro
         }
         CompletionGroupId::LogLevel
         | CompletionGroupId::LogFilter

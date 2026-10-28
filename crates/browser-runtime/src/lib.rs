@@ -39,6 +39,7 @@ use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
 use nightfall_framepace::prelude::{FramepaceSettings, Limiter};
 use nightfall_fx::prelude::{FxPlugin, StoredFxModule};
+use nightfall_macros::prelude::MacrosPlugin;
 use nightfall_programmer::prelude::ProgrammerPlugin;
 use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
@@ -249,6 +250,7 @@ impl BrowserEngine {
         app.add_plugins(ProgrammerPlugin);
         app.add_plugins(CuePlugin);
         app.add_plugins(BoardsPlugin);
+        app.add_plugins(MacrosPlugin);
         app.add_plugins(TempoPlugin);
         app.add_plugins(FxPlugin);
         app.init_resource::<DataProvider<StoredFxModule>>();

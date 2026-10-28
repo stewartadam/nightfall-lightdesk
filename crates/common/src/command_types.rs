@@ -47,6 +47,7 @@ pub enum ObjectType {
     Timecode,
     Timeline,
     Board,
+    Macro,
 }
 
 impl Display for ObjectType {
@@ -67,6 +68,7 @@ impl Display for ObjectType {
             ObjectType::Timecode => write!(f, "timecode"),
             ObjectType::Timeline => write!(f, "timeline"),
             ObjectType::Board => write!(f, "board"),
+            ObjectType::Macro => write!(f, "macro"),
         }
     }
 }

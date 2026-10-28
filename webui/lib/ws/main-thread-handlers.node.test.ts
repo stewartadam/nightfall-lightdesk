@@ -72,6 +72,8 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "ListAvailableFixturesResponse",
   "ListAvailableFxModulesResponse",
   "ListAvailableObjectsResponse",
+  "MacroDefinitions",
+  "MacroRunStates",
   "MasterDefinitions",
   "Metrics",
   "MidiControlTouched",

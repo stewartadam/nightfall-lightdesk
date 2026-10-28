@@ -30,6 +30,7 @@ pub(super) fn reset_showfile_state(
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
     board_data_provider: &mut DataProvider<Board>,
+    macro_data_provider: &mut DataProvider<Macro>,
     active_fx_module_ids: Option<&mut ActiveFxModuleIds>,
     input_routes: &mut InputRoutes,
     output_routes: &mut OutputRoutes,
@@ -88,6 +89,7 @@ pub(super) fn reset_showfile_state(
     timecode_data_provider.clear();
     timeline_data_provider.clear();
     board_data_provider.clear();
+    macro_data_provider.clear();
     if let Some(active_fx_module_ids) = active_fx_module_ids {
         active_fx_module_ids.0.clear();
     }

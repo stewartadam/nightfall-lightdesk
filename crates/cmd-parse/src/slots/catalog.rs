@@ -537,6 +537,7 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
         SlotId::FlowIdentifier | SlotId::FlowAction => playback_shape_slot(slot_id),
         SlotId::TimecodeIdentifier | SlotId::TimecodeAction => playback_shape_slot(slot_id),
         SlotId::TimelineIdentifier | SlotId::TimelineAction => playback_shape_slot(slot_id),
+        SlotId::MacroIdentifier | SlotId::MacroAction => playback_shape_slot(slot_id),
         SlotId::LogLevel => slot(
             slot_id,
             &[TokenId::Level],
@@ -660,6 +661,7 @@ fn playback_shape_slot_spec(slot_id: SlotId) -> Option<&'static ParseShapeSlotSp
         SlotId::TimelineIdentifier | SlotId::TimelineAction => {
             InstanceCommandParseShapeId::Timeline
         }
+        SlotId::MacroIdentifier | SlotId::MacroAction => InstanceCommandParseShapeId::Macro,
         _ => return None,
     };
     playback_command_parse_shape_slots(shape_id)
@@ -724,6 +726,7 @@ fn command_heads() -> &'static [TokenId] {
         TokenId::Clip,
         TokenId::Timecode,
         TokenId::Timeline,
+        TokenId::Macro,
         TokenId::Store,
         TokenId::Recall,
         TokenId::Rm,

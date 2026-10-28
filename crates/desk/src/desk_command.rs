@@ -83,6 +83,8 @@ pub struct ShowfileImportOptions {
     pub clips: ShowfileImportPolicy,
     /// Import policy for boards.
     pub boards: ShowfileImportPolicy,
+    /// Import policy for macros.
+    pub macros: ShowfileImportPolicy,
 }
 
 impl Default for ShowfileImportOptions {
@@ -111,6 +113,7 @@ impl Default for ShowfileImportOptions {
             timelines: ShowfileImportPolicy::Skip,
             clips: ShowfileImportPolicy::Merge,
             boards: ShowfileImportPolicy::Merge,
+            macros: ShowfileImportPolicy::Merge,
         }
     }
 }

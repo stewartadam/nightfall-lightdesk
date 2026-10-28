@@ -114,6 +114,9 @@ pub struct ShowfileSnapshot {
     /// Operator-arranged button boards.
     #[serde(default)]
     pub boards: Vec<Board>,
+    /// Command-line macros.
+    #[serde(default)]
+    pub macros: Vec<Macro>,
 }
 
 impl ShowfileSnapshot {
