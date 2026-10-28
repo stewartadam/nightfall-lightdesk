@@ -11,8 +11,9 @@
 //! A small share of published archives fail strict parsing over details
 //! that do not affect what Nightfall reads from them: NaN placeholders in
 //! optional numeric attributes, missing `Pretty` or `Offset` attributes,
-//! gamut points in the spec's `{x,y,Y}` list syntax, or laser geometries
-//! whose attributes the parser cannot read. When strict parsing fails, the
+//! gamut points written outside the spec's `{x,y,Y}` list syntax,
+//! vendor-specific wiring component types such as `VMXInput`, or laser
+//! geometries whose attributes the parser cannot read. When strict parsing fails, the
 //! archive's `description.xml` is rewritten to repair those faults and the
 //! archive is parsed again from memory. Archives that parse as published are
 //! never rewritten.
@@ -243,11 +244,25 @@ fn repair_element(start: &BytesStart, repairs: &mut Vec<String>) -> Option<Bytes
             }
             continue;
         }
-        let value = if name == "Gamut" && key == "Points" && value.contains('{') {
-            note(repairs, "rewrote gamut points list");
-            gamut_points_list(&value)
-        } else {
-            value
+        let value = match (name.as_str(), key.as_str()) {
+            ("Gamut", "Points") => {
+                let points = gamut_points_list(&value);
+                if points != value {
+                    note(repairs, "rewrote gamut points list");
+                }
+                points
+            }
+            ("WiringObject", "ComponentType") => match wiring_component_type(&value) {
+                Some(known) => {
+                    note(
+                        repairs,
+                        &format!("imported WiringObject@ComponentType {value} as {known}"),
+                    );
+                    known.to_string()
+                }
+                None => value,
+            },
+            _ => value,
         };
         match key.as_str() {
             "Name" => element_name = Some(value.clone()),
@@ -283,17 +298,56 @@ fn is_nan(value: &str) -> bool {
     })
 }
 
-/// Converts GDTF's `{x,y,Y}{x,y,Y}` gamut syntax into a whitespace-separated point list.
+/// Rewrites a gamut point list into the spec's `{x,y,Y}{x,y,Y}` syntax the parser requires.
 ///
-/// Whitespace inside a point is removed, since the parser splits the list on it.
+/// Regroups the list's numbers into braced triples, so braced points with
+/// stray separators or whitespace and unbraced `x,y,Y` triples separated by
+/// whitespace both become canonical. Values already in canonical form, and
+/// lists whose number count is not a multiple of three, are returned
+/// unchanged so the parser reports them as published.
 fn gamut_points_list(value: &str) -> String {
-    value
-        .split(['{', '}'])
-        .map(|point| point.split_whitespace().collect::<String>())
-        .map(|point| point.trim_matches(',').to_string())
-        .filter(|point| !point.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+    let numbers: Vec<&str> = value
+        .split(|c: char| c == ',' || c == '{' || c == '}' || c.is_whitespace())
+        .filter(|number| !number.is_empty())
+        .collect();
+    if numbers.is_empty() || !numbers.len().is_multiple_of(3) {
+        return value.to_string();
+    }
+    numbers
+        .chunks(3)
+        .map(|point| format!("{{{}}}", point.join(",")))
+        .collect()
+}
+
+/// Wiring object component types the parser accepts.
+const WIRING_COMPONENT_TYPES: [&str; 9] = [
+    "Input",
+    "Output",
+    "PowerSource",
+    "Consumer",
+    "Fuse",
+    "NetworkProvider",
+    "NetworkInput",
+    "NetworkOutput",
+    "NetworkInOut",
+];
+
+/// Maps a vendor-specific wiring component type onto the generic one the parser accepts.
+///
+/// Manufacturers publish types outside the spec, such as Martin's `VMXInput`
+/// and `VMXOutput` video-mapping connectors. Unknown types ending in `Input`
+/// or `Output` become the generic `Input` or `Output` connector; known and
+/// other unknown types return `None` and are left as published.
+fn wiring_component_type(value: &str) -> Option<&'static str> {
+    if WIRING_COMPONENT_TYPES.contains(&value) {
+        None
+    } else if value.ends_with("Input") {
+        Some("Input")
+    } else if value.ends_with("Output") {
+        Some("Output")
+    } else {
+        None
+    }
 }
 
 /// Records a repair once.
@@ -422,13 +476,93 @@ mod tests {
         assert_eq!(reparsed, repaired);
     }
 
-    /// Verifies braced gamut points become a whitespace-separated list of triples.
+    /// Verifies stray separators between braced gamut points and unbraced
+    /// whitespace-separated triples both become the spec's braced list,
+    /// while canonical lists are left untouched.
     #[test]
-    fn rewrites_braced_gamut_points() {
+    fn rewrites_gamut_points_to_braced_list() {
+        let canonical = "{0.64,0.33,1}{0.3,0.6,1}{0.15,0.06,1}";
         assert_eq!(
             gamut_points_list("{0.64,0.33,1}{0.3,0.6,1},{0.15,0.06,1}"),
-            "0.64,0.33,1 0.3,0.6,1 0.15,0.06,1"
+            canonical
         );
+        assert_eq!(
+            gamut_points_list("0.64,0.33,1 0.3,0.6,1  0.15,0.06,1"),
+            canonical
+        );
+        assert_eq!(
+            gamut_points_list("0.64, 0.33, 1 0.3, 0.6, 1 0.15, 0.06, 1"),
+            canonical
+        );
+        assert_eq!(gamut_points_list(canonical), canonical);
+        assert_eq!(gamut_points_list("{0.64,0.33}"), "{0.64,0.33}");
+
+        let xml = format!(r#"<Gamut Name="G" Points="{canonical}"/>"#);
+        let (repaired, repairs) = repair_description(&xml).expect("well-formed");
+        assert_eq!(repaired, xml);
+        assert!(repairs.is_empty());
+    }
+
+    /// Verifies vendor wiring component types ending in Input or Output map
+    /// onto the generic connector, while spec types and other unknown types
+    /// are left as published.
+    #[test]
+    fn maps_vendor_wiring_component_types() {
+        let xml = r#"<Geometries><WiringObject Name="In" ComponentType="VMXInput"/><WiringObject Name="Out" ComponentType="VMXOutput"/><WiringObject Name="Net" ComponentType="NetworkInput"/><WiringObject Name="Odd" ComponentType="Mystery"/></Geometries>"#;
+        let (repaired, repairs) = repair_description(xml).expect("well-formed");
+        assert_eq!(
+            repaired,
+            r#"<Geometries><WiringObject Name="In" ComponentType="Input"/><WiringObject Name="Out" ComponentType="Output"/><WiringObject Name="Net" ComponentType="NetworkInput"/><WiringObject Name="Odd" ComponentType="Mystery"/></Geometries>"#
+        );
+        assert_eq!(
+            repairs,
+            vec![
+                "imported WiringObject@ComponentType VMXInput as Input",
+                "imported WiringObject@ComponentType VMXOutput as Output",
+            ]
+        );
+    }
+
+    /// Regression for Martin's VDO Sceptron archive on GDTF Share: a
+    /// `VMXInput` wiring object made strict parsing fail, and the repair pass
+    /// then broke its canonical braced gamut. The repaired archive must open
+    /// with the gamut intact.
+    #[test]
+    fn opens_archive_with_vendor_wiring_and_braced_gamut() {
+        let description = crate::testing::GdtfBuilder::new("Martin", "Sceptron")
+            .description_xml()
+            .replacen(
+                "<PhysicalDescriptions>\n",
+                "<PhysicalDescriptions>\n<Gamuts><Gamut Name=\"Calibrated\" Points=\"{0.681000,0.311000,27.385095}{0.190000,0.690000,65.450618}{0.141000,0.059000,7.164287}\"/></Gamuts>\n",
+                1,
+            )
+            .replacen(
+                "<Geometries>\n",
+                "<Geometries>\n<WiringObject Name=\"VMX In\" Model=\"\" Position=\"{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}\" ConnectorType=\"RJ45\" ComponentType=\"VMXInput\" SignalType=\"VMX\" PinCount=\"8\" SignalLayer=\"0\" Orientation=\"Left\" WireGroup=\"\"/>\n",
+                1,
+            );
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        archive
+            .start_file(DESCRIPTION_ENTRY, zip::write::SimpleFileOptions::default())
+            .expect("start entry");
+        archive
+            .write_all(description.as_bytes())
+            .expect("write description");
+        let bytes = archive.finish().expect("finish archive").into_inner();
+        assert!(gdtf::GdtfFile::new(Cursor::new(bytes.clone())).is_err());
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("sceptron.gdtf");
+        std::fs::write(&path, &bytes).expect("write archive");
+
+        let (parsed, repairs) = open_gdtf(&path).expect("repaired archive opens");
+        assert_eq!(
+            repairs,
+            vec!["imported WiringObject@ComponentType VMXInput as Input"]
+        );
+        let gamut = &parsed.description.fixture_types[0]
+            .physical_descriptions
+            .gamuts[0];
+        assert_eq!(gamut.points.len(), 3);
     }
 
     /// Verifies a laser becomes a plain geometry, keeping children but not protocols.
@@ -464,12 +598,12 @@ mod tests {
         assert!(repairs.is_empty());
     }
 
-    /// Verifies whitespace inside braced gamut points is removed so each point stays one token.
+    /// Verifies whitespace inside and between braced gamut points is removed.
     #[test]
     fn gamut_points_drop_inner_whitespace() {
         assert_eq!(
             gamut_points_list("{0.64, 0.33, 1} {0.3, 0.6, 1}"),
-            "0.64,0.33,1 0.3,0.6,1"
+            "{0.64,0.33,1}{0.3,0.6,1}"
         );
     }
 }

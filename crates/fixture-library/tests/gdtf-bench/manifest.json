@@ -1,6 +1,6 @@
 {
   "description": "Curated GDTF bench. Archives come from GDTF Share; they are not redistributed with the repository; fetch them with `pnpm run gdtf:fetch`. Hashes pin the exact revisions; mode names are exact, including significant whitespace.",
-  "source": "GDTF Share collection, 2025-12-30; mac-viper, magicpanel, volero, magicblade and argo-6-fx re-pinned 2026-09-29 after GDTF Share replaced the earlier revisions",
+  "source": "GDTF Share collection, 2025-12-30; mac-viper, magicpanel, volero, magicblade and argo-6-fx re-pinned 2026-09-29 after GDTF Share replaced the earlier revisions; vdo-sceptron added 2026-10-28 for its vendor wiring types and braced gamut",
   "archives": [
     {
       "id": "sharpy",
@@ -777,6 +777,34 @@
         "Extended_Ring"
       ],
       "chart_modes": ["Extended_Pixel_2_+_Liquid"]
+    },
+    {
+      "id": "vdo-sceptron",
+      "group": "full",
+      "file": "Martin_Professional@VDO_Sceptron_10_320mm@20261024@165968.gdtf",
+      "sha256": "157458f81088823d567ee5137932432205acb3a5137a78b0c4615357f6e0de78",
+      "modes": [
+        "DMX_RGB",
+        "DMX_Basic",
+        "DMX_Segments",
+        "DMX_Pixel",
+        "P3_Intensity",
+        "P3_RGB",
+        "P3_Basic",
+        "P3_Hybrid 1 Segment",
+        "P3_Hybrid 2 Segments",
+        "P3_Hybrid 4 Segments",
+        "P3_Hybrid 8 Segments",
+        "P3_Hybrid 16 Segments",
+        "P3_Hybrid 32 Segments",
+        "P3_PixelMap 1 Segment",
+        "P3_PixelMap 2 Segments",
+        "P3_PixelMap 4 Segments",
+        "P3_PixelMap 8 Segments",
+        "P3_PixelMap 16 Segments",
+        "P3_PixelMap 32 Segments"
+      ],
+      "chart_modes": ["DMX_Segments"]
     }
   ]
 }

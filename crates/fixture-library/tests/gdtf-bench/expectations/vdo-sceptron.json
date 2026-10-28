@@ -1,0 +1,21 @@
+{
+  "known_violations": {},
+  "charts": {
+    "DMX_Segments": [
+      "Base2Segments · Intensity · b1 · 1,2",
+      "Base2Segments · StrobeShutter · b1 · 3",
+      "Base2Segments · Custom { label: \"StrobeDuration\" } · b1 · 4",
+      "Base2Segments · Custom { label: \"Effects1\" } · b1 · 5",
+      "Base2Segments · Custom { label: \"Effects1Rate\" } · b1 · 6",
+      "Base2Segments · Custom { label: \"EffectsSync\" } · b1 · 7",
+      "Segment 1/2 · Intensity · virtual",
+      "Segment 1/2 · Red · b1 · 8",
+      "Segment 1/2 · Green · b1 · 9",
+      "Segment 1/2 · Blue · b1 · 10",
+      "Segment 2/2 · Intensity · virtual",
+      "Segment 2/2 · Red · b1 · 11",
+      "Segment 2/2 · Green · b1 · 12",
+      "Segment 2/2 · Blue · b1 · 13"
+    ]
+  }
+}
