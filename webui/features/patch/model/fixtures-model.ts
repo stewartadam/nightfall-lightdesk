@@ -37,8 +37,6 @@ export type ConflictTooltipState = {
   anchorRect: DOMRect;
 };
 
-export const DISABLED_TEXT_COLOR = "#6b7280";
-
 export function stableUniverseKey(range?: types.DmxRange): string {
   if (!range) return "*";
   if (range.start === range.end) return `${range.start}`;

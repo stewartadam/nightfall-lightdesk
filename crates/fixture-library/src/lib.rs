@@ -61,6 +61,10 @@ pub enum FixtureLibraryError {
         model: String,
     },
 
+    /// The library does not list this file as one that failed to load
+    #[error("{0} is not listed as a file that failed to load")]
+    UnloadableNotFound(String),
+
     /// Mode not found
     #[error("Mode '{mode}' not found for {make} {model}")]
     ModeNotFound {

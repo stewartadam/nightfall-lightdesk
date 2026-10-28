@@ -44,6 +44,7 @@ import type {
 } from "../../../lib/data-grid-types";
 import {
   createRowSelectionHelpers,
+  DISABLED_TEXT_COLOR,
   emptyGridSelection,
   getEditTargetRowIndices,
   makeSafeTextCell,
@@ -65,21 +66,82 @@ import {
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
-import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
+import {
+  fixtureLibrary,
+  runtimeCapabilities,
+  unloadableFixtureFiles,
+} from "../../../state/appStores";
 import type {
   AvailableFixtureInfo,
   FixtureLibraryCommand,
   FixtureLibraryEntry,
+  UnloadableFixtureFile,
+  UnloadableFixtureFileId,
 } from "../../../types";
 import { GdtfShareBrowser } from "../../gdtf-share";
 import { usePropertiesInspector } from "../../property-inspector";
 import FixtureLibraryProperties from "../components/fixture-library-properties";
 import {
-  fixtureLibrarySelectedFixture,
+  type FixtureLibraryRow,
+  fixtureLibrarySelection,
   setFixtureLibrarySelectedFixture,
+  setFixtureLibrarySelection,
 } from "../state/selection";
 
 const log = getLogger(import.meta.url);
+
+/** Marks the first cell of a library file that failed to load. */
+const UNLOADABLE_INDICATORS = [
+  { label: "Failed to load", tone: "warning", variant: "icon" },
+] as const;
+
+/** Grid key of a library row, unique across loaded profiles and unloadable files. */
+function libraryRowId(row: FixtureLibraryRow): string {
+  return row.kind === "fixture"
+    ? libraryDefinitionId(row.fixture)
+    : JSON.stringify(["unloadable", row.file.in_showfile, row.file.file_name]);
+}
+
+/** Names the definition format of an unloadable file from its extension. */
+function unloadableSourceFormat(file: UnloadableFixtureFile): string {
+  return file.file_name.toLowerCase().endsWith(".gdtf") ? "GDTF" : "OFL";
+}
+
+/**
+ * Returns the text a column shows and filters on for one row. A file that failed to load
+ * shows "Failed to load" as its make, its file name as the model and the error as its modes.
+ */
+function libraryRowText(row: FixtureLibraryRow, column: string): string {
+  if (row.kind === "unloadable") {
+    switch (column) {
+      case "make":
+        return "Failed to load";
+      case "model":
+        return row.file.file_name;
+      case "modes":
+        return row.file.error;
+      case "source":
+        return unloadableSourceFormat(row.file);
+      default:
+        return "";
+    }
+  }
+  const { fixture } = row;
+  switch (column) {
+    case "make":
+      return fixture.make;
+    case "model":
+      return fixture.model;
+    case "modes":
+      return fixture.modes.join(", ");
+    case "source":
+      return fixture.source_format;
+    case "revision":
+      return libraryRevisionLabel(fixture.asset_etag);
+    default:
+      return "";
+  }
+}
 
 interface FixtureLibraryPanelProps extends BasePanelComponentProps {
   initialPanelId?: string;
@@ -89,7 +151,30 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   log.trace("mounting");
   const panelId = props.initialPanelId ?? props.id;
   const $fixtureLibrary = useStore(fixtureLibrary);
-  const $selectedFixture = useStore(fixtureLibrarySelectedFixture);
+  const $unloadableFiles = useStore(unloadableFixtureFiles);
+  const $selection = useStore(fixtureLibrarySelection);
+
+  /** The loaded profile selected for the properties panel, if a profile row is selected. */
+  const selectedFixture = createMemo(() => {
+    const row = $selection();
+    return row?.kind === "fixture" ? row.fixture : null;
+  });
+
+  /**
+   * The file that failed to load selected for the properties panel, as the latest scan
+   * reports it, or null once a rescan no longer lists it.
+   */
+  const selectedUnloadable = createMemo(() => {
+    const row = $selection();
+    if (row?.kind !== "unloadable") return null;
+    return (
+      $unloadableFiles().find(
+        (file) =>
+          file.file_name === row.file.file_name &&
+          file.in_showfile === row.file.in_showfile,
+      ) ?? null
+    );
+  });
   const capabilities = useStore(runtimeCapabilities);
 
   /** Whether the runtime can import and delete fixture definition files. */
@@ -161,75 +246,103 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     fileInputRef?.click();
   };
 
-  /** Handle fixture deletion for selected rows */
+  /**
+   * Deletes the selected rows: profile revisions through `DeleteFixtures`, and files that
+   * failed to load through `DeleteUnloadableFiles`.
+   */
   const handleDeleteSelected = () => {
     const indices = selectedRows();
     if (indices.length === 0) return;
 
     const fixtureData = fixtures();
     const fixturesToDelete: FixtureLibraryEntry[] = [];
+    const filesToDelete: UnloadableFixtureFileId[] = [];
 
     for (const idx of indices) {
-      const fixture = fixtureData[idx];
-      if (fixture) {
+      const row = fixtureData[idx];
+      if (row?.kind === "fixture") {
         fixturesToDelete.push({
-          make: fixture.make,
-          model: fixture.model,
-          asset_etag: fixture.asset_etag,
+          make: row.fixture.make,
+          model: row.fixture.model,
+          asset_etag: row.fixture.asset_etag,
+        });
+      } else if (row) {
+        filesToDelete.push({
+          file_name: row.file.file_name,
+          in_showfile: row.file.in_showfile,
         });
       }
     }
 
-    if (fixturesToDelete.length === 0) return;
+    if (fixturesToDelete.length === 0 && filesToDelete.length === 0) return;
 
     clearSelection();
 
-    // Send delete command to backend
-    const command: FixtureLibraryCommand = {
-      type: "DeleteFixtures",
-      data: fixturesToDelete,
-    };
-
-    commandClient.emit("FixtureLibraryCommand", command);
+    if (fixturesToDelete.length > 0) {
+      const command: FixtureLibraryCommand = {
+        type: "DeleteFixtures",
+        data: fixturesToDelete,
+      };
+      commandClient.emit("FixtureLibraryCommand", command);
+    }
+    if (filesToDelete.length > 0) {
+      const command: FixtureLibraryCommand = {
+        type: "DeleteUnloadableFiles",
+        data: filesToDelete,
+      };
+      commandClient.emit("FixtureLibraryCommand", command);
+    }
   };
 
   // Register properties panel
   usePropertiesInspector(
     panelId,
     "Fixture Library",
-    () => <FixtureLibraryProperties selectedFixture={$selectedFixture} />,
+    () => (
+      <FixtureLibraryProperties
+        selectedFixture={selectedFixture}
+        unloadableFile={selectedUnloadable}
+      />
+    ),
     { priority: 10, autoActivate: true },
   );
 
-  /** Sorts library fixtures by make, model, then revision so revisions of one model keep a stable row order. */
-  const sortedFixtures = createMemo(() => {
-    const rawFixtures = $fixtureLibrary();
-
-    return [...rawFixtures].sort(
-      (a, b) =>
-        a.make.localeCompare(b.make) ||
-        a.model.localeCompare(b.model) ||
-        a.asset_etag.localeCompare(b.asset_etag),
-    );
+  /**
+   * Lists library rows: loaded profiles sorted by make, model, then revision so revisions of
+   * one model keep a stable order, followed by the files that failed to load, by file name.
+   */
+  const sortedFixtures = createMemo((): FixtureLibraryRow[] => {
+    const loaded = [...$fixtureLibrary()]
+      .sort(
+        (a, b) =>
+          a.make.localeCompare(b.make) ||
+          a.model.localeCompare(b.model) ||
+          a.asset_etag.localeCompare(b.asset_etag),
+      )
+      .map((fixture): FixtureLibraryRow => ({ kind: "fixture", fixture }));
+    const unloadable = [...$unloadableFiles()]
+      .sort((a, b) => a.file_name.localeCompare(b.file_name))
+      .map((file): FixtureLibraryRow => ({ kind: "unloadable", file }));
+    return [...loaded, ...unloadable];
   });
 
   // Column definitions for data grid
   const columns: FilterableGridColumn<
-    FixtureLibraryEntry,
+    FixtureLibraryRow,
     VisibilityGridColumn
   >[] = [
     {
       title: "Make",
       id: "make",
       width: 150,
-      filter: { value: (fixture) => fixture.make },
+      filter: { value: (row) => libraryRowText(row, "make") },
       ...alwaysVisibleColumnMeta("Identity", "Make"),
     },
     {
       title: "Model",
       id: "model",
       width: 150,
-      filter: { value: (fixture) => fixture.model },
+      filter: { value: (row) => libraryRowText(row, "model") },
       ...columnVisibilityMeta("Metadata", "Model"),
     },
     {
@@ -277,43 +390,40 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     return filterVisibleColumns(columns, panelId);
   });
 
-  /** Provides cells from keyed fixture and column snapshots. */
+  /**
+   * Provides cells from keyed row and column snapshots. Files that failed to load are greyed
+   * out, with a warning sign before the file name.
+   */
   const cellProvider = createMemo(() =>
     createKeyedDataGridCellProvider({
       rows: fixtures(),
       columns: displayColumns(),
-      rowKey: libraryDefinitionId,
+      rowKey: libraryRowId,
       columnKey: (column) => String(column.id),
-      getCellContent: ({ row: fixture, column }): GridCell => {
+      getCellContent: ({ row, column }): GridCell => {
         const colId = String(column.id);
-        switch (colId) {
-          case "make":
-            return makeSafeTextCell(fixture.make);
-          case "model":
-            return makeSafeTextCell(fixture.model);
-          case "modes":
-            return makeSafeTextCell(fixture.modes.join(", "));
-          case "source":
-            return makeSafeTextCell(fixture.source_format);
-          case "revision":
-            return makeSafeTextCell(libraryRevisionLabel(fixture.asset_etag));
-          default:
-            return makeSafeTextCell("");
-        }
+        const cell = makeSafeTextCell(libraryRowText(row, colId));
+        if (row.kind === "fixture") return cell;
+        return {
+          ...cell,
+          themeOverride: { textDark: DISABLED_TEXT_COLOR },
+          stateIndicators:
+            colId === "make" ? [...UNLOADABLE_INDICATORS] : undefined,
+        };
       },
     }),
   );
 
-  /** Handle row click to select fixture */
+  /** Shows the clicked row, a profile or a file that failed to load, in the properties panel. */
   const handleCellClicked = (cell: Item) => {
-    const [, row] = cell;
-    const fixture = fixtures()[row];
+    const [, index] = cell;
+    const row = fixtures()[index];
 
-    if (!fixture) {
-      log.warn(`Could not find fixture for clicked row ${row}`);
+    if (!row) {
+      log.warn(`Could not find fixture for clicked row ${index}`);
       return;
     }
-    setFixtureLibrarySelectedFixture(fixture);
+    setFixtureLibrarySelection(row);
   };
 
   return (
@@ -368,7 +478,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
           </div>
         ) : fixtures().length === 0 ? (
           <div class="p-4 text-center text-gray-500">
-            {$fixtureLibrary().length === 0
+            {sortedFixtures().length === 0
               ? "No fixtures in library"
               : "No fixtures match filter"}
           </div>

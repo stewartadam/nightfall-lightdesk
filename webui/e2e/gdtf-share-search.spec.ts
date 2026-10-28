@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page, Route } from "@playwright/test";
 import type { GdtfShareFixture } from "../types";
@@ -16,6 +17,7 @@ import { waitForDockviewApp } from "./showfile-startup";
 
 const PATCH_PANEL_ID = "panel-PatchEditor-gdtf-share-e2e";
 const LIBRARY_PANEL_ID = "panel-FixtureLibrary-gdtf-share-e2e";
+const PROPERTIES_PANEL_ID = "panel-PropertiesInspector";
 
 /** The GDTF Share fixture the wizard test installs. */
 const WASH: GdtfShareFixture = {
@@ -29,6 +31,15 @@ const WASH: GdtfShareFixture = {
   manufacturer_upload: true,
   last_modified: 1_761_000_000,
   file_size: 2048,
+};
+
+/** A listed fixture whose download is not a GDTF archive, so the library can't load it. */
+const BROKEN: GdtfShareFixture = {
+  ...WASH,
+  rid: 104,
+  fixture_type_id: "e2e00000-0000-4000-8000-000000000004",
+  manufacturer: "Other Lighting",
+  fixture: "Faulty Spot",
 };
 
 /** Fixtures the stand-in GDTF Share lists. */
@@ -55,14 +66,17 @@ const LISTED: GdtfShareFixture[] = [
     rating: 3,
     manufacturer_upload: false,
   },
+  BROKEN,
 ];
 
 /**
  * Answers the engine's GDTF Share routes so the test never contacts GDTF Share: the account
  * is `user` (or signed out), searches match every word against make and model, and installs
- * write a generated archive into the backend's real fixture library folder, then stream
- * progress and the outcome as the engine does. An install waits for `installGate` first,
- * so the test can see the download under way.
+ * write a generated archive into the backend's real fixture library folder (atomically, as
+ * the engine does), then stream
+ * progress and the outcome as the engine does. {@link BROKEN} downloads as bytes that are not
+ * an archive. An install waits for `installGate` first, so the test can see the download
+ * under way.
  */
 async function standInForGdtfShare(
   page: Page,
@@ -123,13 +137,19 @@ async function standInForGdtfShare(
       installs.push(rid);
       await options.installGate;
       const fileName = `Nightfall_Test@${fixture.fixture.replace(/ /g, "_")}@1.0@${rid}.gdtf`;
-      const archive = testGdtfArchive({
-        manufacturer: fixture.manufacturer,
-        model: fixture.fixture,
-        fixtureTypeId: fixture.fixture_type_id ?? "",
-      });
+      const archive =
+        rid === BROKEN.rid
+          ? Buffer.from("this is not a GDTF archive")
+          : testGdtfArchive({
+              manufacturer: fixture.manufacturer,
+              model: fixture.fixture,
+              fixtureTypeId: fixture.fixture_type_id ?? "",
+            });
       await mkdir(options.libraryDir, { recursive: true });
-      await writeFile(join(options.libraryDir, fileName), archive);
+      // Written under a hidden name first, as the engine does, so no rescan sees half a file.
+      const partial = join(options.libraryDir, `.${fileName}.partial`);
+      await writeFile(partial, archive);
+      await rename(partial, join(options.libraryDir, fileName));
       const total = archive.length;
       const events = [
         { type: "Progress", data: { received: total >> 1, total } },
@@ -159,15 +179,19 @@ async function openApp(page: Page) {
   await waitForDockviewApp(page);
 }
 
-/** Adds and focuses one Dockview panel of `component`. */
+/**
+ * Adds and focuses one Dockview panel of `component`, as a tab beside the first grid panel
+ * unless `direction` places it to one side of that panel.
+ */
 async function addPanel(
   page: Page,
   id: string,
   component: string,
   title: string,
+  direction: "within" | "right" = "within",
 ) {
   await page.evaluate(
-    ({ panelId, panelComponent, panelTitle }) => {
+    ({ panelId, panelComponent, panelTitle, panelDirection }) => {
       const api = (window as any).appStores.dockApi.get();
       api.getPanel(panelId)?.api.close();
       const reference = api.panels.find(
@@ -179,13 +203,23 @@ async function addPanel(
         title: panelTitle,
         params: { initialPanelId: panelId },
         ...(reference
-          ? { position: { referencePanel: reference.id, direction: "within" } }
+          ? {
+              position: {
+                referencePanel: reference.id,
+                direction: panelDirection,
+              },
+            }
           : {}),
       });
       panel.api.setActive();
       panel.focus();
     },
-    { panelId: id, panelComponent: component, panelTitle: title },
+    {
+      panelId: id,
+      panelComponent: component,
+      panelTitle: title,
+      panelDirection: direction,
+    },
   );
   const panel = page.locator(
     `[data-component="${component}"][data-panel-id="${id}"]`,
@@ -348,4 +382,80 @@ test("points to Settings when GDTF Share is signed out", async ({
   await page.screenshot({
     path: testInfo.outputPath("07-settings-sign-in.png"),
   });
+});
+
+/**
+ * Installing a download the library can't read names the parser's error, and the Fixture
+ * Library then lists the file greyed out, with the same error in Properties, until the user
+ * deletes it from there.
+ */
+test("shows why an installed fixture can't be read", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await standInForGdtfShare(page, {
+    user: "lighting@example.com",
+    libraryDir: join(backendSlot.dataDir, "fixtures"),
+  });
+  await openApp(page);
+  const library = await addPanel(
+    page,
+    LIBRARY_PANEL_ID,
+    "FixtureLibrary",
+    "Fixture Library",
+  );
+  await library.getByTestId("fixture-library-search-online").click();
+  const browser = library.getByTestId("gdtf-share-browser");
+  await browser.getByLabel("Search GDTF Share").fill("faulty");
+  await browser.getByRole("row").filter({ hasText: "Faulty Spot" }).click();
+  const selected = browser.getByTestId("gdtf-share-selected");
+  await selected.getByTestId("gdtf-share-install").click();
+  const note = selected.getByTestId("gdtf-share-install-note");
+  await expect(note).toContainText(
+    "Installed as Nightfall_Test@Faulty_Spot@1.0@104.gdtf, but Nightfall can't read it:",
+    { timeout: 20_000 },
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("08-install-parse-error.png"),
+  });
+
+  await library.getByTestId("fixture-library-search-online").click();
+  const brokenRow = library
+    .getByRole("row")
+    .filter({ hasText: "Nightfall_Test@Faulty_Spot@1.0@104.gdtf" });
+  await expect(brokenRow).toContainText("Failed to load");
+  await addPanel(
+    page,
+    PROPERTIES_PANEL_ID,
+    "PropertiesInspector",
+    "Properties",
+    "right",
+  );
+  await page.evaluate((panelId) => {
+    (window as any).appStores.dockApi.get().getPanel(panelId)?.focus();
+  }, LIBRARY_PANEL_ID);
+  await brokenRow.click();
+  const details = page.getByTestId("fixture-library-unloadable");
+  await expect(details).toContainText("Failed to load");
+  await expect(details).toContainText(
+    "Nightfall_Test@Faulty_Spot@1.0@104.gdtf",
+  );
+  await expect(details).toContainText("Parser error");
+  await page.screenshot({
+    path: testInfo.outputPath("09-library-shows-parse-error.png"),
+  });
+
+  await library.getByRole("button", { name: "Delete selected (1)" }).click();
+  await expect(brokenRow).toHaveCount(0);
+  await expect(details).toHaveCount(0);
+  expect(
+    existsSync(
+      join(
+        backendSlot.dataDir,
+        "fixtures",
+        "Nightfall_Test@Faulty_Spot@1.0@104.gdtf",
+      ),
+    ),
+  ).toBe(false);
 });

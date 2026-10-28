@@ -38,13 +38,15 @@ import {
   type GridSelection,
 } from "../../lib/data-grid-types";
 import { getLogger } from "../../lib/logger";
-import { fixtureLibrary } from "../../state/appStores";
+import { fixtureLibrary, unloadableFixtureFiles } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
 import type {
   AvailableFixtureInfo,
   GdtfShareDownloadProgress,
   GdtfShareFixture,
+  GdtfShareInstall,
   GdtfShareSearchResults,
+  UnloadableFixtureFile,
 } from "../../types";
 import { requestGdtfShareAccount } from "./account";
 import {
@@ -122,36 +124,62 @@ function resultCell(
   }
 }
 
+/** What the library made of an installed file: a listed entry, or a file it could not load. */
+type InstalledOutcome =
+  | { kind: "listed"; entry: AvailableFixtureInfo }
+  | { kind: "unloadable"; file: UnloadableFixtureFile };
+
 /**
- * Resolves with the library entry whose fingerprint is `assetEtag`: at once when the
- * library already lists it, as it does for a download identical to an installed copy, or
- * as soon as the library picks the new file up.
+ * Waits for the library to take up an installed file. Resolves with the entry whose
+ * fingerprint is `installed.asset_etag` at once when the library already lists it, as it does
+ * for a download identical to an installed copy, or as soon as the library picks the new file
+ * up. A listing that reports `installed.file_name` as unloadable resolves with that failure
+ * instead; only listings that arrive while waiting count, since an earlier one may describe a
+ * file the download replaced, though the latest listing is checked once more on timeout.
  *
  * Resolves with `undefined` when none appears in time, or when `signal` aborts the wait.
  */
-function waitForLibraryEntry(
-  assetEtag: string,
+function waitForInstalledFile(
+  installed: GdtfShareInstall,
   signal: AbortSignal,
-): Promise<AvailableFixtureInfo | undefined> {
+): Promise<InstalledOutcome | undefined> {
+  /** Finds the failure the library reports for the installed file, if any. */
+  const unloadable = (): InstalledOutcome | undefined => {
+    const file = unloadableFixtureFiles
+      .get()
+      .find(
+        (candidate) =>
+          !candidate.in_showfile && candidate.file_name === installed.file_name,
+      );
+    return file && { kind: "unloadable", file };
+  };
   return new Promise((resolve) => {
-    let unsubscribe = () => {};
-    /** Stops waiting and resolves with `entry`. */
-    const finish = (entry?: AvailableFixtureInfo) => {
+    const unsubscribers: (() => void)[] = [];
+    /** Stops waiting and resolves with `outcome`. */
+    const finish = (outcome?: InstalledOutcome) => {
       clearTimeout(timer);
       signal.removeEventListener("abort", abort);
-      queueMicrotask(() => unsubscribe());
-      resolve(entry);
+      queueMicrotask(() => {
+        for (const unsubscribe of unsubscribers) unsubscribe();
+      });
+      resolve(outcome);
     };
     /** Gives up when the browser that asked goes away. */
     const abort = () => finish();
-    const timer = setTimeout(() => finish(), LIBRARY_WAIT_MS);
+    const timer = setTimeout(() => finish(unloadable()), LIBRARY_WAIT_MS);
     signal.addEventListener("abort", abort);
-    unsubscribe = fixtureLibrary.subscribe((library) => {
-      const entry = library.find(
-        (candidate) => candidate.asset_etag === assetEtag,
-      );
-      if (entry) finish(entry);
-    });
+    unsubscribers.push(
+      fixtureLibrary.subscribe((library) => {
+        const entry = library.find(
+          (candidate) => candidate.asset_etag === installed.asset_etag,
+        );
+        if (entry) finish({ kind: "listed", entry });
+      }),
+      unloadableFixtureFiles.listen(() => {
+        const failure = unloadable();
+        if (failure) finish(failure);
+      }),
+    );
   });
 }
 
@@ -370,13 +398,14 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
         setDownload,
         lifetime.signal,
       );
-      const entry = await waitForLibraryEntry(
-        installed.asset_etag,
-        lifetime.signal,
-      );
+      const outcome = await waitForInstalledFile(installed, lifetime.signal);
       if (lifetime.signal.aborted) return;
-      if (entry) {
-        props.onUse(entry);
+      if (outcome?.kind === "listed") {
+        props.onUse(outcome.entry);
+      } else if (outcome?.kind === "unloadable") {
+        setInstallNote(
+          `Installed as ${installed.file_name}, but Nightfall can't read it: ${outcome.file.error}`,
+        );
       } else {
         setInstallNote(
           `Installed as ${installed.file_name}, but the library has not listed it yet.`,
@@ -600,7 +629,12 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
               </Show>
               <Show when={installNote()}>
                 {(message) => (
-                  <Alert variant="caution" density="compact">
+                  <Alert
+                    variant="caution"
+                    density="compact"
+                    class="break-words"
+                    data-testid="gdtf-share-install-note"
+                  >
                     {message()}
                   </Alert>
                 )}
