@@ -41,3 +41,22 @@ fn save_replaces_and_leaves_no_partial_file() {
         .collect();
     assert_eq!(names, ["Acme@Spot@1.gdtf"]);
 }
+
+/// Progress steps by whole percent of a known size and by 64 KiB of an unknown one, so
+/// the route streams few lines either way.
+#[test]
+fn progress_steps_by_percent_or_by_64_kib() {
+    let known = |received| GdtfShareDownloadProgress {
+        received,
+        total: Some(1000),
+    };
+    assert_eq!(known(0).step(), 0);
+    assert_eq!(known(505).step(), 50);
+    assert_eq!(known(1000).step(), 100);
+    let unknown = |received| GdtfShareDownloadProgress {
+        received,
+        total: None,
+    };
+    assert_eq!(unknown(65_535).step(), 0);
+    assert_eq!(unknown(65_536).step(), 1);
+}

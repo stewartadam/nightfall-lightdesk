@@ -267,14 +267,12 @@ async fn install_fixture(
         })?;
     let (events, receiver) = mpsc::unbounded_channel::<GdtfShareInstallEvent>();
     tokio::spawn(async move {
-        // Reports whole percents only, so a large archive sends at most a hundred lines.
-        let last_percent = AtomicU32::new(u32::MAX);
+        let last_step = AtomicU32::new(u32::MAX);
+        // Streams one progress line per step, so a large archive sends a hundred lines at
+        // most rather than one per chunk.
         let report = |progress: GdtfShareDownloadProgress| {
-            let percent = u32::try_from(
-                u64::from(progress.received) * 100 / u64::from(progress.total.max(1)),
-            )
-            .unwrap_or(100);
-            if last_percent.swap(percent, Ordering::Relaxed) != percent {
+            let step = progress.step();
+            if last_step.swap(step, Ordering::Relaxed) != step {
                 let _ = events.send(GdtfShareInstallEvent::Progress(progress));
             }
         };
@@ -291,6 +289,7 @@ async fn install_fixture(
         };
         let _ = events.send(outcome);
     });
+    // Writes each event as one JSON line until the install task drops its sender.
     let lines = futures_util::stream::unfold(receiver, |mut receiver| async move {
         let event = receiver.recv().await?;
         let mut line = serde_json::to_vec(&event).unwrap_or_default();

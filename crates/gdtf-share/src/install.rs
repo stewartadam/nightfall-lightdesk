@@ -34,7 +34,21 @@ pub struct GdtfShareDownloadProgress {
     /// Bytes received so far.
     pub received: u32,
     /// Expected size in bytes: what GDTF Share announced, or else the size its list gave.
-    pub total: u32,
+    /// Unknown when neither is given or the download has outgrown the listed size.
+    pub total: Option<u32>,
+}
+
+impl GdtfShareDownloadProgress {
+    /// Coarse step this report falls in: its whole percent of a known size, or each
+    /// 64 KiB received of an unknown one. Reports in the same step look alike to the UI.
+    pub fn step(&self) -> u32 {
+        match self.total {
+            Some(total) if total > 0 => {
+                u32::try_from(u64::from(self.received) * 100 / u64::from(total)).unwrap_or(100)
+            }
+            _ => self.received >> 16,
+        }
+    }
 }
 
 /// Why an install failed, worded for the user.
@@ -79,11 +93,15 @@ pub async fn install(
     fn bytes_u32(bytes: u64) -> u32 {
         u32::try_from(bytes).unwrap_or(u32::MAX)
     }
+    // Turns the client's byte counts into a progress report, trusting the listed size only
+    // until the download outgrows it.
     let report = |received: u64, length: Option<u64>| {
-        let total = length.unwrap_or(listed_size).max(received);
+        let total = length
+            .or((listed_size > 0).then_some(listed_size))
+            .filter(|total| *total >= received);
         progress(GdtfShareDownloadProgress {
             received: bytes_u32(received),
-            total: bytes_u32(total),
+            total: total.map(bytes_u32),
         });
     };
     let report = &report;

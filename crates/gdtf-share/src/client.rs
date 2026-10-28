@@ -216,8 +216,9 @@ impl ShareClient {
             .map_err(|error| ShareError::Network(error.to_string()))?
         {
             bytes.extend_from_slice(&chunk);
-            // A reply short enough to be an error envelope is reported once it is known not to be.
-            if bytes.len() > MAX_ERROR_REPLY {
+            // Failed replies and ones short enough to be an error envelope are never
+            // counted; the latter is reported once it is known not to be one.
+            if status.is_success() && bytes.len() > MAX_ERROR_REPLY {
                 progress(bytes.len() as u64, length);
             }
         }
