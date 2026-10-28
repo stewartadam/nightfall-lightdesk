@@ -5834,6 +5834,7 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "apple-native-keyring-store",
  "axum",
+ "futures-util",
  "keyring-core",
  "nightfall-websocket",
  "nightfall-workspace-hack",

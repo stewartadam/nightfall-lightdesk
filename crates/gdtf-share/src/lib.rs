@@ -35,6 +35,8 @@ pub use routes::{GdtfShareFolders, register_routes};
 pub mod prelude {
     pub use crate::account::{GdtfShareAccount, GdtfShareAccountStatus, GdtfShareCredentialSource};
     pub use crate::catalog::{GdtfShareFixture, GdtfShareMode, GdtfShareSearchResults};
-    pub use crate::install::GdtfShareInstall;
+    pub use crate::install::{
+        GdtfShareDownloadProgress, GdtfShareInstall, GdtfShareInstallEvent, GdtfShareInstallFailure,
+    };
     pub use crate::{GdtfShareFolders, register_routes as register_gdtf_share_routes};
 }

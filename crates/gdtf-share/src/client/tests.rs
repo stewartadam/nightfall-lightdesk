@@ -126,22 +126,32 @@ async fn error_envelopes_are_told_apart() {
     assert!(matches!(error, ShareError::SessionExpired), "{error:?}");
 
     let session = client.login(&valid_credentials()).await.unwrap();
-    let error = client.download(&session, 5).await.unwrap_err();
+    let error = client.download(&session, 5, &|_, _| {}).await.unwrap_err();
     assert!(
         matches!(&error, ShareError::Refused(message) if message == "File not found."),
         "{error:?}"
     );
 }
 
-/// A download returns the archive bytes unchanged.
+/// A download returns the archive bytes unchanged, reporting progress up to the
+/// announced length.
 #[tokio::test]
 async fn download_returns_the_archive() {
     let share = MockShare::start().await;
     share.add_file(3, gdtf_archive("Spot"));
     let client = share.client();
     let session = client.login(&valid_credentials()).await.unwrap();
+    let reports = std::sync::Mutex::new(Vec::new());
+    let bytes = client
+        .download(&session, 3, &|received, length| {
+            reports.lock().unwrap().push((received, length));
+        })
+        .await
+        .unwrap();
+    assert_eq!(bytes, gdtf_archive("Spot"));
+    let size = bytes.len() as u64;
     assert_eq!(
-        client.download(&session, 3).await.unwrap(),
-        gdtf_archive("Spot")
+        reports.into_inner().unwrap().last(),
+        Some(&(size, Some(size)))
     );
 }

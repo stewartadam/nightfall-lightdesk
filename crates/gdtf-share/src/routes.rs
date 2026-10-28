@@ -15,27 +15,41 @@
 //! crosses the network to the engine, and another device cannot remove an account it
 //! cannot restore.
 //!
-//! `GET /api/gdtf-share/fixtures?query=&offset=&limit=` searches the saved fixture list,
+//! `GET /api/gdtf-share/fixtures?query=` searches the saved fixture list,
 //! `POST /api/gdtf-share/fixtures/refresh` fetches it again, and
 //! `POST /api/gdtf-share/fixtures/{rid}/install` downloads a revision into the fixture
-//! library. Any paired device may search and install, as it may upload fixtures.
+//! library, streaming its progress. Any paired device may search and install, as it may
+//! upload fixtures.
 
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    convert::Infallible,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+};
 
 use axum::{
     Json,
+    body::Body,
     extract::{ConnectInfo, Path, Query, State},
-    http::{HeaderMap, StatusCode, Uri},
+    http::{HeaderMap, StatusCode, Uri, header::CONTENT_TYPE},
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use nightfall_websocket::prelude::{HttpRouteRegistry, is_local_client};
 use serde::Deserialize;
+use tokio::sync::mpsc;
 
 use crate::account::{AccountError, GdtfShareAccount, GdtfShareAccountStatus};
 use crate::catalog::{GdtfShareCatalog, GdtfShareSearchResults};
 use crate::client::ShareError;
 use crate::credentials::Credentials;
-use crate::install::{GdtfShareInstall, install};
+use crate::install::{
+    GdtfShareDownloadProgress, GdtfShareInstallEvent, GdtfShareInstallFailure, install,
+};
 
 /// Path of the account resource; `GET` reads it and `POST` signs in.
 const ACCOUNT_PATH: &str = "/api/gdtf-share/account";
@@ -47,9 +61,6 @@ const FIXTURES_PATH: &str = "/api/gdtf-share/fixtures";
 const REFRESH_PATH: &str = "/api/gdtf-share/fixtures/refresh";
 /// Path that installs one revision into the fixture library.
 const INSTALL_PATH: &str = "/api/gdtf-share/fixtures/{rid}/install";
-
-/// Results per page when a search names no limit.
-const DEFAULT_PAGE: usize = 50;
 
 /// A failed request: its status code and a message the UI shows as is.
 type RouteError = (StatusCode, String);
@@ -183,9 +194,6 @@ async fn sign_out(
 struct SearchParams {
     #[serde(default)]
     query: String,
-    #[serde(default)]
-    offset: usize,
-    limit: Option<usize>,
 }
 
 /// Searches the saved fixture list, fetching it first when there is none.
@@ -209,11 +217,9 @@ async fn search(
             .catalog
             .refresh_in_background(share.account.clone(), catalog.fetched_at());
     }
-    let limit = params.limit.unwrap_or(DEFAULT_PAGE);
-    let results =
-        tokio::task::spawn_blocking(move || catalog.search(&params.query, params.offset, limit))
-            .await
-            .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let results = tokio::task::spawn_blocking(move || catalog.search(&params.query))
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     Ok(Json(results))
 }
 
@@ -234,11 +240,19 @@ async fn refresh(
     Ok(Json(catalog.summary()))
 }
 
-/// Downloads revision `rid` into the fixture library.
+/// Downloads revision `rid` into the fixture library, streaming its progress.
+///
+/// The reply is newline-delimited JSON: [`GdtfShareInstallEvent::Progress`] lines as the
+/// download arrives, then one `Installed` or `Failed` line. A revision missing from the
+/// list or a signed-out account is refused with an error status before streaming starts.
+/// The install finishes even if the device that asked goes away.
 async fn install_fixture(
     State(share): State<GdtfShare>,
     Path(rid): Path<u32>,
-) -> Result<Json<GdtfShareInstall>, RouteError> {
+) -> Result<Response, RouteError> {
+    if !share.account.is_signed_in().await {
+        return Err(route_error(AccountError::SignedOut));
+    }
     let fixture = share
         .catalog
         .current()
@@ -251,10 +265,43 @@ async fn install_fixture(
                     .to_string(),
             )
         })?;
-    install(&share.account, &share.library_dir, &fixture)
-        .await
-        .map(Json)
-        .map_err(route_error)
+    let (events, receiver) = mpsc::unbounded_channel::<GdtfShareInstallEvent>();
+    tokio::spawn(async move {
+        // Reports whole percents only, so a large archive sends at most a hundred lines.
+        let last_percent = AtomicU32::new(u32::MAX);
+        let report = |progress: GdtfShareDownloadProgress| {
+            let percent = u32::try_from(
+                u64::from(progress.received) * 100 / u64::from(progress.total.max(1)),
+            )
+            .unwrap_or(100);
+            if last_percent.swap(percent, Ordering::Relaxed) != percent {
+                let _ = events.send(GdtfShareInstallEvent::Progress(progress));
+            }
+        };
+        let outcome = match install(&share.account, &share.library_dir, &fixture, &report).await {
+            Ok(installed) => GdtfShareInstallEvent::Installed(installed),
+            Err(error) => {
+                let (status, message) = route_error(error);
+                tracing::warn!(rid, message, "GDTF Share install failed");
+                GdtfShareInstallEvent::Failed(GdtfShareInstallFailure {
+                    message,
+                    signed_out: status == StatusCode::PRECONDITION_REQUIRED,
+                })
+            }
+        };
+        let _ = events.send(outcome);
+    });
+    let lines = futures_util::stream::unfold(receiver, |mut receiver| async move {
+        let event = receiver.recv().await?;
+        let mut line = serde_json::to_vec(&event).unwrap_or_default();
+        line.push(b'\n');
+        Some((Ok::<_, Infallible>(line), receiver))
+    });
+    Ok((
+        [(CONTENT_TYPE, "application/x-ndjson")],
+        Body::from_stream(lines),
+    )
+        .into_response())
 }
 
 /// Wraps every route in a router, for tests that call them directly.

@@ -213,7 +213,7 @@ async fn search_needs_a_signed_in_account() {
 /// The first search fetches the list with the sign-in's session; later searches, from any
 /// device, reuse the saved list.
 #[tokio::test]
-async fn search_fetches_the_list_once_and_pages_results() {
+async fn search_fetches_the_list_once_and_returns_every_match() {
     let share = MockShare::start().await;
     list_fixtures(&share);
     let (router, _data) = signed_in_router(&share).await;
@@ -231,17 +231,13 @@ async fn search_fetches_the_list_once_and_pages_results() {
     );
     assert_eq!(results["fixtures"][0]["modes"][0]["footprint"], 30);
 
-    let (_, body) = Call::new(
-        Method::GET,
-        "/api/gdtf-share/fixtures?limit=1&offset=1",
-        PHONE,
-    )
-    .send(&router)
-    .await;
-    let page: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(page["total"], 2);
-    assert_eq!(page["fixtures"].as_array().unwrap().len(), 1);
-    assert_eq!(page["fixtures"][0]["manufacturer"], "Robe");
+    let (_, body) = Call::new(Method::GET, FIXTURES_PATH, PHONE)
+        .send(&router)
+        .await;
+    let all: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(all["total"], 2);
+    assert_eq!(all["fixtures"].as_array().unwrap().len(), 2);
+    assert_eq!(all["fixtures"][1]["manufacturer"], "Robe");
     assert_eq!((share.login_count(), share.list_count()), (1, 1));
 }
 
@@ -284,8 +280,15 @@ async fn refresh_fetches_the_list_again() {
     assert_eq!(share.list_count(), 3);
 }
 
-/// Installing saves the archive in the library folder under GDTF Share's file name, and
-/// logs in again once when the session has expired.
+/// Parses an install reply's newline-delimited events.
+fn install_events(body: &str) -> Vec<Value> {
+    body.lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// Installing streams the download's progress, saves the archive in the library folder
+/// under GDTF Share's file name, and logs in again once when the session has expired.
 #[tokio::test]
 async fn install_saves_the_archive_after_logging_in_again() {
     let share = MockShare::start().await;
@@ -301,10 +304,14 @@ async fn install_saves_the_archive_after_logging_in_again() {
         .send(&router)
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(
-        serde_json::from_str::<Value>(&body).unwrap()["file_name"],
-        "Martin@MAC_Aura@1.0@20.gdtf"
-    );
+    let events = install_events(&body);
+    let (last, progress) = events.split_last().unwrap();
+    assert_eq!(last["type"], "Installed", "{body}");
+    assert_eq!(last["data"]["file_name"], "Martin@MAC_Aura@1.0@20.gdtf");
+    let size = gdtf_archive("MAC Aura").len();
+    assert_eq!(progress.last().unwrap()["type"], "Progress");
+    assert_eq!(progress.last().unwrap()["data"]["received"], size);
+    assert_eq!(progress.last().unwrap()["data"]["total"], size);
     let saved = std::fs::read(data.path().join("fixtures/Martin@MAC_Aura@1.0@20.gdtf")).unwrap();
     assert_eq!(saved, gdtf_archive("MAC Aura"));
     assert_eq!((share.login_count(), share.download_count()), (2, 2));
@@ -324,4 +331,28 @@ async fn install_of_an_unlisted_revision_is_not_found() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(share.download_count(), 0);
+}
+
+/// A download GDTF Share refuses ends the stream with a failure line, and nothing is saved.
+#[tokio::test]
+async fn install_failure_ends_the_stream() {
+    let share = MockShare::start().await;
+    list_fixtures(&share);
+    let (router, data) = signed_in_router(&share).await;
+    Call::new(Method::GET, FIXTURES_PATH, LOCAL)
+        .send(&router)
+        .await;
+    let (status, body) = Call::new(Method::POST, "/api/gdtf-share/fixtures/20/install", LOCAL)
+        .send(&router)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let last = install_events(&body).pop().unwrap();
+    assert_eq!(last["type"], "Failed", "{body}");
+    assert_eq!(last["data"]["signed_out"], false);
+    assert!(
+        !data
+            .path()
+            .join("fixtures/Martin@MAC_Aura@1.0@20.gdtf")
+            .exists()
+    );
 }

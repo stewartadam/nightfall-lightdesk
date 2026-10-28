@@ -172,18 +172,35 @@ impl ShareClient {
         Ok(entries)
     }
 
-    /// Downloads the archive of one revision.
-    pub async fn download(&self, session: &Session, rid: u32) -> Result<Vec<u8>, ShareError> {
-        self.get(session, &format!("downloadFile.php?rid={rid}"))
+    /// Downloads the archive of one revision, calling `progress` as it arrives with the
+    /// bytes received so far and the size GDTF Share announced, if it did.
+    pub async fn download(
+        &self,
+        session: &Session,
+        rid: u32,
+        progress: &(dyn Fn(u64, Option<u64>) + Sync),
+    ) -> Result<Vec<u8>, ShareError> {
+        self.get_with_progress(session, &format!("downloadFile.php?rid={rid}"), progress)
             .await
     }
 
     /// Sends a signed-in `GET` for `path` and returns the reply body.
+    async fn get(&self, session: &Session, path: &str) -> Result<Vec<u8>, ShareError> {
+        self.get_with_progress(session, path, &|_, _| {}).await
+    }
+
+    /// Sends a signed-in `GET` for `path` and returns the reply body, calling `progress`
+    /// after each chunk with the bytes received so far and the announced length.
     ///
     /// GDTF Share reports failures as a small `{ result: false, error }` envelope, often
     /// with HTTP 200, so short JSON replies are checked for one before the body is used.
-    async fn get(&self, session: &Session, path: &str) -> Result<Vec<u8>, ShareError> {
-        let response = self
+    async fn get_with_progress(
+        &self,
+        session: &Session,
+        path: &str,
+        progress: &(dyn Fn(u64, Option<u64>) + Sync),
+    ) -> Result<Vec<u8>, ShareError> {
+        let mut response = self
             .http
             .get(format!("{}/{path}", self.base_url))
             .header(COOKIE, session.cookie())
@@ -191,10 +208,19 @@ impl ShareClient {
             .await
             .map_err(|error| ShareError::Network(error.to_string()))?;
         let status = response.status();
-        let bytes = response
-            .bytes()
+        let length = response.content_length();
+        let mut bytes = Vec::with_capacity(length.unwrap_or(0).min(64 << 20) as usize);
+        while let Some(chunk) = response
+            .chunk()
             .await
-            .map_err(|error| ShareError::Network(error.to_string()))?;
+            .map_err(|error| ShareError::Network(error.to_string()))?
+        {
+            bytes.extend_from_slice(&chunk);
+            // A reply short enough to be an error envelope is reported once it is known not to be.
+            if bytes.len() > MAX_ERROR_REPLY {
+                progress(bytes.len() as u64, length);
+            }
+        }
         if status == StatusCode::UNAUTHORIZED {
             return Err(ShareError::SessionExpired);
         }
@@ -222,7 +248,8 @@ impl ShareClient {
                 "{path} answered HTTP {status}"
             )));
         }
-        Ok(bytes.to_vec())
+        progress(bytes.len() as u64, length);
+        Ok(bytes)
     }
 }
 

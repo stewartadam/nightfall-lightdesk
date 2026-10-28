@@ -14,16 +14,13 @@ use serde::Serialize;
 
 use super::{Catalog, GdtfShareFixture};
 
-/// Largest page a search returns.
-pub const MAX_PAGE: usize = 100;
-
-/// One page of search results.
+/// The results of a search.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[typeshare::typeshare]
 pub struct GdtfShareSearchResults {
-    /// The fixtures on this page, best match first.
+    /// Every matching fixture, best match first.
     pub fixtures: Vec<GdtfShareFixture>,
-    /// How many fixtures match in total.
+    /// How many fixtures match, or for a summary, how many the list holds.
     pub total: u32,
     /// When the searched list was fetched from GDTF Share, in Unix seconds.
     pub fetched_at: u32,
@@ -125,11 +122,11 @@ fn starts_word(text: &str, word: &str) -> bool {
 }
 
 impl Catalog {
-    /// Returns one page of the fixtures matching every word of `query`.
+    /// Returns every fixture matching every word of `query`, best match first.
     ///
     /// Each word must appear in the manufacturer, fixture or a mode name, ignoring case.
     /// An empty query lists every fixture alphabetically.
-    pub fn search(&self, query: &str, offset: usize, limit: usize) -> GdtfShareSearchResults {
+    pub fn search(&self, query: &str) -> GdtfShareSearchResults {
         let query = query.trim().to_lowercase();
         let words: Vec<String> = query.split_whitespace().map(str::to_string).collect();
         let ranked = !words.is_empty();
@@ -146,8 +143,6 @@ impl Catalog {
             total: u32::try_from(matches.len()).unwrap_or(u32::MAX),
             fixtures: matches
                 .into_iter()
-                .skip(offset)
-                .take(limit.min(MAX_PAGE))
                 .map(|(_, indexed)| indexed.fixture.clone())
                 .collect(),
             fetched_at: u32::try_from(self.fetched_at).unwrap_or(u32::MAX),

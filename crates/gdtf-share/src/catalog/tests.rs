@@ -30,15 +30,12 @@ fn fixture(rid: u32, manufacturer: &str, name: &str, mode: &str) -> GdtfShareFix
 /// Returns the fixture names of a search's results, in order.
 fn names(catalog: &Catalog, query: &str) -> Vec<String> {
     catalog
-        .search(query, 0, MAX_PAGE_FOR_TESTS)
+        .search(query)
         .fixtures
         .into_iter()
         .map(|fixture| fixture.fixture)
         .collect()
 }
-
-/// Page size large enough to see every result in these tests.
-const MAX_PAGE_FOR_TESTS: usize = 100;
 
 /// Every word must match a manufacturer, fixture or mode name, ignoring case.
 #[test]
@@ -106,27 +103,25 @@ fn search_shows_the_newest_revision_of_each_type() {
         ..fixture(2, "Acme", "Spot", "Standard")
     };
     let catalog = Catalog::new(0, vec![newer, older]);
-    let results = catalog.search("spot", 0, 10);
+    let results = catalog.search("spot");
     assert_eq!(results.total, 1);
     assert_eq!(results.fixtures[0].rid, 2);
     assert!(catalog.revision(1).is_some());
 }
 
-/// Pages split the ordered results and report the full match count.
+/// A search returns every match, however many there are, with the match count and the
+/// list's fetch time.
 #[test]
-fn pages_report_the_total() {
+fn search_returns_every_match() {
     let catalog = Catalog::new(
         42,
-        (1..=5)
+        (1..=250)
             .map(|rid| fixture(rid, "Acme", &format!("Spot {rid}"), "Standard"))
             .collect(),
     );
-    let page = catalog.search("spot", 3, 10);
-    assert_eq!((page.total, page.fetched_at), (5, 42));
-    assert_eq!(
-        page.fixtures.iter().map(|f| f.rid).collect::<Vec<_>>(),
-        [4, 5]
-    );
+    let results = catalog.search("spot");
+    assert_eq!((results.total, results.fetched_at), (250, 42));
+    assert_eq!(results.fixtures.len(), 250);
 }
 
 /// List entries keep their fields, with a blank id, an `N/A` rating and the
