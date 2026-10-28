@@ -198,12 +198,21 @@ export function SettingsOverlay() {
   const quality = useStore(visualizerQuality);
   const darkness = useStore(visualizerDarkness);
   const dismissed = useStore(dismissedPrompts);
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
+  const [chosenTab, setActiveTab] = createSignal<SettingsTab>("general");
   /** Tabs with something to show on this engine; Accounts holds only GDTF Share for now. */
   const visibleTabs = createMemo(() =>
     SETTINGS_TABS.filter(
       (tab) => tab.key !== "accounts" || capabilities()?.gdtf_share,
     ),
+  );
+  /**
+   * The tab shown: the one chosen, or General when the chosen tab has nothing to show on
+   * this engine, such as Accounts after connecting to one without GDTF Share.
+   */
+  const activeTab = createMemo(() =>
+    visibleTabs().some((tab) => tab.key === chosenTab())
+      ? chosenTab()
+      : "general",
   );
   const [query, setQuery] = createSignal("");
   const [hasResults, setHasResults] = createSignal(true);
