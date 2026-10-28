@@ -14,12 +14,11 @@ import {
 } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-/** Opens Settings on its Network tab and returns the dialog. */
-async function openNetworkSettings(page: Page) {
+/** Opens Settings and returns the dialog. */
+async function openSettings(page: Page) {
   await page.keyboard.press("ControlOrMeta+,");
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("tab", { name: "Network", exact: true }).click();
   return dialog;
 }
 
@@ -58,19 +57,35 @@ test("signs in to GDTF Share from Settings and out again", async ({
 
   await page.goto("/?e2e=1");
   await waitForDockviewApp(page);
-  const dialog = await openNetworkSettings(page);
+  const dialog = await openSettings(page);
+  await dialog.getByRole("tab", { name: "Accounts", exact: true }).click();
   const section = dialog.getByRole("region", { name: "GDTF Share" });
   await expect(section).toBeVisible();
   const user = section.getByTestId("gdtf-share-user");
   const password = section.getByTestId("gdtf-share-password");
   const signIn = section.getByTestId("gdtf-share-sign-in");
-  await expect(user).toBeEnabled();
+  await expect(user).toBeEditable();
   await expect(signIn).toBeDisabled();
-  await section.scrollIntoViewIfNeeded();
+  // The note depends on whether the machine running the test has a system keychain.
+  await expect(
+    section.getByText(
+      /saved in this computer's keychain|keychain isn't available/,
+    ),
+  ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("01-signed-out.png") });
 
   await user.fill("lighting@example.com");
   await password.fill("wrong");
+  const reveal = section.getByRole("button", { name: "Show password" });
+  await expect(password).toHaveAttribute("type", "password");
+  await reveal.click();
+  await expect(reveal).toHaveAttribute("aria-pressed", "true");
+  await expect(password).toHaveAttribute("type", "text");
+  await page.screenshot({
+    path: testInfo.outputPath("01b-password-shown.png"),
+  });
+  await reveal.click();
+  await expect(password).toHaveAttribute("type", "password");
   await password.press("Enter");
   await expect(section.getByText("No valid user or password")).toBeVisible();
   await expect(password).toHaveValue("wrong");
@@ -83,7 +98,7 @@ test("signs in to GDTF Share from Settings and out again", async ({
     account.getByText("Signed in as lighting@example.com"),
   ).toBeVisible();
   await expect(
-    account.getByText("Saved in this computer's keychain."),
+    section.getByText("Your account is saved in this computer's keychain."),
   ).toBeVisible();
   expect(signIns).toEqual([
     { user: "lighting@example.com", password: "wrong" },
@@ -97,19 +112,26 @@ test("signs in to GDTF Share from Settings and out again", async ({
   await page.screenshot({ path: testInfo.outputPath("04-signed-out.png") });
 });
 
-/** The browser demo has no engine-side GDTF Share, so Settings leaves the section out. */
+/**
+ * The browser demo has no engine-side GDTF Share, so Settings leaves out the Accounts tab
+ * and the section, even from a search.
+ */
 frontendOnlyTest(
   "browser demo hides GDTF Share settings",
   async ({ page }, testInfo) => {
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
-    const dialog = await openNetworkSettings(page);
+    const dialog = await openSettings(page);
     await expect(
-      dialog.getByRole("heading", { name: "Network", exact: true }),
+      dialog.getByRole("tab", { name: "Network", exact: true }),
     ).toBeVisible();
+    await expect(
+      dialog.getByRole("tab", { name: "Accounts", exact: true }),
+    ).toHaveCount(0);
+    await dialog.getByTestId("settings-search").locator("input").fill("GDTF");
     await expect(
       dialog.getByRole("region", { name: "GDTF Share" }),
     ).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath("demo-network.png") });
+    await page.screenshot({ path: testInfo.outputPath("demo-settings.png") });
   },
 );

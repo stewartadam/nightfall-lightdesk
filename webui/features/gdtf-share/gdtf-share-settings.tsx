@@ -9,6 +9,7 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { Alert } from "../../components/ui/alert";
 import { Input } from "../../components/ui/form-controls";
+import { PasswordField } from "../../components/ui/password-field";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
 import { Button } from "../../components/ui/visual-language/button";
 import { getLogger } from "../../lib/logger";
@@ -23,16 +24,24 @@ const log = getLogger(import.meta.url);
 /** Where people create the free account GDTF Share requires. */
 const GDTF_SHARE_URL = "https://gdtf-share.com";
 
-/** Explains where the signed-in account is kept, so people know whether it survives a restart. */
-function sourceDescription(status: GdtfShareAccountStatus): string {
-  switch (status.source) {
-    case GdtfShareCredentialSource.Environment:
-      return "Set by GDTF_SHARE_USER and GDTF_SHARE_PASSWORD on the computer running Nightfall.";
-    case GdtfShareCredentialSource.Session:
-      return "The system keychain isn't available, so you'll need to sign in again after Nightfall restarts.";
-    default:
-      return "Saved in this computer's keychain.";
+/** Width shared by the username and password fields, so the form lines up. */
+const FIELD_WIDTH = { width: "15rem" };
+
+/**
+ * Explains where the account is or will be kept, so people know whether it survives a
+ * restart. Without a status yet, it assumes the keychain, which is the usual case.
+ */
+function storageNote(status: GdtfShareAccountStatus | undefined): string {
+  if (status?.source === GdtfShareCredentialSource.Environment) {
+    return "Set by GDTF_SHARE_USER and GDTF_SHARE_PASSWORD on the computer running Nightfall.";
   }
+  if (
+    status?.source === GdtfShareCredentialSource.Session ||
+    status?.keychain_available === false
+  ) {
+    return "The system keychain isn't available, so you'll need to sign in again after Nightfall restarts.";
+  }
+  return "Your account is saved in this computer's keychain.";
 }
 
 /**
@@ -85,88 +94,82 @@ export function GdtfShareSettings() {
     signIn();
   };
 
+  /** The last request's failure, shown beside the button that sent it. */
+  const errorAlert = () => (
+    <Show when={error()}>
+      {(message) => (
+        <Alert variant="caution" density="compact">
+          {message()}
+        </Alert>
+      )}
+    </Show>
+  );
+
   return (
-    <SettingsSection
-      title="GDTF Share"
-      footer={
-        <>
-          Sign in with your free{" "}
-          <a
-            class="text-blue-300 underline"
-            href={GDTF_SHARE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            GDTF Share
-          </a>{" "}
-          account to find and download fixture profiles from its library.
-        </>
-      }
-    >
+    <SettingsSection title="GDTF Share" footer={storageNote(status())}>
       <Show
         when={status()?.user}
         fallback={
-          <>
-            <SettingsRow label="Username" keywords="GDTF Share account email">
+          // One entry, so the section draws no dividers between the form's fields and button.
+          <div data-testid="gdtf-share-sign-in-form">
+            <p class="pt-2 text-xs leading-[1.45] text-gray-400">
+              Sign in with your free{" "}
+              <a
+                class="text-blue-300 underline"
+                href={GDTF_SHARE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                GDTF Share
+              </a>{" "}
+              account to find and download fixture profiles from its library.
+            </p>
+            <SettingsRow
+              label="Username"
+              setting="gdtf-share-user"
+              keywords="GDTF Share account email login sign in"
+            >
               {(field) => (
                 <Input
                   id={field.id}
                   aria-describedby={field.describedBy}
                   autocomplete="username"
                   value={user()}
-                  disabled={busy()}
+                  readOnly={busy()}
+                  style={FIELD_WIDTH}
                   onInput={(event) => setUser(event.currentTarget.value)}
                   onKeyDown={submitOnEnter}
                   data-testid="gdtf-share-user"
                 />
               )}
             </SettingsRow>
-            <SettingsRow label="Password" keywords="GDTF Share account">
+            <SettingsRow label="Password" keywords="GDTF Share account login">
               {(field) => (
-                <Input
+                <PasswordField
                   id={field.id}
                   aria-describedby={field.describedBy}
-                  type="password"
                   autocomplete="current-password"
                   value={password()}
-                  disabled={busy()}
+                  readOnly={busy()}
+                  style={FIELD_WIDTH}
                   onInput={(event) => setPassword(event.currentTarget.value)}
                   onKeyDown={submitOnEnter}
                   data-testid="gdtf-share-password"
                 />
               )}
             </SettingsRow>
-            <SettingsRow
-              label="Sign in to GDTF Share"
-              labelControl={false}
-              keywords="GDTF Share account login"
-              description={
-                status()?.keychain_available === false
-                  ? "The system keychain isn't available, so you'll need to sign in again after Nightfall restarts."
-                  : "Your account is saved in this computer's keychain."
-              }
-              details={
-                <Show when={error()}>
-                  {(message) => (
-                    <Alert variant="caution" density="compact">
-                      {message()}
-                    </Alert>
-                  )}
-                </Show>
-              }
-            >
-              {() => (
-                <Button
-                  variant="primary"
-                  disabled={busy() || !user().trim() || !password()}
-                  onClick={signIn}
-                  data-testid="gdtf-share-sign-in"
-                >
-                  {busy() && status() ? "Signing in…" : "Sign in"}
-                </Button>
-              )}
-            </SettingsRow>
-          </>
+            <div class="flex flex-col items-end gap-2 pt-1 pb-2">
+              {errorAlert()}
+              <Button
+                variant="primary"
+                disabled={busy() || !user().trim() || !password()}
+                onClick={signIn}
+                data-testid="gdtf-share-sign-in"
+              >
+                {busy() && status() ? "Signing in…" : "Sign in"}
+              </Button>
+            </div>
+          </div>
         }
       >
         {(signedInUser) => (
@@ -174,16 +177,7 @@ export function GdtfShareSettings() {
             label={`Signed in as ${signedInUser()}`}
             labelControl={false}
             keywords="GDTF Share account sign out logout"
-            description={sourceDescription(status() as GdtfShareAccountStatus)}
-            details={
-              <Show when={error()}>
-                {(message) => (
-                  <Alert variant="caution" density="compact">
-                    {message()}
-                  </Alert>
-                )}
-              </Show>
-            }
+            details={errorAlert()}
             data-testid="gdtf-share-account"
           >
             {() => (

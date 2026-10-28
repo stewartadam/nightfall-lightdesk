@@ -16,6 +16,7 @@ export type SettingsTab =
   | "network"
   | "visualizer"
   | "keyboard"
+  | "accounts"
   | "privacy";
 
 /** Place in the Settings dialog to show: a tab, and optionally one setting on it to focus. */

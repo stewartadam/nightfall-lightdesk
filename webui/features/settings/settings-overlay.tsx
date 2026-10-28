@@ -112,6 +112,7 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "network", label: "Network" },
   { key: "visualizer", label: "Visualizer" },
   { key: "keyboard", label: "Keyboard" },
+  { key: "accounts", label: "Accounts" },
   { key: "privacy", label: "Privacy" },
 ];
 
@@ -198,6 +199,12 @@ export function SettingsOverlay() {
   const darkness = useStore(visualizerDarkness);
   const dismissed = useStore(dismissedPrompts);
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
+  /** Tabs with something to show on this engine; Accounts holds only GDTF Share for now. */
+  const visibleTabs = createMemo(() =>
+    SETTINGS_TABS.filter(
+      (tab) => tab.key !== "accounts" || capabilities()?.gdtf_share,
+    ),
+  );
   const [query, setQuery] = createSignal("");
   const [hasResults, setHasResults] = createSignal(true);
   /** Whether a search is running, which lists matches from every tab instead of one tab. */
@@ -466,7 +473,7 @@ export function SettingsOverlay() {
               id={tabId}
               label="Settings categories"
               contentId={`${tabId}-content`}
-              options={SETTINGS_TABS}
+              options={visibleTabs()}
               value={activeTab()}
               onChange={setActiveTab}
             />
@@ -488,6 +495,11 @@ export function SettingsOverlay() {
           <TabPane tab="appearance">
             <AppearanceSettings />
           </TabPane>
+          <Show when={capabilities()?.gdtf_share}>
+            <TabPane tab="accounts">
+              <GdtfShareSettings />
+            </TabPane>
+          </Show>
           <TabPane tab="privacy">
             <PrivacySettings />
           </TabPane>
@@ -915,9 +927,6 @@ export function SettingsOverlay() {
                 )}
               </SettingsRow>
             </SettingsSection>
-            <Show when={capabilities()?.gdtf_share}>
-              <GdtfShareSettings />
-            </Show>
           </TabPane>
 
           <TabPane tab="visualizer">
