@@ -14,6 +14,7 @@ import {
   createMemo,
   createSignal,
   For,
+  type JSX,
   on,
   onCleanup,
   Show,
@@ -21,6 +22,7 @@ import {
 import { useAppShell } from "../../components/providers/app-shell";
 import { Alert } from "../../components/ui/alert";
 import { EmptyState } from "../../components/ui/empty-state";
+import { ProgressBar } from "../../components/ui/progress-bar";
 import { SearchField } from "../../components/ui/search-field";
 import { Button } from "../../components/ui/visual-language/button";
 import DataGrid, {
@@ -39,6 +41,7 @@ import { fixtureLibrary } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
 import type {
   AvailableFixtureInfo,
+  GdtfShareDownloadProgress,
   GdtfShareFixture,
   GdtfShareSearchResults,
 } from "../../types";
@@ -52,9 +55,6 @@ import {
 import { GdtfShareRequestError } from "./request";
 
 const log = getLogger(import.meta.url);
-
-/** Results fetched per page. */
-const PAGE_SIZE = 50;
 
 /** Pause after the last keystroke before searching, so typing sends one request. */
 const SEARCH_DELAY_MS = 250;
@@ -77,11 +77,6 @@ type AccountState =
   | { kind: "signed-in" }
   | { kind: "signed-out" }
   | { kind: "failed"; message: string };
-
-/** Results on screen and the query they answer. */
-interface ShownResults extends GdtfShareSearchResults {
-  query: string;
-}
 
 /** Returns a failure's message for display. */
 function messageOf(failure: unknown): string {
@@ -160,6 +155,11 @@ function waitForLibraryCopy(
   });
 }
 
+/** Formats a byte count in whole kilobytes, at least 1, for download progress. */
+function kilobytes(bytes: number): string {
+  return `${Math.max(1, Math.round(bytes / 1024)).toLocaleString()} KB`;
+}
+
 /** Formats a Unix time as a short local date for "list updated" notes. */
 function formatDate(seconds: number): string {
   return new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -176,6 +176,8 @@ export interface GdtfShareBrowserProps {
   onUse: (entry: AvailableFixtureInfo) => void;
   /** Verb on the button that uses a library copy, such as "Use" or "Show". */
   useLabel: string;
+  /** Controls placed before the search field on the same row, such as a view switch. */
+  leading?: JSX.Element;
 }
 
 /**
@@ -191,7 +193,7 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $shellDialog = useStore(activeShellDialog);
   const [account, setAccount] = createSignal<AccountState>({ kind: "loading" });
-  const [results, setResults] = createSignal<ShownResults>();
+  const [results, setResults] = createSignal<GdtfShareSearchResults>();
   const [searching, setSearching] = createSignal(false);
   const [refreshing, setRefreshing] = createSignal(false);
   const [error, setError] = createSignal<string>();
@@ -199,6 +201,7 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
   const [reportedSelection, setReportedSelection] =
     createSignal<GridSelection>();
   const [installing, setInstalling] = createSignal(false);
+  const [download, setDownload] = createSignal<GdtfShareDownloadProgress>();
   const [installNote, setInstallNote] = createSignal<string>();
   /** Aborts the search in flight, and everything else once the browser unmounts. */
   let searchAbort: AbortController | undefined;
@@ -242,33 +245,17 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
   };
 
   /**
-   * Fetches the page of results for `query` starting at `offset`, replacing the results for
-   * the first page and appending later pages of the same query. A newer search cancels an
-   * older one still in flight.
+   * Fetches every result for `query`; the table draws only the visible rows. A newer
+   * search cancels an older one still in flight.
    */
-  const fetchPage = async (query: string, offset: number) => {
+  const runSearch = async (query: string) => {
     searchAbort?.abort();
     const abort = new AbortController();
     searchAbort = abort;
     setSearching(true);
     setError(undefined);
     try {
-      const page = await searchGdtfShare(
-        query,
-        offset,
-        PAGE_SIZE,
-        abort.signal,
-      );
-      const previous = results();
-      setResults(
-        offset > 0 && previous?.query === query
-          ? {
-              ...page,
-              query,
-              fixtures: [...previous.fixtures, ...page.fixtures],
-            }
-          : { ...page, query },
-      );
+      setResults(await searchGdtfShare(query, abort.signal));
     } catch (failure) {
       if (!abort.signal.aborted) handleFailure(failure, "search");
     } finally {
@@ -280,7 +267,7 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
   createEffect(
     on([() => props.query.trim(), () => account().kind], ([query, kind]) => {
       if (kind !== "signed-in") return;
-      const timer = setTimeout(() => fetchPage(query, 0), SEARCH_DELAY_MS);
+      const timer = setTimeout(() => runSearch(query), SEARCH_DELAY_MS);
       onCleanup(() => clearTimeout(timer));
     }),
   );
@@ -291,7 +278,7 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
     setError(undefined);
     try {
       await refreshGdtfShare();
-      await fetchPage(props.query.trim(), 0);
+      await runSearch(props.query.trim());
     } catch (failure) {
       handleFailure(failure, "refresh");
     } finally {
@@ -301,6 +288,10 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
 
   /** Whether a search or refresh is under way. */
   const busy = () => searching() || refreshing();
+
+  /** Whether searching is possible: signed in, or still finding out. */
+  const usable = () =>
+    account().kind === "signed-in" || account().kind === "loading";
 
   /** Results on screen, best match first. */
   const fixtures = createMemo(() => results()?.fixtures ?? []);
@@ -361,32 +352,34 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
   createEffect(on(selectedRid, () => setInstallNote(undefined)));
 
   /**
-   * Installs the selected result, then hands the library entry it produced to `onUse`
-   * once the library lists it. A download identical to a library copy adds no entry, so
-   * the note says so and the library copy stays one click away.
+   * Installs the selected result, showing the download's progress, then hands the library
+   * entry to `onUse` once the library lists it. A download identical to a library copy adds
+   * no entry, so that copy is handed over instead.
    */
   const install = async () => {
     const fixture = selected();
     if (!fixture) return;
     setInstalling(true);
+    setDownload(undefined);
     setInstallNote(undefined);
     try {
       const before = new Set(
         $fixtureLibrary().map((entry) => entry.asset_etag),
       );
-      const installed = await installGdtfShareFixture(fixture);
+      const installed = await installGdtfShareFixture(fixture, (progress) => {
+        if (!lifetime.signal.aborted) setDownload(progress);
+      });
       const typeId = installed.fixture_type_id ?? fixture.fixture_type_id;
-      const entry = typeId
-        ? await waitForLibraryCopy(typeId, before, lifetime.signal)
-        : undefined;
+      const entry =
+        (typeId
+          ? await waitForLibraryCopy(typeId, before, lifetime.signal)
+          : undefined) ?? libraryCopiesOf(typeId, fixtureLibrary.get())[0];
       if (lifetime.signal.aborted) return;
       if (entry) {
         props.onUse(entry);
       } else {
         setInstallNote(
-          libraryCopiesOf(typeId, fixtureLibrary.get()).length > 0
-            ? "Installed. It matches a copy already in the library."
-            : `Installed as ${installed.file_name}, but the library has not listed it yet.`,
+          `Installed as ${installed.file_name}, but the library has not listed it yet.`,
         );
       }
     } catch (failure) {
@@ -397,7 +390,10 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
       log.warn("GDTF Share install failed", failure);
       setInstallNote(messageOf(failure));
     } finally {
-      if (!lifetime.signal.aborted) setInstalling(false);
+      if (!lifetime.signal.aborted) {
+        setInstalling(false);
+        setDownload(undefined);
+      }
     }
   };
 
@@ -422,7 +418,7 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
           <Button
             variant="primary"
             onClick={() =>
-              openSettings({ tab: "network", setting: "gdtf-share-user" })
+              openSettings({ tab: "accounts", setting: "gdtf-share-user" })
             }
             data-testid="gdtf-share-open-settings"
           >
@@ -438,32 +434,39 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
       class="flex h-full min-h-0 flex-col gap-3"
       data-testid="gdtf-share-browser"
     >
-      <Show
-        when={account().kind === "signed-in" || account().kind === "loading"}
-        fallback={accountPrompt()}
-      >
+      <Show when={props.leading || usable()}>
         <div class="flex items-center gap-2">
-          <SearchField
-            label="Search GDTF Share"
-            placeholder="Search GDTF Share by make, model or mode..."
-            density="compact"
-            value={props.query}
-            onInput={props.onQueryChange}
-            autofocus
-            class="flex-1"
-            data-testid="gdtf-share-search"
-          />
-          <Button
-            size="icon-compact"
-            variant="subtle"
-            aria-label="Refresh the GDTF Share list"
-            tooltip="Refresh the GDTF Share list"
-            disabled={busy() || account().kind !== "signed-in"}
-            onClick={refresh}
-          >
-            <ArrowClockwiseIcon class="size-4" aria-hidden />
-          </Button>
+          {props.leading}
+          <Show when={usable()}>
+            <SearchField
+              label="Search GDTF Share"
+              placeholder="Search GDTF Share by make, model or mode..."
+              density="compact"
+              value={props.query}
+              onInput={props.onQueryChange}
+              autofocus
+              class="flex-1"
+              data-testid="gdtf-share-search"
+            />
+            <Button
+              size="icon-compact"
+              variant="subtle"
+              aria-label="Refresh the GDTF Share list"
+              tooltip="Refresh the GDTF Share list"
+              aria-busy={busy()}
+              disabled={busy() || account().kind !== "signed-in"}
+              onClick={refresh}
+              data-testid="gdtf-share-refresh"
+            >
+              <ArrowClockwiseIcon
+                class={`size-4 ${busy() ? "animate-spin motion-reduce:animate-none" : ""}`}
+                aria-hidden
+              />
+            </Button>
+          </Show>
         </div>
+      </Show>
+      <Show when={usable()} fallback={accountPrompt()}>
         <Show when={error()}>
           {(message) => (
             <Alert variant="caution" density="compact">
@@ -507,29 +510,15 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
             />
           </Show>
         </section>
-        <div class="flex items-center justify-between gap-2 text-xs text-gray-500">
-          <span data-testid="gdtf-share-count">
-            <Show when={results()}>
-              {(page) => (
-                <>
-                  Showing {fixtures().length} of {page().total}. List updated{" "}
-                  {formatDate(page().fetched_at)}.
-                </>
-              )}
-            </Show>
-          </span>
+        <div class="text-xs text-gray-500" data-testid="gdtf-share-count">
           <Show when={results()}>
-            {(page) => (
-              <Show when={fixtures().length < page().total}>
-                <Button
-                  size="compact"
-                  variant="subtle"
-                  disabled={busy()}
-                  onClick={() => fetchPage(page().query, fixtures().length)}
-                >
-                  Show more
-                </Button>
-              </Show>
+            {(found) => (
+              <>
+                {found().total === 1
+                  ? "1 fixture"
+                  : `${found().total.toLocaleString()} fixtures`}
+                . List updated {formatDate(found().fetched_at)}.
+              </>
             )}
           </Show>
         </div>
@@ -550,7 +539,7 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
                       ? " · Uploaded by the manufacturer"
                       : ""}
                     {" · "}
-                    {Math.max(1, Math.round(fixture().file_size / 1024))} KB
+                    {kilobytes(fixture().file_size)}
                   </div>
                 </div>
                 <div class="flex shrink-0 gap-2">
@@ -593,6 +582,22 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
                   )}
                 </For>
               </div>
+              <Show when={installing()}>
+                <div class="flex items-center gap-2" role="status">
+                  <ProgressBar
+                    label="GDTF Share download progress"
+                    value={download()?.received}
+                    max={download()?.total}
+                    class="flex-1"
+                    data-testid="gdtf-share-download-progress"
+                  />
+                  <span class="shrink-0 text-xs text-gray-400">
+                    {download()
+                      ? `${kilobytes(download()?.received ?? 0)} of ${kilobytes(download()?.total ?? 0)}`
+                      : "Downloading…"}
+                  </span>
+                </div>
+              </Show>
               <Show when={installNote()}>
                 {(message) => (
                   <Alert variant="caution" density="compact">

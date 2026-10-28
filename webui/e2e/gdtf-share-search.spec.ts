@@ -60,11 +60,17 @@ const LISTED: GdtfShareFixture[] = [
 /**
  * Answers the engine's GDTF Share routes so the test never contacts GDTF Share: the account
  * is `user` (or signed out), searches match every word against make and model, and installs
- * write a generated archive into the backend's real fixture library folder.
+ * write a generated archive into the backend's real fixture library folder, then stream
+ * progress and the outcome as the engine does. An install waits for `installGate` first,
+ * so the test can see the download under way.
  */
 async function standInForGdtfShare(
   page: Page,
-  options: { user: string | null; libraryDir: string },
+  options: {
+    user: string | null;
+    libraryDir: string;
+    installGate?: Promise<void>;
+  },
 ) {
   const installs: number[] = [];
   await page.route("**/api/gdtf-share/account", (route) =>
@@ -115,17 +121,31 @@ async function standInForGdtfShare(
       const fixture = LISTED.find((candidate) => candidate.rid === rid);
       if (!fixture) return route.fulfill({ status: 404, body: "Not listed" });
       installs.push(rid);
+      await options.installGate;
       const fileName = `Nightfall_Test@${fixture.fixture.replace(/ /g, "_")}@1.0@${rid}.gdtf`;
+      const archive = testGdtfArchive({
+        manufacturer: fixture.manufacturer,
+        model: fixture.fixture,
+        fixtureTypeId: fixture.fixture_type_id ?? "",
+      });
       await mkdir(options.libraryDir, { recursive: true });
-      await writeFile(
-        join(options.libraryDir, fileName),
-        testGdtfArchive({
-          manufacturer: fixture.manufacturer,
-          model: fixture.fixture,
-          fixtureTypeId: fixture.fixture_type_id ?? "",
-        }),
-      );
-      return route.fulfill({ json: { file_name: fileName } });
+      await writeFile(join(options.libraryDir, fileName), archive);
+      const total = archive.length;
+      const events = [
+        { type: "Progress", data: { received: total >> 1, total } },
+        { type: "Progress", data: { received: total, total } },
+        {
+          type: "Installed",
+          data: {
+            file_name: fileName,
+            fixture_type_id: fixture.fixture_type_id,
+          },
+        },
+      ];
+      return route.fulfill({
+        contentType: "application/x-ndjson",
+        body: events.map((event) => `${JSON.stringify(event)}\n`).join(""),
+      });
     },
   );
   return installs;
@@ -175,16 +195,23 @@ async function addPanel(
 
 /**
  * Searches GDTF Share from the patch wizard after the library has no match, installs a
- * fixture, and lands back in the library with it selected and previewed.
+ * fixture while its download shows progress, and lands back in the library with it selected
+ * and previewed. The same words then find it on both tabs, and installing an identical
+ * revision again selects the library copy instead of adding another.
  */
 test("installs a GDTF Share fixture from the patch wizard", async ({
   page,
   backendSlot,
 }, testInfo) => {
   test.setTimeout(180_000);
+  let releaseInstall = () => {};
+  const installGate = new Promise<void>((resolve) => {
+    releaseInstall = resolve;
+  });
   const installs = await standInForGdtfShare(page, {
     user: "lighting@example.com",
     libraryDir: join(backendSlot.dataDir, "fixtures"),
+    installGate,
   });
   await openApp(page);
   const patch = await addPanel(page, PATCH_PANEL_ID, "PatchEditor", "Patch");
@@ -212,7 +239,10 @@ test("installs a GDTF Share fixture from the patch wizard", async ({
     browser.getByRole("row").filter({ hasText: "E2E Spot" }),
   ).toBeVisible();
   await expect(browser.getByTestId("gdtf-share-count")).toContainText(
-    "Showing 2 of 2",
+    "2 fixtures",
+  );
+  await expect(browser.getByRole("button", { name: "Show more" })).toHaveCount(
+    0,
   );
   await washRow.click();
   const selected = browser.getByTestId("gdtf-share-selected");
@@ -224,6 +254,16 @@ test("installs a GDTF Share fixture from the patch wizard", async ({
   });
 
   await selected.getByTestId("gdtf-share-install").click();
+  await expect(
+    selected.getByTestId("gdtf-share-download-progress"),
+  ).toBeVisible();
+  await expect(selected.getByTestId("gdtf-share-install")).toHaveText(
+    "Installing…",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("02b-downloading.png"),
+  });
+  releaseInstall();
   await expect(dialog.getByLabel("Filter fixtures")).toHaveValue("E2E Wash", {
     timeout: 20_000,
   });
@@ -245,6 +285,33 @@ test("installs a GDTF Share fixture from the patch wizard", async ({
   ).toContainText("In library");
   await page.screenshot({
     path: testInfo.outputPath("04-marked-in-library.png"),
+  });
+
+  await browser.getByLabel("Search GDTF Share").fill("nightfall wash");
+  await expect(
+    browser.getByRole("row").filter({ hasText: "E2E Wash" }),
+  ).toBeVisible();
+  await browser.getByRole("row").filter({ hasText: "E2E Wash" }).click();
+  await selected.getByTestId("gdtf-share-install").click();
+  await expect(dialog.getByLabel("Filter fixtures")).toHaveValue("E2E Wash", {
+    timeout: 20_000,
+  });
+  expect(installs).toEqual([101, 101]);
+  await expect(
+    dialog
+      .getByRole("grid", { name: "Available fixtures" })
+      .locator('[data-grid-row][data-selected="true"]'),
+  ).toContainText("E2E Wash");
+
+  await dialog.getByLabel("Filter fixtures").fill("nightfall wash");
+  await expect(
+    dialog
+      .getByRole("grid", { name: "Available fixtures" })
+      .getByRole("row")
+      .filter({ hasText: "E2E Wash" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("05-same-words-in-library.png"),
   });
 });
 
@@ -269,7 +336,7 @@ test("points to Settings when GDTF Share is signed out", async ({
   );
   await library.getByTestId("fixture-library-search-online").click();
   await expect(library.getByText("Sign in to GDTF Share")).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("05-signed-out.png") });
+  await page.screenshot({ path: testInfo.outputPath("06-signed-out.png") });
 
   await library.getByTestId("gdtf-share-open-settings").click();
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
@@ -278,6 +345,6 @@ test("points to Settings when GDTF Share is signed out", async ({
   ).toBeVisible();
   await expect(settings.getByTestId("gdtf-share-user")).toBeFocused();
   await page.screenshot({
-    path: testInfo.outputPath("06-settings-sign-in.png"),
+    path: testInfo.outputPath("07-settings-sign-in.png"),
   });
 });

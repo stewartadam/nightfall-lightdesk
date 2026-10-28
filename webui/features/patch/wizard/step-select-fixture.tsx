@@ -8,7 +8,11 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, Show } from "solid-js";
-import { Input } from "../../../components/ui/form-controls";
+import { SearchField } from "../../../components/ui/search-field";
+import {
+  matchesSearchTerms,
+  searchTerms,
+} from "../../../components/ui/search-match";
 import {
   SegmentedControl,
   type SegmentedControlOption,
@@ -118,18 +122,15 @@ export function StepSelectFixture() {
     () => capabilities()?.fixture_library === "BuiltInOnly",
   );
 
+  /**
+   * Library fixtures matching every word of the filter in their make or model, the way
+   * GDTF Share searches match, so one query finds the same fixture on both tabs.
+   */
   const filteredFixtures = createMemo(() => {
-    const rawFixtures = $fixtureLibrary();
-    const filter = filterText().toLowerCase();
-
-    // Filter by search text
-    const filtered = filter
-      ? rawFixtures.filter(
-          (f) =>
-            f.make.toLowerCase().includes(filter) ||
-            f.model.toLowerCase().includes(filter),
-        )
-      : [...rawFixtures];
+    const terms = searchTerms(filterText());
+    const filtered = $fixtureLibrary().filter((f) =>
+      matchesSearchTerms(terms, [f.make, f.model]),
+    );
 
     // Sort alphabetically by manufacturer, then model
     return filtered.sort((a, b) => {
@@ -209,16 +210,14 @@ export function StepSelectFixture() {
     <Show
       when={view() === "library"}
       fallback={
-        <div class="flex h-full min-h-0 flex-col gap-3">
-          <div>{viewSwitch()}</div>
-          <div class="flex-1 min-h-0">
-            <GdtfShareBrowser
-              query={filterText()}
-              onQueryChange={setFilterText}
-              onUse={useLibraryCopy}
-              useLabel="Use"
-            />
-          </div>
+        <div class="h-full min-h-0">
+          <GdtfShareBrowser
+            query={filterText()}
+            onQueryChange={setFilterText}
+            onUse={useLibraryCopy}
+            useLabel="Use"
+            leading={viewSwitch()}
+          />
         </div>
       }
     >
@@ -227,16 +226,13 @@ export function StepSelectFixture() {
         <div class="flex-1 flex flex-col min-w-0 min-h-0">
           <div class="mb-3 flex items-center gap-2">
             {viewSwitch()}
-            <Input
+            <SearchField
+              label="Filter fixtures"
+              placeholder="Filter by make or model..."
               density="compact"
-              type="text"
-              aria-label="Filter fixtures"
-              placeholder="Filter by make/model..."
               value={filterText()}
-              onInput={(e) =>
-                setFilterText((e.target as HTMLInputElement).value)
-              }
-              class="w-full"
+              onInput={setFilterText}
+              class="flex-1"
             />
           </div>
 

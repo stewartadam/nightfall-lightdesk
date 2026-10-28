@@ -10,9 +10,9 @@ Use the preview to check the attributes you need before patching. A fixture with
 
 ## Search GDTF Share
 
-[GDTF Share](https://gdtf-share.com) is the shared online library of GDTF fixture definitions. It needs a free account: sign in under **Settings > Network > GDTF Share** on the computer running Nightfall. Every device connected to that computer then uses the same account.
+[GDTF Share](https://gdtf-share.com) is the shared online library of GDTF fixture definitions. It needs a free account: sign in under **Settings > Accounts > GDTF Share** on the computer running Nightfall. Every device connected to that computer then uses the same account.
 
-Select **Search GDTF Share** in the toolbar and type a make, model, or mode name. Select a result to see its revision and modes, then select **Install** to download it into the library. Results already in the library say **In library**; select **Show library copy** to inspect the copy you have, or **Install this revision** to add the online revision next to it.
+Select **Search GDTF Share** in the toolbar and type a make, model, or mode name. Select a result to see its revision and modes, then select **Install** to download it into the library; a bar shows the download as it arrives. Results already in the library say **In library**; select **Show library copy** to inspect the copy you have, or **Install this revision** to add the online revision next to it.
 
 The patch wizard has the same search: switch its fixture list from **In library** to **GDTF Share**, or select **Search GDTF Share** when no library fixture matches your filter. Installing from the wizard selects the new fixture so you can continue patching.
 

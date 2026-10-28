@@ -8,31 +8,32 @@
 
 import type {
   AvailableFixtureInfo,
+  GdtfShareDownloadProgress,
   GdtfShareFixture,
   GdtfShareInstall,
+  GdtfShareInstallEvent,
   GdtfShareSearchResults,
 } from "../../types";
-import { requestGdtfShare } from "./request";
+import {
+  GDTF_SHARE_SIGNED_OUT_STATUS,
+  GdtfShareRequestError,
+  requestGdtfShare,
+  sendGdtfShare,
+} from "./request";
 
 /** Path of the fixture search on the backend. */
 const FIXTURES_PATH = "/api/gdtf-share/fixtures";
 
 /**
- * Searches the engine's saved GDTF Share list for fixtures matching every word of
- * `query`, returning the page of `limit` results starting at `offset`. The first search
- * after signing in waits for the engine to fetch the list.
+ * Searches the engine's saved GDTF Share list for every fixture matching every word of
+ * `query`, best match first. The first search after signing in waits for the engine to
+ * fetch the list.
  */
 export function searchGdtfShare(
   query: string,
-  offset: number,
-  limit: number,
   signal?: AbortSignal,
 ): Promise<GdtfShareSearchResults> {
-  const params = new URLSearchParams({
-    query,
-    offset: String(offset),
-    limit: String(limit),
-  });
+  const params = new URLSearchParams({ query });
   return requestGdtfShare(`${FIXTURES_PATH}?${params}`, { signal });
 }
 
@@ -44,13 +45,48 @@ export function refreshGdtfShare(): Promise<GdtfShareSearchResults> {
 /**
  * Downloads one GDTF Share revision into the engine's fixture library folder, resolving
  * with the file it wrote and the fixture type id the archive declares.
+ *
+ * The engine streams one JSON event per line; `onProgress` hears each progress line.
+ * A failure line rejects with a {@link GdtfShareRequestError}, marked signed out when
+ * that is the cause, and a reply that ends without an outcome rejects too.
  */
-export function installGdtfShareFixture(
+export async function installGdtfShareFixture(
   fixture: GdtfShareFixture,
+  onProgress: (progress: GdtfShareDownloadProgress) => void,
 ): Promise<GdtfShareInstall> {
-  return requestGdtfShare(`${FIXTURES_PATH}/${fixture.rid}/install`, {
-    method: "POST",
-  });
+  const response = await sendGdtfShare(
+    `${FIXTURES_PATH}/${fixture.rid}/install`,
+    { method: "POST" },
+  );
+  const lines = response.body?.pipeThrough(new TextDecoderStream()).getReader();
+  let buffered = "";
+  while (lines) {
+    const { done, value } = await lines.read();
+    if (value) buffered += value;
+    const complete = buffered.split("\n");
+    buffered = done ? "" : (complete.pop() ?? "");
+    for (const line of complete) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line) as GdtfShareInstallEvent;
+      switch (event.type) {
+        case "Progress":
+          onProgress(event.data);
+          break;
+        case "Installed":
+          return event.data;
+        case "Failed":
+          throw new GdtfShareRequestError(
+            event.data.message,
+            event.data.signed_out ? GDTF_SHARE_SIGNED_OUT_STATUS : 500,
+          );
+      }
+    }
+    if (done) break;
+  }
+  throw new GdtfShareRequestError(
+    "Nightfall stopped answering before the install finished.",
+    0,
+  );
 }
 
 /**
