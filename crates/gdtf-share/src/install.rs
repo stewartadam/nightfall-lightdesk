@@ -14,6 +14,7 @@
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
+use nightfall_fixture_model::prelude::fixture_asset_etag;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde::Serialize;
@@ -29,6 +30,9 @@ pub struct GdtfShareInstall {
     pub file_name: String,
     /// Lowercase `FixtureTypeID` the archive declares, which the library reports for it.
     pub fixture_type_id: Option<String>,
+    /// The library's fingerprint of the saved file, which names the library entry it
+    /// becomes; an identical copy already in the library has the same one.
+    pub asset_etag: String,
 }
 
 /// How much of an install's download has arrived.
@@ -114,17 +118,18 @@ pub async fn install(
         .await?;
     let file_name = fixture.file_name();
     let path = library_dir.join(&file_name);
-    let fixture_type_id = tokio::task::spawn_blocking(move || {
+    let (fixture_type_id, asset_etag) = tokio::task::spawn_blocking(move || {
         let fixture_type_id = check_archive(&bytes)?;
         save(&path, &bytes).map_err(|error| AccountError::Storage(error.to_string()))?;
-        Ok::<_, AccountError>(fixture_type_id)
+        Ok::<_, AccountError>((fixture_type_id, fixture_asset_etag(&bytes)))
     })
     .await
     .map_err(|error| AccountError::Storage(error.to_string()))??;
-    tracing::info!(rid, file_name, "Installed a GDTF Share fixture");
+    tracing::info!(rid, file_name, asset_etag, "Installed a GDTF Share fixture");
     Ok(GdtfShareInstall {
         file_name,
         fixture_type_id,
+        asset_etag,
     })
 }
 

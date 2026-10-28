@@ -5836,6 +5836,7 @@ dependencies = [
  "axum",
  "futures-util",
  "keyring-core",
+ "nightfall-fixture-model",
  "nightfall-websocket",
  "nightfall-workspace-hack",
  "quick-xml 0.42.0",

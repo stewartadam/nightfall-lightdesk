@@ -10,7 +10,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page, Route } from "@playwright/test";
 import type { GdtfShareFixture } from "../types";
-import { testGdtfArchive } from "./gdtf-archive";
+import { libraryAssetEtag, testGdtfArchive } from "./gdtf-archive";
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -139,6 +139,7 @@ async function standInForGdtfShare(
           data: {
             file_name: fileName,
             fixture_type_id: fixture.fixture_type_id,
+            asset_etag: libraryAssetEtag(archive),
           },
         },
       ];

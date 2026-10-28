@@ -308,6 +308,10 @@ async fn install_saves_the_archive_after_logging_in_again() {
     let (last, progress) = events.split_last().unwrap();
     assert_eq!(last["type"], "Installed", "{body}");
     assert_eq!(last["data"]["file_name"], "Martin@MAC_Aura@1.0@20.gdtf");
+    assert_eq!(
+        last["data"]["asset_etag"],
+        nightfall_fixture_model::prelude::fixture_asset_etag(&gdtf_archive("MAC Aura"))
+    );
     let size = gdtf_archive("MAC Aura").len();
     assert_eq!(progress.last().unwrap()["type"], "Progress");
     assert_eq!(progress.last().unwrap()["data"]["received"], size);

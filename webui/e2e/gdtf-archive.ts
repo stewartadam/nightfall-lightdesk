@@ -61,6 +61,19 @@ export interface TestGdtfFixture {
 }
 
 /**
+ * Returns the fixture library's fingerprint of `bytes` (64-bit FNV-1a in hex), which a
+ * stand-in install reports so the UI can find the entry the archive becomes.
+ */
+export function libraryAssetEtag(bytes: Uint8Array): string {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
+/**
  * Builds a minimal GDTF archive for `fixture`: a cube body with one wash beam and a single
  * one-channel dimmer mode named "Standard", enough for the library to list and preview it.
  */

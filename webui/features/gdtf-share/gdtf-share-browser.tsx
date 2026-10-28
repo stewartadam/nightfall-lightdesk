@@ -10,6 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import {
+  children,
   createEffect,
   createMemo,
   createSignal,
@@ -122,15 +123,14 @@ function resultCell(
 }
 
 /**
- * Resolves with the library entry an install produced: the first copy of fixture type
- * `typeId` that the library lists and that was not among the etags in `before`.
+ * Resolves with the library entry whose fingerprint is `assetEtag`: at once when the
+ * library already lists it, as it does for a download identical to an installed copy, or
+ * as soon as the library picks the new file up.
  *
- * Resolves with `undefined` when none appears in time, which happens when the download is
- * identical to a copy already in the library, or when `signal` aborts the wait.
+ * Resolves with `undefined` when none appears in time, or when `signal` aborts the wait.
  */
-function waitForLibraryCopy(
-  typeId: string,
-  before: ReadonlySet<string>,
+function waitForLibraryEntry(
+  assetEtag: string,
   signal: AbortSignal,
 ): Promise<AvailableFixtureInfo | undefined> {
   return new Promise((resolve) => {
@@ -147,8 +147,8 @@ function waitForLibraryCopy(
     const timer = setTimeout(() => finish(), LIBRARY_WAIT_MS);
     signal.addEventListener("abort", abort);
     unsubscribe = fixtureLibrary.subscribe((library) => {
-      const entry = libraryCopiesOf(typeId, library).find(
-        (candidate) => !before.has(candidate.asset_etag),
+      const entry = library.find(
+        (candidate) => candidate.asset_etag === assetEtag,
       );
       if (entry) finish(entry);
     });
@@ -206,6 +206,8 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
   /** Aborts the search in flight, and everything else once the browser unmounts. */
   let searchAbort: AbortController | undefined;
   const lifetime = new AbortController();
+  /** The caller's leading controls, resolved once so checking for them builds nothing extra. */
+  const leading = children(() => props.leading);
   onCleanup(() => {
     searchAbort?.abort();
     lifetime.abort();
@@ -353,8 +355,8 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
 
   /**
    * Installs the selected result, showing the download's progress, then hands the library
-   * entry to `onUse` once the library lists it. A download identical to a library copy adds
-   * no entry, so that copy is handed over instead.
+   * entry the saved file became to `onUse`. A download identical to a library copy is that
+   * copy, so it is handed over at once.
    */
   const install = async () => {
     const fixture = selected();
@@ -363,17 +365,15 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
     setDownload(undefined);
     setInstallNote(undefined);
     try {
-      const before = new Set(
-        $fixtureLibrary().map((entry) => entry.asset_etag),
+      const installed = await installGdtfShareFixture(
+        fixture,
+        setDownload,
+        lifetime.signal,
       );
-      const installed = await installGdtfShareFixture(fixture, (progress) => {
-        if (!lifetime.signal.aborted) setDownload(progress);
-      });
-      const typeId = installed.fixture_type_id ?? fixture.fixture_type_id;
-      const entry =
-        (typeId
-          ? await waitForLibraryCopy(typeId, before, lifetime.signal)
-          : undefined) ?? libraryCopiesOf(typeId, fixtureLibrary.get())[0];
+      const entry = await waitForLibraryEntry(
+        installed.asset_etag,
+        lifetime.signal,
+      );
       if (lifetime.signal.aborted) return;
       if (entry) {
         props.onUse(entry);
@@ -434,9 +434,9 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
       class="flex h-full min-h-0 flex-col gap-3"
       data-testid="gdtf-share-browser"
     >
-      <Show when={props.leading || usable()}>
+      <Show when={leading() || usable()}>
         <div class="flex items-center gap-2">
-          {props.leading}
+          {leading()}
           <Show when={usable()}>
             <SearchField
               label="Search GDTF Share"

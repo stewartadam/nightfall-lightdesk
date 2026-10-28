@@ -12,11 +12,13 @@
 //! visualizer (through WebAssembly) share one implementation of parameter
 //! value mappings, mode masters, relations and DMX profiles.
 
+pub mod asset;
 pub mod evaluation;
 pub mod parameter;
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
+    pub use crate::asset::fixture_asset_etag;
     pub use crate::evaluation::{
         ChannelReading, FixtureEvaluator, FixtureModel, MAX_RELATION_DEPTH, RelationScope,
     };

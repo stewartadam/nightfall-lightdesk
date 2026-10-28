@@ -608,7 +608,7 @@ impl FixtureLibraryManager {
 /// Compute a deterministic content fingerprint for a fixture source file.
 pub fn fixture_source_version(source_path: &Path) -> Result<String> {
     let bytes = std::fs::read(source_path)?;
-    Ok(fnv1a64_hex(&bytes))
+    Ok(nightfall_fixture_model::prelude::fixture_asset_etag(&bytes))
 }
 
 /// Return built-in profiles that should be available even when no fixture files are installed.
@@ -625,17 +625,6 @@ fn builtin_fixture_profiles() -> impl Iterator<Item = FixtureProfile> {
             file_path: PathBuf::new(),
             revision: profile.asset_etag.to_string(),
         })
-}
-
-/// Format bytes as a stable FNV-1a hex fingerprint.
-fn fnv1a64_hex(bytes: &[u8]) -> String {
-    // Stable, dependency-free fingerprint for version comparisons.
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("{hash:016x}")
 }
 
 impl Default for FixtureLibraryManager {

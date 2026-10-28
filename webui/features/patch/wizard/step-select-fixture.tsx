@@ -123,13 +123,13 @@ export function StepSelectFixture() {
   );
 
   /**
-   * Library fixtures matching every word of the filter in their make or model, the way
+   * Library fixtures matching every word of the filter in their make, model or mode names,
    * GDTF Share searches match, so one query finds the same fixture on both tabs.
    */
   const filteredFixtures = createMemo(() => {
     const terms = searchTerms(filterText());
     const filtered = $fixtureLibrary().filter((f) =>
-      matchesSearchTerms(terms, [f.make, f.model]),
+      matchesSearchTerms(terms, [f.make, f.model, ...f.modes]),
     );
 
     // Sort alphabetically by manufacturer, then model
@@ -228,7 +228,7 @@ export function StepSelectFixture() {
             {viewSwitch()}
             <SearchField
               label="Filter fixtures"
-              placeholder="Filter by make or model..."
+              placeholder="Filter by make, model or mode..."
               density="compact"
               value={filterText()}
               onInput={setFilterText}

@@ -48,40 +48,46 @@ export function refreshGdtfShare(): Promise<GdtfShareSearchResults> {
  *
  * The engine streams one JSON event per line; `onProgress` hears each progress line.
  * A failure line rejects with a {@link GdtfShareRequestError}, marked signed out when
- * that is the cause, and a reply that ends without an outcome rejects too.
+ * that is the cause, and a reply that ends without an outcome rejects too. `signal` stops
+ * listening, with the browser's `AbortError`; the engine still finishes the install.
  */
 export async function installGdtfShareFixture(
   fixture: GdtfShareFixture,
   onProgress: (progress: GdtfShareDownloadProgress) => void,
+  signal?: AbortSignal,
 ): Promise<GdtfShareInstall> {
   const response = await sendGdtfShare(
     `${FIXTURES_PATH}/${fixture.rid}/install`,
-    { method: "POST" },
+    { method: "POST", signal },
   );
   const lines = response.body?.pipeThrough(new TextDecoderStream()).getReader();
   let buffered = "";
-  while (lines) {
-    const { done, value } = await lines.read();
-    if (value) buffered += value;
-    const complete = buffered.split("\n");
-    buffered = done ? "" : (complete.pop() ?? "");
-    for (const line of complete) {
-      if (!line.trim()) continue;
-      const event = JSON.parse(line) as GdtfShareInstallEvent;
-      switch (event.type) {
-        case "Progress":
-          onProgress(event.data);
-          break;
-        case "Installed":
-          return event.data;
-        case "Failed":
-          throw new GdtfShareRequestError(
-            event.data.message,
-            event.data.signed_out ? GDTF_SHARE_SIGNED_OUT_STATUS : 500,
-          );
+  try {
+    while (lines) {
+      const { done, value } = await lines.read();
+      if (value) buffered += value;
+      const complete = buffered.split("\n");
+      buffered = done ? "" : (complete.pop() ?? "");
+      for (const line of complete) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line) as GdtfShareInstallEvent;
+        switch (event.type) {
+          case "Progress":
+            onProgress(event.data);
+            break;
+          case "Installed":
+            return event.data;
+          case "Failed":
+            throw new GdtfShareRequestError(
+              event.data.message,
+              event.data.signed_out ? GDTF_SHARE_SIGNED_OUT_STATUS : 500,
+            );
+        }
       }
+      if (done) break;
     }
-    if (done) break;
+  } finally {
+    void lines?.cancel().catch(() => {});
   }
   throw new GdtfShareRequestError(
     "Nightfall stopped answering before the install finished.",
