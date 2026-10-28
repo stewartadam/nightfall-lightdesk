@@ -30,11 +30,16 @@ const check = { ...none, desktop_check: true };
 const desktopWithCheck = { ...desktop, desktop_check: true };
 
 /**
- * Select scope without the Rust test and app validation decisions, which dedicated tests cover,
+ * Select scope without the Rust test, native and app validation decisions, which dedicated tests cover,
  * so the distribution tables stay focused on packaging and check ownership.
  */
 function selectScope(options) {
-  const { rust: _rust, app: _app, ...scope } = selectFullScope(options);
+  const {
+    rust: _rust,
+    native: _native,
+    app: _app,
+    ...scope
+  } = selectFullScope(options);
   return scope;
 }
 
@@ -274,15 +279,22 @@ test("workspace-only lockfile changes skip packaging", () => {
       paths,
       workspaceOnlyLockfile: true,
     });
-  assert.deepEqual(select(["Cargo.lock"]), { ...none, rust: true, app: true });
+  assert.deepEqual(select(["Cargo.lock"]), {
+    ...none,
+    rust: true,
+    native: true,
+    app: true,
+  });
   assert.deepEqual(select(["Cargo.lock", "Cargo.toml"]), {
     ...both,
     rust: true,
+    native: true,
     app: true,
   });
   assert.deepEqual(select(["Cargo.lock", "crates/app-runtime/Cargo.toml"]), {
     ...desktopWithCheck,
     rust: true,
+    native: true,
     app: true,
   });
 });
@@ -449,6 +461,61 @@ test("app validation runs only for PRs that can change the app", () => {
   }
 });
 
+/**
+ * Worktree dashboard changes keep the WASM packages and WebUI checks that typecheck its page, but
+ * skip the native backend and Chromium product flows, which never load it.
+ */
+test("dashboard-only PRs skip native validation and product flows", () => {
+  /** Select a ready PR touching the given paths and report its app and native decisions. */
+  const select = (paths) => {
+    const scope = selectFullScope({
+      event: "pull_request",
+      ref: "refs/pull/1/merge",
+      paths,
+    });
+    return [scope.rust, scope.native, scope.app];
+  };
+  for (const path of [
+    "worktree-dashboard/worktree-dashboard.mjs",
+    "worktree-dashboard/a-new-module.mjs",
+    "webui/worktree-dashboard.tsx",
+    "webui/worktree-dashboard.html",
+    "webui/e2e/worktree-dashboard.spec.ts",
+  ]) {
+    assert.deepEqual(select([path]), [false, false, true], path);
+  }
+  assert.deepEqual(
+    select([
+      "worktree-dashboard/dashboard-client.mjs",
+      "webui/worktree-dashboard.tsx",
+      "scripts/worktree-service.node.test.mjs",
+      "CONTRIBUTING.md",
+    ]),
+    [false, false, true],
+  );
+  for (const path of [
+    "webui/components/ui/table.tsx",
+    "scripts/setup-env.mjs",
+    "crates/engine/src/lib.rs",
+  ]) {
+    assert.deepEqual(
+      select(["webui/worktree-dashboard.tsx", path])[1],
+      true,
+      path,
+    );
+  }
+  for (const [event, ref] of [
+    ["push", "refs/heads/develop"],
+    ["workflow_dispatch", "refs/heads/develop"],
+  ]) {
+    assert.equal(
+      selectFullScope({ event, ref }).native,
+      true,
+      `${event} ${ref}`,
+    );
+  }
+});
+
 /** The native job runs the Rust tests, so every path that selects them also selects app validation. */
 test("Rust test inputs always select app validation", () => {
   for (const path of [
@@ -464,7 +531,11 @@ test("Rust test inputs always select app validation", () => {
       ref: "refs/pull/1/merge",
       paths: [path],
     });
-    assert.deepEqual([scope.rust, scope.app], [true, true], path);
+    assert.deepEqual(
+      [scope.rust, scope.native, scope.app],
+      [true, true, true],
+      path,
+    );
   }
 });
 
@@ -490,6 +561,7 @@ test("draft PRs select only their preview", () => {
     preview_pr: "1",
     docs: true,
     rust: false,
+    native: false,
     app: false,
   });
   assert.deepEqual(
@@ -503,17 +575,20 @@ test("draft PRs select only their preview", () => {
       browser_preview: true,
       preview_pr: "1",
       rust: false,
+      native: false,
       app: false,
     },
   );
   assert.deepEqual(select({ previewTarget: true, sameRepository: false }), {
     ...none,
     rust: false,
+    native: false,
     app: false,
   });
   assert.deepEqual(select({ previewTarget: false, sameRepository: true }), {
     ...none,
     rust: false,
+    native: false,
     app: false,
   });
   assert.deepEqual(
@@ -522,7 +597,7 @@ test("draft PRs select only their preview", () => {
       sameRepository: true,
       paths: ["scripts/update-deps.sh"],
     }),
-    { ...none, rust: false, app: false },
+    { ...none, rust: false, native: false, app: false },
   );
 });
 
@@ -542,11 +617,13 @@ test("manual preview runs select only the preview", () => {
     browser_preview: true,
     preview_pr: "42",
     rust: false,
+    native: false,
     app: false,
   });
   assert.deepEqual(select({ previewTarget: false }), {
     ...none,
     rust: false,
+    native: false,
     app: false,
   });
   assert.deepEqual(
@@ -557,12 +634,13 @@ test("manual preview runs select only the preview", () => {
       preview_pr: "42",
       docs: true,
       rust: false,
+      native: false,
       app: false,
     },
   );
   assert.deepEqual(
     select({ previewTarget: false, paths: ["docs/src/SUMMARY.md"] }),
-    { ...none, rust: false, app: false },
+    { ...none, rust: false, native: false, app: false },
   );
   for (const previewPr of ["0", "4a", "-1", "1 2"]) {
     assert.throws(() => select({ previewTarget: true, previewPr }), previewPr);
@@ -613,25 +691,33 @@ test("Cargo tool pins validate what the changed tools affect", () => {
     preview_pr: "",
     docs: false,
     rust: false,
+    native: false,
     app: false,
   };
   assert.deepEqual(select(["mdbook"]), { ...quiet, docs: true });
   assert.deepEqual(select(["cargo-nextest"]), {
     ...quiet,
     rust: true,
+    native: true,
     app: true,
   });
-  assert.deepEqual(select(["typeshare-cli"]), { ...quiet, app: true });
+  assert.deepEqual(select(["typeshare-cli"]), {
+    ...quiet,
+    native: true,
+    app: true,
+  });
   assert.deepEqual(select(["cargo-about"]), {
     ...quiet,
     desktop_package: true,
     browser_package: true,
+    native: true,
     app: true,
   });
   assert.deepEqual(select(["mdbook"], ["crates/engine/src/lib.rs"]), {
     ...quiet,
     docs: true,
     rust: true,
+    native: true,
     app: true,
   });
   const unknown = {
@@ -640,6 +726,7 @@ test("Cargo tool pins validate what the changed tools affect", () => {
     browser_package: true,
     docs: true,
     rust: true,
+    native: true,
     app: true,
   };
   assert.deepEqual(select(null), unknown);

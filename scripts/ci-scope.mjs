@@ -85,6 +85,14 @@ export const appIndependent = [
   /^scripts\/(check-commit-signoff|claude-worktree-hook|fetch-gdtf-bench|generate-app-icons|install-fx-module|release-notes|seed-data-dir-from-main)\.mjs$/,
   /^scripts\/(profile-perf|test-desktop-updater|update-deps|verify_showfile_roundtrip)\.sh$/,
 ];
+// The worktree dashboard: a developer tool whose service and page nothing in the native backend
+// or the Chromium product flows loads. Its page still shares WebUI components, so it keeps the
+// WASM packages and WebUI checks, which typecheck it, but skips the native job and product flows.
+export const dashboardSources = [
+  /^worktree-dashboard\//,
+  /^webui\/worktree-dashboard\.(html|tsx)$/,
+  /^webui\/e2e\/worktree-dashboard\.spec\.ts$/,
+];
 
 /** The manifest that pins the Cargo tools local setup and CI install. */
 export const cargoToolsManifest = "config/cargo-tools.json";
@@ -186,7 +194,9 @@ export function lockfileChangesOnlyWorkspaceEdges(base, head) {
  *
  * The WASM packages, native backend, WebUI checks and Chromium product flows (`app`) run for every
  * push and manual run, but only for PRs that change an app input: any path outside
- * `appIndependent`. Rust tests always imply `app`, because the native job runs them.
+ * `appIndependent`. The native backend and product flows (`native`) further skip PRs whose app
+ * inputs are all `dashboardSources`. Rust tests always imply `native`, because the native job runs
+ * them, and `native` implies `app`.
  *
  * Browser previews build the demo for every same-repository PR that changes an app input or the
  * manual, once a preview target is configured. Fork PRs never receive the deployment credential,
@@ -207,7 +217,7 @@ export function lockfileChangesOnlyWorkspaceEdges(base, head) {
  *
  * Rust tests, doctests and Clippy run for every push and manual run, but only for PRs that touch
  * Rust sources, their build and lint configuration, or files the Rust code embeds. Native
- * validation still builds the headless backend whenever `app` is selected because the Chromium
+ * validation still builds the headless backend whenever `native` is selected because the Chromium
  * product flows run against it.
  */
 export function selectScope({
@@ -240,6 +250,15 @@ export function selectScope({
     filePaths.some(
       (path) => !appIndependent.some((pattern) => pattern.test(path)),
     );
+  /** Whether any changed path or tool pin can change the native backend or the product flows. */
+  const touchesNative = () =>
+    toolsTouch("app") ||
+    filePaths.some(
+      (path) =>
+        ![...appIndependent, ...dashboardSources].some((pattern) =>
+          pattern.test(path),
+        ),
+    );
   /**
    * Select nothing but the given PR's preview, when a preview target can receive it, plus the
    * documentation build that preview publishes when the PR changes the books.
@@ -252,6 +271,7 @@ export function selectScope({
     preview_pr: enabled ? pr : "",
     docs: enabled && touchesDocumentation(),
     rust: false,
+    native: false,
     app: false,
   });
   if (event === "workflow_dispatch" && previewPr) {
@@ -274,6 +294,7 @@ export function selectScope({
   let desktopCheck = false;
   let docs = false;
   let rust = event !== "pull_request";
+  let native = event !== "pull_request";
   let app = event !== "pull_request";
   if (event === "workflow_dispatch") {
     if (!["all", "desktop", "browser"].includes(distribution)) {
@@ -288,6 +309,7 @@ export function selectScope({
     browserPackage = ref === "refs/heads/main";
   } else if (event === "pull_request") {
     app = touchesApp();
+    native = touchesNative();
     docs = touchesDocumentation();
     browserPreview = previewTarget && sameRepository && (app || docs);
     rust = toolsTouch("rust");
@@ -309,7 +331,8 @@ export function selectScope({
         desktopCheck = true;
       if (rustTests.some((pattern) => pattern.test(path))) rust = true;
     }
-    app ||= rust;
+    native ||= rust;
+    app ||= native;
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
   }
@@ -321,6 +344,7 @@ export function selectScope({
     preview_pr: browserPreview ? pullRequest : "",
     docs,
     rust,
+    native,
     app,
   };
 }
