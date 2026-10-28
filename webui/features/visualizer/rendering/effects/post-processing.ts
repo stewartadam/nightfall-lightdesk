@@ -23,12 +23,13 @@ import {
   pass,
   renderOutput,
   smoothstep,
+  uniform,
   uv,
   vec2,
   vec3,
   vec4,
 } from "three/tsl";
-import type { Camera, Node, Object3D } from "three/webgpu";
+import type { Camera, Node, Object3D, UniformNode } from "three/webgpu";
 import {
   Color,
   NodeMaterial,
@@ -42,6 +43,7 @@ import { type QualityProfile, resolveQualityProfile } from "../quality-profile";
 import { GpuBudget, type GpuBudgetSample } from "./gpu-budget";
 import { createOpticalRenderContext } from "./optical-render-context";
 import { OpticalSurfaceLighting } from "./optical-surface-lighting";
+import { outlineHiddenMask } from "./outline-hidden-fill";
 import { syncOutlineProxyVisibility } from "./outline-proxies";
 
 /** Post-processing configuration */
@@ -62,6 +64,8 @@ export interface PostProcessingConfig {
   outlineVisibleColor: string;
   /** Selection outline hidden edge color */
   outlineHiddenColor: string;
+  /** Selection outline fill opacity over the parts hidden behind other objects */
+  outlineHiddenFill: number;
   /** Edit-selection outline intensity multiplier */
   editSelectionOutlineStrength: number;
   /** Edit-selection outline edge thickness */
@@ -72,6 +76,8 @@ export interface PostProcessingConfig {
   editSelectionOutlineVisibleColor: string;
   /** Edit-selection outline hidden edge color */
   editSelectionOutlineHiddenColor: string;
+  /** Edit-selection outline fill opacity over the parts hidden behind other objects */
+  editSelectionOutlineHiddenFill: number;
   /** Programmer-value outline intensity multiplier */
   programmerValueOutlineStrength: number;
   /** Programmer-value outline edge thickness */
@@ -82,6 +88,8 @@ export interface PostProcessingConfig {
   programmerValueOutlineVisibleColor: string;
   /** Programmer-value outline hidden edge color */
   programmerValueOutlineHiddenColor: string;
+  /** Programmer-value outline fill opacity over the parts hidden behind other objects */
+  programmerValueOutlineHiddenFill: number;
   /** Active span outline intensity multiplier */
   activeSpanOutlineStrength: number;
   /** Active span outline edge thickness */
@@ -92,6 +100,8 @@ export interface PostProcessingConfig {
   activeSpanOutlineVisibleColor: string;
   /** Active span outline hidden edge color */
   activeSpanOutlineHiddenColor: string;
+  /** Active span outline fill opacity over the parts hidden behind other objects */
+  activeSpanOutlineHiddenFill: number;
 }
 
 export const defaultPostProcessingConfig: PostProcessingConfig = {
@@ -103,21 +113,25 @@ export const defaultPostProcessingConfig: PostProcessingConfig = {
   outlineGlow: 0.0,
   outlineVisibleColor: "#ffffff",
   outlineHiddenColor: "#9ca3af",
+  outlineHiddenFill: 0.2,
   editSelectionOutlineStrength: 1.8,
   editSelectionOutlineThickness: 1.6,
   editSelectionOutlineGlow: 0.02,
   editSelectionOutlineVisibleColor: "#facc15",
   editSelectionOutlineHiddenColor: "#ca8a04",
+  editSelectionOutlineHiddenFill: 0.45,
   programmerValueOutlineStrength: 2.2,
   programmerValueOutlineThickness: 1.8,
   programmerValueOutlineGlow: 0.04,
   programmerValueOutlineVisibleColor: "#ef4444",
   programmerValueOutlineHiddenColor: "#991b1b",
+  programmerValueOutlineHiddenFill: 0.4,
   activeSpanOutlineStrength: 3.2,
   activeSpanOutlineThickness: 2.0,
   activeSpanOutlineGlow: 0.08,
   activeSpanOutlineVisibleColor: "#ffffff",
   activeSpanOutlineHiddenColor: "#9ca3af",
+  activeSpanOutlineHiddenFill: 0.2,
 };
 
 /** Atmosphere resolution used by profiles that do not adapt it to GPU headroom. */
@@ -135,6 +149,10 @@ export interface PostProcessingState {
   visibleOutlineProxies: Set<Object3D>;
   /** Every outline pass's live selection, re-read before each render so in-place edits take effect. */
   outlineSelections: Object3D[][];
+  /** Per outline pass, gates the occluded fill so it never shows a stale mask or a tied-depth proxy. */
+  outlineHiddenFillActive: UniformNode<"float", number>[];
+  /** Per-frame scratch the proxy sync writes fill eligibility into before it reaches the uniforms. */
+  outlineHiddenFillEligible: number[];
   /** Clustered optical surface shading, installed only when the profile lights surfaces. */
   surfaceLighting?: OpticalSurfaceLighting;
   volumePass: ReturnType<typeof pass>;
@@ -230,9 +248,13 @@ function displayColor(css: string, outputColorSpace: string): Node<"vec3"> {
 }
 
 /**
- * Lays one outline pass over display-space color: hidden edges first, then visible edges, each
- * covering the image with its exact configured color where its edge mask (scaled by `strength`)
- * saturates.
+ * Lays one outline pass over display-space color: a translucent fill in the visible color over
+ * the selection's occluded pixels, then hidden edges, then visible edges, each edge covering the
+ * image with its exact configured color where its edge mask (scaled by `strength`) saturates.
+ *
+ * The fill lets a selection buried inside other geometry be found at a glance. It is display
+ * compositing only, so lighting, shadows, and beams are unaffected. `fillActive` gates it per
+ * frame (see `syncOutlineProxyVisibility`).
  */
 function compositeOutline(
   base: Node<"vec3">,
@@ -240,9 +262,16 @@ function compositeOutline(
   visibleColor: Node<"vec3">,
   hiddenColor: Node<"vec3">,
   strength: number,
+  fillOpacity: number,
+  fillActive: Node<"float">,
 ): Node<"vec3"> {
-  const behind = mix(
+  const filled = mix(
     base,
+    visibleColor,
+    outlineHiddenMask(outlineNode).mul(fillOpacity).mul(fillActive),
+  );
+  const behind = mix(
+    filled,
     hiddenColor,
     outlineNode.hiddenEdge.mul(strength).saturate(),
   );
@@ -348,31 +377,45 @@ export function createPostProcessing(
     renderer.outputColorSpace,
   );
   const outputColorSpace = renderer.outputColorSpace;
+  const outlineHiddenFillActive = [
+    uniform(0),
+    uniform(0),
+    uniform(0),
+    uniform(0),
+  ];
   let outlined: Node<"vec3"> = display.rgb;
-  for (const [outlineNode, visible, hidden, strength] of [
+  for (const [outlineNode, visible, hidden, strength, fill, fillActive] of [
     [
       outlinePass,
       config.outlineVisibleColor,
       config.outlineHiddenColor,
       config.outlineStrength,
+      config.outlineHiddenFill,
+      outlineHiddenFillActive[0],
     ],
     [
       editSelectionOutlinePass,
       config.editSelectionOutlineVisibleColor,
       config.editSelectionOutlineHiddenColor,
       config.editSelectionOutlineStrength,
+      config.editSelectionOutlineHiddenFill,
+      outlineHiddenFillActive[1],
     ],
     [
       programmerValueOutlinePass,
       config.programmerValueOutlineVisibleColor,
       config.programmerValueOutlineHiddenColor,
       config.programmerValueOutlineStrength,
+      config.programmerValueOutlineHiddenFill,
+      outlineHiddenFillActive[2],
     ],
     [
       activeSpanOutlinePass,
       config.activeSpanOutlineVisibleColor,
       config.activeSpanOutlineHiddenColor,
       config.activeSpanOutlineStrength,
+      config.activeSpanOutlineHiddenFill,
+      outlineHiddenFillActive[3],
     ],
   ] as const) {
     outlined = compositeOutline(
@@ -381,6 +424,8 @@ export function createPostProcessing(
       displayColor(visible, outputColorSpace),
       displayColor(hidden, outputColorSpace),
       strength,
+      fill,
+      fillActive,
     );
   }
   const outlinedDisplay = vec4(outlined, display.a);
@@ -428,6 +473,8 @@ export function createPostProcessing(
       programmerValueOutlinePass.selectedObjects,
       activeSpanOutlinePass.selectedObjects,
     ],
+    outlineHiddenFillActive,
+    outlineHiddenFillEligible: [0, 0, 0, 0],
     config,
   };
   syncOutlineProxyVisibility(
@@ -531,7 +578,10 @@ export function renderWithPostProcessing(
   syncOutlineProxyVisibility(
     state.outlineSelections,
     state.visibleOutlineProxies,
+    state.outlineHiddenFillEligible,
   );
+  for (let i = 0; i < state.outlineHiddenFillActive.length; i++)
+    state.outlineHiddenFillActive[i].value = state.outlineHiddenFillEligible[i];
   state.postProcessing.render();
   state.gpuBudget.recordRender(performance.now() - started, updateMs);
 }

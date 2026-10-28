@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Group, Object3D } from "three";
+import { BoxGeometry, Group, Mesh, Object3D } from "three";
 import { syncOutlineProxyVisibility } from "./outline-proxies";
 
 /** Builds a fixture group holding one hidden outline-only cell proxy, as LED bars and emitter batches do. */
@@ -61,6 +61,28 @@ test("outline proxies follow a fixture rebuilt while selected", () => {
   syncOutlineProxyVisibility([selected], visible);
   assert.equal(original.proxy.visible, false);
   assert.equal(rebuilt.proxy.visible, true);
+});
+
+/**
+ * The occluded fill needs drawable geometry (OutlineNode keeps a stale mask otherwise) and must
+ * skip selections that target a proxy directly, whose depth ties with its unselected batch mesh.
+ */
+test("hidden fill eligibility follows drawables and direct proxy targets", () => {
+  const empty = new Group();
+  const fixture = new Group();
+  const head = new Group();
+  head.add(new Mesh(new BoxGeometry()));
+  fixture.add(head);
+  const cell = new Mesh(new BoxGeometry());
+  cell.userData.visualizerOutlineOnly = true;
+  const hiddenFill = [-1, -1, -1, -1];
+
+  syncOutlineProxyVisibility(
+    [[], [empty], [empty, fixture], [fixture, cell]],
+    new Set(),
+    hiddenFill,
+  );
+  assert.deepEqual(hiddenFill, [0, 0, 1, 0]);
 });
 
 /** Ordinary (non-proxy) geometry keeps whatever visibility the scene gave it. */
