@@ -62,6 +62,7 @@ impl BuiltinFixtureProfile {
             modes: self.mode_names(),
             source_format: BUILTIN_SOURCE_FORMAT.to_string(),
             asset_etag: self.asset_etag.to_string(),
+            gdtf_fixture_type_id: None,
         }
     }
 

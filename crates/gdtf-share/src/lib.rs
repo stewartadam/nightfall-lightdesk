@@ -13,22 +13,30 @@
 //! user's behalf and keeps the account in the operating system's keychain. Every client
 //! connected to the engine shares that one account.
 //!
-//! Everything is exposed as HTTP routes registered through [`register_routes`]. Nothing
-//! contacts GDTF Share or the keychain until a client asks for the account.
+//! Clients search a copy of the GDTF Share fixture list saved next to the fixture library,
+//! and installs download straight into the library folder. Everything is exposed as HTTP
+//! routes registered through [`register_routes`]. Nothing contacts GDTF Share or the
+//! keychain until a client asks for the account.
 
 #![warn(missing_docs)]
 
 pub mod account;
+pub mod catalog;
 pub mod client;
 pub mod credentials;
+pub mod install;
 mod routes;
 #[cfg(test)]
 mod testing;
 
-pub use routes::register_routes;
+pub use routes::{GdtfShareFolders, register_routes};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::account::{GdtfShareAccount, GdtfShareAccountStatus, GdtfShareCredentialSource};
-    pub use crate::register_routes as register_gdtf_share_routes;
+    pub use crate::catalog::{GdtfShareFixture, GdtfShareMode, GdtfShareSearchResults};
+    pub use crate::install::{
+        GdtfShareDownloadProgress, GdtfShareInstall, GdtfShareInstallEvent, GdtfShareInstallFailure,
+    };
+    pub use crate::{GdtfShareFolders, register_routes as register_gdtf_share_routes};
 }

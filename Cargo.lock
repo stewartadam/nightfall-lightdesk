@@ -5836,12 +5836,16 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "apple-native-keyring-store",
  "axum",
+ "futures-util",
  "keyring-core",
+ "nightfall-fixture-model",
  "nightfall-websocket",
  "nightfall-workspace-hack",
+ "quick-xml 0.42.0",
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tower",
@@ -5849,6 +5853,7 @@ dependencies = [
  "typeshare",
  "windows-native-keyring-store",
  "zbus-secret-service-keyring-store",
+ "zip 9.0.5",
 ]
 
 [[package]]

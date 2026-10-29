@@ -67,6 +67,7 @@ pub fn handle_builtin_fixture_library_commands(
                         .iter()
                         .map(|profile| profile.info())
                         .collect(),
+                    unloadable: Vec::new(),
                 };
                 publish_available_fixtures(&broadcaster, &response);
                 Ok(FixtureLibraryCommandSuccess::AvailableFixtures(response))
@@ -122,7 +123,10 @@ pub fn handle_builtin_fixture_library_commands(
                 .map(|()| FixtureLibraryCommandSuccess::Applied)
             }
             FixtureLibraryCommand::UploadFixture { .. }
-            | FixtureLibraryCommand::DeleteFixtures(_) => Err(library_management_unavailable()),
+            | FixtureLibraryCommand::DeleteFixtures(_)
+            | FixtureLibraryCommand::DeleteUnloadableFiles(_) => {
+                Err(library_management_unavailable())
+            }
         };
         results.write(FixtureLibraryCommandResult::new(event.command_id, result));
     }

@@ -14,5 +14,5 @@
 
 pub use nightfall_fixtures::library::commands::{
     AvailableFixtureInfo, FixtureLibraryCommand, FixtureLibraryEntry, GetFixtureProfileResponse,
-    ListAvailableFixturesResponse,
+    ListAvailableFixturesResponse, UnloadableFixtureFile, UnloadableFixtureFileId,
 };

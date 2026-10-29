@@ -17,6 +17,7 @@ use nightfall_fixtures::library::catalog;
 use nightfall_fixtures::prelude::{Fixture, FixtureGeometry};
 use uuid::Uuid;
 
+use crate::commands::{UnloadableFixtureFile, UnloadableFixtureFileId};
 use crate::gdtf_metadata::GdtfMetadata;
 use crate::{FixtureLibraryError, Result};
 
@@ -88,6 +89,8 @@ pub struct FixtureLibraryManager {
     /// Conversions of file-backed profiles, reused for every fixture created
     /// from, previewing, or falling back to one revision and mode.
     conversions: ProfileConversions,
+    /// Definition files in the library folders that failed to load, by file name.
+    unloadable: Vec<UnloadableFixtureFile>,
     /// Library directory path
     library_path: PathBuf,
     /// Optional package library overlaid on installed profiles.
@@ -108,6 +111,7 @@ impl FixtureLibraryManager {
             latest: HashMap::new(),
             copies: HashMap::new(),
             conversions: ProfileConversions::default(),
+            unloadable: Vec::new(),
             library_path,
             showfile_directory: None,
         };
@@ -137,6 +141,7 @@ impl FixtureLibraryManager {
             latest: HashMap::new(),
             copies: HashMap::new(),
             conversions: ProfileConversions::default(),
+            unloadable: Vec::new(),
             library_path,
             showfile_directory,
         };
@@ -158,9 +163,11 @@ impl FixtureLibraryManager {
         let Some(directory) = directory else {
             return Ok(());
         };
-        let profiles = crate::scanner::FixtureScanner::new(&directory.join("fixtures")).scan()?;
+        let package = scan_package(&directory)?;
         self.showfile_directory = Some(directory);
-        for profile in profiles {
+        self.unloadable.extend(package.unloadable);
+        sort_unloadable(&mut self.unloadable);
+        for profile in package.profiles {
             self.insert_profile(profile);
         }
         tracing::info!(
@@ -191,19 +198,22 @@ impl FixtureLibraryManager {
         self.fixtures.clear();
         self.latest.clear();
         self.copies.clear();
+        self.unloadable.clear();
         self.conversions = ProfileConversions::default();
         self.insert_builtin_profiles();
 
-        let scanner = crate::scanner::FixtureScanner::new(&self.library_path);
-        let mut profiles = scanner.scan()?;
+        let mut scan = crate::scanner::FixtureScanner::new(&self.library_path).scan()?;
         if let Some(directory) = &self.showfile_directory {
-            profiles
-                .extend(crate::scanner::FixtureScanner::new(&directory.join("fixtures")).scan()?);
+            let package = scan_package(directory)?;
+            scan.profiles.extend(package.profiles);
+            scan.unloadable.extend(package.unloadable);
         }
 
-        for profile in profiles {
+        for profile in scan.profiles {
             self.insert_profile(profile);
         }
+        sort_unloadable(&mut scan.unloadable);
+        self.unloadable = scan.unloadable;
 
         tracing::info!(
             "Loaded {} fixtures from fixture library and built-ins",
@@ -216,6 +226,42 @@ impl FixtureLibraryManager {
     /// List all available fixtures
     pub fn list_fixtures(&self) -> Vec<&FixtureProfile> {
         self.fixtures.values().collect()
+    }
+
+    /// Definition files the last scan found in the library folders but could not load.
+    pub fn list_unloadable(&self) -> &[UnloadableFixtureFile] {
+        &self.unloadable
+    }
+
+    /// Deletes a definition file the last scan could not load and stops listing it.
+    ///
+    /// Only files the scan reported can be deleted, so `file` never names a path outside the
+    /// library folders.
+    pub fn delete_unloadable(&mut self, file: &UnloadableFixtureFileId) -> Result<()> {
+        let index = self
+            .unloadable
+            .iter()
+            .position(|listed| {
+                listed.file_name == file.file_name && listed.in_showfile == file.in_showfile
+            })
+            .ok_or_else(|| FixtureLibraryError::UnloadableNotFound(file.file_name.clone()))?;
+        let folder = if file.in_showfile {
+            self.showfile_directory
+                .as_ref()
+                .map(|directory| directory.join("fixtures"))
+                .ok_or_else(|| FixtureLibraryError::UnloadableNotFound(file.file_name.clone()))?
+        } else {
+            self.library_path.clone()
+        };
+        let path = folder.join(&file.file_name);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        tracing::info!(path = %path.display(), "Deleted unloadable fixture file");
+        self.unloadable.remove(index);
+        Ok(())
     }
 
     /// Indexes a profile under its revision and makes it the default for its
@@ -605,10 +651,25 @@ impl FixtureLibraryManager {
     }
 }
 
+/// Scans the `fixtures` folder of the show package at `directory`, marking each file that
+/// fails to load as part of the show.
+fn scan_package(directory: &Path) -> Result<crate::scanner::LibraryScan> {
+    let mut scan = crate::scanner::FixtureScanner::new(&directory.join("fixtures")).scan()?;
+    for file in &mut scan.unloadable {
+        file.in_showfile = true;
+    }
+    Ok(scan)
+}
+
+/// Orders unloadable files with installed library files before package files, each by file name.
+fn sort_unloadable(files: &mut [UnloadableFixtureFile]) {
+    files.sort_by(|a, b| (a.in_showfile, &a.file_name).cmp(&(b.in_showfile, &b.file_name)));
+}
+
 /// Compute a deterministic content fingerprint for a fixture source file.
 pub fn fixture_source_version(source_path: &Path) -> Result<String> {
     let bytes = std::fs::read(source_path)?;
-    Ok(fnv1a64_hex(&bytes))
+    Ok(nightfall_fixture_model::prelude::fixture_asset_etag(&bytes))
 }
 
 /// Return built-in profiles that should be available even when no fixture files are installed.
@@ -625,17 +686,6 @@ fn builtin_fixture_profiles() -> impl Iterator<Item = FixtureProfile> {
             file_path: PathBuf::new(),
             revision: profile.asset_etag.to_string(),
         })
-}
-
-/// Format bytes as a stable FNV-1a hex fingerprint.
-fn fnv1a64_hex(bytes: &[u8]) -> String {
-    // Stable, dependency-free fingerprint for version comparisons.
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("{hash:016x}")
 }
 
 impl Default for FixtureLibraryManager {
@@ -935,6 +985,73 @@ mod revision_tests {
         assert!(!dir.path().join("b.gdtf").exists());
         manager.scan().unwrap();
         assert!(manager.find_fixture("Rev Test", "Fixture").is_none());
+    }
+
+    /// Verifies the manager lists installed and packaged files that fail to load apart, even
+    /// when both folders hold the same file name, and forgets a file once a rescan no longer
+    /// finds it.
+    #[test]
+    fn unloadable_files_follow_the_latest_scan() {
+        let (dir, mut manager) = library(&[("a.gdtf", revision("Body", 0.0, "Dimmer"))]);
+        std::fs::write(dir.path().join("broken.gdtf"), b"not a zip").unwrap();
+        let package = tempfile::tempdir().unwrap();
+        std::fs::create_dir(package.path().join("fixtures")).unwrap();
+        std::fs::write(package.path().join("fixtures/broken.gdtf"), b"").unwrap();
+
+        manager.scan().unwrap();
+        let names = |manager: &FixtureLibraryManager| {
+            manager
+                .list_unloadable()
+                .iter()
+                .map(|file| (file.file_name.clone(), file.in_showfile))
+                .collect::<Vec<_>>()
+        };
+        let installed = ("broken.gdtf".to_string(), false);
+        let packaged = ("broken.gdtf".to_string(), true);
+        assert_eq!(names(&manager), [installed.clone()]);
+        manager
+            .set_showfile_directory(Some(package.path().to_path_buf()))
+            .unwrap();
+        assert_eq!(names(&manager), [installed, packaged.clone()]);
+
+        std::fs::remove_file(dir.path().join("broken.gdtf")).unwrap();
+        manager.scan().unwrap();
+        assert_eq!(names(&manager), [packaged]);
+        assert!(manager.find_fixture("Rev Test", "Fixture").is_some());
+    }
+
+    /// Verifies deleting an unloadable file removes only that folder's copy, and that a file
+    /// the scan never reported is refused rather than deleted.
+    #[test]
+    fn deleting_an_unloadable_file_removes_only_that_copy() {
+        let (dir, mut manager) = library(&[]);
+        let package = tempfile::tempdir().unwrap();
+        std::fs::create_dir(package.path().join("fixtures")).unwrap();
+        for folder in [dir.path().to_path_buf(), package.path().join("fixtures")] {
+            std::fs::write(folder.join("broken.gdtf"), b"not a zip").unwrap();
+        }
+        std::fs::write(dir.path().join("notes.txt"), "keep me").unwrap();
+        manager.scan().unwrap();
+        manager
+            .set_showfile_directory(Some(package.path().to_path_buf()))
+            .unwrap();
+
+        let installed = UnloadableFixtureFileId {
+            file_name: "broken.gdtf".to_string(),
+            in_showfile: false,
+        };
+        manager.delete_unloadable(&installed).unwrap();
+        assert!(!dir.path().join("broken.gdtf").exists());
+        assert!(package.path().join("fixtures/broken.gdtf").exists());
+        assert_eq!(manager.list_unloadable().len(), 1);
+        assert!(manager.list_unloadable()[0].in_showfile);
+
+        let unlisted = UnloadableFixtureFileId {
+            file_name: "notes.txt".to_string(),
+            in_showfile: false,
+        };
+        assert!(manager.delete_unloadable(&unlisted).is_err());
+        assert!(dir.path().join("notes.txt").exists());
     }
 
     /// Verifies fixtures falling back from a missing revision share one

@@ -297,6 +297,8 @@ export const sceneObjects = deepMap<SceneObjectMap>({});
 export type FixtureGeometryMap = { [uid: string]: types.FixtureGeometry };
 export const fixtureGeometries = deepMap<FixtureGeometryMap>({});
 export const fixtureLibrary = atom<types.AvailableFixtureInfo[]>([]);
+/** Definition files in the fixture library folders that failed to load. */
+export const unloadableFixtureFiles = atom<types.UnloadableFixtureFile[]>([]);
 
 /** Canonical backend-provided attribute presentation metadata. */
 export const attributeMetadata = atom<types.AttributeMetadata[]>([]);
@@ -1119,6 +1121,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     fixtures,
     sceneObjects,
     fixtureLibrary,
+    unloadableFixtureFiles,
     attributeMetadata,
     fixtureGeometries,
     objectLibrary,

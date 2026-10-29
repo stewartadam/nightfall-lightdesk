@@ -38,6 +38,7 @@ import {
   applyElementBackground,
   CONFLICT_VALUE_TEXT_COLOR,
   conflictWarningIndicators,
+  DISABLED_TEXT_COLOR,
   makeSafeTextCell,
 } from "../../../lib/datagrid";
 import {
@@ -59,7 +60,6 @@ import { useSharedStore } from "../../../lib/use-shared-store";
 import { dmxUniverseList, fixtures, routes } from "../../../state/appStores";
 import {
   type ConflictTooltipState,
-  DISABLED_TEXT_COLOR,
   disabledRouteTouchesFixture,
   type FixtureDisplayRow,
   fixtureOutputOccupancyKey,

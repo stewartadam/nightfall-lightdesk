@@ -22,7 +22,7 @@ Choose ID ranges that make sense for your rig, for example 101 to 112 for front 
 
 1. Open **Patch** from the Command Palette.
 1. In the **Fixtures** view, select **Add fixture** (+) to open the wizard.
-1. Filter the library and select a fixture definition, then select **Next**.
+1. Filter the library and select a fixture definition, then select **Next**. If the fixture is not in the library, switch to **GDTF Share** to [search and install it](panels/fixture-library.md#search-gdtf-share).
 1. Select the mode set on the physical light, then select **Next**.
 1. Set **Quantity** and **First fixture ID**. The wizard numbers the other fixtures after the first one. Leave **First fixture ID** empty to use the next ID after the highest one in the show.
 1. Keep **Assign Console DMX** selected and set the universe and start address under **Patch**. The wizard starts on the first universe and address with room for every new fixture. Select **Next available** to find that spot again after changing the quantity or mode. Each next fixture starts right after the previous one.

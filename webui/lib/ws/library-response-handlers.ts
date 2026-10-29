@@ -20,7 +20,7 @@ export function registerLibraryResponseHandlers(
   registry: WsMessageHandlerRegistry<AnyWsMessage>,
 ): void {
   registry.register("ListAvailableFixturesResponse", (message) => {
-    applyAvailableFixturesResponse(message.data.fixtures);
+    applyAvailableFixturesResponse(message.data);
   });
 
   registry.register("GetFixtureProfileResponse", (message) => {

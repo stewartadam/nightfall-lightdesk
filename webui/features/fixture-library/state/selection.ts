@@ -8,7 +8,7 @@
 
 /**
  * Fixture Library state management using nanostores.
- * Tracks selected fixture for properties panel display.
+ * Tracks the selected library row for properties panel display.
  */
 
 import { atom } from "nanostores";
@@ -16,17 +16,32 @@ import { setStoreAction } from "../../../lib/nanostore-action";
 import { unproxify } from "../../../lib/utils";
 import type * as types from "../../../types";
 
-export const fixtureLibrarySelectedFixture =
-  atom<types.AvailableFixtureInfo | null>(null);
+/** One Fixture Library row: a loaded profile, or a definition file that failed to load. */
+export type FixtureLibraryRow =
+  | { kind: "fixture"; fixture: types.AvailableFixtureInfo }
+  | { kind: "unloadable"; file: types.UnloadableFixtureFile };
 
-export function setFixtureLibrarySelectedFixture(
-  fixture: types.AvailableFixtureInfo | null,
+export const fixtureLibrarySelection = atom<FixtureLibraryRow | null>(null);
+
+/**
+ * Selects a Fixture Library row for the properties panel, or clears the selection when
+ * `row` is null.
+ */
+export function setFixtureLibrarySelection(
+  row: FixtureLibraryRow | null,
 ): void {
   // If we retain proxied objects in the store, it can lead to corruption of the
   // prior stored memos in some cases.
   setStoreAction(
-    fixtureLibrarySelectedFixture,
+    fixtureLibrarySelection,
     "Set Fixture Library Selection",
-    fixture ? unproxify(fixture) : null,
+    row ? unproxify(row) : null,
   );
+}
+
+/** Selects a loaded library profile for the properties panel. */
+export function setFixtureLibrarySelectedFixture(
+  fixture: types.AvailableFixtureInfo,
+): void {
+  setFixtureLibrarySelection({ kind: "fixture", fixture });
 }

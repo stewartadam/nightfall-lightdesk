@@ -77,6 +77,9 @@ export const FIXTURE_VALUE_TEXT_COLORS = {
 
 export const CONFLICT_VALUE_TEXT_COLOR = "#ef4444";
 
+/** Text color for grid rows that are present but inactive, such as disabled patch entries. */
+export const DISABLED_TEXT_COLOR = "#6b7280";
+
 const FIXTURE_VALUE_BACKGROUND_COLORS = {
   attribute: "#1a1a1f",
   invalid: "#FF6F00",

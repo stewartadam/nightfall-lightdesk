@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { Alert } from "../../../components/ui/alert";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { Table, TableScroll } from "../../../components/ui/table";
@@ -33,6 +34,8 @@ import LibraryFixturePreview from "./library-fixture-preview";
 
 interface FixtureLibraryPropertiesProps {
   selectedFixture: Accessor<types.AvailableFixtureInfo | null>;
+  /** The selected library file that failed to load, shown with its error instead of a profile. */
+  unloadableFile: Accessor<types.UnloadableFixtureFile | null>;
 }
 
 type ParameterDisplayRow = {
@@ -180,6 +183,33 @@ function profileMatchesSelection(
 }
 
 /**
+ * Explains why a library file failed to load: its name, whether it belongs to the open show,
+ * and the parser's error, with what the user can do about it.
+ */
+function UnloadableFileDetails(props: { file: types.UnloadableFixtureFile }) {
+  return (
+    <div class="space-y-3 text-sm" data-testid="fixture-library-unloadable">
+      <div>
+        <h3 class="mb-1 font-medium">Failed to load</h3>
+        <p class="break-all text-neutral-400">{props.file.file_name}</p>
+        <Show when={props.file.in_showfile}>
+          <p class="text-neutral-400">In this show's package.</p>
+        </Show>
+      </div>
+      <Alert variant="caution" density="compact" title="Parser error">
+        <p class="whitespace-pre-wrap break-words font-mono text-xs">
+          {props.file.error}
+        </p>
+      </Alert>
+      <p class="text-neutral-400">
+        Nightfall can't use this fixture until the file is fixed or replaced
+        with a working copy. To remove it, select its row and delete it.
+      </p>
+    </div>
+  );
+}
+
+/**
  * Renders mode-specific fixture library metadata and parameter configuration.
  */
 export default function FixtureLibraryProperties(
@@ -245,7 +275,16 @@ export default function FixtureLibraryProperties(
     <div class="flex h-full flex-col space-y-4 overflow-auto p-4">
       <Show
         when={selectedFixture()}
-        fallback={<EmptyState variant="inline" title="No fixture selected" />}
+        fallback={
+          <Show
+            when={props.unloadableFile()}
+            fallback={
+              <EmptyState variant="inline" title="No fixture selected" />
+            }
+          >
+            {(file) => <UnloadableFileDetails file={file()} />}
+          </Show>
+        }
       >
         {(fixture) => (
           <>
