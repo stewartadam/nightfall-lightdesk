@@ -50,12 +50,12 @@
 
 /* Inline editors use the grid cell's selection perimeter as their focus indicator. */
 [role="gridcell"]
-:is(
-  input:not([type="checkbox"], [type="radio"]),
-  textarea,
-  select,
-  .nf-select-toggle
-):focus-visible {
+  :is(
+    input:not([type="checkbox"], [type="radio"]),
+    textarea,
+    select,
+    .nf-select-toggle
+  ):focus-visible {
   outline: none;
   box-shadow: none;
 }
