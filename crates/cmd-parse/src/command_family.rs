@@ -44,6 +44,7 @@ pub enum StructuralAstDispatchKind {
     Flow,
     Timecode,
     Timeline,
+    Macro,
     Rm,
     Rename,
     Store,
@@ -105,6 +106,10 @@ const TIMECODE_GROUPS: &[CompletionGroupId] = &[
 const TIMELINE_GROUPS: &[CompletionGroupId] = &[
     CompletionGroupId::TimelineIdentifier,
     CompletionGroupId::TimelineAction,
+];
+const MACRO_GROUPS: &[CompletionGroupId] = &[
+    CompletionGroupId::MacroIdentifier,
+    CompletionGroupId::MacroAction,
 ];
 const RM_GROUPS: &[CompletionGroupId] = &[
     CompletionGroupId::RmObjectType,
@@ -272,6 +277,13 @@ const COMMAND_FAMILY_SPECS: &[CommandFamilySpec] = &[
         single_token_head_policy: SingleTokenHeadPolicy::None,
         hidden_exact_head_groups: &[],
         structural_ast_dispatch: StructuralAstDispatchKind::Timeline,
+    },
+    CommandFamilySpec {
+        root_clause: ClauseId::Macro,
+        completion_groups: MACRO_GROUPS,
+        single_token_head_policy: SingleTokenHeadPolicy::None,
+        hidden_exact_head_groups: &[],
+        structural_ast_dispatch: StructuralAstDispatchKind::Macro,
     },
     CommandFamilySpec {
         root_clause: ClauseId::Rm,

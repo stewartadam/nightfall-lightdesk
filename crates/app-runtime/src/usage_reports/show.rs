@@ -106,6 +106,7 @@ impl ShowSummary {
             ("timelines", snapshot.timelines.len()),
             ("clips", snapshot.clips.len()),
             ("boards", snapshot.boards.len()),
+            ("macros", snapshot.macros.len()),
             ("input_routes", snapshot.routes.input.len()),
             ("output_routes", snapshot.routes.output.len()),
             ("console_universes", outputs.console_universes.len()),

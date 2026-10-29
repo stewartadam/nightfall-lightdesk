@@ -2,7 +2,7 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-The Rust side of Nightfall is a Cargo workspace of 55 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`.
+The Rust side of Nightfall is a Cargo workspace of 56 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`.
 
 For how the crates combine into running programs, see [how the pieces fit together](system-overview.md).
 
@@ -20,7 +20,7 @@ flowchart TB
   accTitle: Crate layers, their crates, and allowed dependencies
   accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
   hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli"]
-  crossPlugin["<b>Cross-plugin</b><br/>boards · desk · desk-audio · references · showfile · wasm-bridge"]
+  crossPlugin["<b>Cross-plugin</b><br/>boards · desk · desk-audio · macros · references · showfile · wasm-bridge"]
   plugins["<b>Plugins</b><br/>audio · cues · fixture-library · flow · fx · fx-module · object-library · programmer <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
   engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · lookahead · service-host <br /> tempo · timecode · undo · websocket"]
   base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances · io <br /> lookahead-projection · playback-planner · selection · waveform · workspace-hack"]
@@ -132,6 +132,7 @@ Cross-plugin crates combine several plugins, which plugin crates can't do themse
 | `desk` | Demo | Shared desk behavior that spans domains. See [what lives in `desk` and why](#what-lives-in-desk-and-why). |
 | `desk_audio` | No | Watches the system's audio output devices and moves timeline audio when the chosen device appears or disappears. |
 | `boards` | Demo | Boards: grids of buttons, button presses, and button status. |
+| `macros` | Demo | Macros: numbered command-line scripts, the backend runner that executes them line by line, and the `macro.start`, `macro.release`, and `macro.stop` actions. |
 | `references` | Demo | Show-wide report of which objects use which, for the **References** panel and delete guards. |
 | `showfile` | Demo | The versioned showfile JSON format, migrations, applying a showfile to an engine world, and snapshots of a world. |
 | `wasm-bridge` | Bridge | Functions the web UI calls in WASM. See [what the WASM bridge exports](#what-the-wasm-bridge-exports). |

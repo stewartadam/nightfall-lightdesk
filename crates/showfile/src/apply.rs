@@ -77,10 +77,12 @@ pub enum ShowfileLoadDomain {
     TimecodesTimelines,
     /// Operator-arranged button boards.
     Boards,
+    /// Command-line macros.
+    Macros,
 }
 
 impl ShowfileLoadDomain {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::DeskState,
         Self::FixturesPatch,
         Self::SceneObjects,
@@ -91,6 +93,7 @@ impl ShowfileLoadDomain {
         Self::Clips,
         Self::TimecodesTimelines,
         Self::Boards,
+        Self::Macros,
     ];
 
     /// Returns the domains that must be applied before this domain.
@@ -112,6 +115,7 @@ impl ShowfileLoadDomain {
                 Self::Clips,
             ],
             Self::Boards => &[],
+            Self::Macros => &[],
         }
     }
 }
@@ -172,6 +176,7 @@ pub fn apply_showfile_snapshot(
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
     board_data_provider: &mut DataProvider<Board>,
+    macro_data_provider: &mut DataProvider<Macro>,
     input_routes: &mut InputRoutes,
     output_routes: &mut OutputRoutes,
     disabled_routes: &mut DisabledRoutes,
@@ -215,7 +220,8 @@ pub fn apply_showfile_snapshot(
     let mut timecodes_timelines_contributor =
         TimecodesTimelinesLoadContributor::new(timecode_data_provider, timeline_data_provider);
     let mut boards_contributor = BoardsLoadContributor::new(board_data_provider);
-    let mut load_contributors: [&mut dyn ShowfileLoadContributor; 10] = [
+    let mut macros_contributor = MacrosLoadContributor::new(macro_data_provider);
+    let mut load_contributors: [&mut dyn ShowfileLoadContributor; 11] = [
         &mut desk_state_contributor,
         &mut fixtures_patch_contributor,
         &mut scene_objects_contributor,
@@ -226,6 +232,7 @@ pub fn apply_showfile_snapshot(
         &mut clips_contributor,
         &mut timecodes_timelines_contributor,
         &mut boards_contributor,
+        &mut macros_contributor,
     ];
 
     // Deterministic phase barriers:
@@ -265,6 +272,7 @@ pub struct ShowfileApplyState<'w> {
     timecode_data_provider: ResMut<'w, DataProvider<Timecode>>,
     timeline_data_provider: ResMut<'w, DataProvider<Timeline>>,
     board_data_provider: ResMut<'w, DataProvider<Board>>,
+    macro_data_provider: ResMut<'w, DataProvider<Macro>>,
     input_routes: ResMut<'w, InputRoutes>,
     output_routes: ResMut<'w, OutputRoutes>,
     disabled_routes: ResMut<'w, DisabledRoutes>,
@@ -307,6 +315,7 @@ pub fn apply_showfile_snapshot_to_world(
                     &mut state.timecode_data_provider,
                     &mut state.timeline_data_provider,
                     &mut state.board_data_provider,
+                    &mut state.macro_data_provider,
                     &mut state.input_routes,
                     &mut state.output_routes,
                     &mut state.disabled_routes,
@@ -340,6 +349,7 @@ pub fn initialize_showfile_resources(world: &mut World) {
     world.init_resource::<DataProvider<Timecode>>();
     world.init_resource::<DataProvider<Timeline>>();
     world.init_resource::<DataProvider<Board>>();
+    world.init_resource::<DataProvider<Macro>>();
     world.init_resource::<InputRoutes>();
     world.init_resource::<OutputRoutes>();
     world.init_resource::<DisabledRoutes>();

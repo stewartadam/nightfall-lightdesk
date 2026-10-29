@@ -70,7 +70,8 @@ impl ObjectDefinitionSources<'_, '_> {
             ObjectType::Master
             | ObjectType::Parameter
             | ObjectType::Blueprint
-            | ObjectType::Board => true,
+            | ObjectType::Board
+            | ObjectType::Macro => true,
         }
     }
 
@@ -91,7 +92,8 @@ impl ObjectDefinitionSources<'_, '_> {
             ObjectType::Master
             | ObjectType::Parameter
             | ObjectType::Blueprint
-            | ObjectType::Board => true,
+            | ObjectType::Board
+            | ObjectType::Macro => true,
         }
     }
 

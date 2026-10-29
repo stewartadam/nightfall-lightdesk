@@ -196,6 +196,7 @@ pub(super) fn merge_showfile_snapshots(
         )?,
         clips: merge_identified_vec("clips", current.clips, incoming.clips, options.clips)?,
         boards: merge_identified_vec("boards", current.boards, incoming.boards, options.boards)?,
+        macros: merge_identified_vec("macros", current.macros, incoming.macros, options.macros)?,
     };
     for warning in stabilize_showfile_group_refs(&mut merged) {
         tracing::warn!("{}", warning);
@@ -232,6 +233,7 @@ pub(super) fn validate_showfile_import_options(
     validate_import_policy("timelines", options.timelines, FULL_IMPORT_POLICIES)?;
     validate_import_policy("clips", options.clips, FULL_IMPORT_POLICIES)?;
     validate_import_policy("boards", options.boards, FULL_IMPORT_POLICIES)?;
+    validate_import_policy("macros", options.macros, FULL_IMPORT_POLICIES)?;
     Ok(())
 }
 

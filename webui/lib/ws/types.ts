@@ -110,6 +110,7 @@ export type AnyCommand =
   | types.FxCommand
   | types.FxModuleCommand
   | types.GroupCommand
+  | types.MacroCommand
   | types.ProgrammerCommand
   | types.SceneObjectCommand
   | types.SettingsCommand
@@ -124,6 +125,7 @@ export type AnyCommand =
 export type AnyWsMessage =
   | types.BoardWsMessage
   | types.CueWsMessage
+  | types.MacroWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
   | types.FixtureLibraryWsMessage

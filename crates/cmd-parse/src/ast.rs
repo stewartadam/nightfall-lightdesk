@@ -82,6 +82,7 @@ pub enum CommandAst<'i> {
     Clip(ClipCommandAst),
     Timecode(TimecodeCommandAst),
     Timeline(TimelineCommandAst),
+    Macro(MacroCommandAst),
     Tempo(TempoCommandAst<'i>),
     Channel(ChannelCommandAst<'i>),
     PatchAdd(PatchAddCommandAst<'i>),
@@ -115,6 +116,10 @@ pub struct TimecodeKeyword;
 /// Marker node for the `timeline` command keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimelineKeyword;
+
+/// Marker node for the `macro` command keyword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroKeyword;
 
 /// Marker node for direct DMX channel commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -558,6 +563,14 @@ pub enum TempoActionAst<'i> {
 pub struct TimelineCommandAst {
     pub _timeline: TimelineKeyword,
     pub timeline_id: SimpleIdentifierExpressionAst,
+    pub action: StartStopAst,
+}
+
+/// Macro start or stop command targeting one macro id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MacroCommandAst {
+    pub _macro: MacroKeyword,
+    pub macro_id: SimpleIdentifierExpressionAst,
     pub action: StartStopAst,
 }
 

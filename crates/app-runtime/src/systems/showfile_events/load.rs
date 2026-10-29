@@ -46,6 +46,7 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) timeline_data_provider:
         ResMut<'w, DataProvider<Timeline>>,
     pub(in crate::systems::showfile_events) board_data_provider: ResMut<'w, DataProvider<Board>>,
+    pub(in crate::systems::showfile_events) macro_data_provider: ResMut<'w, DataProvider<Macro>>,
     pub(in crate::systems::showfile_events) active_fx_module_ids:
         Option<ResMut<'w, ActiveFxModuleIds>>,
     pub(in crate::systems::showfile_events) input_routes: ResMut<'w, InputRoutes>,
@@ -79,6 +80,8 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) io_settings: ResMut<'w, IoRuntimeSettings>,
     pub(in crate::systems::showfile_events) controller_mapping_mode:
         Option<ResMut<'w, nightfall_actions::ControllerMappingMode>>,
+    pub(in crate::systems::showfile_events) macro_runs:
+        Option<ResMut<'w, nightfall_macros::prelude::MacroRuns>>,
 }
 
 /// Replaces current runtime showfile state with a provided snapshot.
@@ -99,6 +102,7 @@ pub(super) fn load_showfile_in_place(
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
     board_data_provider: &mut DataProvider<Board>,
+    macro_data_provider: &mut DataProvider<Macro>,
     active_fx_module_ids: Option<&mut ActiveFxModuleIds>,
     input_routes: &mut InputRoutes,
     output_routes: &mut OutputRoutes,
@@ -140,6 +144,7 @@ pub(super) fn load_showfile_in_place(
         timecode_data_provider,
         timeline_data_provider,
         board_data_provider,
+        macro_data_provider,
         active_fx_module_ids,
         input_routes,
         output_routes,
@@ -177,6 +182,7 @@ pub(super) fn load_showfile_in_place(
         timecode_data_provider,
         timeline_data_provider,
         board_data_provider,
+        macro_data_provider,
         input_routes,
         output_routes,
         disabled_routes,
@@ -212,6 +218,7 @@ pub(super) fn load_showfile_snapshot_from_state(
         timecode_data_provider,
         timeline_data_provider,
         board_data_provider,
+        macro_data_provider,
         active_fx_module_ids,
         input_routes,
         output_routes,
@@ -236,6 +243,7 @@ pub(super) fn load_showfile_snapshot_from_state(
         desk_settings,
         io_settings,
         controller_mapping_mode,
+        macro_runs,
     } = showfile_load_state;
 
     // A loaded show replaces every target a client may be about to bind, so mapping mode
@@ -245,6 +253,9 @@ pub(super) fn load_showfile_snapshot_from_state(
             tracing::info!("controller_mapping_mode_released_on_show_load");
         }
         mode.end_for_show_load();
+    }
+    if let Some(runs) = macro_runs {
+        runs.end_all_for_show_load();
     }
 
     load_showfile_in_place(
@@ -263,6 +274,7 @@ pub(super) fn load_showfile_snapshot_from_state(
         timecode_data_provider.as_mut(),
         timeline_data_provider.as_mut(),
         board_data_provider.as_mut(),
+        macro_data_provider.as_mut(),
         active_fx_module_ids.as_deref_mut(),
         input_routes.as_mut(),
         output_routes.as_mut(),

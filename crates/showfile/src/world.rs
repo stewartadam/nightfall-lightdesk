@@ -32,8 +32,9 @@ use crate::{
     contributors::{
         BoardsSaveContributor, ClipsSaveContributor, ColorPathsSaveContributor,
         CueStructureSaveContributor, DeskStateSaveContributor, FixturesPatchSaveContributor,
-        FlowsSaveContributor, FxSaveContributor, SceneObjectsSaveContributor,
-        ShowfileSaveContributor, TimecodesTimelinesSaveContributor, collect_save_contributions,
+        FlowsSaveContributor, FxSaveContributor, MacrosSaveContributor,
+        SceneObjectsSaveContributor, ShowfileSaveContributor, TimecodesTimelinesSaveContributor,
+        collect_save_contributions,
     },
 };
 
@@ -55,6 +56,7 @@ pub struct ShowfileSaveState<'w, 's> {
     timecode_data_provider: Res<'w, DataProvider<Timecode>>,
     timeline_data_provider: Res<'w, DataProvider<Timeline>>,
     board_data_provider: Res<'w, DataProvider<Board>>,
+    macro_data_provider: Res<'w, DataProvider<Macro>>,
     input_routes: Res<'w, InputRoutes>,
     output_routes: Res<'w, OutputRoutes>,
     disabled_routes: Res<'w, DisabledRoutes>,
@@ -115,6 +117,7 @@ pub fn snapshot_from_save_state(
         &showfile_save_state.timeline_data_provider,
     );
     let boards_contributor = BoardsSaveContributor::new(&showfile_save_state.board_data_provider);
+    let macros_contributor = MacrosSaveContributor::new(&showfile_save_state.macro_data_provider);
 
     collect_save_contributions(&[
         &desk_state_contributor as &dyn ShowfileSaveContributor,
@@ -127,6 +130,7 @@ pub fn snapshot_from_save_state(
         &clips_contributor,
         &timecodes_timelines_contributor,
         &boards_contributor,
+        &macros_contributor,
     ])
 }
 

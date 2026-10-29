@@ -178,6 +178,8 @@ export function ActionPicker(props: ActionPickerProps): JSX.Element {
         return targetSelect(parameter, targets.timelines());
       case "Cue":
         return targetSelect(parameter, targets.cues());
+      case "Macro":
+        return targetSelect(parameter, targets.macros());
       case "Control":
       case "Integer":
       case "Number":

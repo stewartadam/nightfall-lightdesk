@@ -81,6 +81,8 @@ completion_group_ids! {
     TimecodeAction => "timecode/action",
     TimelineIdentifier => "timeline/identifier",
     TimelineAction => "timeline/action",
+    MacroIdentifier => "macro/identifier",
+    MacroAction => "macro/action",
     LogLevel => "log/level",
     LogFilter => "log/filter",
     LogFixture => "log/fixture",

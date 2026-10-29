@@ -1114,6 +1114,7 @@ pub(in crate::parser) fn is_property_slot(slot: SlotId) -> bool {
             | SlotId::FlowAction
             | SlotId::TimecodeAction
             | SlotId::TimelineAction
+            | SlotId::MacroAction
             | SlotId::TempoAction
             | SlotId::LogFilterField
             | SlotId::RecallBlueprintKeyword
@@ -1152,6 +1153,7 @@ pub(in crate::parser) fn is_identifier_slot(slot: SlotId) -> bool {
             | SlotId::FlowIdentifier
             | SlotId::TimecodeIdentifier
             | SlotId::TimelineIdentifier
+            | SlotId::MacroIdentifier
             | SlotId::LogFilterValue
             | SlotId::LogFixtureIdentifier
             | SlotId::RecallCueRef
