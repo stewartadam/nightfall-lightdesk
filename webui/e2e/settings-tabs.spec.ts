@@ -9,7 +9,10 @@
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
-/** Checks category content, keyboard selection, and access to the segmented strip on narrow screens. */
+/**
+ * Checks category content and pointer and Up/Down keyboard selection in the vertical sidebar on
+ * wide screens, then the horizontal strip that replaces it on narrow screens.
+ */
 test("settings segmented tabs support pointer and keyboard navigation", async ({
   page,
 }, testInfo) => {
@@ -20,6 +23,15 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });
   await expect(tablist.getByRole("tab")).toHaveCount(7);
+  await expect(tablist).toHaveAttribute("aria-orientation", "vertical");
+  const content = dialog.getByRole("tabpanel");
+  const [list, panel] = await Promise.all([
+    tablist.boundingBox(),
+    content.boundingBox(),
+  ]);
+  expect((list?.x ?? 0) + (list?.width ?? 0)).toBeLessThanOrEqual(
+    panel?.x ?? 0,
+  );
   const general = tablist.getByRole("tab", { name: "General", exact: true });
   await expect(general).toHaveAttribute("aria-selected", "true");
   await expect(dialog.getByRole("tabpanel", { name: "General" })).toBeVisible();
@@ -29,7 +41,7 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   const indicator = tablist.locator(".nf-segmented-tabs-indicator");
   await expect(indicator).toBeVisible();
   const initialPosition = await indicator.evaluate(
-    (element) => element.getBoundingClientRect().x,
+    (element) => element.getBoundingClientRect().y,
   );
   await appearance.click();
   await expect(appearance).toHaveAttribute("aria-selected", "true");
@@ -39,27 +51,56 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
     .poll(async () => {
       const highlight = await indicator.boundingBox();
       const tab = await appearance.boundingBox();
-      return Math.abs((highlight?.x ?? 0) - (tab?.x ?? 0));
+      return Math.abs((highlight?.y ?? 0) - (tab?.y ?? 0));
     })
     .toBeLessThan(1);
   expect(
-    await indicator.evaluate((element) => element.getBoundingClientRect().x),
+    await indicator.evaluate((element) => element.getBoundingClientRect().y),
   ).toBeGreaterThan(initialPosition);
   await expect(indicator).toHaveCSS("transition-duration", "0.12s, 0.12s");
+  await expect(indicator).toHaveCSS("transition-property", "transform, height");
   await page.screenshot({
     path: testInfo.outputPath("settings-segmented.png"),
   });
 
   await appearance.press("ArrowRight");
+  await expect(appearance).toBeFocused();
+  await expect(appearance).toHaveAttribute("aria-selected", "true");
+  await appearance.press("ArrowDown");
   const editors = tablist.getByRole("tab", { name: "Editors" });
   await expect(editors).toBeFocused();
   await expect(dialog.getByLabel("Insert and paste position")).toBeVisible();
-  await editors.press("ArrowRight");
+  await editors.press("ArrowDown");
   const network = tablist.getByRole("tab", { name: "Network" });
   await expect(network).toBeFocused();
   await expect(dialog.getByLabel("Input signal loss policy")).toBeVisible();
+  await network.press("ArrowUp");
+  await expect(editors).toBeFocused();
+  await editors.press("ArrowDown");
+  await expect(network).toBeFocused();
+
+  // A short window makes the sidebar scroll; End must bring the last category into view.
+  const wide = page.viewportSize();
+  await page.setViewportSize({ width: wide?.width ?? 1280, height: 360 });
+  await network.press("End");
+  const lastTab = tablist.getByRole("tab", { name: "Privacy" });
+  await expect(lastTab).toBeFocused();
+  await expect(lastTab).toBeInViewport({ ratio: 1 });
+  await page.screenshot({
+    path: testInfo.outputPath("settings-segmented-short.png"),
+  });
+  await lastTab.press("Home");
+  await expect(general).toBeFocused();
+  await expect(general).toBeInViewport({ ratio: 1 });
+  for (let step = 0; step < 3; step++) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(network).toBeFocused();
+  if (wide) await page.setViewportSize(wide);
 
   await page.setViewportSize({ width: 390, height: 780 });
+  await expect(tablist).toHaveAttribute("aria-orientation", "horizontal");
+  await expect(network).toHaveAttribute("aria-selected", "true");
   await network.press("ArrowRight");
   const visualizer = tablist.getByRole("tab", { name: "Visualizer" });
   await expect(visualizer).toBeFocused();
@@ -141,7 +182,10 @@ test("settings segmented tabs support pointer and keyboard navigation", async ({
   await expect(dialog).toBeHidden();
 });
 
-/** Verifies both content slide directions, captures an intermediate frame, and honors reduced motion. */
+/**
+ * Verifies both content slide directions of the vertical sidebar (down for a later tab, up for an
+ * earlier one), captures an intermediate frame, and honors reduced motion.
+ */
 test("shared tabs slide their associated content", async ({
   page,
 }, testInfo) => {
@@ -153,8 +197,8 @@ test("shared tabs slide their associated content", async ({
   const tablist = dialog.getByRole("tablist", { name: "Settings categories" });
 
   for (const [name, offset] of [
-    ["Appearance", "100%"],
-    ["General", "-100%"],
+    ["Appearance", "10%"],
+    ["General", "-10%"],
   ] as const) {
     const frames = await tablist
       .getByRole("tab", { name, exact: true })
@@ -176,7 +220,7 @@ test("shared tabs slide their associated content", async ({
         animation.pause();
         animation.currentTime = 60;
         return [
-          getComputedStyle(panel!).getPropertyValue("--tw-enter-translate-x"),
+          getComputedStyle(panel!).getPropertyValue("--tw-enter-translate-y"),
           animation instanceof CSSAnimation,
         ];
       });

@@ -37,6 +37,7 @@
 }
 .nf-segmented-tabs-indicator {
   position: absolute;
+  top: 0;
   left: 0;
   z-index: -1;
   pointer-events: none;
@@ -46,6 +47,12 @@
   transition:
     transform 120ms ease-out,
     width 120ms ease-out;
+}
+.nf-segmented-tabs-viewport[aria-orientation="vertical"]
+  > .nf-segmented-tabs-indicator {
+  transition:
+    transform 120ms ease-out,
+    height 120ms ease-out;
 }
 .nf-segmented-tabs-viewport > .nf-button {
   flex: 1 0 auto;
@@ -60,6 +67,22 @@
   color: var(--nf-segmented-selected-color);
   background: transparent;
   border-color: transparent;
+}
+.nf-segmented-tabs-viewport[aria-orientation="vertical"] {
+  flex-direction: column;
+  gap: 2px;
+  scroll-padding-inline: 0;
+  scroll-padding-block: 12px;
+  padding: 6px;
+}
+.nf-segmented-tabs-viewport[aria-orientation="vertical"] > .nf-button {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: start;
+  padding: 6px 10px;
 }
 :root[data-reduced-motion="true"] {
   .nf-segmented-tabs-indicator {

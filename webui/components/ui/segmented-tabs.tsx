@@ -14,21 +14,35 @@ import {
   on,
   onCleanup,
 } from "solid-js";
-import { playContentEntrance } from "./content-entrance";
+import { type ContentEntrance, playContentEntrance } from "./content-entrance";
 import { ScrollArea } from "./scroll-area";
 import { Button } from "./visual-language/button";
 import "./segmented.css";
 import "./segmented-tabs.css";
 
 /**
- * Scrolls the strip horizontally so a tab is fully visible inside its scroll padding, which
+ * Scrolls the strip along its axis so a tab is fully visible inside its scroll padding, which
  * keeps the edge indicators from covering it. Only the strip scrolls: unlike
  * `scrollIntoView`, this never moves an enclosing dialog, panel or page. Does nothing when
- * the tab is already visible. The viewport is the tabs' offset parent, so `offsetLeft` is in
- * the strip's scroll coordinates.
+ * the tab is already visible. The viewport is the tabs' offset parent, so the tab's offsets
+ * are in the strip's scroll coordinates.
  */
-function revealTab(viewport: HTMLElement, tab: HTMLElement) {
+function revealTab(
+  viewport: HTMLElement,
+  tab: HTMLElement,
+  orientation: TabsOrientation,
+) {
   const style = getComputedStyle(viewport);
+  if (orientation === "vertical") {
+    const padStart = Number.parseFloat(style.scrollPaddingBlockStart) || 0;
+    const padEnd = Number.parseFloat(style.scrollPaddingBlockEnd) || 0;
+    const start = tab.offsetTop - padStart;
+    const end =
+      tab.offsetTop + tab.offsetHeight + padEnd - viewport.clientHeight;
+    if (viewport.scrollTop > start) viewport.scrollTop = start;
+    else if (viewport.scrollTop < end) viewport.scrollTop = end;
+    return;
+  }
   const padStart = Number.parseFloat(style.scrollPaddingInlineStart) || 0;
   const padEnd = Number.parseFloat(style.scrollPaddingInlineEnd) || 0;
   const start = tab.offsetLeft - padStart;
@@ -37,8 +51,25 @@ function revealTab(viewport: HTMLElement, tab: HTMLElement) {
   else if (viewport.scrollLeft < end) viewport.scrollLeft = end;
 }
 
+/** Axis the tabs are laid out along: a row strip, or a column such as a dialog sidebar. */
+export type TabsOrientation = "horizontal" | "vertical";
+
+/**
+ * How content enters for each orientation: from the side of the newly selected tab. A vertical
+ * slide uses a short distance, since a full-height panel moving its whole height reads as a jump.
+ */
+const CONTENT_ENTRANCES: Record<
+  TabsOrientation,
+  { backward: ContentEntrance; forward: ContentEntrance; distance?: number }
+> = {
+  horizontal: { backward: "left", forward: "right" },
+  vertical: { backward: "top", forward: "bottom", distance: 10 },
+};
+
 interface SegmentedTabsProps<T extends string> {
   density?: "compact" | "comfortable";
+  /** Lays the tabs out in a row (default) or a column; arrow keys follow the same axis. */
+  orientation?: TabsOrientation;
   id: string;
   label: string;
   contentId: string;
@@ -47,9 +78,14 @@ interface SegmentedTabsProps<T extends string> {
   onChange: (value: T) => void;
 }
 
-/** Selects a content view with roving tab focus and scrolling for narrow horizontal strips. */
+/**
+ * Selects a content view with roving tab focus. Lays out as a horizontal strip that scrolls when
+ * narrow, or as a vertical list that scrolls when short.
+ */
 export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
   const tabs: HTMLButtonElement[] = [];
+  /** Axis the strip is laid out along, defaulting to a horizontal row. */
+  const orientation = (): TabsOrientation => props.orientation ?? "horizontal";
   let viewport!: HTMLDivElement;
   const [indicator, setIndicator] = createSignal<JSX.CSSProperties>();
 
@@ -72,8 +108,11 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
           if (document.documentElement.dataset.reducedMotion === "true") return;
           const panel = document.getElementById(contentId);
           if (!panel) return;
+          const { backward, forward, distance } =
+            CONTENT_ENTRANCES[orientation()];
           cancelEntrance = playContentEntrance(panel, {
-            direction: nextIndex > previousIndex ? "right" : "left",
+            direction: nextIndex > previousIndex ? forward : backward,
+            distance,
           });
         });
         onCleanup(() => {
@@ -87,20 +126,22 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
   /**
    * Scrolls the selected tab into view whenever the selection changes, including the initial
    * one, so a tab chosen programmatically (e.g. Settings opened on a specific tab) is not left
-   * hidden past the edge of a narrow strip. Waits a frame so the strip has been laid out.
+   * hidden past the edge of a narrow strip or short list. Waits a frame so the strip has been
+   * laid out.
    */
   createEffect(() => {
     const index = props.options.findIndex(
       (option) => option.key === props.value,
     );
+    const axis = orientation();
     const frame = requestAnimationFrame(() => {
       const tab = tabs[index];
-      if (tab) revealTab(viewport, tab);
+      if (tab) revealTab(viewport, tab, axis);
     });
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
-  /** Tracks the selected button's layout so the highlight slides between unequal-width tabs. */
+  /** Tracks the selected button's layout so the highlight slides between unequal-size tabs. */
   createEffect(() => {
     const value = props.value;
     const options = props.options;
@@ -112,9 +153,8 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
       setIndicator(
         selected
           ? {
-              transform: `translateX(${selected.offsetLeft}px)`,
+              transform: `translate(${selected.offsetLeft}px, ${selected.offsetTop}px)`,
               width: `${selected.offsetWidth}px`,
-              top: `${selected.offsetTop}px`,
               height: `${selected.offsetHeight}px`,
             }
           : undefined,
@@ -129,14 +169,19 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
     onCleanup(() => resize.disconnect());
   });
 
-  /** Activates adjacent or endpoint tabs and keeps keyboard focus on the selected option. */
+  /**
+   * Activates adjacent or endpoint tabs and keeps keyboard focus on the selected option. The
+   * arrow keys along the strip's axis move the selection (Left/Right for a row, Up/Down for a
+   * column), wrapping at either end; the cross-axis arrows are left to the page.
+   */
   function navigateTabs(event: KeyboardEvent, index: number) {
+    const vertical = orientation() === "vertical";
     let next: number;
     switch (event.key) {
-      case "ArrowRight":
+      case vertical ? "ArrowDown" : "ArrowRight":
         next = (index + 1) % props.options.length;
         break;
-      case "ArrowLeft":
+      case vertical ? "ArrowUp" : "ArrowLeft":
         next = (index + props.options.length - 1) % props.options.length;
         break;
       case "Home":
@@ -164,6 +209,7 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
         },
         role: "tablist",
         "aria-label": props.label,
+        "aria-orientation": orientation(),
       }}
     >
       <span
@@ -184,7 +230,9 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
             aria-selected={props.value === tab.key}
             tabIndex={props.value === tab.key ? 0 : -1}
             onClick={() => props.onChange(tab.key)}
-            onFocus={(event) => revealTab(viewport, event.currentTarget)}
+            onFocus={(event) =>
+              revealTab(viewport, event.currentTarget, orientation())
+            }
             onKeyDown={(event) => navigateTabs(event, index())}
           >
             {tab.label}
