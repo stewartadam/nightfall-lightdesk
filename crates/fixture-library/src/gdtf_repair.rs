@@ -252,16 +252,17 @@ fn repair_element(start: &BytesStart, repairs: &mut Vec<String>) -> Option<Bytes
                 }
                 points
             }
-            ("WiringObject", "ComponentType") => match wiring_component_type(&value) {
-                Some(known) => {
-                    note(
-                        repairs,
-                        &format!("imported WiringObject@ComponentType {value} as {known}"),
-                    );
-                    known.to_string()
-                }
-                None => value,
-            },
+            ("WiringObject", "ComponentType")
+                if !WIRING_COMPONENT_TYPES.contains(&value.as_str()) =>
+            {
+                note(
+                    repairs,
+                    &format!(
+                        "imported WiringObject@ComponentType {value} as {PLACEHOLDER_COMPONENT_TYPE}"
+                    ),
+                );
+                PLACEHOLDER_COMPONENT_TYPE.to_string()
+            }
             _ => value,
         };
         match key.as_str() {
@@ -332,23 +333,14 @@ const WIRING_COMPONENT_TYPES: [&str; 9] = [
     "NetworkInOut",
 ];
 
-/// Maps a vendor-specific wiring component type onto the generic one the parser accepts.
+/// Component type substituted for wiring component types outside the spec.
 ///
-/// Manufacturers publish types outside the spec, such as Martin's `VMXInput`
-/// and `VMXOutput` video-mapping connectors. Unknown types ending in `Input`
-/// or `Output` become the generic `Input` or `Output` connector; known and
-/// other unknown types return `None` and are left as published.
-fn wiring_component_type(value: &str) -> Option<&'static str> {
-    if WIRING_COMPONENT_TYPES.contains(&value) {
-        None
-    } else if value.ends_with("Input") {
-        Some("Input")
-    } else if value.ends_with("Output") {
-        Some("Output")
-    } else {
-        None
-    }
-}
+/// Manufacturers publish vendor types such as Martin's `VMXInput` and
+/// `VMXOutput` video-mapping connectors, and nothing else in the archive
+/// reliably states their role. Nightfall reads only a wiring object's
+/// position, never its component type, so every unknown type becomes this
+/// one, which takes no type-specific attributes.
+const PLACEHOLDER_COMPONENT_TYPE: &str = "Input";
 
 /// Records a repair once.
 fn note(repairs: &mut Vec<String>, repair: &str) {
@@ -503,22 +495,23 @@ mod tests {
         assert!(repairs.is_empty());
     }
 
-    /// Verifies vendor wiring component types ending in Input or Output map
-    /// onto the generic connector, while spec types and other unknown types
-    /// are left as published.
+    /// Verifies every wiring component type outside the spec becomes the
+    /// placeholder type, whatever its name, while spec types are left as
+    /// published.
     #[test]
-    fn maps_vendor_wiring_component_types() {
-        let xml = r#"<Geometries><WiringObject Name="In" ComponentType="VMXInput"/><WiringObject Name="Out" ComponentType="VMXOutput"/><WiringObject Name="Net" ComponentType="NetworkInput"/><WiringObject Name="Odd" ComponentType="Mystery"/></Geometries>"#;
+    fn maps_vendor_wiring_component_types_to_placeholder() {
+        let xml = r#"<Geometries><WiringObject Name="In" ComponentType="VMXInput"/><WiringObject Name="Out" ComponentType="VMXOutput"/><WiringObject Name="Net" ComponentType="NetworkOutput"/><WiringObject Name="Odd" ComponentType="Mystery"/></Geometries>"#;
         let (repaired, repairs) = repair_description(xml).expect("well-formed");
         assert_eq!(
             repaired,
-            r#"<Geometries><WiringObject Name="In" ComponentType="Input"/><WiringObject Name="Out" ComponentType="Output"/><WiringObject Name="Net" ComponentType="NetworkInput"/><WiringObject Name="Odd" ComponentType="Mystery"/></Geometries>"#
+            r#"<Geometries><WiringObject Name="In" ComponentType="Input"/><WiringObject Name="Out" ComponentType="Input"/><WiringObject Name="Net" ComponentType="NetworkOutput"/><WiringObject Name="Odd" ComponentType="Input"/></Geometries>"#
         );
         assert_eq!(
             repairs,
             vec![
                 "imported WiringObject@ComponentType VMXInput as Input",
-                "imported WiringObject@ComponentType VMXOutput as Output",
+                "imported WiringObject@ComponentType VMXOutput as Input",
+                "imported WiringObject@ComponentType Mystery as Input",
             ]
         );
     }
