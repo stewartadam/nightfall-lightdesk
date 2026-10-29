@@ -164,6 +164,12 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
+    #[cfg(feature = "gdtf-share")]
+    nightfall_gdtf_share::register_routes(
+        &mut app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+    );
     crate::diagnostic_http::register_routes(
         &mut app
             .world_mut()
@@ -312,6 +318,7 @@ fn native_runtime_capabilities(
         network_dmx_output: (cfg!(feature = "artnet") || cfg!(feature = "sacn"))
             && transport_policy.allow_network_output,
         usb_dmx_output: cfg!(feature = "usb") && transport_policy.allow_usb_output,
+        gdtf_share: cfg!(feature = "gdtf-share"),
     }
 }
 

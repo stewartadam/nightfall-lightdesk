@@ -32,10 +32,12 @@ pub mod routes;
 mod web_ui;
 pub mod websocket;
 
+pub use origin::is_local_client;
 pub use web_ui::{SharedWebUiAssets, WebUiAssets};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
+    pub use crate::is_local_client;
     pub use crate::routes::HttpRouteRegistry;
     pub use crate::websocket::AxumAppState;
     pub use crate::{SharedWebUiAssets, WebUiAssets, WebsocketHost, WebsocketPlugin};

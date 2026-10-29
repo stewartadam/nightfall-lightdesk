@@ -73,6 +73,7 @@ import {
   TimelinePlacementPreference,
 } from "../../types";
 import { createBeatModelDownload } from "../beat-detection";
+import { GdtfShareSettings } from "../gdtf-share";
 import { KeybindingsSettings } from "../keybindings";
 import {
   type QualityPreset,
@@ -111,6 +112,7 @@ const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
   { key: "network", label: "Network" },
   { key: "visualizer", label: "Visualizer" },
   { key: "keyboard", label: "Keyboard" },
+  { key: "accounts", label: "Accounts" },
   { key: "privacy", label: "Privacy" },
 ];
 
@@ -196,7 +198,22 @@ export function SettingsOverlay() {
   const quality = useStore(visualizerQuality);
   const darkness = useStore(visualizerDarkness);
   const dismissed = useStore(dismissedPrompts);
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
+  const [chosenTab, setActiveTab] = createSignal<SettingsTab>("general");
+  /** Tabs with something to show on this engine; Accounts holds only GDTF Share for now. */
+  const visibleTabs = createMemo(() =>
+    SETTINGS_TABS.filter(
+      (tab) => tab.key !== "accounts" || capabilities()?.gdtf_share,
+    ),
+  );
+  /**
+   * The tab shown: the one chosen, or General when the chosen tab has nothing to show on
+   * this engine, such as Accounts after connecting to one without GDTF Share.
+   */
+  const activeTab = createMemo(() =>
+    visibleTabs().some((tab) => tab.key === chosenTab())
+      ? chosenTab()
+      : "general",
+  );
   const [query, setQuery] = createSignal("");
   const [hasResults, setHasResults] = createSignal(true);
   /** Whether a search is running, which lists matches from every tab instead of one tab. */
@@ -465,7 +482,7 @@ export function SettingsOverlay() {
               id={tabId}
               label="Settings categories"
               contentId={`${tabId}-content`}
-              options={SETTINGS_TABS}
+              options={visibleTabs()}
               value={activeTab()}
               onChange={setActiveTab}
             />
@@ -487,6 +504,11 @@ export function SettingsOverlay() {
           <TabPane tab="appearance">
             <AppearanceSettings />
           </TabPane>
+          <Show when={capabilities()?.gdtf_share}>
+            <TabPane tab="accounts">
+              <GdtfShareSettings />
+            </TabPane>
+          </Show>
           <TabPane tab="privacy">
             <PrivacySettings />
           </TabPane>
