@@ -24,9 +24,11 @@ store cue 1.2 /merge
 clip 1 start
 clip 1 go
 clip 1 stop
+macro 3 start
+macro 3 stop
 ```
 
-Create the sequence and configure the clip's source in their panels first. Cue `1.2` belongs to sequence `1`; clip `1` is a separate object with its own ID. See [Storing and recalling looks](stores.md) for overwrite modes.
+Create the sequence and configure the clip's source in their panels first. Cue `1.2` belongs to sequence `1`; clip `1` is a separate object with its own ID. `macro 3 start` runs the commands of [macro](panels/macros.md) 3 in order. See [Storing and recalling looks](stores.md) for overwrite modes.
 
 ## Tempo
 

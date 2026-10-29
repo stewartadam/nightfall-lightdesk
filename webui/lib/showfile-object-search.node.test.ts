@@ -53,6 +53,7 @@ function createSnapshot(
     timecodes: {},
     timelines: {},
     boards: {},
+    macros: {},
     ...overrides,
   };
 }
