@@ -35,7 +35,7 @@ bumpalo = { version = "3.20.3", features = ["allocator-api2"] }
 bytemuck = { version = "1.25.2", default-features = false, features = ["aarch64_simd", "derive", "wasm_simd"] }
 byteorder = { version = "1.5.0" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "wasmbind"] }
-cranelift-bitset = { version = "0.137.0", default-features = false, features = ["enable-serde"] }
+cranelift-bitset = { version = "0.137.1", default-features = false, features = ["enable-serde"] }
 crc32fast = { version = "1.5.3" }
 crossbeam-channel = { version = "0.5.17" }
 crossbeam-utils = { version = "0.8.23" }
@@ -65,7 +65,7 @@ once_cell = { version = "1.21.4" }
 percent-encoding = { version = "2.3.2" }
 phf_shared = { version = "0.13.1" }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-pulley-interpreter = { version = "50.0.0", default-features = false, features = ["disas", "interp", "std"] }
+pulley-interpreter = { version = "50.0.1", default-features = false, features = ["disas", "interp", "std"] }
 quick-xml = { version = "0.42.0", features = ["overlapped-lists", "serialize"] }
 rand = { version = "0.10.3" }
 regex = { version = "1.13.1" }
@@ -99,7 +99,7 @@ url = { version = "2.5.8", features = ["serde"] }
 uuid = { version = "1.29.0", features = ["js", "serde", "v4", "v5"] }
 wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
 wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
-wasmtime-internal-core = { version = "50.0.0", default-features = false, features = ["backtrace", "serde"] }
+wasmtime-internal-core = { version = "50.0.1", default-features = false, features = ["backtrace", "serde"] }
 web-time = { version = "1.1.0", default-features = false, features = ["serde"] }
 winnow = { version = "1.0.4" }
 zerocopy = { version = "0.8.63", default-features = false, features = ["derive", "simd"] }
@@ -113,7 +113,7 @@ bevy_reflect_derive = { version = "0.20.1", features = ["auto_register_inventory
 bitflags = { version = "2.13.2", default-features = false, features = ["serde", "std"] }
 bumpalo = { version = "3.20.3", features = ["allocator-api2"] }
 byteorder = { version = "1.5.0" }
-cranelift-bitset = { version = "0.137.0", default-features = false, features = ["enable-serde"] }
+cranelift-bitset = { version = "0.137.1", default-features = false, features = ["enable-serde"] }
 crc32fast = { version = "1.5.3" }
 crypto-common = { version = "0.1.7", default-features = false, features = ["std"] }
 derive_more = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
@@ -134,7 +134,7 @@ once_cell = { version = "1.21.4" }
 percent-encoding = { version = "2.3.2" }
 phf_shared = { version = "0.13.1" }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-pulley-interpreter = { version = "50.0.0", default-features = false, features = ["disas", "interp", "std"] }
+pulley-interpreter = { version = "50.0.1", default-features = false, features = ["disas", "interp", "std"] }
 quick-xml = { version = "0.42.0", features = ["overlapped-lists", "serialize"] }
 regex = { version = "1.13.1" }
 regex-automata = { version = "0.4.18" }
@@ -160,7 +160,7 @@ url = { version = "2.5.8", features = ["serde"] }
 uuid = { version = "1.29.0", features = ["js", "serde", "v4", "v5"] }
 wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
 wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
-wasmtime-internal-core = { version = "50.0.0", default-features = false, features = ["backtrace", "serde"] }
+wasmtime-internal-core = { version = "50.0.1", default-features = false, features = ["backtrace", "serde"] }
 web-time = { version = "1.1.0", default-features = false, features = ["serde"] }
 winnow = { version = "1.0.4" }
 zlib-rs = { version = "0.6.8", default-features = false, features = ["std"] }
