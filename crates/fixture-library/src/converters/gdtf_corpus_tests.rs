@@ -20,7 +20,7 @@
 //! source content the description model drops on write is reported per
 //! archive and summed in the report.
 //!
-//! Run with `NIGHTFALL_GDTF_CORPUS_DIR=<dirs> pnpm run gdtf:corpus`
+//! Run with `pnpm run gdtf:corpus`, setting NIGHTFALL_GDTF_CORPUS_DIR=<dirs>
 //! (a platform path list; directories are searched recursively).
 
 use std::collections::BTreeMap;

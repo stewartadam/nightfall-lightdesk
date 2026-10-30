@@ -35,10 +35,18 @@ The archives are not redistributed with the repository. Fetch them from
 [GDTF Share](https://gdtf-share.com/) with your own account:
 
 ```sh
-export NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench
 GDTF_SHARE_USER=<user> GDTF_SHARE_PASSWORD=<password> pnpm run gdtf:fetch
 pnpm run gdtf:bench
 ```
+
+The `gdtf:*` scripts read their settings from the shell or from the worktree
+`.env` (only the `GDTF_*` and `NIGHTFALL_GDTF_*` keys), with the shell winning.
+Put the GDTF Share credentials in `.env` to skip typing them. The archives go
+to `NIGHTFALL_GDTF_BENCH_DIR`, which defaults to a per-user cache shared by
+every worktree: `~/Library/Caches/nightfall/gdtf-bench` on macOS,
+`$XDG_CACHE_HOME/nightfall/gdtf-bench` (or `~/.cache/...`) on Linux and
+`%LOCALAPPDATA%\nightfall\gdtf-bench` on Windows. Running the Cargo tests
+directly instead of through `gdtf:bench` needs the variable exported.
 
 The fetcher matches each archive to GDTF Share revisions of the same
 manufacturer and fixture and keeps only the one whose bytes hash to the pinned
@@ -61,6 +69,10 @@ NIGHTFALL_GDTF_BENCH_DIR=/path/to/bench \
 NIGHTFALL_GDTF_BENCH_SCREENSHOTS=1 \
 pnpm run test:webui-playwright webui/e2e/gdtf-bench-visual.spec.ts
 ```
+
+The bench specs only run when `NIGHTFALL_GDTF_BENCH_DIR` is exported (point it
+at the default cache above after `gdtf:fetch`), so full Playwright runs never
+pick them up.
 
 The spec installs bench archives into an isolated backend, drives fixtures
 through console commands, and asserts world-space beam directions, independent
