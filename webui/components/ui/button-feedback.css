@@ -6,6 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+/*
+ * A selected button or surface sets its selection outline here so the pressed
+ * shadow keeps it. It must not inherit: a button nested in a selected card,
+ * such as a card's settings button, would otherwise press with the card's
+ * selection accent.
+ */
+@property --button-selection-shadow {
+  syntax: "*";
+  inherits: false;
+}
 :is(.nf-button, .nf-toolbar-button) {
   transition:
     transform 120ms ease-out,

@@ -180,6 +180,39 @@ export function createMacroListController(options: MacroListControllerOptions) {
   const isRunning = (macro: Macro) =>
     macroRunStatus($macroRuns(), macro) !== undefined;
 
+  /** Selected macros that still exist, in selection order. */
+  const selectedMacros = createMemo(() =>
+    selectedMacroUids().flatMap((uid) => $macros()[uid] ?? []),
+  );
+  /** Whether any selected macro is idle, so Run has something to start. */
+  const canRunSelected = createMemo(() =>
+    selectedMacros().some((macro) => !isRunning(macro)),
+  );
+  /** Whether any selected macro is running, so Stop has something to stop. */
+  const canStopSelected = createMemo(() =>
+    selectedMacros().some((macro) => isRunning(macro)),
+  );
+
+  /** Starts every selected macro that isn't running. */
+  const handleRunSelected = () => {
+    if (dialogOpen()) return;
+    for (const macro of selectedMacros()) {
+      if (!isRunning(macro)) {
+        sendMacroCommand(buildStartMacroCommand(macro.identifiers.id));
+      }
+    }
+  };
+
+  /** Stops every selected macro that is running. */
+  const handleStopSelected = () => {
+    if (dialogOpen()) return;
+    for (const macro of selectedMacros()) {
+      if (isRunning(macro)) {
+        sendMacroCommand(buildStopMacroCommand(macro.identifiers.id));
+      }
+    }
+  };
+
   /** Stops `macro` when it runs, otherwise starts its press body. */
   const toggleRun = (macro: Macro) => {
     sendMacroCommand(
@@ -200,10 +233,10 @@ export function createMacroListController(options: MacroListControllerOptions) {
     );
   };
 
-  /** Shows `macro` in Properties without changing the selection. */
+  /** Shows `macro` in Properties without changing the selection, bringing Properties into view. */
   const inspectMacro = (macro: Macro) => {
     setInspectedMacroUid(macro.identifiers.uid);
-    propertiesInspector.activate();
+    propertiesInspector.reveal(panelId);
   };
 
   /** Selects a macro requested by the object palette, clearing a search that hides it. */
@@ -296,7 +329,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
   };
 
   /** Runs or stops the one selected macro. */
-  const handleRunSelected = () => {
+  const handleToggleSelected = () => {
     const macro = selectedMacro();
     if (selectedCount() !== 1 || dialogOpen() || !macro) return;
     toggleRun(macro);
@@ -421,7 +454,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
   for (const [key, handler, description] of [
     ["n", handleCreate, "Create macro"],
     ["v", handleToggleSelectionMode, "Toggle selection mode"],
-    ["Enter", handleRunSelected, "Run or stop selected macro"],
+    ["Enter", handleToggleSelected, "Run or stop selected macro"],
     ["e", handleEditSelected, "Edit selected macro"],
     ["Delete", handleDeleteSelected, "Delete selected macros"],
     ["Backspace", handleDeleteSelected, "Delete selected macros"],
@@ -465,6 +498,9 @@ export function createMacroListController(options: MacroListControllerOptions) {
     openMacroContextMenu,
     handleMacroClick,
     handleRunSelected,
+    handleStopSelected,
+    canRunSelected,
+    canStopSelected,
     handleCreate,
     handleEditSelected,
     handleEditSubmit,

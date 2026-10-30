@@ -364,7 +364,7 @@ export default function MacroProperties(props: MacroPropertiesProps) {
           />
           <CommandBodyField
             label="On release"
-            hint="Runs when a held button that started the macro is let go. Leave empty to ignore the release."
+            hint="Runs whenever the macro ends: it finishes, a line fails, it is stopped, or a held button that started it is let go."
             ariaLabel="Macro release commands"
             draft={releaseCommands}
           />

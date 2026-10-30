@@ -26,8 +26,8 @@ import {
   useContext,
 } from "solid-js";
 import type { RenderPropertiesMetadata } from "../../../lib/panel-capabilities";
-
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
+import { revealPropertiesPanel } from "./reveal-properties-panel";
 
 export interface PropertyProvider extends RenderPropertiesMetadata {
   id: string;
@@ -87,5 +87,14 @@ export const usePropertiesInspector = (
   return {
     activate: () => context.activateProvider(id),
     deactivate: () => context.deactivateProvider(id),
+    /**
+     * Shows this provider in Properties and brings the Properties panel into view, the way a
+     * card's settings button does, returning focus to `sourcePanelId` when Properties lives
+     * in an edge group.
+     */
+    reveal: (sourcePanelId: string) => {
+      context.activateProvider(id);
+      revealPropertiesPanel(sourcePanelId);
+    },
   };
 };

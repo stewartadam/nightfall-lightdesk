@@ -11,7 +11,6 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
-import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { For, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
@@ -30,11 +29,13 @@ import {
   CRUD_CARD_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
+import { CrudRunStopButtons } from "../../../components/widgets/crud/crud-run-stop-buttons";
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
 import CrudViewModeToggle from "../../../components/widgets/crud/crud-view-mode-toggle";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import EntityEditorModal from "../../../components/widgets/entity-editor-dialog";
-import type { Macro } from "../../../types";
+import { setObjectDragData } from "../../../lib/object-drag";
+import { type Macro, ObjectType } from "../../../types";
 import type { MacroListController } from "../controllers/macro-list-controller";
 import {
   firstCommandLine,
@@ -62,8 +63,6 @@ function MacroCard(props: MacroListViewProps & { macro: Macro }) {
   const isSelected = () => controller.selectedMacroUidSet().has(uid());
   /** Whether any body of this card's macro is running. */
   const running = () => controller.isRunning(props.macro);
-  /** First command the press body runs, shown as a preview. */
-  const preview = () => firstCommandLine(props.macro.commands);
 
   return (
     <div
@@ -73,6 +72,13 @@ function MacroCard(props: MacroListViewProps & { macro: Macro }) {
       data-crud-select-id={uid()}
       data-macro-card={props.macro.identifiers.id}
       data-running={running() ? "" : undefined}
+      draggable={!controller.selectionMode()}
+      onDragStart={(event) => {
+        if (!event.dataTransfer) return;
+        setObjectDragData(event.dataTransfer, ObjectType.Macro, uid());
+        event.dataTransfer.setData("text/plain", macroDisplayName(props.macro));
+        event.dataTransfer.effectAllowed = "copy";
+      }}
       onClick={(event) => controller.handleMacroClick(props.macro, event)}
       onKeyDown={(event) => {
         if (controller.selectionMode()) return;
@@ -139,12 +145,6 @@ function MacroCard(props: MacroListViewProps & { macro: Macro }) {
             <GearSixIcon class="size-3" aria-hidden />
           </Button>
         </div>
-      </div>
-      <div
-        class="nf-crud-card-detail truncate font-mono"
-        title={props.macro.commands}
-      >
-        {preview() || "No commands yet"}
       </div>
       <div
         class="nf-crud-card-meta truncate"
@@ -221,11 +221,6 @@ function MacroRowList(props: MacroListViewProps) {
 /** Presents the Macros panel: the standard toolbar, dialogs, and grid or list of macros. */
 export function MacroListView(props: MacroListViewProps) {
   const controller = props.controller;
-  /** Whether the one selected macro is running, which turns the run button into Stop. */
-  const selectedRunning = () => {
-    const macro = controller.selectedMacro();
-    return macro !== undefined && controller.isRunning(macro);
-  };
   return (
     <div
       class="flex h-full min-h-0 flex-col"
@@ -242,26 +237,6 @@ export function MacroListView(props: MacroListViewProps) {
               label="Add macro"
             >
               <PlusIcon class="size-4" aria-hidden />
-            </ToolbarButton>
-            <ToolbarButton
-              tooltip={
-                selectedRunning()
-                  ? "Stop selected macro (Enter)"
-                  : "Run selected macro (Enter)"
-              }
-              type="button"
-              onClick={controller.handleRunSelected}
-              disabled={controller.selectedCount() !== 1}
-              label={
-                selectedRunning() ? "Stop selected macro" : "Run selected macro"
-              }
-            >
-              <Show
-                when={selectedRunning()}
-                fallback={<PlayIcon class="size-4" aria-hidden />}
-              >
-                <StopIcon class="size-4" aria-hidden />
-              </Show>
             </ToolbarButton>
             <ToolbarButton
               tooltip="Edit selected macro (E)"
@@ -287,6 +262,13 @@ export function MacroListView(props: MacroListViewProps) {
             >
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
+            <CrudRunStopButtons
+              noun="macros"
+              canRun={controller.canRunSelected()}
+              canStop={controller.canStopSelected()}
+              onRun={controller.handleRunSelected}
+              onStop={controller.handleStopSelected}
+            />
             <Show when={controller.viewMode() === "grid"}>
               <ToolbarSeparator />
               <ToggleToolbarButton

@@ -143,7 +143,7 @@ test("macros panel creates, edits and runs a macro", async ({
     .poll(async () => (await storedMacro(page, 1))?.commands)
     .toBe("fixture 311 @ 100\nsleep 2s\nfixture 312 @ 100");
   await expect(card).toContainText("Specials up");
-  await expect(card).toContainText("fixture 311 @ 100");
+  await expect(card).not.toContainText("fixture 311 @ 100");
 
   await card.click();
   await expect(card).toHaveAttribute("data-running", "");
@@ -180,4 +180,78 @@ test("macros panel creates, edits and runs a macro", async ({
     panel.getByRole("row").filter({ hasText: "Specials up" }),
   ).toHaveAttribute("data-selected", "true");
   await page.screenshot({ path: testInfo.outputPath("macro-revealed.png") });
+});
+
+/** Stores a macro with `id`, `label` and press `commands` through the engine. */
+async function storeMacro(
+  page: Page,
+  id: number,
+  label: string,
+  commands: string,
+): Promise<void> {
+  await page.evaluate(
+    async ({ id, label, commands }) => {
+      const result = await (window as any).appStores.sendAndAwait({
+        module: "MacroCommand",
+        command: {
+          type: "StoreMacro",
+          data: {
+            identifiers: {
+              id,
+              uid: crypto.randomUUID().replace(/-/g, ""),
+              label,
+            },
+            commands,
+            release_commands: "",
+          },
+        },
+      });
+      if (result.outcome.type !== "Succeeded") {
+        throw new Error(`failed to store macro ${id}`);
+      }
+    },
+    { id, label, commands },
+  );
+}
+
+/**
+ * Puts every macro on a board as a collection, then presses a button to run its macro and
+ * presses it again to stop it, with the button lighting while the macro runs.
+ */
+test("boards run macros from a collection", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  await openMacroApp(page, backendSlot.backendPort);
+  await storeMacro(page, 1, "Specials up", "fixture 311 @ 100\nsleep 10s");
+  await storeMacro(page, 2, "Specials out", "fixture 311 @ 0");
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const commandInput = page.getByPlaceholder("Type a command or search...");
+  await commandInput.fill("New Board");
+  await page.keyboard.press("Enter");
+  const panel = page.locator('[data-panel-kind="boards"]:visible');
+  await expect(panel.locator("[data-board-grid]")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await panel.getByRole("button", { name: "Add to board" }).click();
+  await page
+    .getByRole("menu")
+    .getByRole("button", { name: "All macros", exact: true })
+    .click();
+  const collection = panel.locator('[data-kind="Collection"]');
+  const buttons = collection.locator(".nf-board-button");
+  await expect(buttons).toHaveCount(2);
+  await expect(buttons.nth(0)).toContainText("Specials up");
+
+  await panel.getByRole("tab", { name: "Operate" }).click();
+  await buttons.nth(0).click();
+  await expect(buttons.nth(0)).toHaveAttribute("data-state", "On");
+  await expect(buttons.nth(1)).toHaveAttribute("data-state", "Off");
+  await page.screenshot({
+    path: testInfo.outputPath("macro-board-running.png"),
+  });
+
+  await buttons.nth(0).click();
+  await expect(buttons.nth(0)).toHaveAttribute("data-state", "Off");
 });

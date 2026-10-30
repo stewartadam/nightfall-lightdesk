@@ -25,6 +25,7 @@ import {
   boards,
   clips,
   groups,
+  macros,
   masters,
 } from "../../../state/appStores";
 import { pushToast } from "../../../state/notifications";
@@ -102,6 +103,7 @@ export function createBoardPanelController(
   const $clips = useStore(clips);
   const $groups = useStore(groups);
   const $blueprints = useStore(blueprints);
+  const $macros = useStore(macros);
   const $masters = useStore(masters);
 
   const [boardUid, setBoardUid] = createSignal(options.initialBoardUid);
@@ -189,6 +191,7 @@ export function createBoardPanelController(
       (blueprint) => blueprint.identifiers,
     ),
     Master: Object.values($masters()).map((master) => master.identifiers),
+    Macro: Object.values($macros()).map((macro) => macro.identifiers),
   }));
 
   /** Returns the resolved buttons of one element on the shown board. */

@@ -21,6 +21,7 @@ import {
 import CrudPanelSearch, {
   type CrudPanelSearchController,
 } from "../../../components/widgets/crud/crud-panel-search";
+import { CrudRunStopButtons } from "../../../components/widgets/crud/crud-run-stop-buttons";
 import CrudViewModeToggle, {
   type CrudViewMode,
 } from "../../../components/widgets/crud/crud-view-mode-toggle";
@@ -30,9 +31,15 @@ interface ClipListToolbarProps {
   viewMode: CrudViewMode;
   selectionMode: boolean;
   selectedCount: number;
+  /** Whether any selected clip is stopped and can start. */
+  canRunSelected: boolean;
+  /** Whether any selected clip is playing and can stop. */
+  canStopSelected: boolean;
   onCreate: () => void;
   onEditSelected: () => void;
   onDeleteSelected: () => void;
+  onRunSelected: () => void;
+  onStopSelected: () => void;
   onToggleSelectionMode: () => void;
   onViewModeChange: (mode: CrudViewMode) => void;
 }
@@ -77,6 +84,14 @@ export function ClipListToolbar(props: ClipListToolbarProps) {
           >
             <TrashIcon class="size-4" aria-hidden />
           </ToolbarButton>
+
+          <CrudRunStopButtons
+            noun="clips"
+            canRun={props.canRunSelected}
+            canStop={props.canStopSelected}
+            onRun={props.onRunSelected}
+            onStop={props.onStopSelected}
+          />
 
           <Show when={props.viewMode === "grid"}>
             <ToolbarSeparator />
