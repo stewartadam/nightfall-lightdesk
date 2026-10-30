@@ -45,16 +45,18 @@ The following table lists who uses macros and what each needs:
 - Starting a macro that is already running does nothing and tells the operator it is already running.
 - `macro <id> stop` and the `macro.stop` action end the run. Statements that haven't started never run, and the run doesn't wait for a `sleep` in progress.
 - Stopping a macro also stops any macro it started, along with that macro's remaining statements.
-- Deleting a running macro, editing the body it runs, or loading a show stops it.
+- Deleting a running macro, editing the body it runs, or loading a show stops it. Editing it moves on to the release body; deleting it or loading a show does not.
 - A macro can start another macro. The parent waits for the child to finish. A macro that would start itself, directly or through other macros, fails with an error. Nesting deeper than eight macros fails with an error.
 - The engine reports every running body with its current line and statement count, so the web UI can show progress.
 
 ### Press and release
 
-- `macro.start` is a momentary action. A held binding, such as a board button or a MIDI pad, runs the press body on press and sends `macro.release` on release.
-- On release, the engine stops whatever remains of the press body, then runs the release body.
+- `macro.start` is a momentary action. A held binding, such as a MIDI pad, runs the press body on press and sends `macro.release` on release.
+- The release body runs whenever the press body ends: it finishes, a statement fails, the macro is stopped, its running body is edited, or a held binding is released. The command that started the macro finishes after the release body, and reports the press body's failure if there was one.
+- On release of a held binding, the engine stops whatever remains of the press body, then runs the release body. Releasing after the press body already ended does nothing, because the release body already ran.
 - A macro without a release body ignores the release, so a quick tap runs the whole press body.
-- Surfaces that only trigger, such as timeline events, the command palette, and `macro 3 start`, run only the press body.
+- Stopping a macro while its release body runs stops the release body.
+- Undo, redo, deleting the macro, and loading a show end a run without its release body, since running more commands would act on a show the operator just replaced.
 
 ### Undo
 
@@ -89,8 +91,7 @@ The following items are deliberately left out of the first version:
 Each stage ships as its own pull request:
 
 1. Engine: the macro object, showfile support, the runner, undo behavior, the actions, and the `macro <id> start` and `macro <id> stop` commands.
-1. Web UI: a **Macros** panel, an editor in **Properties** for both bodies with command highlighting and line errors, run progress, and failure messages.
-1. Boards: macros as board targets that light while running and can be dragged onto a board from the **Macros** panel.
+1. Web UI and boards: a **Macros** panel, an editor in **Properties** for both bodies with line errors, run progress, failure messages, and macros as board buttons and collections that light while running and can be dragged onto a board from the **Macros** panel.
 1. Console: the console sends multi-statement lines to the engine's runner, and the browser's sequence runner is removed.
 1. Parameters.
 

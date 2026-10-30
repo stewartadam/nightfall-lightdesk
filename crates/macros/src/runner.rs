@@ -35,7 +35,8 @@ pub const MAX_MACRO_NESTING: usize = 8;
 pub enum MacroRunPhase {
     /// The body run when the macro starts.
     Press,
-    /// The body run when a held button that started the macro is let go.
+    /// The body run once the press body ends, however it ends: it runs to completion, fails,
+    /// is stopped, or the held button that started it is let go.
     Release,
 }
 
@@ -103,6 +104,43 @@ struct MacroRun {
     origin: CommandOrigin,
     /// Macros on the path from the outermost run to this one, including this macro.
     chain: Vec<Uuid>,
+    /// First statement failure of the run, reported on the starting command once the release
+    /// body has had its turn.
+    failure: Option<CommandError>,
+}
+
+impl MacroRun {
+    /// Switches a press run to its macro's release body, starting from the first statement.
+    ///
+    /// Returns `false`, leaving the run untouched, when the run is already releasing or the
+    /// macro has no release statements. A statement still in flight is no longer waited on:
+    /// it finishes on its own, and nothing after it in the press body runs.
+    fn begin_release(&mut self, definition: &Macro) -> bool {
+        if self.phase != MacroRunPhase::Press {
+            return false;
+        }
+        let statements = macro_statements(&definition.release_commands);
+        if statements.is_empty() {
+            return false;
+        }
+        self.phase = MacroRunPhase::Release;
+        self.body = definition.release_commands.clone();
+        self.statements = statements;
+        self.next = 0;
+        self.in_flight = None;
+        self.settled = None;
+        true
+    }
+}
+
+/// What happens to a run that is told to end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunEnding {
+    /// A press run moves on to the release body; a release run ends.
+    Release,
+    /// The run ends without its release body, for undo, show loads and deleted macros, where
+    /// running more commands would act on a show the operator just replaced.
+    Discard,
 }
 
 /// Why a run could not start.
@@ -230,51 +268,66 @@ impl MacroRuns {
             undo_id: envelope.undo_id,
             origin: envelope.origin.clone(),
             chain,
+            failure: None,
         });
         Ok(())
     }
 
-    /// Ends the macro's runs in `phase`, or in every phase when `phase` is `None`, reporting
-    /// success for the commands that started them. Statements still in flight finish on their
-    /// own, and nothing after them runs, including the rest of any macro they started.
+    /// Ends the macro's runs in `phase`, or in every phase when `phase` is `None`.
+    ///
+    /// With [`RunEnding::Release`], a press run moves on to its release body and finishes its
+    /// starting command once that body ends; any other run finishes its command now.
+    /// Statements still in flight finish on their own, and nothing after them runs, including
+    /// the rest of any macro they started.
     pub fn stop(
         &mut self,
         macro_uid: Uuid,
         phase: Option<MacroRunPhase>,
+        ending: RunEnding,
+        macros: &DataProvider<Macro>,
         responder: &mut CommandResponder,
     ) {
-        self.finish_where(
+        self.end_where(
             |run| run.macro_uid == macro_uid && phase.is_none_or(|phase| run.phase == phase),
+            ending,
+            macros,
             responder,
         );
     }
 
-    /// Ends every run, reporting success for the commands that started them.
-    pub fn stop_all(&mut self, responder: &mut CommandResponder) {
-        self.finish_where(|_| true, responder);
+    /// Ends every run without its release body, reporting the result of each starting
+    /// command.
+    pub fn stop_all(&mut self, macros: &DataProvider<Macro>, responder: &mut CommandResponder) {
+        self.end_where(|_| true, RunEnding::Discard, macros, responder);
     }
 
     /// Ends runs whose macro was deleted, or whose running body was edited or replaced by a
-    /// show load or import, so a run never keeps executing text the show no longer holds.
+    /// show load or import, so a run never keeps executing text the show no longer holds. A
+    /// press run whose macro still exists moves on to the stored release body.
     fn stop_outdated(&mut self, macros: &DataProvider<Macro>, responder: &mut CommandResponder) {
-        self.finish_where(
+        self.end_where(
             |run| {
                 !macros
                     .get(run.macro_uid)
                     .is_ok_and(|definition| run.phase.body(&definition) == run.body)
             },
+            RunEnding::Release,
+            macros,
             responder,
         );
     }
 
-    /// Removes the runs matching `predicate`, along with every macro those runs started, and
-    /// reports success for their starting commands.
+    /// Ends the runs matching `predicate`, along with every macro those runs started.
     ///
     /// A nested run's starting command is a statement of its parent, so a parent's in-flight
-    /// statement identifies the child runs to end with it.
-    fn finish_where(
+    /// statement identifies the child runs to end with it. Each ended run either moves on to
+    /// its release body, as `ending` and [`MacroRun::begin_release`] allow, or reports its
+    /// result on its starting command.
+    fn end_where(
         &mut self,
         predicate: impl Fn(&MacroRun) -> bool,
+        ending: RunEnding,
+        macros: &DataProvider<Macro>,
         responder: &mut CommandResponder,
     ) {
         let (mut finished, mut kept) = std::mem::take(&mut self.runs)
@@ -294,10 +347,21 @@ impl MacroRuns {
             finished.extend(children);
         }
         self.runs = kept;
-        for run in finished.iter().rev() {
-            succeed(responder, run);
+        for mut run in finished.into_iter().rev() {
+            if ending == RunEnding::Release && release_stored_body(&mut run, macros) {
+                self.runs.push(run);
+            } else {
+                finish(responder, &run);
+            }
         }
     }
+}
+
+/// Moves a press run on to the release body its macro stores now, if there is one.
+fn release_stored_body(run: &mut MacroRun, macros: &DataProvider<Macro>) -> bool {
+    macros
+        .get(run.macro_uid)
+        .is_ok_and(|definition| run.begin_release(&definition))
 }
 
 /// Converts a count or position to the `u32` clients receive, saturating on overflow.
@@ -305,31 +369,51 @@ fn saturating_u32(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-/// Reports success for the command that started a run.
-fn succeed(responder: &mut CommandResponder, run: &MacroRun) {
-    if let Err(error) = responder.succeed(run.owner) {
+/// Reports how a run ended on the command that started it: its first failure, or success.
+fn finish(responder: &mut CommandResponder, run: &MacroRun) {
+    let result = match &run.failure {
+        Some(failure) => responder.fail(run.owner, failure.clone()),
+        None => responder.succeed(run.owner),
+    };
+    if let Err(error) = result {
         tracing::error!(command_id = %run.owner, %error, "macro_run_completion_failed");
     }
 }
 
-/// Reports the statement failure that ended a run on the command that started it.
+/// Records a failure on a run. The first failure is the one its starting command reports, so
+/// a release body failing after the press body failed is shown as a warning instead.
+fn record_failure(responder: &mut CommandResponder, run: &mut MacroRun, failure: CommandError) {
+    if run.failure.is_none() {
+        run.failure = Some(failure);
+    } else if let Err(error) =
+        responder.notice(run.owner, NoticeLevel::Warning, failure.message.clone())
+    {
+        tracing::error!(command_id = %run.owner, %error, "macro_run_notice_failed");
+    }
+}
+
+/// Describes the statement failure that ended a run's current body, naming the macro, the
+/// body and the line.
 ///
 /// The message names the macro's current ID, so a rename during the run doesn't point the
 /// operator at the wrong macro.
-fn fail(
-    responder: &mut CommandResponder,
+fn statement_failure(
     macros: &DataProvider<Macro>,
     run: &MacroRun,
     error: &CommandError,
-) {
+) -> CommandError {
     let macro_id = macros
         .get(run.macro_uid)
         .map_or(run.macro_id, |definition| definition.identifiers.id);
     let statement = &run.statements[run.next];
-    let failure = CommandError::new(
+    let body = match run.phase {
+        MacroRunPhase::Press => "",
+        MacroRunPhase::Release => " release",
+    };
+    CommandError::new(
         "macro.statement_failed",
         format!(
-            "Macro {macro_id} stopped at line {} ({}): {}",
+            "Macro {macro_id}{body} stopped at line {} ({}): {}",
             statement.line, statement.text, error.message
         ),
     )
@@ -338,10 +422,7 @@ fn fail(
         "line": statement.line,
         "statement": statement.text,
         "code": error.code,
-    }));
-    if let Err(error) = responder.fail(run.owner, failure) {
-        tracing::error!(command_id = %run.owner, %error, "macro_run_failure_failed");
-    }
+    }))
 }
 
 /// Records the results of statements that finished since the last frame on the runs waiting
@@ -365,8 +446,9 @@ pub fn record_statement_results(
     }
 }
 
-/// Moves every run forward: ends finished or failed runs, and submits the next statement of
-/// each run that is waiting.
+/// Moves every run forward: moves press runs that finished or failed on to their release body,
+/// ends runs with nothing left to run, and submits the next statement of each run that is
+/// waiting.
 ///
 /// Runs after event handling, so a stop, release or undo handled this frame takes effect before
 /// another statement is submitted. A submitted statement dispatches on the next frame.
@@ -380,7 +462,7 @@ pub fn advance_macro_runs(
         return;
     }
     if std::mem::take(&mut runs.bypass_change_detection().end_all_requested) {
-        runs.stop_all(&mut responder);
+        runs.stop_all(&macros, &mut responder);
     }
     if macros.is_changed() {
         runs.stop_outdated(&macros, &mut responder);
@@ -397,11 +479,16 @@ pub fn advance_macro_runs(
             progressed = true;
             run.in_flight = None;
             if let CommandOutcome::Failed(error) = outcome {
-                let run = live.runs.remove(index);
-                fail(&mut responder, &macros, &run, &error);
-                continue;
+                let failure = statement_failure(&macros, run, &error);
+                record_failure(&mut responder, run, failure);
+                if !release_stored_body(run, &macros) {
+                    let run = live.runs.remove(index);
+                    finish(&mut responder, &run);
+                    continue;
+                }
+            } else {
+                run.next += 1;
             }
-            run.next += 1;
         }
         if run.in_flight.is_some() {
             index += 1;
@@ -409,8 +496,10 @@ pub fn advance_macro_runs(
         }
         progressed = true;
         let Some(statement) = run.statements.get(run.next) else {
-            let run = live.runs.remove(index);
-            succeed(&mut responder, &run);
+            if !release_stored_body(run, &macros) {
+                let run = live.runs.remove(index);
+                finish(&mut responder, &run);
+            }
             continue;
         };
         let command_id = CommandId::new();
@@ -421,13 +510,10 @@ pub fn advance_macro_runs(
             ReplyTarget::Detached,
         ) {
             tracing::error!(%command_id, %error, "macro_statement_registration_failed");
+            let failure = CommandError::new("macro.statement_untracked", error.to_string());
+            record_failure(&mut responder, run, failure);
             let run = live.runs.remove(index);
-            fail(
-                &mut responder,
-                &macros,
-                &run,
-                &CommandError::new("macro.statement_untracked", error.to_string()),
-            );
+            finish(&mut responder, &run);
             continue;
         }
         pending.push(PayloadEnvelope::with_context(

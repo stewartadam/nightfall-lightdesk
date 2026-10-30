@@ -482,3 +482,92 @@ async fn show_load_ends_running_macros() {
     assert_eq!(harness.wait(started), CommandOutcome::succeeded());
     assert!(!harness.is_running(1));
 }
+
+/// A press body that runs to the end moves on to the release body, and the starting command
+/// finishes after both, as one undo step.
+#[tokio::test]
+async fn completed_press_body_runs_release_body() {
+    let mut harness = MacroHarness::new(&[(1, "rename clip 1 901", "rename clip 2 902")]);
+
+    let started = harness.eval("macro 1 start");
+    assert_eq!(harness.wait(started), CommandOutcome::succeeded());
+
+    assert!(harness.has_clip(901) && harness.has_clip(902));
+    assert!(!harness.is_running(1));
+    assert_eq!(harness.undo_ids(), vec![UndoId::from(started)]);
+}
+
+/// `macro 1 stop` cuts the press body short and runs the release body; the starting command
+/// stays open until the release body ends.
+#[tokio::test]
+async fn stopping_a_macro_runs_its_release_body() {
+    let mut harness =
+        MacroHarness::new(&[(1, "sleep 150ms\nrename clip 1 901", "rename clip 2 902")]);
+
+    let started = harness.eval("macro 1 start");
+    while !harness.is_running(1) {
+        harness.step();
+    }
+    let stopped = harness.eval("macro 1 stop");
+    assert_eq!(harness.wait(stopped), CommandOutcome::succeeded());
+    assert_eq!(harness.wait(started), CommandOutcome::succeeded());
+    harness.run_for(Duration::from_millis(250));
+
+    assert!(harness.has_clip(902), "the release body should run");
+    assert!(harness.has_clip(1), "the rest of the press body should not");
+}
+
+/// A failing press statement still runs the release body, and the starting command reports
+/// the press failure.
+#[tokio::test]
+async fn failed_press_body_runs_release_body() {
+    let mut harness = MacroHarness::new(&[(1, "not a command", "rename clip 2 902")]);
+
+    let started = harness.eval("macro 1 start");
+    let CommandOutcome::Failed(error) = harness.wait(started) else {
+        panic!("the press failure should fail the macro");
+    };
+
+    assert!(
+        error
+            .message
+            .starts_with("Macro 1 stopped at line 1 (not a command)"),
+        "unexpected message: {}",
+        error.message
+    );
+    assert!(harness.has_clip(902), "the release body should still run");
+}
+
+/// Letting go after the macro already ended does nothing, because the release body ran when
+/// the press body finished.
+#[tokio::test]
+async fn release_after_the_macro_ended_does_nothing() {
+    let mut harness = MacroHarness::new(&[(1, "rename clip 1 901", "rename clip 2 902")]);
+
+    let started = harness.eval("macro 1 start");
+    assert_eq!(harness.wait(started), CommandOutcome::succeeded());
+    let released = harness.submit(MacroCommand::ReleaseMacro(1));
+    assert_eq!(harness.wait(released), CommandOutcome::succeeded());
+    harness.step();
+
+    assert!(!harness.is_running(1));
+    assert_eq!(harness.undo_ids(), vec![UndoId::from(started)]);
+}
+
+/// Undo during a run discards the release body too, so nothing reapplies after the undo.
+#[tokio::test]
+async fn undo_skips_the_release_body() {
+    let mut harness =
+        MacroHarness::new(&[(1, "rename clip 1 901\nsleep 150ms", "rename clip 2 902")]);
+
+    let started = harness.eval("macro 1 start");
+    while !harness.has_clip(901) {
+        harness.step();
+    }
+    let undo = harness.submit(UndoCommand::Undo {});
+    assert_eq!(harness.wait(undo), CommandOutcome::succeeded());
+    assert_eq!(harness.wait(started), CommandOutcome::succeeded());
+    harness.run_for(Duration::from_millis(250));
+
+    assert!(harness.has_clip(1) && harness.has_clip(2));
+}
