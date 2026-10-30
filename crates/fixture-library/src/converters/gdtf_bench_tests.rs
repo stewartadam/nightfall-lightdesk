@@ -10,7 +10,7 @@
 //!
 //! The archives cannot be redistributed with the repository, so these tests
 //! are ignored by default and run with
-//! `NIGHTFALL_GDTF_BENCH_DIR=<dir> pnpm run gdtf:bench`. Once requested,
+//! `pnpm run gdtf:bench`, which supplies NIGHTFALL_GDTF_BENCH_DIR. Once requested,
 //! a missing directory, missing archive or changed hash fails the run instead
 //! of skipping.
 //!
@@ -96,7 +96,7 @@ fn bench_root() -> PathBuf {
 fn bench() -> (BenchManifest, PathBuf) {
     let dir = std::env::var_os("NIGHTFALL_GDTF_BENCH_DIR")
         .map(PathBuf::from)
-        .expect("NIGHTFALL_GDTF_BENCH_DIR must point at the curated GDTF archives");
+        .expect("NIGHTFALL_GDTF_BENCH_DIR must point at the curated GDTF archives; run `pnpm run gdtf:bench`");
     let manifest: BenchManifest = serde_json::from_str(
         &std::fs::read_to_string(bench_root().join("manifest.json")).expect("bench manifest"),
     )
