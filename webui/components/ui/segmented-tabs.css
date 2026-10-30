@@ -68,12 +68,20 @@
   background: transparent;
   border-color: transparent;
 }
+/* A vertical list sits directly on its surface: only the selected tab is outlined. */
+.nf-segmented-tabs.nf-segmented-tabs-vertical {
+  border-color: transparent;
+  background: transparent;
+}
+.nf-segmented-tabs-vertical .nf-scroll-indicators {
+  --nf-scroll-surface: var(--panel, #191c1e);
+}
 .nf-segmented-tabs-viewport[aria-orientation="vertical"] {
   flex-direction: column;
   gap: 2px;
   scroll-padding-inline: 0;
   scroll-padding-block: 12px;
-  padding: 6px;
+  padding: 0;
 }
 .nf-segmented-tabs-viewport[aria-orientation="vertical"] > .nf-button {
   flex: 0 0 auto;

@@ -200,7 +200,7 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
 
   return (
     <ScrollArea
-      class="nf-segmented-tabs"
+      class={`nf-segmented-tabs ${orientation() === "vertical" ? "nf-segmented-tabs-vertical" : ""}`}
       viewportClass="nf-segmented-tabs-viewport"
       viewportProps={{
         "data-density": props.density ?? "comfortable",

@@ -8,6 +8,14 @@
 
 import { useStore } from "@nanostores/solid";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
+import { CubeIcon } from "@squidlab/phosphor-solid/cube";
+import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
+import { KeyboardIcon } from "@squidlab/phosphor-solid/keyboard";
+import { NetworkIcon } from "@squidlab/phosphor-solid/network";
+import { PaletteIcon } from "@squidlab/phosphor-solid/palette";
+import { PencilSimpleIcon } from "@squidlab/phosphor-solid/pencil-simple";
+import { ShieldCheckIcon } from "@squidlab/phosphor-solid/shield-check";
+import { UserCircleIcon } from "@squidlab/phosphor-solid/user-circle";
 import {
   createEffect,
   createMemo,
@@ -30,7 +38,10 @@ import {
   SettingsSearchItem,
   SettingsSearchRoot,
 } from "../../components/ui/settings-search";
-import { SidebarTabs } from "../../components/ui/sidebar-tabs";
+import {
+  SidebarTabs,
+  type SidebarTabsOption,
+} from "../../components/ui/sidebar-tabs";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
@@ -105,15 +116,15 @@ const ROTATION_MODE_OPTIONS: {
   { value: "center-locked", label: "Center-locked" },
 ];
 
-const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
-  { key: "general", label: "General" },
-  { key: "appearance", label: "Appearance" },
-  { key: "editors", label: "Editors" },
-  { key: "network", label: "Network" },
-  { key: "visualizer", label: "Visualizer" },
-  { key: "keyboard", label: "Keyboard" },
-  { key: "accounts", label: "Accounts" },
-  { key: "privacy", label: "Privacy" },
+const SETTINGS_TABS: SidebarTabsOption<SettingsTab>[] = [
+  { key: "general", label: "General", icon: GearSixIcon },
+  { key: "appearance", label: "Appearance", icon: PaletteIcon },
+  { key: "editors", label: "Editors", icon: PencilSimpleIcon },
+  { key: "network", label: "Network", icon: NetworkIcon },
+  { key: "visualizer", label: "Visualizer", icon: CubeIcon },
+  { key: "keyboard", label: "Keyboard", icon: KeyboardIcon },
+  { key: "accounts", label: "Accounts", icon: UserCircleIcon },
+  { key: "privacy", label: "Privacy", icon: ShieldCheckIcon },
 ];
 
 /** Returns the human-readable interface name, falling back to the system name. */

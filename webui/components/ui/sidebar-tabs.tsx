@@ -17,6 +17,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { playContentEntrance } from "./content-entrance";
 import { DialogBackButton, useDialogPage } from "./dialog";
 import { ScrollArea } from "./scroll-area";
@@ -32,11 +33,18 @@ export interface SidebarTabsPanel {
   "aria-label"?: string;
 }
 
+/** One category: its key, its name, and an icon shown beside the name in the stacked list. */
+export interface SidebarTabsOption<T extends string> {
+  key: T;
+  label: string;
+  icon?: (props: { class?: string; "aria-hidden"?: boolean }) => JSX.Element;
+}
+
 interface SidebarTabsProps<T extends string> {
   id: string;
   /** Accessible name for the category list. */
   label: string;
-  options: readonly { key: T; label: string }[];
+  options: readonly SidebarTabsOption<T>[];
   value: T;
   onChange: (value: T) => void;
   /**
@@ -213,8 +221,20 @@ export function SidebarTabs<T extends string>(props: SidebarTabsProps<T>) {
                   class="nf-sidebar-tabs-item"
                   onClick={() => openPage(option.key)}
                 >
-                  <span>{option.label}</span>
-                  <CaretRightIcon class="size-4" aria-hidden />
+                  <Show when={option.icon}>
+                    {(Icon) => (
+                      <Dynamic
+                        component={Icon()}
+                        class="nf-sidebar-tabs-item-icon"
+                        aria-hidden
+                      />
+                    )}
+                  </Show>
+                  <span class="nf-sidebar-tabs-item-label">{option.label}</span>
+                  <CaretRightIcon
+                    class="nf-sidebar-tabs-item-chevron"
+                    aria-hidden
+                  />
                 </Button>
               )}
             </For>
