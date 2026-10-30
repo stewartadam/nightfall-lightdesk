@@ -19,6 +19,7 @@
 
 pub mod commands;
 pub mod converters;
+pub mod editor;
 pub mod gdtf_metadata;
 pub mod gdtf_repair;
 pub mod gdtf_write;
