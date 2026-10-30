@@ -381,7 +381,7 @@ mod tests {
                 json!({"id": "clip.stop", "arguments": {"clip": "aa"}}),
                 json!({"id": "clip.go", "arguments": {"clip": "aa"}}),
                 json!({"id": "clip.back", "arguments": {"clip": "aa"}}),
-                json!({"id": "clip.set-rate", "arguments": {"clip": "aa", "rate": 0.5}}),
+                json!({"id": "clip.set-speed", "arguments": {"clip": "aa", "speed": 0.5}}),
                 json!({"id": "clip.goto", "arguments": {"clip": "aa", "cue_index": 3}}),
                 json!({"id": "timeline.fire-cue", "arguments": {"cue": "bb"}}),
                 json!({"id": "desk.eval", "arguments": {"command": "clip 1 go"}}),

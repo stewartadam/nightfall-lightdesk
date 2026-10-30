@@ -173,9 +173,9 @@ fn release_playback_entity(
 
     commands.entity(entity).insert(ReleaseMarker::default());
 
-    if let Some(controls) = controls.filter(|controls| controls.rate == 0.0) {
+    if let Some(controls) = controls.filter(|controls| controls.speed == 0.0) {
         let mut resumed_controls = controls.clone();
-        resumed_controls.rate = 1.0;
+        resumed_controls.speed = 1.0;
         commands.entity(entity).insert(resumed_controls);
     }
 
@@ -251,7 +251,7 @@ mod tests {
                 }),
                 InstanceControls {
                     intensity_scale: 1.0,
-                    rate: 0.0,
+                    speed: 0.0,
                     ..Default::default()
                 },
             ))
@@ -264,7 +264,7 @@ mod tests {
             world
                 .get::<InstanceControls>(playback)
                 .expect("controls should remain attached")
-                .rate,
+                .speed,
             1.0
         );
     }

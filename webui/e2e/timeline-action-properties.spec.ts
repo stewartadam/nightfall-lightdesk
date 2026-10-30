@@ -15,7 +15,7 @@ type ActionPropertiesFixture = {
   timelineId: number;
   timecodeId: number;
   trackId: string;
-  rateActionId: string;
+  speedActionId: string;
   evalActionId: string;
 };
 
@@ -83,7 +83,7 @@ async function openActionPropertiesFixture(
     const timelineId = idBase;
     const timecodeId = idBase + 1;
     const trackId = `e2e-properties-track-${Date.now()}`;
-    const rateActionId = `e2e-rate-item-${Date.now()}`;
+    const speedActionId = `e2e-speed-item-${Date.now()}`;
     const evalActionId = `e2e-eval-item-${Date.now()}`;
 
     await store({
@@ -124,13 +124,13 @@ async function openActionPropertiesFixture(
               expanded: true,
               actions: [
                 {
-                  id: rateActionId,
-                  label: "Rate Action",
+                  id: speedActionId,
+                  label: "Speed Action",
                   position: { secs: 1, nanos: 0 },
                   duration: { secs: 1, nanos: 0 },
                   action: {
-                    id: "clip.set-rate",
-                    arguments: { clip: clipUid, rate: 1.25 },
+                    id: "clip.set-speed",
+                    arguments: { clip: clipUid, speed: 1.25 },
                   },
                 },
                 {
@@ -196,7 +196,7 @@ async function openActionPropertiesFixture(
       timelineId,
       timecodeId,
       trackId,
-      rateActionId,
+      speedActionId,
       evalActionId,
     };
   });
@@ -258,7 +258,7 @@ async function actionKind(
 }
 
 /** Verifies selected timeline actions expose editable action properties. */
-test("timeline action properties edit rate and eval actions", async ({
+test("timeline action properties edit speed and eval actions", async ({
   backendSlot,
   page,
 }, testInfo) => {
@@ -274,32 +274,32 @@ test("timeline action properties edit rate and eval actions", async ({
     await expect(surface).toBeVisible();
     await surface.getByLabel("Timeline zoom").fill("250");
 
-    const rateAction = page.locator(
-      `[data-timeline-action="true"][data-track-id="${fixture.trackId}"][data-action-id="${fixture.rateActionId}"]`,
+    const speedAction = page.locator(
+      `[data-timeline-action="true"][data-track-id="${fixture.trackId}"][data-action-id="${fixture.speedActionId}"]`,
     );
-    await expect(rateAction).toBeVisible();
-    await rateAction.click();
+    await expect(speedAction).toBeVisible();
+    await speedAction.click();
     await page.getByRole("tab", { name: "Properties", exact: true }).click();
 
     await expect(
       page.getByRole("heading", { name: "Action", level: 3 }),
     ).toBeVisible();
-    const rateInput = page.getByLabel("Action clip rate");
-    await expect(rateInput).toHaveValue("1.25");
-    await expect(rateInput).toHaveCSS("height", "28px");
-    await rateInput.fill("1.75");
-    await rateInput.blur();
+    const speedInput = page.getByLabel("Action clip speed");
+    await expect(speedInput).toHaveValue("1.25");
+    await expect(speedInput).toHaveCSS("height", "28px");
+    await speedInput.fill("1.75");
+    await speedInput.blur();
     await expect
       .poll(() =>
         actionKind(
           page,
           fixture as ActionPropertiesFixture,
-          fixture!.rateActionId,
+          fixture!.speedActionId,
         ),
       )
       .toMatchObject({
-        id: "clip.set-rate",
-        arguments: { rate: 1.75 },
+        id: "clip.set-speed",
+        arguments: { speed: 1.75 },
       });
 
     const evalAction = page.locator(
@@ -359,11 +359,11 @@ test("timeline action properties show Move in Black alerts", async ({
     await expect(surface).toBeVisible();
     await surface.getByLabel("Timeline zoom").fill("250");
 
-    const rateAction = page.locator(
-      `[data-timeline-action="true"][data-track-id="${fixture.trackId}"][data-action-id="${fixture.rateActionId}"]`,
+    const speedAction = page.locator(
+      `[data-timeline-action="true"][data-track-id="${fixture.trackId}"][data-action-id="${fixture.speedActionId}"]`,
     );
-    await expect(rateAction).toBeVisible();
-    await rateAction.click();
+    await expect(speedAction).toBeVisible();
+    await speedAction.click();
     await page.getByRole("tab", { name: "Properties", exact: true }).click();
 
     const properties = page.locator(
@@ -378,13 +378,13 @@ test("timeline action properties show Move in Black alerts", async ({
       path: testInfo.outputPath("timeline-mib-idle.png"),
     });
 
-    await page.evaluate(({ timelineUid, trackId, rateActionId }) => {
+    await page.evaluate(({ timelineUid, trackId, speedActionId }) => {
       (window as any).appStores.timelineLookaheadActionStatuses.set({
         [timelineUid]: {
-          [JSON.stringify([trackId, rateActionId])]: {
+          [JSON.stringify([trackId, speedActionId])]: {
             timeline_uid: timelineUid,
             track_id: trackId,
-            action_id: rateActionId,
+            action_id: speedActionId,
             kind: "blocked_by_intervening_fixture_assertions",
             blocking_actions: [],
           },

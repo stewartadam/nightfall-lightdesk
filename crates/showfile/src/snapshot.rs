@@ -25,6 +25,7 @@ use nightfall_input_osc::prelude::*;
 use nightfall_io::IoRuntimeSettings;
 use nightfall_scene_objects::prelude::*;
 use nightfall_selection::ReferenceSource;
+use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -61,6 +62,9 @@ pub struct ShowfileSnapshot {
     /// Showfile-scoped input and output transport preferences.
     #[serde(default, rename = "ioSettings")]
     pub io_settings: IoRuntimeSettings,
+    /// Show tempo and bar length, restored when the show opens.
+    #[serde(default)]
+    pub tempo: TempoSettings,
     /// Input, output, and disabled DMX routes.
     pub routes: RoutesSnapshot,
     /// MIDI action mappings when compiled with MIDI support.

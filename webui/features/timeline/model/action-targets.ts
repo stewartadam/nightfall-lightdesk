@@ -276,7 +276,7 @@ export function resolveActionClipPropertiesTarget(
       case "AdvanceSequence":
       case "BackSequence":
         return action.data;
-      case "SetClipRate":
+      case "SetClipSpeed":
       case "JumpToCue":
         return action.data.uid;
       case "FireCue":
@@ -362,7 +362,7 @@ export function resolveActionEditorTarget(
     case "StartClip":
     case "StopClip":
       return clipEditorTarget(index, action.data);
-    case "SetClipRate":
+    case "SetClipSpeed":
       return clipEditorTarget(index, action.data.uid);
     case "JumpToCue":
       return sequenceCueEditorTarget(
@@ -418,13 +418,13 @@ export function resolveActionDisplayLabel(
       const clip = clipTuple[0];
       return `Exec ${clip.identifiers.id}: ${clip.identifiers.label}`;
     }
-    case "SetClipRate": {
+    case "SetClipSpeed": {
       const clipTuple = index.clipMapByUid.get(
         normalizeActionTargetUid(action.data.uid),
       );
       if (!clipTuple) return fallbackLabel;
       const clip = clipTuple[0];
-      return `Rate ${action.data.rate.toFixed(2)}x: ${clip.identifiers.label}`;
+      return `Speed ${action.data.speed.toFixed(2)}x: ${clip.identifiers.label}`;
     }
     case "AdvanceSequence":
     case "BackSequence": {

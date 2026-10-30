@@ -249,7 +249,8 @@ pub(crate) use rendering::apply_color_path_samples_to_layer;
 pub use rendering::{LookaheadCandidateAssertion, lookahead_assertions_for_dark_global_candidates};
 pub use systems::{
     advance_sequences, despawn_materialized_sequences, paint_materialized_sequences,
-    release_materialized_sequences, sync_sequence_playback_runtime_status,
+    release_materialized_sequences, sync_sequence_instance_timebase,
+    sync_sequence_playback_runtime_status,
 };
 
 #[cfg(test)]

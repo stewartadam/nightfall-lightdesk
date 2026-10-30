@@ -134,7 +134,7 @@ fn bench_lookup_strategies(c: &mut Criterion, defined_counts: &[usize], lookup_c
     group.finish();
 }
 
-/// Measures snapshot resolution together with the active-instance scan used by rate masters.
+/// Measures snapshot resolution together with the active-instance scan used by speed masters.
 fn bench_active_scans(c: &mut Criterion, defined_counts: &[usize], active_counts: &[usize]) {
     let mut group = c.benchmark_group("clip_lookup_with_active_scan");
 
@@ -279,7 +279,7 @@ fn snapshot_lookups(lookup: ClipLookup, targets: Res<LookupTargets>) {
     }
 }
 
-/// Resolves rate-master-like targets before scanning independently sized active instances.
+/// Resolves speed-master-like targets before scanning independently sized active instances.
 fn snapshot_lookups_with_active_scan(
     lookup: ClipLookup,
     targets: Res<ActiveScanTargets>,

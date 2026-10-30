@@ -95,7 +95,7 @@ impl Undoable for StepFxCommand {
             }
             StepFxCommand::Delete(id) => stored(&|existing| existing.identifiers.id == *id)
                 .map(|existing| Box::new(StepFxCommand::Store(existing)) as Box<dyn Undoable>),
-            StepFxCommand::Start(_) | StepFxCommand::Stop(_) | StepFxCommand::SetRate { .. } => {
+            StepFxCommand::Start(_) | StepFxCommand::Stop(_) | StepFxCommand::SetSpeed { .. } => {
                 None
             }
         }
@@ -112,8 +112,8 @@ impl Undoable for StepFxCommand {
             StepFxCommand::Delete(id) => format!("Delete Step FX {id}"),
             StepFxCommand::Start(id) => format!("Start Step FX {id}"),
             StepFxCommand::Stop(id) => format!("Stop Step FX {id}"),
-            StepFxCommand::SetRate { fx_id, rate } => {
-                format!("Set Step FX {fx_id} rate to {rate}")
+            StepFxCommand::SetSpeed { fx_id, speed } => {
+                format!("Set Step FX {fx_id} speed to {speed}")
             }
         }
     }

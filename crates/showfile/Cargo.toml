@@ -20,6 +20,7 @@ nightfall-input-osc = { path = "../input_osc", optional = true }
 nightfall-io = { path = "../io" }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-selection = { path = "../selection" }
+nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-timeline = { path = "../timeline", default-features = false }
 serde.workspace = true

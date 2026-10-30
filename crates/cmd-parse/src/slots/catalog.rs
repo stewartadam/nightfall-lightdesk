@@ -201,7 +201,7 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
         ),
         SlotId::FxAction => slot(
             slot_id,
-            &[TokenId::Start, TokenId::Stop, TokenId::Rate],
+            &[TokenId::Start, TokenId::Stop, TokenId::Speed],
             None,
             NONE_SUPPRESS,
             false,

@@ -30,7 +30,7 @@ function previewStatus(
     session_id: SESSION_ID,
     sampled_at_epoch_ms: 10_000,
     elapsed: { secs: 1, nanos: 0 },
-    elapsed_rate: 1,
+    elapsed_speed: 1,
     track_phase_offsets: [],
     ...options,
   };
@@ -50,9 +50,9 @@ function playback(
     is_paused: false,
     owner_uids: [],
     intensity_scale: 1,
-    rate: 1,
-    rate_master_scale: 1,
-    effective_rate: 1,
+    speed: 1,
+    speed_master_scale: 1,
+    effective_speed: 1,
     step_fx_preview: preview,
     status: {
       position: { type: "None" },
@@ -96,7 +96,7 @@ test("stepFxPreviewBeat interpolates from the authoritative backend anchor", () 
 test("stepFxPreviewBeat applies the selected track continuity offset", () => {
   const status = previewStatus({
     elapsed: { secs: 0, nanos: 0 },
-    elapsed_rate: 0,
+    elapsed_speed: 0,
     track_phase_offsets: [
       {
         attribute: { type: "Custom", data: { label: "Blade 1" } },
@@ -135,7 +135,7 @@ test("stepFxPreviewBeat applies the first selection phase offset", () => {
   const beat = stepFxPreviewBeat(
     previewStatus({
       elapsed: { secs: 0, nanos: 0 },
-      elapsed_rate: 0,
+      elapsed_speed: 0,
     }),
     { type: "Pan" },
     "absolute",
@@ -153,7 +153,7 @@ test("stepFxPreviewBeats resolves every selection phase offset", () => {
   const beats = stepFxPreviewBeats(
     previewStatus({
       elapsed: { secs: 0, nanos: 0 },
-      elapsed_rate: 0,
+      elapsed_speed: 0,
     }),
     { type: "Pan" },
     "absolute",
@@ -200,7 +200,7 @@ test("stepFxPreviewOrStartBeats prefers the live preview clock", () => {
   const beats = stepFxPreviewOrStartBeats(
     previewStatus({
       elapsed: { secs: 0, nanos: 0 },
-      elapsed_rate: 0,
+      elapsed_speed: 0,
     }),
     { type: "Pan" },
     "absolute",
@@ -307,7 +307,7 @@ test("stepFxPreviewBeat gives both fixed bounce passes their configured beats", 
   const beat = stepFxPreviewBeat(
     previewStatus({
       elapsed: { secs: 1, nanos: 0 },
-      elapsed_rate: 0,
+      elapsed_speed: 0,
     }),
     { type: "Pan" },
     "absolute",
@@ -350,7 +350,7 @@ test("stepFxPhaseMarkerBeat maps an assigned offset onto the authored graph", ()
 test("stepFxPreviewBeat starts Bounce at the same authored position as Forward", () => {
   const status = previewStatus({
     elapsed: { secs: 0, nanos: 0 },
-    elapsed_rate: 0,
+    elapsed_speed: 0,
   });
   const startPosition = 0.25;
   const forward = stepFxPreviewBeat(
@@ -383,7 +383,7 @@ test("stepFxPreviewBeat maps bounce over twice the authored pass width", () => {
   const beat = stepFxPreviewBeat(
     previewStatus({
       elapsed: { secs: 1, nanos: 500_000_000 },
-      elapsed_rate: 0,
+      elapsed_speed: 0,
     }),
     { type: "Pan" },
     "absolute",

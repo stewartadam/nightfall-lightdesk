@@ -9,17 +9,24 @@
 import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { FastForwardIcon } from "@squidlab/phosphor-solid/fast-forward";
+import { LightningIcon } from "@squidlab/phosphor-solid/lightning";
 import { RewindIcon } from "@squidlab/phosphor-solid/rewind";
 import { SkipForwardIcon } from "@squidlab/phosphor-solid/skip-forward";
 import { For, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { NumericStepper } from "../../../components/ui/numeric-stepper";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../../components/ui/segmented-control";
 import { Toolbar } from "../../../components/ui/toolbar";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import { isEditableKeyboardTarget } from "../../../components/widgets/data-grid/event-adapter";
+import { commandClient } from "../../../lib/engine-commands";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
-import { showTempo } from "../../../state/appStores";
+import { armedLaunches, showTempo } from "../../../state/appStores";
+import { LaunchQuantize } from "../../../types";
 import { TempoBeatIndicator } from "../components/tempo-beat-indicator";
 import { TempoTapButton } from "../components/tempo-tap-button";
 import {
@@ -63,6 +70,31 @@ const TEMPO_ACTIONS = [
   ["Jump to next downbeat", SkipForwardIcon, { type: "Snap" }],
 ] as const;
 
+/** Launch quantize modes offered by the panel. */
+const LAUNCH_QUANTIZE_OPTIONS: readonly SegmentedControlOption<LaunchQuantize>[] =
+  [
+    {
+      value: LaunchQuantize.Off,
+      label: "Off",
+      tooltip: "Clips launch as soon as they are pressed",
+    },
+    {
+      value: LaunchQuantize.Beat,
+      label: "Beat",
+      tooltip: "Clips launch and stop on the next beat",
+    },
+    {
+      value: LaunchQuantize.Bar,
+      label: "Bar",
+      tooltip: "Clips launch and stop on the next downbeat",
+    },
+  ];
+
+/** Fires every clip waiting for its beat or bar now. */
+function launchArmedNow() {
+  commandClient.emit("ClipCommand", { type: "LaunchArmed" });
+}
+
 /**
  * The show tempo panel: a beat indicator and BPM readout that follow the
  * engine, fields for the exact tempo and bar length, half/double time and
@@ -70,7 +102,11 @@ const TEMPO_ACTIONS = [
  */
 export default function TempoPanel(_props: BasePanelComponentProps) {
   const tempo = useStore(showTempo);
+  const armed = useStore(armedLaunches);
   const beat = createBeatInBar();
+
+  /** Returns whether any clip is waiting for its beat or bar. */
+  const hasArmedLaunches = () => Object.keys(armed()).length > 0;
 
   /**
    * The exact tempo. Only a value in the engine's range is sent, so a partly
@@ -127,6 +163,13 @@ export default function TempoPanel(_props: BasePanelComponentProps) {
                 </ToolbarButton>
               )}
             </For>
+            <ToolbarButton
+              label="Launch armed clips now"
+              disabled={!hasArmedLaunches()}
+              onClick={launchArmedNow}
+            >
+              <LightningIcon class="size-4" aria-hidden />
+            </ToolbarButton>
           </Toolbar>
         }
       />
@@ -185,6 +228,19 @@ export default function TempoPanel(_props: BasePanelComponentProps) {
                   increaseLabel="More beats per bar"
                 />
               </label>
+            </div>
+            <div class="nf-tempo-launch-quantize">
+              <span aria-hidden="true">Launch quantize</span>
+              <SegmentedControl
+                label="Launch quantize"
+                density="compact"
+                options={LAUNCH_QUANTIZE_OPTIONS}
+                value={state().launchQuantize}
+                onChange={(mode) =>
+                  sendTempoCommand({ type: "SetLaunchQuantize", data: mode })
+                }
+                data-testid="launch-quantize-control"
+              />
             </div>
             <TempoTapButton class="nf-tempo-panel-tap" />
             <div class="nf-tempo-key-hint">

@@ -124,7 +124,14 @@ pub(super) fn materialize_timeline_sequences(
             &materializer.fixture_data_provider,
             &materializer.selection_resolver,
             interval.started_at_timeline,
-        ) else {
+        )
+        .map(|playback| {
+            playback.with_source_scale(clip_sequence_source_scale(
+                clip,
+                materializer.sequence_data_provider.as_deref(),
+                timeline.timeline.beats_per_second(),
+            ))
+        }) else {
             tracing::error!(
                 clip_uid = %clip_uid,
                 track_id = %interval.owner.track_id,
@@ -142,11 +149,13 @@ pub(super) fn materialize_timeline_sequences(
                 && let Some((clip, sequence)) = sequence_is_resolvable()
             {
                 let target = playback.target();
-                let release_timing = PlaybackReconstructionTiming::timeline_source_local(
-                    interval.playback_position_at(release.released_at_timeline),
-                    interval.playback_position_at(timeline_position),
-                    timeline.timeline.identifiers.uid,
-                    interval.started_at_timeline,
+                let release_timing = playback.source_reconstruction_timing(
+                    PlaybackReconstructionTiming::timeline_source_local(
+                        interval.playback_position_at(release.released_at_timeline),
+                        interval.playback_position_at(timeline_position),
+                        timeline.timeline.identifiers.uid,
+                        interval.started_at_timeline,
+                    ),
                 );
                 let materialized = spawn_released_reconstructed_sequence_for_clip(
                     commands,
@@ -218,7 +227,7 @@ pub(super) fn materialize_timeline_sequences(
                 target.position,
                 PlaybackReconstructionTiming::timeline_source_local(
                     target.started_at,
-                    interval.playback_position_at(timeline_position),
+                    playback.source_position(interval.playback_position_at(timeline_position)),
                     timeline.timeline.identifiers.uid,
                     interval.started_at_timeline,
                 ),
@@ -250,6 +259,23 @@ pub(super) fn materialize_timeline_sequences(
     }
 }
 
+/// Returns how much sequence time passes per timeline second for a clip's sequence: the
+/// timeline's beats per second when the sequence is beat-timed, otherwise one.
+fn clip_sequence_source_scale(
+    clip: &Clip,
+    sequence_data_provider: Option<&DataProvider<Sequence>>,
+    timeline_beats_per_second: f64,
+) -> f64 {
+    let Some(Source::Sequence(sequence_uid)) = &clip.source else {
+        return 1.0;
+    };
+    sequence_source_scale(
+        *sequence_uid,
+        sequence_data_provider,
+        timeline_beats_per_second,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use nightfall_playback_planner::{
@@ -279,7 +305,7 @@ mod tests {
             stopped_at_timeline: Some(Duration::from_secs(4)),
             source_local_start: Duration::ZERO,
             release: None,
-            rate_changes: Vec::new(),
+            speed_changes: Vec::new(),
             explicit_interventions: vec![PlannedPlaybackIntervention {
                 owner: owner("go"),
                 timeline_position: Duration::from_secs(2),

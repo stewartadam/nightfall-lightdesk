@@ -183,7 +183,7 @@ pub struct FlowWaveform {
     /// Waveform shape.
     pub kind: WaveformKind,
     /// Cycle length in seconds.
-    pub rate_secs: f32,
+    pub cycle_length_secs: f32,
     /// Amplitude.
     pub amplitude: f32,
     /// Phase offset in radians.

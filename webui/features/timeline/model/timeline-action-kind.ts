@@ -22,7 +22,7 @@ export type TimelineActionKind =
   | { type: "StopClip"; data: string }
   | { type: "AdvanceSequence"; data: string }
   | { type: "BackSequence"; data: string }
-  | { type: "SetClipRate"; data: { uid: string; rate: number } }
+  | { type: "SetClipSpeed"; data: { uid: string; speed: number } }
   | { type: "JumpToCue"; data: { uid: string; cue_index: number } }
   | { type: "DeskEval"; data: string }
   | { type: "RegisteredAction"; data: types.ActionReference };
@@ -34,7 +34,7 @@ const ACTION_IDS = {
   StopClip: "clip.stop",
   AdvanceSequence: "clip.go",
   BackSequence: "clip.back",
-  SetClipRate: "clip.set-rate",
+  SetClipSpeed: "clip.set-speed",
   JumpToCue: "clip.goto",
   DeskEval: "desk.eval",
 } as const;
@@ -79,10 +79,10 @@ export function timelineActionKind(
       return clip ? { type: "AdvanceSequence", data: clip } : registered;
     case ACTION_IDS.BackSequence:
       return clip ? { type: "BackSequence", data: clip } : registered;
-    case ACTION_IDS.SetClipRate: {
-      const rate = numberArgument(action, "rate");
-      return clip && rate !== undefined
-        ? { type: "SetClipRate", data: { uid: clip, rate } }
+    case ACTION_IDS.SetClipSpeed: {
+      const speed = numberArgument(action, "speed");
+      return clip && speed !== undefined
+        ? { type: "SetClipSpeed", data: { uid: clip, speed } }
         : registered;
     }
     case ACTION_IDS.JumpToCue: {
@@ -114,10 +114,10 @@ export function timelineActionReference(
     case "AdvanceSequence":
     case "BackSequence":
       return { id: ACTION_IDS[kind.type], arguments: { clip: kind.data } };
-    case "SetClipRate":
+    case "SetClipSpeed":
       return {
-        id: ACTION_IDS.SetClipRate,
-        arguments: { clip: kind.data.uid, rate: kind.data.rate },
+        id: ACTION_IDS.SetClipSpeed,
+        arguments: { clip: kind.data.uid, speed: kind.data.speed },
       };
     case "JumpToCue":
       return {

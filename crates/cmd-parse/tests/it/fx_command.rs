@@ -165,17 +165,17 @@ fn test_fx_step_accepts_invert_attribute_transform() {
     ));
 }
 
-/// Verifies playback-rate parsing remains under the non-store FX command.
+/// Verifies playback-speed parsing remains under the non-store FX command.
 #[test]
-fn test_fx_rate_decimal_ast() {
-    let command_ast = generate_ast("fx 1 rate 2.5").expect("Failed to parse FX rate command");
+fn test_fx_speed_decimal_ast() {
+    let command_ast = generate_ast("fx 1 speed 2.5").expect("Failed to parse FX speed command");
 
     match command_ast {
         ast::CommandAst::Fx(fx_ast) => match fx_ast.action {
-            ast::FxActionAst::SetRate(rate) => {
-                assert_eq!(rate.value.0, "2.5");
+            ast::FxActionAst::SetSpeed(speed) => {
+                assert_eq!(speed.value.0, "2.5");
             }
-            other => panic!("Expected SetRate FX action, got {:?}", other),
+            other => panic!("Expected SetSpeed FX action, got {:?}", other),
         },
         other => panic!("Expected FX command, got {:?}", other),
     }

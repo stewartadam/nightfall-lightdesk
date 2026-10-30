@@ -42,9 +42,9 @@ test("parameter lane controls persist additions and deletions", async ({
   await expect(
     dialog.getByRole("button", { name: "Add lane", exact: true }),
   ).toBeDisabled();
-  await dialog.getByLabel("Parameter type").selectOption("RateMaster");
+  await dialog.getByLabel("Parameter type").selectOption("ClipSpeed");
   await expect(
-    dialog.getByText("Create a clip to add a clip rate lane."),
+    dialog.getByText("Create a clip to add a clip speed lane."),
   ).toBeVisible();
   await expect(
     dialog.getByRole("button", { name: "Add lane", exact: true }),
@@ -143,7 +143,7 @@ test("parameter lane controls persist additions and deletions", async ({
 });
 
 /** Verifies a published clip target remains editable after adding control points. */
-test("clip rate lane control points persist after backend publication", async ({
+test("clip speed lane control points persist after backend publication", async ({
   page,
 }, testInfo) => {
   await openFirstTimeline(page);
@@ -154,7 +154,7 @@ test("clip rate lane control points persist after backend publication", async ({
       ...stores.clips.get(),
       [uid]: [
         {
-          identifiers: { id: 9201, uid, label: "Rate Target" },
+          identifiers: { id: 9201, uid, label: "Speed Target" },
           priority: 0,
           options: { auto_release: false, deactivate_on_sequence_end: false },
         },
@@ -169,7 +169,7 @@ test("clip rate lane control points persist after backend publication", async ({
     .getByRole("button", { name: "Add parameter lane", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Add parameter lane" });
-  await dialog.getByLabel("Parameter type").selectOption("RateMaster");
+  await dialog.getByLabel("Parameter type").selectOption("ClipSpeed");
   await dialog.getByRole("combobox", { name: /^Clip/ }).selectOption(clipUid);
   await dialog.getByRole("button", { name: "Add lane", exact: true }).click();
   /** Reads authoritative lane data delivered by the backend. */
@@ -179,7 +179,7 @@ test("clip rate lane control points persist after backend publication", async ({
         (window as any).appStores.timelines
           .get()
           [uid].tracks[0].automation_lanes.find(
-            (lane: any) => lane.parameter_type.type === "RateMaster",
+            (lane: any) => lane.parameter_type.type === "ClipSpeed",
           ),
       TIMELINE_UID,
     );
@@ -200,12 +200,12 @@ test("clip rate lane control points persist after backend publication", async ({
   await openFirstTimeline(page);
   await expect(lane.locator(".automation-point")).toHaveCount(2);
   await page.screenshot({
-    path: testInfo.outputPath("clip-rate-control-points.png"),
+    path: testInfo.outputPath("clip-speed-control-points.png"),
   });
 });
 
-/** Verifies a clip rate lane changes rendered Step FX output through the shared rate property. */
-test("clip rate automation controls Step FX playback and output", async ({
+/** Verifies a clip speed lane changes rendered Step FX output through the shared speed property. */
+test("clip speed automation controls Step FX playback and output", async ({
   page,
 }, testInfo) => {
   const clipUid = "c7500000000000000000000000000004";
@@ -219,7 +219,7 @@ test("clip rate automation controls Step FX playback and output", async ({
         make: "Generic",
         model: "Moving Head RGBW",
         mode: "Spot",
-        label: "Rate test fixture",
+        label: "Speed test fixture",
         update_existing_ids: [],
         update_existing_only: false,
       },
@@ -233,7 +233,7 @@ test("clip rate automation controls Step FX playback and output", async ({
         identifiers: {
           id: TIMELINE_ID,
           uid: stepFxUid,
-          label: "Rate test Step FX",
+          label: "Speed test Step FX",
         },
         selection: {
           source: {
@@ -269,7 +269,11 @@ test("clip rate automation controls Step FX playback and output", async ({
     command: {
       type: "StoreClip",
       data: {
-        identifiers: { id: TIMELINE_ID, uid: clipUid, label: "Rate test clip" },
+        identifiers: {
+          id: TIMELINE_ID,
+          uid: clipUid,
+          label: "Speed test clip",
+        },
         source: { type: "StepFx", data: stepFxUid },
         priority: 0,
         options: { auto_release: false, deactivate_on_sequence_end: false },
@@ -282,7 +286,7 @@ test("clip rate automation controls Step FX playback and output", async ({
   );
   timeline.tracks[0].actions = [
     {
-      id: "rate-test-start",
+      id: "speed-test-start",
       label: "Start Step FX",
       position: { secs: 2, nanos: 0 },
       duration: { secs: 0, nanos: 0 },
@@ -302,7 +306,7 @@ test("clip rate automation controls Step FX playback and output", async ({
     .getByRole("button", { name: "Add parameter lane", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Add parameter lane" });
-  await dialog.getByLabel("Parameter type").selectOption("RateMaster");
+  await dialog.getByLabel("Parameter type").selectOption("ClipSpeed");
   await dialog.getByRole("combobox", { name: /^Clip/ }).selectOption(clipUid);
   await dialog.getByRole("button", { name: "Add lane", exact: true }).click();
   const lane = page.locator(
@@ -342,7 +346,7 @@ test("clip rate automation controls Step FX playback and output", async ({
         : undefined;
       const elapsed = instance?.transition_elapsed;
       return {
-        rate: instance?.rate,
+        speed: instance?.speed,
         elapsed: elapsed ? elapsed.secs + elapsed.nanos / 1e9 : undefined,
         output: raw?.VirtualIntensity ?? raw?.Intensity,
         at: Date.now(),
@@ -350,7 +354,7 @@ test("clip rate automation controls Step FX playback and output", async ({
     }, TIMELINE_ID);
   try {
     await expect
-      .poll(async () => (await readPlayback()).rate)
+      .poll(async () => (await readPlayback()).speed)
       .toBeCloseTo(0.25, 1);
   } catch (error) {
     const state = await page.evaluate(() => {
@@ -364,7 +368,7 @@ test("clip rate automation controls Step FX playback and output", async ({
         stepFx: stores.stepFx.get(),
       };
     });
-    await testInfo.attach("rate-playback-state", {
+    await testInfo.attach("speed-playback-state", {
       body: JSON.stringify(state, null, 2),
       contentType: "application/json",
     });
@@ -378,11 +382,11 @@ test("clip rate automation controls Step FX playback and output", async ({
     .poll(async () => (await readPlayback()).at - slowStart.at)
     .toBeGreaterThan(1000);
   const slowEnd = await readPlayback();
-  const observedRate =
+  const observedSpeed =
     ((slowEnd.elapsed ?? 0) - (slowStart.elapsed ?? 0)) /
     ((slowEnd.at - slowStart.at) / 1000);
-  expect(observedRate).toBeGreaterThan(0.1);
-  expect(observedRate).toBeLessThan(0.5);
+  expect(observedSpeed).toBeGreaterThan(0.1);
+  expect(observedSpeed).toBeLessThan(0.5);
   await expect
     .poll(async () => (await readPlayback()).output)
     .not.toBeUndefined();
@@ -399,7 +403,7 @@ test("clip rate automation controls Step FX playback and output", async ({
     module: "TimelineCommand",
     command: { type: "StoreTimeline", data: zeroTimeline },
   });
-  await expect.poll(async () => (await readPlayback()).rate).toBe(0);
+  await expect.poll(async () => (await readPlayback()).speed).toBe(0);
   const frozenStart = await readPlayback();
   await expect
     .poll(async () => (await readPlayback()).at - frozenStart.at)
@@ -408,14 +412,14 @@ test("clip rate automation controls Step FX playback and output", async ({
   expect(frozenEnd.elapsed).toBe(frozenStart.elapsed);
   expect(frozenEnd.output).toBe(frozenStart.output);
   await page.screenshot({
-    path: testInfo.outputPath("clip-rate-step-fx-frozen.png"),
+    path: testInfo.outputPath("clip-speed-step-fx-frozen.png"),
   });
   zeroTimeline.tracks[0].automation_lanes = [];
   await sendOwnedOperatorCommand(page, {
     module: "TimelineCommand",
     command: { type: "StoreTimeline", data: zeroTimeline },
   });
-  await expect.poll(async () => (await readPlayback()).rate).toBe(1);
+  await expect.poll(async () => (await readPlayback()).speed).toBe(1);
   await expect
     .poll(async () => (await readPlayback()).elapsed)
     .toBeGreaterThan(frozenEnd.elapsed ?? 0);
@@ -423,7 +427,7 @@ test("clip rate automation controls Step FX playback and output", async ({
     .poll(async () => (await readPlayback()).output)
     .not.toBe(frozenEnd.output);
   await page.screenshot({
-    path: testInfo.outputPath("clip-rate-step-fx-released.png"),
+    path: testInfo.outputPath("clip-speed-step-fx-released.png"),
   });
 });
 

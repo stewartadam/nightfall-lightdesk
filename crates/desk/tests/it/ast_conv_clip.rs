@@ -275,10 +275,10 @@ fn test_clip_back_conversion() {
     }
 }
 
-/// Verifies clip rate commands convert to attached playback rate commands.
+/// Verifies clip speed commands convert to attached playback speed commands.
 #[test]
-fn test_clip_rate_conversion() {
-    let ast = generate_ast("exec 1 rate 2.5").expect("Failed to parse 'exec 1 rate 2.5'");
+fn test_clip_speed_conversion() {
+    let ast = generate_ast("exec 1 speed 2.5").expect("Failed to parse 'exec 1 speed 2.5'");
     let commands = DeskAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
@@ -286,16 +286,16 @@ fn test_clip_rate_conversion() {
     assert!(cmd.is_some(), "Command is not an ClipCommand");
 
     match cmd.unwrap() {
-        ClipCommand::SetRate { clip_id, rate } => {
+        ClipCommand::SetSpeed { clip_id, speed } => {
             assert_eq!(
                 *clip_id,
                 IdExpr::Single(1),
                 "Expected clip ID 1, got {}",
                 clip_id
             );
-            assert_eq!(*rate, 2.5);
+            assert_eq!(*speed, 2.5);
         }
-        other => panic!("Expected SetRate command, got {:?}", other),
+        other => panic!("Expected SetSpeed command, got {:?}", other),
     }
 }
 

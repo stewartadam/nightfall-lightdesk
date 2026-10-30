@@ -82,6 +82,10 @@ export function createStepFxEditorEditController(
   const setTiming = (timing: types.StepFxTiming) =>
     mutate((next) => (next.timing = timing));
 
+  /** Switches whether one authored beat is the effect's own beat or one show beat. */
+  const setTimebase = (timebase: types.Timebase) =>
+    mutate((next) => (next.timebase = timebase));
+
   /** Replaces the effect-wide cycle scaling mode. */
   const setCycleScale = (cycleScale: types.StepFxCycleScale) =>
     mutate((next) => (next.cycle_scale = cycleScale));
@@ -542,6 +546,7 @@ export function createStepFxEditorEditController(
     setSpatialSelection,
     setDirection,
     setTiming,
+    setTimebase,
     setCycleScale,
     setPhase,
     replaceLane,

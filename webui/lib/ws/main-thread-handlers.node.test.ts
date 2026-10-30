@@ -16,6 +16,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "ActionInvocationFailed",
   "ActiveInstances",
   "AppState",
+  "ArmedLaunches",
   "AttributeMetadata",
   "AudioInputDevices",
   "AvailableAudioDevices",

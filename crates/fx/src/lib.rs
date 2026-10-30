@@ -129,6 +129,12 @@ impl Plugin for FxPlugin {
                 .run_if(in_state(AppState::Ready)),
         );
         app.add_systems(
+            Update,
+            systems::sync_fx_instance_timebase
+                .after(EventHandling)
+                .run_if(in_state(AppState::Ready)),
+        );
+        app.add_systems(
             Render,
             (
                 systems::evaluate_step_fx,

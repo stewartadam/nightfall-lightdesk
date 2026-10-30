@@ -116,7 +116,7 @@ mod tests {
     #[allow(dead_code)]
     struct ClipArguments {
         clip: Uuid,
-        rate: Option<f64>,
+        speed: Option<f64>,
     }
 
     /// Builds an app with a clip action, a clip target validator, and a diagnosing surface.
@@ -134,8 +134,8 @@ mod tests {
                     ActionParameterKind::Clip,
                 ))
                 .with_parameter(ActionParameter::optional(
-                    "rate",
-                    "Rate",
+                    "speed",
+                    "Speed",
                     ActionParameterKind::Number { min: 0.0, max: 4.0 },
                 )),
             |_world, _arguments, _invocation| Ok(InvocationDispatch::succeeded()),
@@ -210,11 +210,11 @@ mod tests {
         let out_of_range = registry
             .validate_arguments(&ActionReference::new(
                 "test.clip",
-                json!({ "clip": uid, "rate": 9.0 }),
+                json!({ "clip": uid, "speed": 9.0 }),
             ))
-            .expect_err("a rate above its range should be rejected");
+            .expect_err("a speed above its range should be rejected");
         assert_eq!(out_of_range.code, "action.invalid_arguments");
-        assert_eq!(out_of_range.details, Some(json!({ "parameter": "rate" })));
+        assert_eq!(out_of_range.details, Some(json!({ "parameter": "speed" })));
         let unregistered = registry
             .validate_arguments(&ActionReference::new("test.missing", json!({})))
             .expect_err("an unregistered action should be rejected");

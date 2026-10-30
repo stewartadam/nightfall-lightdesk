@@ -621,7 +621,7 @@ test("rankCommandAutocomplete preserves uncovered raw tokens alongside completio
   assert.ok(tokenInsertTexts(ranked).includes("@"));
 });
 
-test("rankCommandAutocomplete surfaces rate completion group for fx step selection tail", () => {
+test("rankCommandAutocomplete surfaces speed completion group for fx step selection tail", () => {
   const input = "store fx 1 step group 14 ";
   const response = makeResponse({
     replace: { start: input.length, end: input.length },
@@ -641,7 +641,9 @@ test("rankCommandAutocomplete surfaces rate completion group for fx step selecti
       active_slots: [],
       filled: [],
       completion_groups: [
-        makeCompletionGroup("fx/rate", "Rate", 700, [{ insert_text: "0..9" }]),
+        makeCompletionGroup("fx/speed", "Speed", 700, [
+          { insert_text: "0..9" },
+        ]),
       ],
       loose_candidates: [],
       suppression: [],
@@ -650,7 +652,7 @@ test("rankCommandAutocomplete surfaces rate completion group for fx step selecti
   });
 
   const ranked = rankCommandAutocomplete(response, input, input.length);
-  assert.deepEqual(groupLabels(ranked), ["Rate"]);
+  assert.deepEqual(groupLabels(ranked), ["Speed"]);
 });
 
 test("rankCommandAutocomplete surfaces attribute completion group after fx duration", () => {

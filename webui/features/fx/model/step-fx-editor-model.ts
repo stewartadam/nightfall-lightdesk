@@ -12,8 +12,8 @@ import type * as types from "../../../types";
 import { FxDirection } from "../../../types";
 import type { StepFxWaveformDragTarget } from "./step-fx-waveform-types";
 
-/** Operator-facing units accepted by the Step FX speed control. */
-export type StepFxSpeedUnit = "BPM" | "Hz" | "Seconds" | "Milliseconds";
+/** Operator-facing units accepted by the Step FX beat control. */
+export type StepFxBeatUnit = "BPM" | "Hz" | "Seconds" | "Milliseconds";
 
 /** Display units available for normalized Step FX cycle positions. */
 export type StepFxPositionUnit = "percent" | "degrees";
@@ -247,10 +247,10 @@ function isPointClipboardValue(value: unknown): value is types.Point2D {
   );
 }
 
-/** Converts canonical beat duration into one operator-facing speed unit. */
-export function stepFxSpeedValue(
+/** Converts canonical beat duration into one operator-facing beat unit. */
+export function stepFxBeatValue(
   timing: types.StepFxTiming,
-  unit: StepFxSpeedUnit,
+  unit: StepFxBeatUnit,
 ): number {
   const seconds = durationToSeconds(timing.beat_duration);
   const value =
@@ -264,10 +264,10 @@ export function stepFxSpeedValue(
   return Number(value.toFixed(6));
 }
 
-/** Parses a positive speed value into canonical duration-per-beat storage. */
-export function stepFxTimingFromSpeed(
+/** Parses a positive beat value into canonical duration-per-beat storage. */
+export function stepFxTimingFromBeat(
   value: number,
-  unit: StepFxSpeedUnit,
+  unit: StepFxBeatUnit,
 ): types.StepFxTiming | null {
   if (!Number.isFinite(value) || value <= 0) return null;
   const seconds =

@@ -109,7 +109,7 @@ export function createDefaultFx(id: number, label?: string): types.Fx {
     },
     attributes: {
       Intensity: {
-        rate: { secs: 1, nanos: 0 },
+        cycle_length: { secs: 1, nanos: 0 },
         width: 1.0,
         phase_range: [0, 2 * Math.PI],
         is_relative: false,
@@ -295,7 +295,7 @@ export function flowWaveformToFxWaveform(
       duty_cycle: dutyCycle,
     },
     phase_range: [phaseStart, phaseEnd],
-    rate: toDuration(waveform.rate_secs),
+    cycle_length: toDuration(waveform.cycle_length_secs),
     width: 1.0,
     is_relative: isRelative,
   };
@@ -334,7 +334,7 @@ export function fxWaveformToFlowWaveform(
 
   return {
     kind,
-    rate_secs: fromDuration(waveform.rate),
+    cycle_length_secs: fromDuration(waveform.cycle_length),
     amplitude: clamp(max - min, 0, 1),
     phase: waveform.phase_range?.[0] ?? 0,
     base: min,
@@ -348,7 +348,7 @@ export function fxWaveformToFlowWaveform(
 export function createDefaultFlowWaveform(): FlowWaveform {
   return {
     kind: WaveformKind.Sin,
-    rate_secs: 1,
+    cycle_length_secs: 1,
     amplitude: 1,
     phase: 0,
     base: 0,

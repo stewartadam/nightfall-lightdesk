@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use nightfall_instances::{InstanceClockSource, Timebase};
 use nightfall_lookahead::Lookahead;
 
 use super::navigation::MAX_AUTONOMOUS_SEQUENCE_ADVANCES_PER_TICK;
@@ -61,7 +62,7 @@ pub fn advance_sequences(
 
         if preview_controls
             .get(sequence_entity)
-            .is_ok_and(|controls| controls.effective_rate() == 0.0)
+            .is_ok_and(|controls| controls.effective_speed() == 0.0)
         {
             continue;
         }
@@ -295,7 +296,14 @@ pub fn despawn_materialized_sequences(
                 .iter()
                 .any(|materialized_clip| materialized_clip.attached_instance == *instance_id)
         });
+        // A beat-timed playback following the show tempo counts its release in beats on its own
+        // clock; wall-clock seconds would end it early or late.
+        let beat_timed_on_clock = clock.is_some_and(|clock| {
+            clock.source == InstanceClockSource::Tempo
+                && msequence.sequence.timebase == Timebase::Beats
+        });
         let playback_should_use_marker_elapsed = instance_id.is_some()
+            && !beat_timed_on_clock
             && (clock.is_none() || (!playback_is_attached && release_timing.is_none()));
         let clock_release_elapsed = clock.and_then(|clock| {
             if playback_should_use_marker_elapsed && !playback_is_attached {
@@ -319,6 +327,24 @@ pub fn despawn_materialized_sequences(
         if msequence.release_complete(release_grace, release_elapsed) {
             tracing::debug!(entity=%entity, uid=%msequence.identifiers().uid, "Despawning sequence '{}'", msequence.identifiers().label);
             commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Copies each sequence playback's timebase from its materialized definition onto the playback
+/// entity.
+///
+/// The clock systems read the [`Timebase`] component to decide whether a playback follows the
+/// show tempo. Rematerializing after a definition edit updates the copy, so switching a running
+/// sequence between Seconds and Beats takes effect while it plays.
+pub fn sync_sequence_instance_timebase(
+    mut commands: Commands,
+    sequences: Query<(Entity, &MaterializedSequence, Option<&Timebase>)>,
+) {
+    for (entity, msequence, current) in sequences.iter() {
+        let timebase = msequence.sequence.timebase;
+        if current != Some(&timebase) {
+            commands.entity(entity).insert(timebase);
         }
     }
 }

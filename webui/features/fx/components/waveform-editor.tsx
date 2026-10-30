@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import {
   Input,
   InputGroup,
@@ -17,6 +17,9 @@ import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { type FlowWaveform, WaveformKind } from "../../../types";
 import { WaveformCanvas } from "./waveform-canvas";
 import { WaveformPresets } from "./waveform-presets";
+
+/** Common beat-timed cycle lengths, from a sixteenth note to four 4/4 bars. */
+const BEAT_LENGTH_PRESETS = [0.25, 0.5, 1, 2, 4, 8, 16] as const;
 
 export interface WaveformEditorProps {
   title?: string;
@@ -30,10 +33,12 @@ export interface WaveformEditorProps {
   isRelative?: boolean;
   /** Callback when is_relative changes (FX editor only) */
   onRelativeChange?: (relative: boolean) => void;
+  /** Unit the cycle length is entered in; beats when the effect follows the show tempo */
+  cycleLengthUnit?: "seconds" | "beats";
   /** Fields that are disabled because they have upstream connections */
   disabledFields?: {
     kind?: boolean;
-    rate?: boolean;
+    cycleLength?: boolean;
     amplitude?: boolean;
     phase?: boolean;
     base?: boolean;
@@ -51,6 +56,7 @@ export function WaveformEditor(props: WaveformEditorProps) {
   );
 
   const showRelative = () => props.showRelative ?? false;
+  const inBeats = () => props.cycleLengthUnit === "beats";
 
   const isDisabled = (field: keyof NonNullable<typeof props.disabledFields>) =>
     props.disabledFields?.[field] ?? false;
@@ -208,11 +214,13 @@ export function WaveformEditor(props: WaveformEditorProps) {
           <label class="flex items-center justify-between">
             <span
               class={
-                isDisabled("rate") ? "text-neutral-500" : "text-neutral-400"
+                isDisabled("cycleLength")
+                  ? "text-neutral-500"
+                  : "text-neutral-400"
               }
             >
-              Rate
-              {isDisabled("rate") && (
+              Cycle length
+              {isDisabled("cycleLength") && (
                 <span class="ml-1 text-[10px]">(wired)</span>
               )}
             </span>
@@ -220,22 +228,34 @@ export function WaveformEditor(props: WaveformEditorProps) {
               <Input
                 density="compact"
                 type="number"
-                step="0.1"
-                min="0.1"
-                aria-label="Rate"
-                value={props.waveform.rate_secs.toFixed(2)}
-                disabled={isDisabled("rate")}
+                step={inBeats() ? "0.25" : "0.1"}
+                min={inBeats() ? "0.0625" : "0.1"}
+                list={inBeats() ? "waveform-cycle-length-beats" : undefined}
+                aria-label={
+                  inBeats()
+                    ? "Cycle length in beats"
+                    : "Cycle length in seconds"
+                }
+                value={props.waveform.cycle_length_secs.toFixed(2)}
+                disabled={isDisabled("cycleLength")}
                 onInput={(e) => {
-                  if (isDisabled("rate")) return;
+                  if (isDisabled("cycleLength")) return;
                   const value = Number.parseFloat(e.currentTarget.value);
                   if (!Number.isNaN(value) && value > 0) {
-                    props.onWaveformChange({ rate_secs: value });
+                    props.onWaveformChange({ cycle_length_secs: value });
                   }
                 }}
                 class="w-14 text-right"
               />
-              <InputSuffix>s</InputSuffix>
+              <InputSuffix>{inBeats() ? "beats" : "s"}</InputSuffix>
             </InputGroup>
+            <Show when={inBeats()}>
+              <datalist id="waveform-cycle-length-beats">
+                <For each={BEAT_LENGTH_PRESETS}>
+                  {(beats) => <option value={beats} />}
+                </For>
+              </datalist>
+            </Show>
           </label>
 
           <Show when={showRelative()}>

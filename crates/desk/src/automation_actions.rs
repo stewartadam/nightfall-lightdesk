@@ -20,9 +20,9 @@ use nightfall_actions::{
     submit_command,
 };
 use nightfall_clips::{
-    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_RATE_ACTION_ID,
+    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_SPEED_ACTION_ID,
     CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipGotoActionArguments,
-    ClipRateActionArguments,
+    ClipSpeedActionArguments,
 };
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
@@ -37,7 +37,9 @@ use crate::controls::{
     ControlCommand, ControlUpdate, Controls, clip_live_state, master_contributes,
 };
 use crate::desk_command::DeskCommand;
-use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
+use crate::masters::{
+    Master, MasterCommand, MasterKind, MasterMode, MasterUpdate, clamp_master_level,
+};
 
 /// Stable action ID for driving a control slot's level from external hardware input.
 pub const CONTROL_LEVEL_ACTION_ID: &str = "control.level";
@@ -59,6 +61,22 @@ pub const MASTER_ON_ACTION_ID: &str = "master.on";
 
 /// Stable action ID for turning a toggle-mode master off.
 pub const MASTER_OFF_ACTION_ID: &str = "master.off";
+
+/// Stable action ID for halving a speed master.
+pub const MASTER_SPEED_HALF_ACTION_ID: &str = "master.speed-half";
+
+/// Stable action ID for doubling a speed master.
+pub const MASTER_SPEED_DOUBLE_ACTION_ID: &str = "master.speed-double";
+
+/// Stable action ID for returning a speed master to ×1.
+pub const MASTER_SPEED_RESET_ACTION_ID: &str = "master.speed-reset";
+
+/// Stable action ID for firing every live launch waiting for the next beat or bar now.
+pub const CLIP_LAUNCH_ARMED_ACTION_ID: &str = "clip.launch-armed";
+
+/// Arguments for actions that take none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct NoArguments {}
 
 /// Persisted arguments for externally-driven control actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,29 +181,41 @@ pub fn register_desk_actions(app: &mut App) {
             })
         },
     );
-    app.register_command_action::<ClipRateActionArguments, ClipCommand, _>(
-        ActionDescriptor::new(CLIP_SET_RATE_ACTION_ID, "Set clip rate", "Clips")
-            .with_description("Sets the playback rate multiplier of a running clip")
+    app.register_command_action::<NoArguments, ClipCommand, _>(
+        ActionDescriptor::new(
+            CLIP_LAUNCH_ARMED_ACTION_ID,
+            "Launch armed clips now",
+            "Clips",
+        )
+        .with_description(
+            "Fires every clip waiting for the next beat or bar at once, skipping launch \
+                 quantize",
+        ),
+        |_, _| Ok(ClipCommand::LaunchArmed),
+    );
+    app.register_command_action::<ClipSpeedActionArguments, ClipCommand, _>(
+        ActionDescriptor::new(CLIP_SET_SPEED_ACTION_ID, "Set clip speed", "Clips")
+            .with_description("Sets the playback speed multiplier of a running clip")
             .with_parameter(clip_parameter())
             .with_parameter(ActionParameter::required(
-                "rate",
-                "Rate",
+                "speed",
+                "Speed",
                 ActionParameterKind::Number { min: 0.0, max: 4.0 },
             )),
         |world, arguments| {
-            Ok(ClipCommand::SetRate {
+            Ok(ClipCommand::SetSpeed {
                 clip_id: IdExpr::Single(resolve_clip_id(world, arguments.clip)?),
-                rate: arguments.rate,
+                speed: arguments.speed,
             })
         },
     )
-    .register_action_capability::<ClipRateActionArguments, TimelinePlaybackActionPlan, _>(
-        CLIP_SET_RATE_ACTION_ID,
+    .register_action_capability::<ClipSpeedActionArguments, TimelinePlaybackActionPlan, _>(
+        CLIP_SET_SPEED_ACTION_ID,
         TimelinePlaybackActionPlan::CAPABILITY,
         |arguments| {
             Ok(TimelinePlaybackActionPlan {
                 owner_uid: arguments.clip,
-                kind: TimelinePlaybackActionKind::SetRate(arguments.rate),
+                kind: TimelinePlaybackActionKind::SetSpeed(arguments.speed),
             })
         },
     );
@@ -315,6 +345,33 @@ pub fn register_desk_actions(app: &mut App) {
             let master = resolve_master(world, arguments.master)?;
             Ok(ActionFeedback::active_if(master_contributes(&master)))
         });
+    }
+    for (action_id, label, description, step) in [
+        (
+            MASTER_SPEED_HALF_ACTION_ID,
+            "Speed master ×½",
+            "Halves a speed master, down to ×¼",
+            SpeedMasterStep::Half,
+        ),
+        (
+            MASTER_SPEED_DOUBLE_ACTION_ID,
+            "Speed master ×2",
+            "Doubles a running speed master, up to ×2",
+            SpeedMasterStep::Double,
+        ),
+        (
+            MASTER_SPEED_RESET_ACTION_ID,
+            "Speed master ×1",
+            "Returns a speed master to normal speed",
+            SpeedMasterStep::Reset,
+        ),
+    ] {
+        app.register_command_action::<MasterActionArguments, MasterCommand, _>(
+            ActionDescriptor::new(action_id, label, "Masters")
+                .with_description(description)
+                .with_parameter(master_parameter()),
+            move |world, arguments| step_speed_master(world, arguments.master, step),
+        );
     }
     app.register_action::<DeskEvalActionArguments, _>(
         ActionDescriptor::new(DESK_EVAL_ACTION_ID, "Evaluate command", "Desk")
@@ -459,6 +516,53 @@ fn resolve_master(world: &World, uid: Uuid) -> Result<Master, InvocationError> {
             )
             .with_details(serde_json::json!({ "master": uid }))
         })
+}
+
+/// One press of a speed master's ×½, ×2 or ×1 action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpeedMasterStep {
+    /// Halve the current speed.
+    Half,
+    /// Double the current speed.
+    Double,
+    /// Return to normal speed.
+    Reset,
+}
+
+/// Lowest level the ×½ action steps down to, so repeated presses never stop playback.
+const SPEED_MASTER_MIN_STEP_PERCENT: f32 = 25.0;
+
+/// Lowers a speed master's ×½, ×2 or ×1 action to an undoable level change.
+///
+/// Halving stops at ×¼ and doubling at the master's ×2 maximum. Masters of any other kind
+/// reject the action, since halving an intensity master is not a speed change.
+fn step_speed_master(
+    world: &World,
+    uid: Uuid,
+    step: SpeedMasterStep,
+) -> Result<MasterCommand, InvocationError> {
+    let master = resolve_master(world, uid)?;
+    if master.kind != MasterKind::PlaybackSpeed {
+        return Err(InvocationError::new(
+            "master.not_speed",
+            format!(
+                "Master '{}' is not a speed master",
+                master.identifiers.label
+            ),
+        )
+        .with_details(serde_json::json!({ "master": uid })));
+    }
+    let level_percent = match step {
+        SpeedMasterStep::Half => (master.level_percent / 2.0)
+            .max(SPEED_MASTER_MIN_STEP_PERCENT)
+            .min(master.level_percent),
+        SpeedMasterStep::Double => master.level_percent * 2.0,
+        SpeedMasterStep::Reset => 100.0,
+    };
+    Ok(MasterCommand::SetMasterLevel {
+        id: master.identifiers.id,
+        level_percent: clamp_master_level(MasterKind::PlaybackSpeed, level_percent),
+    })
 }
 
 /// Lowers turning a toggle-mode master on or off to a mode change.
@@ -779,7 +883,7 @@ mod tests {
             },
             ..Default::default()
         });
-        add_rate_master(&mut app);
+        add_speed_master(&mut app);
 
         assert!(validate(&app, &start_clip_action(clip_uid)).is_ok());
         assert!(validate(&app, &master_level_action(master_uid)).is_ok());
@@ -841,7 +945,7 @@ mod tests {
     #[test]
     fn only_master_set_changes_mark_action_targets_changed() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         app.update();
         app.update();
         /// Returns when action targets were last marked changed.
@@ -887,8 +991,8 @@ mod tests {
         );
     }
 
-    /// Stores a toggle-mode playback rate master and returns its persistent UID.
-    fn add_rate_master(app: &mut App) -> Uuid {
+    /// Stores a toggle-mode playback speed master and returns its persistent UID.
+    fn add_speed_master(app: &mut App) -> Uuid {
         let uid = Uuid::from_u128(41);
         app.world_mut()
             .resource_mut::<DataProvider<Master>>()
@@ -896,9 +1000,9 @@ mod tests {
                 identifiers: nightfall::prelude::Identifiers {
                     id: 4,
                     uid,
-                    label: "Rate".to_string(),
+                    label: "Speed".to_string(),
                 },
-                kind: crate::masters::MasterKind::PlaybackRate,
+                kind: crate::masters::MasterKind::PlaybackSpeed,
                 target: crate::masters::MasterTarget::Instances(
                     crate::masters::InstanceMasterTarget::All,
                 ),
@@ -911,9 +1015,9 @@ mod tests {
 
     /// Verifies master level input is scaled to the master kind's range as an untracked update.
     #[test]
-    fn master_level_action_scales_rate_masters() {
+    fn master_level_action_scales_speed_masters() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         app.world_mut().write_message(ActionInvocation::scalar(
             master_level_action(uid),
             ActionSurface::Midi,
@@ -939,7 +1043,7 @@ mod tests {
     #[test]
     fn master_toggle_action_submits_toggle_command() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         app.world_mut().write_message(ActionInvocation::trigger(
             master_toggle_action(uid),
             ActionSurface::Osc,
@@ -957,11 +1061,56 @@ mod tests {
         ));
     }
 
+    /// Invokes one speed-step action on a speed master at `level_percent` and returns the
+    /// level it sets.
+    fn speed_step_level(action_id: &str, level_percent: f32) -> f32 {
+        let mut app = desk_action_app();
+        let uid = add_speed_master(&mut app);
+        let mut masters = app.world_mut().resource_mut::<DataProvider<Master>>();
+        let mut master = masters.remove(&uid).expect("speed master is stored");
+        master.level_percent = level_percent;
+        masters.add(master).expect("speed master re-stores");
+        app.world_mut().write_message(ActionInvocation::trigger(
+            master_action_reference(action_id, uid),
+            ActionSurface::Midi,
+        ));
+        app.update();
+
+        match take_pending_commands(&mut app)
+            .first()
+            .and_then(|envelope| envelope.payload.as_any().downcast_ref::<MasterCommand>())
+        {
+            Some(MasterCommand::SetMasterLevel {
+                id: 4,
+                level_percent,
+            }) => *level_percent,
+            other => panic!("expected a speed master level change, got {other:?}"),
+        }
+    }
+
+    /// Verifies ×½ and ×2 step a speed master between ×¼ and ×2, and ×1 resets it.
+    #[test]
+    fn speed_master_steps_halve_double_and_reset() {
+        assert_eq!(speed_step_level(MASTER_SPEED_HALF_ACTION_ID, 100.0), 50.0);
+        assert_eq!(speed_step_level(MASTER_SPEED_HALF_ACTION_ID, 40.0), 25.0);
+        assert_eq!(
+            speed_step_level(MASTER_SPEED_HALF_ACTION_ID, 10.0),
+            10.0,
+            "halving below x1/4 never speeds a master up"
+        );
+        assert_eq!(speed_step_level(MASTER_SPEED_DOUBLE_ACTION_ID, 50.0), 100.0);
+        assert_eq!(
+            speed_step_level(MASTER_SPEED_DOUBLE_ACTION_ID, 150.0),
+            200.0
+        );
+        assert_eq!(speed_step_level(MASTER_SPEED_RESET_ACTION_ID, 37.0), 100.0);
+    }
+
     /// Verifies Master on and off set a toggle master's state and pair up for Hold.
     #[test]
     fn master_on_and_off_set_toggle_state() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         let on = master_action_reference(MASTER_ON_ACTION_ID, uid);
         assert_eq!(
             app.world()
@@ -995,7 +1144,7 @@ mod tests {
     #[test]
     fn master_level_flash_restores_the_previous_level() {
         let mut app = desk_action_app();
-        let uid = add_rate_master(&mut app);
+        let uid = add_speed_master(&mut app);
         for input in [ActionInput::Press, ActionInput::Release] {
             app.world_mut().write_message(ActionInvocation::new(
                 master_level_action(uid),

@@ -18,12 +18,13 @@ type TimelineInstanceControlData = (
     &'static mut InstanceControls,
     Option<&'static mut InstanceClock>,
     Option<&'static Owner>,
+    Option<&'static Timebase>,
 );
 
-/// Playback rates captured while timeline pause owns a playback-rate override.
+/// Playback speeds captured while timeline pause owns a playback-speed override.
 #[derive(Resource, Default)]
-pub struct TimelinePausedPlaybackRates {
-    rates: HashMap<InstanceId, f32>,
+pub struct TimelinePausedPlaybackSpeeds {
+    speeds: HashMap<InstanceId, f32>,
     source_positions: HashMap<InstanceId, Duration>,
 }
 
@@ -42,7 +43,7 @@ pub fn sync_timeline_paused_instance_controls_system(
     action_registry: Option<Res<ActionRegistry>>,
     mut instance_controls: Query<TimelineInstanceControlData, Without<MaterializedCue>>,
     mut materialized_cues: Query<TimelineCueClockItem<'_>, TimelineCueClockFilter>,
-    mut paused_rates: ResMut<TimelinePausedPlaybackRates>,
+    mut paused_speeds: ResMut<TimelinePausedPlaybackSpeeds>,
 ) {
     let planner_resolver = TimelineSyncPlannerResolver {
         source_by_clip_uid: exec_query
@@ -73,11 +74,12 @@ pub fn sync_timeline_paused_instance_controls_system(
 
     let mut should_pause_playback = HashMap::new();
     let mut playback_positions = HashMap::new();
-    let mut reconstruction_rates = HashMap::new();
+    let mut reconstruction_speeds = HashMap::new();
     let mut playback_source_positions = HashMap::new();
     let mut playback_sources = HashMap::new();
     let mut playback_states_by_timeline_clip_uid = HashMap::new();
     let mut timeline_positions_by_uid = HashMap::new();
+    let mut beats_per_second_by_timeline_uid = HashMap::new();
     let mut should_pause_cue = HashMap::new();
     let mut cue_positions = HashMap::new();
     let mut cue_sources = HashMap::new();
@@ -91,6 +93,10 @@ pub fn sync_timeline_paused_instance_controls_system(
             continue;
         };
         let timeline_position = timeline.get_playback_position(*timecode_time);
+        beats_per_second_by_timeline_uid.insert(
+            timeline.timeline.identifiers.uid,
+            timeline.timeline.beats_per_second(),
+        );
         timeline_positions_by_uid.insert(
             timeline.timeline.identifiers.uid,
             (*timecode_is_active, timeline_position),
@@ -143,7 +149,7 @@ pub fn sync_timeline_paused_instance_controls_system(
                             .map(|state| state.position)
                             .unwrap_or_else(|| timeline_position.saturating_sub(action_position));
                         if let Some(state) = planned_playback_states.get(&playback_state_key) {
-                            reconstruction_rates.insert(instance_id, state.rate);
+                            reconstruction_speeds.insert(instance_id, state.speed);
                         }
                         playback_source_positions.insert(
                             instance_id,
@@ -177,7 +183,7 @@ pub fn sync_timeline_paused_instance_controls_system(
     }
 
     let mut seen_instances = HashSet::new();
-    for (instance_id, mut controls, clock, owner) in instance_controls.iter_mut() {
+    for (instance_id, mut controls, clock, owner, timebase) in instance_controls.iter_mut() {
         let mut should_pause = should_pause_playback
             .get(instance_id)
             .copied()
@@ -200,7 +206,7 @@ pub fn sync_timeline_paused_instance_controls_system(
                 playback_states_by_timeline_clip_uid.get(&(timeline_uid, owner.0))
             }) {
                 playback_source_position = Some(source_position);
-                reconstruction_rates.insert(*instance_id, state.rate);
+                reconstruction_speeds.insert(*instance_id, state.speed);
                 playback_source_positions.insert(*instance_id, source_position);
                 playback_position = Some(state.position);
             } else {
@@ -208,36 +214,49 @@ pub fn sync_timeline_paused_instance_controls_system(
             }
             playback_source = Some(clock.source);
         }
-        // Reconstruct the rate property only for explicit seeks, never ordinary playback ticks.
+        // Reconstruct the speed property only for explicit seeks, never ordinary playback ticks.
         let reconstructing = clock
             .as_ref()
             .is_some_and(|clock| clock.discontinuity == InstanceClockDiscontinuity::Discontinuous)
             || playback_source_position.is_some_and(|position| {
-                paused_rates
+                paused_speeds
                     .source_positions
                     .get(instance_id)
                     .is_some_and(|previous| position < *previous)
             });
-        if reconstructing && let Some(rate) = reconstruction_rates.get(instance_id) {
-            controls.set_rate(*rate);
+        if reconstructing && let Some(speed) = reconstruction_speeds.get(instance_id) {
+            controls.set_speed(*speed);
             if should_pause {
-                paused_rates.rates.insert(*instance_id, *rate);
+                paused_speeds.speeds.insert(*instance_id, *speed);
             }
         }
         if should_pause {
             seen_instances.insert(*instance_id);
-            paused_rates
-                .rates
+            paused_speeds
+                .speeds
                 .entry(*instance_id)
-                .or_insert(controls.rate);
-            controls.set_rate(0.0);
-        } else if let Some(previous_rate) = paused_rates.rates.remove(instance_id) {
-            controls.set_rate(previous_rate);
+                .or_insert(controls.speed);
+            controls.set_speed(0.0);
+        } else if let Some(previous_speed) = paused_speeds.speeds.remove(instance_id) {
+            controls.set_speed(previous_speed);
         }
         if let Some(mut clock) = clock
             && let Some(position) = playback_position
         {
-            clock.set_rate(controls.effective_rate());
+            // Beat-timed playback reads one beat per source second at the timeline's BPM.
+            let beat_scale = match (timebase, playback_source) {
+                (
+                    Some(Timebase::Beats),
+                    Some(InstanceClockSource::Timeline { timeline_uid, .. }),
+                ) => beats_per_second_by_timeline_uid
+                    .get(&timeline_uid)
+                    .copied()
+                    .unwrap_or(1.0),
+                _ => 1.0,
+            };
+            let position = position.mul_f64(beat_scale);
+            let speed = controls.effective_speed() * beat_scale;
+            clock.set_speed(speed);
             if let Some(source_position) = playback_source_position {
                 sync_timeline_owned_instance_clock(
                     instance_id,
@@ -245,9 +264,9 @@ pub fn sync_timeline_paused_instance_controls_system(
                     playback_source,
                     source_position,
                     position,
-                    controls.effective_rate(),
+                    speed,
                     should_pause,
-                    &mut paused_rates.source_positions,
+                    &mut paused_speeds.source_positions,
                 );
             } else {
                 if let Some(source) = playback_source {
@@ -263,10 +282,10 @@ pub fn sync_timeline_paused_instance_controls_system(
         }
     }
 
-    paused_rates.rates.retain(|instance_id, _| {
+    paused_speeds.speeds.retain(|instance_id, _| {
         seen_instances.contains(instance_id) || should_pause_playback.contains_key(instance_id)
     });
-    paused_rates
+    paused_speeds
         .source_positions
         .retain(|instance_id, _| playback_source_positions.contains_key(instance_id));
 
@@ -295,7 +314,7 @@ fn sync_timeline_owned_instance_clock(
     source: Option<InstanceClockSource>,
     source_position: Duration,
     seed_position: Duration,
-    final_rate: f64,
+    final_speed: f64,
     should_pause: bool,
     source_positions: &mut HashMap<InstanceId, Duration>,
 ) {
@@ -311,24 +330,24 @@ fn sync_timeline_owned_instance_clock(
         clock.seek_to(seed_position);
         clock.discontinuity = InstanceClockDiscontinuity::Continuous;
     } else if !should_pause && let Some(previous_source_position) = previous_source_position {
-        clock.set_rate(final_rate);
+        clock.set_speed(final_speed);
         clock.advance_by_source_delta(source_position.saturating_sub(previous_source_position));
     }
 
     if should_pause {
-        clock.set_rate(0.0);
+        clock.set_speed(0.0);
     } else {
-        set_timeline_owned_instance_clock_rate(clock, final_rate);
+        set_timeline_owned_instance_clock_speed(clock, final_speed);
     }
     source_positions.insert(*instance_id, source_position);
 }
 
-/// Applies the final timeline-owned clock rate without discarding this frame's delta.
-fn set_timeline_owned_instance_clock_rate(clock: &mut InstanceClock, rate: f64) {
+/// Applies the final timeline-owned clock speed without discarding this frame's delta.
+fn set_timeline_owned_instance_clock_speed(clock: &mut InstanceClock, speed: f64) {
     let previous_position = clock.previous_position;
     let delta = clock.delta;
     let discontinuity = clock.discontinuity;
-    clock.set_rate(rate);
+    clock.set_speed(speed);
     clock.previous_position = previous_position;
     clock.delta = delta;
     clock.discontinuity = discontinuity;
@@ -353,7 +372,7 @@ impl TimelinePlaybackSourceResolver for TimelineSyncPlannerResolver {
 #[derive(Clone)]
 struct TimelinePlaybackSyncState {
     position: Duration,
-    rate: f32,
+    speed: f32,
 }
 
 /// Evaluates a timeline into source-local states for active clip-owned instances.
@@ -375,7 +394,7 @@ fn planned_clip_playback_sync_states(
     .map(|playback| {
         let state = TimelinePlaybackSyncState {
             position: playback.playback_position_at(timeline_position),
-            rate: playback.playback_rate_at(timeline_position),
+            speed: playback.playback_speed_at(timeline_position),
         };
         ((playback.owner.track_id, playback.owner.action_id), state)
     })

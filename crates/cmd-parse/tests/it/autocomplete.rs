@@ -208,7 +208,7 @@ fn complete_command_emits_typed_expected_tokens() {
                 ExpectedToken::Token(TokenId::Step)
                     | ExpectedToken::Token(TokenId::Start)
                     | ExpectedToken::Token(TokenId::Stop)
-                    | ExpectedToken::Token(TokenId::Rate)
+                    | ExpectedToken::Token(TokenId::Speed)
             ))
     );
 }

@@ -145,14 +145,14 @@ export function modeFromKey(key: string): types.MasterMode {
   return alwaysOnMode();
 }
 
-/** Returns whether a persisted master controls playback rate. */
-export function isRateMaster(master: types.Master): boolean {
-  return master.kind === types.MasterKind.PlaybackRate;
+/** Returns whether a persisted master controls playback speed. */
+export function isSpeedMaster(master: types.Master): boolean {
+  return master.kind === types.MasterKind.PlaybackSpeed;
 }
 
 /** Returns the maximum stored level for a master. */
 export function masterLevelMax(master: types.Master): number {
-  return isRateMaster(master) ? 200 : 100;
+  return isSpeedMaster(master) ? 200 : 100;
 }
 
 /** Builds the command that stores a new master. */

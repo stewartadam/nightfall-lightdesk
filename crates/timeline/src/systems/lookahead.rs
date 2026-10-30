@@ -728,7 +728,7 @@ fn timeline_action_playback_footprint(
                 })
                 .unwrap_or(FixtureFootprint::Unknown)
         }
-        ActionKind::StopClip(_) | ActionKind::SetClipRate { .. } => FixtureFootprint::empty(),
+        ActionKind::StopClip(_) | ActionKind::SetClipSpeed { .. } => FixtureFootprint::empty(),
         ActionKind::JumpToCue { uid, .. } => {
             cached_planned_source_for_clip_uid(uid, clips, footprint_cache)
                 .map(|source| {

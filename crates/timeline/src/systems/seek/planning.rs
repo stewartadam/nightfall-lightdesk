@@ -202,8 +202,8 @@ pub(super) fn active_start_timing_changed(
     triggered_actions.get(owner) != Some(current_position)
 }
 
-/// Returns the planned instance rate active for an evaluated instance at the seek target.
-pub(super) fn evaluated_instance_playback_rate_at_target(
+/// Returns the planned instance speed active for an evaluated instance at the seek target.
+pub(super) fn evaluated_instance_playback_speed_at_target(
     instance: &EvaluatedInstanceState,
     timeline_plan: &nightfall_playback_planner::TimelinePlan,
     timeline_position: Duration,
@@ -212,7 +212,9 @@ pub(super) fn evaluated_instance_playback_rate_at_target(
         .instances
         .iter()
         .find(|interval| interval.owner == instance.owner && interval.source == instance.source)
-        .map_or(1.0, |interval| interval.playback_rate_at(timeline_position))
+        .map_or(1.0, |interval| {
+            interval.playback_speed_at(timeline_position)
+        })
 }
 
 /// Builds a deterministic reconstruction plan and all indexes needed by later stages.
@@ -278,7 +280,7 @@ pub(super) fn plan_timeline_reconstruction(
                 (action.track_id.clone(), action.action_id.clone()),
                 *clip_uid,
             )),
-            ActionKind::SetClipRate { uid, .. } | ActionKind::JumpToCue { uid, .. } => {
+            ActionKind::SetClipSpeed { uid, .. } | ActionKind::JumpToCue { uid, .. } => {
                 Some(((action.track_id.clone(), action.action_id.clone()), *uid))
             }
             ActionKind::FireCue(_)
@@ -305,6 +307,7 @@ pub(super) fn plan_timeline_reconstruction(
                     sequence_data_provider,
                     fixture_data_provider,
                     selection_resolver,
+                    timeline.timeline.beats_per_second(),
                 ),
             )
         })
@@ -322,6 +325,7 @@ pub(super) fn plan_timeline_reconstruction(
                                 sequence_data_provider,
                                 fixture_data_provider,
                                 selection_resolver,
+                                timeline.timeline.beats_per_second(),
                             ),
                         ))
                     }
@@ -329,7 +333,7 @@ pub(super) fn plan_timeline_reconstruction(
                     | ActionKind::StopClip(_)
                     | ActionKind::AdvanceSequence(_)
                     | ActionKind::BackSequence(_)
-                    | ActionKind::SetClipRate { .. }
+                    | ActionKind::SetClipSpeed { .. }
                     | ActionKind::JumpToCue { .. }
                     | ActionKind::DeskEval(_)
                     | ActionKind::RegisteredAction(_) => None,

@@ -173,8 +173,8 @@ pub fn build_waveform_layer(
         .map(|set| set.difference(&current_attribute_set).cloned().collect())
         .unwrap_or_default();
 
-    let rate_secs = waveform.rate_secs.max(0.001);
-    let step = frame_delta.as_secs_f32() / rate_secs;
+    let cycle_length_secs = waveform.cycle_length_secs.max(0.001);
+    let step = frame_delta.as_secs_f32() / cycle_length_secs;
     let next_phase = (phase_cache.get(&node_def.node_id).copied().unwrap_or(0.0) + step).fract();
     phase_cache.insert(node_def.node_id, next_phase);
 
@@ -310,7 +310,7 @@ fn sample_waveform(
 fn default_flow_waveform() -> FlowWaveform {
     FlowWaveform {
         kind: WaveformKind::Sin,
-        rate_secs: 1.0,
+        cycle_length_secs: 1.0,
         amplitude: 1.0,
         phase: 0.0,
         base: 0.0,

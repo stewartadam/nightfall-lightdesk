@@ -35,8 +35,8 @@ pub enum MasterKind {
     /// Proportionally limits selected intensity output.
     #[default]
     InhibitiveIntensity,
-    /// Multiplies matching live playback rates.
-    PlaybackRate,
+    /// Multiplies matching live playback speeds.
+    PlaybackSpeed,
 }
 
 /// Persisted fixture target affected by an intensity master.
@@ -53,7 +53,7 @@ pub enum FixtureMasterTarget {
     Selection(SpatialSelection),
 }
 
-/// Persisted instance target affected by a rate master.
+/// Persisted instance target affected by a speed master.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SmartDefault)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
@@ -73,7 +73,7 @@ pub enum MasterTarget {
     /// Fixture scope for intensity masters.
     #[default]
     Fixtures(FixtureMasterTarget),
-    /// Instance scope for rate masters.
+    /// Instance scope for speed masters.
     Instances(InstanceMasterTarget),
 }
 
@@ -148,8 +148,8 @@ impl Master {
         (self.level_percent / 100.0).clamp(0.0, 1.0)
     }
 
-    /// Returns the playback rate multiplier represented by this master.
-    pub fn playback_rate_scale(&self) -> f32 {
+    /// Returns the playback speed multiplier represented by this master.
+    pub fn playback_speed_scale(&self) -> f32 {
         (self.level_percent / 100.0).clamp(0.0, 2.0)
     }
 
@@ -157,7 +157,7 @@ impl Master {
     pub fn control_position_percent(&self) -> f32 {
         match self.kind {
             MasterKind::InhibitiveIntensity => self.level_percent.clamp(0.0, 100.0),
-            MasterKind::PlaybackRate => (self.level_percent / 2.0).clamp(0.0, 100.0),
+            MasterKind::PlaybackSpeed => (self.level_percent / 2.0).clamp(0.0, 100.0),
         }
     }
 
@@ -165,7 +165,7 @@ impl Master {
     pub fn level_percent_from_control(kind: MasterKind, control_percent: f32) -> f32 {
         match kind {
             MasterKind::InhibitiveIntensity => control_percent.clamp(0.0, 100.0),
-            MasterKind::PlaybackRate => (control_percent * 2.0).clamp(0.0, 200.0),
+            MasterKind::PlaybackSpeed => (control_percent * 2.0).clamp(0.0, 200.0),
         }
     }
 
@@ -173,7 +173,7 @@ impl Master {
     pub fn control_percent_from_level(kind: MasterKind, level_percent: f32) -> f32 {
         match kind {
             MasterKind::InhibitiveIntensity => level_percent.clamp(0.0, 100.0),
-            MasterKind::PlaybackRate => (level_percent / 2.0).clamp(0.0, 100.0),
+            MasterKind::PlaybackSpeed => (level_percent / 2.0).clamp(0.0, 100.0),
         }
     }
 
@@ -188,12 +188,12 @@ impl Master {
 
     /// Builds the always-on master at full level that a new show starts with for a master kind.
     ///
-    /// Intensity masters cover every fixture and rate masters cover every live instance, so
+    /// Intensity masters cover every fixture and speed masters cover every live instance, so
     /// the pair gives each new show one grand intensity fader and one show-wide speed fader.
     fn global(id: u32, uid: Uuid, kind: MasterKind, label: &str) -> Self {
         let target = match kind {
             MasterKind::InhibitiveIntensity => MasterTarget::Fixtures(FixtureMasterTarget::All),
-            MasterKind::PlaybackRate => MasterTarget::Instances(InstanceMasterTarget::All),
+            MasterKind::PlaybackSpeed => MasterTarget::Instances(InstanceMasterTarget::All),
         };
         Self {
             identifiers: Identifiers {
@@ -213,11 +213,11 @@ impl Master {
 pub const DEFAULT_INTENSITY_MASTER_UID: Uuid =
     Uuid::from_u128(0x6e66_6d61_7374_4000_8000_0000_0000_0001);
 
-/// Stable UID of the global rate master every new show starts with.
-pub const DEFAULT_RATE_MASTER_UID: Uuid =
+/// Stable UID of the global speed master every new show starts with.
+pub const DEFAULT_SPEED_MASTER_UID: Uuid =
     Uuid::from_u128(0x6e66_6d61_7374_4000_8000_0000_0000_0002);
 
-/// Adds the global intensity master (ID 1) and global rate master (ID 2) to a new, empty show.
+/// Adds the global intensity master (ID 1) and global speed master (ID 2) to a new, empty show.
 ///
 /// Both start at 100%, so they leave output and playback speed untouched until someone moves
 /// them. Their UIDs are the same in every show, so merging one new show into another matches
@@ -233,9 +233,9 @@ pub fn add_default_show_masters(
     ))?;
     masters.add(Master::global(
         2,
-        DEFAULT_RATE_MASTER_UID,
-        MasterKind::PlaybackRate,
-        "Global Rate Master",
+        DEFAULT_SPEED_MASTER_UID,
+        MasterKind::PlaybackSpeed,
+        "Global Speed Master",
     ))
 }
 
@@ -442,8 +442,8 @@ fn finish_master_command(
     }
 }
 
-/// Applies active playback rate masters before realtime clocks advance.
-pub fn apply_playback_rate_masters(
+/// Applies active playback speed masters before realtime clocks advance.
+pub fn apply_playback_speed_masters(
     master_data_provider: Res<DataProvider<Master>>,
     materialized_clips: Query<&MaterializedClip>,
     mut instances: Query<(
@@ -457,14 +457,14 @@ pub fn apply_playback_rate_masters(
         .filter_map(|(instance_id, _controls, preview)| preview.is_none().then_some(*instance_id))
         .collect::<HashSet<_>>();
 
-    let active_rate_masters = master_data_provider.iter().filter_map(|entry| {
+    let active_speed_masters = master_data_provider.iter().filter_map(|entry| {
         let master = entry.value().clone();
-        (master.kind == MasterKind::PlaybackRate && master.is_active()).then_some(master)
+        (master.kind == MasterKind::PlaybackSpeed && master.is_active()).then_some(master)
     });
 
     let mut playback_scales: HashMap<InstanceId, f32> = HashMap::new();
-    for master in active_rate_masters {
-        let scale = master.playback_rate_scale();
+    for master in active_speed_masters {
+        let scale = master.playback_speed_scale();
         match &master.target {
             MasterTarget::Instances(InstanceMasterTarget::All) => {
                 for instance_id in &live_instance_ids {
@@ -488,8 +488,8 @@ pub fn apply_playback_rate_masters(
         } else {
             1.0
         };
-        if controls.rate_master_scale != scale {
-            controls.set_rate_master_scale(scale);
+        if controls.speed_master_scale != scale {
+            controls.set_speed_master_scale(scale);
         }
     }
 }
@@ -568,10 +568,10 @@ fn default_master_level() -> f32 {
 }
 
 /// Clamp a user-supplied master level to the supported percent range.
-fn clamp_master_level(kind: MasterKind, level_percent: f32) -> f32 {
+pub(crate) fn clamp_master_level(kind: MasterKind, level_percent: f32) -> f32 {
     match kind {
         MasterKind::InhibitiveIntensity => level_percent.clamp(0.0, 100.0),
-        MasterKind::PlaybackRate => level_percent.clamp(0.0, 200.0),
+        MasterKind::PlaybackSpeed => level_percent.clamp(0.0, 200.0),
     }
 }
 
@@ -716,15 +716,15 @@ mod tests {
         }
     }
 
-    /// Builds a playback rate master with a deterministic ID and level.
-    fn rate_master(id: u32, target: InstanceMasterTarget, level_percent: f32) -> Master {
+    /// Builds a playback speed master with a deterministic ID and level.
+    fn speed_master(id: u32, target: InstanceMasterTarget, level_percent: f32) -> Master {
         Master {
             identifiers: Identifiers {
                 id,
                 uid: Uuid::from_u128(id as u128),
-                label: format!("Rate Master {id}"),
+                label: format!("Speed Master {id}"),
             },
-            kind: MasterKind::PlaybackRate,
+            kind: MasterKind::PlaybackSpeed,
             target: MasterTarget::Instances(target),
             mode: MasterMode::AlwaysOn,
             level_percent,
@@ -945,30 +945,30 @@ mod tests {
         assert_eq!(master.normalized_level(), 0.5);
     }
 
-    /// Verifies intensity and rate masters clamp to their own supported ranges.
+    /// Verifies intensity and speed masters clamp to their own supported ranges.
     #[test]
     fn master_level_clamps_by_kind() {
         assert_eq!(
             clamp_master_level(MasterKind::InhibitiveIntensity, 150.0),
             100.0
         );
-        assert_eq!(clamp_master_level(MasterKind::PlaybackRate, 250.0), 200.0);
-        assert_eq!(clamp_master_level(MasterKind::PlaybackRate, -10.0), 0.0);
+        assert_eq!(clamp_master_level(MasterKind::PlaybackSpeed, 250.0), 200.0);
+        assert_eq!(clamp_master_level(MasterKind::PlaybackSpeed, -10.0), 0.0);
     }
 
-    /// Verifies normalized control positions map to playback-rate master levels.
+    /// Verifies normalized control positions map to playback-speed master levels.
     #[test]
-    fn rate_master_control_mapping_centers_normal_speed() {
+    fn speed_master_control_mapping_centers_normal_speed() {
         assert_eq!(
-            Master::level_percent_from_control(MasterKind::PlaybackRate, 50.0),
+            Master::level_percent_from_control(MasterKind::PlaybackSpeed, 50.0),
             100.0
         );
         assert_eq!(
-            rate_master(1, InstanceMasterTarget::All, 100.0).control_position_percent(),
+            speed_master(1, InstanceMasterTarget::All, 100.0).control_position_percent(),
             50.0
         );
         assert_eq!(
-            rate_master(1, InstanceMasterTarget::All, 200.0).playback_rate_scale(),
+            speed_master(1, InstanceMasterTarget::All, 200.0).playback_speed_scale(),
             2.0
         );
     }
@@ -1053,19 +1053,19 @@ mod tests {
         );
     }
 
-    /// Verifies active playback-rate masters multiply matching live playback scales.
+    /// Verifies active playback-speed masters multiply matching live playback scales.
     #[test]
-    fn apply_playback_rate_masters_multiplies_matching_instances() {
+    fn apply_playback_speed_masters_multiplies_matching_instances() {
         let mut app = App::new();
         let mut masters = DataProvider::<Master>::default();
         masters
-            .add(rate_master(1, InstanceMasterTarget::All, 50.0))
-            .expect("global rate master should store");
+            .add(speed_master(1, InstanceMasterTarget::All, 50.0))
+            .expect("global speed master should store");
         masters
-            .add(rate_master(2, InstanceMasterTarget::Clips(vec![7]), 200.0))
-            .expect("clip rate master should store");
+            .add(speed_master(2, InstanceMasterTarget::Clips(vec![7]), 200.0))
+            .expect("clip speed master should store");
         app.insert_resource(masters);
-        app.add_systems(Update, apply_playback_rate_masters);
+        app.add_systems(Update, apply_playback_speed_masters);
 
         let targeted_playback = InstanceId(Uuid::from_u128(10));
         let unrelated_playback = InstanceId(Uuid::from_u128(11));
@@ -1089,7 +1089,7 @@ mod tests {
         let mut controls = app.world_mut().query::<(&InstanceId, &InstanceControls)>();
         let scales = controls
             .iter(app.world())
-            .map(|(instance_id, controls)| (*instance_id, controls.rate_master_scale))
+            .map(|(instance_id, controls)| (*instance_id, controls.speed_master_scale))
             .collect::<HashMap<_, _>>();
         assert_eq!(scales[&targeted_playback], 1.0);
         assert_eq!(scales[&unrelated_playback], 0.5);

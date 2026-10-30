@@ -642,6 +642,7 @@ fn sequence_clips_with_same_target_keep_distinct_priorities() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -709,6 +710,7 @@ fn go_clip_with_same_target_starts_its_own_priority_playback() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -769,6 +771,7 @@ fn go_clip_queues_start_then_go_when_not_running() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -849,6 +852,7 @@ fn start_clip_restarts_existing_sequence_with_fresh_realtime_clock() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -928,6 +932,7 @@ fn goto_clip_queues_start_then_goto_when_not_running() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -996,6 +1001,7 @@ fn go_clip_twice_in_same_tick_does_not_duplicate_materialization() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -1060,6 +1066,7 @@ fn start_then_go_in_same_tick_does_not_duplicate_materialization() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -1143,6 +1150,7 @@ fn timed_start_then_go_in_same_tick_uses_clock_position_for_advanced_cue() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -1267,6 +1275,7 @@ fn start_then_goto_then_go_in_same_tick_advances_from_goto_position() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -1325,6 +1334,7 @@ fn start_go_stop_in_same_tick_leaves_clip_stopped() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -1391,6 +1401,7 @@ fn go_then_stop_in_same_tick_cancels_pending_sequence_go() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -1446,6 +1457,7 @@ fn stop_clip_releases_running_sequence_after_target_changes_to_fx() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 
@@ -1531,6 +1543,7 @@ fn render_clip_at_autostart_preserves_lookahead_options() {
             release_cue: Cue::default(),
             default_timing: Transition::default(),
             tracking_mode: Default::default(),
+            timebase: Default::default(),
         })
         .expect("failed to add test sequence");
 

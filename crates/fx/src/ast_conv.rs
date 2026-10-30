@@ -43,13 +43,13 @@ pub fn stepfx_commands_from_ast<'i>(
     match action {
         ast::FxActionAst::Start => Ok(vec![StepFxCommand::Start(fx_id)]),
         ast::FxActionAst::Stop => Ok(vec![StepFxCommand::Stop(fx_id)]),
-        ast::FxActionAst::SetRate(set_rate_ast) => {
+        ast::FxActionAst::SetSpeed(set_speed_ast) => {
             // ValueAst is a newtype around &'i str
-            let rate_text = (set_rate_ast.value).0;
-            let rate = rate_text
+            let speed_text = (set_speed_ast.value).0;
+            let speed = speed_text
                 .parse::<f32>()
-                .map_err(|_| AstConvError::Invalid("fx rate"))?;
-            Ok(vec![StepFxCommand::SetRate { fx_id, rate }])
+                .map_err(|_| AstConvError::Invalid("fx speed"))?;
+            Ok(vec![StepFxCommand::SetSpeed { fx_id, speed }])
         }
         ast::FxActionAst::CreateStep(create_ast) => {
             let selection =
@@ -261,6 +261,7 @@ fn step_fx_from_direct_draft(draft: StepFxDraft) -> StepFx {
         direction: draft.direction,
         cycle_scale: draft.cycle_scale,
         lanes,
+        timebase: Default::default(),
     }
 }
 
@@ -400,14 +401,14 @@ impl AstConvert for FxAstConverter {
                     ast::FxActionAst::Stop => {
                         Ok(vec![Box::new(crate::events::StepFxCommand::Stop(id))])
                     }
-                    ast::FxActionAst::SetRate(set_rate_ast) => {
-                        // set_rate_ast.value is ValueAst(&str)
-                        let rate = set_rate_ast.value.0.parse::<f32>().map_err(|_| {
-                            DispatchError::ConversionFailed("invalid rate".to_string())
+                    ast::FxActionAst::SetSpeed(set_speed_ast) => {
+                        // set_speed_ast.value is ValueAst(&str)
+                        let speed = set_speed_ast.value.0.parse::<f32>().map_err(|_| {
+                            DispatchError::ConversionFailed("invalid speed".to_string())
                         })?;
-                        Ok(vec![Box::new(crate::events::StepFxCommand::SetRate {
+                        Ok(vec![Box::new(crate::events::StepFxCommand::SetSpeed {
                             fx_id: id,
-                            rate,
+                            speed,
                         })])
                     }
                     ast::FxActionAst::CreateStep(_create_ast) => {

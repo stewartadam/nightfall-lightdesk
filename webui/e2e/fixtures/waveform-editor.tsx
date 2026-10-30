@@ -16,7 +16,7 @@ import "../../index.css";
 function WaveformEditorFixture() {
   const [waveform, setWaveform] = createSignal<FlowWaveform>({
     kind: WaveformKind.Sin,
-    rate_secs: 1,
+    cycle_length_secs: 1,
     amplitude: 1,
     base: 0,
     phase: 0,

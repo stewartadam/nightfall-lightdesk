@@ -35,9 +35,9 @@ function instance(
     owner_uids: [],
     bound_clip_id: undefined,
     intensity_scale: 1,
-    rate: 1,
-    rate_master_scale: 1,
-    effective_rate: 1,
+    speed: 1,
+    speed_master_scale: 1,
+    effective_speed: 1,
     status: { position: { type: "None" } },
   };
 }

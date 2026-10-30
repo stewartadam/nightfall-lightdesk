@@ -74,3 +74,22 @@ export function masterHoldControl(master: types.Master): EngineControl {
     behaviors: [types.ControlBehavior.Hold],
   });
 }
+
+/**
+ * Defines the mapping-only ×½, ×2 and ×1 choices of a speed master, which step its level on
+ * each press of a mapped control.
+ */
+export function masterSpeedStepControls(master: types.Master): EngineControl[] {
+  return [
+    ["master.speed-half", "Speed ×½"],
+    ["master.speed-double", "Speed ×2"],
+    ["master.speed-reset", "Speed ×1"],
+  ].map(([id, label]) =>
+    defineEngineControl({
+      id,
+      label,
+      args: { master: master.identifiers.uid },
+      behaviors: [types.ControlBehavior.Press],
+    }),
+  );
+}
