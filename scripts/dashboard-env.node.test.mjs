@@ -61,8 +61,8 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
       WORKTREE_DATA_ROOT: process.env.HOME + "/worktree",
       PATH: "/extra:" + process.env.PATH,
     });
-    const books = { docs: ["docs", 2], devguide: ["docs/internal", 3] };
-    for (const service of ["backend", "ui", "wasm", "artnet-sender", "sacn-sender", "docs", "devguide"]) {
+    const books = { "docs-user": ["docs", 2], "docs-dev": ["docs/internal", 3] };
+    for (const service of ["backend", "ui", "wasm", "artnet-sender", "sacn-sender", "docs-user", "docs-dev"]) {
       const childEnv = processEnvForService(service, cwd + "/worktree", target);
       for (const [key, value] of Object.entries(target)) assert.equal(childEnv[key], value);
       assert.equal(childEnv.DASHBOARD_ONLY_SETTING, undefined);
@@ -80,14 +80,14 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
         assert.equal(command.command, process.platform === "win32" ? "pnpm.cmd" : "pnpm");
       }
     }
-    assert.throws(() => commandForService("docs", {}), /NIGHTFALL_PORT/);
-    assert.throws(() => commandForService("devguide", {}), /devguide needs a valid NIGHTFALL_PORT/);
+    assert.throws(() => commandForService("docs-user", {}), /NIGHTFALL_PORT/);
+    assert.throws(() => commandForService("docs-dev", {}), /docs-dev needs a valid NIGHTFALL_PORT/);
     assert.equal(servicePortFromEnv("backend", target), 3079);
     assert.equal(servicePortFromEnv("ui", target), 3080);
-    assert.equal(servicePortFromEnv("docs", target), 3081);
-    assert.equal(servicePortFromEnv("devguide", target), 3082);
+    assert.equal(servicePortFromEnv("docs-user", target), 3081);
+    assert.equal(servicePortFromEnv("docs-dev", target), 3082);
     assert.equal(servicePortFromEnv("wasm", target), null);
-    assert.equal(servicePortFromEnv("docs", { NIGHTFALL_PORT: "invalid" }), null);
+    assert.equal(servicePortFromEnv("docs-user", { NIGHTFALL_PORT: "invalid" }), null);
     const defaults = processEnvForService("backend", cwd + "/worktree");
     assert.equal(defaults.NIGHTFALL_PORT, launcherPort);
     assert.equal(defaults.NIGHTFALL_DATA_DIR, undefined);
