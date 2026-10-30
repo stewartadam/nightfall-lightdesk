@@ -5617,6 +5617,8 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "gdtf",
+ "jiff",
+ "minicbor-serde",
  "nightfall",
  "nightfall-dmx",
  "nightfall-engine",
@@ -5635,6 +5637,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "typeshare",
  "uuid",
  "zip 9.1.3",
 ]

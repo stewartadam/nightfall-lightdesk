@@ -108,7 +108,7 @@ pub enum FixtureLibraryCommand {
 impl IngressCommand for FixtureLibraryCommand {}
 
 /// Identifies a fixture in the library by make and model
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct FixtureLibraryEntry {
     /// Manufacturer name
