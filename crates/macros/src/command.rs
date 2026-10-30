@@ -16,7 +16,7 @@ use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::runner::{
-    MAX_MACRO_NESTING, MacroRunPhase, MacroRuns, MacroStartRefusal, macro_statements,
+    MAX_MACRO_NESTING, MacroRunPhase, MacroRuns, MacroStartRefusal, RunEnding, macro_statements,
 };
 
 /// User commands that edit macros and control their runs.
@@ -38,12 +38,15 @@ pub enum MacroCommand {
     DeleteMacro(u32),
     /// Run a macro's press body. Ignored while any body of the macro runs.
     ///
-    /// The command finishes when the run ends, and fails when a statement fails.
+    /// The command finishes when the run ends, after the release body, and fails when a
+    /// statement fails.
     StartMacro(u32),
-    /// Let go of a held button that started a macro: stop the press body and run the release
-    /// body. Does nothing for a macro without a release body.
+    /// Let go of a held button that started a macro: stop the press body and move on to the
+    /// release body. Does nothing for a macro without a release body, or one whose press body
+    /// already ended.
     ReleaseMacro(u32),
-    /// Stop every running body of a macro.
+    /// Stop a macro. A running press body moves on to the release body, and a running release
+    /// body stops.
     StopMacro(u32),
 }
 
@@ -99,7 +102,7 @@ pub fn handle_macro_commands(
             && !runs.is_statement(event.command_id)
     });
     if history_moved {
-        runs.stop_all(&mut responder);
+        runs.stop_all(&macros, &mut responder);
     }
 
     for event in events.read() {
@@ -107,11 +110,26 @@ pub fn handle_macro_commands(
             MacroCommand::StartMacro(id) => {
                 start_run(event, *id, MacroRunPhase::Press, &macros, &mut runs)
             }
-            MacroCommand::ReleaseMacro(id) => {
-                release(event, *id, &macros, &mut runs, &mut responder)
-            }
+            MacroCommand::ReleaseMacro(id) => resolve(&macros, *id).map(|definition| {
+                if !macro_statements(&definition.release_commands).is_empty() {
+                    runs.stop(
+                        definition.identifiers.uid,
+                        Some(MacroRunPhase::Press),
+                        RunEnding::Release,
+                        &macros,
+                        &mut responder,
+                    );
+                }
+                RunStart::Finished
+            }),
             MacroCommand::StopMacro(id) => resolve(&macros, *id).map(|definition| {
-                runs.stop(definition.identifiers.uid, None, &mut responder);
+                runs.stop(
+                    definition.identifiers.uid,
+                    None,
+                    RunEnding::Release,
+                    &macros,
+                    &mut responder,
+                );
                 RunStart::Finished
             }),
             command => {
@@ -120,7 +138,7 @@ pub fn handle_macro_commands(
                     .expect("remaining macro commands are CRUD")
                     .map(|()| {
                         if let Some(uid) = deleted {
-                            runs.stop(uid, None, &mut responder);
+                            runs.stop(uid, None, RunEnding::Discard, &macros, &mut responder);
                         }
                         RunStart::Finished
                     })
@@ -189,24 +207,4 @@ fn start_run(
             format!("Macros can start other macros at most {MAX_MACRO_NESTING} levels deep"),
         )),
     }
-}
-
-/// Stops a macro's press body and runs its release body, if it has one.
-fn release(
-    event: &CommandEnvelope<MacroCommand>,
-    id: u32,
-    macros: &DataProvider<Macro>,
-    runs: &mut MacroRuns,
-    responder: &mut CommandResponder,
-) -> Result<RunStart, CommandError> {
-    let definition = resolve(macros, id)?;
-    if macro_statements(&definition.release_commands).is_empty() {
-        return Ok(RunStart::Finished);
-    }
-    runs.stop(
-        definition.identifiers.uid,
-        Some(MacroRunPhase::Press),
-        responder,
-    );
-    start_run(event, id, MacroRunPhase::Release, macros, runs)
 }

@@ -33,7 +33,7 @@ import {
   serializeTimelineInsertDragPayload,
   TIMELINE_INSERT_DRAG_MIME,
 } from "../../../lib/timeline-insert-drag";
-import { clips, dockApi } from "../../../state/appStores";
+import { clips } from "../../../state/appStores";
 import * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import { ClipControlsSection } from "../components/clip-controls-section";
@@ -41,7 +41,11 @@ import { ClipEditorDialogs } from "../components/clip-editor-dialogs";
 import { ClipListToolbar } from "../components/clip-list-toolbar";
 import { ClipListView } from "../components/clip-list-view";
 import ClipProperties from "../components/clip-properties";
-import { toggleClipPlayback } from "../services/clip-commands";
+import {
+  startClip,
+  stopClip,
+  toggleClipPlayback,
+} from "../services/clip-commands";
 import { createClipControlsController } from "./clip-controls-controller";
 import { createClipCrudController } from "./clip-crud-controller";
 
@@ -51,7 +55,6 @@ interface ClipListControllerProps {
 
 /** Coordinates clip stores, CRUD interactions, selection, and presentation. */
 export function ClipListController(props: ClipListControllerProps) {
-  const $dockApi = useStore(dockApi);
   const $clips = useStore(clips);
   const panelId = props.panelId;
   const search = createCrudPanelSearch({
@@ -173,6 +176,28 @@ export function ClipListController(props: ClipListControllerProps) {
     toggleClipPlayback(clipId, isActive);
   };
 
+  /** Selected clips that still exist, each with whether it is playing. */
+  const selectedClipEntries = createMemo(() =>
+    selectedClipUids().flatMap((uid) => {
+      const entry = $clips()[uid];
+      return entry ? [entry] : [];
+    }),
+  );
+
+  /** Starts every selected clip that isn't playing. */
+  const handleRunSelected = () => {
+    for (const [clip, active] of selectedClipEntries()) {
+      if (!active) startClip(clip.identifiers.id);
+    }
+  };
+
+  /** Stops every selected clip that is playing. */
+  const handleStopSelected = () => {
+    for (const [clip, active] of selectedClipEntries()) {
+      if (active) stopClip(clip.identifiers.id);
+    }
+  };
+
   /** Resolves a clip UID before toggling its current playback state. */
   const togglePlaybackByUid = (clipUid: string) => {
     const clipEntry = $clips()[clipUid];
@@ -183,28 +208,7 @@ export function ClipListController(props: ClipListControllerProps) {
   /** Opens clip properties while keeping this panel's inspector provider active. */
   const openPropertiesForClip = (clipUid: string) => {
     setInspectedClipUid(clipUid);
-    clipPropertiesInspector.activate();
-    const api = $dockApi();
-    if (!api) return;
-
-    const propertiesPanel = api.getPanel("panel-PropertiesInspector");
-    if (propertiesPanel) {
-      const location = propertiesPanel.api.location;
-      if (location.type === "edge") {
-        propertiesPanel.api.setActive();
-        api.getEdgeGroup(location.position)?.expand();
-        requestAnimationFrame(() => api.getPanel(panelId)?.api.setActive());
-      } else {
-        propertiesPanel.focus();
-      }
-    } else {
-      api.addPanel({
-        id: "panel-PropertiesInspector",
-        component: "PropertiesInspector",
-        title: "Properties",
-        params: {},
-      });
-    }
+    clipPropertiesInspector.reveal(panelId);
   };
 
   /** Selects and reveals a clip requested by another panel or palette. */
@@ -426,6 +430,10 @@ export function ClipListController(props: ClipListControllerProps) {
         onCreate={crud.openCreate}
         onEditSelected={crud.openEditSelected}
         onDeleteSelected={crud.openDeleteSelected}
+        canRunSelected={selectedClipEntries().some(([, active]) => !active)}
+        canStopSelected={selectedClipEntries().some(([, active]) => active)}
+        onRunSelected={handleRunSelected}
+        onStopSelected={handleStopSelected}
         onToggleSelectionMode={handleToggleSelectionMode}
         onViewModeChange={setViewMode}
       />

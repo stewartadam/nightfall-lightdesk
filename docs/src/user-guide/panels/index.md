@@ -18,6 +18,7 @@ Open panels from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P). Cue Editor, S
 - [Clips](clips.md)
 - [Boards](boards.md)
 - [Board](board.md)
+- [Macros](macros.md)
 - [FX List](fx-list.md)
 - [FX Editor](fx-editor.md)
 - [Color Paths](color-paths.md)

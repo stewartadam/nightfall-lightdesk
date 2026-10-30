@@ -91,6 +91,7 @@ test("panel definitions declare reveal-object capability targets", () => {
     "panel-SceneObjects",
     "panel-SequenceList",
     "panel-ClipList",
+    "panel-Macros",
     "panel-TimecodesPanel",
     "panel-TimelinesPanel",
   ]);

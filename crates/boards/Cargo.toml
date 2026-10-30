@@ -13,6 +13,7 @@ nightfall-clips = { path = "../clips" }
 nightfall-desk = { path = "../desk", default-features = false }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
+nightfall-macros = { path = "../macros" }
 nightfall-programmer = { path = "../programmer" }
 nightfall-undo = { path = "../undo" }
 serde.workspace = true

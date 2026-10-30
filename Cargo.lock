@@ -5311,6 +5311,7 @@ dependencies = [
  "nightfall-fixture-model",
  "nightfall-fixtures",
  "nightfall-instances",
+ "nightfall-macros",
  "nightfall-programmer",
  "nightfall-undo",
  "nightfall-workspace-hack",

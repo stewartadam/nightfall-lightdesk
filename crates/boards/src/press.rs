@@ -24,6 +24,7 @@ use nightfall_actions::{
 use nightfall_clips::ClipCommand;
 use nightfall_desk::prelude::{MasterCommand, MasterMode};
 use nightfall_engine::prelude::*;
+use nightfall_macros::prelude::MacroCommand;
 use nightfall_programmer::prelude::{
     ProgrammerAttributeOperation, ProgrammerAttributeSource, ProgrammerCommand,
 };
@@ -62,6 +63,8 @@ pub(crate) enum PressCommand {
     Programmer(ProgrammerCommand),
     /// Toggle a master.
     Master(MasterCommand),
+    /// Start or stop a macro.
+    Macro(MacroCommand),
 }
 
 /// Registers the board press action, invokable only from boards.
@@ -105,6 +108,9 @@ fn invoke_board_press(
                 submit_command_in_undo_step(world, invocation, undo_id, command)?;
             }
             PressCommand::Master(command) => {
+                submit_command_in_undo_step(world, invocation, undo_id, command)?;
+            }
+            PressCommand::Macro(command) => {
                 submit_command_in_undo_step(world, invocation, undo_id, command)?;
             }
         }
@@ -229,6 +235,21 @@ pub(crate) fn plan_press(
             }));
             commands
         }
+        ObjectType::Macro => {
+            if state.is_on() {
+                vec![PressCommand::Macro(MacroCommand::StopMacro(identifiers.id))]
+            } else {
+                let mut commands: Vec<PressCommand> = engaged_siblings()
+                    .iter()
+                    .filter_map(|sibling| objects.identifiers(sibling))
+                    .map(|sibling| PressCommand::Macro(MacroCommand::StopMacro(sibling.id)))
+                    .collect();
+                commands.push(PressCommand::Macro(MacroCommand::StartMacro(
+                    identifiers.id,
+                )));
+                commands
+            }
+        }
         other => {
             return Err(InvocationError::new(
                 "board.unsupported_target",
@@ -312,6 +333,7 @@ mod tests {
     const CLIP_B: Uuid = Uuid::from_u128(402);
     const GROUP: Uuid = Uuid::from_u128(501);
     const MASTER: Uuid = Uuid::from_u128(601);
+    const MACRO: Uuid = Uuid::from_u128(701);
 
     /// Builds identifiers with a deterministic id, UID and label.
     fn identifiers(id: u32, uid: Uuid, label: &str) -> Identifiers {
@@ -334,9 +356,20 @@ mod tests {
         }
     }
 
-    /// Builds a world holding one fixture, two blueprints, two clips, a group and a master.
+    /// Builds a world holding one fixture, two blueprints, two clips, a group, a master and a
+    /// macro.
     fn world() -> World {
         let mut world = World::new();
+        world.init_resource::<DataProvider<Macro>>();
+        world.init_resource::<nightfall_macros::prelude::MacroRuns>();
+        world
+            .resource_mut::<DataProvider<Macro>>()
+            .add(Macro {
+                identifiers: identifiers(5, MACRO, "Specials up"),
+                commands: "clip 11 start".to_owned(),
+                release_commands: String::new(),
+            })
+            .expect("macro should insert");
         world.init_resource::<Programmer>();
         world.init_resource::<DataProvider<Group>>();
         world.init_resource::<DataProvider<Blueprint>>();
@@ -567,6 +600,23 @@ mod tests {
         assert!(matches!(
             commands[1],
             PressCommand::Clip(ClipCommand::StartClip(IdExpr::Single(12)))
+        ));
+    }
+
+    /// Pressing an idle macro button starts the macro.
+    #[test]
+    fn idle_macro_press_starts_it() {
+        let mut world = world();
+        let commands = press(
+            &mut world,
+            &board(exclusive_collection(ObjectType::Macro)),
+            ObjectType::Macro,
+            MACRO,
+        );
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            commands[0],
+            PressCommand::Macro(MacroCommand::StartMacro(5))
         ));
     }
 

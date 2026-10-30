@@ -19,6 +19,7 @@ import type {
   Fx,
   Group,
   Identifiers,
+  Macro,
   Master,
   SceneObject,
   Sequence,
@@ -50,7 +51,8 @@ export type ShowfileObjectType =
   | "sceneObject"
   | "timecode"
   | "timeline"
-  | "board";
+  | "board"
+  | "macro";
 
 export interface ShowfileObjectTypeDefinition {
   type: ShowfileObjectType;
@@ -102,6 +104,7 @@ export interface ShowfileObjectStoresSnapshot {
   timecodes: Record<string, [Timecode, unknown]>;
   timelines: Record<string, Timeline>;
   boards: Record<string, Board>;
+  macros: Record<string, Macro>;
 }
 
 interface RankedEntry {
@@ -243,6 +246,13 @@ export const SHOWFILE_OBJECT_TYPE_DEFINITIONS: readonly ShowfileObjectTypeDefini
       badge: "board",
       ...showfileObjectPanelFields("BoardsPanel"),
       aliases: ["board", "boards"],
+    },
+    {
+      type: "macro",
+      label: "Macro",
+      badge: "macro",
+      ...showfileObjectPanelFields("MacrosPanel"),
+      aliases: ["macro", "macros", "mac"],
     },
   ];
 
@@ -407,6 +417,12 @@ export function buildShowfileObjectSearchEntries(
     ),
     ...Object.values(stores.boards).map((board) =>
       createEntry("board", board.identifiers, []),
+    ),
+    ...Object.values(stores.macros).map((macro) =>
+      createEntry("macro", macro.identifiers, [
+        macro.commands,
+        macro.release_commands,
+      ]),
     ),
   ];
 }
