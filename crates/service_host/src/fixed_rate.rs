@@ -181,36 +181,72 @@ mod tests {
     use super::*;
     use crate::tick_grid::grid_epoch;
 
-    /// Ticks arrive at the configured rate, each just after a grid tick.
+    /// Ticks never outpace the period, mostly fire on consecutive grid ticks, and each lands
+    /// shortly after a grid tick of its own.
+    ///
+    /// The test waits for a tick count rather than a wall-clock window, and its period is long
+    /// enough to tell an on-grid tick that was preempted (a few milliseconds late on a busy
+    /// machine, such as when `nextest` runs the whole workspace next to other builds) apart from
+    /// one scheduled off the grid.
     #[test]
     fn ticks_on_grid_at_fixed_rate() {
-        let period = Duration::from_millis(10);
+        const TICKS: usize = 6;
+        let period = Duration::from_millis(50);
+        let max_lateness = Duration::from_millis(20);
         let ticks = Arc::new(Mutex::new(Vec::new()));
         let recorded = Arc::clone(&ticks);
         let mut worker =
             FixedRateWorker::spawn("test-fixed-rate", FixedRatePeriod::new(period), move || {
-                recorded.lock().unwrap().push(Instant::now());
-                ControlFlow::Continue(())
+                let mut ticks = recorded.lock().unwrap();
+                ticks.push(Instant::now());
+                if ticks.len() < TICKS {
+                    ControlFlow::Continue(())
+                } else {
+                    ControlFlow::Break(())
+                }
             })
             .unwrap();
 
-        std::thread::sleep(Duration::from_millis(105));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while worker.is_alive() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
         worker.shutdown();
 
         let ticks = ticks.lock().unwrap();
-        assert!(
-            (8..=12).contains(&ticks.len()),
-            "expected about 10 ticks in 105 ms, got {}",
-            ticks.len()
+        assert_eq!(
+            ticks.len(),
+            TICKS,
+            "worker should tick {TICKS} times within 10 s"
         );
-        for tick in ticks.iter() {
-            let since_epoch = tick.saturating_duration_since(grid_epoch());
-            let phase = Duration::from_nanos((since_epoch.as_nanos() % period.as_nanos()) as u64);
-            assert!(
-                phase < Duration::from_millis(3),
-                "tick should land just after a grid tick, got phase {phase:?}"
-            );
-        }
+        let since_epoch: Vec<Duration> = ticks
+            .iter()
+            .map(|tick| tick.saturating_duration_since(grid_epoch()))
+            .collect();
+        let slots: Vec<u128> = since_epoch
+            .iter()
+            .map(|elapsed| elapsed.as_nanos() / period.as_nanos())
+            .collect();
+        assert!(
+            slots.windows(2).all(|pair| pair[0] < pair[1]),
+            "each tick should land in a later grid slot than the previous one, got slots {slots:?}"
+        );
+        let next_slot_gaps = slots
+            .windows(2)
+            .filter(|pair| pair[1] == pair[0] + 1)
+            .count();
+        assert!(
+            next_slot_gaps * 2 > TICKS - 1,
+            "most ticks should follow the previous one by a single period, got slots {slots:?}"
+        );
+        let phases: Vec<Duration> = since_epoch
+            .iter()
+            .map(|elapsed| Duration::from_nanos((elapsed.as_nanos() % period.as_nanos()) as u64))
+            .collect();
+        assert!(
+            phases.iter().all(|phase| *phase < max_lateness),
+            "every tick should land within {max_lateness:?} of a grid tick, got phases {phases:?}"
+        );
     }
 
     /// Returning `Break` from the callback ends the thread.

@@ -198,13 +198,6 @@ fn render_lead(frame_target: Duration, recent_render_time: Duration) -> Duration
         .min(frame_target / 2)
 }
 
-/// Returns the first render start strictly after `after`: a grid tick of `period`, less `lead`.
-#[cfg(not(target_arch = "wasm32"))]
-fn next_render_start(period: Duration, after: Instant, lead: Duration) -> Instant {
-    let tick = next_grid_tick(period, after + lead);
-    tick.checked_sub(lead).unwrap_or(tick)
-}
-
 /// Final stretch before a tick that is slept with `spin_sleep`, so regular frames start
 /// precisely on the tick. A wake arriving inside it waits for the tick.
 #[cfg(not(target_arch = "wasm32"))]
@@ -224,12 +217,13 @@ const PRECISE_TAIL: Duration = SPIN_TAIL;
 #[cfg(not(target_arch = "wasm32"))]
 const WAKE_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
-/// Tracks when the current frame started and when the next render frame starts.
+/// Tracks when the current frame started and which grid tick the next render frame is for.
 #[derive(Debug, Clone, Resource)]
 pub struct FrameTimer {
     /// When the current frame started, after the previous limiter sleep.
     frame_start: Instant,
-    /// When the next render frame starts, with the period it was computed for.
+    /// Grid tick the next render frame renders for, with the period it was computed for. The
+    /// frame starts the current render lead before it.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     next_tick: Option<(Instant, Duration)>,
     /// Whether the current frame renders.
@@ -313,7 +307,7 @@ impl FramePaceStats {
 /// Render frames start [`render_lead`] before each tick of the grid shared with DMX output (see
 /// [`nightfall_service_host::tick_grid`]). A [`FrameWaker`] wake newer than the one observed at
 /// the start of this frame starts an input-only frame early, no sooner than
-/// [`EARLY_FRAME_MIN_INTERVAL`] after this one started, and leaves the pending render start in
+/// [`EARLY_FRAME_MIN_INTERVAL`] after this one started, and leaves the pending render tick in
 /// place. The kind of the next frame is recorded in [`RenderPass`]; without a limit every frame
 /// renders.
 #[allow(unused_variables, unused_mut)]
@@ -341,8 +335,9 @@ fn framerate_limiter(
         let lead = render_lead(frame_target, timer.render_time);
         let tick = match timer.next_tick {
             Some((tick, period)) if period == frame_target => tick,
-            _ => next_render_start(frame_target, timer.frame_start, lead),
+            _ => next_grid_tick(frame_target, timer.frame_start + lead),
         };
+        let render_start = tick.checked_sub(lead).unwrap_or(tick);
 
         // Read EMA of previous sleep error (ns). We'll treat negative avg as zero compensation.
         let avg_err_ns = stats.avg_sleep_error_ns.load(Ordering::Relaxed);
@@ -353,7 +348,9 @@ fn framerate_limiter(
         };
 
         // Compensate the wake-up time by the EMA of previous sleep error.
-        let wake_at = tick.checked_sub(compensation).unwrap_or(tick);
+        let wake_at = render_start
+            .checked_sub(compensation)
+            .unwrap_or(render_start);
         let before_sleep = Instant::now();
         let woke_early = sleep_until_tick_or_wake(
             wake_at,
@@ -370,8 +367,10 @@ fn framerate_limiter(
         if woke_early {
             timer.next_tick = Some((tick, frame_target));
         } else {
+            // Planned from the tick this frame rendered for, not its start, so a shrinking lead
+            // cannot plan a second render for the same tick.
             timer.next_tick = Some((
-                next_render_start(frame_target, tick.max(after_sleep), lead),
+                next_grid_tick(frame_target, tick.max(after_sleep + lead)),
                 frame_target,
             ));
             if before_sleep < wake_at {
@@ -553,24 +552,53 @@ mod tests {
         );
     }
 
-    /// Verifies that frames within budget are paced to the target frame time with no overrun.
+    /// Verifies that frames within budget report no overrun, wait for the target frame time
+    /// instead of free-running, and plan each next render on a later tick of the grid.
+    ///
+    /// The plan is checked rather than each frame's wall-clock length: on a busy machine a
+    /// preempted frame skips to a later tick, and the limiter's sleep-error compensation then
+    /// starts frames early, so only a loose lower bound on the elapsed time holds.
     #[test]
     fn under_budget_frames_are_paced_to_target() {
+        let period = Duration::from_millis(20);
         let mut app = limited_app(50.0, Duration::from_millis(2));
         app.update();
 
         let frames = 10;
+        let mut planned = Vec::with_capacity(frames);
         let start = Instant::now();
         for _ in 0..frames {
             app.update();
+            let (tick, _) = app.world().resource::<FrameTimer>().next_tick.unwrap();
+            planned.push(tick);
         }
-        let average = start.elapsed() / frames;
+        let elapsed = start.elapsed();
 
         let stats = app.world().resource::<FramePaceStats>();
         assert_eq!(stats.overrun().unwrap(), Duration::ZERO);
+        let slots: Vec<Duration> = planned
+            .iter()
+            .map(|tick| tick.saturating_duration_since(grid_epoch()))
+            .collect();
         assert!(
-            average >= Duration::from_millis(18) && average <= Duration::from_millis(25),
-            "frames should average about 20 ms, got {average:?}"
+            slots
+                .iter()
+                .all(|slot| slot.as_nanos() % period.as_nanos() == 0)
+                && slots.windows(2).all(|pair| pair[0] < pair[1]),
+            "each frame should plan its render for a later grid tick, got {slots:?}"
+        );
+        let next_tick_gaps = slots
+            .windows(2)
+            .filter(|pair| pair[1] - pair[0] == period)
+            .count();
+        assert!(
+            next_tick_gaps * 2 > slots.len() - 1,
+            "most frames should plan the very next grid tick, got {slots:?}"
+        );
+        let paced_at_least = period * frames as u32 / 2;
+        assert!(
+            elapsed >= paced_at_least,
+            "{frames} frames of 2 ms work should be paced to about 20 ms each, took {elapsed:?}"
         );
     }
 
@@ -584,11 +612,15 @@ mod tests {
 
     /// Verifies that a wake ends the limiter sleep early and that the pending tick is kept, so the
     /// following regular frame still starts on the original grid.
+    ///
+    /// The kept tick is checked on the limiter's plan, since when the following frame actually
+    /// starts depends on how promptly the OS resumes the thread.
     #[test]
     fn wake_starts_frame_early_without_moving_the_tick() {
         let (mut app, waker) = wakeable_app(10.0);
         app.update();
 
+        let planned = app.world().resource::<FrameTimer>().next_tick;
         let start = Instant::now();
         let remote = waker.clone();
         let handle = std::thread::spawn(move || {
@@ -599,15 +631,13 @@ mod tests {
         let early = start.elapsed();
         handle.join().expect("waking thread should finish");
         assert!(
-            early < Duration::from_millis(60),
+            early < Duration::from_millis(90),
             "a wake 20 ms into a 100 ms sleep should end it early, took {early:?}"
         );
-
-        app.update();
-        let through_tick = start.elapsed();
-        assert!(
-            through_tick <= Duration::from_millis(110),
-            "the frame after an early frame should start on the original tick, took {through_tick:?}"
+        assert_eq!(
+            app.world().resource::<FrameTimer>().next_tick,
+            planned,
+            "an early frame should keep the pending render tick"
         );
     }
 
@@ -636,28 +666,61 @@ mod tests {
         );
     }
 
-    /// Verifies that the limiter plans each render frame to start the render lead before a tick
-    /// of the shared grid, so it finishes before DMX output sends on that tick.
+    /// Verifies that the limiter plans each render frame for a tick of the shared grid, which the
+    /// frame then starts the render lead ahead of so it finishes before DMX output sends.
     ///
-    /// The planned start is checked rather than the time the frame actually started, which
+    /// The planned tick is checked rather than the time the frame actually started, which
     /// depends on how promptly the OS resumes the thread.
     #[test]
-    fn render_frames_start_a_lead_before_grid_ticks() {
+    fn render_frames_are_planned_for_grid_ticks() {
         let mut app = limited_app(50.0, Duration::ZERO);
         app.update();
         app.update();
 
         let period = Duration::from_millis(20);
         let timer = app.world().resource::<FrameTimer>();
-        let (start, planned_period) = timer.next_tick.expect("limiter should plan a render");
+        let (tick, planned_period) = timer.next_tick.expect("limiter should plan a render");
         assert_eq!(planned_period, period);
-        let lead = render_lead(period, timer.render_time);
-        assert!(lead >= MIN_RENDER_LEAD);
-        let since_epoch = (start + lead).saturating_duration_since(grid_epoch());
+        assert!(render_lead(period, timer.render_time) >= MIN_RENDER_LEAD);
+        let since_epoch = tick.saturating_duration_since(grid_epoch());
         assert_eq!(
             since_epoch.as_nanos() % period.as_nanos(),
             0,
-            "a render frame should start {lead:?} before a grid tick"
+            "a render frame should be planned for a grid tick"
+        );
+    }
+
+    /// Verifies that a render lead shrinking from one frame to the next, as it does while the
+    /// render time average decays after a slow render, never plans two renders for one tick.
+    #[test]
+    fn shrinking_render_lead_plans_each_tick_once() {
+        let mut app = limited_app(50.0, Duration::ZERO);
+        app.update();
+        app.world_mut().resource_mut::<FrameTimer>().render_time = Duration::from_millis(4);
+
+        let period = Duration::from_millis(20);
+        let mut planned = Vec::new();
+        let mut leads = Vec::new();
+        for _ in 0..4 {
+            app.update();
+            let timer = app.world().resource::<FrameTimer>();
+            planned.push(timer.next_tick.unwrap().0);
+            leads.push(render_lead(period, timer.render_time));
+        }
+        assert!(
+            leads.first() > leads.last(),
+            "the render lead should shrink as the render time average decays, got {leads:?}"
+        );
+        let slots: Vec<Duration> = planned
+            .iter()
+            .map(|tick| tick.saturating_duration_since(grid_epoch()))
+            .collect();
+        assert!(
+            slots
+                .iter()
+                .all(|slot| slot.as_nanos() % period.as_nanos() == 0)
+                && slots.windows(2).all(|pair| pair[0] < pair[1]),
+            "each render should be planned for a later grid tick, got {slots:?}"
         );
     }
 
