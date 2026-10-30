@@ -19,14 +19,13 @@
 //! never rewritten.
 
 use std::fs::File;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
-/// Name of the archive entry holding the fixture description.
-const DESCRIPTION_ENTRY: &str = "description.xml";
+use crate::gdtf_write::{DESCRIPTION_ENTRY, rebuild_archive};
 
 /// Archive entries a repaired archive is rebuilt with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,27 +98,9 @@ fn repaired_archive(path: &Path, contents: RepairedContents) -> Option<(Vec<u8>,
         return None;
     }
 
-    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let copied_entries = match contents {
-        RepairedContents::WithResources => source.len(),
-        RepairedContents::DescriptionOnly => 0,
-    };
-    for index in 0..copied_entries {
-        let entry = source.by_index_raw(index).ok()?;
-        if entry.name().is_ok_and(|name| name == DESCRIPTION_ENTRY) {
-            continue;
-        }
-        output.raw_copy_file(entry).ok()?;
-    }
-    output
-        .start_file(
-            DESCRIPTION_ENTRY,
-            zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated),
-        )
-        .ok()?;
-    output.write_all(repaired.as_bytes()).ok()?;
-    Some((output.finish().ok()?.into_inner(), repairs))
+    let copy_resources = matches!(contents, RepairedContents::WithResources);
+    let archive = rebuild_archive(&mut source, &repaired, copy_resources).ok()?;
+    Some((archive, repairs))
 }
 
 /// Rewrites a description to repair known faults, listing each distinct repair.
@@ -351,6 +332,8 @@ fn note(repairs: &mut Vec<String>, repair: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
 
     /// Verifies well-formed descriptions need no repair.

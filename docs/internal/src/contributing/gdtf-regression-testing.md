@@ -13,7 +13,7 @@ results from earlier runs.
 | Scene-graph tests | World-space beam directions and pivots for rest poses, nested pan/tilt, independent heads, mounting and smoothing | Every PR (`pnpm run test:webui-node`) |
 | Curated bench | 18 pinned archives: every mode converts, invariants and reference decoder agree, channel charts match | On demand |
 | Visual bench | Real archives render with loaded meshes; unlit bodies match reviewed baselines | On demand |
-| Corpus check | Every archive in a collection is rejected cleanly or converts without violations | On demand |
+| Corpus check | Every archive in a collection is rejected cleanly or converts without violations, and its description writes back out and reads back unchanged | On demand |
 
 ## Synthetic archives
 
@@ -92,7 +92,18 @@ archive must either be rejected with an error or convert every mode without
 invariant violations; panics, timeouts and violations fail. After the first
 timeout the check starts no further archives, since the hung conversion cannot
 be stopped; the rest are reported as not checked. Directories that cannot be read
-are skipped with a warning and listed in the report. The JSON report
+are skipped with a warning and listed in the report.
+
+Each readable archive's description is also written back out with
+`gdtf_write`. A description that fails to write, fails to read back, or reads
+back different fails the check. Elements and attributes the description model
+does not read are dropped on write; they are listed per archive under
+`round_trip.lost` and counted across the collection in `lost_content`. Those
+lists are informational and show what the fixture editor cannot keep when it
+saves an edited third-party file. An archive whose source description cannot
+be analysed records why in `round_trip.lost_error`.
+
+The JSON report
 (per-stage counts, rejection reasons, per-archive outcomes) is informational
 and never compared between runs. To guard a behavior found in the corpus check, add a
 synthetic test or a bench archive rather than recording corpus results.

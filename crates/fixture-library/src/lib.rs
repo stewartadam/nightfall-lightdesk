@@ -21,6 +21,7 @@ pub mod commands;
 pub mod converters;
 pub mod gdtf_metadata;
 pub mod gdtf_repair;
+pub mod gdtf_write;
 pub mod http_routes;
 pub mod manager;
 pub mod mesh;
