@@ -20,6 +20,7 @@ use nightfall_clips::{Clip, MaterializedClip};
 use nightfall_desk::prelude::Master;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::{prelude::FixtureDataProviderExt, selection::SpatialSelectionResolver};
+use nightfall_macros::prelude::MacroRuns;
 use nightfall_programmer::prelude::Programmer;
 use serde::Serialize;
 use uuid::Uuid;
@@ -96,6 +97,10 @@ pub struct BoardObjects<'w, 's> {
     blueprints: Res<'w, DataProvider<Blueprint>>,
     /// Stored masters.
     masters: Res<'w, DataProvider<Master>>,
+    /// Stored macros.
+    macros: Res<'w, DataProvider<Macro>>,
+    /// Running macros.
+    macro_runs: Res<'w, MacroRuns>,
     /// Live Programmer selection and values.
     programmer: Res<'w, Programmer>,
     /// Patched fixtures, watched so group states follow patch changes.
@@ -132,6 +137,8 @@ impl BoardObjects<'_, '_> {
         self.groups.is_changed()
             || self.blueprints.is_changed()
             || self.masters.is_changed()
+            || self.macros.is_changed()
+            || self.macro_runs.is_changed()
             || self.programmer.is_changed()
             || self.fixtures.is_changed()
     }
@@ -182,6 +189,7 @@ impl BoardObjects<'_, '_> {
             ObjectType::Group => provider_identifiers(&self.groups, identity.uid),
             ObjectType::Blueprint => provider_identifiers(&self.blueprints, identity.uid),
             ObjectType::Master => provider_identifiers(&self.masters, identity.uid),
+            ObjectType::Macro => provider_identifiers(&self.macros, identity.uid),
             _ => None,
         }
     }
@@ -210,6 +218,7 @@ impl BoardObjects<'_, '_> {
             ObjectType::Group => all_identifiers(&self.groups),
             ObjectType::Blueprint => all_identifiers(&self.blueprints),
             ObjectType::Master => all_identifiers(&self.masters),
+            ObjectType::Macro => all_identifiers(&self.macros),
             _ => Vec::new(),
         }
     }
@@ -259,6 +268,7 @@ impl BoardObjects<'_, '_> {
             ObjectType::Master => self
                 .master(target.uid)
                 .is_some_and(|master| master.is_active()),
+            ObjectType::Macro => self.macro_runs.is_running(target.uid),
             _ => false,
         };
         if on {

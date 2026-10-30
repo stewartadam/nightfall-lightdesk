@@ -29,6 +29,7 @@ pub const BOARD_TARGET_TYPES: &[ObjectType] = &[
     ObjectType::Group,
     ObjectType::Blueprint,
     ObjectType::Master,
+    ObjectType::Macro,
 ];
 
 /// Shared showfile object holding operator-arranged controls on an open grid of small cells.
