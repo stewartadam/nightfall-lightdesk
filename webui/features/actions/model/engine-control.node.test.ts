@@ -16,22 +16,22 @@ import { defineEngineControl } from "./engine-control";
  */
 test("engine controls keep handlers and bindings on one captured target", () => {
   const sent: unknown[] = [];
-  const args = { control_index: 3 };
+  const args = { fader_index: 3 };
   const control = defineEngineControl({
-    id: "control.go",
-    label: "Go control 3",
+    id: "fader.go",
+    label: "Go fader 3",
     args,
-    handlers: (captured) => ({ go: () => sent.push(captured.control_index) }),
+    handlers: (captured) => ({ go: () => sent.push(captured.fader_index) }),
   });
 
-  args.control_index = 9;
+  args.fader_index = 9;
   const action = control.action;
-  (action.arguments as { control_index: number }).control_index = 7;
+  (action.arguments as { fader_index: number }).fader_index = 7;
   control.handlers.go();
 
   assert.deepEqual(control.action, {
-    id: "control.go",
-    arguments: { control_index: 3 },
+    id: "fader.go",
+    arguments: { fader_index: 3 },
   });
   assert.deepEqual(sent, [3]);
 });

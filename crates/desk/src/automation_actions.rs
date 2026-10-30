@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Domain-owned bindable actions for desk clips, controls, and command evaluation.
+//! Domain-owned bindable actions for desk clips, faders, and command evaluation.
 
 use std::collections::BTreeSet;
 
@@ -33,22 +33,20 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::clips::{Clip, ClipCommand};
-use crate::controls::{
-    ControlCommand, ControlUpdate, Controls, clip_live_state, master_contributes,
-};
 use crate::desk_command::DeskCommand;
+use crate::faders::{FaderCommand, FaderUpdate, Faders, clip_live_state, master_contributes};
 use crate::masters::{
     Master, MasterCommand, MasterKind, MasterMode, MasterUpdate, clamp_master_level,
 };
 
-/// Stable action ID for driving a control slot's level from external hardware input.
-pub const CONTROL_LEVEL_ACTION_ID: &str = "control.level";
+/// Stable action ID for driving a fader's level from external hardware input.
+pub const FADER_LEVEL_ACTION_ID: &str = "fader.level";
 
-/// Stable action ID for running a control slot's Go behavior.
-pub const CONTROL_GO_ACTION_ID: &str = "control.go";
+/// Stable action ID for running a fader's Go behavior.
+pub const FADER_GO_ACTION_ID: &str = "fader.go";
 
-/// Stable action ID for pressing and releasing a control slot's button in its button mode.
-pub const CONTROL_BUTTON_ACTION_ID: &str = "control.button";
+/// Stable action ID for pressing and releasing a fader's button in its button mode.
+pub const FADER_BUTTON_ACTION_ID: &str = "fader.button";
 
 /// Stable action ID for driving a master's level.
 pub const MASTER_LEVEL_ACTION_ID: &str = "master.level";
@@ -78,12 +76,12 @@ pub const CLIP_LAUNCH_ARMED_ACTION_ID: &str = "clip.launch-armed";
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct NoArguments {}
 
-/// Persisted arguments for externally-driven control actions.
+/// Persisted arguments for externally-driven fader actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
-pub struct ControlActionArguments {
-    /// One-based control index in the backend-owned control bank.
-    pub control_index: u32,
+pub struct FaderActionArguments {
+    /// One-based fader index in the backend-owned fader bank.
+    pub fader_index: u32,
 }
 
 /// Persisted arguments for actions addressing one master.
@@ -95,19 +93,19 @@ pub struct MasterActionArguments {
     pub master: Uuid,
 }
 
-/// Creates a persisted control level action reference.
-pub fn control_level_action(control_index: u32) -> ActionReference {
-    control_action_reference(CONTROL_LEVEL_ACTION_ID, control_index)
+/// Creates a persisted fader level action reference.
+pub fn fader_level_action(fader_index: u32) -> ActionReference {
+    fader_action_reference(FADER_LEVEL_ACTION_ID, fader_index)
 }
 
-/// Creates a persisted control Go action reference.
-pub fn control_go_action(control_index: u32) -> ActionReference {
-    control_action_reference(CONTROL_GO_ACTION_ID, control_index)
+/// Creates a persisted fader Go action reference.
+pub fn fader_go_action(fader_index: u32) -> ActionReference {
+    fader_action_reference(FADER_GO_ACTION_ID, fader_index)
 }
 
-/// Creates a persisted control button action reference.
-pub fn control_button_action(control_index: u32) -> ActionReference {
-    control_action_reference(CONTROL_BUTTON_ACTION_ID, control_index)
+/// Creates a persisted fader button action reference.
+pub fn fader_button_action(fader_index: u32) -> ActionReference {
+    fader_action_reference(FADER_BUTTON_ACTION_ID, fader_index)
 }
 
 /// Creates a persisted master level action reference.
@@ -219,68 +217,68 @@ pub fn register_desk_actions(app: &mut App) {
             })
         },
     );
-    app.register_update_action::<ControlActionArguments, ControlUpdate, _>(
-        ActionDescriptor::new(CONTROL_LEVEL_ACTION_ID, "Control level", "Controls")
-            .with_description("Drives a control fader from hardware with soft pickup")
+    app.register_update_action::<FaderActionArguments, FaderUpdate, _>(
+        ActionDescriptor::new(FADER_LEVEL_ACTION_ID, "Fader level", "Faders")
+            .with_description("Drives a fader from hardware with soft pickup")
             .with_input(ActionInputKind::Absolute)
-            .with_parameter(control_parameter()),
+            .with_parameter(fader_parameter()),
         |_world, arguments, value| {
-            Ok(ControlUpdate::SetExternalHardwareValue {
-                control_index: arguments.control_index,
+            Ok(FaderUpdate::SetExternalHardwareValue {
+                fader_index: arguments.fader_index,
                 value: value * 100.0,
             })
         },
     )
-    .register_action_feedback::<ControlActionArguments, _>(
-        CONTROL_LEVEL_ACTION_ID,
+    .register_action_feedback::<FaderActionArguments, _>(
+        FADER_LEVEL_ACTION_ID,
         |world, arguments| {
-            let (level, active) = control_live_state(world, arguments.control_index)?;
+            let (level, active) = fader_live_state(world, arguments.fader_index)?;
             Ok(ActionFeedback {
                 level: Some((level / 100.0).clamp(0.0, 1.0)),
                 ..ActionFeedback::active_if(active)
             })
         },
     );
-    app.register_command_action::<ControlActionArguments, ControlCommand, _>(
-        ActionDescriptor::new(CONTROL_GO_ACTION_ID, "Control Go", "Controls")
-            .with_description("Starts or advances the control's clip, or toggles its master")
-            .with_parameter(control_parameter()),
+    app.register_command_action::<FaderActionArguments, FaderCommand, _>(
+        ActionDescriptor::new(FADER_GO_ACTION_ID, "Fader Go", "Faders")
+            .with_description("Starts or advances the fader's clip, or toggles its master")
+            .with_parameter(fader_parameter()),
         |_world, arguments| {
-            Ok(ControlCommand::Go {
-                control_index: arguments.control_index,
+            Ok(FaderCommand::Go {
+                fader_index: arguments.fader_index,
             })
         },
     )
-    .register_action_feedback::<ControlActionArguments, _>(
-        CONTROL_GO_ACTION_ID,
+    .register_action_feedback::<FaderActionArguments, _>(
+        FADER_GO_ACTION_ID,
         |world, arguments| {
-            let (_, active) = control_live_state(world, arguments.control_index)?;
+            let (_, active) = fader_live_state(world, arguments.fader_index)?;
             Ok(ActionFeedback::active_if(active))
         },
     );
-    app.register_momentary_command_action::<ControlActionArguments, ControlCommand, _>(
-        ActionDescriptor::new(CONTROL_BUTTON_ACTION_ID, "Control button", "Controls")
-            .with_description("Presses and releases the control's button in its button mode")
+    app.register_momentary_command_action::<FaderActionArguments, FaderCommand, _>(
+        ActionDescriptor::new(FADER_BUTTON_ACTION_ID, "Fader button", "Faders")
+            .with_description("Presses and releases the fader's button in its button mode")
             .with_input(ActionInputKind::Momentary)
             .with_surfaces([
                 ActionSurface::Midi,
                 ActionSurface::Osc,
                 ActionSurface::Websocket,
             ])
-            .with_parameter(control_parameter()),
+            .with_parameter(fader_parameter()),
         |_world, arguments, pressed| {
-            let control_index = arguments.control_index;
+            let fader_index = arguments.fader_index;
             Ok(if pressed {
-                ControlCommand::PressButton { control_index }
+                FaderCommand::PressButton { fader_index }
             } else {
-                ControlCommand::ReleaseButton { control_index }
+                FaderCommand::ReleaseButton { fader_index }
             })
         },
     );
-    app.register_action_feedback::<ControlActionArguments, _>(
-        CONTROL_BUTTON_ACTION_ID,
+    app.register_action_feedback::<FaderActionArguments, _>(
+        FADER_BUTTON_ACTION_ID,
         |world, arguments| {
-            let (_, active) = control_live_state(world, arguments.control_index)?;
+            let (_, active) = fader_live_state(world, arguments.fader_index)?;
             Ok(ActionFeedback::active_if(active))
         },
     );
@@ -394,10 +392,10 @@ pub fn register_desk_actions(app: &mut App) {
     );
 }
 
-/// Registers how stored bindings check that their clip, master, and control targets exist.
+/// Registers how stored bindings check that their clip, master, and fader targets exist.
 ///
 /// Binding diagnostics are recomputed when clip entities, the set of masters, or the number
-/// of control slots change.
+/// of faders change.
 fn register_desk_target_validators(app: &mut App) {
     app.register_action_target_validator::<Uuid, _>(ActionParameterKind::Clip, |world, uid| {
         resolve_clip_id(world, uid).map(drop)
@@ -405,10 +403,10 @@ fn register_desk_target_validators(app: &mut App) {
     .register_action_target_validator::<Uuid, _>(ActionParameterKind::Master, |world, uid| {
         resolve_master(world, uid).map(drop)
     })
-    .register_action_target_validator::<u32, _>(ActionParameterKind::Control, validate_control)
+    .register_action_target_validator::<u32, _>(ActionParameterKind::Fader, validate_fader)
     .invalidate_action_targets_when(clips_changed)
     .invalidate_action_targets_when(master_set_changed)
-    .invalidate_action_targets_when(control_slot_count_changed);
+    .invalidate_action_targets_when(fader_count_changed);
 }
 
 /// Run condition reporting whether masters were added or removed.
@@ -436,44 +434,41 @@ fn clips_changed(changed: Query<(), Changed<Clip>>, removed: RemovedComponents<C
     !changed.is_empty() || !removed.is_empty()
 }
 
-/// Run condition reporting whether the control bank gained or lost slots.
+/// Run condition reporting whether the fader bank gained or lost faders.
 ///
-/// Controls change on every fader move, so this compares slot counts rather than change
+/// Faders change on every move, so this compares fader counts rather than change
 /// ticks to avoid recomputing binding diagnostics while a fader is dragged.
-fn control_slot_count_changed(
-    controls: Option<Res<Controls>>,
-    mut last_count: Local<Option<usize>>,
-) -> bool {
-    let count = controls.map(|controls| controls.slot_count());
+fn fader_count_changed(faders: Option<Res<Faders>>, mut last_count: Local<Option<usize>>) -> bool {
+    let count = faders.map(|faders| faders.fader_count());
     let changed = *last_count != count;
     *last_count = count;
     changed
 }
 
-/// Checks that a 1-based control index addresses a slot in the bank.
+/// Checks that a 1-based fader index addresses a fader in the bank.
 ///
-/// Unassigned slots are valid targets, since a binding follows whatever is later assigned.
-fn validate_control(world: &World, control_index: u32) -> Result<(), InvocationError> {
-    let controls = world.get_resource::<Controls>().ok_or_else(|| {
-        InvocationError::new("control.bank_unavailable", "Controls are unavailable")
-    })?;
-    if controls.contains(control_index) {
+/// Unassigned faders are valid targets, since a binding follows whatever is later assigned.
+fn validate_fader(world: &World, fader_index: u32) -> Result<(), InvocationError> {
+    let faders = world
+        .get_resource::<Faders>()
+        .ok_or_else(|| InvocationError::new("fader.bank_unavailable", "Faders are unavailable"))?;
+    if faders.contains(fader_index) {
         return Ok(());
     }
     Err(InvocationError::new(
-        "control.not_found",
+        "fader.not_found",
         format!(
-            "Control {control_index} does not exist; controls are numbered 1 to {}",
-            controls.slot_count()
+            "Fader {fader_index} does not exist; faders are numbered 1 to {}",
+            faders.fader_count()
         ),
     )
-    .with_details(serde_json::json!({ "control_index": control_index })))
+    .with_details(serde_json::json!({ "fader_index": fader_index })))
 }
 
-/// Creates a control action reference for one stable action ID.
-fn control_action_reference(action_id: &str, control_index: u32) -> ActionReference {
-    ActionReference::with_arguments(action_id, &ControlActionArguments { control_index })
-        .expect("control action arguments should serialize")
+/// Creates a fader action reference for one stable action ID.
+fn fader_action_reference(action_id: &str, fader_index: u32) -> ActionReference {
+    ActionReference::with_arguments(action_id, &FaderActionArguments { fader_index })
+        .expect("fader action arguments should serialize")
 }
 
 /// Creates a master action reference for one stable action ID.
@@ -487,9 +482,9 @@ fn clip_parameter() -> ActionParameter {
     ActionParameter::required("clip", "Clip", ActionParameterKind::Clip)
 }
 
-/// Describes the control slot argument shared by control actions.
-fn control_parameter() -> ActionParameter {
-    ActionParameter::required("control_index", "Control", ActionParameterKind::Control)
+/// Describes the fader argument shared by fader actions.
+fn fader_parameter() -> ActionParameter {
+    ActionParameter::required("fader_index", "Fader", ActionParameterKind::Fader)
 }
 
 /// Describes the master argument shared by master actions.
@@ -626,13 +621,13 @@ fn clip_feedback(world: &World, clip: Uuid) -> Result<ActionFeedback, Invocation
     Ok(ActionFeedback::active_if(clip_live_state(world, clip_id).1))
 }
 
-/// Reads a control slot's console level and whether its assignment is running.
-fn control_live_state(world: &World, control_index: u32) -> Result<(f32, bool), InvocationError> {
-    validate_control(world, control_index)?;
+/// Reads a fader's console level and whether its assignment is running.
+fn fader_live_state(world: &World, fader_index: u32) -> Result<(f32, bool), InvocationError> {
+    validate_fader(world, fader_index)?;
     world
-        .resource::<Controls>()
-        .live_state(world, control_index)
-        .ok_or_else(|| InvocationError::new("control.not_found", "Control does not exist"))
+        .resource::<Faders>()
+        .live_state(world, fader_index)
+        .ok_or_else(|| InvocationError::new("fader.not_found", "Fader does not exist"))
 }
 
 /// Resolves a persisted clip UID to the numeric ID used by runtime commands.
@@ -693,10 +688,10 @@ mod tests {
     fn desk_action_app() -> App {
         let mut app = App::new();
         app.add_plugins(ActionsPlugin);
-        app.add_message::<ControlUpdate>();
+        app.add_message::<FaderUpdate>();
         app.add_message::<MasterUpdate>();
         app.init_resource::<DataProvider<Master>>();
-        app.init_resource::<Controls>();
+        app.init_resource::<Faders>();
         app.init_resource::<CommandTracker>();
         app.init_resource::<PendingCommandBuffer>();
         register_desk_actions(&mut app);
@@ -788,12 +783,12 @@ mod tests {
         );
     }
 
-    /// Verifies normalized action input is converted to the desk control percentage scale.
+    /// Verifies normalized action input is converted to the desk fader percentage scale.
     #[test]
-    fn control_action_writes_normalized_update() {
+    fn fader_action_writes_normalized_update() {
         let mut app = desk_action_app();
         app.world_mut().write_message(ActionInvocation::scalar(
-            control_level_action(3),
+            fader_level_action(3),
             ActionSurface::Osc,
             0.25,
         ));
@@ -802,13 +797,13 @@ mod tests {
 
         let updates = app
             .world_mut()
-            .resource_mut::<Messages<ControlUpdate>>()
+            .resource_mut::<Messages<FaderUpdate>>()
             .drain()
             .collect::<Vec<_>>();
         assert!(matches!(
             updates.as_slice(),
-            [ControlUpdate::SetExternalHardwareValue {
-                control_index: 3,
+            [FaderUpdate::SetExternalHardwareValue {
+                fader_index: 3,
                 value,
             }] if (*value - 25.0).abs() < f32::EPSILON
         ));
@@ -887,32 +882,32 @@ mod tests {
 
         assert!(validate(&app, &start_clip_action(clip_uid)).is_ok());
         assert!(validate(&app, &master_level_action(master_uid)).is_ok());
-        assert!(validate(&app, &control_go_action(2)).is_ok());
+        assert!(validate(&app, &fader_go_action(2)).is_ok());
     }
 
-    /// Verifies control targets accept every slot in the bank, assigned or not, and reject
-    /// indices outside `1..=slot_count`.
+    /// Verifies fader targets accept every fader in the bank, assigned or not, and reject
+    /// indices outside `1..=fader_count`.
     #[test]
-    fn target_validation_bounds_control_slots() {
+    fn target_validation_bounds_faders() {
         let app = desk_action_app();
         let registry = app.world().resource::<nightfall_actions::ActionRegistry>();
-        let last = u32::try_from(app.world().resource::<Controls>().slot_count())
-            .expect("slot count fits in u32");
+        let last = u32::try_from(app.world().resource::<Faders>().fader_count())
+            .expect("fader count fits in u32");
         let code = |index| {
             registry
-                .validate_target(app.world(), &control_go_action(index))
+                .validate_target(app.world(), &fader_go_action(index))
                 .map_err(|error| error.code)
         };
 
         assert_eq!(code(1), Ok(()));
         assert_eq!(code(last), Ok(()));
-        assert_eq!(code(0), Err("control.not_found".to_string()));
-        assert_eq!(code(last + 1), Err("control.not_found".to_string()));
+        assert_eq!(code(0), Err("fader.not_found".to_string()));
+        assert_eq!(code(last + 1), Err("fader.not_found".to_string()));
         assert_eq!(
             registry
-                .validate_target(app.world(), &control_level_action(last + 1))
+                .validate_target(app.world(), &fader_level_action(last + 1))
                 .map_err(|error| error.code),
-            Err("control.not_found".to_string())
+            Err("fader.not_found".to_string())
         );
     }
 
@@ -1169,12 +1164,12 @@ mod tests {
         assert_eq!(levels, vec![200.0, 100.0]);
     }
 
-    /// Verifies control Go lowers to the control Go command expanded later in the frame.
+    /// Verifies fader Go lowers to the fader Go command expanded later in the frame.
     #[test]
-    fn control_go_action_submits_control_go_command() {
+    fn fader_go_action_submits_fader_go_command() {
         let mut app = desk_action_app();
         app.world_mut().write_message(ActionInvocation::new(
-            control_go_action(2),
+            fader_go_action(2),
             ActionSurface::Midi,
             nightfall_actions::ActionInput::Press,
         ));
@@ -1186,19 +1181,19 @@ mod tests {
             pending
                 .as_slice()
                 .first()
-                .and_then(|envelope| envelope.payload.as_any().downcast_ref::<ControlCommand>()),
-            Some(ControlCommand::Go { control_index: 2 })
+                .and_then(|envelope| envelope.payload.as_any().downcast_ref::<FaderCommand>()),
+            Some(FaderCommand::Go { fader_index: 2 })
         ));
     }
 
-    /// Verifies the control button action lowers each press and release edge to its own
-    /// control command, so held MIDI pads reach the slot's button mode on both edges.
+    /// Verifies the fader button action lowers each press and release edge to its own
+    /// fader command, so held MIDI pads reach the fader's button mode on both edges.
     #[test]
-    fn control_button_action_submits_press_and_release_commands() {
+    fn fader_button_action_submits_press_and_release_commands() {
         let mut app = desk_action_app();
         for input in [ActionInput::Press, ActionInput::Release] {
             app.world_mut().write_message(ActionInvocation::new(
-                control_button_action(3),
+                fader_button_action(3),
                 ActionSurface::Midi,
                 input,
             ));
@@ -1211,15 +1206,15 @@ mod tests {
                 envelope
                     .payload
                     .as_any()
-                    .downcast_ref::<ControlCommand>()
+                    .downcast_ref::<FaderCommand>()
                     .cloned()
             })
             .collect::<Vec<_>>();
         assert!(matches!(
             commands.as_slice(),
             [
-                ControlCommand::PressButton { control_index: 3 },
-                ControlCommand::ReleaseButton { control_index: 3 }
+                FaderCommand::PressButton { fader_index: 3 },
+                FaderCommand::ReleaseButton { fader_index: 3 }
             ]
         ));
     }

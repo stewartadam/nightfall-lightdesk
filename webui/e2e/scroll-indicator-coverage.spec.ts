@@ -34,7 +34,7 @@ test("controls strip shows horizontal scroll edges", async ({
   await page.keyboard.press("ControlOrMeta+Shift+P");
   await page.getByPlaceholder("Type a command or search...").fill("Open Clips");
   await page.keyboard.press("Enter");
-  const controls = page.locator(".controls");
+  const controls = page.locator(".faders");
   await expect(controls).toBeVisible();
   const overlay = controls.locator(".nf-scroll-indicators");
   await expect(edge(overlay, "right")).toHaveAttribute("data-visible", "true");

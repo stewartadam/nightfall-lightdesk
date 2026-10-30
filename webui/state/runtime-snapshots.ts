@@ -11,10 +11,10 @@ import type * as types from "../types";
 import {
   type ActiveInstancesMap,
   activeInstances,
-  type ControlState,
-  controls,
   type EngineMetrics,
   engineMetrics,
+  type FaderState,
+  faders,
   type UndoState,
   undoState,
 } from "./appStores";
@@ -62,9 +62,9 @@ export function applyActiveInstancesSnapshot(
   );
 }
 
-/** Applies the latest control snapshot list to the control store. */
-export function applyControlsSnapshot(snapshot: ControlState[]): void {
-  setStoreAction(controls, "Receive Controls", snapshot);
+/** Applies the latest fader snapshot list to the fader store. */
+export function applyFadersSnapshot(snapshot: FaderState[]): void {
+  setStoreAction(faders, "Receive Faders", snapshot);
 }
 
 /** Applies an undo snapshot using the nullable description shape expected by UI stores. */

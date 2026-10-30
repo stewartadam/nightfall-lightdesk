@@ -8,18 +8,18 @@
 
 import type { HeldButtonEffect } from "../types";
 
-/** Short tag and explanation shown wherever a held slot button changes a playback. */
+/** Short tag and explanation shown wherever a held fader button changes a playback. */
 export interface HeldButtonTag {
   /** One-word tag, such as "Swopped". */
   label: string;
-  /** Sentence naming the slot whose held button causes the change. */
+  /** Sentence naming the fader whose held button causes the change. */
   title: string;
   /** Whether the held button plays this playback, rather than taking it out. */
   active: boolean;
 }
 
 /**
- * Describes how a held Flash or Swop changes a playback, so every view names the slot
+ * Describes how a held Flash or Swop changes a playback, so every view names the fader
  * responsible in the same words. Returns `undefined` when no held button concerns it.
  */
 export function heldButtonTag(
@@ -29,19 +29,19 @@ export function heldButtonTag(
     case "Flashed":
       return {
         label: "Flash",
-        title: `Played at full by the Flash held on slot ${effect.data.control_index}`,
+        title: `Played at full by the Flash held on fader ${effect.data.fader_index}`,
         active: true,
       };
     case "Swopping":
       return {
         label: "Swop",
-        title: `Played on its own by the Swop held on slot ${effect.data.control_index}`,
+        title: `Played on its own by the Swop held on fader ${effect.data.fader_index}`,
         active: true,
       };
     case "SwoppedOut":
       return {
         label: "Swopped",
-        title: `Taken out by the Swop held on slot ${effect.data.control_index}`,
+        title: `Taken out by the Swop held on fader ${effect.data.fader_index}`,
         active: false,
       };
     default:

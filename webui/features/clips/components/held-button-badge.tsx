@@ -17,7 +17,7 @@ export interface HeldButtonBadgeProps {
 }
 
 /**
- * Tags a playback a held Flash or Swop changes, naming the responsible slot in its tooltip.
+ * Tags a playback a held Flash or Swop changes, naming the responsible fader in its tooltip.
  * The playback the held button plays gets an amber tag; ones a Swop takes out a grey one.
  */
 export function HeldButtonBadge(props: HeldButtonBadgeProps): JSX.Element {

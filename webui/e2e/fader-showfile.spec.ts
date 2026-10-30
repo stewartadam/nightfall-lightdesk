@@ -16,20 +16,20 @@ import { waitForDockviewApp } from "./showfile-startup";
 /** Read the backend-owned assignment bank and button modes after websocket synchronization. */
 async function assignments(page: Page) {
   return page.evaluate(() =>
-    (window as any).appStores.controls.get().map((control: any) => ({
-      clip: control.assigned_clip_id,
-      master: control.assigned_master_id,
-      buttonMode: control.button_mode,
+    (window as any).appStores.faders.get().map((fader: any) => ({
+      clip: fader.assigned_clip_id,
+      master: fader.assigned_master_id,
+      buttonMode: fader.button_mode,
     })),
   );
 }
 
-/** Sends one control command and returns its backend outcome type. */
-async function sendControlCommand(page: Page, command: object) {
+/** Sends one fader command and returns its backend outcome type. */
+async function sendFaderCommand(page: Page, command: object) {
   const result = await page.evaluate(
     (command) =>
       (window as any).appStores.sendAndAwait({
-        module: "ControlCommand",
+        module: "FaderCommand",
         command,
       }),
     command,
@@ -94,15 +94,15 @@ test("fader assignments survive saving and loading a showfile", async ({
   const result = await page.evaluate(async () => {
     const stores = (window as any).appStores;
     return stores.sendAndAwait({
-      module: "ControlCommand",
-      command: { type: "AssignClip", data: { control_index: 1, clip_id: 2 } },
+      module: "FaderCommand",
+      command: { type: "AssignClip", data: { fader_index: 1, clip_id: 2 } },
     });
   });
   expect(result.outcome.type).toBe("Succeeded");
   expect(
-    await sendControlCommand(page, {
+    await sendFaderCommand(page, {
       type: "SetButtonMode",
-      data: { control_index: 1, mode: "Toggle" },
+      data: { fader_index: 1, mode: "Toggle" },
     }),
   ).toBe("Succeeded");
   await expect
@@ -131,18 +131,19 @@ test("fader assignments survive saving and loading a showfile", async ({
     "/api/showfiles/current/showfile.json",
   );
   expect(response.ok()).toBe(true);
-  expect((await response.json()).controlSlots).toEqual(persisted.controlSlots);
+  expect(persisted.faders).toBeDefined();
+  expect((await response.json()).faders).toEqual(persisted.faders);
   const cleared = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "ControlCommand",
-      command: { type: "ClearClip", data: { control_index: 1 } },
+      module: "FaderCommand",
+      command: { type: "ClearClip", data: { fader_index: 1 } },
     }),
   );
   expect(cleared.outcome.type).toBe("Succeeded");
   expect(
-    await sendControlCommand(page, {
+    await sendFaderCommand(page, {
       type: "SetButtonMode",
-      data: { control_index: 1, mode: "Go" },
+      data: { fader_index: 1, mode: "Go" },
     }),
   ).toBe("Succeeded");
   await expect
@@ -160,7 +161,7 @@ test("fader assignments survive saving and loading a showfile", async ({
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page.getByPlaceholder("Type a command or search...").fill("Open Clips");
   await page.keyboard.press("Enter");
-  const fader = page.locator('[data-control-index="1"]');
+  const fader = page.locator('[data-fader-index="1"]');
   await expect(fader).toBeVisible();
   const label = await page.evaluate(() => {
     const clips = Object.values((window as any).appStores.clips.get()) as any[];

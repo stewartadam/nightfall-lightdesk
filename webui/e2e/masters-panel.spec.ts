@@ -10,8 +10,7 @@ import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-const CONTROLS_COLLAPSED_STORAGE_KEY =
-  "nightfall-clip-panel:controls-collapsed";
+const FADERS_COLLAPSED_STORAGE_KEY = "nightfall-clip-panel:faders-collapsed";
 
 test.setTimeout(60_000);
 
@@ -94,20 +93,19 @@ async function addPanel(
 async function expectMasterAssignedToControl(
   page: Page,
   masterId: number,
-  controlIndex: number,
+  faderIndex: number,
 ): Promise<void> {
   await expect
     .poll(() =>
       page.evaluate(
-        ({ controlIndex }) =>
+        ({ faderIndex }) =>
           (
-            (window as any).appStores.controls.get() as Array<{
+            (window as any).appStores.faders.get() as Array<{
               index: number;
               assigned_master_id?: number;
             }>
-          ).find((control) => control.index === controlIndex)
-            ?.assigned_master_id,
-        { controlIndex },
+          ).find((control) => control.index === faderIndex)?.assigned_master_id,
+        { faderIndex },
       ),
     )
     .toBe(masterId);
@@ -117,7 +115,7 @@ async function expectMasterAssignedToControl(
 async function dragMasterToControl(
   page: Page,
   masterId: number,
-  controlIndex: number,
+  faderIndex: number,
 ): Promise<void> {
   const mastersPanel = page.locator(".panel-Masters-assignment-e2e");
   const clipsPanel = page.locator(".panel-Clips-assignment-e2e");
@@ -125,12 +123,12 @@ async function dragMasterToControl(
     `[data-master-drag-handle-id="${masterId}"]`,
   );
   const dropZone = clipsPanel.locator(
-    `[data-clip-dropzone-index="${controlIndex}"]`,
+    `[data-clip-dropzone-index="${faderIndex}"]`,
   );
   await expect(dragHandle).toBeVisible();
   await expect(dropZone).toBeVisible();
   await dragHandle.dragTo(dropZone);
-  await expectMasterAssignedToControl(page, masterId, controlIndex);
+  await expectMasterAssignedToControl(page, masterId, faderIndex);
 }
 
 test("masters can be created and assigned to a control", async ({
@@ -140,7 +138,7 @@ test("masters can be created and assigned to a control", async ({
   await page.setViewportSize({ width: 1800, height: 1000 });
   await page.addInitScript((storageKey) => {
     window.localStorage.setItem(storageKey, "false");
-  }, CONTROLS_COLLAPSED_STORAGE_KEY);
+  }, FADERS_COLLAPSED_STORAGE_KEY);
 
   await loadTestApp(page, backendSlot.backendPort);
   await page.waitForTimeout(3_000);
@@ -212,7 +210,7 @@ test("masters can be created and assigned to a control", async ({
 
   const assignedControl = page
     .locator(".panel-Clips-assignment-e2e")
-    .locator('[data-control-index="2"]');
+    .locator('[data-fader-index="2"]');
   const assignedDropZone = assignedControl.locator(
     '[data-clip-dropzone-index="2"]',
   );
@@ -234,7 +232,7 @@ test("playback speed masters use control midpoint as normal speed", async ({
   await page.setViewportSize({ width: 1800, height: 1000 });
   await page.addInitScript((storageKey) => {
     window.localStorage.setItem(storageKey, "false");
-  }, CONTROLS_COLLAPSED_STORAGE_KEY);
+  }, FADERS_COLLAPSED_STORAGE_KEY);
 
   await loadTestApp(page, backendSlot.backendPort);
   await page.waitForTimeout(3_000);
@@ -280,7 +278,7 @@ test("playback speed masters use control midpoint as normal speed", async ({
     .poll(() =>
       page.evaluate(() => {
         const control = (
-          (window as any).appStores.controls.get() as Array<{
+          (window as any).appStores.faders.get() as Array<{
             index: number;
             display_value: number;
           }>
@@ -292,7 +290,7 @@ test("playback speed masters use control midpoint as normal speed", async ({
 
   const assignedControl = page
     .locator(".panel-Clips-assignment-e2e")
-    .locator('[data-control-index="3"]');
+    .locator('[data-fader-index="3"]');
   await expect(assignedControl.getByText("100%")).toBeVisible();
 });
 

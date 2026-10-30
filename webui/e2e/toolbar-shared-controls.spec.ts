@@ -164,7 +164,7 @@ test("disabled clip control buttons explain why through shared tooltips", async 
   await openDemo(page);
   await page.getByRole("tab", { name: "Clips", exact: true }).click();
   const disabled = page
-    .locator("[data-control-button-index]:disabled:visible")
+    .locator("[data-fader-button-index]:disabled:visible")
     .first();
   await expect(disabled).toBeVisible();
   await expect(disabled).not.toHaveAttribute("title");

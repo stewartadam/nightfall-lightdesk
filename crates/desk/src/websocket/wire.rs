@@ -63,7 +63,7 @@ pub struct InstanceInfo {
     pub effective_speed: f64,
     /// Backend-authored clock and phase state for an editor-owned Step FX preview.
     pub step_fx_preview: Option<StepFxPreviewPlaybackStatus>,
-    /// How a held control slot Flash or Swop changes this playback, if one does.
+    /// How a held fader Flash or Swop changes this playback, if one does.
     pub held_button: Option<HeldButtonEffect>,
     /// Source-specific runtime status.
     pub status: InstanceStatus,
@@ -219,8 +219,8 @@ pub(super) enum DeskWsMessage<'a> {
     Metrics(&'a DeskMetrics),
     /// Active instances list
     ActiveInstances(&'a [InstanceInfo]),
-    /// Backend-owned control state
-    Controls(&'a [ControlSnapshot]),
+    /// Backend-owned fader state
+    Faders(&'a [FaderSnapshot]),
     /// Current undo/redo state
     UndoState(&'a UndoStateMessage),
     /// Live clip launches waiting for the next beat or bar
@@ -267,7 +267,7 @@ pub(super) struct OutboundLayerState {
     pub is_releasing: bool,
     /// Current source-specific playback position for playback-backed layers.
     pub runtime_position: Option<InstancePosition>,
-    /// How a held control slot Flash or Swop changes this layer's playback; a playback a Swop
+    /// How a held fader Flash or Swop changes this layer's playback; a playback a Swop
     /// takes out asserts nothing while the Swop is held.
     pub held_button: Option<HeldButtonEffect>,
     /// Asserted absolute parameter values for this layer.

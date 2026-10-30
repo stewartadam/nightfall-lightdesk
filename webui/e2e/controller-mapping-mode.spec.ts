@@ -367,10 +367,10 @@ test("fader slots with an assigned master offer both mapping targets", async ({
   await page.evaluate(
     (masterId) =>
       (window as any).appStores.sendAndAwait({
-        module: "ControlCommand",
+        module: "FaderCommand",
         command: {
           type: "AssignMaster",
-          data: { control_index: 1, master_id: masterId },
+          data: { fader_index: 1, master_id: masterId },
         },
       }),
     masterId,
@@ -382,8 +382,8 @@ test("fader slots with an assigned master offer both mapping targets", async ({
   await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
     "OSC /e2e/map/fader",
   );
-  await page.getByRole("button", { name: "Map control 1 fader" }).click();
-  const menu = page.getByRole("menu", { name: "Map control 1 fader to" });
+  await page.getByRole("button", { name: "Map fader 1 level" }).click();
+  const menu = page.getByRole("menu", { name: "Map fader 1 level to" });
   await expect(
     menu
       .getByRole("menuitem")
@@ -391,13 +391,11 @@ test("fader slots with an assigned master offer both mapping targets", async ({
         items.map((item) => item.getAttribute("aria-label")),
       ),
   ).resolves.toEqual([
-    "Fader slot 1 · Follow fader",
+    "Fader 1 · Follow fader",
     "Assigned master: Global Intensity Master · Follow fader",
     "Assigned master: Global Intensity Master · Flash to full",
   ]);
-  await menu
-    .getByRole("menuitem", { name: "Fader slot 1 · Follow fader" })
-    .click();
+  await menu.getByRole("menuitem", { name: "Fader 1 · Follow fader" }).click();
 
   await expect
     .poll(() =>
@@ -407,7 +405,7 @@ test("fader slots with an assigned master offer both mapping targets", async ({
           .map((mapping: any) => mapping.action),
       ),
     )
-    .toEqual([{ id: "control.level", arguments: { control_index: 1 } }]);
+    .toEqual([{ id: "fader.level", arguments: { fader_index: 1 } }]);
   await leaveMapping(page);
 
   /** Returns each master's level keyed by numeric ID. */
@@ -436,10 +434,10 @@ test("fader slots with an assigned master offer both mapping targets", async ({
   await page.evaluate(
     (masterId) =>
       (window as any).appStores.sendAndAwait({
-        module: "ControlCommand",
+        module: "FaderCommand",
         command: {
           type: "AssignMaster",
-          data: { control_index: 1, master_id: masterId },
+          data: { fader_index: 1, master_id: masterId },
         },
       }),
     secondId,
@@ -466,10 +464,8 @@ test("mapping an empty slot's Go follows what is assigned later", async ({
   await expect(page.locator("[data-mapping-mode-banner]")).toContainText(
     "OSC /e2e/map/empty-go",
   );
-  await expect(
-    page.getByRole("button", { name: "Go control 2" }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "Map control 2 button" }).click();
+  await expect(page.getByRole("button", { name: "Go fader 2" })).toBeDisabled();
+  await page.getByRole("button", { name: "Map fader 2 button" }).click();
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -478,7 +474,7 @@ test("mapping an empty slot's Go follows what is assigned later", async ({
           .map((mapping: any) => mapping.action),
       ),
     )
-    .toEqual([{ id: "control.go", arguments: { control_index: 2 } }]);
+    .toEqual([{ id: "fader.go", arguments: { fader_index: 2 } }]);
   await leaveMapping(page);
 
   // Assign a toggle master to slot 2; Go on a toggle master flips it.
@@ -487,10 +483,10 @@ test("mapping an empty slot's Go follows what is assigned later", async ({
   await page.evaluate(
     (masterId) =>
       (window as any).appStores.sendAndAwait({
-        module: "ControlCommand",
+        module: "FaderCommand",
         command: {
           type: "AssignMaster",
-          data: { control_index: 2, master_id: masterId },
+          data: { fader_index: 2, master_id: masterId },
         },
       }),
     masterId,

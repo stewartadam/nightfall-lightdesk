@@ -12,6 +12,6 @@ A speed master's fader settles on 25%, 50%, 100% and 200% when you release it cl
 
 Each row shows the master, its mode, level, and enabled state. Change the level to scale the affected output or playback speed. An inhibitive intensity master limits intensity; it does not create a look in an otherwise empty programmer.
 
-Drag a master to a control slot in [Clips](clips.md) for convenient operation. If fixtures are unexpectedly dark or playback is unusually slow, inspect all applicable masters and their enabled states before changing cue programming.
+Drag a master to a fader in [Clips](clips.md) for convenient operation. If fixtures are unexpectedly dark or playback is unusually slow, inspect all applicable masters and their enabled states before changing cue programming.
 
 Save the showfile to preserve master definitions and assignments.

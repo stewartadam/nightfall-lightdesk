@@ -68,8 +68,8 @@ Controls turn operator input into playback. The following diagram shows the path
 ```mermaid
 flowchart TB
   accTitle: Controls and playback
-  accDescr: Panels, control slots, boards, MIDI and OSC mappings, and timelines trigger actions or commands on a clip. The clip starts a playback, which produces a layer. Layers merge into the output. Masters scale the rate of playbacks or the intensity of the merged output.
-  input([Panels, commands, control slots, boards, MIDI, OSC]) -- trigger --> action[Action or command]
+  accDescr: Panels, faders, boards, MIDI and OSC mappings, and timelines trigger actions or commands on a clip. The clip starts a playback, which produces a layer. Layers merge into the output. Masters scale the rate of playbacks or the intensity of the merged output.
+  input([Panels, commands, faders, boards, MIDI, OSC]) -- trigger --> action[Action or command]
   timeline[Timeline] -- schedules --> action
   action -- starts or advances --> clip{{Clip}}
   clip -- starts --> playback([Playback])
@@ -92,10 +92,10 @@ The following table lists the main terms. "Owning crate" is the crate under `cra
 | Board | `common`, `boards` | A grid of buttons arranged by the operator, each running a show object's default action. |
 | Clip | `clips` | A slot that plays one source (sequence, FX, Step FX, FX module, or flow) with its own priority and options. |
 | Console universe | `fixtures` | Nightfall's internal 512-channel DMX address space. Fixtures patch into it. |
-| Control slot | `desk` | A fader and buttons that drive a clip or master. |
 | Cue | `cues` | Stored instructions, with timing, that a sequence plays. |
 | Cue part | `cues` | A subset of a cue's instructions with its own timing. |
 | Element | `fixtures` | An independently controlled part of a fixture, such as one cell of an LED bar. |
+| Fader | `desk` | A numbered strip with a level and a button that drives a clip or master. |
 | Fixture | `fixtures` | A patched light, using one mode of a fixture profile. |
 | Fixture profile | `fixture-model`, `fixture-library` | The definition of a fixture type: modes, attributes, channels, and value ranges. Imported from GDTF or Open Fixture Library (OFL) files. |
 | Flow | `flow` | A node graph that generates values or triggers actions, such as an oscillator driving intensity on the beat. |
@@ -130,7 +130,7 @@ Some words mean different things in different crates. Check which one a piece of
 | Tracking | A sequence's tracking mode (`TrackingMode`). A cue's tracking flags (`TrackingFlags`), which choose what tracks for HTP, LTP, and FX values. |
 | References | The `references` crate, which reports which objects use which. The `ReferenceBook` in the `selection` crate, which stores those reports. The `References` struct in `common`, which still has a `palettes` field from before blueprints. |
 | Waveform | The `waveform` crate, which samples effect shapes such as sine and square. The audio waveform shown on a timeline. |
-| Controls | Control slots in `desk`. `InstanceControls`, which hold one playback's level and rate. |
+| Controls | `InstanceControls`, which hold one playback's level and rate. The desk's faders were called control slots before schema 23. |
 | Lookahead | Preparing dark fixtures before their next cue. It appears in the `lookahead` and `lookahead-projection` crates, cue part options, playback options, and timeline settings. |
 
 ## Related topics

@@ -21,7 +21,7 @@ import type {
   TimecodeMap,
   TimelineMap,
 } from "../../state/appStores";
-import { type ControlSnapshot, InstanceDisplayKind } from "../../types";
+import { type FaderSnapshot, InstanceDisplayKind } from "../../types";
 import type { PatchTab, PatchWizardStep } from "../patch";
 import { normalizeTimelineUid } from "../timeline";
 
@@ -79,7 +79,7 @@ export type GuideObservation =
   | { type: "cue-manual"; sequenceId: number; id: number }
   | { type: "clip-sequence"; clipId: number; sequenceId: number }
   | { type: "clip-created"; clipId: number }
-  | { type: "assigned"; clipId: number; control: number }
+  | { type: "assigned"; clipId: number; fader: number }
   | { type: "clip-playing" | "clip-stopped"; clipId: number }
   | { type: "cue-playing"; clipId: number; position: number }
   | { type: "playback-idle" }
@@ -138,7 +138,7 @@ export interface GuideSnapshot {
   cues: CueMap;
   sequences: SequenceMap;
   clips: ClipMap;
-  controls: ControlSnapshot[];
+  faders: FaderSnapshot[];
   instances: ActiveInstancesMap;
   timelines: TimelineMap;
   timecodes: TimecodeMap;
@@ -420,9 +420,8 @@ export function guideCompletionToken(
         ? "clear"
         : "";
     case "assigned":
-      return state.controls.find(
-        (control) => control.index === observation.control,
-      )?.assigned_clip_id === observation.clipId
+      return state.faders.find((fader) => fader.index === observation.fader)
+        ?.assigned_clip_id === observation.clipId
         ? "assigned"
         : "";
     case "clip-playing":
