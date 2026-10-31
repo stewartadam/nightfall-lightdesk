@@ -8,6 +8,7 @@
 
 //! Schema 21 → 22: playback "rate" becomes "speed", and waveform "rate" becomes cycle length.
 
+use nightfall_cmd_parse::lexicon::aliases::canonicalize_alias_any_scope;
 use nightfall_cmd_parse::statement_ranges;
 use serde_json::{Map, Value};
 
@@ -98,10 +99,12 @@ fn speed_keyword_command(command: &str) -> String {
 }
 
 /// Rewrites whole `rate` words of one statement to `speed` when the statement starts with
-/// `clip` or `fx`, and returns any other statement unchanged.
+/// `clip` (or one of its aliases such as `exec`) or `fx`, and returns any other statement
+/// unchanged.
 fn speed_keyword_statement(statement: &str) -> String {
     let first_word = statement.split_whitespace().next().unwrap_or_default();
-    if !first_word.eq_ignore_ascii_case("clip") && !first_word.eq_ignore_ascii_case("fx") {
+    let keyword = canonicalize_alias_any_scope(first_word).unwrap_or(first_word);
+    if !keyword.eq_ignore_ascii_case("clip") && !keyword.eq_ignore_ascii_case("fx") {
         return statement.to_string();
     }
     let mut rewritten = String::with_capacity(statement.len());
@@ -173,7 +176,7 @@ mod tests {
                 {"action": {"id": "desk.eval", "arguments": {"command": "clip 3 rate 0.5"}}},
                 {"action": {"id": "desk.eval", "arguments": {"command": "FX 2  Rate 2"}}},
                 {"action": {"id": "desk.eval", "arguments": {"command": "group rate"}}},
-                {"action": {"id": "desk.eval", "arguments": {"command": "group 1 at 50; clip 2 rate 0.5;fx 1 rate 2"}}}
+                {"action": {"id": "desk.eval", "arguments": {"command": "group 1 at 50; exec 2 rate 0.5;fx 1 rate 2"}}}
             ]
         })
     }
@@ -222,7 +225,7 @@ mod tests {
         );
         assert_eq!(
             showfile["midiMappings"][4]["action"]["arguments"]["command"],
-            "group 1 at 50; clip 2 speed 0.5;fx 1 speed 2"
+            "group 1 at 50; exec 2 speed 0.5;fx 1 speed 2"
         );
     }
 
