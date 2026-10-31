@@ -11,45 +11,55 @@
 use std::collections::HashSet;
 
 use super::super::*;
-use super::ShowfileEntityFilter;
+use super::ShowfileLoadState;
 
 /// Clears world and runtime resources that are rebuilt by showfile load.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn reset_showfile_state(
-    fixture_data_provider: &mut FixtureDataProviderExt,
-    scene_object_provider: &mut SceneObjectDataProvider,
-    cue_data_provider: &mut DataProvider<Cue>,
-    seq_data_provider: &mut DataProvider<Sequence>,
-    group_data_provider: &mut DataProvider<Group>,
-    master_data_provider: &mut DataProvider<Master>,
-    blueprint_data_provider: &mut DataProvider<Blueprint>,
-    color_path_data_provider: &mut DataProvider<ColorPath>,
-    fx_data_provider: &mut DataProvider<Fx>,
-    fx_module_data_provider: &mut DataProvider<StoredFxModule>,
-    flow_data_provider: &mut DataProvider<FlowDefinition>,
-    timecode_data_provider: &mut DataProvider<Timecode>,
-    timeline_data_provider: &mut DataProvider<Timeline>,
-    board_data_provider: &mut DataProvider<Board>,
-    macro_data_provider: &mut DataProvider<Macro>,
-    active_fx_module_ids: Option<&mut ActiveFxModuleIds>,
-    input_routes: &mut InputRoutes,
-    output_routes: &mut OutputRoutes,
-    disabled_routes: &mut DisabledRoutes,
-    all_entities: &Query<Entity, ShowfileEntityFilter>,
-    resolved_input_routes: Option<&mut ResolvedInputRoutes>,
-    console_dmx_addresses: Option<&mut ConsoleDmxAddresses>,
-    console_dmx_universes: Option<&mut ConsoleDmxUniverses>,
-    input_dmx_universes: Option<&mut InputDmxUniverses>,
-    output_routing: Option<&mut OutputRouting>,
-    instance_index: Option<&mut InstanceIndex>,
-    final_layer_attributed_assertions: Option<&mut FinalLayerAttributedAssertions>,
-    pending_commands: &mut PendingCommandBuffer,
-    scheduled_commands: Option<&mut DelayedCommandQueue>,
-    undo_manager: Option<&mut UndoManager>,
-    programmer: Option<&mut Programmer>,
-    global_variables: &GlobalVariables,
-    commands: &mut Commands,
-) {
+pub(super) fn reset_showfile_state(state: &mut ShowfileLoadState<'_, '_>, commands: &mut Commands) {
+    let ShowfileLoadState {
+        apply:
+            ShowfileApplyState {
+                fixture_data_provider,
+                scene_object_provider,
+                cue_data_provider,
+                seq_data_provider,
+                group_data_provider,
+                master_data_provider,
+                blueprint_data_provider,
+                color_path_data_provider,
+                fx_data_provider,
+                fx_module_data_provider,
+                flow_data_provider,
+                timecode_data_provider,
+                timeline_data_provider,
+                board_data_provider,
+                macro_data_provider,
+                input_routes,
+                output_routes,
+                disabled_routes,
+                global_variables,
+                // Listed so a new apply field fails to compile here until reset decides on it.
+                #[cfg(feature = "midi")]
+                    midi_mappings: _,
+                #[cfg(feature = "osc")]
+                    osc_mappings: _,
+                desk_settings: _,
+                io_settings: _,
+            },
+        active_fx_module_ids,
+        all_entities,
+        resolved_input_routes,
+        console_dmx_addresses,
+        console_dmx_universes,
+        input_dmx_universes,
+        output_routing,
+        instance_index,
+        final_layer_attributed_assertions,
+        pending_commands,
+        scheduled_commands,
+        undo_manager,
+        programmer,
+        ..
+    } = state;
     let parameter_entities: HashSet<Entity> = fixture_data_provider
         .clear_all()
         .into_iter()
