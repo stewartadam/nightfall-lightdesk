@@ -10,6 +10,7 @@ import { useStore } from "@nanostores/solid";
 import { onCleanup, onMount, Show } from "solid-js";
 import { BoardPaletteCommands } from "../../../features/boards";
 import { ReleaseHeldButtonsCommand } from "../../../features/clips";
+import { FixtureEditorCommands } from "../../../features/fixture-editor";
 import {
   BackupBanner,
   MappingModeBanner,
@@ -64,6 +65,7 @@ function ShellRuntime() {
       <ReleaseHeldButtonsCommand />
       <LayoutCommands />
       <BoardPaletteCommands />
+      <FixtureEditorCommands />
       <MappingModeController />
       <MidiDeviceDetectedNotice />
       <KeybindingController />
