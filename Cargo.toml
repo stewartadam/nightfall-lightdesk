@@ -6,7 +6,7 @@ exclude = ["vendor"]
 resolver = "3" # default for rust 2024
 
 [workspace.package]
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2024"
 license = "MPL-2.0"
 
