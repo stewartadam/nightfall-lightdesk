@@ -11,7 +11,6 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
 const MAX_RECENT_SEND_FAILURES: usize = 32;
@@ -35,7 +34,8 @@ pub struct NetworkOutputSendFailure {
 }
 
 /// Tracks timing statistics for network output operations
-#[derive(Resource, Default, Debug, Clone)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
+#[derive(Default, Debug, Clone)]
 pub struct NetworkStats {
     /// Time spent sending Art-Net universes on the last output tick
     artnet_send_time: Option<Duration>,

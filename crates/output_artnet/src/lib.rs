@@ -65,6 +65,7 @@ impl Plugin for OutputArtnetPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering OutputArtnetPlugin");
         app.init_resource::<TransportRuntimePolicy>();
+        app.init_resource::<nightfall_io::NetworkStats>();
         let artnet_service = service::process_artnet_output_service();
         let _ = artnet_service.configure_network_output_enabled(self.network_output_enabled);
 

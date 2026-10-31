@@ -114,7 +114,7 @@ pub(crate) fn handle_low_freq_updates(
     io_settings: Res<IoRuntimeSettings>,
     network_interface_state: Res<NetworkInterfaceState>,
     output_frames: Res<OutputDmxFrames>,
-    network_stats: Res<crate::resources::network_stats::NetworkStats>,
+    network_stats: Res<nightfall_io::NetworkStats>,
     layer_only_query: Query<&Layer>,
     entities_query: Query<Entity>,
     diagnostics: Res<DiagnosticsStore>,

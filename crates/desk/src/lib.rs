@@ -28,7 +28,9 @@ use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, InstanceCommand, InstanceControlUpdate,
     PlaybackOperation, PlaybackReleaseOperation,
 };
-use nightfall_io::{AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState};
+use nightfall_io::{
+    AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState, NetworkStats,
+};
 use nightfall_undo::{UndoPlugin, prelude::*};
 
 use crate::{
@@ -77,7 +79,6 @@ pub mod prelude {
         MasterCommand, MasterKind, MasterMode, MasterTarget, add_default_show_masters,
     };
     pub use crate::resources::ExclusiveResource;
-    pub use crate::resources::network_stats::{NetworkOutputSendFailure, NetworkStats};
     pub use crate::settings::{
         AvailableAudioDevices, DeskSettings, GraphicsReport, PanelLayoutArrangement,
         PanelLayoutRename, PanelLayoutVisibility, ReportedGraphics, SelectionFlattenPolicy,

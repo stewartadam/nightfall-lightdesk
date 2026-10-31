@@ -9,7 +9,6 @@
 //! Hands composed Art-Net frames to the process-lifetime output worker.
 
 use bevy_ecs::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_io::prelude::*;
 

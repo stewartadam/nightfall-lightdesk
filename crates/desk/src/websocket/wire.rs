@@ -8,6 +8,8 @@
 
 //! Desk websocket wire schemas.
 
+use nightfall_io::NetworkOutputSendFailure;
+
 use super::*;
 
 /// Local outbound clip representation used for UI serialization

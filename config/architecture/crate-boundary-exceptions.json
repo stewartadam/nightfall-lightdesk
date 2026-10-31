@@ -28,26 +28,6 @@
       ]
     },
     {
-      "id": "network-io-desk-diagnostics",
-      "reason": "Network output domains use desk-owned diagnostics and notification integration.",
-      "edges": [
-        {
-          "from": "nightfall-output-artnet",
-          "to": "nightfall-desk",
-          "fromLayer": "plugins",
-          "toLayer": "cross-plugin",
-          "rule": "plugin-crate-must-not-depend-on-cross-plugin-or-host"
-        },
-        {
-          "from": "nightfall-output-sacn",
-          "to": "nightfall-desk",
-          "fromLayer": "plugins",
-          "toLayer": "cross-plugin",
-          "rule": "plugin-crate-must-not-depend-on-cross-plugin-or-host"
-        }
-      ]
-    },
-    {
       "id": "object-library-scene-objects",
       "reason": "Object library persistence directly imports and exports scene-object domain models.",
       "edges": [
