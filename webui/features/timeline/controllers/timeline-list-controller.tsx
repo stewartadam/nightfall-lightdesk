@@ -14,21 +14,7 @@ import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
-import type {
-  CrudListDataGridEditRequest,
-  CrudListDataGridSelectionRequest,
-} from "../../../components/widgets/crud/crud-list-data-grid";
-import {
-  createCrudPanelSearch,
-  createCrudPanelSearchQueryChangeEffect,
-} from "../../../components/widgets/crud/crud-panel-search";
-import type { CrudViewMode } from "../../../components/widgets/crud/crud-view-mode-toggle";
-import { createCrudGridClickSelection } from "../../../components/widgets/crud/model/crud-grid-click-selection";
-import { createCrudGridDragSelection } from "../../../components/widgets/crud/model/crud-grid-drag-selection";
-import {
-  changeCrudPanelViewMode,
-  loadCrudPanelViewMode,
-} from "../../../lib/crud-panel-view-mode";
+import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import {
@@ -71,33 +57,44 @@ export function createTimelineListController(
   );
   const $dockApi = useStore(dockApi);
   const panelId = props.initialPanelId ?? props.id;
-  const search = createCrudPanelSearch({
-    componentId: panelId,
-    label: "Search timelines",
+  const crud = createCrudListState<Timeline>({
+    panelId,
+    searchLabel: "Search timelines",
+    viewModeKey: "timeline-list",
+    orderedUids: (): readonly string[] => timelineIds(),
+    otherDialogOpen: () => isCreateModalOpen() || isEditModalOpen(),
   });
-  const [selectionMode, setSelectionMode] = createSignal(false);
-  const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
-    loadCrudPanelViewMode("timeline-list"),
-  );
-  const [selectedTimelineUids, setSelectedTimelineUids] = createSignal<
-    string[]
-  >([]);
+  const {
+    search,
+    selectionMode,
+    viewMode,
+    setViewMode,
+    setSelectionModeEnabled,
+    selectedCount,
+    select: selectTimelines,
+    clearSelection,
+    isDeleteModalOpen,
+    setIsDeleteModalOpen,
+    labelEditRequest,
+    listSelectionRequest,
+    setListSelectionRequest,
+    editingCardLabelUid,
+    setEditingCardLabelUid,
+    handleToggleSelectionMode,
+    handleEscape,
+    gridDragSelection,
+    gridClickSelection,
+  } = crud;
+  const selectedTimelineUids = crud.selectedUids;
+  const selectedTimelineUidSet = crud.selectedUidSet;
   const [isCreateModalOpen, setIsCreateModalOpen] = createSignal(false);
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
   const [createInitialId, setCreateInitialId] = createSignal(1);
   const [editingTimelineUid, setEditingTimelineUid] = createSignal<
     string | null
   >(null);
   const [editInitialId, setEditInitialId] = createSignal(1);
   const [editInitialLabel, setEditInitialLabel] = createSignal("");
-  const [labelEditRequest, setLabelEditRequest] =
-    createSignal<CrudListDataGridEditRequest<Timeline>>();
-  const [listSelectionRequest, setListSelectionRequest] =
-    createSignal<CrudListDataGridSelectionRequest<Timeline>>();
-  const [editingCardLabelUid, setEditingCardLabelUid] = createSignal<
-    string | null
-  >(null);
 
   /** Returns all timelines in stable display order before toolbar filtering. */
   const allTimelineList = createMemo(() => buildTimelineList($timelines()));
@@ -120,48 +117,10 @@ export function createTimelineListController(
       normalizeTimelineUid(timeline.identifiers.uid),
     ),
   );
-  /** Returns the number of timelines in the current selection. */
-  const selectedCount = createMemo(() => selectedTimelineUids().length);
-  /** Indexes selected timeline UIDs for constant-time presentation checks. */
-  const selectedTimelineUidSet = createMemo(
-    () => new Set(selectedTimelineUids()),
-  );
   /** Indexes all timelines by normalized UID for selection and reveal. */
   const timelineListByUid = createMemo(() =>
     indexTimelinesByUid(allTimelineList()),
   );
-
-  /** Replaces the current timeline selection with normalized UIDs. */
-  const selectTimelines = (uids: string[]) => {
-    setSelectedTimelineUids(uids);
-  };
-
-  /** Clears all selected timelines. */
-  const clearSelection = () => {
-    selectTimelines([]);
-  };
-  createCrudPanelSearchQueryChangeEffect(search, clearSelection);
-
-  /** Toggles grid selection mode and clears selection when leaving it. */
-  const setSelectionModeEnabled = (enabled: boolean) => {
-    setSelectionMode(enabled);
-    if (!enabled) {
-      clearSelection();
-    }
-  };
-
-  /** Persists and applies the timeline-list presentation mode. */
-  const setViewMode = (mode: CrudViewMode) => {
-    changeCrudPanelViewMode(
-      "timeline-list",
-      viewMode(),
-      mode,
-      setViewModeSignal,
-      {
-        onEnterListMode: () => setSelectionModeEnabled(false),
-      },
-    );
-  };
 
   /** Resolves the sole selected timeline for editing and Properties. */
   const selectedTimeline = createMemo(() => {
@@ -204,7 +163,7 @@ export function createTimelineListController(
         const timelineUid = normalizeTimelineUid(timeline.identifiers.uid);
         setViewMode("list");
         setSelectionModeEnabled(false);
-        setSelectedTimelineUids([timelineUid]);
+        selectTimelines([timelineUid]);
         setListSelectionRequest({
           row: timeline,
           requestId: request.requestId,
@@ -247,20 +206,11 @@ export function createTimelineListController(
   };
 
   /** Requests inline editing for the selected timeline label cell. */
-  const requestTimelineLabelEdit = (timeline: Timeline) => {
-    if (viewMode() !== "list") {
-      setEditingCardLabelUid(normalizeTimelineUid(timeline.identifiers.uid));
-      return;
-    }
-    /** Dispatches an imperative label-cell edit request to the data grid. */
-    const startEdit = () =>
-      setLabelEditRequest({
-        row: timeline,
-        columnId: "label",
-        requestId: Date.now(),
-      });
-    startEdit();
-  };
+  const requestTimelineLabelEdit = (timeline: Timeline) =>
+    crud.requestLabelEdit(
+      timeline,
+      normalizeTimelineUid(timeline.identifiers.uid),
+    );
 
   /** Resolves an internal timecode that can safely mirror timeline edits. */
   const editableLinkedTimecode = (timeline: Timeline): Timecode | undefined => {
@@ -293,7 +243,7 @@ export function createTimelineListController(
   const selectForContextMenu = (timeline: Timeline) => {
     const timelineUid = normalizeTimelineUid(timeline.identifiers.uid);
     if (selectedTimelineUidSet().has(timelineUid)) return;
-    setSelectedTimelineUids([timelineUid]);
+    selectTimelines([timelineUid]);
   };
 
   /** Opens timeline row actions, including inline label rename. */
@@ -517,46 +467,6 @@ export function createTimelineListController(
     setIsDeleteModalOpen(false);
   };
 
-  /** Toggles card selection mode while dialogs are inactive. */
-  const handleToggleSelectionMode = () => {
-    if (isCreateModalOpen() || isEditModalOpen() || isDeleteModalOpen()) return;
-    if (viewMode() === "list") return;
-    setSelectionModeEnabled(!selectionMode());
-  };
-
-  /** Clears dialogs-external transient state in keyboard priority order. */
-  const handleEscape = () => {
-    if (isCreateModalOpen() || isEditModalOpen() || isDeleteModalOpen()) {
-      return true;
-    }
-    if (search.clear()) {
-      return true;
-    }
-    if (selectedCount() > 0) {
-      clearSelection();
-      return true;
-    }
-    if (selectionMode()) {
-      setSelectionModeEnabled(false);
-      return true;
-    }
-    return false;
-  };
-
-  const gridDragSelection = createCrudGridDragSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: timelineIds,
-    selectedIds: selectedTimelineUids,
-    onSelectionChange: selectTimelines,
-  });
-  const gridClickSelection = createCrudGridClickSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: timelineIds,
-    selectedIds: selectedTimelineUids,
-    onSelectionChange: selectTimelines,
-    multiSelectOnPlainClick: true,
-  });
-
   useKeyboardShortcut({
     key: "n",
     handler: handleCreate,
@@ -606,7 +516,6 @@ export function createTimelineListController(
     selectionMode,
     viewMode,
     selectedTimelineUids,
-    setSelectedTimelineUids,
     isCreateModalOpen,
     setIsCreateModalOpen,
     isEditModalOpen,
