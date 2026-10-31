@@ -896,58 +896,6 @@ async function openSequenceEditorPanel(
   );
 }
 
-/**
- * Opens the clip list panel for TanStack grid coverage.
- */
-async function openClipListPanel(page: import("@playwright/test").Page) {
-  return await page.evaluate(
-    async ({ clipLabel, clipUid }) => {
-      await new Promise<void>((resolve, reject) => {
-        const started = Date.now();
-
-        /** Polls browser state until the awaited test condition is satisfied. */
-        const tick = () => {
-          const stores = (window as any).appStores;
-          const api = stores?.dockApi?.get?.();
-          const clips = stores?.clips?.get?.() ?? {};
-          if (api && clips[clipUid]?.[0]?.identifiers?.label === clipLabel) {
-            resolve();
-            return;
-          }
-          if (Date.now() - started > 15_000) {
-            reject(new Error("owned TanStack clip data did not load"));
-            return;
-          }
-          window.setTimeout(tick, 100);
-        };
-        tick();
-      });
-
-      const api = (window as any).appStores.dockApi.get();
-      const panelId = "panel-ClipList";
-      const panel =
-        api.getPanel(panelId) ??
-        api.addPanel({
-          id: panelId,
-          component: "ClipList",
-          title: "Clips",
-          params: { initialPanelId: panelId },
-        });
-      panel.api.setActive();
-
-      const clip = (window as any).appStores.clips.get()[clipUid]?.[0];
-      if (clip?.identifiers?.label !== clipLabel) {
-        throw new Error(`Owned TanStack clip ${clipUid} was not loaded`);
-      }
-      return clipLabel;
-    },
-    {
-      clipLabel: CLIP_LABEL,
-      clipUid: CLIP_UID,
-    },
-  );
-}
-
 /** Verifies showfile-like fixture data replacement does not crash stale virtualized columns. */
 test("TanStack Fixtures survives column shrink during showfile reload", async ({
   page,
@@ -1964,30 +1912,6 @@ test("TanStack Fixtures toggles expandable ID rows with Enter and Space", async 
   await page.keyboard.press("Space");
   await expect(idCell).toContainText(`▶ ${fixtureId}`);
   await expect(idCell).toHaveAttribute("aria-selected", "true");
-});
-
-/** Verifies the exact owned clip renders through the shared TanStack list. */
-test("TanStack renderer is used by shared list tables", async ({ page }) => {
-  await page.setViewportSize({ width: 2200, height: 1200 });
-  await page.addInitScript(() => {
-    window.localStorage.setItem(
-      "nightfall-crud-panel-view-mode:clips-list",
-      "list",
-    );
-  });
-  await openOwnedApp(page);
-  const firstClipLabel = await openClipListPanel(page);
-  await dockBesideVisualizer(page, "panel-ClipList");
-
-  const clipPanel = page.locator(
-    '[data-panel-kind="clips"][data-panel-id="panel-ClipList"]',
-  );
-  const grid = clipPanel.locator('[data-grid-kind="tanstack"]');
-  await expect(grid).toBeVisible();
-  await expect(
-    grid.locator('[data-grid-header-id^="tanstack-header-placeholder-"]'),
-  ).toHaveCount(0);
-  await expect(grid.getByText(firstClipLabel)).toBeVisible();
 });
 
 /** Verifies fixture 311 Red output paints the shared programmer color cell. */

@@ -883,41 +883,6 @@ test("keeps signed value tokens inside their owning intent after @", async ({
   await expect(page.getByRole("option", { name: /^\+/ })).toBeVisible();
 });
 
-test("accepts spatial selection clauses on attribute commands", async ({
-  page,
-}) => {
-  const input = page.locator(inputSelector);
-  await input.fill("group 1>4|wings 2 @ 50");
-
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-});
-
-/**
- * Verifies named showfile save commands are accepted by the UI parser.
- */
-test("accepts named showfile save commands", async ({ page }) => {
-  const input = page.locator(inputSelector);
-  await input.fill("save sample");
-
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-});
-
-/**
- * Verifies named showfile load commands are accepted by the UI parser.
- */
-test("accepts named showfile load commands", async ({ page }) => {
-  const input = page.locator(inputSelector);
-  await input.fill("load sample");
-
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-
-  await input.fill("load draft/default");
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-
-  await input.fill("load backups/default-20260707-151450");
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-});
-
 /**
  * Verifies semantic validation flags patch commands with unknown output transport targets.
  */

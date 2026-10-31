@@ -7,8 +7,11 @@
  */
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { TIMING_SPECS_ENABLED, TIMING_SPECS_SKIP_REASON } from "./perf-budgets";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
+
+test.skip(!TIMING_SPECS_ENABLED, TIMING_SPECS_SKIP_REASON);
 
 test.setTimeout(60_000);
 
