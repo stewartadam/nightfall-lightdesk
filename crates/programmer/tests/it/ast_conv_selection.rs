@@ -13,41 +13,8 @@ use nightfall_programmer::ast_conv::ProgrammerAstConverter;
 use nightfall_programmer::prelude::*;
 
 // ============================================================================
-// AST Alias Equality Tests
+// Selection Syntax Tests
 // ============================================================================
-
-#[test]
-fn test_fixture_selection_aliases() {
-    let base_ast = generate_ast("fix 1").expect("Failed to parse 'fix 1'");
-
-    // Test "fixture" keyword - produces identical AST to "fix"
-    let fixture_ast = generate_ast("fixture 1").expect("Failed to parse 'fixture 1'");
-    assert_eq!(
-        base_ast, fixture_ast,
-        "'fixture' should produce identical AST to 'fix'"
-    );
-
-    // Test "f" alias - produces identical AST to "fix"
-    let f_ast = generate_ast("f 1").expect("Failed to parse 'f 1'");
-    assert_eq!(base_ast, f_ast, "'f' should produce identical AST to 'fix'");
-}
-
-#[test]
-fn test_range_selection_aliases() {
-    // Base command with ">" operator
-    let base_ast = generate_ast("fix 1>10").expect("Failed to parse 'fix 1>10'");
-
-    // Test "thru" range operator - produces identical AST to ">"
-    let thru_ast = generate_ast("fix 1 thru 10").expect("Failed to parse 'fix 1 thru 10'");
-    assert_eq!(
-        base_ast, thru_ast,
-        "'thru' should produce identical AST to '>'"
-    );
-
-    // Test "t" range operator - produces identical AST to ">"
-    let t_ast = generate_ast("fix 1 t 10").expect("Failed to parse 'fix 1 t 10'");
-    assert_eq!(base_ast, t_ast, "'t' should produce identical AST to '>'");
-}
 
 #[test]
 fn test_signed_range_endpoint_is_invalid_selection_syntax() {

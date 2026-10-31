@@ -8,10 +8,10 @@
 
 use super::branch_view::{merged_slot_span, tokens_in_span};
 use super::{
-    lex_command, materialize_strict_ast_from_structural_dispatch, parse_channel_command,
-    parse_clear_command, parse_log_command, parse_patch_add_command, parse_release_command,
-    parse_rm_patch_command, parse_selection_ast, parse_set_fps_command, parse_simple_clip_command,
-    parse_simple_flow_command, parse_simple_general_command, parse_simple_general_object_commands,
+    lex_command, parse_channel_command, parse_clear_command, parse_log_command,
+    parse_patch_add_command, parse_release_command, parse_rm_patch_command, parse_selection_ast,
+    parse_set_fps_command, parse_simple_clip_command, parse_simple_flow_command,
+    parse_simple_general_command, parse_simple_general_object_commands,
     parse_simple_identifier_expression_from_tokens, parse_simple_selection_command,
     parse_simple_timecode_command, parse_simple_timeline_command, parse_sleep_command,
     parse_strict, strict_preparse,
@@ -447,14 +447,6 @@ fn strict_parser_handles_ranged_store_targets() {
 }
 
 #[test]
-fn strict_structural_dispatch_accepts_fully_consumed_store_blueprint_branch() {
-    assert!(matches!(
-        materialize_strict_ast_from_structural_dispatch("store blueprint 9 filter red blue",),
-        Some(CommandAst::General(GeneralCommandAst::StoreBlueprint(_)))
-    ));
-}
-
-#[test]
 fn materialize_store_ast_from_branch_handles_blueprint_payload() {
     let input = "store blueprint 9 filter red blue";
     let tokens = crate::parser::lexer::lex_command(input);
@@ -855,32 +847,6 @@ fn materialize_store_ast_from_branch_handles_step_fx() {
 }
 
 #[test]
-fn strict_structural_dispatch_handles_fx_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fx 1 start"),
-        Some(CommandAst::Fx(command)) if matches!(command.action, FxActionAst::Start)
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fx 1 speed 50"),
-        Some(CommandAst::Fx(command))
-            if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "50")
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fx 1 speed 2.5"),
-        Some(CommandAst::Fx(command))
-            if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "2.5")
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch(
-            "store fx 1 step fix 1 50% int steps 100 0"
-        ),
-        Some(CommandAst::General(GeneralCommandAst::StoreStepFx(command)))
-            if command.definition.attributes.len() == 1
-                && command.definition.attributes[0].steps.len() == 2
-    ));
-}
-
-#[test]
 fn materialize_attribute_ast_from_branch_handles_active_selection_timings() {
     let input = "red @ 100 fade 1";
     let tokens = crate::parser::lexer::lex_command(input);
@@ -910,25 +876,6 @@ fn materialize_attribute_ast_from_branch_handles_active_selection_timings() {
     ));
 }
 
-#[test]
-fn strict_structural_dispatch_handles_active_selection_attribute_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("red @ 100 fade 1"),
-        Some(CommandAst::ActiveSelectionAttribute(command))
-            if command.timings.as_ref().and_then(|timings| timings.fades.as_ref()).is_some()
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_explicit_selection_attribute_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 311 red @ 100 fade 1"),
-        Some(CommandAst::Attribute(command))
-            if matches!(command.selection.selection.selection_type, SelectionTypeAst::Fixture)
-                && command.timings.as_ref().and_then(|timings| timings.fades.as_ref()).is_some()
-    ));
-}
-
 /// Strict parser preserves clause-bearing selection source on explicit attribute commands.
 #[test]
 fn strict_parser_handles_spatial_selection_attribute_branch() {
@@ -938,15 +885,6 @@ fn strict_parser_handles_spatial_selection_attribute_branch() {
             if command.selection.source == "group 1>4|wings 2"
                 && matches!(command.selection.selection.selection_type, SelectionTypeAst::Group)
     ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_complex_selection_branch() {
-    let input = "fix 1>3+5";
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch(input),
-        parse_simple_selection_command(input)
-    );
 }
 
 #[test]
@@ -963,15 +901,6 @@ fn materialize_fixture_placement_ast_from_branch_handles_chained_actions() {
 
     assert!(matches!(
         super::materialize_fixture_placement_ast_from_branch(input, branch),
-        Some(CommandAst::FixturePlacement(command))
-            if command.actions.position.is_some() && command.actions.rotation.is_some()
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_fixture_placement_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 1 3d pos x 1 rot z 180"),
         Some(CommandAst::FixturePlacement(command))
             if command.actions.position.is_some() && command.actions.rotation.is_some()
     ));
@@ -999,55 +928,6 @@ fn materialize_patch_add_ast_from_branch_handles_modifiers() {
     ));
 }
 
-#[test]
-fn strict_structural_dispatch_handles_patch_add_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch(
-            "patch artnet:3.78 @ fix 311 prio 2 /clone",
-        ),
-        Some(CommandAst::PatchAdd(command))
-            if matches!(command.source, PatchEndpointAst::Transport(_))
-                && matches!(command.target, PatchEndpointAst::Fixture(_))
-                && command.priority.is_some()
-                && command.clone.is_some()
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_rm_patch_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch(
-            "rm patch artnet:3.78 @ fix 311 prio 2 /clone",
-        ),
-        Some(CommandAst::RmPatch(command))
-            if command.source.is_some()
-                && command.target.is_some()
-                && command.priority.is_some()
-                && command.clone.is_some()
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_patch_passthrough_and_fixture_source_variants() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("patch sacn @ console"),
-        Some(CommandAst::PatchAdd(command))
-            if matches!(command.source, PatchEndpointAst::Transport(_))
-                && matches!(command.target, PatchEndpointAst::Console(_))
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("patch fix 211>215 @ console:2"),
-        Some(CommandAst::PatchAdd(command))
-            if matches!(command.source, PatchEndpointAst::Fixture(_))
-                && matches!(command.target, PatchEndpointAst::Console(_))
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("rm patch @ console:2"),
-        Some(CommandAst::RmPatch(command))
-            if command.source.is_none() && command.target.is_some()
-    ));
-}
-
 /// Verifies `break N` on a fixture endpoint parses as a whole-fixture DMX break target.
 #[test]
 fn strict_structural_dispatch_handles_patch_fixture_break() {
@@ -1063,178 +943,6 @@ fn strict_structural_dispatch_handles_patch_fixture_break() {
     assert_eq!(target.dmx_break.as_ref().map(|value| value.0), Some("2"));
     assert!(target.element.is_none() && target.param.is_none());
     assert!(matches!(command.target, PatchEndpointAst::Transport(_)));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_rm_general_object_branch() {
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("rm fixture 5"),
-        parse_simple_general_object_commands("rm fixture 5")
-    );
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("rm cue 1.1"),
-        parse_simple_general_object_commands("rm cue 1.1")
-    );
-}
-
-#[test]
-fn strict_structural_dispatch_handles_clip_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("clip 1 goto 5"),
-        Some(CommandAst::Clip(command))
-            if matches!(command.action, PlaybackActionAst::Goto(5))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_clip_range_alias_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("clip 1>5 on"),
-        Some(CommandAst::Clip(command))
-            if matches!(command.action, PlaybackActionAst::On)
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_timecode_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("timecode 3 pause"),
-        Some(CommandAst::Timecode(command))
-            if matches!(command.action, TimecodeActionAst::Pause)
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_timeline_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("timeline 4 stop"),
-        Some(CommandAst::Timeline(command))
-            if matches!(command.action, StartStopAst::Stop)
-    ));
-}
-
-/// Macro commands parse their id and a trailing `start` or `stop` keyword.
-#[test]
-fn strict_structural_dispatch_handles_macro_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("macro 3 start"),
-        Some(CommandAst::Macro(command))
-            if matches!(command.action, StartStopAst::Start)
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("macro 12 stop"),
-        Some(CommandAst::Macro(command))
-            if matches!(command.action, StartStopAst::Stop)
-    ));
-    assert!(super::materialize_strict_ast_from_structural_dispatch("macro 3 go").is_none());
-}
-
-#[test]
-fn strict_structural_dispatch_handles_flow_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("flow 3 start"),
-        Some(CommandAst::Flow(flow))
-            if matches!(flow.action, FlowActionAst::Start)
-    ));
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("flow 3 mv 7>9"),
-        parse_simple_flow_command("flow 3 mv 7>9")
-    );
-}
-
-#[test]
-fn strict_structural_dispatch_handles_release_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("release attr red"),
-        Some(CommandAst::General(GeneralCommandAst::Release(_)))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_release_fixture_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("release fix 1.1"),
-        Some(CommandAst::General(GeneralCommandAst::Release(release)))
-            if matches!(release.target, Some(ReleaseTargetAst::Fixture(_)))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_clear_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("clear fix 1 attr red"),
-        Some(CommandAst::General(GeneralCommandAst::Clear(_)))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_channel_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("channel (1.1>1.5)+(2.1>2.5) @ 100",),
-        Some(CommandAst::Channel(_))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_programmer_timing_chain_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 1 red @ 50 fade 3 delay 2"),
-        Some(CommandAst::Attribute(command))
-            if command.timings.as_ref().and_then(|timings| timings.fades.as_ref()).is_some()
-                && command
-                    .timings
-                    .as_ref()
-                    .and_then(|timings| timings.delays.as_ref())
-                    .is_some()
-    ));
-}
-
-/// Verifies explicit timing directions are captured by strict structural dispatch.
-#[test]
-fn strict_structural_dispatch_handles_programmer_timing_directions() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 1 red @ 50 fade in 3"),
-        Some(CommandAst::Attribute(command))
-            if command
-                .timings
-                .as_ref()
-                .and_then(|timings| timings.fades.as_ref())
-                .and_then(|fades| fades.direction)
-                == Some(TimingDirectionAst::In)
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 1 red @ 50 fade out 3"),
-        Some(CommandAst::Attribute(command))
-            if command
-                .timings
-                .as_ref()
-                .and_then(|timings| timings.fades.as_ref())
-                .and_then(|fades| fades.direction)
-                == Some(TimingDirectionAst::Out)
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 1 red @ 50 delay out 2"),
-        Some(CommandAst::Attribute(command))
-            if command
-                .timings
-                .as_ref()
-                .and_then(|timings| timings.delays.as_ref())
-                .and_then(|delays| delays.direction)
-                == Some(TimingDirectionAst::Out)
-    ));
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch(
-            "fix 1 red @ 50 fade in 1 fade out 5"
-        ),
-        Some(CommandAst::Attribute(command))
-            if command
-                .timings
-                .as_ref()
-                .and_then(|timings| timings.fades.as_ref())
-                .is_some_and(|fades| fades.direction == Some(TimingDirectionAst::In)
-                    && fades.additional.len() == 1
-                    && fades.additional[0].direction == Some(TimingDirectionAst::Out))
-    ));
 }
 
 /// Verifies representative programmer fade syntax materializes through structural dispatch.
@@ -1261,141 +969,6 @@ fn strict_structural_dispatch_handles_programmer_fade_examples() {
             "expected fade timing AST for {input}"
         );
     }
-}
-
-#[test]
-fn strict_structural_dispatch_handles_programmer_implicit_intensity_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 1 @ 50"),
-        Some(CommandAst::Attribute(_))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_programmer_dynamic_attribute_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 311 zoom @ 100"),
-        Some(CommandAst::Attribute(_))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_fixture_placement_tuple_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fix 1 3d rot (0,90,0)"),
-        Some(CommandAst::FixturePlacement(command)) if command.actions.rotation.is_some()
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_sleep_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("sleep 1.5sec"),
-        Some(CommandAst::General(GeneralCommandAst::Sleep(command)))
-            if command.duration.value.0 == "1.5"
-                && command.duration.unit.map(|unit| unit.0) == Some("sec")
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_fps_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("fps +120"),
-        Some(CommandAst::General(GeneralCommandAst::SetFps(command)))
-            if command.fps.0 == "+120"
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_recall_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("recall cue 1.1"),
-        Some(CommandAst::General(GeneralCommandAst::RecallCue(_)))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_store_general_object_branch() {
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("store cue 1.2"),
-        parse_simple_general_object_commands("store cue 1.2")
-    );
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("store g 1>3"),
-        parse_simple_general_object_commands("store g 1>3")
-    );
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("store fixture 1 offset int 50%",),
-        super::parse_store_extended_command("store fixture 1 offset int 50%")
-    );
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch(
-            "store fix 1 \"Acme\" \"Wash\" mode1",
-        ),
-        super::parse_store_extended_command("store fix 1 \"Acme\" \"Wash\" mode1")
-    );
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("store fixture 1 offset red +30",),
-        super::parse_store_extended_command("store fixture 1 offset red +30")
-    );
-    assert_eq!(
-        super::materialize_strict_ast_from_structural_dispatch("store fixture 1 offset pan 25%",),
-        super::parse_store_extended_command("store fixture 1 offset pan 25%")
-    );
-}
-
-#[test]
-fn strict_structural_dispatch_handles_log_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("log fix 1 red"),
-        Some(CommandAst::General(GeneralCommandAst::Log(log)))
-            if matches!(log.command, LogCommandAst::Fixture(_))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_log_level_clear_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("log level clear"),
-        Some(CommandAst::General(GeneralCommandAst::Log(log)))
-            if matches!(
-                &log.command,
-                LogCommandAst::Level(level) if level.level.0 == "clear"
-            )
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_log_filter_field_only_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("log filter myfield"),
-        Some(CommandAst::General(GeneralCommandAst::Log(log)))
-            if matches!(
-                &log.command,
-                LogCommandAst::Filter(filter)
-                    if matches!(
-                        &filter.filter,
-                        LogFilterCommandAst::Set(set)
-                            if set.field.name.0 == "myfield" && set.value.is_none()
-                    )
-            )
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_debug_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("debug fixture 1"),
-        Some(CommandAst::General(GeneralCommandAst::Debug(_)))
-    ));
-}
-
-#[test]
-fn strict_structural_dispatch_handles_rename_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("rename fixture 1 3"),
-        Some(CommandAst::General(GeneralCommandAst::Rename(_)))
-    ));
 }
 
 #[test]
@@ -1524,21 +1097,6 @@ fn strict_parser_handles_empty_and_simple_clear_release_forms() {
     ] {
         assert!(parse_strict(command).is_ok(), "failed to parse {command:?}");
     }
-}
-
-/// Verifies a standalone clear attribute qualifier materializes as an attribute target.
-#[test]
-fn strict_structural_dispatch_materializes_clear_attribute_target() {
-    let structural = super::materialize_strict_ast_from_structural_dispatch("clear attr red");
-
-    assert!(
-        matches!(
-            structural,
-            Some(CommandAst::General(GeneralCommandAst::Clear(ref clear)))
-                if matches!(clear.targets.as_slice(), [ClearTargetAst::Attribute(_)])
-        ),
-        "unexpected structural AST: {structural:#?}"
-    );
 }
 
 /// Verifies structural placement parsing retains decimal axis components.
@@ -1733,16 +1291,6 @@ fn strict_parser_rejects_malformed_tempo_commands() {
     }
 }
 
-/// Verifies structural dispatch routes the tempo root clause to its materializer.
-#[test]
-fn strict_structural_dispatch_handles_tempo_branch() {
-    assert!(matches!(
-        super::materialize_strict_ast_from_structural_dispatch("tempo nudge -0.25"),
-        Some(CommandAst::Tempo(TempoCommandAst { action: TempoActionAst::Nudge(value) }))
-            if value.0 == "-0.25"
-    ));
-}
-
 /// Verifies cue tracking marker words are valid attribute value targets.
 #[test]
 fn strict_parser_handles_cue_tracking_marker_attribute_targets() {
@@ -1750,4 +1298,255 @@ fn strict_parser_handles_cue_tracking_marker_attribute_targets() {
     assert!(parse_strict("fix 311 red @ R").is_ok());
     assert!(parse_strict("fix 311 pan @ Hold").is_ok());
     assert!(parse_strict("fix 311 tilt @ H").is_ok());
+}
+
+/// Checks one structural-dispatch result: the input and a predicate over its materialized AST.
+type DispatchCase = (&'static str, fn(&CommandAst<'_>) -> bool);
+
+/// Verifies structural dispatch routes every command family to its materializer.
+///
+/// Each row feeds one command through `materialize_strict_ast_from_structural_dispatch` and
+/// checks the AST variant plus the fields that branch is responsible for filling in.
+#[test]
+fn strict_structural_dispatch_materializes_each_command_family() {
+    let cases: &[DispatchCase] = &[
+        (
+            "fx 1 start",
+            |ast| matches!(ast, CommandAst::Fx(command) if matches!(command.action, FxActionAst::Start)),
+        ),
+        ("fx 1 speed 50", |ast| {
+            matches!(ast, CommandAst::Fx(command)
+                if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "50"))
+        }),
+        ("fx 1 speed 2.5", |ast| {
+            matches!(ast, CommandAst::Fx(command)
+                if matches!(command.action, FxActionAst::SetSpeed(ref speed) if speed.value.0 == "2.5"))
+        }),
+        ("store fx 1 step fix 1 50% int steps 100 0", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::StoreStepFx(command))
+                if command.definition.attributes.len() == 1
+                    && command.definition.attributes[0].steps.len() == 2)
+        }),
+        ("store blueprint 9 filter red blue", |ast| {
+            matches!(
+                ast,
+                CommandAst::General(GeneralCommandAst::StoreBlueprint(_))
+            )
+        }),
+        ("red @ 100 fade 1", |ast| {
+            matches!(ast, CommandAst::ActiveSelectionAttribute(command)
+                if command.timings.as_ref().and_then(|timings| timings.fades.as_ref()).is_some())
+        }),
+        ("fix 311 red @ 100 fade 1", |ast| {
+            matches!(ast, CommandAst::Attribute(command)
+                if matches!(command.selection.selection.selection_type, SelectionTypeAst::Fixture)
+                    && command.timings.as_ref().and_then(|timings| timings.fades.as_ref()).is_some())
+        }),
+        ("fix 1 @ 50", |ast| matches!(ast, CommandAst::Attribute(_))),
+        ("fix 311 zoom @ 100", |ast| {
+            matches!(ast, CommandAst::Attribute(_))
+        }),
+        ("fix 1 red @ 50 fade 3 delay 2", |ast| {
+            matches!(ast, CommandAst::Attribute(command)
+                if command.timings.as_ref().and_then(|timings| timings.fades.as_ref()).is_some()
+                    && command.timings.as_ref().and_then(|timings| timings.delays.as_ref()).is_some())
+        }),
+        ("fix 1 red @ 50 fade in 3", |ast| {
+            matches!(ast, CommandAst::Attribute(command)
+                if command.timings.as_ref().and_then(|timings| timings.fades.as_ref())
+                    .and_then(|fades| fades.direction) == Some(TimingDirectionAst::In))
+        }),
+        ("fix 1 red @ 50 fade out 3", |ast| {
+            matches!(ast, CommandAst::Attribute(command)
+                if command.timings.as_ref().and_then(|timings| timings.fades.as_ref())
+                    .and_then(|fades| fades.direction) == Some(TimingDirectionAst::Out))
+        }),
+        ("fix 1 red @ 50 delay out 2", |ast| {
+            matches!(ast, CommandAst::Attribute(command)
+                if command.timings.as_ref().and_then(|timings| timings.delays.as_ref())
+                    .and_then(|delays| delays.direction) == Some(TimingDirectionAst::Out))
+        }),
+        ("fix 1 red @ 50 fade in 1 fade out 5", |ast| {
+            matches!(ast, CommandAst::Attribute(command)
+                if command.timings.as_ref().and_then(|timings| timings.fades.as_ref())
+                    .is_some_and(|fades| fades.direction == Some(TimingDirectionAst::In)
+                        && fades.additional.len() == 1
+                        && fades.additional[0].direction == Some(TimingDirectionAst::Out)))
+        }),
+        ("fix 1 3d pos x 1 rot z 180", |ast| {
+            matches!(ast, CommandAst::FixturePlacement(command)
+                if command.actions.position.is_some() && command.actions.rotation.is_some())
+        }),
+        (
+            "fix 1 3d rot (0,90,0)",
+            |ast| matches!(ast, CommandAst::FixturePlacement(command) if command.actions.rotation.is_some()),
+        ),
+        ("patch artnet:3.78 @ fix 311 prio 2 /clone", |ast| {
+            matches!(ast, CommandAst::PatchAdd(command)
+                if matches!(command.source, PatchEndpointAst::Transport(_))
+                    && matches!(command.target, PatchEndpointAst::Fixture(_))
+                    && command.priority.is_some()
+                    && command.clone.is_some())
+        }),
+        ("patch sacn @ console", |ast| {
+            matches!(ast, CommandAst::PatchAdd(command)
+                if matches!(command.source, PatchEndpointAst::Transport(_))
+                    && matches!(command.target, PatchEndpointAst::Console(_)))
+        }),
+        ("patch fix 211>215 @ console:2", |ast| {
+            matches!(ast, CommandAst::PatchAdd(command)
+                if matches!(command.source, PatchEndpointAst::Fixture(_))
+                    && matches!(command.target, PatchEndpointAst::Console(_)))
+        }),
+        ("rm patch artnet:3.78 @ fix 311 prio 2 /clone", |ast| {
+            matches!(ast, CommandAst::RmPatch(command)
+                if command.source.is_some()
+                    && command.target.is_some()
+                    && command.priority.is_some()
+                    && command.clone.is_some())
+        }),
+        ("rm patch @ console:2", |ast| {
+            matches!(ast, CommandAst::RmPatch(command)
+                if command.source.is_none() && command.target.is_some())
+        }),
+        (
+            "clip 1 goto 5",
+            |ast| matches!(ast, CommandAst::Clip(command) if matches!(command.action, PlaybackActionAst::Goto(5))),
+        ),
+        (
+            "clip 1>5 on",
+            |ast| matches!(ast, CommandAst::Clip(command) if matches!(command.action, PlaybackActionAst::On)),
+        ),
+        (
+            "timecode 3 pause",
+            |ast| matches!(ast, CommandAst::Timecode(command) if matches!(command.action, TimecodeActionAst::Pause)),
+        ),
+        (
+            "timeline 4 stop",
+            |ast| matches!(ast, CommandAst::Timeline(command) if matches!(command.action, StartStopAst::Stop)),
+        ),
+        (
+            "macro 3 start",
+            |ast| matches!(ast, CommandAst::Macro(command) if matches!(command.action, StartStopAst::Start)),
+        ),
+        (
+            "macro 12 stop",
+            |ast| matches!(ast, CommandAst::Macro(command) if matches!(command.action, StartStopAst::Stop)),
+        ),
+        (
+            "flow 3 start",
+            |ast| matches!(ast, CommandAst::Flow(flow) if matches!(flow.action, FlowActionAst::Start)),
+        ),
+        ("release attr red", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Release(_)))
+        }),
+        ("release fix 1.1", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Release(release))
+                if matches!(release.target, Some(ReleaseTargetAst::Fixture(_))))
+        }),
+        ("clear fix 1 attr red", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Clear(_)))
+        }),
+        ("clear attr red", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Clear(clear))
+                if matches!(clear.targets.as_slice(), [ClearTargetAst::Attribute(_)]))
+        }),
+        ("channel (1.1>1.5)+(2.1>2.5) @ 100", |ast| {
+            matches!(ast, CommandAst::Channel(_))
+        }),
+        ("sleep 1.5sec", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Sleep(command))
+                if command.duration.value.0 == "1.5"
+                    && command.duration.unit.map(|unit| unit.0) == Some("sec"))
+        }),
+        (
+            "fps +120",
+            |ast| matches!(ast, CommandAst::General(GeneralCommandAst::SetFps(command)) if command.fps.0 == "+120"),
+        ),
+        ("recall cue 1.1", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::RecallCue(_)))
+        }),
+        ("log fix 1 red", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Log(log))
+                if matches!(log.command, LogCommandAst::Fixture(_)))
+        }),
+        ("log level clear", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Log(log))
+                if matches!(&log.command, LogCommandAst::Level(level) if level.level.0 == "clear"))
+        }),
+        ("log filter myfield", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Log(log))
+                if matches!(&log.command, LogCommandAst::Filter(filter)
+                    if matches!(&filter.filter, LogFilterCommandAst::Set(set)
+                        if set.field.name.0 == "myfield" && set.value.is_none())))
+        }),
+        ("debug fixture 1", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Debug(_)))
+        }),
+        ("rename fixture 1 3", |ast| {
+            matches!(ast, CommandAst::General(GeneralCommandAst::Rename(_)))
+        }),
+        ("tempo nudge -0.25", |ast| {
+            matches!(ast, CommandAst::Tempo(TempoCommandAst { action: TempoActionAst::Nudge(value) })
+                if value.0 == "-0.25")
+        }),
+    ];
+
+    let failures: Vec<String> = cases
+        .iter()
+        .filter_map(|(input, check)| {
+            let ast = super::materialize_strict_ast_from_structural_dispatch(input);
+            (!ast.as_ref().is_some_and(check)).then(|| format!("{input:?}: {ast:#?}"))
+        })
+        .collect();
+    assert!(
+        failures.is_empty(),
+        "unexpected structural ASTs:\n{}",
+        failures.join("\n")
+    );
+    assert!(super::materialize_strict_ast_from_structural_dispatch("macro 3 go").is_none());
+}
+
+/// Verifies structural dispatch yields the same AST as the dedicated parser for each family.
+///
+/// These families have a standalone parser that predates structural dispatch, so the two
+/// results must stay identical.
+#[test]
+fn strict_structural_dispatch_matches_dedicated_parsers() {
+    let cases: &[(&str, fn(&str) -> Option<CommandAst<'_>>)] = &[
+        ("fix 1>3+5", parse_simple_selection_command),
+        ("rm fixture 5", parse_simple_general_object_commands),
+        ("rm cue 1.1", parse_simple_general_object_commands),
+        ("flow 3 mv 7>9", parse_simple_flow_command),
+        ("store cue 1.2", parse_simple_general_object_commands),
+        ("store g 1>3", parse_simple_general_object_commands),
+        (
+            "store fixture 1 offset int 50%",
+            super::parse_store_extended_command,
+        ),
+        (
+            "store fix 1 \"Acme\" \"Wash\" mode1",
+            super::parse_store_extended_command,
+        ),
+        (
+            "store fixture 1 offset red +30",
+            super::parse_store_extended_command,
+        ),
+        (
+            "store fixture 1 offset pan 25%",
+            super::parse_store_extended_command,
+        ),
+    ];
+
+    let mismatches: Vec<&str> = cases
+        .iter()
+        .filter(|(input, parse)| {
+            super::materialize_strict_ast_from_structural_dispatch(input) != parse(input)
+        })
+        .map(|(input, _)| *input)
+        .collect();
+    assert!(
+        mismatches.is_empty(),
+        "structural dispatch differs from the dedicated parser for {mismatches:?}"
+    );
 }

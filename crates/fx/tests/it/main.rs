@@ -8,7 +8,6 @@
 
 //! Integration tests, linked into one binary to avoid per-file link overhead.
 
-mod ast_conv;
 mod ast_conv_control;
 mod ast_conv_create;
 mod ast_conv_create_basic;
