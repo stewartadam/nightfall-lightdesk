@@ -102,33 +102,8 @@ pub(super) fn apply_color_path_samples(
             normalize_emitter_value(&blue_parameter, blue_target),
         ]);
         let parent_ratio = color_path_transition_ratio(layer, group, compositing_context);
-        let brightness_multiplier =
-            color_path_midpoint_brightness_multiplier(&group.path, parent_ratio);
-        let sampled = ColorPathRgb {
-            red: sample_color_path(
-                &group.path,
-                start,
-                end,
-                color_path_channel_ratio(&group.path, parent_ratio, &attributes[0]),
-            )
-            .red,
-            green: sample_color_path(
-                &group.path,
-                start,
-                end,
-                color_path_channel_ratio(&group.path, parent_ratio, &attributes[1]),
-            )
-            .green,
-            blue: sample_color_path(
-                &group.path,
-                start,
-                end,
-                color_path_channel_ratio(&group.path, parent_ratio, &attributes[2]),
-            )
-            .blue,
-        }
-        .scaled(brightness_multiplier)
-        .clamped();
+        let sampled =
+            sample_color_path_with_timing(&group.path, start, end, parent_ratio, &attributes);
         let (sampled, decomposed_emitters) = if group.model == MaterializedColorPathModel::Rgb {
             let decomposed_emitters =
                 sample_decomposed_rgb_emitters(group, start, end, parent_ratio);
@@ -465,86 +440,6 @@ fn color_path_scalar_transition_ratio(
         transition.fade_in,
         transition.delay_in,
     )
-}
-
-/// Resolves path progress after applying path-level and attribute-level timing controls.
-fn color_path_channel_ratio(path: &ColorPath, parent_ratio: f32, attribute: &Attribute) -> f32 {
-    path.timing
-        .attributes
-        .get(attribute)
-        .map(|timing| {
-            timed_ratio(
-                parent_ratio,
-                timing.delay_percent,
-                timing.time_percent,
-                timing.curve,
-            )
-        })
-        .unwrap_or_else(|| color_path_global_ratio(path, parent_ratio))
-}
-
-/// Resolves path-level timing from in-color and out-color controls.
-fn color_path_global_ratio(path: &ColorPath, parent_ratio: f32) -> f32 {
-    match (&path.timing.in_color, &path.timing.out_color) {
-        (Some(in_color), Some(out_color)) => {
-            (timed_ratio_linear(parent_ratio, in_color.delay_percent, in_color.time_percent)
-                + timed_ratio_linear(
-                    parent_ratio,
-                    out_color.delay_percent,
-                    out_color.time_percent,
-                ))
-                / 2.0
-        }
-        (Some(in_color), None) => {
-            timed_ratio_linear(parent_ratio, in_color.delay_percent, in_color.time_percent)
-        }
-        (None, Some(out_color)) => timed_ratio_linear(
-            parent_ratio,
-            out_color.delay_percent,
-            out_color.time_percent,
-        ),
-        (None, None) => parent_ratio,
-    }
-}
-
-/// Resolves a linear timing ratio from fractional delay and duration controls.
-fn timed_ratio_linear(parent_ratio: f32, delay_percent: f32, time_percent: f32) -> f32 {
-    let parent_ratio = parent_ratio.clamp(0.0, 1.0);
-    let delay_percent = delay_percent.clamp(0.0, 1.0);
-    let time_percent = time_percent.max(0.0);
-
-    if parent_ratio < delay_percent {
-        return 0.0;
-    }
-    if time_percent <= f32::EPSILON {
-        return 1.0;
-    }
-
-    ((parent_ratio - delay_percent) / time_percent).clamp(0.0, 1.0)
-}
-
-/// Resolves the midpoint brightness envelope multiplier for a parent fade ratio.
-fn color_path_midpoint_brightness_multiplier(path: &ColorPath, parent_ratio: f32) -> f32 {
-    let midpoint_brightness = path.timing.brightness_percent.unwrap_or(1.0).max(0.0);
-    let interior_weight = 1.0 - ((parent_ratio.clamp(0.0, 1.0) * 2.0) - 1.0).abs();
-    1.0 + (midpoint_brightness - 1.0) * interior_weight
-}
-
-/// Maps a parent transition ratio through one fractional delay/fade timing control.
-fn timed_ratio(parent_ratio: f32, delay_percent: f32, time_percent: f32, curve: FadeCurve) -> f32 {
-    let parent_ratio = parent_ratio.clamp(0.0, 1.0);
-    let delay_percent = delay_percent.clamp(0.0, 1.0);
-    let time_percent = time_percent.max(0.0);
-
-    if parent_ratio < delay_percent {
-        return 0.0;
-    }
-    if time_percent <= f32::EPSILON {
-        return 1.0;
-    }
-
-    let ratio = ((parent_ratio - delay_percent) / time_percent).clamp(0.0, 1.0);
-    curve.evaluate_at(ratio)
 }
 
 /// Samples a scalar color emitter through the color path curve and timing.

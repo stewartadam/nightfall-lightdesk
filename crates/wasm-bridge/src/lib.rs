@@ -45,6 +45,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 mod board_placement;
+mod color_path;
 mod fixture_evaluation;
 
 pub use fixture_evaluation::{fixture_reading_stride, FixtureChannelEvaluator};
