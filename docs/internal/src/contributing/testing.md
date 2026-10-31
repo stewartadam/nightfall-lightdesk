@@ -67,7 +67,7 @@ Saving and loading a show must not change it. The showfile event tests in `app-r
 
 - A save, load, save cycle produces identical snapshot JSON.
 - Loading into a fresh world twice in a row gives the same result, so a restart doesn't drift.
-- One `roundtrip_preserves_*` test per domain, such as patch bindings, boards, desk settings, and MIDI and OSC mappings, checks that domain survives a round trip.
+- One `roundtrip_preserves_*` test per domain, such as DMX routes, boards, desk settings, and MIDI and OSC mappings, checks that domain survives a round trip.
 
 When you add a persisted domain or field, seed it in the test world and add a round-trip test for it. If the save or load system reads a new resource, add it to `setup_world` too.
 
@@ -90,11 +90,11 @@ Web UI node tests are TypeScript files named `*.node.test.ts`, anywhere under `w
 
 Some node tests read the source tree instead of running code. `webui/architecture-boundaries.node.test.ts` enforces the web UI's layer import rules against an exception list, and the `shared-*` tests keep dialogs, portals, menus, tables, and segmented controls on their shared components. The [web UI architecture](../architecture/web-ui.md#import-and-component-rules) page lists each rule and its test. When one fails, move the code to the right layer rather than adding an exception.
 
-Two scripts check the Rust side in the same spirit. `pnpm run check:crate-boundaries` fails when a crate depends on a crate in a role it must not use, as the [crate map](../architecture/crate-map.md#roles-and-dependency-rules) describes. `pnpm run check:command-architecture` fails when code reintroduces retired command types or moves domain-owned command types into the engine crate. They're scripts, not node tests, and the commit hooks run them.
+Two scripts check the Rust side in the same spirit. `pnpm run check:crate-boundaries` fails when a crate depends on a crate in a higher layer, or a plugin crate depends on another plugin crate, as the [crate layers and dependency rules](../architecture/crate-map.md#architectural-layers-and-crate-dependency-rules) describe. `pnpm run check:command-architecture` fails when code reintroduces retired command types or moves command and operation types that other crates own into the engine crate. They're scripts, not node tests, and the commit hooks run them.
 
 ## Script tests
 
-The repository's tooling has its own tests in `scripts/*.node.test.mjs`, run with `pnpm run test:scripts`. They cover the Playwright wrapper, the WASM build, release notes, distribution notices, and the worktree tooling. Several of them pin down CI behavior:
+The repository's tooling has its own tests in `scripts/*.node.test.mjs`, run with `pnpm run test:scripts`. They cover the Playwright wrapper, the WASM build, release notes, distribution notices, and the [worktree tooling](../architecture/worktree-tooling.md). Several of them pin down CI behavior:
 
 - `ci-scope.node.test.mjs` checks which jobs each changed path selects.
 - `ci-validation.node.test.mjs` parses `ci.yml` and checks job dependencies and the **CI gate** logic.
@@ -160,28 +160,40 @@ The push hook can take several minutes on a cold build. Let it finish. CI runs t
 
 ## How CI picks what to run
 
-CI doesn't run everything for every pull request. `scripts/ci-scope.mjs` reads the list of changed paths and sets flags that turn jobs on or off. The following diagram shows the main decisions for a pull request:
+CI doesn't run everything for every pull request. `scripts/ci-scope.mjs` reads the changed paths and any changed pins in `config/cargo-tools.json`, and sets flags that turn jobs on or off. The selections nest: Rust inputs also select the native jobs, and native inputs also select the app jobs. The following diagram shows the main decisions for a pull request:
 
 ```mermaid
 flowchart TB
   accTitle: How a pull request's changes select CI jobs
-  accDescr: Every pull request runs the hook, script, web UI, and WASM jobs and builds the native backend. Rust inputs add Rust tests, doctests, desktop shell tests, and Clippy. Documentation sources add the book build. A pull request that isn't a draft adds the Chromium product flows.
-  pr([Pull request changes]) --> always[Prek hooks and script tests<br/>TypeScript and web UI node tests<br/>WASM builds<br/>Native backend build]
-  pr --> rust{Touches Rust inputs?}
-  pr --> docs{Touches docs/ or CI scope?}
-  pr --> draft{Draft?}
+  accDescr: A draft pull request builds only its browser preview, and only when it opens. A pull request that is ready for review always runs the hook and script tests. App inputs add the WASM builds and the web UI node tests. App inputs outside the worktree dashboard add the native backend build and the Chromium product flows. Rust inputs add Rust tests, doctests, desktop shell tests, and Clippy. Documentation inputs add the book build.
+  pr([Pull request changes]) --> draft{Draft?}
+  draft -- yes --> preview[Browser preview only,<br/>built when the draft opens]
+  draft -- no --> always[Prek hooks and script tests]
+  draft -- no --> app{Touches app inputs?}
+  draft -- no --> docs{Touches documentation inputs?}
+  app -- yes --> appjobs[WASM builds<br/>TypeScript and web UI node tests]
+  app -- yes --> native{Touches more than<br/>the worktree dashboard?}
+  native -- yes --> nativejobs[Native backend build<br/>Chromium product flows]
+  native -- yes --> rust{Touches Rust inputs?}
   rust -- yes --> rusttests[nextest, doctests,<br/>desktop shell tests, Clippy]
   docs -- yes --> book[Documentation build]
-  draft -- no --> flows[Chromium product flows]
 ```
 
-### Jobs every pull request runs
+Pushes to `main` and `develop`, and manual runs without a preview pull request number, skip the path checks and select every Rust, native, and app job.
 
-The **Prek hooks and script tests** job runs every pre-commit hook against all files, except Clippy and the typecheck, which have their own jobs. The **TypeScript and WebUI Node tests** job runs the typecheck and `pnpm run test:webui-node` with the release WASM bridge. Both WASM packages build, and the **Native** job always builds `nightfall-headless`, because the Chromium product flows run against it.
+### The job every pull request runs
 
-### Rust tests run only for Rust inputs
+The **Prek hooks and script tests** job runs every pre-commit hook against all files, except Clippy and the typecheck, which have their own jobs. It also runs the script tests. It's the only validation job that runs for every pull request that's ready for review.
 
-For a pull request, the native job runs nextest, doctests, the desktop shell tests, and Clippy only when the change touches a path in the `rustTests` list in `ci-scope.mjs`. That list covers `crates/`, `desktop/`, the Cargo manifests and lockfile, the toolchain file, Cargo, nextest, Clippy, rustfmt, and hook configuration, the native workflow, and a few files outside `crates/`. A pull request that only changes the web UI or the docs skips the Rust tests but still builds the backend. Pushes to `main` and `develop` and manual runs always run every Rust step.
+### App, native, and Rust selections
+
+The scope script sorts changes into three nested selections:
+
+- **App inputs** are every path that isn't on the `appIndependent` list in `ci-scope.mjs`. That list covers `docs/`, the documentation specs, agent and editor configuration, the top-level Markdown guides, script tests, and standalone scripts that the app doesn't use. App inputs build both WASM packages and run the **TypeScript and WebUI Node tests** job, which runs the typecheck and `pnpm run test:webui-node` with the release WASM bridge.
+- **Native inputs** are app inputs other than the worktree dashboard sources on the `dashboardSources` list. They select the **Native** job, which builds `nightfall-headless`, and the **Chromium product flows**, which run against it.
+- **Rust inputs** are paths on the `rustTests` list. They make the native job also run nextest, doctests, the desktop shell tests, and Clippy. The list covers `crates/`, `desktop/`, the Cargo manifests and lockfile, the toolchain file, Cargo, nextest, Clippy, rustfmt, and hook configuration, the native workflow, and a few files outside `crates/`. A pull request that changes only web UI code skips the Rust tests but still builds the backend.
+
+A changed pin in `config/cargo-tools.json` selects the jobs that use that tool, plus the selections that nest under them. mdBook selects the documentation build, nextest and hakari the Rust tests, typeshare the app jobs, and cargo-about the app jobs and the distribution packages. A tool the scope script doesn't list selects everything.
 
 > [!WARNING]
 > Rust code that embeds a file from outside `crates/` with `include_str!` or `include_bytes!` depends on that file, but CI can't see the dependency. Add the file's path to `rustTests` in `scripts/ci-scope.mjs`, and add a case for it in `ci-scope.node.test.mjs`. Otherwise a pull request that changes only that file skips the Rust tests that would catch the break. The list today covers the browser demo showfile, the beat model notice and configuration, and `config/project-links.json`.
@@ -190,23 +202,17 @@ For a pull request, the native job runs nextest, doctests, the desktop shell tes
 
 The scope script also decides the following:
 
-- The **Documentation** job runs for pull requests that touch `docs/`, the scope script, or `ci.yml`, drafts included. Branch pushes and manual runs don't build the books.
+- The **Documentation** job runs for pull requests that touch `docs/`, the scope script, `ci.yml`, the Cargo tools action, or the mdBook pin. Branch pushes don't build the books. A manual preview run builds them only when the previewed pull request changes them.
 - The **Desktop check** job runs the desktop shell tests on macOS and Windows when a change touches the desktop shell or the startup, shutdown, diagnostics, and configuration code it shares with the runtime.
 - Desktop installers and the browser demo build when a change touches their packaging inputs. The [workflow README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/.github/workflows/README.md#distribution-selection) has the full table.
 
 ### Draft pull requests
 
-A draft pull request skips the slowest browser and packaging work:
-
-- The Chromium product flows.
-- The browser demo's Playwright tests and its `pnpm test` step. The demo still builds when selected.
-- The desktop installers.
-
-Marking the pull request ready for review runs CI again with these jobs. The Rust tests, node tests, hooks, and documentation build run for drafts as usual.
+A draft pull request validates nothing. When a draft from a branch in the same repository opens, CI builds only its browser preview, with the books when the draft changes them. A draft from a fork, or one that changes neither the app nor the books, builds nothing. Later pushes to the draft run no CI at all. To refresh the preview of a draft, comment `/republish`. Marking the pull request ready for review runs CI in full.
 
 ### The CI gate
 
-The **CI gate** job is the single required check. It fails if any of the hook, documentation, native, WASM, web UI, or Chromium product flow jobs fails or is skipped unexpectedly. It accepts a skipped product flow job when the pull request is a draft, and a skipped documentation job when no documentation changed. The desktop check, the desktop installers, and the browser demo job aren't part of the gate. They report as separate checks, so read their results yourself when your change selects them. Version tag pushes skip the validation jobs and the gate entirely.
+The **CI gate** job is the single required check. For a pull request that's ready for review, it fails if any selected hook, documentation, native, WASM, web UI, or Chromium product flow job fails. Jobs that the scope didn't select don't count. The desktop check, the desktop installers, and the browser demo job aren't part of the gate. They report as separate checks, so read their results yourself when your change selects them. On a draft's preview run, the gate passes only while the pull request is still a draft. Version tag pushes skip the validation jobs and the gate entirely.
 
 ## If you change X, run Y
 
@@ -243,7 +249,7 @@ The following table lists common changes and the checks to run locally before yo
 | Showfile parse test and fixture | `crates/app-runtime/tests/showfile_data_parse.rs`, `crates/app-runtime/tests/data/` |
 | Web UI node test runner | `scripts/run-webui-node-tests.mjs`, `tsconfig.node-tests.json` |
 | Web UI boundary rules | `webui/architecture-boundaries.node.test.ts`, `config/architecture/webui-boundary-exceptions.json` |
-| Rust architecture checks | `scripts/check-crate-boundaries.mjs`, `scripts/check-command-architecture.mjs` |
+| Rust architecture checks | `scripts/check-crate-boundaries.mjs`, `config/architecture/crate-layers.json`, `scripts/check-command-architecture.mjs` |
 | Playwright wrapper and target selection | `scripts/run-playwright.mjs`, `scripts/playwright-run-mode.mjs` |
 | Playwright configuration | `playwright.config.ts`, `playwright/docs.config.ts` |
 | CI smoke specs | `test:webui-smoke` in `package.json`, `.github/actions/playwright-smoke/action.yml` |

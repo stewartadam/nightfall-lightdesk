@@ -207,9 +207,9 @@ The IO services live as long as the process. They start once and keep running wh
 
 ### DMX output
 
-In every frame, the engine composes one DMX frame for each output universe. Patch bindings decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net and sACN each run on their own thread and transmit on a fixed schedule. These workers and the engine's frame limiter share one schedule of send times, a fixed interval apart. The engine starts each frame shortly before a send time, so each transmission carries the most recently finished frame. USB DMX output doesn't follow this schedule. It writes each frame to the interface as soon as the engine finishes it. The default DMX output rate is 44 frames a second.
+In every frame, the engine composes one DMX frame for each output universe. DMX routes decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net and sACN each run on their own thread and transmit on a fixed schedule. These workers and the engine's frame limiter share one schedule of send times, a fixed interval apart. The engine starts each frame shortly before a send time, so each transmission carries the most recently finished frame. USB DMX output doesn't follow this schedule. It writes each frame to the interface as soon as the engine finishes it. The default DMX output rate is 44 frames a second.
 
-Output transports are off until something routes to them. A console universe reaches the wire only when a patch binding routes it to a transport, as [how a show becomes light](../concepts/show-to-light.md) describes.
+Output transports are off until something routes to them. A console universe reaches the wire only when a DMX route sends it to a transport, as [how a show becomes light](../concepts/show-to-light.md) describes.
 
 ### Control and DMX input
 

@@ -38,7 +38,7 @@ Most layers come from clips, and a clip's priority is a setting on the clip. The
 
 | Source | Priority | Description |
 |--------|----------|-------------|
-| DMX input | -128 | Incoming DMX routed to fixtures by input bindings. Everything else overrides it. |
+| DMX input | -128 | Incoming DMX that input routes send to fixtures. Everything else overrides it. |
 | Manual channel values | -127 | Console DMX channel values set with the `channel` command. The written byte also keeps its console channel on the wire until released, as [fixtures, patching, and DMX output](../domains/fixtures-and-output.md#console-universes-and-output-transports) describes. |
 | Clips | Set per clip, 0 by default | Sequences, FX, Step FX, and flows started from a clip use the clip's priority. |
 | Flow started directly | 0 | A flow started with the `flow start` command, outside a clip. |
@@ -111,7 +111,7 @@ The **Layers** panel lists the active layers and the values each one sets. The *
 | Programmer priority | `crates/programmer/src/painter.rs` |
 | Clip priority | `crates/clips/src/model.rs` |
 | Per-playback intensity level | `crates/desk/src/systems/instance_controls.rs` |
-| Intensity and rate masters | `crates/desk/src/masters.rs` |
+| Intensity and speed masters | `crates/desk/src/masters.rs` |
 | Merge rule per attribute | `MergeStrategy` in `crates/fixture-model/src/parameter.rs`, set by the importers in `crates/fixture-library/src/converters/` |
 
 ## Related topics

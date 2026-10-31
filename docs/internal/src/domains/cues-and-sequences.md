@@ -32,6 +32,7 @@ A `Sequence` carries the following fields:
 - `tracking_mode`, the tracking behavior that cues inherit.
 - `wrap`, which makes Go on the last cue return to the first.
 - `release_on_start`, which the engine stores but doesn't read during playback.
+- `timebase`, a `Timebase` of `Seconds` or `Beats`, shown as **Timing** in the **Properties** panel for the **Sequence Editor**. A beat-timed sequence reads every trigger delay, fade, and follow time as beats, one authored second per beat.
 
 A `Cue` holds its `trigger`, its timing (`transitions` and `transitions_by_attribute`), its body `instructions`, optional `parts`, and its tracking settings. A `CuePart` is a subset of a cue's instructions with its own timing and lookahead flag. Parts fire at the same moment as their cue and render after the cue body, in part order. When the programmer stores into part 0, it writes the cue body.
 
@@ -112,7 +113,12 @@ The runtime fields that drive playback are:
 | `last_rendered_layer` | The most recent output, which release freezes. |
 | `release_layer` | The frozen output that the sequence renders while it releases. |
 
-All of these positions are source-local: they come from the playback's `InstanceClock`, which runs at the playback's own rate and can be repositioned by a timeline. The `activation_time` fields hold host wall-clock time and only feed the status that the UI shows.
+All of these positions are source-local: they come from the playback's `InstanceClock`, which runs at the playback's own speed and can be repositioned by a timeline. The `activation_time` fields hold host wall-clock time and only feed the status that the UI shows.
+
+A beat-timed sequence's positions count beats instead of seconds. `sync_sequence_instance_timebase` copies the sequence's `timebase` onto the playback entity, and the desk's clock system then switches a live playback's clock to the `InstanceClockSource::Tempo` source, which advances one source second per beat of the show tempo. Taps, nudges, and tempo changes therefore move every beat-timed playback together. Because the copy follows rematerialization, switching a running sequence between Seconds and Beats takes effect while it plays.
+
+> [!NOTE]
+> The **Cue Editor** shows a cue's own times in seconds even when the cue belongs to a beat-timed sequence, where playback reads them as beats.
 
 When a stored cue, sequence, or blueprint changes while a sequence runs, the engine rematerializes the affected cues in place and keeps their activation and release positions, so a running fade continues with the new values.
 
@@ -138,6 +144,8 @@ stateDiagram-v2
 Three things move a sequence between cues:
 
 - **Go and Back.** A clip command such as `clip 1 go` reaches the clip handlers, which pass a `SequencePlaybackOperation::Go` or `Back` to the running playback. The handler runs in `EventHandling`, extends the materialized prefix, and moves the position, anchoring the new cue at the clock's current position. Go on the last cue does nothing unless `wrap` is on, and Back on the first cue does the same. [From command to state change](../engine/command-path.md) follows a command along this path.
+
+  While the show's launch quantize mode is on, a live Go, start, or stop doesn't reach the playback at once. `forward_clip_ingress_actions` in the desk holds it in `ArmedLaunches` and releases it once the show tempo reaches the next beat or bar, or when a **Launch armed clips now** action fires everything waiting. Clip commands from the web UI, fader buttons, boards, MIDI, OSC, and the command line wait this way. A press that lands within 0.05 beat after a beat or bar fires at once. Timelines, flows, held Flash and Swop buttons, and fader moves that start or stop a clip never wait, and desk command actions a timeline runs carry the `InternalDeskAction` origin so they skip quantize too.
 - **Goto.** `SequencePlaybackOperation::Goto` jumps to a position. It can carry a `PlaybackReconstructionTiming`, which also resets the playback clock. A timeline uses this to place a cue at an exact point in its own time.
 - **Automatic triggers.** In each render pass, `advance_sequences` checks whether the next cue's trigger is due. It advances as many cues as are due, up to 10,000 in one tick, and anchors each cue at the exact position where it became due rather than at the frame's time. Follow chains therefore keep exact timing at any frame rate.
 
@@ -157,6 +165,8 @@ A timeline that seeks, or starts playback partway through a song, needs the sequ
 
 1. `SequenceTimelineSeekPlayback` replays those interventions and the automatic triggers between them on step timings alone. It produces a target cue position and the position where that cue started, without materializing anything.
 1. `spawn_reconstructed_sequence_for_clip` materializes the sequence and calls `set_position_reconstructing_prefix_at_playback_position`. That walks back from the target while each cue was entered by an automatic trigger, and gives each one the activation and release positions it would have had. The walk stops at the first cue with a `Manual` trigger.
+
+A beat-timed sequence on a timeline counts beats at the timeline's tempo. The timeline systems pass its beats per second to `SequenceTimelineSeekPlayback::with_source_scale`, so the replay converts timeline seconds into sequence beats. Lookahead, seeking, and Stop Clip use the same conversion.
 
 > [!WARNING]
 > Reconstruction retains only the cues back to the nearest manual boundary, while a live Goto retains every cue from the first. A timeline that seeks into `Blue` retains only `Blue`, because `Blue`'s trigger is `Manual`. Values that `Red` would track into `Blue` aren't in the reconstructed layer.
@@ -231,7 +241,10 @@ When every release transition has finished, plus a 10-millisecond grace period, 
 | Rematerialization after definition changes | `crates/cues/src/materialized_sequence/rematerialize.rs` |
 | Seek replay for timelines | `crates/cues/src/sequence_planning.rs` |
 | Planning contracts and `PlaybackReconstructionTiming` | `crates/playback-planner/src/lib.rs` |
-| `InstanceClock` | `crates/instances/src/lib.rs` |
+| `InstanceClock`, `InstanceClockSource`, and `Timebase` | `crates/instances/src/lib.rs` |
+| Tempo clock for beat-timed playbacks | `crates/desk/src/instances.rs` |
+| Launch quantize and `ArmedLaunches` | `crates/desk/src/launch_quantize.rs`, `forward_clip_ingress_actions` in `crates/desk/src/systems/event_handlers/clip_events.rs` |
+| Beat conversion for timeline sequences | `crates/timeline/src/systems/planner_adapter.rs`, `crates/timeline/src/systems/planned_cues.rs`, `crates/timeline/src/systems/seek/sequence.rs` |
 
 ## Related topics
 

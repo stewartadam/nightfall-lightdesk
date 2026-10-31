@@ -15,6 +15,14 @@ A timing has six fields: `delay_in`, `fade_in`, `curve_in`, `delay_out`, `fade_o
 
 Each delay and fade is a `TransitionMode`, which is either one duration or a fan across the selection. The curves are `FadeCurve` values: `Linear`, `EaseIn`, `EaseOut`, or `EaseInOut`.
 
+## Seconds or beats
+
+A timing stores durations, but the sequence's `timebase` decides what unit they count. The web UI shows it as **Timing**, set to **Seconds** or **Beats**, and it applies to every cue trigger, delay, and fade in the sequence. A beat-timed sequence reads one stored second as one beat, so a 2-second fade-in becomes a 2-beat fade-in. The override chain and fans work the same in either unit.
+
+The unit changes how the playback's clock advances, not how the engine resolves timing. Each render pass, a seconds-timed playback's clock advances by the wall-clock time since the previous pass. A beat-timed playback's clock advances by the number of beats the show tempo moved in that time, so its fades follow tempo changes, taps, and nudges. When a timeline plays a beat-timed sequence, the sequence follows that timeline's BPM instead, and timeline lookahead, seeking, and Stop Clip convert between timeline seconds and sequence beats. In both units, the clip's speed and any speed masters that target it multiply the clock's advance.
+
+Launch quantize can also delay when a cue starts. When the Tempo panel sets it to **Beat** or **Bar**, a live clip start, Go, or stop waits as an armed launch in the desk until the show tempo reaches the next beat or bar. Held Flash and Swop buttons, fader moves that start or stop a clip, timelines, and flows never wait. The cue's own delays and fades start counting when the launch fires.
+
 ## The override chain
 
 The following diagram shows the order in which timing layers apply to one value. Each layer overrides only the fields it sets:
@@ -84,7 +92,7 @@ Suppose you add timing to `First sequence` as follows:
 - The `Blue` cue sets a 3-second fade-in.
 - `Blue`'s instruction for `Par 1` overrides the blue attribute with a 0.5-second delay-in and a 1-second fade-in.
 
-When you press Go, `Blue` becomes active at the playback clock's current position, and each value resolves through the chain:
+`First sequence` counts in seconds, and launch quantize is off. When you press Go, `Blue` becomes active at the playback clock's current position, and each value resolves through the chain:
 
 | Attribute | Change | Delay | Fade | Description |
 |-----------|--------|-------|------|-------------|
@@ -95,7 +103,7 @@ When you press Go, `Blue` becomes active at the playback clock's current positio
 
 `Par 1` is one fixture, so each instruction has one slot, and a fanned mode would resolve to its first value. Red merges LTP, so it uses its in timing even though it goes down. Intensity merges HTP, so a cue that lowered it would use the out timing, or the in timing under the exception described earlier.
 
-Red reaches 0% 3 seconds after Go. Blue starts moving half a second after Go and reaches full 1.5 seconds after Go.
+Red reaches 0% 3 seconds after Go. Blue starts moving half a second after Go and reaches full 1.5 seconds after Go. If you set the sequence's timing to beats, the same values mean 3 beats and half a beat, so at 120 BPM red reaches 0% 1.5 seconds after Go.
 
 ## In the code
 
@@ -109,6 +117,11 @@ Red reaches 0% 3 seconds after Go. Blue starts moving half a second after Go and
 | Logical attribute to fixture parameter | `try_parameter_for_logical_attribute` in `crates/fixtures/src/data_provider_ext.rs` |
 | In or out timing by direction | `crates/cues/src/materialized_sequence/tracking.rs`, `crates/compositor/src/stages/transition.rs` |
 | Release timing | `crates/cues/src/materialized_sequence/release.rs` |
+| `Timebase` and the sequence's `timebase` field | `crates/instances/src/lib.rs`, `crates/cues/src/cue.rs` |
+| Seconds-timed and beat-timed clock advance, with speed applied | `advance_realtime_instance_clocks` in `crates/desk/src/instances.rs` |
+| Speed masters | `apply_playback_speed_masters` in `crates/desk/src/masters.rs` |
+| Timeline seconds to sequence beats | `crates/timeline/src/systems/planned_cues.rs` |
+| Launch quantize and armed launches | `LaunchQuantize` in `crates/tempo/src/lib.rs`, `crates/desk/src/launch_quantize.rs` |
 
 ## Related topics
 
