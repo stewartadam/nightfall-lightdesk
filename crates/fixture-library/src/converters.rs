@@ -16,7 +16,7 @@ pub mod gdtf;
 mod gdtf_bench_tests;
 #[cfg(test)]
 mod gdtf_corpus_tests;
-mod gdtf_functions;
+pub(crate) mod gdtf_functions;
 #[cfg(test)]
 mod gdtf_joint_tests;
 #[cfg(test)]
