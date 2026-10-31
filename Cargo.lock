@@ -5960,6 +5960,7 @@ dependencies = [
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
+ "tracing",
  "typeshare",
  "web-time",
 ]
@@ -6043,7 +6044,6 @@ dependencies = [
  "artnet_protocol",
  "bevy_app",
  "bevy_ecs",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixtures",
@@ -6059,7 +6059,6 @@ version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixtures",
