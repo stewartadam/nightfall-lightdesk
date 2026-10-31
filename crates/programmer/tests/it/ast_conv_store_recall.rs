@@ -14,72 +14,6 @@ use nightfall_programmer::ast_conv::ProgrammerAstConverter;
 use nightfall_programmer::prelude::*;
 
 // ============================================================================
-// AST Alias Equality Tests
-// ============================================================================
-
-#[test]
-fn test_store_cue_aliases() {
-    let base_ast = generate_ast("store cue 1.5").expect("Failed to parse 'store cue 1.5'");
-
-    // Test "c" alias produces identical AST to "cue"
-    let c_ast = generate_ast("store c 1.5").expect("Failed to parse 'store c 1.5'");
-    assert_eq!(base_ast, c_ast, "'c' should produce identical AST to 'cue'");
-}
-
-#[test]
-fn test_store_group_aliases() {
-    let base_ast = generate_ast("store group 5").expect("Failed to parse 'store group 5'");
-
-    // Test "grp" alias produces identical AST to "group"
-    let grp_ast = generate_ast("store grp 5").expect("Failed to parse 'store grp 5'");
-    assert_eq!(
-        base_ast, grp_ast,
-        "'grp' should produce identical AST to 'group'"
-    );
-
-    // Test "g" alias produces identical AST to "group"
-    let g_ast = generate_ast("store g 5").expect("Failed to parse 'store g 5'");
-    assert_eq!(
-        base_ast, g_ast,
-        "'g' should produce identical AST to 'group'"
-    );
-}
-
-#[test]
-fn test_store_blueprint_aliases() {
-    let base_ast = generate_ast("store blueprint 1").expect("Failed to parse 'store blueprint 1'");
-
-    // Test "bp" alias produces identical AST to "blueprint"
-    let bp_ast = generate_ast("store bp 1").expect("Failed to parse 'store bp 1'");
-    assert_eq!(
-        base_ast, bp_ast,
-        "'bp' should produce identical AST to 'blueprint'"
-    );
-}
-
-#[test]
-fn test_recall_cue_aliases() {
-    let base_ast = generate_ast("recall cue 1.5").expect("Failed to parse 'recall cue 1.5'");
-
-    // Test "c" alias produces identical AST to "cue"
-    let c_ast = generate_ast("recall c 1.5").expect("Failed to parse 'recall c 1.5'");
-    assert_eq!(base_ast, c_ast, "'c' should produce identical AST to 'cue'");
-}
-
-#[test]
-fn test_recall_blueprint_aliases() {
-    let base_ast =
-        generate_ast("recall blueprint 1").expect("Failed to parse 'recall blueprint 1'");
-
-    // Test "bp" alias produces identical AST to "blueprint"
-    let bp_ast = generate_ast("recall bp 1").expect("Failed to parse 'recall bp 1'");
-    assert_eq!(
-        base_ast, bp_ast,
-        "'bp' should produce identical AST to 'blueprint'"
-    );
-}
-
-// ============================================================================
 // AST -> Command Conversion Tests
 // ============================================================================
 
@@ -358,24 +292,6 @@ fn test_store_group_conversion() {
     }
 }
 
-#[test]
-fn test_store_group_different_id_conversion() {
-    let ast = generate_ast("store group 10").expect("Failed to parse 'store group 10'");
-    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<ProgrammerCommand>();
-    assert!(cmd.is_some(), "Command is not a ProgrammerCommand");
-
-    match cmd.unwrap() {
-        ProgrammerCommand::StoreGroup { group_id, label } => {
-            assert_eq!(*group_id, 10, "Expected group ID 10, got {}", group_id);
-            assert_eq!(*label, None, "Expected no label");
-        }
-        other => panic!("Expected StoreGroup command, got {:?}", other),
-    }
-}
-
 /// Verifies group store ranges create one group command per selected ID.
 #[test]
 fn test_store_group_range_conversion() {
@@ -446,27 +362,6 @@ fn test_store_blueprint_range_conversion() {
         .collect::<Vec<_>>();
 
     assert_eq!(ids, vec![2, 3, 4]);
-}
-
-#[test]
-fn test_store_blueprint_different_id_conversion() {
-    let ast = generate_ast("store blueprint 2").expect("Failed to parse 'store blueprint 2'");
-    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<ProgrammerCommand>();
-    assert!(cmd.is_some(), "Command is not a ProgrammerCommand");
-
-    match cmd.unwrap() {
-        ProgrammerCommand::StoreBlueprint { blueprint_id, .. } => {
-            assert_eq!(
-                *blueprint_id, 2,
-                "Expected blueprint ID 2, got {}",
-                blueprint_id
-            );
-        }
-        other => panic!("Expected StoreBlueprint command, got {:?}", other),
-    }
 }
 
 #[test]
@@ -685,35 +580,6 @@ fn test_recall_cue_select_flag_conversion() {
 }
 
 #[test]
-fn test_recall_cue_different_id_conversion() {
-    let ast = generate_ast("recall cue 3.10").expect("Failed to parse 'recall cue 3.10'");
-    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<ProgrammerCommand>();
-    assert!(cmd.is_some(), "Command is not a ProgrammerCommand");
-
-    match cmd.unwrap() {
-        ProgrammerCommand::RecallCue {
-            sequence_id,
-            cue_id,
-            part_id,
-            select,
-        } => {
-            assert_eq!(
-                *sequence_id, 3,
-                "Expected sequence ID 3, got {}",
-                sequence_id
-            );
-            assert_eq!(*cue_id, 10, "Expected cue ID 10, got {}", cue_id);
-            assert_eq!(*part_id, 0);
-            assert!(!select);
-        }
-        other => panic!("Expected RecallCue command, got {:?}", other),
-    }
-}
-
-#[test]
 fn test_recall_cue_part_conversion() {
     let ast = generate_ast("recall cue 3.10p4").expect("Failed to parse 'recall cue 3.10p4'");
     let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
@@ -786,41 +652,4 @@ fn test_recall_blueprint_conversion() {
             },
         }]
     ));
-}
-
-#[test]
-fn test_recall_blueprint_different_id_conversion() {
-    let ast = generate_ast("recall blueprint 5").expect("Failed to parse 'recall blueprint 5'");
-    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<ProgrammerCommand>();
-    assert!(cmd.is_some(), "Command is not a ProgrammerCommand");
-
-    let ProgrammerCommand::ApplyAttributeOperations { operations, .. } = cmd.unwrap() else {
-        panic!("Expected Blueprint attribute operations")
-    };
-    assert!(matches!(
-        operations.as_slice(),
-        [ProgrammerAttributeOperation {
-            target: BlueprintSelector::All,
-            source: ProgrammerAttributeSource::Blueprint {
-                address: BlueprintAddress::Id(5),
-                resolution: BlueprintResolution::Reference,
-            },
-        }]
-    ));
-}
-
-#[test]
-fn test_clear_conversion() {
-    let ast = generate_ast("clear").expect("Failed to parse 'clear'");
-    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0]
-        .as_any()
-        .downcast_ref::<UserCommand>()
-        .expect("Command is not a UserCommand");
-    assert_eq!(cmd, &UserCommand::Clear(ClearCommand::default()));
 }

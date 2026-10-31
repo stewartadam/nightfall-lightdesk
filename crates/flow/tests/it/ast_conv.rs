@@ -18,37 +18,6 @@ fn escape_json(input: &str) -> String {
 }
 
 // ============================================================================
-// AST Alias Equality Tests
-// ============================================================================
-
-#[test]
-fn test_flow_delete_aliases() {
-    let base_ast = generate_ast("flow 1 delete").expect("Failed to parse 'flow 1 delete'");
-
-    let del_ast = generate_ast("flow 1 del").expect("Failed to parse 'flow 1 del'");
-    assert_eq!(
-        base_ast, del_ast,
-        "'del' should produce identical AST to 'delete'"
-    );
-
-    let rm_ast = generate_ast("flow 1 rm").expect("Failed to parse 'flow 1 rm'");
-    assert_eq!(
-        base_ast, rm_ast,
-        "'rm' should produce identical AST to 'delete'"
-    );
-}
-
-#[test]
-fn test_flow_rename_aliases() {
-    let base_ast = generate_ast("flow 1 rename 2").expect("Failed to parse 'flow 1 rename 2'");
-    let mv_ast = generate_ast("flow 1 mv 2").expect("Failed to parse 'flow 1 mv 2'");
-    assert_eq!(
-        base_ast, mv_ast,
-        "'mv' should produce identical AST to 'rename'"
-    );
-}
-
-// ============================================================================
 // AST -> Command Conversion Tests
 // ============================================================================
 

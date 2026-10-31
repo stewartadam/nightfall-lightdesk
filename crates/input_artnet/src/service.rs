@@ -526,8 +526,4 @@ mod tests {
             .expect("second listener should receive broadcast frame");
         assert_eq!(&buffer[..len2], &payload);
     }
-
-    #[cfg(not(unix))]
-    #[test]
-    fn artnet_input_shared_listeners_receive_broadcast_frames() {}
 }
