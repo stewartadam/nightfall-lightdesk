@@ -13,21 +13,7 @@ import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
-import type {
-  CrudListDataGridEditRequest,
-  CrudListDataGridSelectionRequest,
-} from "../../../components/widgets/crud/crud-list-data-grid";
-import {
-  createCrudPanelSearch,
-  createCrudPanelSearchQueryChangeEffect,
-} from "../../../components/widgets/crud/crud-panel-search";
-import type { CrudViewMode } from "../../../components/widgets/crud/crud-view-mode-toggle";
-import { createCrudGridClickSelection } from "../../../components/widgets/crud/model/crud-grid-click-selection";
-import { createCrudGridDragSelection } from "../../../components/widgets/crud/model/crud-grid-drag-selection";
-import {
-  changeCrudPanelViewMode,
-  loadCrudPanelViewMode,
-} from "../../../lib/crud-panel-view-mode";
+import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { deleteCue, sendCueUpdate } from "../../../lib/cue-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import {
@@ -62,33 +48,41 @@ export function createCueListController(props: CueListControllerProps) {
   const $sequences = useShallowStore(sequences);
   const $dockApi = useStore(dockApi);
   const panelId = props.initialPanelId ?? props.id;
-  const search = createCrudPanelSearch({
-    componentId: panelId,
-    label: "Search cues",
+  const crud = createCrudListState<CueListDisplayRow>({
+    panelId,
+    searchLabel: "Search cues",
+    viewModeKey: "cue-list",
+    orderedUids: (): readonly string[] => cueGridOrder(),
   });
-  const [selectionMode, setSelectionMode] = createSignal(false);
-  const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
-    loadCrudPanelViewMode("cue-list"),
-  );
-  const [selectedCueUids, setSelectedCueUids] = createSignal<string[]>([]);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
+  const {
+    search,
+    selectionMode,
+    viewMode,
+    setViewMode,
+    setSelectionModeEnabled,
+    selectedCount,
+    clearSelection,
+    isDeleteModalOpen,
+    setIsDeleteModalOpen,
+    labelEditRequest,
+    setLabelEditRequest,
+    listSelectionRequest,
+    setListSelectionRequest,
+    editingCardLabelUid,
+    setEditingCardLabelUid,
+    handleToggleSelectionMode,
+    handleEscape,
+    gridDragSelection,
+    gridClickSelection,
+  } = crud;
+  const selectedCueUids = crud.selectedUids;
+  const setSelectedCueUids = crud.setSelectedUids;
+  const selectedCueUidSet = crud.selectedUidSet;
   const [activeCueListRow, setActiveCueListRow] =
     createSignal<CueListDisplayRow | null>(null);
-  const [labelEditRequest, setLabelEditRequest] =
-    createSignal<CrudListDataGridEditRequest<CueListDisplayRow>>();
-  const [listSelectionRequest, setListSelectionRequest] =
-    createSignal<CrudListDataGridSelectionRequest<CueListDisplayRow>>();
-  const [editingCardLabelUid, setEditingCardLabelUid] = createSignal<
-    string | null
-  >(null);
   const [collapsedGroupKeys, setCollapsedGroupKeys] = createSignal<string[]>(
     [],
   );
-
-  /** Returns the number of cues in the current selection. */
-  const selectedCount = createMemo(() => selectedCueUids().length);
-  /** Indexes selected cue UIDs for constant-time presentation checks. */
-  const selectedCueUidSet = createMemo(() => new Set(selectedCueUids()));
   /** Returns the single cue exposed to Properties, or null for other selections. */
   const propertiesCue = createMemo(() => {
     if (selectedCount() !== 1) return null;
@@ -140,27 +134,6 @@ export function createCueListController(props: CueListControllerProps) {
       setLabelEditRequest({ row, columnId: "label", requestId: Date.now() });
     };
     startEdit();
-  };
-
-  /** Clears all selected cue UIDs. */
-  const clearSelection = () => {
-    setSelectedCueUids([]);
-  };
-  createCrudPanelSearchQueryChangeEffect(search, clearSelection);
-
-  /** Toggles card selection mode and clears selection when leaving it. */
-  const setSelectionModeEnabled = (enabled: boolean) => {
-    setSelectionMode(enabled);
-    if (!enabled) {
-      clearSelection();
-    }
-  };
-
-  /** Persists and applies the cue-list presentation mode. */
-  const setViewMode = (mode: CrudViewMode) => {
-    changeCrudPanelViewMode("cue-list", viewMode(), mode, setViewModeSignal, {
-      onEnterListMode: () => setSelectionModeEnabled(false),
-    });
   };
 
   /** Toggles one cue UID within the current selection. */
@@ -394,30 +367,6 @@ export function createCueListController(props: CueListControllerProps) {
     setIsDeleteModalOpen(false);
   };
 
-  /** Toggles card selection mode when grid presentation permits it. */
-  const handleToggleSelectionMode = () => {
-    if (isDeleteModalOpen()) return;
-    if (viewMode() === "list") return;
-    setSelectionModeEnabled(!selectionMode());
-  };
-
-  /** Clears search, selection, or selection mode in priority order. */
-  const handleEscape = () => {
-    if (isDeleteModalOpen()) return true;
-    if (search.clear()) {
-      return true;
-    }
-    if (selectedCount() > 0) {
-      clearSelection();
-      return true;
-    }
-    if (selectionMode()) {
-      setSelectionModeEnabled(false);
-      return true;
-    }
-    return false;
-  };
-
   /** Checks a cue and its sequence context against the live toolbar search. */
   const cueMatchesSearch = (cue: Cue, sequence?: Sequence) =>
     search.matches([
@@ -507,22 +456,6 @@ export function createCueListController(props: CueListControllerProps) {
       accepts: (payload) => payload.type === "cue",
     },
   );
-
-  /** Owns rectangular drag selection for cue cards. */
-  const gridDragSelection = createCrudGridDragSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: cueGridOrder,
-    selectedIds: selectedCueUids,
-    onSelectionChange: setSelectedCueUids,
-  });
-  /** Owns click and modifier selection semantics for cue cards. */
-  const gridClickSelection = createCrudGridClickSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: cueGridOrder,
-    selectedIds: selectedCueUids,
-    onSelectionChange: setSelectedCueUids,
-    multiSelectOnPlainClick: true,
-  });
 
   useKeyboardShortcut({
     key: "v",
