@@ -18,9 +18,8 @@ use bevy_ecs::prelude::*;
 use nightfall_actions::BindingDiagnostic;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
-use crate::command::{MidiCommand, MidiLastEvent, MidiMapping};
+use crate::command::{MidiLastEvent, MidiMapping};
 use crate::detected::DetectedMidiDevices;
 use crate::mapping::MidiMappings;
 use crate::profile::{self, MidiDeviceProfile};
@@ -63,27 +62,6 @@ enum MidiWsMessage<'a> {
     /// Devices that connected while the engine runs and that the show does not map yet, so
     /// clients can offer to set them up. Each device is announced once.
     MidiDeviceDetected(&'a [String]),
-}
-
-/// Deserialize and dispatch MidiCommand from JSON
-pub fn deserialize_midi_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: MidiCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse MidiCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
 }
 
 /// System to send MIDI state on resync
@@ -240,38 +218,4 @@ fn send_last_event(event: &MidiLastEvent, broadcaster: &ClientEventSink) {
         DISCRIMINATOR_DROPPABLE,
         &MidiWsMessage::MidiLastEvent(event),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verifies MIDI commands queue through the pending buffer so undo can capture them.
-    #[test]
-    fn deserialize_midi_command_queues_for_undo_capture() {
-        let mut world = World::new();
-        world.init_resource::<PendingCommandBuffer>();
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_midi_command(
-            &mut world,
-            serde_json::json!({
-                "type": "DeleteMapping",
-                "data": "00000000000000000000000000000003"
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("midi command should deserialize");
-
-        let messages = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(
-            messages[0].payload.as_any().downcast_ref::<MidiCommand>(),
-            Some(MidiCommand::DeleteMapping(id)) if *id == uuid::Uuid::from_u128(3)
-        ));
-    }
 }

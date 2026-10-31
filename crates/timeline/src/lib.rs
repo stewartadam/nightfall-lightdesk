@@ -145,10 +145,7 @@ impl Plugin for TimelinePlugin {
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimelineAstConverter,
         >();
-        register_command_deserializer::<TimelineCommand>(
-            app,
-            websocket::deserialize_timeline_command,
-        );
+        register_buffered_command::<TimelineCommand>(app);
 
         app.init_resource::<DataProvider<Timeline>>();
         app.insert_resource(beatgrid_detection::BeatgridDetectionRuntime::new(

@@ -84,11 +84,8 @@ impl Plugin for FxPlugin {
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FxAstConverter>();
 
-        register_command_deserializer::<FxCommand>(app, websocket::deserialize_fx_command);
-        register_command_deserializer::<events::StepFxCommand>(
-            app,
-            websocket::deserialize_step_fx_command,
-        );
+        register_buffered_command::<FxCommand>(app);
+        register_buffered_command::<events::StepFxCommand>(app);
 
         register_update_deserializer(
             app,

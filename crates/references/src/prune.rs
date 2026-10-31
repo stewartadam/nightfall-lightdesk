@@ -17,7 +17,6 @@ use nightfall_flow::prelude::FlowCommand;
 use nightfall_fx::prelude::{FxCommand, StepFxCommand};
 use nightfall_selection::{ReferenceLookup, ReferenceSource, prune_missing_fixture_refs};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::ReferenceSources;
 
@@ -36,30 +35,11 @@ impl IngressCommand for ReferenceCommand {}
 /// Registers the reference command and its handler.
 pub(crate) fn register(app: &mut App) {
     register_ingress_command::<ReferenceCommand>(app);
-    register_command_deserializer::<ReferenceCommand>(app, deserialize_reference_command);
+    register_buffered_command::<ReferenceCommand>(app);
     app.add_systems(
         bevy_app::Update,
         handle_reference_commands.in_set(EventHandling),
     );
-}
-
-/// Deserializes a [`ReferenceCommand`] from a client and queues it for dispatch.
-fn deserialize_reference_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: ReferenceCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse ReferenceCommand: {error}"))?;
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-    Ok(())
 }
 
 /// Handles reference commands.

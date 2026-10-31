@@ -24,26 +24,6 @@ enum FxModuleWsMessage<'a> {
     ListAvailableFxModulesResponse(&'a ListAvailableFxModulesResponse),
 }
 
-/// Deserialize and queue fx module commands from JSON so undo is captured before dispatch.
-pub fn deserialize_fx_module_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FxModuleCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse FxModuleCommand: {error}"))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-    Ok(())
-}
-
 /// Deserializes and dispatches an untracked FX module preview update from JSON.
 pub fn deserialize_fx_module_preview_update(world: &mut World, json: Value) -> Result<(), String> {
     let update: FxModulePreviewUpdate = serde_json::from_value(json)
@@ -116,32 +96,6 @@ mod tests {
 
     use super::*;
 
-    /// Verifies management commands enter pending dispatch for undo capture.
-    #[test]
-    fn deserialize_fx_module_command_queues_pending_command() {
-        let mut world = World::new();
-        world.insert_resource(PendingCommandBuffer::default());
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-
-        deserialize_fx_module_command(
-            &mut world,
-            serde_json::json!({ "type": "DeleteFxModule", "data": 42 }),
-            command_id,
-            undo_id,
-        )
-        .expect("module command should deserialize");
-
-        let queued = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].command_id, command_id);
-        assert_eq!(queued[0].undo_id, undo_id);
-        assert!(matches!(
-            queued[0].payload.as_any().downcast_ref::<FxModuleCommand>(),
-            Some(FxModuleCommand::DeleteFxModule(42))
-        ));
-    }
-
     /// Verifies a WebSocket module deletion captures its exact restore command for undo.
     #[test]
     fn websocket_delete_captures_undo() {
@@ -170,7 +124,7 @@ mod tests {
             .resource_mut::<UndoRegistry>()
             .register::<FxModuleCommand>();
 
-        deserialize_fx_module_command(
+        deserialize_buffered_command::<FxModuleCommand>(
             &mut world,
             serde_json::json!({ "type": "DeleteFxModule", "data": 42 }),
             CommandId::new(),

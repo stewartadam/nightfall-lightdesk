@@ -17,25 +17,12 @@ pub fn deserialize_desk_command(
     command_id: CommandId,
     undo_id: UndoId,
 ) -> Result<(), String> {
-    let command: DeskCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse DeskCommand: {}", e))?;
-
+    let command = decode_client_command::<DeskCommand>(json)?;
     if matches!(command, DeskCommand::Eval(_)) {
-        world
-            .resource_mut::<PendingCommandBuffer>()
-            .push(PayloadEnvelope::with_context(
-                command_id,
-                undo_id,
-                Box::new(command),
-            ));
-        return Ok(());
+        buffer_command(world, command_id, undo_id, command);
+    } else {
+        admit_command(world, command_id, undo_id, command);
     }
-
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-
     Ok(())
 }
 
@@ -154,154 +141,6 @@ pub(super) fn flush_pending_ui_notifications(
             &DeskWsMessage::UiNotification(&notification),
         );
     }
-}
-
-/// Deserialize and dispatch GroupCommand from JSON.
-pub fn deserialize_group_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: GroupCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse GroupCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserialize and dispatch MasterCommand from JSON.
-pub fn deserialize_master_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: MasterCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse MasterCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserialize and dispatch ClipCommand from JSON.
-///
-/// ClipCommand is routed through PendingCommandBuffer to enable undo support
-/// for commands like StartClip/StopClip.
-pub fn deserialize_clip_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: ClipCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse ClipCommand: {}", e))?;
-
-    // Route through PendingCommandBuffer so the undo system can capture inverses
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserialize and dispatch BlueprintCommand from JSON.
-pub fn deserialize_blueprint_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: BlueprintCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse BlueprintCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserialize and dispatch SettingsCommand from JSON.
-pub fn deserialize_settings_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: SettingsCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse SettingsCommand: {}", e))?;
-
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-
-    Ok(())
-}
-
-/// Deserialize and dispatch InstanceCommand from JSON.
-pub fn deserialize_playback_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: InstanceCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse InstanceCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserialize and dispatch FaderCommand from JSON.
-pub fn deserialize_fader_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: crate::faders::FaderCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse FaderCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
 }
 
 /// Deserializes and dispatches an untracked master level update from JSON.

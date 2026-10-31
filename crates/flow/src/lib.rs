@@ -84,7 +84,7 @@ impl Plugin for FlowPlugin {
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FlowAstConverter>(
         );
-        register_command_deserializer::<FlowCommand>(app, websocket::deserialize_flow_command);
+        register_admitted_command::<FlowCommand>(app);
 
         app.add_systems(
             Update,

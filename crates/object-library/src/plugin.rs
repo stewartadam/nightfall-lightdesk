@@ -37,10 +37,7 @@ impl Plugin for ObjectLibraryPlugin {
         // Register object library commands with the engine
         register_ingress_command::<ObjectLibraryCommand>(app);
         app.add_message::<crate::websocket::ObjectLibraryCommandResult>();
-        register_command_deserializer::<ObjectLibraryCommand>(
-            app,
-            crate::websocket::deserialize_object_library_command,
-        );
+        register_admitted_command::<ObjectLibraryCommand>(app);
 
         // Register HTTP routes for model serving
         app.world_mut()

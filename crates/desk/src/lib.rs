@@ -155,22 +155,13 @@ impl Plugin for DeskPlugin {
         app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();
 
         register_command_deserializer::<DeskCommand>(app, websocket::deserialize_desk_command);
-        register_command_deserializer::<GroupCommand>(app, websocket::deserialize_group_command);
-        register_command_deserializer::<MasterCommand>(app, websocket::deserialize_master_command);
-        register_command_deserializer::<ClipCommand>(app, websocket::deserialize_clip_command);
-        register_command_deserializer::<BlueprintCommand>(
-            app,
-            websocket::deserialize_blueprint_command,
-        );
-        register_command_deserializer::<SettingsCommand>(
-            app,
-            websocket::deserialize_settings_command,
-        );
-        register_command_deserializer::<InstanceCommand>(
-            app,
-            websocket::deserialize_playback_command,
-        );
-        register_command_deserializer::<FaderCommand>(app, websocket::deserialize_fader_command);
+        register_buffered_command::<GroupCommand>(app);
+        register_buffered_command::<MasterCommand>(app);
+        register_buffered_command::<ClipCommand>(app);
+        register_buffered_command::<BlueprintCommand>(app);
+        register_admitted_command::<SettingsCommand>(app);
+        register_buffered_command::<InstanceCommand>(app);
+        register_buffered_command::<FaderCommand>(app);
         register_update_deserializer(app, "FaderUpdate", websocket::deserialize_fader_update);
         register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
 

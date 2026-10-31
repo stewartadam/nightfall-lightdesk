@@ -103,7 +103,7 @@ impl Plugin for InputMidiPlugin {
         // Register command type and deserializer
         register_ingress_command::<MidiCommand>(app);
         app.add_message::<MidiInput>();
-        register_command_deserializer::<MidiCommand>(app, websocket::deserialize_midi_command);
+        register_buffered_command::<MidiCommand>(app);
         register_binding_undo::<MidiMappings, MidiCommand>(app);
 
         // Add systems
@@ -503,16 +503,6 @@ mod tests {
             .drain()
             .next()
             .expect("MIDI command should return a terminal result")
-    }
-
-    /// Verifies MIDI mappings preserve domain arguments without interpreting them.
-    #[test]
-    fn registered_action_arguments_remain_opaque() {
-        let arguments = serde_json::json!({ "domainValue": 7 });
-        let action = nightfall_actions::ActionReference::new("domain.action", arguments.clone());
-
-        assert_eq!(action.id.as_str(), "domain.action");
-        assert_eq!(action.arguments, arguments);
     }
 
     /// Verifies control changes classify as normalized levels on their channel.

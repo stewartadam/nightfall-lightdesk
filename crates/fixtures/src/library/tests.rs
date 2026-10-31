@@ -10,20 +10,17 @@
 
 use std::collections::HashSet;
 
-use bevy_ecs::message::Messages;
 use bevy_ecs::prelude::*;
 use bevy_ecs::world::CommandQueue;
 use nightfall_dmx::DmxValueResolution;
 use nightfall_dmx::prelude::{Attribute, ParameterUnit, ParameterValue};
-use nightfall_engine::prelude::{CommandEnvelope, CommandError, CommandId, CommandTracker, UndoId};
+use nightfall_engine::prelude::CommandError;
 use nightfall_fixture_model::prelude::PhysicalUnit;
 
 use super::catalog::{
     BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
 };
-use super::commands::{
-    FixtureLibraryCommand, LibraryFixtureInstance, deserialize_fixture_library_command,
-};
+use super::commands::LibraryFixtureInstance;
 use super::instantiate::{LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures};
 use super::{create_fixture_from_library, moving_heads, normalize_fixture_profile, strobes};
 use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter};
@@ -758,33 +755,4 @@ fn create_library_fixtures_rejects_empty_request() {
         "fixture_library.no_fixtures"
     );
     assert_eq!(resolutions, 0);
-}
-
-/// Verifies semantic deserialization preserves command and undo identities.
-#[test]
-fn deserialize_fixture_library_command_writes_semantic_envelope() {
-    let mut world = World::new();
-    world.insert_resource(Messages::<CommandEnvelope<FixtureLibraryCommand>>::default());
-    world.init_resource::<CommandTracker>();
-    let command_id = CommandId::new();
-    let undo_id = UndoId::new();
-    deserialize_fixture_library_command(
-        &mut world,
-        serde_json::json!({ "type": "RefreshLibrary" }),
-        command_id,
-        undo_id,
-    )
-    .expect("fixture-library command should deserialize");
-
-    let messages = world
-        .resource_mut::<Messages<CommandEnvelope<FixtureLibraryCommand>>>()
-        .drain()
-        .collect::<Vec<_>>();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].command_id, command_id);
-    assert_eq!(messages[0].undo_id, undo_id);
-    assert!(matches!(
-        messages[0].command,
-        FixtureLibraryCommand::RefreshLibrary
-    ));
 }

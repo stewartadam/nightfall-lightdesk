@@ -279,10 +279,7 @@ impl Plugin for FxModulePlugin {
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::FxModuleAstConverter,
         >();
-        register_command_deserializer::<FxModuleCommand>(
-            app,
-            websocket::deserialize_fx_module_command,
-        );
+        register_buffered_command::<FxModuleCommand>(app);
         register_update_deserializer(
             app,
             "FxModulePreviewUpdate",

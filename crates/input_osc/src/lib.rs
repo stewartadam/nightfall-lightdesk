@@ -88,7 +88,7 @@ impl Plugin for InputOscPlugin {
         app.add_message::<OscInput>();
 
         register_ingress_command::<OscCommand>(app);
-        register_command_deserializer::<OscCommand>(app, websocket::deserialize_osc_command);
+        register_buffered_command::<OscCommand>(app);
         register_binding_undo::<OscMappings, OscCommand>(app);
 
         app.add_systems(
@@ -465,16 +465,6 @@ mod tests {
             .drain()
             .next()
             .expect("OSC command should return a terminal result")
-    }
-
-    /// Verifies OSC mappings preserve domain arguments without interpreting them.
-    #[test]
-    fn registered_action_arguments_remain_opaque() {
-        let arguments = serde_json::json!({ "domainValue": 7 });
-        let action = nightfall_actions::ActionReference::new("domain.action", arguments.clone());
-
-        assert_eq!(action.id.as_str(), "domain.action");
-        assert_eq!(action.arguments, arguments);
     }
 
     /// Creates one OSC event carrying the supplied argument.

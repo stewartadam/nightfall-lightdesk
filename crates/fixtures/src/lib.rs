@@ -167,10 +167,7 @@ impl Plugin for FixturePlugin {
         register_engine_operation::<DmxOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FixtureAstConverter>(
         );
-        register_command_deserializer::<FixtureCommand>(
-            app,
-            websocket::deserialize_fixture_command,
-        );
+        register_buffered_command::<FixtureCommand>(app);
         register_client_update_deserializer(
             app,
             parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE,

@@ -71,11 +71,8 @@ impl Plugin for ProgrammerPlugin {
         register_engine_operation::<undo::RestoreProgrammerState>(app);
         register_engine_operation::<undo::RemoveProgrammerInstructionByUuid>(app);
 
-        register_command_deserializer::<events::ProgrammerCommand>(
-            app,
-            websocket::deserialize_programmer_command,
-        );
-        register_command_deserializer::<UserCommand>(app, websocket::deserialize_user_command);
+        register_buffered_command::<events::ProgrammerCommand>(app);
+        register_buffered_command::<UserCommand>(app);
 
         app.add_systems(
             PostUpdate,

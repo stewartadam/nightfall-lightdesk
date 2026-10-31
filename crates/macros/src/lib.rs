@@ -46,10 +46,7 @@ impl Plugin for MacrosPlugin {
         app.init_resource::<DataProvider<Macro>>();
         app.init_resource::<runner::MacroRuns>();
         register_ingress_command::<command::MacroCommand>(app);
-        register_command_deserializer::<command::MacroCommand>(
-            app,
-            websocket::deserialize_macro_command,
-        );
+        register_buffered_command::<command::MacroCommand>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::MacroAstConverter>(
         );
         app.world_mut()
