@@ -2,7 +2,7 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-A fixture profile tells Nightfall what each DMX channel of a light means. The patch tells it where those channels live. Together they decide which bytes leave the computer. This page follows that path from an imported GDTF or Open Fixture Library (OFL) file to the bytes in an Art-Net, sACN, or USB frame: the profile model, the importers, the parameter entities a patched fixture becomes, the binding graph and how patch changes are validated, and the order in which console universes, direct fixture patches, and DMX input combine into one output frame. Read it before you change an importer, the patch, or anything in the `DmxOutput` system set.
+A fixture profile tells Nightfall what each DMX channel of a light means. The patch tells it where those channels live. Together they decide which bytes leave the computer. This page follows that path from an imported GDTF or Open Fixture Library (OFL) file to the bytes in an Art-Net, sACN, or USB frame: the profile model, the importers, the parameter entities a patched fixture becomes, the route graph and how patch changes are validated, and the order in which console universes, direct fixture patches, and DMX input combine into one output frame. Read it before you change an importer, the patch, or anything in the `DmxOutput` system set.
 
 The page builds on [how a show becomes light](../concepts/show-to-light.md) and [priorities and merging](../concepts/priorities-and-merging.md), and it places each step in the render pass that [the frame loop](../engine/frame-loop.md) describes. It follows `Par 1`, patched at console universe 1, address 1.
 
@@ -13,21 +13,21 @@ The following diagram shows the data flow. Stored data is on the left of each st
 ```mermaid
 flowchart TB
   accTitle: From fixture profile to wire
-  accDescr: An importer converts a GDTF or OFL file into a fixture with elements and parameter metadata. Each parameter becomes a parameter entity. The compositor and the masters, virtual dimmer, and relation systems set each parameter's value. The value is encoded as DMX bytes at the addresses the patch bindings resolve, into console universes or direct output buffers. Output frame composition combines those with DMX input pass-through into one frame per transport and universe, which the output workers send.
+  accDescr: An importer converts a GDTF or OFL file into a fixture with elements and parameter metadata. Each parameter becomes a parameter entity. The compositor and the masters, virtual dimmer, and relation systems set each parameter's value. The value is encoded as DMX bytes at the addresses the DMX routes resolve, into console universes or direct output buffers. Output frame composition combines those with DMX input pass-through into one frame per transport and universe, which the output workers send.
   file[(GDTF or OFL file)] --> importer[[Importer in fixture-library]]
   importer --> fixture["Fixture: elements and parameter metadata"]
   fixture --> entities([Parameter entities])
   entities --> merge[Compositor merges layers]
   merge --> adjust[Masters, virtual dimmers, relations]
   adjust --> encode[Encode each value as DMX bytes]
-  bindings[(Patch bindings)] --> encode
+  routes[(DMX routes)] --> encode
   encode --> spaces[(Console universes and direct output buffers)]
   spaces --> compose{{Compose one frame per transport and universe}}
   input([DMX input pass-through]) --> compose
   compose --> wire([Art-Net, sACN, USB workers])
 ```
 
-The profile is static data that the patched fixture copies. The parameter entities hold the live values. The bindings decide addresses, and output frame composition decides what wins when several sources write the same wire channel.
+The profile is static data that the patched fixture copies. The parameter entities hold the live values. The routes decide addresses, and output frame composition decides what wins when several sources write the same wire channel.
 
 ## The profile model
 
@@ -123,7 +123,7 @@ Each parameter has a logical range of 0 to 255, no offset, no inversion, and no 
 
 ## Importing GDTF and OFL profiles
 
-The `fixture-library` crate scans the library directory for `.gdtf` and `.json` files, watches it for changes, and converts a mode on demand when you create fixtures. The browser demo uses a built-in library with compiled-in profiles instead. The two importers follow different rules:
+The `fixture-library` crate scans the library directory for `.gdtf` and `.json` files, watches it for changes, and converts a mode on demand when you create fixtures. When a GDTF archive fails strict parsing over a known authoring fault, such as a NaN placeholder in an optional number, the library repairs its `description.xml` in memory and parses it again. A file that still can't load appears in the **Fixture Library** panel with the parser's error. The browser demo uses a built-in library with compiled-in profiles instead. The two importers follow different rules:
 
 | Topic | GDTF importer | OFL importer |
 |-------|---------------|--------------|
@@ -155,7 +155,7 @@ After linking, the GDTF importer decides which virtual dimmers respond to intens
 
 A fixture isn't an entity. The engine stores `Fixture` values in `FixtureDataProviderExt`, a data provider keyed by fixture UID. Elements aren't entities either: code refers to an element with a `FixtureRef`, which holds the fixture UID and a 1-based element index. Only parameters are entities. Each one carries a `Parameter` component with the profile metadata and its live values.
 
-When the library commands `CreateFixtureFromLibrary` or `CreateFixturesFromLibrary` create fixtures, they convert the mode once, validate every requested fixture ID, store the fixtures, and spawn one parameter entity per parameter of every element. Loading a showfile spawns the same entities. A parameter index maps each (element, attribute) pair to its entity and back, so commands, layers, and bindings can find the parameter that `fixture 1 red` means.
+When the library commands `CreateFixtureFromLibrary` or `CreateFixturesFromLibrary` create fixtures, they convert the mode once, validate every requested fixture ID, store the fixtures, and spawn one parameter entity per parameter of every element. Loading a showfile spawns the same entities. A parameter index maps each (element, attribute) pair to its entity and back, so commands, layers, and routes can find the parameter that `fixture 1 red` means.
 
 Each parameter starts at its profile default. When the profile gives no default, `VirtualIntensity` starts at full so that the element isn't dark, and every other parameter starts at a logical value of 0.
 
@@ -164,46 +164,46 @@ Each parameter starts at its profile default. When the profile gives no default,
 
 For `Par 1`, the result is one stored fixture, one element reference with index 1, and four parameter entities for intensity, red, green, and blue.
 
-## The binding graph
+## The route graph
 
-Patch bindings connect four kinds of endpoint: fixtures, console universes, output transports, and input transports. A binding has a source, a target, a priority, and a clone flag. The following diagram shows the routes the engine resolves:
+DMX routes connect four kinds of endpoint: fixtures, console universes, output transports, and input transports. A route has a source, a target, a priority, and a clone flag. The **DMX Routes** tab of the **Patch** panel lists them. The following diagram shows the paths the engine resolves:
 
 ```mermaid
 flowchart TB
-  accTitle: Patch binding routes
-  accDescr: Output bindings route fixtures to console universes or straight to output transports, and console universes to output transports. Input bindings route input transports to fixtures, console universes, or straight to output transports for pass-through.
-  inputs([Input transport universes]) -- input binding --> fixtures[Fixture parameters]
-  inputs -- input binding --> console[(Console universes)]
-  inputs -- pass-through input binding --> outputs([Output transport universes])
-  fixtures -- output binding --> console
-  fixtures -- direct output binding --> outputs
-  console -- output binding --> outputs
+  accTitle: DMX route paths
+  accDescr: Output routes send fixtures to console universes or straight to output transports, and console universes to output transports. Input routes send input transports to fixtures, console universes, or straight to output transports for pass-through.
+  inputs([Input transport universes]) -- input route --> fixtures[Fixture parameters]
+  inputs -- input route --> console[(Console universes)]
+  inputs -- pass-through input route --> outputs([Output transport universes])
+  fixtures -- output route --> console
+  fixtures -- direct output route --> outputs
+  console -- output route --> outputs
 ```
 
-The engine keeps three binding lists:
+The engine keeps three route lists:
 
-- **Output bindings** route fixture parameters to console universes or straight to an output transport, and route console universes to output transports.
-- **Input bindings** route incoming DMX to fixture parameters, to console universes, or straight to an output transport. Console and fixture sources are also possible, for example to copy one fixture's values onto others.
-- **Disabled bindings** filter out matching input sources. Only inputs can be disabled. To stop an output, remove its binding.
+- **Output routes** send fixture parameters to console universes or straight to an output transport, and send console universes to output transports.
+- **Input routes** send incoming DMX to fixture parameters, to console universes, or straight to an output transport. Console and fixture sources are also possible, for example to copy one fixture's values onto others.
+- **Disabled routes** filter out matching input sources. Only inputs can be disabled. To stop an output, remove its route.
 
-When two bindings conflict, the higher priority wins, and among equal priorities the earlier binding wins. Fixture-to-console bindings resolve this way per parameter: a parameter has at most one console address. Fixture-to-transport bindings add up instead, so a fixture patched to two transports sends to both.
+When two routes conflict, the higher priority wins, and among equal priorities the earlier route wins. Fixture-to-console routes resolve this way per parameter: a parameter has at most one console address. Fixture-to-transport routes add up instead, so a fixture patched to two transports sends to both.
 
-A fixture binding can select whole fixtures, one element, or one parameter. It places its fixtures in order:
+A fixture route can select whole fixtures, one element, or one parameter. It places its fixtures in order:
 
-- The Nth fixture lands in the Nth universe of the binding's universe range, and every fixture past the end of the range lands in the last universe.
-- Fixtures that share a universe are packed one after another from the binding address, unless the clone flag puts every fixture at the same address.
-- A whole-fixture selection keeps the profile's footprint offsets. An element or parameter selection is rebased so its first byte lands on the binding address.
-- Fixture bindings route break 1. Each additional DMX break needs its own `FixtureBreak` binding with its own address.
-- Parameters without slots, including `VirtualIntensity`, get no output address. An input binding that targets a fixture can still drive a `VirtualIntensity` parameter, which it treats as one sequential intensity byte.
+- The Nth fixture lands in the Nth universe of the route's universe range, and every fixture past the end of the range lands in the last universe.
+- Fixtures that share a universe are packed one after another from the route address, unless the clone flag puts every fixture at the same address.
+- A whole-fixture selection keeps the profile's footprint offsets. An element or parameter selection is rebased so its first byte lands on the route address.
+- Fixture routes cover break 1. Each additional DMX break needs its own `FixtureBreak` route with its own address.
+- Parameters without slots, including `VirtualIntensity`, get no output address. An input route that targets a fixture can still drive a `VirtualIntensity` parameter, which it treats as one sequential intensity byte.
 
-The **Patch** wizard creates `Par 1` through the library, then adds one output binding: source fixture 1, target console universe 1 at address 1, priority 0, no clone. The fixture's footprint is four slots, so its parameters get console addresses 1 to 4.
+The **Patch** wizard creates `Par 1` through the library, then adds one output route: source fixture 1, target console universe 1 at address 1, priority 0, no clone. The fixture's footprint is four slots, so its parameters get console addresses 1 to 4.
 
-### How bindings resolve each frame
+### How routes resolve each frame
 
-Resolution happens in two places, and only when bindings, fixtures, or output targets change:
+Resolution happens in two places, and only when routes, fixtures, or output targets change:
 
-- In `Update`, during `InputHandling`, the engine derives every parameter's console address from the fixture-to-console bindings and resolves the input bindings into a list ordered by precedence.
-- In the render pass, at the start of `DmxOutput`, the engine resolves the output bindings. It writes each parameter's direct transport destinations and console address into components on the parameter entity, and builds an output routing plan: which (transport, universe) frames exist and which console windows, direct buffers, and input windows feed each one. It then clears every value that output bindings wrote, so a moved or removed binding leaves no stale bytes behind.
+- In `Update`, during `InputHandling`, the engine derives every parameter's console address from the fixture-to-console routes and resolves the input routes into a list ordered by precedence.
+- In the render pass, at the start of `DmxOutput`, the engine resolves the output routes. It writes each parameter's direct transport destinations and console address into components on the parameter entity, and builds an output routing plan: which (transport, universe) frames exist and which console windows, direct buffers, and input windows feed each one. It then clears every value that output routes wrote, so a moved or removed route leaves no stale bytes behind.
 
 ### Staged patch validation
 
@@ -212,13 +212,13 @@ Every patch change is staged before it takes effect. The following diagram shows
 ```mermaid
 sequenceDiagram
   accTitle: Staged patch validation
-  accDescr: A patch command reaches the fixture command handler. The handler validates the current bindings, applies the change to copies, and validates the copies. It commits the copies only when no new issue appears, and otherwise rejects the command and leaves the live bindings untouched.
+  accDescr: A patch command reaches the fixture command handler. The handler validates the current routes, applies the change to copies, and validates the copies. It commits the copies only when no new issue appears, and otherwise rejects the command and leaves the live routes untouched.
   participant Client as Web UI or command line
   participant Handler as Patch command handler
-  participant Copies as Staged binding copies
-  participant Live as Live bindings
-  Client->>Handler: PatchBinding or RemovePatchBinding
-  Handler->>Handler: Validate live bindings, record existing issues
+  participant Copies as Staged route copies
+  participant Live as Live routes
+  Client->>Handler: AddDmxRoute or RemoveDmxRoutes
+  Handler->>Handler: Validate live routes, record existing issues
   Handler->>Copies: Apply the change to copies
   Handler->>Copies: Validate the copies
   alt No new issue
@@ -229,34 +229,34 @@ sequenceDiagram
   end
 ```
 
-Issues that existed before the change are tolerated, so one bad binding in a loaded show doesn't block every later edit. `UpdateFixturePatch`, which moves a fixture's single transport patch, rejects the change when any issue involves that fixture.
+Issues that existed before the change are tolerated, so one bad route in a loaded show doesn't block every later edit. `UpdateFixturePatch`, which moves a fixture's single transport patch, rejects the change when any issue involves that fixture.
 
 Validation always checks the following:
 
 - Console patch overlaps and fixtures that run past channel 512 of a console universe, using only the addresses output actually uses.
 - Fixtures whose transport patch runs past channel 512.
-- Fixture-to-fixture input bindings whose shapes don't match.
+- Fixture-to-fixture input routes whose shapes don't match.
 
 In the default strict mode, validation also rejects:
 
-- Overlapping transport-to-console input bindings with the same priority.
+- Overlapping transport-to-console input routes with the same priority.
 - Any two output or pass-through spans that overlap on the same transport universe and address.
-- A console-to-transport binding and a direct fixture-to-transport binding on the same transport universe.
+- A console-to-transport route and a direct fixture-to-transport route on the same transport universe.
 
-Permissive mode drops the strict rules. When a showfile loads, the engine validates its bindings but only logs the issues, so a loaded show can contain overlaps that a new patch command would reject.
+Permissive mode drops the strict rules. When a showfile loads, the engine validates its routes but only logs the issues, so a loaded show can contain overlaps that a new patch command would reject.
 
 ## Console universes and output transports
 
-A console universe is Nightfall's internal 512-channel address space, numbered from 1. An output transport is a concrete destination: sACN multicast or unicast, Art-Net broadcast or unicast, or a uDMX USB interface. Commands and bindings name transports by target ID. Every show has the targets `sacn`, `artnet`, and `udmx`, and you can add more in **I/O Transports**.
+A console universe is Nightfall's internal 512-channel address space, numbered from 1. An output transport is a concrete destination: sACN multicast or unicast, Art-Net broadcast or unicast, or a uDMX USB interface. Commands and routes name transports by target ID. Every show has the targets `sacn`, `artnet`, and `udmx`, and you can add more in **I/O Transports**.
 
 The `ConsoleDmxUniverses` resource holds two numbering spaces:
 
 - Console universes, keyed by console universe number. They hold fixture values at their console addresses, manual `channel` writes, and input routed to the console.
 - Direct output buffers, keyed by (transport, wire universe). They hold the values of fixtures patched straight to a transport.
 
-Every channel in both spaces records its origin: an output binding, an input transport, a manual command, or a system clear. Neither space is sent as it is. Console space reaches the wire only through a console-to-transport binding, which is why the tutorial runs without hardware.
+Every channel in both spaces records its origin: an output route, an input transport, a manual command, or a system clear. Neither space is sent as it is. Console space reaches the wire only through a console-to-transport route, which is why the tutorial runs without hardware.
 
-In each render pass, the `dmx_universes` system encodes every parameter that has a console address or a direct destination, and writes its bytes to both places. It writes console channels with the output binding origin and skips any channel that a manual write owns.
+In each render pass, the `dmx_universes` system encodes every parameter that has a console address or a direct destination, and writes its bytes to both places. It writes console channels with the output route origin and skips any channel that a manual write owns.
 
 > [!WARNING]
 > A manual `channel` write owns its console channel until you release it. On a console-patched fixture, the manual byte stays on that channel even when a higher-priority layer, such as the programmer, sets the parameter. The manual value also enters the compositor as a layer at priority -127, which is what the **Fixtures** panel shows. The wire and the parameter value can therefore disagree until you release the channel.
@@ -270,10 +270,10 @@ The following diagram shows the composition order. Each step overwrites the chan
 ```mermaid
 flowchart TB
   accTitle: Output frame composition order
-  accDescr: A frame starts as zeros. Console windows routed by console-to-transport bindings are copied first, lowest precedence first. Direct fixture output buffers are copied next. Input pass-through windows are copied last, lowest precedence first.
-  zero[Frame of 512 zeros] --> console["1: Console windows, written channels only, highest-priority binding last"]
+  accDescr: A frame starts as zeros. Console windows routed by console-to-transport routes are copied first, lowest precedence first. Direct fixture output buffers are copied next. Input pass-through windows are copied last, lowest precedence first.
+  zero[Frame of 512 zeros] --> console["1: Console windows, written channels only, highest-priority route last"]
   console --> direct["2: Direct fixture output buffer, written channels only"]
-  direct --> passthrough["3: Input pass-through windows, highest-priority binding last"]
+  direct --> passthrough["3: Input pass-through windows, highest-priority route last"]
   passthrough --> frame([Frame sent on the wire])
 ```
 
@@ -284,21 +284,21 @@ When a console universe, a direct fixture patch, and DMX input pass-through all 
 | Sources writing the channel | Value on the wire |
 |-----------------------------|-------------------|
 | Console window only | The console channel value. |
-| Console window and direct fixture patch | The direct fixture value. Binding priority does not matter between the two. |
+| Console window and direct fixture patch | The direct fixture value. Route priority does not matter between the two. |
 | Any of the above and an active pass-through window | The incoming DMX value. |
-| Two console windows | The value from the higher-priority binding, then the earlier binding. |
-| Two pass-through windows | The value from the higher-priority binding, then the earlier binding. |
+| Two console windows | The value from the higher-priority route, then the earlier route. |
+| Two pass-through windows | The value from the higher-priority route, then the earlier route. |
 
-Strict validation rejects all of these overlaps when you add a binding, so in practice the order matters for shows in permissive mode and for overlaps that existed before a change. The order is still the contract that output relies on: pass-through is the strongest source, and a direct fixture patch beats routed console space.
+Strict validation rejects all of these overlaps when you add a route, so in practice the order matters for shows in permissive mode and for overlaps that existed before a change. The order is still the contract that output relies on: pass-through is the strongest source, and a direct fixture patch beats routed console space.
 
 ## DMX input
 
-Art-Net and sACN input adapters receive frames on their own threads and publish each accepted frame to the engine. In the render pass, during `LayerGeneration`, the engine stores the frame and applies every input binding whose source matches its transport and universe. The following diagram shows the three routes an input frame can take:
+Art-Net and sACN input adapters receive frames on their own threads and publish each accepted frame to the engine. In the render pass, during `LayerGeneration`, the engine stores the frame and applies every input route whose source matches its transport and universe. The following diagram shows the three paths an input frame can take:
 
 ```mermaid
 flowchart TB
-  accTitle: Routes for incoming DMX
-  accDescr: An accepted input frame is stored by transport and universe. Bindings to fixtures, and console-patched fixtures under a binding to the console, receive values in the input layer at priority -128. A binding to the console also writes the raw channels into the console universe. A pass-through binding copies a window of the frame into an output frame.
+  accTitle: Paths for incoming DMX
+  accDescr: An accepted input frame is stored by transport and universe. Routes to fixtures, and console-patched fixtures under a route to the console, receive values in the input layer at priority -128. A route to the console also writes the raw channels into the console universe. A pass-through route copies a window of the frame into an output frame.
   frame([Accepted input frame]) --> store[(Input universes by transport and universe)]
   store --> layer["Input layer at priority -128"]
   store --> consolech[(Console universe channels)]
@@ -306,11 +306,11 @@ flowchart TB
   layer --> merged[Merged with every other layer]
 ```
 
-Each route behaves differently:
+Each path behaves differently:
 
-- **Input to fixtures.** The engine decodes each target parameter's bytes into an absolute value and asserts it in the input layer, which has priority -128 (`TRANSPORT_INPUT_LAYER_PRIORITY`). Every other layer overrides it. When two bindings drive the same parameter, the stronger binding keeps it until its binding is removed or its source goes stale.
-- **Input to a console universe.** The engine writes the raw channels into console space with the input transport origin. Fixtures that are console-patched in that universe, at or after the binding address, also receive their values through the input layer. Later in the same render pass, `dmx_universes` overwrites the channels those fixtures occupy with their merged output, so on fixture channels the input arrives only through the layer. Channels without a fixture keep the input value.
-- **Pass-through.** A binding from an input transport to an output target copies a window of the latest input frame into the output frame, as step 3 of the composition order.
+- **Input to fixtures.** The engine decodes each target parameter's bytes into an absolute value and asserts it in the input layer, which has priority -128 (`TRANSPORT_INPUT_LAYER_PRIORITY`). Every other layer overrides it. When two routes drive the same parameter, the stronger route keeps it until its route is removed or its source goes stale.
+- **Input to a console universe.** The engine writes the raw channels into console space with the input transport origin. Fixtures that are console-patched in that universe, at or after the route address, also receive their values through the input layer. Later in the same render pass, `dmx_universes` overwrites the channels those fixtures occupy with their merged output, so on fixture channels the input arrives only through the layer. Channels without a fixture keep the input value.
+- **Pass-through.** A route from an input transport to an output target copies a window of the latest input frame into the output frame, as step 3 of the composition order.
 
 When a source stops sending, the IO setting for input signal loss decides what happens. The default policy, `Hold`, keeps the last values. With `ClearAfterTimeout`, the engine clears channels and input layer values owned by a source whose last frame is older than the timeout (2000 ms by default), and stops passing its frame through until a new one arrives. The desk command `ReleaseStaleInputs` applies the same clear on demand.
 
@@ -331,11 +331,11 @@ Relations between two real channels don't run here. The fixture applies them its
 The following steps trace `Par 1` at the moment `First playback` finishes fading into `Red` while the programmer holds intensity at 50%:
 
 1. The OFL importer converts mode **4 channel** into one element with four coarse, sequential parameters, an HTP intensity and LTP red, green, and blue, as the profile table above shows.
-1. The library command spawns four parameter entities. The patch wizard's binding gives them console universe 1, addresses 1 to 4.
+1. The library command spawns four parameter entities. The patch wizard's route gives them console universe 1, addresses 1 to 4.
 1. The compositor merges the layers. The programmer at priority 127 sets intensity to 50%, which is a logical value of 127.5. `First playback` at priority 0 sets intensity to full, red to 255, and green and blue to 0. The programmer's higher priority wins intensity.
 1. No intensity master targets the fixture. It has no `VirtualIntensity` and no relations, so `VdimProcessing` changes nothing.
 1. `dmx_universes` encodes each value. Intensity normalizes to 0.5, scales to 127.5, and rounds to 128.
-1. With no console-to-transport binding, the bytes stay in console universe 1, visible in the **Console DMX** panel. After you add a binding from console universe 1 to `artnet` universe 1, the composed Art-Net frame for universe 1 carries the same bytes in channels 1 to 4 and zeros elsewhere. It leaves the computer once **Network output** is on in **I/O Transports**.
+1. With no console-to-transport route, the bytes stay in console universe 1, visible in the **Console DMX** panel. After you add a route from console universe 1 to `artnet` universe 1, the composed Art-Net frame for universe 1 carries the same bytes in channels 1 to 4 and zeros elsewhere. It leaves the computer once **Network output** is on in **I/O Transports**.
 
 The bytes in console universe 1 are:
 
@@ -356,17 +356,18 @@ An intensity master at 50% on `Par 1` would halve the intensity to 63.75, which 
 | Relation evaluation and relation scope | `crates/fixture-model/src/evaluation.rs` |
 | `Fixture`, `FixtureElement`, element wiring order | `crates/fixtures/src/fixture.rs` |
 | `Parameter` component and default values | `crates/fixtures/src/parameter.rs` |
-| Library entries and modes | `crates/fixture-library/src/manager.rs` |
+| Library entries, modes, and files that fail to load | `crates/fixture-library/src/manager.rs` |
+| Repairing malformed GDTF archives | `crates/fixture-library/src/gdtf_repair.rs` |
 | GDTF conversion, slot sharing, and diagnostics | `crates/fixture-library/src/converters/gdtf.rs` |
 | GDTF mode masters, relations, and virtual dimmer master response | `crates/fixture-library/src/converters/gdtf_links.rs` |
 | OFL conversion and `precedence` | `crates/fixture-library/src/converters/ofl.rs` |
 | OFL file schema | `crates/open-fixture-library/src/schema.rs` |
 | Spawning parameter entities | `crates/fixtures/src/library/instantiate.rs` |
 | Fixture store and parameter index | `crates/fixtures/src/data_provider_ext.rs`, `crates/fixtures/src/parameter_index.rs` |
-| Binding types | `crates/fixtures/src/bindings.rs` |
-| Binding resolution and fixture placement | `crates/fixtures/src/binding_resolution.rs` |
+| Route types | `crates/fixtures/src/routes.rs` |
+| Route resolution and fixture placement | `crates/fixtures/src/route_resolution.rs` |
 | Byte placement in a footprint | `crates/fixtures/src/wire_layout.rs` |
-| Validation rules | `crates/fixtures/src/binding_validation.rs` |
+| Validation rules | `crates/fixtures/src/route_validation.rs` |
 | Staged patch commands | `crates/desk/src/systems/event_handlers/fixture_events/patch.rs` |
 | Console universes, direct output buffers, encoding | `crates/fixtures/src/universe.rs` |
 | Output frame composition order | `crates/fixtures/src/output_frames.rs` |

@@ -15,10 +15,10 @@ A showfile stores what you programmed and how the desk is set up. Its JSON snaps
 
 | Group | Contents |
 |-------|----------|
-| Rig | Fixtures with their profiles embedded, patch bindings, scene objects, and color paths. |
-| Programming | Cues, sequences, groups, masters, blueprints, FX, flows, timecodes, and timelines. |
-| Controls | Clips, control slots, boards, MIDI and OSC mappings, and variables. |
-| Settings | Desk settings, IO settings, and version metadata. |
+| Rig | Fixtures with their profiles embedded, DMX routes, scene objects, and color paths. |
+| Programming | Cues, sequences, groups, masters, blueprints, FX, flows, timecodes, timelines, and macros. |
+| Controls | Clips, faders, boards, MIDI and OSC mappings, and variables. |
+| Settings | Desk settings, IO settings, show tempo (BPM, beats per bar, and launch quantize mode), and version metadata. |
 
 The files beside the snapshot hold what doesn't fit in JSON. The manifest records file hashes and sizes so the show list loads without reading every snapshot. Timeline audio and 3D object bundles are copied into the folder, and a show can also package the fixture profiles and FX modules it uses. [The show folder on disk](#the-show-folder-on-disk) lists the exact paths.
 
@@ -27,9 +27,9 @@ A showfile stores definitions, never live state. These things are not saved:
 - Running playbacks, their positions, and fades in progress. After a load, no clip is running, even if `First playback` was in `Red` when you saved.
 - The programmer. The 50% intensity you held on `Par 1` is gone after a load.
 - Undo history.
-- Control slot levels and pickup state. A control slot saves its assignment and button mode only.
+- Fader levels and pickup state. A fader saves its assignment and button mode only.
 
-The snapshot is flat JSON: one top-level key per kind of object, such as `fixtures`, `cues`, `sequences`, `clips`, `controlSlots`, and `ioSettings`, and a `metadata` object. The metadata records the Nightfall version that wrote the file, the schema version (`showfileVersion`), and the save time.
+The snapshot is flat JSON: one top-level key per kind of object, such as `fixtures`, `routes`, `cues`, `sequences`, `clips`, `faders`, and `ioSettings`, and a `metadata` object. The metadata records the Nightfall version that wrote the file, the schema version (`showfileVersion`), and the save time.
 
 ### The show folder on disk
 
@@ -91,7 +91,7 @@ Each domain has a load contributor that applies its slice of the snapshot. The c
 ```mermaid
 flowchart TB
   accTitle: Load order between showfile domains
-  accDescr: Color paths load after fixtures and patch. Clips load after cue structure, FX, and flows. Timecodes and timelines load after scene objects, cue structure, FX, flows, and clips. Desk state and boards have no dependencies.
+  accDescr: Color paths load after fixtures and patch. Clips load after cue structure, FX, and flows. Timecodes and timelines load after scene objects, cue structure, FX, flows, and clips. Desk state, boards, and macros have no dependencies.
   fixtures[Fixtures and patch] --> colorpaths[Color paths]
   cues[Cue structure] --> clips[Clips]
   fx[FX] --> clips
@@ -103,7 +103,7 @@ flowchart TB
   flows --> timelines
 ```
 
-Desk state and boards have no dependencies. The crate sorts the domains with a depth-first walk of this graph and fails the load if the graph has a cycle.
+Desk state, boards, and macros have no dependencies. The crate sorts the domains with a depth-first walk of this graph and fails the load if the graph has a cycle.
 
 Loading then runs in three phases, and each phase visits every domain in that order before the next phase starts:
 
@@ -236,11 +236,11 @@ Importing parts of another showfile is different: the engine merges the selected
 
 ## Add data to the showfile
 
-When a domain gains state that should survive a restart, add it to the snapshot and to that domain's contributors. Two recent changes show both cases: boards were added as a new field and a new load domain without a schema change, and control slots replaced `controlAssignments` with `controlSlots`, which needed a new schema version and a migration.
+When a domain gains state that should survive a restart, add it to the snapshot and to that domain's contributors. Two recent changes show both cases: boards were added as a new field and a new load domain without a schema change, and moving the `controlSlots` key to `faders` needed schema 23 and a migration, which also rewrites stored `control.level`, `control.go`, and `control.button` action references to their `fader.*` actions.
 
 Follow these steps to add a stored field:
 
-1. Add the field to `ShowfileSnapshot` in `crates/showfile/src/snapshot.rs`. Give it `#[serde(default)]` so files written before the field existed still load, and an explicit camelCase `rename`, as `controlSlots` and `ioSettings` have. Older fields such as `color_paths` predate this convention.
+1. Add the field to `ShowfileSnapshot` in `crates/showfile/src/snapshot.rs`. Give it `#[serde(default)]` so files written before the field existed still load, and an explicit camelCase `rename`, as `ioSettings` and `midiMappings` have. Older fields such as `color_paths` predate this convention.
 1. Add the field to the domain's slice in `crates/showfile/src/contributors/<domain>.rs`. Fill it in the save contributor, and apply it in the load contributor in the right phase: import plain data in the import phase, and create entities only in the materialize phase.
 1. Copy the field between the slice and the snapshot in `apply_save_contribution` and `load_contribution_for_domain` in `crates/showfile/src/contributors/mod.rs`.
 1. If the domain reads a resource the showfile code doesn't have yet, add it to `ShowfileSaveState` in `crates/showfile/src/world.rs`, and to `ShowfileApplyState`, `apply_showfile_snapshot`, and `initialize_showfile_resources` in `crates/showfile/src/apply.rs`.
@@ -252,7 +252,7 @@ Follow these steps to add a stored field:
 When a change renames, removes, or restructures existing JSON, also add a migration:
 
 1. Increase `CURRENT_SHOWFILE_VERSION` in `crates/showfile/src/lib.rs` by one.
-1. In `crates/showfile/src/migrations.rs`, add a match arm for the previous version that calls a new function, such as `19 => control_assignments_to_slots(showfile)?`.
+1. In `crates/showfile/src/migrations.rs`, add a match arm for the previous version that calls a new function, such as `22 => control_slots_to_faders(showfile)?`. Larger steps live in their own module under `crates/showfile/src/migrations/`, such as `speed_names.rs` for schema 21 to 22.
 1. Write the function against `serde_json::Value`. Document it as `Schema N → N+1`, return an error for data it can't convert rather than dropping it, and leave a file without the old key unchanged.
 1. Add tests for the step: one that converts the old shape and one for a file that doesn't contain it.
 1. Check real showfiles with `cargo run -p nightfall-showfile --features midi,osc --example validate -- <showfile>`, which parses and migrates through the same path the engine loads with.
