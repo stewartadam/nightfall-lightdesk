@@ -57,10 +57,7 @@ impl Plugin for TimecodePlugin {
             ast_conv::TimecodeAstConverter,
         >();
 
-        register_command_deserializer::<TimecodeCommand>(
-            app,
-            websocket::deserialize_timecode_command,
-        );
+        register_buffered_command::<TimecodeCommand>(app);
 
         app.init_resource::<DataProvider<timecode::Timecode>>();
         app.init_resource::<external::ExternalTimecodeFeeds>();

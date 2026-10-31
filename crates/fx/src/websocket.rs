@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::FxCommand;
-use crate::events::{FxPreviewUpdate, StepFxCommand, StepFxPreviewUpdate};
+use crate::events::{FxPreviewUpdate, StepFxPreviewUpdate};
 use crate::fx::Fx;
 use crate::step_fx::StepFx;
 
@@ -30,56 +30,6 @@ enum FxWsMessage<'a> {
     FxDefinitions(&'a [Fx]),
     /// List of all step-based fx
     StepFxDefinitions(&'a [StepFx]),
-}
-
-/// Deserialize and dispatch FxCommand from JSON.
-///
-/// This function is registered with the `CommandDeserializerRegistry` to handle
-/// incoming fx commands from the UI. It deserializes the JSON payload into a
-/// `FxCommand` and sends it as a typed event for domain handlers.
-pub fn deserialize_fx_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FxCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse FxCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserialize and dispatch StepFxCommand from JSON.
-///
-/// This function is registered with the `CommandDeserializerRegistry` to handle
-/// incoming step FX commands from the UI. It deserializes the JSON payload into
-/// a `StepFxCommand` and sends it as a typed event for domain handlers.
-pub fn deserialize_step_fx_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: StepFxCommand = serde_json::from_str(&json.to_string())
-        .map_err(|e| format!("Failed to parse StepFxCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
 }
 
 /// Deserializes and dispatches an untracked FX preview update from JSON.

@@ -45,7 +45,7 @@ impl Plugin for TempoPlugin {
         tracing::debug!("Registering TempoPlugin");
         app.init_resource::<ShowTempo>();
         register_ingress_command::<TempoCommand>(app);
-        register_command_deserializer::<TempoCommand>(app, websocket::deserialize_tempo_command);
+        register_buffered_command::<TempoCommand>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::TempoAstConverter>(
         );
         actions::register_tempo_actions(app);

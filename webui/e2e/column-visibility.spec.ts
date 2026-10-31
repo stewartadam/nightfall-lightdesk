@@ -231,113 +231,83 @@ test("fixture grid column visibility hides categories and persists settings", as
   await expect(reloadedColorCheckbox).toBeChecked();
 });
 
+/** Clicks one point six times and records the checkbox state after each click. */
+async function clickSixTimes(
+  page: Page,
+  target: Locator,
+  checkbox: Locator,
+): Promise<boolean[]> {
+  const { x, y } = await locatorCenter(target);
+  const states: boolean[] = [];
+  for (let index = 0; index < 6; index += 1) {
+    await page.mouse.click(x, y);
+    states.push(await checkbox.isChecked());
+  }
+  return states;
+}
+
+/**
+ * Verifies item, category and mixed-category checkboxes toggle once per rapid physical click,
+ * and that two quick clicks on a category label are not merged into one toggle.
+ */
 test("column visibility checkboxes survive rapid physical clicks", async ({
   page,
 }) => {
   const menu = await openColumnVisibilityMenu(page);
 
-  const intensityValueCheckbox = menu
-    .locator('[data-column-group="Intensity"] input[type="checkbox"]')
+  const intensityGroup = menu.locator('[data-column-group="Intensity"]');
+  const intensityCheckbox = intensityGroup
+    .locator('input[type="checkbox"]')
     .first();
-  const intensityValueLabel = menu
-    .locator('[data-column-group="Intensity"] label')
-    .first();
-  const { x, y } = await locatorCenter(intensityValueLabel);
+  expect(
+    await clickSixTimes(
+      page,
+      intensityGroup.locator("label").first(),
+      intensityCheckbox,
+    ),
+  ).toEqual([false, true, false, true, false, true]);
 
-  const states: boolean[] = [];
-  for (let index = 0; index < 6; index += 1) {
-    await page.mouse.click(x, y);
-    states.push(await intensityValueCheckbox.isChecked());
-  }
-
-  expect(states).toEqual([false, true, false, true, false, true]);
-});
-
-test("column visibility checkboxes survive rapid click bursts", async ({
-  page,
-}) => {
-  const menu = await openColumnVisibilityMenu(page);
-
-  const intensityValueCheckbox = menu
-    .locator('[data-column-group="Intensity"] input[type="checkbox"]')
-    .first();
-  const intensityValueLabel = menu
-    .locator('[data-column-group="Intensity"] label')
-    .first();
-  const { x, y } = await locatorCenter(intensityValueLabel);
-
-  for (let index = 0; index < 5; index += 1) {
-    await page.mouse.click(x, y);
-  }
-  await expect(intensityValueCheckbox).not.toBeChecked();
-
-  for (let index = 0; index < 4; index += 1) {
-    await page.mouse.click(x, y);
-  }
-  await expect(intensityValueCheckbox).not.toBeChecked();
-});
-
-test("column visibility category checkboxes survive rapid physical clicks", async ({
-  page,
-}) => {
-  const menu = await openColumnVisibilityMenu(page);
-  const colorCategory = menu.locator('[data-category="Color"]');
-  const colorCheckbox = colorCategory.locator("label").first().locator("input");
+  const colorCheckbox = menu
+    .locator('[data-category="Color"]')
+    .locator("label")
+    .first()
+    .locator("input");
   await expect(colorCheckbox).toBeChecked();
+  expect(await clickSixTimes(page, colorCheckbox, colorCheckbox)).toEqual([
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+  ]);
 
-  const { x, y } = await locatorCenter(colorCheckbox);
-
-  const states: boolean[] = [];
-  for (let index = 0; index < 6; index += 1) {
-    await page.mouse.click(x, y);
-    states.push(await colorCheckbox.isChecked());
-  }
-
-  expect(states).toEqual([false, true, false, true, false, true]);
-});
-
-test("column visibility category label double-click toggles twice", async ({
-  page,
-}) => {
-  const menu = await openColumnVisibilityMenu(page);
   const dimmerCategory = menu.locator('[data-category="Dimmer"]');
   const dimmerCheckbox = dimmerCategory
     .locator("label")
     .first()
     .locator("input");
-  const dimmerLabelText = dimmerCategory.locator("label span").first();
+  await expect(dimmerCheckbox).toBeChecked();
+  const dimmerLabel = await locatorCenter(
+    dimmerCategory.locator("label span").first(),
+  );
+  await page.mouse.click(dimmerLabel.x, dimmerLabel.y);
+  await page.mouse.click(dimmerLabel.x, dimmerLabel.y);
   await expect(dimmerCheckbox).toBeChecked();
 
-  const { x, y } = await locatorCenter(dimmerLabelText);
-
-  await page.mouse.click(x, y);
-  await page.mouse.click(x, y);
-
-  await expect(dimmerCheckbox).toBeChecked();
-});
-
-test("column visibility mixed category checkboxes survive rapid physical clicks", async ({
-  page,
-}) => {
-  const menu = await openColumnVisibilityMenu(page);
-  const colorCategory = menu.locator('[data-category="Color"]');
-  const colorCheckbox = colorCategory.locator("label").first().locator("input");
   await colorCheckbox.click();
   await expect(colorCheckbox).not.toBeChecked();
-
-  const blueValueCheckbox = menu
+  await menu
     .locator('[data-column-group="Blue"] input[type="checkbox"]')
-    .first();
-  await blueValueCheckbox.click();
+    .first()
+    .click();
   await expect(colorCheckbox).toHaveJSProperty("indeterminate", true);
-
-  const { x, y } = await locatorCenter(colorCheckbox);
-
-  const states: boolean[] = [];
-  for (let index = 0; index < 6; index += 1) {
-    await page.mouse.click(x, y);
-    states.push(await colorCheckbox.isChecked());
-  }
-
-  expect(states).toEqual([true, false, true, false, true, false]);
+  expect(await clickSixTimes(page, colorCheckbox, colorCheckbox)).toEqual([
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+  ]);
 });

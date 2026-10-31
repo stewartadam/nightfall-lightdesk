@@ -12,7 +12,6 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_scene_objects::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::commands::{
     AvailableObjectInfo, GetObjectProfileResponse, ListAvailableObjectsResponse,
@@ -48,23 +47,6 @@ enum ObjectLibraryCommandSuccess {
 pub struct ObjectLibraryCommandResult {
     command_id: CommandId,
     result: Result<ObjectLibraryCommandSuccess, CommandError>,
-}
-
-/// Deserializes one object-library command into its semantic envelope.
-pub fn deserialize_object_library_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: ObjectLibraryCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse ObjectLibraryCommand: {error}"))?;
-
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-    Ok(())
 }
 
 /// Applies object-library commands and emits one domain-local result per request.
@@ -651,36 +633,6 @@ mod tests {
             &stored.properties,
             SceneObjectProperties::Custom(properties)
                 if properties.library_object_version.as_deref() == Some("old-version")
-        ));
-    }
-
-    /// Verifies deserialization preserves admitted command and undo context.
-    #[test]
-    fn deserialize_object_library_command_writes_semantic_envelope() {
-        let mut world = World::new();
-        world.insert_resource(Messages::<CommandEnvelope<ObjectLibraryCommand>>::default());
-        world.init_resource::<CommandTracker>();
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-
-        deserialize_object_library_command(
-            &mut world,
-            serde_json::json!({ "type": "RefreshLibrary" }),
-            command_id,
-            undo_id,
-        )
-        .expect("object-library command should deserialize");
-
-        let messages = world
-            .resource_mut::<Messages<CommandEnvelope<ObjectLibraryCommand>>>()
-            .drain()
-            .collect::<Vec<_>>();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(
-            messages[0].command,
-            ObjectLibraryCommand::RefreshLibrary
         ));
     }
 }

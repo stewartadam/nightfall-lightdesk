@@ -6,11 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { TIMING_SPECS_ENABLED, TIMING_SPECS_SKIP_REASON } from "./perf-budgets";
 import { expect, type Page, test } from "./playwright-fixtures";
 import {
   seedStartupShowfileName,
   waitForDockviewApp,
 } from "./showfile-startup";
+
+test.skip(!TIMING_SPECS_ENABLED, TIMING_SPECS_SKIP_REASON);
 
 type ReproSurface = {
   fixturePanelId: string;

@@ -128,11 +128,8 @@ impl Plugin for CuePlugin {
             registry.register_operation::<undo::RestoreSequencePosition>();
         }
 
-        register_command_deserializer::<CueCommand>(app, crate::websocket::deserialize_cue_command);
-        register_command_deserializer::<events::CuePreviewCommand>(
-            app,
-            crate::websocket::deserialize_cue_preview_command,
-        );
+        register_buffered_command::<CueCommand>(app);
+        register_buffered_command::<events::CuePreviewCommand>(app);
 
         app.add_systems(
             PostUpdate,
