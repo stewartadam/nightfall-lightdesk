@@ -35,9 +35,14 @@ use nightfall_output_sacn::prelude::*;
 use nightfall_output_usb::prelude::*;
 
 pub trait FeatureIntegrationExt {
+    /// Inserts the audio engine right after `EnginePlugin` when the `audio` feature is on.
     fn maybe_core_audio(self) -> Self;
+    /// Inserts desk audio integration right after `DeskPlugin` when the `audio` feature is on.
     fn maybe_desk_audio(self) -> Self;
+    /// Inserts the fixture library right after `MacrosPlugin` when its feature is on.
     fn maybe_fixture_library(self) -> Self;
+    /// Inserts the object library after the fixture library (or after `MacrosPlugin` without
+    /// one) when its feature is on. Call it after [`Self::maybe_fixture_library`].
     fn maybe_object_library(self) -> Self;
     fn maybe_ltc_input(self) -> Self;
     fn maybe_midi_input(self, input_port: Option<String>) -> Self;
@@ -52,7 +57,7 @@ pub trait FeatureIntegrationExt {
 impl FeatureIntegrationExt for PluginGroupBuilder {
     #[cfg(feature = "audio")]
     fn maybe_core_audio(self) -> Self {
-        self.add(AudioPlugin)
+        self.add_after::<nightfall_engine::EnginePlugin>(AudioPlugin)
     }
 
     #[cfg(not(feature = "audio"))]
@@ -62,7 +67,7 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
 
     #[cfg(feature = "audio")]
     fn maybe_desk_audio(self) -> Self {
-        self.add(DeskAudioPlugin)
+        self.add_after::<nightfall_desk::DeskPlugin>(DeskAudioPlugin)
     }
 
     #[cfg(not(feature = "audio"))]
@@ -72,7 +77,7 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
 
     #[cfg(feature = "fixture-library")]
     fn maybe_fixture_library(self) -> Self {
-        self.add(FixtureLibraryPlugin)
+        self.add_after::<nightfall_macros::prelude::MacrosPlugin>(FixtureLibraryPlugin)
     }
 
     #[cfg(not(feature = "fixture-library"))]
@@ -80,9 +85,17 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
         self
     }
 
-    #[cfg(feature = "object-library")]
+    /// Places the object library after the fixture library when both are on, so a call made
+    /// before [`FeatureIntegrationExt::maybe_fixture_library`] panics instead of reordering them.
+    #[cfg(all(feature = "object-library", feature = "fixture-library"))]
     fn maybe_object_library(self) -> Self {
-        self.add(ObjectLibraryPlugin)
+        self.add_after::<FixtureLibraryPlugin>(ObjectLibraryPlugin)
+    }
+
+    /// Places the object library right after `MacrosPlugin` when there is no fixture library.
+    #[cfg(all(feature = "object-library", not(feature = "fixture-library")))]
+    fn maybe_object_library(self) -> Self {
+        self.add_after::<nightfall_macros::prelude::MacrosPlugin>(ObjectLibraryPlugin)
     }
 
     #[cfg(not(feature = "object-library"))]

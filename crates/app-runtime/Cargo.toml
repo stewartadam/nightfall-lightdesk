@@ -21,10 +21,10 @@ moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-config = { path = "../config" }
 nightfall-actions = { path = "../actions" }
-nightfall-boards = { path = "../boards" }
 nightfall-macros = { path = "../macros" }
 nightfall-audio = { path = "../audio", optional = true }
 nightfall-beat-detection = { path = "../beat-detection", optional = true }
+nightfall-composition = { path = "../composition" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-cues = { path = "../cues" }
 nightfall-desk = { path = "../desk", default-features = false, features = ["fx-module-host", "native-network-watch"] }
@@ -55,7 +55,6 @@ nightfall-programmer = { path = "../programmer" }
 nightfall-references = { path = "../references", features = ["fx-module-host"] }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-showfile = { path = "../showfile" }
-nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-timeline = { path = "../timeline", default-features = false, features = ["http"] }
 nightfall-undo = { path = "../undo" }

@@ -1,0 +1,31 @@
+[package]
+name = "nightfall-composition"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+bevy_app.workspace = true
+nightfall-actions = { path = "../actions" }
+nightfall-boards = { path = "../boards" }
+nightfall-cues = { path = "../cues" }
+nightfall-desk = { path = "../desk", default-features = false }
+nightfall-engine = { path = "../engine" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-flow = { path = "../flow", default-features = false }
+nightfall-fx = { path = "../fx" }
+nightfall-macros = { path = "../macros" }
+nightfall-programmer = { path = "../programmer" }
+nightfall-references = { path = "../references" }
+nightfall-scene-objects = { path = "../scene-objects" }
+nightfall-tempo = { path = "../tempo" }
+nightfall-timecode = { path = "../timecode" }
+nightfall-timeline = { path = "../timeline", default-features = false }
+nightfall-undo = { path = "../undo" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[lints]
+workspace = true
