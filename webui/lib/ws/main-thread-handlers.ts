@@ -11,6 +11,7 @@ import { registerClipHandlers } from "./clip-handlers";
 import { registerCommandResultHandlers } from "./command-result-handlers";
 import { registerCueHandlers } from "./cue-handlers";
 import { registerDeskHandlers } from "./desk-handlers";
+import { registerFixtureEditorHandlers } from "./fixture-editor-handlers";
 import { registerFixtureHandlers } from "./fixture-handlers";
 import { registerFlowHandlers } from "./flow-handlers";
 import { registerFxHandlers } from "./fx-handlers";
@@ -59,6 +60,7 @@ export function createMainThreadMessageHandlerRegistry(
   registerClipHandlers(registry);
   registerTimelineHandlers(registry);
   registerLibraryResponseHandlers(registry);
+  registerFixtureEditorHandlers(registry);
   registerRuntimeSnapshotHandlers(registry);
   registerSettingsSnapshotHandlers(registry);
   return registry;

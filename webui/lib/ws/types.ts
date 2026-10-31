@@ -129,6 +129,7 @@ export type AnyWsMessage =
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
   | types.FixtureLibraryWsMessage
+  | types.FixtureEditorWsMessage
   | types.ObjectLibraryWsMessage
   | flowTypes.FlowWsMessage
   | Exclude<types.DeskWsMessage, { type: "LayerStack" }>
