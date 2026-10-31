@@ -707,3 +707,90 @@ test("TanStack patch fixture list persists marker-selected Pos Y edits after rel
     contentType: "image/png",
   });
 });
+
+/** Verifies a `0>3` fan typed into a Pos X range spreads evenly from the first to the last row. */
+test("TanStack patch fixture list fans range edits across selected cells", async ({
+  backendSlot,
+  page,
+}) => {
+  const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
+
+  const targetCells = [0, 1, 2, 3].map((row) =>
+    grid.locator(`#tanstack-cell-6-${row}`),
+  );
+  await expect(targetCells[0]!).toHaveText(/-?\d/);
+
+  await targetCells[0]!.click();
+  for (let step = 0; step < 3; step += 1) {
+    await page.keyboard.press("Shift+ArrowDown");
+  }
+  await expect(
+    grid.locator("xpath=ancestor::*[@role='grid'][1]"),
+  ).toHaveAttribute("data-selection-range", "6,0,1,4");
+  await page.keyboard.press("Enter");
+
+  const editor = targetCells[3]!.locator("input");
+  await expect(editor).toBeVisible();
+  await editor.fill("0>3");
+  await editor.press("Enter");
+
+  await expect(editor).toBeHidden();
+  for (const [row, cell] of targetCells.entries()) {
+    await expect(cell).toHaveText(String(row));
+  }
+});
+
+/** Verifies a fan typed into one cell of marker-selected rows spreads across those fixtures and persists. */
+test("TanStack patch fixture list fans marker-selected Rot Z edits", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
+
+  await grid
+    .getByRole("checkbox", { name: "Select row 1", exact: true })
+    .click();
+  await grid
+    .getByRole("checkbox", { name: "Select row 4", exact: true })
+    .click({ modifiers: ["Shift"] });
+
+  const rotZCells = [0, 1, 2, 3].map((row) =>
+    grid.locator(`#tanstack-cell-11-${row}`),
+  );
+  await rotZCells[0]!.dblclick();
+  const editor = rotZCells[0]!.locator("input");
+  await expect(editor).toBeVisible();
+  await editor.fill("-90>90");
+  await editor.press("Enter");
+
+  await expect(editor).toBeHidden();
+  const expected = ["-90", "-30", "30", "90"];
+  for (const [row, cell] of rotZCells.entries()) {
+    await expect(cell).toHaveText(expected[row]!);
+  }
+
+  await page.reload();
+  await waitForDockviewApp(page);
+  await expect
+    .poll(() => ownedPatchStoreCounts(page))
+    .toEqual({
+      fixtures: OWNED_FIXTURE_IDS.length,
+      parameters: OWNED_FIXTURE_IDS.length,
+    });
+  const reloadedGrid = await openPatchPanelWithTanStackGrid(
+    page,
+    "panel-PatchEditor-tanstack-e2e-fan-reload",
+  );
+  for (const [row, value] of expected.entries()) {
+    await expect(reloadedGrid.locator(`#tanstack-cell-11-${row}`)).toHaveText(
+      value,
+    );
+  }
+  await reloadedGrid.locator("#tanstack-cell-11-0").scrollIntoViewIfNeeded();
+  const screenshotPath = testInfo.outputPath("patch-rot-z-fan.png");
+  await reloadedGrid.screenshot({ path: screenshotPath });
+  await testInfo.attach("patch-rot-z-fan", {
+    path: screenshotPath,
+    contentType: "image/png",
+  });
+});

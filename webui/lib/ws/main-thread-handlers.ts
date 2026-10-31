@@ -15,6 +15,7 @@ import { registerFixtureHandlers } from "./fixture-handlers";
 import { registerFlowHandlers } from "./flow-handlers";
 import { registerFxHandlers } from "./fx-handlers";
 import { registerLibraryResponseHandlers } from "./library-response-handlers";
+import { registerMacroHandlers } from "./macro-handlers";
 import {
   createWsMessageHandlerRegistry,
   type WsMessageHandlerRegistry,
@@ -52,6 +53,7 @@ export function createMainThreadMessageHandlerRegistry(
   registerReferenceHandlers(registry);
   registerCueHandlers(registry);
   registerBoardHandlers(registry);
+  registerMacroHandlers(registry);
   registerFxHandlers(registry);
   registerFlowHandlers(registry);
   registerClipHandlers(registry);

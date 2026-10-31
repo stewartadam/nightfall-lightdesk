@@ -55,13 +55,18 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           : > .ci-changed-files
-          rm -f .ci-base-Cargo.lock
+          rm -f .ci-base-Cargo.lock .ci-base-cargo-tools.json
           if [[ "$EVENT_NAME" == pull_request ]]; then
             git diff --no-renames --name-only -z HEAD^1 HEAD > .ci-changed-files
             # Selection compares lockfiles to tell dependency changes from workspace rewiring.
             if ! git diff --quiet HEAD^1 HEAD -- Cargo.lock &&
               git cat-file -e HEAD^1:Cargo.lock 2> /dev/null; then
               git show HEAD^1:Cargo.lock > .ci-base-Cargo.lock
+            fi
+            # Selection compares tool pins to validate only what the changed tools affect.
+            if ! git diff --quiet HEAD^1 HEAD -- config/cargo-tools.json &&
+              git cat-file -e HEAD^1:config/cargo-tools.json 2> /dev/null; then
+              git show HEAD^1:config/cargo-tools.json > .ci-base-cargo-tools.json
             fi
           fi
       # A manual preview run checks out the PR's branch without its base, so the PR's file list
@@ -120,6 +125,8 @@ jobs:
       preview_pr: ${{ steps.select.outputs.preview_pr }}
       docs: ${{ steps.select.outputs.docs }}
       rust: ${{ steps.select.outputs.rust }}
+      native: ${{ steps.select.outputs.native }}
+      app: ${{ steps.select.outputs.app }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -151,9 +158,14 @@ jobs:
     if: needs.selection.outputs.desktop_check == 'true'
     uses: ./.github/workflows/desktop-check.yml
 
+  # Both WASM packages feed the app validation jobs and the browser demo; the bridge also feeds
+  # desktop packaging.
   wasm-bridge:
     name: WASM bridge
-    needs: scope
+    needs: [scope, selection]
+    if: >-
+      needs.selection.outputs.app == 'true' || needs.selection.outputs.desktop_package == 'true' ||
+      needs.selection.outputs.browser_package == 'true' || needs.selection.outputs.browser_preview == 'true'
     uses: ./.github/workflows/wasm.yml
     with:
       package: wasm-bridge
@@ -161,8 +173,11 @@ jobs:
 
   browser-runtime:
     name: Browser runtime
-    needs: scope
-    if: ${{ !startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+    needs: [scope, selection]
+    if: >-
+      (!startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && (
+      needs.selection.outputs.app == 'true' || needs.selection.outputs.browser_package == 'true' ||
+      needs.selection.outputs.browser_preview == 'true')
     uses: ./.github/workflows/wasm.yml
     with:
       package: browser-runtime
@@ -354,8 +369,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run script tests
         run: pnpm run test:scripts
-      - run: cargo install --locked typeshare-cli --version 1.13.3
-      - run: cargo install --locked cargo-hakari --version 0.9.39
+      - uses: ./.github/actions/cargo-tools
+        with:
+          typeshare: true
+          cargo-hakari: true
       - name: Run source pre-commit hooks
         run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
 
@@ -372,11 +389,9 @@ jobs:
           path: .ci-source
       - name: Restore credential-free source
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
-      - name: Install mdBook
-        # Keep in sync with the version in CONTRIBUTING.md.
-        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: ./.github/actions/cargo-tools
         with:
-          tool: mdbook@0.4.49
+          mdbook: true
       - name: Build every mdBook
         # mdBook exits successfully on broken includes, so any logged error or warning fails the job.
         env:
@@ -394,7 +409,7 @@ jobs:
             out="$RUNNER_TEMP/books/${book//\//_}"
             if ! mdbook build --dest-dir "$out" "$book" 2>&1 | tee "$RUNNER_TEMP/mdbook.log"; then
               status=1
-            elif grep -Eq '\[(ERROR|WARN)\]' "$RUNNER_TEMP/mdbook.log"; then
+            elif grep -Eq '^ *(ERROR|WARN) ' "$RUNNER_TEMP/mdbook.log"; then
               echo "::error::mdBook reported problems while building $book"
               status=1
             else
@@ -418,15 +433,15 @@ jobs:
   native:
     name: Native
     needs: [scope, selection]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.native == 'true' }}
     uses: ./.github/workflows/native-validation.yml
     with:
       rust-tests: ${{ needs.selection.outputs.rust == 'true' }}
 
   webui:
     name: TypeScript and WebUI Node tests
-    needs: [scope, wasm-bridge, browser-runtime]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
+    needs: [scope, selection, wasm-bridge, browser-runtime]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.app == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -446,10 +461,12 @@ jobs:
         with:
           key: webui-tools
           cache-targets: false
+      - uses: ./.github/actions/cargo-tools
+        with:
+          typeshare: true
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
-          cargo install --locked typeshare-cli --version 1.13.3
           pnpm run typeshare
       - name: Download shared release bridge
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -470,7 +487,7 @@ jobs:
   browser-smoke:
     name: Chromium product flows
     needs: [scope, selection, native, wasm-bridge]
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.native == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -490,10 +507,12 @@ jobs:
         with:
           key: webui-tools
           cache-targets: false
+      - uses: ./.github/actions/cargo-tools
+        with:
+          typeshare: true
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
-          cargo install --locked typeshare-cli --version 1.13.3
           pnpm run typeshare
       - name: Download shared release bridge
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -543,7 +562,15 @@ jobs:
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
           DOCS: ${{ needs.selection.outputs.docs }}
-        # Documentation builds only when selected.
+          APP: ${{ needs.selection.outputs.app }}
+          NATIVE: ${{ needs.selection.outputs.native }}
+        # Documentation and the app validation jobs run only when selected. The WASM packages may
+        # still build for a preview, which is not part of this check.
         run: |
-          printf '%s' "$JOB_RESULTS" | jq -e --arg docs "$DOCS" \
-            'with_entries(select($docs != "false" or .key != "docs")) | all(.[]; .result == "success")'
+          printf '%s' "$JOB_RESULTS" | jq -e --arg docs "$DOCS" --arg app "$APP" --arg native "$NATIVE" '
+            def app_job: IN("wasm-bridge", "browser-runtime", "webui");
+            def native_job: IN("native", "browser-smoke");
+            with_entries(select(
+              ($docs != "false" or .key != "docs") and ($app != "false" or (.key | app_job | not)) and
+              ($native != "false" or (.key | native_job | not))
+            )) | all(.[]; .result == "success")'

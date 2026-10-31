@@ -10,6 +10,7 @@ export { default as ShowfileDialogs } from "./dialogs/host";
 export { OpenShowfileModal } from "./dialogs/open-showfile";
 export type { AvailableShowfilesResponse } from "./model/showfile-discovery";
 export {
+  OPEN_OBJECT_PALETTE_SHORTCUT,
   ShowfileObjectPaletteProvider,
   useShowfileObjectPalette,
 } from "./object-palette";

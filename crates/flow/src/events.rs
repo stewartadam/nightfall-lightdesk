@@ -2086,7 +2086,7 @@ mod tests {
                 .single_mut(&mut world)
                 .expect("expected controls on started flow");
             controls.intensity_scale = 0.25;
-            controls.rate = 0.5;
+            controls.speed = 0.5;
         }
 
         write_flow_command(&mut world, FlowCommand::StartFlow(11));
@@ -2097,7 +2097,7 @@ mod tests {
             .single(&world)
             .expect("expected controls on restarted flow");
         assert_eq!(controls.intensity_scale, 0.25);
-        assert_eq!(controls.rate, 0.5);
+        assert_eq!(controls.speed, 0.5);
     }
 
     #[test]

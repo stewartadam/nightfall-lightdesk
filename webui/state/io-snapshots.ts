@@ -10,13 +10,13 @@ import {
   appendInvocationFailure,
   describeInvocationFailure,
 } from "../features/actions/model/invocation-failures";
-import { normalizeFixtureUid } from "../lib/binding-utils";
 import { markCommandFailurePresented } from "../lib/command-failure-toasts";
 import {
   replaceStoredLayoutsFromShowfile,
   type StoredPanelLayout,
 } from "../lib/layoutStorage";
 import { setStoreAction } from "../lib/nanostore-action";
+import { normalizeFixtureUid } from "../lib/route-utils";
 import type * as types from "../types";
 import {
   actionCatalog,
@@ -25,6 +25,8 @@ import {
   clientActionInvocation,
   controllerMappingMode,
   midiControlTouches,
+  midiDetectedDevices,
+  midiDeviceProfiles,
   midiDevices,
   midiLastEvent,
   midiMappingDiagnostics,
@@ -136,6 +138,13 @@ export function applyMidiDeviceListSnapshot(devices: types.MidiDevice[]): void {
   setStoreAction(midiDevices, "Receive MidiDeviceList", devices);
 }
 
+/** Applies the controller profiles of connected and mapped MIDI devices to the MIDI store. */
+export function applyMidiDeviceProfilesSnapshot(
+  profiles: types.MidiDeviceProfile[],
+): void {
+  setStoreAction(midiDeviceProfiles, "Receive MidiDeviceProfiles", profiles);
+}
+
 /**
  * Returns mappings with their IDs as unhyphenated UUID strings.
  *
@@ -179,6 +188,11 @@ export function applyMidiLastEventSnapshot(
 /** Publishes one frame of MIDI controls touched while controller mapping mode is active. */
 export function applyMidiControlTouched(touches: types.MidiLastEvent[]): void {
   setStoreAction(midiControlTouches, "Receive MidiControlTouched", touches);
+}
+
+/** Publishes MIDI devices the backend announced as newly connected and not yet mapped. */
+export function applyMidiDeviceDetected(devices: string[]): void {
+  setStoreAction(midiDetectedDevices, "Receive MidiDeviceDetected", devices);
 }
 
 /** Publishes one frame of OSC messages received while controller mapping mode is active. */

@@ -22,7 +22,7 @@ use nightfall_engine::prelude::{
     ClientEventSink, CommandEnvelope, CommandOrigin, OutboundFrame, ReplyTarget,
 };
 use nightfall_fixtures::prelude::{
-    BindingValidationMode, BindingValidationSettings, InputDmxUniverses, InputUniverseStaleTimeout,
+    InputDmxUniverses, InputUniverseStaleTimeout, RouteValidationMode, RouteValidationSettings,
 };
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, ExternalControlState, InputSignalLossPolicy,
@@ -55,7 +55,7 @@ fn settings_command_app() -> (App, Receiver<OutboundFrame>) {
     app.init_resource::<ExternalControlState>();
     app.init_resource::<nightfall_desk::prelude::TelemetryState>();
     app.init_resource::<nightfall_desk::prelude::ReportedGraphics>();
-    app.init_resource::<BindingValidationSettings>();
+    app.init_resource::<RouteValidationSettings>();
     app.init_resource::<InputUniverseVisibilityMode>();
     app.init_resource::<InputUniverseStaleTimeout>();
     app.init_resource::<InputDmxUniverses>();
@@ -109,6 +109,7 @@ fn broadcasts_settings_when_desk_settings_changes() {
             }],
             created_at: 30.0,
             updated_at: 40.0,
+            transient: false,
         }];
     }
     app.update();
@@ -217,19 +218,19 @@ fn broadcasts_clamped_dmx_output_rate() {
 }
 
 #[test]
-fn updates_binding_validation_mode_from_settings_command() {
+fn updates_route_validation_mode_from_settings_command() {
     let (mut app, _rx) = settings_command_app();
 
     submit_settings_command(
         &mut app,
-        SettingsCommand::SetBindingValidationMode(BindingValidationMode::Permissive),
+        SettingsCommand::SetRouteValidationMode(RouteValidationMode::Permissive),
     );
 
     app.update();
 
     assert_eq!(
-        app.world().resource::<BindingValidationSettings>().mode,
-        BindingValidationMode::Permissive
+        app.world().resource::<RouteValidationSettings>().mode,
+        RouteValidationMode::Permissive
     );
 }
 
@@ -555,6 +556,7 @@ fn stored_layout(id: &str, shown_in_switcher: bool) -> StoredPanelLayout {
         }],
         created_at: 10.0,
         updated_at: 20.0,
+        transient: false,
     }
 }
 
@@ -627,4 +629,31 @@ fn rejected_panel_layout_edit_changes_nothing() {
     app.update();
 
     assert_eq!(app.world().resource::<DeskSettings>().panel_layouts, before);
+}
+
+/// Verifies saved showfiles leave out transient layouts and a default layout that is one.
+#[test]
+fn showfile_settings_skip_transient_layouts() {
+    let layout = |id: &str, transient: bool| StoredPanelLayout {
+        transient,
+        ..stored_layout(id, true)
+    };
+    let settings = DeskSettings {
+        panel_layouts: vec![layout("user", false), layout("lesson", true)],
+        default_panel_layout_id: Some("lesson".into()),
+        ..DeskSettings::default()
+    };
+
+    let saved = settings.for_showfile();
+    assert_eq!(saved.panel_layouts, vec![layout("user", false)]);
+    assert_eq!(saved.default_panel_layout_id, None);
+
+    let settings = DeskSettings {
+        default_panel_layout_id: Some("user".into()),
+        ..settings
+    };
+    assert_eq!(
+        settings.for_showfile().default_panel_layout_id.as_deref(),
+        Some("user")
+    );
 }

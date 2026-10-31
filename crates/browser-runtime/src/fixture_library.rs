@@ -67,6 +67,7 @@ pub fn handle_builtin_fixture_library_commands(
                         .iter()
                         .map(|profile| profile.info())
                         .collect(),
+                    unloadable: Vec::new(),
                 };
                 publish_available_fixtures(&broadcaster, &response);
                 Ok(FixtureLibraryCommandSuccess::AvailableFixtures(response))
@@ -122,7 +123,10 @@ pub fn handle_builtin_fixture_library_commands(
                 .map(|()| FixtureLibraryCommandSuccess::Applied)
             }
             FixtureLibraryCommand::UploadFixture { .. }
-            | FixtureLibraryCommand::DeleteFixtures(_) => Err(library_management_unavailable()),
+            | FixtureLibraryCommand::DeleteFixtures(_)
+            | FixtureLibraryCommand::DeleteUnloadableFiles(_) => {
+                Err(library_management_unavailable())
+            }
         };
         results.write(FixtureLibraryCommandResult::new(event.command_id, result));
     }
@@ -139,7 +143,7 @@ fn builtin_fixture_profile(
     mode: Option<&str>,
 ) -> Result<GetFixtureProfileResponse, CommandError> {
     let profile = find_builtin_revision(make, model, revision)?;
-    let requested_mode = mode.unwrap_or(profile.mode);
+    let requested_mode = mode.unwrap_or(profile.default_mode());
     let fixture = profile.create_fixture(0, requested_mode).ok_or_else(|| {
         CommandError::new(
             "fixture_library.profile_failed",

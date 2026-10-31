@@ -14,6 +14,15 @@ uninstalls every toolchain except the active one from `rust-toolchain.toml` firs
 The key then follows the pinned compiler's `rustc -vV` output (release and commit
 hash), so it stays correct even if the pin ever becomes a floating channel.
 
+## Only develop and main save
+
+GitHub lets a run restore caches saved on its own ref or on the default branch
+(develop), plus a PR's base branch. A cache saved by a PR or a release tag is
+therefore readable only by later runs of that same PR or tag, and a tag never runs
+twice. Those saves mostly crowd the repository's 10 GB cache limit and evict the
+develop and main caches every other run restores, so only runs on `develop` and
+`main` save. PRs and tags still restore.
+
 ## Cancelled jobs never save
 
 `rust-cache` skips saving after an exact key match, so whatever is saved first

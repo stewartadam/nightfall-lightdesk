@@ -43,20 +43,21 @@ export function StepFxEditorToolbar(props: {
             onOpenChange={(isOpen) =>
               popovers.setEditorPopoverOpen("timing", isOpen)
             }
-            speedUnit={props.editor.speedUnit()}
+            beatUnit={props.editor.beatUnit()}
             cycleBeatText={props.editor.activeCycleBeatText()}
             fixedScaleDefault={
               stepFxAuthoredPassBeats(selection.activeTrack()) ?? 1
             }
             trackKind={selection.trackKind()}
-            speedError={
+            beatError={
               props.editor.issuesByPath().get("timing.beat_duration")?.[0]
             }
             scaleError={
               props.editor.issuesByPath().get("cycle_scale.data")?.[0]
             }
-            onSpeedUnitChange={props.editor.setSpeedUnit}
+            onBeatUnitChange={props.editor.setBeatUnit}
             onTimingChange={edit.setTiming}
+            onTimebaseChange={edit.setTimebase}
             onCycleScaleChange={edit.setCycleScale}
           />
           <ToolbarSeparator data-step-fx-start-position-separator />

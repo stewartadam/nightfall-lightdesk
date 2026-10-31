@@ -9,9 +9,9 @@
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import {
   useConditionalShallowStore,

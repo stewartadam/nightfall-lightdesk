@@ -15,7 +15,7 @@ import {
 const SEQUENCE_PANEL_ID = "panel-SequenceList-performance-e2e";
 const INSTRUMENTATION_PANEL_ID = "panel-Instrumentation-sequence-performance";
 const REPRESENTATIVE_STORE_SCOPES = [
-  "bindings",
+  "routes",
   "dmx-universe-data",
   "fixtures",
   "flows",
@@ -121,12 +121,12 @@ async function notifySequenceStore(page: Page): Promise<void> {
 async function notifyRepresentativeStores(page: Page): Promise<void> {
   await page.evaluate(() => {
     const stores = (window as any).appStores;
-    const bindings = stores.bindings.get();
-    stores.bindings.set({
-      ...bindings,
-      input: [...(bindings.input ?? [])],
-      output: [...(bindings.output ?? [])],
-      disabled: [...(bindings.disabled ?? [])],
+    const routes = stores.routes.get();
+    stores.routes.set({
+      ...routes,
+      input: [...(routes.input ?? [])],
+      output: [...(routes.output ?? [])],
+      disabled: [...(routes.disabled ?? [])],
     });
     stores.dmxUniverseList.set([...(stores.dmxUniverseList.get() ?? [])]);
     stores.fixtures.set({ ...stores.fixtures.get() });

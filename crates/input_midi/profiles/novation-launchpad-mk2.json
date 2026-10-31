@@ -1,0 +1,14 @@
+{
+  "id": "novation.launchpad-mk2",
+  "name": "Novation Launchpad MK2",
+  "ports": {
+    "match": ["launchpad mk2"],
+    "exclude": ["pro"]
+  },
+  "feedback": false,
+  "hint": "Uses the Session layout: grid pads are notes 11-88 and the top row is controllers 104-111.",
+  "init": [[240, 0, 32, 41, 2, 24, 34, 0, 247]],
+  "release": [[240, 0, 32, 41, 2, 24, 14, 0, 247]],
+  "palette": "rgb-128",
+  "defaults": { "off": "Off", "on": "Green", "held": "Orange" }
+}

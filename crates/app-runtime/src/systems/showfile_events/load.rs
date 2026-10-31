@@ -46,19 +46,20 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) timeline_data_provider:
         ResMut<'w, DataProvider<Timeline>>,
     pub(in crate::systems::showfile_events) board_data_provider: ResMut<'w, DataProvider<Board>>,
+    pub(in crate::systems::showfile_events) macro_data_provider: ResMut<'w, DataProvider<Macro>>,
     pub(in crate::systems::showfile_events) active_fx_module_ids:
         Option<ResMut<'w, ActiveFxModuleIds>>,
-    pub(in crate::systems::showfile_events) input_bindings: ResMut<'w, InputBindings>,
-    pub(in crate::systems::showfile_events) output_bindings: ResMut<'w, OutputBindings>,
-    pub(in crate::systems::showfile_events) disabled_bindings: ResMut<'w, DisabledBindings>,
+    pub(in crate::systems::showfile_events) input_routes: ResMut<'w, InputRoutes>,
+    pub(in crate::systems::showfile_events) output_routes: ResMut<'w, OutputRoutes>,
+    pub(in crate::systems::showfile_events) disabled_routes: ResMut<'w, DisabledRoutes>,
     #[cfg(feature = "midi")]
     pub(in crate::systems::showfile_events) midi_mappings: ResMut<'w, MidiMappings>,
     #[cfg(feature = "osc")]
     pub(in crate::systems::showfile_events) osc_mappings: ResMut<'w, OscMappings>,
     pub(in crate::systems::showfile_events) all_entities:
         Query<'w, 's, Entity, ShowfileEntityFilter>,
-    pub(in crate::systems::showfile_events) resolved_input_bindings:
-        Option<ResMut<'w, ResolvedInputBindings>>,
+    pub(in crate::systems::showfile_events) resolved_input_routes:
+        Option<ResMut<'w, ResolvedInputRoutes>>,
     pub(in crate::systems::showfile_events) console_dmx_addresses:
         Option<ResMut<'w, ConsoleDmxAddresses>>,
     pub(in crate::systems::showfile_events) console_dmx_universes:
@@ -79,6 +80,8 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) io_settings: ResMut<'w, IoRuntimeSettings>,
     pub(in crate::systems::showfile_events) controller_mapping_mode:
         Option<ResMut<'w, nightfall_actions::ControllerMappingMode>>,
+    pub(in crate::systems::showfile_events) macro_runs:
+        Option<ResMut<'w, nightfall_macros::prelude::MacroRuns>>,
 }
 
 /// Replaces current runtime showfile state with a provided snapshot.
@@ -99,14 +102,15 @@ pub(super) fn load_showfile_in_place(
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
     board_data_provider: &mut DataProvider<Board>,
+    macro_data_provider: &mut DataProvider<Macro>,
     active_fx_module_ids: Option<&mut ActiveFxModuleIds>,
-    input_bindings: &mut InputBindings,
-    output_bindings: &mut OutputBindings,
-    disabled_bindings: &mut DisabledBindings,
+    input_routes: &mut InputRoutes,
+    output_routes: &mut OutputRoutes,
+    disabled_routes: &mut DisabledRoutes,
     #[cfg(feature = "midi")] midi_mappings: &mut MidiMappings,
     #[cfg(feature = "osc")] osc_mappings: &mut OscMappings,
     all_entities: &Query<Entity, ShowfileEntityFilter>,
-    resolved_input_bindings: Option<&mut ResolvedInputBindings>,
+    resolved_input_routes: Option<&mut ResolvedInputRoutes>,
     console_dmx_addresses: Option<&mut ConsoleDmxAddresses>,
     console_dmx_universes: Option<&mut ConsoleDmxUniverses>,
     input_dmx_universes: Option<&mut InputDmxUniverses>,
@@ -140,12 +144,13 @@ pub(super) fn load_showfile_in_place(
         timecode_data_provider,
         timeline_data_provider,
         board_data_provider,
+        macro_data_provider,
         active_fx_module_ids,
-        input_bindings,
-        output_bindings,
-        disabled_bindings,
+        input_routes,
+        output_routes,
+        disabled_routes,
         all_entities,
-        resolved_input_bindings,
+        resolved_input_routes,
         console_dmx_addresses,
         console_dmx_universes,
         input_dmx_universes,
@@ -177,9 +182,10 @@ pub(super) fn load_showfile_in_place(
         timecode_data_provider,
         timeline_data_provider,
         board_data_provider,
-        input_bindings,
-        output_bindings,
-        disabled_bindings,
+        macro_data_provider,
+        input_routes,
+        output_routes,
+        disabled_routes,
         #[cfg(feature = "midi")]
         midi_mappings,
         #[cfg(feature = "osc")]
@@ -212,16 +218,17 @@ pub(super) fn load_showfile_snapshot_from_state(
         timecode_data_provider,
         timeline_data_provider,
         board_data_provider,
+        macro_data_provider,
         active_fx_module_ids,
-        input_bindings,
-        output_bindings,
-        disabled_bindings,
+        input_routes,
+        output_routes,
+        disabled_routes,
         #[cfg(feature = "midi")]
         midi_mappings,
         #[cfg(feature = "osc")]
         osc_mappings,
         all_entities,
-        resolved_input_bindings,
+        resolved_input_routes,
         console_dmx_addresses,
         console_dmx_universes,
         input_dmx_universes,
@@ -236,6 +243,7 @@ pub(super) fn load_showfile_snapshot_from_state(
         desk_settings,
         io_settings,
         controller_mapping_mode,
+        macro_runs,
     } = showfile_load_state;
 
     // A loaded show replaces every target a client may be about to bind, so mapping mode
@@ -245,6 +253,9 @@ pub(super) fn load_showfile_snapshot_from_state(
             tracing::info!("controller_mapping_mode_released_on_show_load");
         }
         mode.end_for_show_load();
+    }
+    if let Some(runs) = macro_runs {
+        runs.end_all_for_show_load();
     }
 
     load_showfile_in_place(
@@ -263,16 +274,17 @@ pub(super) fn load_showfile_snapshot_from_state(
         timecode_data_provider.as_mut(),
         timeline_data_provider.as_mut(),
         board_data_provider.as_mut(),
+        macro_data_provider.as_mut(),
         active_fx_module_ids.as_deref_mut(),
-        input_bindings.as_mut(),
-        output_bindings.as_mut(),
-        disabled_bindings.as_mut(),
+        input_routes.as_mut(),
+        output_routes.as_mut(),
+        disabled_routes.as_mut(),
         #[cfg(feature = "midi")]
         midi_mappings.as_mut(),
         #[cfg(feature = "osc")]
         osc_mappings.as_mut(),
         &*all_entities,
-        resolved_input_bindings.as_deref_mut(),
+        resolved_input_routes.as_deref_mut(),
         console_dmx_addresses.as_deref_mut(),
         console_dmx_universes.as_deref_mut(),
         input_dmx_universes.as_deref_mut(),

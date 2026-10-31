@@ -23,6 +23,7 @@ import CrudPanelSearch, {
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
+  type DataGridEditCommitContext,
   type DataGridScrollRequest,
 } from "../../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../../components/widgets/data-grid/extensions/column-visibility-menu";
@@ -42,7 +43,10 @@ import type {
   GridSelection,
   Item,
 } from "../../../../lib/data-grid-types";
-import { CompactSelection } from "../../../../lib/data-grid-types";
+import {
+  CompactSelection,
+  GridCellKind,
+} from "../../../../lib/data-grid-types";
 import {
   emptyGridSelection,
   getEditTargetRowIndices,
@@ -68,6 +72,10 @@ import {
   updateSceneObjectsFromLibrary,
 } from "../../../../lib/scene-object-service";
 import { useSharedStore } from "../../../../lib/use-shared-store";
+import {
+  fanNumbersByColumn,
+  parseNumericFanInput,
+} from "../../../../lib/value-fan";
 import {
   orderedUidListsEqual,
   replaceKnownUidsInSelection,
@@ -414,11 +422,17 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     }
   };
 
+  /**
+   * Applies a typed transform edit to one scene object, or to every selected
+   * row of the column when `useSelection` is set. Fan waypoints spread across
+   * those rows in table order instead of applying the edited value to each.
+   */
   const applySceneObjectEdit = (
     cell: Item,
     newValue: GridCell,
     useSelection: boolean,
     batchId = uuidv4().replace(/-/g, ""),
+    fanWaypoints?: readonly number[] | null,
   ) => {
     const [col, row] = cell;
     const columnId = gridColumns()[col]?.id;
@@ -438,15 +452,25 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     const rowsToEdit = useSelection
       ? getRowsToEdit(selection(), col, row, rowData.length)
       : [row];
+    const targetValues = fanWaypoints
+      ? fanNumbersByColumn(
+          rowsToEdit.map((targetRow) => [col, targetRow] as const),
+          fanWaypoints,
+        )
+      : rowsToEdit.map(() => value);
 
     if (columnId === "scale") {
-      for (const targetRow of rowsToEdit) {
+      for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
         const sceneObject = rowData[targetRow];
-        if (!sceneObject) continue;
+        const targetValue = targetValues[targetIndex];
+        if (!sceneObject || targetValue === undefined) continue;
 
         const currentSceneObject =
           sceneObjects.get()[sceneObject.identifiers.uid] ?? sceneObject;
-        const updatedSceneObject = withUpdatedScale(currentSceneObject, value);
+        const updatedSceneObject = withUpdatedScale(
+          currentSceneObject,
+          targetValue,
+        );
         if (!updatedSceneObject) continue;
 
         setStoreAction(sceneObjects, "Update Scene Object Scale", {
@@ -461,14 +485,19 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
       return;
     }
 
-    const { position, rotation } = buildPlacementUpdate(columnId, value);
-    if (!position && !rotation) {
+    const placementProbe = buildPlacementUpdate(columnId, value);
+    if (!placementProbe.position && !placementProbe.rotation) {
       return;
     }
 
-    for (const targetRow of rowsToEdit) {
+    for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
       const sceneObject = rowData[targetRow];
-      if (!sceneObject) continue;
+      const targetValue = targetValues[targetIndex];
+      if (!sceneObject || targetValue === undefined) continue;
+      const { position, rotation } = buildPlacementUpdate(
+        columnId,
+        targetValue,
+      );
       const currentSceneObject =
         sceneObjects.get()[sceneObject.identifiers.uid] ?? sceneObject;
 
@@ -526,14 +555,49 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     }
   };
 
-  const handleCellEdited = (cell: Item, newValue: GridCell) => {
-    applySceneObjectEdit(cell, newValue, true);
+  /** Applies a single typed edit to every selected scene object row. */
+  const handleCellEdited = (
+    cell: Item,
+    newValue: GridCell,
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    const inputValue = context?.inputValue;
+    applySceneObjectEdit(
+      cell,
+      newValue,
+      true,
+      undefined,
+      inputValue === undefined ? null : parseNumericFanInput(inputValue),
+    );
   };
 
-  const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {
+  /**
+   * Applies a multi-cell range or paste edit as one batch, spreading numeric
+   * fan input such as `0>3` down each edited column in table order.
+   */
+  const handleCellsEdited = (
+    edits: readonly DataGridCellEdit[],
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
     const batchId = uuidv4().replace(/-/g, "");
-    for (const edit of edits) {
-      applySceneObjectEdit(edit.cell, edit.newValue, false, batchId);
+    const inputValue = context?.inputValue ?? edits[0]?.inputValue;
+    const fanWaypoints =
+      inputValue === undefined ? null : parseNumericFanInput(inputValue);
+    const fanValues = fanWaypoints
+      ? fanNumbersByColumn(
+          edits.map((edit) => edit.cell),
+          fanWaypoints,
+        )
+      : null;
+    for (const [editIndex, edit] of edits.entries()) {
+      const fanValue = fanValues?.[editIndex];
+      const newValue: GridCell =
+        fanValue === undefined
+          ? edit.newValue
+          : { kind: GridCellKind.Number, data: fanValue, allowOverlay: true };
+      applySceneObjectEdit(edit.cell, newValue, false, batchId);
     }
   };
 

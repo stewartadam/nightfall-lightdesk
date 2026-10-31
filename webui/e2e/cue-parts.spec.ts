@@ -776,9 +776,9 @@ test("owned cue parts render as expandable rows, edit, and report status", async
                 transition_elapsed: { secs: 0, nanos: 500_000_000 },
                 bound_clip_id: clipId,
                 intensity_scale: 1,
-                rate: 1,
-                rate_master_scale: 1,
-                effective_rate: 1,
+                speed: 1,
+                speed_master_scale: 1,
+                effective_speed: 1,
                 status: {
                   position: {
                     type: "Sequence",

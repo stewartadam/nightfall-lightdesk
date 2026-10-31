@@ -52,10 +52,16 @@ pub fn handle_set_dmx_channels(
 }
 
 /// Handle RestoreFixtureSnapshot commands to recreate a deleted fixture.
+///
+/// Snapshots taken before a delete also carry the DMX routes, which replace the live routes
+/// so the fixture comes back patched exactly as before.
 pub fn handle_restore_fixture_snapshot(
     mut commands: Commands,
     mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreFixtureSnapshot>>,
     mut data_provider: ResMut<FixtureDataProviderExt>,
+    mut input_routes: ResMut<InputRoutes>,
+    mut output_routes: ResMut<OutputRoutes>,
+    mut disabled_routes: ResMut<DisabledRoutes>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
@@ -113,28 +119,33 @@ pub fn handle_restore_fixture_snapshot(
             data_provider
                 .set_color_path_default(default.fixture.clone(), Some(default.color_path_id));
         }
+        if let Some(routes) = &snapshot.routes {
+            input_routes.routes = routes.input_routes.clone();
+            output_routes.routes = routes.output_routes.clone();
+            disabled_routes.routes = routes.disabled_routes.clone();
+        }
         succeed_action(&mut responder, event.command_id);
     }
 }
 
-fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> bool {
-    binding
+fn output_route_matches_fixture(route: &OutputRoute, uid: uuid::Uuid) -> bool {
+    route
         .source
         .fixture_uids()
         .is_some_and(|uids| uids.contains(&uid))
 }
 
-/// Handle RestoreBindingSnapshot commands to restore fixture binding configuration.
-pub fn handle_restore_binding_snapshot(
-    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreBindingSnapshot>>,
+/// Handle RestoreFixtureRoutesSnapshot commands to restore fixture route configuration.
+pub fn handle_restore_fixture_routes_snapshot(
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreFixtureRoutesSnapshot>>,
     data_provider: Res<FixtureDataProviderExt>,
-    mut output_bindings: ResMut<OutputBindings>,
+    mut output_routes: ResMut<OutputRoutes>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
         let snapshot = &event.operation.0;
         tracing::debug!(
-            "Restoring binding snapshot for fixture {}",
+            "Restoring route snapshot for fixture {}",
             snapshot.fixture_id
         );
 
@@ -142,44 +153,42 @@ pub fn handle_restore_binding_snapshot(
             Ok(fixture) => fixture.identifiers.uid,
             Err(_) => {
                 tracing::warn!(
-                    "Failed to restore bindings: fixture {} not found",
+                    "Failed to restore routes: fixture {} not found",
                     snapshot.fixture_id
                 );
                 fail_action(
                     &mut responder,
                     event.command_id,
-                    "fixtures.restore_binding_failed",
+                    "fixtures.restore_route_failed",
                     format!("Fixture {} was not found", snapshot.fixture_id),
                 );
                 continue;
             }
         };
 
-        output_bindings
-            .bindings
-            .retain(|binding| !output_binding_matches_fixture(binding, fixture_uid));
-        output_bindings
-            .bindings
-            .extend(snapshot.output_bindings.clone());
+        output_routes
+            .routes
+            .retain(|route| !output_route_matches_fixture(route, fixture_uid));
+        output_routes.routes.extend(snapshot.output_routes.clone());
         succeed_action(&mut responder, event.command_id);
     }
 }
 
-/// Handle RestorePatchBindingsSnapshot commands to restore all patch bindings.
-pub fn handle_restore_patch_bindings_snapshot(
-    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestorePatchBindingsSnapshot>>,
-    mut input_bindings: ResMut<InputBindings>,
-    mut output_bindings: ResMut<OutputBindings>,
-    mut disabled_bindings: ResMut<DisabledBindings>,
+/// Handle RestoreDmxRoutesSnapshot commands to restore all DMX routes.
+pub fn handle_restore_dmx_routes_snapshot(
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestoreDmxRoutesSnapshot>>,
+    mut input_routes: ResMut<InputRoutes>,
+    mut output_routes: ResMut<OutputRoutes>,
+    mut disabled_routes: ResMut<DisabledRoutes>,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
         let snapshot = &event.operation.0;
-        tracing::debug!("Restoring patch bindings snapshot");
+        tracing::debug!("Restoring DMX routes snapshot");
 
-        input_bindings.bindings = snapshot.input_bindings.clone();
-        output_bindings.bindings = snapshot.output_bindings.clone();
-        disabled_bindings.bindings = snapshot.disabled_bindings.clone();
+        input_routes.routes = snapshot.input_routes.clone();
+        output_routes.routes = snapshot.output_routes.clone();
+        disabled_routes.routes = snapshot.disabled_routes.clone();
         succeed_action(&mut responder, event.command_id);
     }
 }

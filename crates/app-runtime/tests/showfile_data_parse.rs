@@ -30,9 +30,9 @@ fn remove_native_units(value: &mut serde_json::Value) {
 fn assert_showfile_collections_are_populated(value: &serde_json::Value) {
     const ARRAY_PATHS: &[&str] = &[
         "/fixtures",
-        "/bindings/input",
-        "/bindings/output",
-        "/bindings/disabled",
+        "/routes/input",
+        "/routes/output",
+        "/routes/disabled",
         "/midiMappings",
         "/oscMappings",
         "/sceneObjects",

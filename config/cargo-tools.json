@@ -1,0 +1,7 @@
+{
+  "cargo-about": "0.8.4",
+  "cargo-hakari": "0.9.39",
+  "cargo-nextest": "0.9.146",
+  "mdbook": "0.5.4",
+  "typeshare-cli": "1.13.3"
+}

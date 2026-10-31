@@ -11,7 +11,7 @@
 //! These routes live here rather than in `nightfall-beat-detection` so that crate
 //! does not depend on axum, reqwest, or the websocket route registry. Keeping it
 //! free of those dependencies lets it compile early and in parallel with the
-//! domain crates.
+//! plugin crates.
 
 use std::{
     path::PathBuf,

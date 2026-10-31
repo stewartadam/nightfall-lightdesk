@@ -644,6 +644,29 @@ fn build_catalog() -> Vec<CompletionGroupSpec> {
             vis(&[], &[SlotId::TimelineIdentifier]),
         ),
         completion_group(
+            CompletionGroupId::MacroIdentifier,
+            "Identifier",
+            724,
+            &[SlotId::MacroIdentifier],
+            &[pred(
+                &[ClauseId::Macro],
+                Some(SlotId::MacroIdentifier),
+                None,
+            )],
+            vis(&[], &[]),
+        ),
+        completion_group(
+            CompletionGroupId::MacroAction,
+            "Action",
+            723,
+            &[SlotId::MacroIdentifier, SlotId::MacroAction],
+            &[
+                pred(&[ClauseId::Macro], Some(SlotId::MacroAction), None),
+                pred(&[ClauseId::Macro], None, Some(ClauseId::MacroAction)),
+            ],
+            vis(&[], &[SlotId::MacroIdentifier]),
+        ),
+        completion_group(
             CompletionGroupId::LogLevel,
             "Log Level",
             720,

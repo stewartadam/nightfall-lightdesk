@@ -22,19 +22,19 @@ import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import type { LayerElementParameterValues } from "../../../lib/ws/types";
 import {
-  bindings,
   dockApi,
   fixtures,
   layerStack,
+  requestDmxRouteNavigation,
   requestLayerNavigation,
-  requestPatchBindingNavigation,
+  routes,
 } from "../../../state/appStores";
 import { DmxIoMode } from "../../../types";
 import type { ChannelInfo } from "../model/dmx-universe-model";
 import {
-  findInputBindingIdForOutputChannel,
-  findOutputBindingIdForChannel,
-} from "../model/output-binding-follow";
+  findInputRouteIdForOutputChannel,
+  findOutputRouteIdForChannel,
+} from "../model/output-route-follow";
 import type { DmxUniverseSelectionController } from "./dmx-universe-selection-controller";
 
 interface DmxChannelNavigationControllerOptions {
@@ -42,19 +42,19 @@ interface DmxChannelNavigationControllerOptions {
   channelToFixture: Accessor<Map<number, ChannelInfo>>;
 }
 
-/** Owns channel follow, patch binding lookup, and asserting-layer navigation. */
+/** Owns channel follow, DMX route lookup, and asserting-layer navigation. */
 export function createDmxChannelNavigationController(
   options: DmxChannelNavigationControllerOptions,
 ) {
   const dock = useStore(dockApi);
-  const bindingSnapshot = useStore(bindings);
+  const routeSnapshot = useStore(routes);
   const fixtureMap = useSharedStore(fixtures);
   const layers = useStore(layerStack);
-  /** Returns network output targets used for binding lookup. */
+  /** Returns network output targets used for route lookup. */
   const networkDmxOutputs = createMemo(() =>
     networkDmxOutputsFromSettings(options.selection.settings()),
   );
-  /** Returns USB output targets used for binding lookup. */
+  /** Returns USB output targets used for route lookup. */
   const usbDmxOutputs = createMemo(() =>
     usbDmxOutputsFromSettings(options.selection.settings()),
   );
@@ -136,26 +136,26 @@ export function createDmxChannelNavigationController(
     return null;
   };
 
-  /** Finds the binding row that supplies one visible output channel. */
-  const findOutputBindingId = (address: number): string | null => {
+  /** Finds the route row that supplies one visible output channel. */
+  const findOutputRouteId = (address: number): string | null => {
     if (options.selection.ioMode() !== DmxIoMode.Output) return null;
     const universeId = options.selection.selectedUniverse();
     if (universeId === null) return null;
     const space = options.selection.selectedOutputSpace();
-    const snapshot = bindingSnapshot();
+    const snapshot = routeSnapshot();
     const targets = {
       networkDmxOutputs: networkDmxOutputs(),
       usbDmxOutputs: usbDmxOutputs(),
     };
     return (
-      findInputBindingIdForOutputChannel(
+      findInputRouteIdForOutputChannel(
         snapshot,
         space,
         universeId,
         address,
         targets,
       ) ??
-      findOutputBindingIdForChannel(
+      findOutputRouteIdForChannel(
         snapshot,
         fixtureMap(),
         space,
@@ -166,11 +166,11 @@ export function createDmxChannelNavigationController(
     );
   };
 
-  /** Navigates to the patch binding supplying one output channel. */
-  const followOutputBinding = (address: number) => {
-    const bindingId = findOutputBindingId(address);
-    if (!bindingId) return false;
-    requestPatchBindingNavigation(bindingId);
+  /** Navigates to the DMX route supplying one output channel. */
+  const followOutputRoute = (address: number) => {
+    const routeId = findOutputRouteId(address);
+    if (!routeId) return false;
+    requestDmxRouteNavigation(routeId);
     ensurePatchPanelOpen();
     return true;
   };
@@ -195,7 +195,7 @@ export function createDmxChannelNavigationController(
     if (!event.altKey || options.selection.ioMode() !== DmxIoMode.Output)
       return;
     if (event.shiftKey) navigateToAssertingLayer(address);
-    else followOutputBinding(address);
+    else followOutputRoute(address);
   };
 
   /** Opens channel navigation actions in the shared context menu. */
@@ -204,12 +204,12 @@ export function createDmxChannelNavigationController(
     event.preventDefault();
     const items: ContextMenuEntry[] = [
       {
-        id: "follow-output-binding",
-        label: "Follow binding in Patch",
+        id: "follow-output-route",
+        label: "Follow route in Patch",
         icon: ArrowsClockwiseIcon,
         shortcut: "Alt+Click",
-        disabled: findOutputBindingId(address) === null,
-        onSelect: () => followOutputBinding(address),
+        disabled: findOutputRouteId(address) === null,
+        onSelect: () => followOutputRoute(address),
       },
       {
         id: "show-asserting-layer",

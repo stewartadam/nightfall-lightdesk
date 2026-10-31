@@ -123,6 +123,7 @@ fn test_available_fixture_info_serialization() {
         modes: vec!["3 Channel".to_string(), "6 Channel".to_string()],
         source_format: "GDTF".to_string(),
         asset_etag: "v1".to_string(),
+        gdtf_fixture_type_id: None,
     };
 
     let json = serde_json::to_value(&info).unwrap();
@@ -153,6 +154,7 @@ fn test_list_available_fixtures_response_serialization() {
                 modes: vec!["6 Channel".to_string()],
                 source_format: "GDTF".to_string(),
                 asset_etag: "v1".to_string(),
+                gdtf_fixture_type_id: None,
             },
             AvailableFixtureInfo {
                 make: "Generic".to_string(),
@@ -160,8 +162,14 @@ fn test_list_available_fixtures_response_serialization() {
                 modes: vec!["3 Channel".to_string()],
                 source_format: "OFL".to_string(),
                 asset_etag: "v2".to_string(),
+                gdtf_fixture_type_id: None,
             },
         ],
+        unloadable: vec![UnloadableFixtureFile {
+            file_name: "Broken@Fixture.gdtf".to_string(),
+            in_showfile: false,
+            error: "Invalid zip archive".to_string(),
+        }],
     };
 
     let json = serde_json::to_value(&response).unwrap();
@@ -169,12 +177,15 @@ fn test_list_available_fixtures_response_serialization() {
     assert_eq!(json["fixtures"].as_array().unwrap().len(), 2);
     assert_eq!(json["fixtures"][0]["make"], "Chauvet");
     assert_eq!(json["fixtures"][1]["make"], "Generic");
+    assert_eq!(json["unloadable"][0]["file_name"], "Broken@Fixture.gdtf");
+    assert_eq!(json["unloadable"][0]["error"], "Invalid zip archive");
 
     // Should deserialize back correctly
     let deserialized: ListAvailableFixturesResponse = serde_json::from_value(json).unwrap();
     assert_eq!(deserialized.fixtures.len(), 2);
     assert_eq!(deserialized.fixtures[0].make, "Chauvet");
     assert_eq!(deserialized.fixtures[1].make, "Generic");
+    assert_eq!(deserialized.unloadable, response.unloadable);
 }
 
 #[test]
@@ -186,6 +197,7 @@ fn test_get_fixture_profile_response_serialization() {
             modes: vec!["3 Channel".to_string(), "6 Channel".to_string()],
             source_format: "GDTF".to_string(),
             asset_etag: "v1".to_string(),
+            gdtf_fixture_type_id: None,
         },
         requested_mode: Some("6 Channel".to_string()),
         fixture: None,

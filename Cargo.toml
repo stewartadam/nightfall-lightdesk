@@ -6,7 +6,7 @@ exclude = ["vendor"]
 resolver = "3" # default for rust 2024
 
 [workspace.package]
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2024"
 license = "MPL-2.0"
 
@@ -35,7 +35,7 @@ minicbor = "2.3"
 minicbor-serde = { version = "0.7", features = ["alloc"] }
 mime_guess = { version = "2.0.5", default-features = false }
 moonshine-kind = "0.6"
-netdev = "0.46"
+netdev = "0.47"
 netwatcher = "0.8"
 notify = "8.2"
 orx-parallel = "4.1.1"
@@ -52,13 +52,13 @@ socket2 = { version = "0.6.5", features = ["all"] }
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27"
 thiserror = "2.0"
-tokio = { version = "1.54.0", features = ["sync", "rt-multi-thread", "macros"] }
+tokio = { version = "1.54.1", features = ["sync", "rt-multi-thread", "macros"] }
 tower-http = { version = "0.7.1", default-features = false }
 tower-service = "0.3.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 typeshare = "1.0.5"
-uuid = { version = "1.28", features = ["serde", "v4", "v5"] }
+uuid = { version = "1.29", features = ["serde", "v4", "v5"] }
 web-time = { version = "1.1", features = ["serde"] }
 wit-component = "0.262"
 
@@ -113,3 +113,9 @@ debug = true
 
 [workspace.lints.clippy]
 collapsible_if = { level = "allow", priority = 0 }
+
+# Fork of gdtf 0.3.0 with GDTF round-trip writing fixes (cpdt/gdtf-rs#6) and
+# zip 9, since crates.io gdtf requires zip ^8.6, which has security advisories
+# fixed only in zip 9 (GHSA-m665-v7pm-7grj and others).
+[patch.crates-io]
+gdtf = { git = "https://github.com/stewartadam/gdtf-rs", rev = "c3259e4fde83c3c92f51a0b2aaed0f8cfd1570b1" }

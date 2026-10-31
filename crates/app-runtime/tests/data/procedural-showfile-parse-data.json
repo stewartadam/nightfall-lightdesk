@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "nightfallVersion": "0.1.0",
-    "showfileVersion": 19,
+    "nightfallVersion": "0.1.0-alpha.4",
+    "showfileVersion": 23,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -19,6 +19,9 @@
           "label": "Cell 1",
           "parameters": [
             {
+              "dmx_slots": {
+                "type": "Sequential"
+              },
               "resolution": "Coarse",
               "attribute": {
                 "type": "VirtualIntensity"
@@ -39,6 +42,9 @@
               "use_grandmaster": true
             },
             {
+              "dmx_slots": {
+                "type": "Sequential"
+              },
               "resolution": "Coarse",
               "attribute": {
                 "type": "Red"
@@ -59,6 +65,9 @@
               "use_grandmaster": false
             },
             {
+              "dmx_slots": {
+                "type": "Sequential"
+              },
               "resolution": "Coarse",
               "attribute": {
                 "type": "Green"
@@ -79,6 +88,9 @@
               "use_grandmaster": false
             },
             {
+              "dmx_slots": {
+                "type": "Sequential"
+              },
               "resolution": "Coarse",
               "attribute": {
                 "type": "Blue"
@@ -130,9 +142,52 @@
     "time_display_preference": "Auto",
     "timeline_placement_preference": "Playhead",
     "showfile_backup_retention": 20,
+    "parameter_keyframes_only": false,
     "panel_layouts": [],
     "default_panel_layout_id": null
   },
+  "faders": [
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    },
+    {
+      "assignment": null,
+      "buttonMode": "Go"
+    }
+  ],
   "ioSettings": {
     "network_interface": null,
     "network_output_enabled": false,
@@ -172,9 +227,15 @@
       "secs": 2,
       "nanos": 0
     },
-    "input_universe_visibility_mode": "ExternalOnly"
+    "input_universe_visibility_mode": "ExternalOnly",
+    "dmx_output_rate_hz": 44
   },
-  "bindings": {
+  "tempo": {
+    "bpm": 120.0,
+    "beatsPerBar": 4,
+    "launchQuantize": "Off"
+  },
+  "routes": {
     "input": [
       {
         "source": {
@@ -260,14 +321,17 @@
           "controller": 36
         }
       },
+      "behavior": "Press",
       "action": {
-        "id": "control.level",
+        "id": "fader.level",
         "arguments": {
-          "control_index": 1
+          "fader_index": 1
         }
-      }
+      },
+      "led": {}
     }
   ],
+  "midiFeedbackDevices": [],
   "oscMappings": [
     {
       "id": "00000000-0000-0000-0000-00005a3d0002",
@@ -275,10 +339,13 @@
       "address": "/parser/fader",
       "arg_index": 0,
       "arg_value": null,
+      "release_value": null,
+      "range": null,
+      "behavior": "Press",
       "action": {
-        "id": "control.level",
+        "id": "fader.level",
         "arguments": {
-          "control_index": 2
+          "fader_index": 2
         }
       }
     }
@@ -505,7 +572,8 @@
         "data": {
           "__Composed__": 7
         }
-      }
+      },
+      "timebase": "Seconds"
     }
   ],
   "groups": [
@@ -555,7 +623,7 @@
         "uid": "10000000000000000000000000000017",
         "label": "Parser Playback Master"
       },
-      "kind": "PlaybackRate",
+      "kind": "PlaybackSpeed",
       "target": {
         "type": "Instances",
         "data": {
@@ -702,14 +770,15 @@
             0.0,
             3.1415927
           ],
-          "rate": {
+          "cycle_length": {
             "secs": 2,
             "nanos": 0
           },
           "width": 1.0,
           "is_relative": false
         }
-      }
+      },
+      "timebase": "Seconds"
     }
   ],
   "fxModule": [
@@ -832,7 +901,8 @@
           },
           "relative": null
         }
-      ]
+      ],
+      "timebase": "Seconds"
     }
   ],
   "flows": [
@@ -940,7 +1010,7 @@
               "action": {
                 "id": "clip.start",
                 "arguments": {
-                  "clip": "10000000000000000000000000000011"
+                  "clip": "10000000-0000-0000-0000-000000000011"
                 }
               }
             }
@@ -1033,5 +1103,7 @@
         "deactivate_on_sequence_end": false
       }
     }
-  ]
+  ],
+  "boards": [],
+  "macros": []
 }

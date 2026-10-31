@@ -6,9 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
 import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   createContext,
+  createSignal,
   createUniqueId,
   type JSX,
   Show,
@@ -27,9 +29,23 @@ import { Button, type ButtonProps } from "../visual-language/button";
  */
 export type DialogKind = "task" | "info" | "required";
 
+/** A page a dialog has drilled into, which the header shows with a back button. */
+export interface DialogPage {
+  /** Heading shown in place of the dialog title while the page is open. */
+  title: string;
+  /** Accessible name for the back button. */
+  backLabel: string;
+  /** Returns to the previous level. */
+  onBack: () => void;
+}
+
 interface DialogContextValue {
   dismiss: () => void;
   busy: () => boolean;
+  /** Shows a page's title and back button in the header, or clears it with `undefined`. */
+  setPage: (page: DialogPage | undefined) => void;
+  /** Moves focus to the header back button, if one is showing. */
+  focusBack: () => void;
 }
 
 const DialogContext = createContext<DialogContextValue>();
@@ -55,6 +71,12 @@ export interface DialogProps {
   onDismiss?: () => void;
   /** Default action run by Enter when focus has no Enter behavior of its own. */
   onSubmit?: () => void;
+  /**
+   * Lets Escape dismiss a `required` dialog without adding a close button or
+   * outside-click dismissal, for blocking notices that may hide content the
+   * user needs to read underneath.
+   */
+  dismissOnEscape?: boolean;
   /** Locks every dismissal path and the default action while work cannot be cancelled. */
   busy?: boolean;
   /** Accessible name for the header close button. */
@@ -80,18 +102,35 @@ export interface DialogProps {
  */
 export function Dialog(props: DialogProps) {
   const titleId = createUniqueId();
+  const [page, setPage] = createSignal<DialogPage>();
+  let backButton: HTMLButtonElement | undefined;
   /** Reports whether any dismissal path may close the dialog right now. */
   const canDismiss = () => props.kind !== "required" && !props.busy;
   /** Closes through the caller's handler unless the dialog is required or busy. */
   const dismiss = () => {
     if (canDismiss()) props.onDismiss?.();
   };
+  /** Reports whether Escape may close the dialog, which `dismissOnEscape` extends to required dialogs. */
+  const canEscape = () =>
+    canDismiss() || (!!props.dismissOnEscape && !props.busy);
+  /**
+   * Steps back out of a drilled-in page when one is open, otherwise closes through the caller's
+   * handler when Escape is allowed to dismiss.
+   */
+  const dismissFromEscape = () => {
+    const current = page();
+    if (current) {
+      if (!props.busy) current.onBack();
+      return;
+    }
+    if (canEscape()) props.onDismiss?.();
+  };
   return (
     <Modal
       isOpen={props.isOpen}
       usePortal={props.usePortal}
-      onEscape={dismiss}
-      closeOnEscape={canDismiss()}
+      onEscape={dismissFromEscape}
+      closeOnEscape={canEscape() || page() !== undefined}
       blockBackgroundKeys={props.blockBackgroundKeys}
       onEnter={
         props.onSubmit
@@ -115,7 +154,14 @@ export function Dialog(props: DialogProps) {
         },
       }}
     >
-      <DialogContext.Provider value={{ dismiss, busy: () => !!props.busy }}>
+      <DialogContext.Provider
+        value={{
+          dismiss,
+          busy: () => !!props.busy,
+          setPage,
+          focusBack: () => backButton?.focus(),
+        }}
+      >
         <DialogSurface
           ref={props.surfaceRef}
           role="document"
@@ -124,13 +170,34 @@ export function Dialog(props: DialogProps) {
         >
           <DialogHeader>
             <Show
-              when={props.subtitle}
-              fallback={<DialogTitle id={titleId}>{props.title}</DialogTitle>}
+              when={page()}
+              fallback={
+                <Show
+                  when={props.subtitle}
+                  fallback={
+                    <DialogTitle id={titleId}>{props.title}</DialogTitle>
+                  }
+                >
+                  <div class="min-w-0">
+                    <DialogTitle id={titleId}>{props.title}</DialogTitle>
+                    <p class="m-0 text-sm text-neutral-400">{props.subtitle}</p>
+                  </div>
+                </Show>
+              }
             >
-              <div class="min-w-0">
-                <DialogTitle id={titleId}>{props.title}</DialogTitle>
-                <p class="m-0 text-sm text-neutral-400">{props.subtitle}</p>
-              </div>
+              {(current) => (
+                <div class="-ml-2 flex min-w-0 items-center gap-1">
+                  <DialogBackButton
+                    ref={(element) => {
+                      backButton = element;
+                    }}
+                    aria-label={current().backLabel}
+                    disabled={props.busy}
+                    onClick={() => current().onBack()}
+                  />
+                  <DialogTitle id={titleId}>{current().title}</DialogTitle>
+                </div>
+              )}
             </Show>
             <div class="flex shrink-0 items-center gap-2 empty:hidden">
               {props.headerActions}
@@ -149,6 +216,17 @@ export function Dialog(props: DialogProps) {
       </DialogContext.Provider>
     </Modal>
   );
+}
+
+/**
+ * Gives content drilled into a page of the enclosing `Dialog` its header title and back
+ * button. Returns `undefined` outside a dialog, where the content shows its own back control.
+ */
+export function useDialogPage():
+  | Pick<DialogContextValue, "setPage" | "focusBack">
+  | undefined {
+  const dialog = useContext(DialogContext);
+  return dialog && { setPage: dialog.setPage, focusBack: dialog.focusBack };
 }
 
 /** Footer action that dismisses the enclosing `Dialog` through its shared handler and busy lock. */
@@ -257,6 +335,17 @@ export function DialogFooter(props: JSX.HTMLAttributes<HTMLDivElement>) {
       class={`nf-dialog-footer flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[var(--line)] px-4 py-3 ${local.class ?? ""}`}
       {...rest}
     />
+  );
+}
+
+/** Returns from a drilled-in page to the level above it, shown at the leading edge of a header. */
+export function DialogBackButton(
+  props: Omit<ButtonProps, "children" | "size" | "variant">,
+) {
+  return (
+    <Button aria-label="Back" {...props} size="icon" variant="subtle">
+      <CaretLeftIcon class="size-4" aria-hidden />
+    </Button>
   );
 }
 

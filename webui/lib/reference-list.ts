@@ -29,7 +29,7 @@ const DOMAIN_ORDER: readonly ReferenceDomain[] = [
   ReferenceDomain.FxModule,
   ReferenceDomain.Flow,
   ReferenceDomain.Master,
-  ReferenceDomain.PatchBinding,
+  ReferenceDomain.DmxRoute,
 ];
 
 /** Builds the key that identifies one object across list and update messages. */

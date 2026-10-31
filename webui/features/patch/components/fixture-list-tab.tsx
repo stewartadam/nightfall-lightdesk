@@ -19,6 +19,8 @@ import { v4 as uuidv4 } from "uuid";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
+  type DataGridEditCommitContext,
+  type DataGridScrollRequest,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -30,7 +32,7 @@ import type {
   GroupHeaderClickedEventArgs,
   Item,
 } from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
+import { CompactSelection, GridCellKind } from "../../../lib/data-grid-types";
 import {
   emptyGridSelection,
   getEditTargetRowIndices,
@@ -56,6 +58,10 @@ import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
+  fanNumbersByColumn,
+  parseNumericFanInput,
+} from "../../../lib/value-fan";
+import {
   orderedUidListsEqual,
   replaceFixtureUidsInSelection,
 } from "../../../lib/visualizer-selection";
@@ -65,6 +71,10 @@ import {
   visualizerEditSelection,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
+import {
+  PATCH_FIXTURE_REVEAL_WINDOW_MS,
+  patchFixtureRevealRequest,
+} from "../model/patch-view";
 
 export interface PatchFixtureListTabProps {
   panelId: string;
@@ -321,6 +331,12 @@ function isNoopEdit(columnId: string, row: FixtureRow, value: number): boolean {
   );
 }
 
+/** Returns whether a column edits a fixture's position or rotation. */
+function isPlacementColumn(columnId: string): boolean {
+  const { position, rotation } = buildPlacementUpdate(columnId, 0);
+  return position !== undefined || rotation !== undefined;
+}
+
 function buildPlacementUpdate(
   columnId: string,
   value: number,
@@ -560,9 +576,16 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     event.preventDefault();
   };
 
+  /**
+   * Applies placement edits to fixtures in one batch. When `useSelection` is
+   * set, each edit expands to the selected rows of its column. Numeric fan
+   * input such as `0>3` is spread across each column's target rows in table
+   * order; other input applies the edited value to every target.
+   */
   const applyPlacementEdits = (
     edits: readonly DataGridCellEdit[],
     useSelection: boolean,
+    inputValue?: string,
   ) => {
     const startMs = performance.now();
     const rowData = displayRows();
@@ -570,60 +593,59 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     const fixtureMap = fixtures.get();
     let nextFixtureMap: typeof fixtureMap | null = null;
     const updates: types.FixturePlacementUpdateEntry[] = [];
-    let rowsSelected = 0;
 
+    const targets: { cell: Item; columnId: string; value: number }[] = [];
     for (const edit of edits) {
       const [col, row] = edit.cell;
       const columnId = displayColumns()[col]?.id;
-      if (!columnId) continue;
+      if (!columnId || !isPlacementColumn(columnId)) continue;
 
       const value = parseEditedNumber(edit.newValue);
-      if (value === null) {
-        continue;
-      }
-
-      if (row >= rowData.length) {
-        continue;
-      }
-
-      const { position, rotation } = buildPlacementUpdate(columnId, value);
-      if (!position && !rotation) {
-        continue;
-      }
+      if (value === null || row >= rowData.length) continue;
 
       const rowsToEdit = useSelection
         ? getRowsToEdit(selection(), col, row, rowData.length)
         : [row];
-      rowsSelected += rowsToEdit.length;
-
       for (const targetRow of rowsToEdit) {
-        const fixtureRow = rowData[targetRow];
-        if (!fixtureRow) continue;
-
-        if (isNoopEdit(columnId, fixtureRow, value)) {
-          continue;
-        }
-
-        const fixture =
-          nextFixtureMap?.[fixtureRow.uid] ?? fixtureMap[fixtureRow.uid];
-        if (!fixture) continue;
-
-        const updatedFixture = applyPlacementUpdate(
-          fixture,
-          position,
-          rotation,
-        );
-        if (!nextFixtureMap) {
-          nextFixtureMap = { ...fixtureMap };
-        }
-        nextFixtureMap[fixtureRow.uid] = updatedFixture;
-        updates.push({
-          id: fixtureRow.id,
-          position,
-          rotation,
-        });
+        targets.push({ cell: [col, targetRow], columnId, value });
       }
     }
+    const fanWaypoints =
+      inputValue === undefined ? null : parseNumericFanInput(inputValue);
+    const fanValues = fanWaypoints
+      ? fanNumbersByColumn(
+          targets.map((target) => target.cell),
+          fanWaypoints,
+        )
+      : null;
+
+    for (const [targetIndex, { cell, columnId, value }] of targets.entries()) {
+      const fixtureRow = rowData[cell[1]];
+      const targetValue = fanValues?.[targetIndex] ?? value;
+      if (!fixtureRow || isNoopEdit(columnId, fixtureRow, targetValue)) {
+        continue;
+      }
+
+      const { position, rotation } = buildPlacementUpdate(
+        columnId,
+        targetValue,
+      );
+      const fixture =
+        nextFixtureMap?.[fixtureRow.uid] ?? fixtureMap[fixtureRow.uid];
+      if (!fixture) continue;
+
+      const updatedFixture = applyPlacementUpdate(fixture, position, rotation);
+      if (!nextFixtureMap) {
+        nextFixtureMap = { ...fixtureMap };
+      }
+      nextFixtureMap[fixtureRow.uid] = updatedFixture;
+      updates.push({
+        id: fixtureRow.id,
+        position,
+        rotation,
+      });
+    }
+    const rowsSelected = targets.length;
 
     if (updates.length === 0) {
       const totalMs = performance.now() - startMs;
@@ -644,12 +666,27 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     );
   };
 
-  const handleCellEdited = (cell: Item, newValue: GridCell) => {
-    applyPlacementEdits([{ cell, newValue }], true);
+  /** Applies a single typed edit to every selected fixture row. */
+  const handleCellEdited = (
+    cell: Item,
+    newValue: GridCell,
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    applyPlacementEdits([{ cell, newValue }], true, context?.inputValue);
   };
 
-  const handleCellsEdited = (edits: readonly DataGridCellEdit[]) => {
-    applyPlacementEdits(edits, false);
+  /** Applies a multi-cell range or paste edit as one placement batch. */
+  const handleCellsEdited = (
+    edits: readonly DataGridCellEdit[],
+    _selection?: GridSelection,
+    context?: DataGridEditCommitContext,
+  ) => {
+    applyPlacementEdits(
+      edits,
+      false,
+      context?.inputValue ?? edits[0]?.inputValue,
+    );
   };
 
   const deleteSelectedFixtures = () => {
@@ -677,6 +714,62 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
 
   createEffect(() => {
     props.onDeleteActionChange?.(deleteSelectedFixtures);
+  });
+
+  const revealRequest = useStore(patchFixtureRevealRequest);
+  const [scrollRequest, setScrollRequest] =
+    createSignal<DataGridScrollRequest>();
+  /**
+   * Last reveal this view acted on. Every mounted view, including ones in hidden layouts, handles
+   * each request once, within the reveal window.
+   */
+  let handledRevealId: number | undefined;
+  /** Numbers this view's scroll requests so the grid acts on each one. */
+  let scrollRequestId = 0;
+  /** Asks the grid to scroll a row into view in the given column, under a fresh request id. */
+  const scrollToRow = (column: number, row: number) => {
+    scrollRequestId += 1;
+    setScrollRequest({ cell: [column, row], requestId: scrollRequestId });
+  };
+  /**
+   * Scrolls to the fixtures Patch was asked to reveal, selecting them when requested, once all of
+   * them have arrived. Rows hidden by a filter are skipped, and expired requests are dropped.
+   */
+  createEffect(() => {
+    const request = revealRequest();
+    if (!request || request.requestId === handledRevealId) return;
+    if (
+      performance.now() - request.requestedAt >
+      PATCH_FIXTURE_REVEAL_WINDOW_MS
+    ) {
+      handledRevealId = request.requestId;
+      return;
+    }
+    const known = new Set(rows().map((row) => row.id));
+    if (!request.fixtureIds.every((id) => known.has(id))) return;
+    handledRevealId = request.requestId;
+    const rowData = displayRows();
+    const indices = request.fixtureIds
+      .map((id) => rowData.findIndex((row) => row.id === id))
+      .filter((index) => index >= 0)
+      .sort((a, b) => a - b);
+    if (indices.length === 0) return;
+    if (request.select)
+      handleGridSelectionChange({
+        ...emptyGridSelection(),
+        rows: CompactSelection.fromArray(indices),
+      });
+    const column = Math.max(
+      0,
+      displayColumns().findIndex((entry) => entry.id === request.column),
+    );
+    // The grid lays out newly arrived rows on the next frame; scrolling sooner clamps short of them.
+    // Scrolling to the last fixture and then the first shows the whole range when it fits, and
+    // otherwise keeps the first fixture in view.
+    requestAnimationFrame(() => {
+      scrollToRow(column, indices[indices.length - 1]);
+      requestAnimationFrame(() => scrollToRow(column, indices[0]));
+    });
   });
 
   createEffect(() => {
@@ -717,6 +810,7 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
           rowMarkers="checkbox"
           gridSelection={selection()}
           onGridSelectionChange={handleGridSelectionChange}
+          scrollRequest={scrollRequest()}
           onGroupHeaderClicked={handleGroupHeaderClicked}
           width="100%"
           height="100%"

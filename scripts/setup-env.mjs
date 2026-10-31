@@ -22,7 +22,8 @@ import {
 const PORT_RANGE_START = 3000;
 /**
  * Ports reserved per worktree, starting at NIGHTFALL_PORT: backend (+0),
- * web UI (+1), docs (+2), and room for future services.
+ * web UI (+1), user manual (+2), Developer Guide (+3), and room for future
+ * services.
  */
 export const PORT_BLOCK_SIZE = 10;
 const PORT_BLOCK_COUNT = 100;

@@ -598,6 +598,9 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
     app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<FinalLayerAttributedAssertions>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
     app.add_systems(
         Update,
         (
@@ -668,6 +671,7 @@ fn restore_fixture_snapshot_allows_running_effect_to_assert_restored_parameters(
                     values: restored_values.clone(),
                 }],
                 color_path_defaults: vec![],
+                routes: None,
             },
         )));
 

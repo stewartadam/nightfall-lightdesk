@@ -107,7 +107,10 @@ export function canUseCellEditor(
 export function makeEditedCell(original: GridCell, value: string): GridCell {
   if (canEditTimeCell(original)) {
     const data = original.data;
-    const parsed = parseDurationInput(value, { minMs: data.minMs });
+    const parsed = parseDurationInput(value, {
+      minMs: data.minMs,
+      beats: data.displayUnit === "beats",
+    });
     if (!parsed) {
       return data.clearable === true && value.trim() === ""
         ? {

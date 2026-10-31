@@ -21,7 +21,7 @@ function instanceRow(
     display_kind: "Cue",
     intensity_scale: 1,
     name: "Instance",
-    rate: 1,
+    speed: 1,
     tags: [],
     ...overrides,
   } as StatusInstanceInfo;

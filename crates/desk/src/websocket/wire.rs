@@ -39,7 +39,7 @@ pub struct InstanceInfo {
     pub is_preview: bool,
     /// Whether this playback is fading out after a stop/release command.
     pub is_releasing: bool,
-    /// Whether this playback clock is currently frozen or held at zero rate.
+    /// Whether this playback clock is currently frozen or held at zero speed.
     pub is_paused: bool,
     /// Wall-clock timestamp when this playback began releasing, if applicable.
     pub release_epoch_ms: Option<f64>,
@@ -55,15 +55,15 @@ pub struct InstanceInfo {
     pub bound_clip_id: Option<u32>,
     /// Current intensity scale (0.0-1.0)
     pub intensity_scale: f32,
-    /// Current rate multiplier
-    pub rate: f32,
-    /// Runtime master scale applied on top of the current rate.
-    pub rate_master_scale: f32,
-    /// Current effective rate after master scaling.
-    pub effective_rate: f64,
+    /// Current speed multiplier
+    pub speed: f32,
+    /// Runtime master scale applied on top of the current speed.
+    pub speed_master_scale: f32,
+    /// Current effective speed after master scaling.
+    pub effective_speed: f64,
     /// Backend-authored clock and phase state for an editor-owned Step FX preview.
     pub step_fx_preview: Option<StepFxPreviewPlaybackStatus>,
-    /// How a held control slot Flash or Swop changes this playback, if one does.
+    /// How a held fader Flash or Swop changes this playback, if one does.
     pub held_button: Option<HeldButtonEffect>,
     /// Source-specific runtime status.
     pub status: InstanceStatus,
@@ -219,10 +219,12 @@ pub(super) enum DeskWsMessage<'a> {
     Metrics(&'a DeskMetrics),
     /// Active instances list
     ActiveInstances(&'a [InstanceInfo]),
-    /// Backend-owned control state
-    Controls(&'a [ControlSnapshot]),
+    /// Backend-owned fader state
+    Faders(&'a [FaderSnapshot]),
     /// Current undo/redo state
     UndoState(&'a UndoStateMessage),
+    /// Live clip launches waiting for the next beat or bar
+    ArmedLaunches(&'a [ArmedLaunch]),
 }
 
 /// One Blueprint's current reverse-dependency descriptions.
@@ -265,7 +267,7 @@ pub(super) struct OutboundLayerState {
     pub is_releasing: bool,
     /// Current source-specific playback position for playback-backed layers.
     pub runtime_position: Option<InstancePosition>,
-    /// How a held control slot Flash or Swop changes this layer's playback; a playback a Swop
+    /// How a held fader Flash or Swop changes this layer's playback; a playback a Swop
     /// takes out asserts nothing while the Swop is held.
     pub held_button: Option<HeldButtonEffect>,
     /// Asserted absolute parameter values for this layer.

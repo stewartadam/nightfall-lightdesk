@@ -16,9 +16,7 @@ use nightfall_dmx::prelude::{DmxValueResolution, MAX_CHANNELS_PER_UNIVERSE, Para
 use nightfall_engine::prelude::{Compositing, LayerGeneration, Render, add_render_schedule};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::{input_apply::TransportInputPlugin, prelude::*};
-use nightfall_io::{
-    AcceptedDmxFrame, BindingTransport, DmxInputSet, OutputTransport, SacnDelivery,
-};
+use nightfall_io::{AcceptedDmxFrame, DmxInputSet, OutputTransport, RouteTransport, SacnDelivery};
 use web_time::Instant;
 
 /// Creates a persistent assertion layer for routing tests.
@@ -52,7 +50,7 @@ fn make_frame(universe: u16, channels: &[(u16, u8)]) -> AcceptedDmxFrame {
         data[usize::from(address - 1)] = value;
     }
     AcceptedDmxFrame {
-        transport: BindingTransport::ArtNet,
+        transport: RouteTransport::ArtNet,
         universe,
         data,
         received_at: Instant::now(),
@@ -60,14 +58,14 @@ fn make_frame(universe: u16, channels: &[(u16, u8)]) -> AcceptedDmxFrame {
     }
 }
 
-/// Verifies accepted frames preserve records frames without transport bindings.
+/// Verifies accepted frames preserve records frames without transport routes.
 #[test]
-fn accepted_input_records_frames_without_transport_bindings() {
+fn accepted_input_records_frames_without_transport_routes() {
     let mut app = App::new();
     add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
     app.init_resource::<InputDmxUniverses>();
     app.init_resource::<ConsoleDmxUniverses>();
 
@@ -85,7 +83,7 @@ fn accepted_input_records_frames_without_transport_bindings() {
     let input_universes = app.world().resource::<InputDmxUniverses>();
     assert!(
         input_universes
-            .frame_age_ms(BindingTransport::ArtNet, 1, Instant::now())
+            .frame_age_ms(RouteTransport::ArtNet, 1, Instant::now())
             .is_some()
     );
 }
@@ -97,7 +95,7 @@ fn accepted_input_applies_only_bound_channels() {
     add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
     app.init_resource::<InputDmxUniverses>();
     app.init_resource::<ConsoleDmxUniverses>();
 
@@ -105,11 +103,9 @@ fn accepted_input_applies_only_bound_channels() {
     let unbound_parameter = app.world_mut().spawn(make_coarse_parameter()).id();
     let input_layer = spawn_transport_input_layer(&mut app);
 
-    app.world_mut()
-        .resource_mut::<ResolvedInputBindings>()
-        .bindings = vec![ResolvedInputBinding {
+    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
         source: ResolvedInputSource::Transport {
-            transport: BindingTransport::ArtNet,
+            transport: RouteTransport::ArtNet,
             universe: 1,
             address: 100,
         },
@@ -152,15 +148,13 @@ fn accepted_input_sets_console_channels_for_transport_console_mapping() {
     add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
     app.init_resource::<InputDmxUniverses>();
     app.init_resource::<ConsoleDmxUniverses>();
 
-    app.world_mut()
-        .resource_mut::<ResolvedInputBindings>()
-        .bindings = vec![ResolvedInputBinding {
+    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
         source: ResolvedInputSource::Transport {
-            transport: BindingTransport::ArtNet,
+            transport: RouteTransport::ArtNet,
             universe: 2,
             address: 1,
         },
@@ -193,15 +187,13 @@ fn accepted_input_sets_transport_channels_for_transport_mapping() {
     add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
 
-    app.init_resource::<ResolvedInputBindings>();
+    app.init_resource::<ResolvedInputRoutes>();
     app.init_resource::<InputDmxUniverses>();
     app.init_resource::<ConsoleDmxUniverses>();
 
-    app.world_mut()
-        .resource_mut::<ResolvedInputBindings>()
-        .bindings = vec![ResolvedInputBinding {
+    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
         source: ResolvedInputSource::Transport {
-            transport: BindingTransport::ArtNet,
+            transport: RouteTransport::ArtNet,
             universe: 2,
             address: 1,
         },
@@ -209,7 +201,7 @@ fn accepted_input_sets_transport_channels_for_transport_mapping() {
         destination: ResolvedInputDestination::Transport {
             target: ResolvedTransportTarget {
                 target: "sacn".to_string(),
-                protocol: BindingTransport::Sacn,
+                protocol: RouteTransport::Sacn,
                 transport: OutputTransport::Sacn {
                     mode: SacnDelivery::Multicast,
                 },
@@ -224,7 +216,7 @@ fn accepted_input_sets_transport_channels_for_transport_mapping() {
     app.update();
 
     let input_universes = app.world().resource::<InputDmxUniverses>();
-    let target = input_universes.get_universe(BindingTransport::Sacn, 11);
+    let target = input_universes.get_universe(RouteTransport::Sacn, 11);
     assert_eq!(target[0], 17);
     assert_eq!(target[199], 66);
     assert_eq!(target[511], 99);
@@ -253,11 +245,11 @@ fn publish_sacn(mut pending: ResMut<SacnFrames>, mut frames: MessageWriter<Accep
 
 /// Captures the input state visible when compositing begins.
 #[derive(Resource, Default)]
-struct CompositingInput(Vec<(BindingTransport, u8)>);
+struct CompositingInput(Vec<(RouteTransport, u8)>);
 
 /// Observes routing output at the first consumer phase after layer generation.
 fn observe_compositing(input: Res<InputDmxUniverses>, mut observed: ResMut<CompositingInput>) {
-    observed.0 = [BindingTransport::ArtNet, BindingTransport::Sacn]
+    observed.0 = [RouteTransport::ArtNet, RouteTransport::Sacn]
         .into_iter()
         .map(|transport| (transport, input.get_universe(transport, 1)[0]))
         .collect();
@@ -282,46 +274,44 @@ fn mixed_protocol_ingress_is_applied_before_compositing_without_retimestamping()
     last.received_at = received_at;
     last.is_self_frame = true;
     let mut sacn = make_frame(1, &[(1, 30)]);
-    sacn.transport = BindingTransport::Sacn;
+    sacn.transport = RouteTransport::Sacn;
     app.insert_resource(ArtNetFrames(vec![first, last]));
     app.insert_resource(SacnFrames(vec![sacn]));
     app.update();
     assert_eq!(
         app.world().resource::<CompositingInput>().0,
-        vec![(BindingTransport::ArtNet, 20), (BindingTransport::Sacn, 30)]
+        vec![(RouteTransport::ArtNet, 20), (RouteTransport::Sacn, 30)]
     );
     let input = app.world().resource::<InputDmxUniverses>();
     assert_eq!(
-        input.frame_age_ms(BindingTransport::ArtNet, 1, received_at),
+        input.frame_age_ms(RouteTransport::ArtNet, 1, received_at),
         Some(0)
     );
     assert_eq!(
         input.frame_age_ms(
-            BindingTransport::ArtNet,
+            RouteTransport::ArtNet,
             1,
             received_at + std::time::Duration::from_millis(500)
         ),
         Some(500)
     );
-    assert_eq!(input.is_self_frame(BindingTransport::ArtNet, 1), Some(true));
+    assert_eq!(input.is_self_frame(RouteTransport::ArtNet, 1), Some(true));
 }
 
-/// Duplicate targets retain the first binding, and consumed frames cannot resurrect cleared assertions.
+/// Duplicate targets retain the first route, and consumed frames cannot resurrect cleared assertions.
 #[test]
-fn routing_preserves_binding_precedence_and_consumes_each_frame_once() {
+fn routing_preserves_route_precedence_and_consumes_each_frame_once() {
     let mut app = App::new();
     add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
     let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
     let input_layer = spawn_transport_input_layer(&mut app);
-    app.world_mut()
-        .resource_mut::<ResolvedInputBindings>()
-        .bindings = [1, 2]
+    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = [1, 2]
         .into_iter()
         .enumerate()
-        .map(|(priority, address)| ResolvedInputBinding {
+        .map(|(priority, address)| ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 1,
                 address,
             },
@@ -364,14 +354,14 @@ fn routing_preserves_binding_precedence_and_consumes_each_frame_once() {
     );
 }
 
-/// Builds resolved bindings from Art-Net universes 1 and 2 (address 1) to `destination`, in
+/// Builds resolved routes from Art-Net universes 1 and 2 (address 1) to `destination`, in
 /// resolved precedence order: universe 1 at priority 10 ahead of universe 2 at priority 1.
-fn competing_source_bindings(destination: ResolvedInputDestination) -> Vec<ResolvedInputBinding> {
+fn competing_source_routes(destination: ResolvedInputDestination) -> Vec<ResolvedInputRoute> {
     [(1, 10), (2, 1)]
         .into_iter()
-        .map(|(universe, priority)| ResolvedInputBinding {
+        .map(|(universe, priority)| ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe,
                 address: 1,
             },
@@ -403,7 +393,7 @@ fn single_layer_value(app: &App, input_layer: Entity) -> ParameterValue {
 }
 
 /// Verifies that when two source universes drive one fixture parameter, the higher-priority
-/// binding's value holds no matter which source's frame arrives last.
+/// route's value holds no matter which source's frame arrives last.
 #[test]
 fn fixture_target_keeps_highest_priority_source_across_frames() {
     for arrival_order in [[(1, 42), (2, 99)], [(2, 99), (1, 42)]] {
@@ -412,14 +402,13 @@ fn fixture_target_keeps_highest_priority_source_across_frames() {
         app.add_plugins(TransportInputPlugin);
         let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
         let input_layer = spawn_transport_input_layer(&mut app);
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = competing_source_bindings(ResolvedInputDestination::Fixture {
-            targets: vec![ResolvedInputTarget {
-                entity: parameter,
-                offsets: vec![0],
-            }],
-        });
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes =
+            competing_source_routes(ResolvedInputDestination::Fixture {
+                targets: vec![ResolvedInputTarget {
+                    entity: parameter,
+                    offsets: vec![0],
+                }],
+            });
 
         let app = deliver_frames_in_separate_updates(app, &arrival_order);
 
@@ -442,14 +431,13 @@ fn fixture_target_falls_back_to_lower_priority_source_after_owner_goes_stale() {
     app.add_plugins(TransportInputPlugin);
     let parameter = app.world_mut().spawn(make_coarse_parameter()).id();
     let input_layer = spawn_transport_input_layer(&mut app);
-    app.world_mut()
-        .resource_mut::<ResolvedInputBindings>()
-        .bindings = competing_source_bindings(ResolvedInputDestination::Fixture {
-        targets: vec![ResolvedInputTarget {
-            entity: parameter,
-            offsets: vec![0],
-        }],
-    });
+    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes =
+        competing_source_routes(ResolvedInputDestination::Fixture {
+            targets: vec![ResolvedInputTarget {
+                entity: parameter,
+                offsets: vec![0],
+            }],
+        });
     let mut app = deliver_frames_in_separate_updates(app, &[(1, 42)]);
 
     app.world_mut()
@@ -479,26 +467,25 @@ fn fixture_target_falls_back_to_lower_priority_source_after_owner_goes_stale() {
 }
 
 /// Verifies a lower-priority source takes over a console channel once the higher-priority
-/// binding is removed, even though the old owner's origin is still recorded on the channel.
+/// route is removed, even though the old owner's origin is still recorded on the channel.
 #[test]
-fn console_target_falls_back_to_lower_priority_source_after_owner_binding_removed() {
+fn console_target_falls_back_to_lower_priority_source_after_owner_route_removed() {
     let mut app = App::new();
     add_render_schedule(&mut app);
     app.add_plugins(TransportInputPlugin);
-    app.world_mut()
-        .resource_mut::<ResolvedInputBindings>()
-        .bindings = competing_source_bindings(ResolvedInputDestination::Console {
-        target: ResolvedConsoleTarget {
-            universe: 3,
-            address: 1,
-        },
-        targets: vec![],
-    });
+    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes =
+        competing_source_routes(ResolvedInputDestination::Console {
+            target: ResolvedConsoleTarget {
+                universe: 3,
+                address: 1,
+            },
+            targets: vec![],
+        });
     let mut app = deliver_frames_in_separate_updates(app, &[(1, 17)]);
 
     app.world_mut()
-        .resource_mut::<ResolvedInputBindings>()
-        .bindings
+        .resource_mut::<ResolvedInputRoutes>()
+        .routes
         .remove(0);
     let app = deliver_frames_in_separate_updates(app, &[(2, 66)]);
 
@@ -511,22 +498,21 @@ fn console_target_falls_back_to_lower_priority_source_after_owner_binding_remove
 }
 
 /// Verifies that when two source universes map onto one console channel, the higher-priority
-/// binding's value holds no matter which source's frame arrives last.
+/// route's value holds no matter which source's frame arrives last.
 #[test]
 fn console_target_keeps_highest_priority_source_across_frames() {
     for arrival_order in [[(1, 17), (2, 66)], [(2, 66), (1, 17)]] {
         let mut app = App::new();
         add_render_schedule(&mut app);
         app.add_plugins(TransportInputPlugin);
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = competing_source_bindings(ResolvedInputDestination::Console {
-            target: ResolvedConsoleTarget {
-                universe: 3,
-                address: 1,
-            },
-            targets: vec![],
-        });
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes =
+            competing_source_routes(ResolvedInputDestination::Console {
+                target: ResolvedConsoleTarget {
+                    universe: 3,
+                    address: 1,
+                },
+                targets: vec![],
+            });
 
         let app = deliver_frames_in_separate_updates(app, &arrival_order);
 

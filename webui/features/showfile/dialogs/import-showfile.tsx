@@ -59,7 +59,7 @@ const IMPORT_ROWS: Array<{
   { key: "fixtures", label: "Fixtures / Patch", policies: FULL_POLICY_OPTIONS },
   { key: "variables", label: "Variables", policies: FULL_POLICY_OPTIONS },
   { key: "settings", label: "Settings", policies: REPLACE_ONLY_POLICY_OPTIONS },
-  { key: "bindings", label: "Bindings", policies: LIST_POLICY_OPTIONS },
+  { key: "routes", label: "DMX Routes", policies: LIST_POLICY_OPTIONS },
   {
     key: "midi_mappings",
     label: "MIDI Mappings",
@@ -89,6 +89,7 @@ const IMPORT_ROWS: Array<{
   { key: "timelines", label: "Timelines", policies: FULL_POLICY_OPTIONS },
   { key: "clips", label: "Clips", policies: FULL_POLICY_OPTIONS },
   { key: "boards", label: "Boards", policies: FULL_POLICY_OPTIONS },
+  { key: "macros", label: "Macros", policies: FULL_POLICY_OPTIONS },
 ];
 
 /** Build the default showfile import options used by the modal. */
@@ -98,7 +99,7 @@ function defaultImportOptions(): ShowfileImportOptions {
     fixtures: ShowfileImportPolicy.Merge,
     variables: ShowfileImportPolicy.Merge,
     settings: ShowfileImportPolicy.Skip,
-    bindings: ShowfileImportPolicy.Merge,
+    routes: ShowfileImportPolicy.Merge,
     midi_mappings: ShowfileImportPolicy.Merge,
     osc_mappings: ShowfileImportPolicy.Merge,
     scene_objects: ShowfileImportPolicy.Merge,
@@ -116,6 +117,7 @@ function defaultImportOptions(): ShowfileImportOptions {
     timelines: ShowfileImportPolicy.Skip,
     clips: ShowfileImportPolicy.Merge,
     boards: ShowfileImportPolicy.Merge,
+    macros: ShowfileImportPolicy.Merge,
   };
 }
 

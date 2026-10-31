@@ -12,19 +12,20 @@ base64.workspace = true
 gdtf.workspace = true
 notify.workspace = true
 open-fixture-library = { path = "../open-fixture-library" }
-quick-xml = "0.42"
+quick-xml = { version = "0.42", features = ["serialize", "overlapped-lists"] }
 nightfall = { path = "../common" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-websocket = { path = "../websocket" }
 serde.workspace = true
+serde_ignored = "0.1.14"
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
-zip = { version = "9.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.1", default-features = false, features = ["deflate"] }
 nightfall-fixture-model = { path = "../fixture-model" }
 
 [features]

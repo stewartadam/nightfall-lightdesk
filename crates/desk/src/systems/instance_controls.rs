@@ -20,7 +20,7 @@ use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::{InstanceControls, InstanceId};
 
-use crate::controls::{HeldButtonEffect, HeldButtonEffects};
+use crate::faders::{HeldButtonEffect, HeldButtonEffects};
 
 /// Attributes affected by playback intensity scaling.
 const INTENSITY_ATTRIBUTES: &[Attribute] = &[Attribute::Intensity, Attribute::VirtualIntensity];
@@ -66,7 +66,7 @@ fn effective_intensity_scale(intensity_scale: f32, effect: Option<HeldButtonEffe
 /// System that applies per-playback intensity scaling to layers.
 ///
 /// This runs after layer generation but before compositing, scaling Intensity and
-/// VirtualIntensity parameters by the playback's intensity_scale. Playbacks a held slot Flash
+/// VirtualIntensity parameters by the playback's intensity_scale. Playbacks a held fader Flash
 /// or Swop plays render at full instead, and those a Swop takes out (see
 /// [`HeldButtonEffects`]) drop out entirely.
 pub fn apply_playback_intensity(
@@ -140,13 +140,13 @@ mod tests {
     /// out renders at zero, and others keep their clamped fader scale.
     #[test]
     fn held_buttons_override_the_fader_scale() {
-        let flashed = Some(HeldButtonEffect::Flashed { control_index: 1 });
-        let swopped_out = Some(HeldButtonEffect::SwoppedOut { control_index: 1 });
+        let flashed = Some(HeldButtonEffect::Flashed { fader_index: 1 });
+        let swopped_out = Some(HeldButtonEffect::SwoppedOut { fader_index: 1 });
         assert_eq!(effective_intensity_scale(0.3, None), 0.3);
         assert_eq!(effective_intensity_scale(1.4, None), 1.0);
         assert_eq!(effective_intensity_scale(0.0, flashed), 1.0);
         assert_eq!(
-            effective_intensity_scale(0.0, Some(HeldButtonEffect::Swopping { control_index: 1 })),
+            effective_intensity_scale(0.0, Some(HeldButtonEffect::Swopping { fader_index: 1 })),
             1.0
         );
         assert_eq!(effective_intensity_scale(0.8, swopped_out), 0.0);

@@ -6,7 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides timecode clocks driven by the engine or by an external source
+//! Timecode objects and the generators that advance them.
+//!
+//! A timecode is a clock that timelines follow. Its generator either runs on the engine's own
+//! clock or chases an external source, reading the latest frame that an input service (MIDI
+//! timecode, Art-Net timecode, or LTC audio) published to its feed.
 
 #![warn(missing_docs)]
 

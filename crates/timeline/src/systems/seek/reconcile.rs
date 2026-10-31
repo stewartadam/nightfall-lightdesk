@@ -46,7 +46,7 @@ pub(super) struct TimelineReconciliationState {
     pub(super) preserved_fire_cue_owners: HashSet<(String, String)>,
     /// Authored owners whose deterministic playback was materialized directly.
     pub(super) direct_materialized_actions: HashSet<(String, String)>,
-    /// Clips whose rate was restored as part of direct materialization.
+    /// Clips whose speed was restored as part of direct materialization.
     pub(super) direct_materialized_clip_uids: HashSet<Uuid>,
 }
 

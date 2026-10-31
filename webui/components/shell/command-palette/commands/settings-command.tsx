@@ -14,13 +14,16 @@ import { useUiAction } from "../../../providers/command-registry";
 
 const log = getLogger(import.meta.url);
 
+/** UI action ID of the command that opens application settings. */
+export const OPEN_SETTINGS_ACTION_ID = "open.settings";
+
 export default function SettingsCommand() {
   const { openSettings } = useAppShell();
 
   onMount(() => {
     log.trace("mounting");
     useUiAction({
-      id: "open.settings",
+      id: OPEN_SETTINGS_ACTION_ID,
       name: "Open Settings",
       description: "Open application settings",
       icon: GearIcon,

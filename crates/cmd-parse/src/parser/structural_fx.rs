@@ -32,10 +32,10 @@ pub(super) fn step_fx_shaping_expected_tokens() -> Vec<ExpectedToken> {
     ]
 }
 
-pub(super) fn fx_rate_value_surface(fills: &[&ConsumedSemanticItem]) -> Option<String> {
+pub(super) fn fx_speed_value_surface(fills: &[&ConsumedSemanticItem]) -> Option<String> {
     fills
         .first()
-        .is_some_and(|item| token_id_for_text(item.surface.as_str()) == Some(TokenId::Rate))
+        .is_some_and(|item| token_id_for_text(item.surface.as_str()) == Some(TokenId::Speed))
         .then(|| {
             fills
                 .iter()
@@ -45,14 +45,14 @@ pub(super) fn fx_rate_value_surface(fills: &[&ConsumedSemanticItem]) -> Option<S
         })
 }
 
-pub(super) fn filled_value_for_fx_rate_followup(
+pub(super) fn filled_value_for_fx_speed_followup(
     slot: SlotId,
     fills: &[&ConsumedSemanticItem],
     token: &LexerToken,
     decimal_value_prefix: fn(&str) -> bool,
     is_complete_decimal_value: fn(&str) -> bool,
 ) -> Option<(FilledValue, Option<NormalizedFilledValue>)> {
-    let value_surface = fx_rate_value_surface(fills)?;
+    let value_surface = fx_speed_value_surface(fills)?;
     let token_id = token_id_for_text(token.text.as_str());
     if value_surface.is_empty() {
         if token.kind == LexerTokenKind::Number {
@@ -99,12 +99,12 @@ pub(super) fn filled_value_for_fx_rate_followup(
     None
 }
 
-pub(super) fn fx_rate_requires_followup(
+pub(super) fn fx_speed_requires_followup(
     fills: &[&ConsumedSemanticItem],
     decimal_value_prefix: fn(&str) -> bool,
     is_complete_decimal_value: fn(&str) -> bool,
 ) -> bool {
-    let Some(value_surface) = fx_rate_value_surface(fills) else {
+    let Some(value_surface) = fx_speed_value_surface(fills) else {
         return false;
     };
     value_surface.is_empty()

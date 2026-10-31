@@ -53,6 +53,7 @@ function createSnapshot(
     timecodes: {},
     timelines: {},
     boards: {},
+    macros: {},
     ...overrides,
   };
 }
@@ -341,7 +342,7 @@ test("searches all object families without an active type", () => {
           target: { type: "Fixtures", data: { type: "All" } },
         }) as unknown as Master,
         master6: withIdentifiers(6, "Speed Master", {
-          kind: "PlaybackRate",
+          kind: "PlaybackSpeed",
           target: { type: "Instances", data: { type: "Clips", data: [1] } },
         }) as unknown as Master,
       },

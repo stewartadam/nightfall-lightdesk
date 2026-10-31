@@ -28,6 +28,7 @@ test("validation jobs wait only for their preparation prerequisites", () => {
   );
   assert.deepEqual(jobs.webui.needs, [
     "scope",
+    "selection",
     "wasm-bridge",
     "browser-runtime",
   ]);
@@ -37,12 +38,36 @@ test("validation jobs wait only for their preparation prerequisites", () => {
     "native",
     "wasm-bridge",
   ]);
-  for (const id of ["source-checks", "native", "webui", "browser-smoke"]) {
+  assert.equal(
+    jobs["source-checks"].if,
+    `\${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}`,
+  );
+  // Selection leaves app validation off for drafts and preview-only runs, and the native backend
+  // and product flows off for dashboard-only PRs.
+  for (const [id, output] of [
+    ["native", "native"],
+    ["webui", "app"],
+    ["browser-smoke", "native"],
+  ]) {
     assert.equal(
       jobs[id].if,
-      `\${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}`,
+      `\${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.${output} == 'true' }}`,
     );
   }
+  for (const id of ["wasm-bridge", "browser-runtime"]) {
+    assert.deepEqual(jobs[id].needs, ["scope", "selection"]);
+    for (const output of ["app", "browser_package", "browser_preview"]) {
+      assert.match(
+        jobs[id].if,
+        new RegExp(`needs\\.selection\\.outputs\\.${output} == 'true'`),
+        `${id} builds for ${output}`,
+      );
+    }
+  }
+  assert.match(
+    jobs["wasm-bridge"].if,
+    /needs\.selection\.outputs\.desktop_package == 'true'/,
+  );
   assert.deepEqual(jobs.docs.needs, ["scope", "selection"]);
   for (const id of [
     "source-checks",
@@ -77,7 +102,7 @@ test("the required check accepts only successful prerequisite results", () => {
     jobs.gate.needs.map((id) => [id, { result: "success" }]),
   );
   /** Run the workflow shell against a controlled collection of dependency outcomes. */
-  function runGuard(outcomes, docs = "true") {
+  function runGuard(outcomes, docs = "true", app = "true", native = app) {
     const result = spawnSync(
       "bash",
       ["-e", "-o", "pipefail", "-c", guard.run],
@@ -86,6 +111,8 @@ test("the required check accepts only successful prerequisite results", () => {
           ...process.env,
           JOB_RESULTS: JSON.stringify(outcomes),
           DOCS: docs,
+          APP: app,
+          NATIVE: native,
         },
         encoding: "utf8",
       },
@@ -116,6 +143,73 @@ test("the required check accepts only successful prerequisite results", () => {
     0,
     "skipped docs still require other jobs",
   );
+  assert.equal(guard.env.APP, `\${{ needs.selection.outputs.app }}`);
+  const appJobs = [
+    "wasm-bridge",
+    "browser-runtime",
+    "native",
+    "webui",
+    "browser-smoke",
+  ];
+  const noApp = {
+    ...noDocs,
+    ...Object.fromEntries(appJobs.map((id) => [id, { result: "skipped" }])),
+  };
+  assert.equal(runGuard(noApp, "false", "false"), 0, "unselected app skips");
+  assert.equal(
+    runGuard(
+      { ...noApp, "wasm-bridge": { result: "failure" } },
+      "false",
+      "false",
+    ),
+    0,
+    "a preview-only WASM build does not decide the check",
+  );
+  assert.notEqual(
+    runGuard(noApp, "false", ""),
+    0,
+    "missing app selection stays strict",
+  );
+  assert.notEqual(
+    runGuard(noApp, "false", "true"),
+    0,
+    "selected app requires its jobs",
+  );
+  assert.equal(guard.env.NATIVE, `\${{ needs.selection.outputs.native }}`);
+  const noNative = {
+    ...noDocs,
+    native: { result: "skipped" },
+    "browser-smoke": { result: "skipped" },
+  };
+  assert.equal(
+    runGuard(noNative, "false", "true", "false"),
+    0,
+    "unselected native validation skips",
+  );
+  assert.notEqual(
+    runGuard(noNative, "false", "true", ""),
+    0,
+    "missing native selection stays strict",
+  );
+  for (const id of ["wasm-bridge", "browser-runtime", "webui"]) {
+    assert.notEqual(
+      runGuard(
+        { ...noNative, [id]: { result: "skipped" } },
+        "false",
+        "true",
+        "false",
+      ),
+      0,
+      `skipped native validation still requires ${id}`,
+    );
+  }
+  for (const id of ["scope", "selection", "source-checks"]) {
+    assert.notEqual(
+      runGuard({ ...noApp, [id]: { result: "failure" } }, "false", "false"),
+      0,
+      `skipped app still requires ${id}`,
+    );
+  }
 });
 
 /** Drafts acquire source only when opened, so later draft pushes skip every job and the gate. */

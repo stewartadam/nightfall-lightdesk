@@ -9,10 +9,7 @@
 import type { DataGridProps } from "./model/types";
 import TanStackDataGrid from "./tanstack-data-grid";
 
-export {
-  drawActiveCuePlayIcon,
-  drawConflictWarningIcon,
-} from "./canvas-decorations";
+export { drawActiveCuePlayIcon } from "./canvas-decorations";
 export { DropdownCellAffordance } from "./cells/dropdown-cell-affordance";
 export type { DataGridCellKey } from "./model/cell-provider";
 export { createKeyedDataGridCellProvider } from "./model/cell-provider";

@@ -40,10 +40,26 @@ export const WORKTREE_MANAGED_SERVICES = [
   "wasm",
   "artnet-sender",
   "sacn-sender",
-  "docs",
+  "docs-user",
+  "docs-dev",
 ];
 export const MANAGE_ACTIONS = ["start", "stop", "recycle"];
 export const ALL_SELECTOR = "all";
+/**
+ * Selectors that name a group of managed services, mapped to its members. The
+ * dashboard API and every client resolve groups from this one table.
+ */
+export const SERVICE_SELECTORS = {
+  [ALL_SELECTOR]: WORKTREE_MANAGED_SERVICES,
+  both: ["backend", "ui"],
+  docs: ["docs-user", "docs-dev"],
+  senders: ["artnet-sender", "sacn-sender"],
+};
+/** Every name a caller may pass as a service target. */
+export const SERVICE_TARGET_NAMES = [
+  ...WORKTREE_MANAGED_SERVICES,
+  ...Object.keys(SERVICE_SELECTORS),
+];
 
 /**
  * Resolves a path to its canonical real path so worktree paths compare equal
@@ -110,14 +126,17 @@ export function summarizeWorktree(worktree) {
     nightfallPort: worktree.nightfallPort,
     webUiPort: worktree.webUiPort,
     webUiUrl: worktree.webUiUrl,
-    docsPort: worktree.docsPort,
-    docsUrl: worktree.docsUrl,
+    docsUserPort: worktree.docsUserPort,
+    docsUserUrl: worktree.docsUserUrl,
+    docsDevPort: worktree.docsDevPort,
+    docsDevUrl: worktree.docsDevUrl,
     backend: statusSummary(worktree, "backend"),
     ui: statusSummary(worktree, "ui"),
     wasm: statusSummary(worktree, "wasm"),
     artnetSender: statusSummary(worktree, "artnet-sender"),
     sacnSender: statusSummary(worktree, "sacn-sender"),
-    docs: statusSummary(worktree, "docs"),
+    docsUser: statusSummary(worktree, "docs-user"),
+    docsDev: statusSummary(worktree, "docs-dev"),
     managed: {
       backend: {
         running: Boolean(worktree.managed?.backend?.running),
@@ -139,9 +158,13 @@ export function summarizeWorktree(worktree) {
         running: Boolean(worktree.managed?.["sacn-sender"]?.running),
         pid: worktree.managed?.["sacn-sender"]?.pid ?? null,
       },
-      docs: {
-        running: Boolean(worktree.managed?.docs?.running),
-        pid: worktree.managed?.docs?.pid ?? null,
+      "docs-user": {
+        running: Boolean(worktree.managed?.["docs-user"]?.running),
+        pid: worktree.managed?.["docs-user"]?.pid ?? null,
+      },
+      "docs-dev": {
+        running: Boolean(worktree.managed?.["docs-dev"]?.running),
+        pid: worktree.managed?.["docs-dev"]?.pid ?? null,
       },
     },
   };
@@ -173,20 +196,23 @@ export function uniqueNonEmptyStrings(values) {
 }
 
 /**
- * Deduplicates requested service names and expands the `all` selector to
- * every managed service.
+ * Expands group selectors such as `all` and `docs` to their member services
+ * and deduplicates the result, keeping the order in which services were first
+ * named.
  */
 export function resolveWorktreeServiceTargets(values) {
-  const targets = uniqueNonEmptyStrings(values);
-  if (targets.includes(ALL_SELECTOR)) {
-    return [...WORKTREE_MANAGED_SERVICES];
-  }
-  return targets;
+  return uniqueNonEmptyStrings(
+    uniqueNonEmptyStrings(values).flatMap((target) =>
+      Object.hasOwn(SERVICE_SELECTORS, target)
+        ? SERVICE_SELECTORS[target]
+        : [target],
+    ),
+  );
 }
 
 /**
  * Reports whether the dashboard observed a service as live: an open port for
- * the backend, UI, and docs, or a running process for the sender examples.
+ * the backend, UI, and both books, or a running process for the sender examples.
  */
 function observedOpenForService(worktree, service) {
   if (service === "backend") {
@@ -195,8 +221,11 @@ function observedOpenForService(worktree, service) {
   if (service === "ui") {
     return Boolean(worktree.observed?.webUiPortOpen);
   }
-  if (service === "docs") {
-    return Boolean(worktree.observed?.docsPortOpen);
+  if (service === "docs-user") {
+    return Boolean(worktree.observed?.docsUserPortOpen);
+  }
+  if (service === "docs-dev") {
+    return Boolean(worktree.observed?.docsDevPortOpen);
   }
   if (service === "artnet-sender") {
     return Boolean(worktree.observed?.artnetSenderRunning);

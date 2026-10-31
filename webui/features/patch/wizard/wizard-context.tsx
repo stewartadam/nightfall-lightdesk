@@ -14,6 +14,9 @@ import {
   useContext,
 } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { useSharedStore } from "../../../lib/use-shared-store";
+import { fixtures } from "../../../state/appStores";
+import type { ConsolePatchProblem } from "../model/console-patch-allocation";
 
 const log = getLogger(import.meta.url);
 
@@ -44,18 +47,13 @@ export interface PatchWizardState {
   universeId: number | null;
   startAddress: number | null;
   quantity: number;
+  /**
+   * ID of the first new fixture, the rest numbered after it; null uses the next free ID. Holds
+   * whatever number the user typed, so invalid entries stay visible until corrected.
+   */
+  firstFixtureId: number | null;
   label: string;
   morphFixtureIds: number[];
-}
-
-interface PatchConflictInfo {
-  hasConflict: boolean;
-  /** Universe where the conflict occurs */
-  conflictingUniverse?: number;
-  /** Details about the first conflicting address, if any */
-  conflictingAddress?: number;
-  /** Label/name of the fixture that owns the conflicting address */
-  conflictingFixtureLabel?: string;
 }
 
 const initialState: PatchWizardState = {
@@ -65,6 +63,7 @@ const initialState: PatchWizardState = {
   universeId: null,
   startAddress: null,
   quantity: 1,
+  firstFixtureId: null,
   label: "",
   morphFixtureIds: [],
 };
@@ -90,11 +89,19 @@ interface PatchWizardContextValue {
   isLastStep: () => boolean;
   isFirstStep: () => boolean;
   state: () => PatchWizardState;
+  /** One past the highest fixture ID in the show, suggested for the first new fixture. */
+  nextFixtureId: () => number;
+  /** ID the first new fixture receives: the user's choice, or the suggested next ID. */
+  baseFixtureId: () => number;
+  /** Whether the typed first fixture ID is empty or a whole number from 1. */
+  firstFixtureIdValid: () => boolean;
+  /** First new fixture ID that an existing fixture already uses, if any. */
+  fixtureIdConflict: () => number | undefined;
   updateState: (updates: Partial<PatchWizardState>) => void;
   resetState: () => void;
-  /** Patch conflict info set by the configure step */
-  patchConflict: () => PatchConflictInfo;
-  setPatchConflict: (info: PatchConflictInfo) => void;
+  /** First reason the configured console patch cannot be applied, set by the configure step. */
+  patchProblem: () => ConsolePatchProblem | null;
+  setPatchProblem: (problem: ConsolePatchProblem | null) => void;
 }
 
 const PatchWizardContext = createContext<PatchWizardContextValue>();
@@ -104,8 +111,47 @@ export const PatchWizardProvider: ParentComponent = (props) => {
   const [currentStep, setCurrentStep] =
     createSignal<WizardStep>("fixture-selection");
   const [state, setState] = createSignal<PatchWizardState>({ ...initialState });
-  const [patchConflict, setPatchConflict] = createSignal<PatchConflictInfo>({
-    hasConflict: false,
+  const [patchProblem, setPatchProblem] =
+    createSignal<ConsolePatchProblem | null>(null);
+  const $fixtures = useSharedStore(fixtures);
+
+  /**
+   * Suggests numbering new fixtures after the highest ID in the show, so none are overwritten.
+   * Reads the show only while the wizard is open, since the provider is always mounted.
+   */
+  const nextFixtureId = createMemo(() =>
+    isOpen()
+      ? Object.values($fixtures()).reduce(
+          (highest, fixture) => Math.max(highest, fixture.identifiers.id),
+          0,
+        ) + 1
+      : 1,
+  );
+
+  /** Whether the typed first fixture ID is usable: empty, or a whole number from 1. */
+  const firstFixtureIdValid = createMemo(() => {
+    const id = state().firstFixtureId;
+    return id === null || (Number.isInteger(id) && id >= 1);
+  });
+
+  /** Resolves the first new fixture's ID from the user's choice, falling back to the suggestion. */
+  const baseFixtureId = createMemo(() =>
+    firstFixtureIdValid()
+      ? (state().firstFixtureId ?? nextFixtureId())
+      : nextFixtureId(),
+  );
+
+  /** Finds the first new fixture ID already used in the show, which Finish would overwrite. */
+  const fixtureIdConflict = createMemo(() => {
+    if (!isOpen() || state().morphFixtureIds.length > 0) return undefined;
+    const existing = new Set(
+      Object.values($fixtures()).map((fixture) => fixture.identifiers.id),
+    );
+    const first = baseFixtureId();
+    return Array.from(
+      { length: state().quantity },
+      (_, index) => first + index,
+    ).find((id) => existing.has(id));
   });
 
   /** Returns the step sequence for either patching new fixtures or morphing existing ones. */
@@ -140,6 +186,9 @@ export const PatchWizardProvider: ParentComponent = (props) => {
       case "mode-selection":
         return s.fixtureMode !== null;
       case "configure":
+        if (!firstFixtureIdValid() || fixtureIdConflict() !== undefined) {
+          return false;
+        }
         if (!s.assignConsoleDmx) {
           return s.quantity > 0;
         }
@@ -147,7 +196,7 @@ export const PatchWizardProvider: ParentComponent = (props) => {
           s.universeId !== null &&
           s.startAddress !== null &&
           s.quantity > 0 &&
-          !patchConflict().hasConflict
+          patchProblem() === null
         );
       case "review":
         return true;
@@ -169,7 +218,7 @@ export const PatchWizardProvider: ParentComponent = (props) => {
       quantity: morphFixtureIds.length || initialState.quantity,
       morphFixtureIds,
     });
-    setPatchConflict({ hasConflict: false });
+    setPatchProblem(null);
     setIsOpen(true);
   };
 
@@ -231,10 +280,14 @@ export const PatchWizardProvider: ParentComponent = (props) => {
     isLastStep,
     isFirstStep,
     state,
+    nextFixtureId,
+    baseFixtureId,
+    firstFixtureIdValid,
+    fixtureIdConflict,
     updateState,
     resetState,
-    patchConflict,
-    setPatchConflict,
+    patchProblem,
+    setPatchProblem,
   };
 
   return (

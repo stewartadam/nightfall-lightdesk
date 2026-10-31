@@ -17,7 +17,7 @@ use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_instances::{
     InstanceClock, InstanceControls, InstanceDisplayKind, InstanceId, InstanceKind,
-    InstanceMetadata, Owner,
+    InstanceMetadata, Owner, Timebase,
 };
 use nightfall_selection::{
     HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
@@ -266,6 +266,9 @@ pub struct StepFx {
     pub cycle_scale: StepFxCycleScale,
     /// Independent attribute lanes.
     pub lanes: Vec<FxLane>,
+    /// Whether one authored beat lasts the effect's own beat duration or one show beat.
+    #[serde(default)]
+    pub timebase: Timebase,
 }
 
 impl Default for StepFx {
@@ -279,6 +282,7 @@ impl Default for StepFx {
             direction: FxDirection::default(),
             cycle_scale: StepFxCycleScale::default(),
             lanes: Vec::new(),
+            timebase: Timebase::default(),
         }
     }
 }
@@ -380,7 +384,7 @@ pub struct ActiveStepFx {
     /// Layer priority for this playback.
     pub priority: Priority,
     /// Playback speed multiplier.
-    pub rate: f32,
+    pub speed: f32,
     /// Whether the runtime should currently evaluate.
     pub is_playing: bool,
 }
@@ -429,7 +433,7 @@ impl Default for ActiveStepFx {
         Self {
             fx_entity: Entity::PLACEHOLDER,
             priority: Priority(50),
-            rate: 1.0,
+            speed: 1.0,
             is_playing: false,
         }
     }
@@ -459,7 +463,7 @@ pub fn spawn_reconstructed_step_fx_for_clip(
             ActiveStepFx {
                 fx_entity,
                 priority,
-                rate: 1.0,
+                speed: 1.0,
                 is_playing: true,
             },
             Owner(clip_uid),
@@ -651,10 +655,28 @@ impl StepFx {
         issues
     }
 
+    /// Returns the timing one lane samples with, measured on the playback clock.
+    ///
+    /// Seconds-timed effects use the lane override or the effect-wide beat duration. Beat-timed
+    /// effects run on a clock that counts one show beat per second, so their effect-wide beat
+    /// lasts one second and a lane override keeps its ratio to the effect-wide beat.
+    pub fn lane_timing(&self, lane: &FxLane) -> StepFxTiming {
+        let authored = lane.timing_override.as_ref().unwrap_or(&self.timing);
+        match self.timebase {
+            Timebase::Seconds => authored.clone(),
+            Timebase::Beats => StepFxTiming {
+                beat_duration: Duration::try_from_secs_f64(
+                    authored.beat_duration.as_secs_f64() / self.timing.beat_duration.as_secs_f64(),
+                )
+                .unwrap_or(Duration::from_secs(1)),
+            },
+        }
+    }
+
     /// Returns the representative overall cycle duration for continuity re-anchoring.
     pub fn cycle_duration(&self) -> Option<Duration> {
         self.lanes.iter().find_map(|lane| {
-            let timing = lane.timing_override.as_ref().unwrap_or(&self.timing);
+            let timing = &self.lane_timing(lane);
             [lane.absolute.as_ref(), lane.relative.as_ref()]
                 .into_iter()
                 .flatten()
@@ -674,7 +696,7 @@ impl StepFx {
             .iter()
             .find(|lane| &lane.attribute == attribute)
             .map(|lane| {
-                let timing = lane.timing_override.as_ref().unwrap_or(&self.timing);
+                let timing = &self.lane_timing(lane);
                 (
                     lane.absolute.as_ref().and_then(|track| {
                         track_cycle_duration(track, timing, &self.cycle_scale, &self.direction)
@@ -716,7 +738,7 @@ impl StepFx {
         self.lanes
             .iter()
             .map(|lane| {
-                let timing = lane.timing_override.as_ref().unwrap_or(&self.timing);
+                let timing = &self.lane_timing(lane);
                 let phase = lane.phase_override.as_ref().unwrap_or(&self.phase);
                 let selection_phase =
                     phase_for_selection_index(phase, selection_index, selection_index_count);
@@ -763,7 +785,7 @@ impl StepFx {
         self.lanes
             .iter()
             .map(|lane| {
-                let timing = lane.timing_override.as_ref().unwrap_or(&self.timing);
+                let timing = &self.lane_timing(lane);
                 FxLaneSample {
                     attribute: lane.attribute.clone(),
                     absolute: lane.absolute.as_ref().and_then(|track| {
@@ -1247,6 +1269,7 @@ mod tests {
                 absolute: Some(track),
                 relative: None,
             }],
+            timebase: Default::default(),
         }
     }
 
@@ -1345,6 +1368,29 @@ mod tests {
         fx.lanes[0].timing_override = Some(StepFxTiming::from_bpm(60.0).unwrap());
 
         assert_eq!(fx.cycle_duration(), Some(Duration::from_secs(2)));
+    }
+
+    /// Verifies a beat-timed Step FX plays one authored beat per show beat, and a lane override
+    /// keeps its speed relative to the effect-wide beat.
+    #[test]
+    fn beat_timed_cycle_counts_show_beats() {
+        let mut fx = test_fx(FxTrack {
+            steps: vec![step(1.0, 1.0, 0.0), step(0.0, 1.0, 0.0)],
+        });
+        fx.timing = StepFxTiming::from_bpm(240.0).unwrap();
+        fx.timebase = Timebase::Beats;
+        assert_eq!(
+            fx.cycle_duration(),
+            Some(Duration::from_secs(2)),
+            "two one-beat steps last two show beats whatever the effect's own beat"
+        );
+
+        fx.lanes[0].timing_override = Some(StepFxTiming::from_bpm(120.0).unwrap());
+        assert_eq!(
+            fx.cycle_duration(),
+            Some(Duration::from_secs(4)),
+            "a lane at half the effect's speed takes twice as many show beats"
+        );
     }
 
     /// Verifies fixed scaling controls one pass and bounce adds an equal return pass.

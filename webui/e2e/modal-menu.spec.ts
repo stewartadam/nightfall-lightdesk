@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { formatShortcutHint } from "../components/ui/kbd-keys";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
@@ -166,10 +167,14 @@ test("patch wizard locks body scroll and keeps preview fixed while fixture list 
     .toBe("");
 });
 
-/** Verifies the status menu keeps context-menu row sizing while showing hotkeys. */
+/**
+ * Verifies the status menu keeps context-menu row sizing and labels items with the keys that
+ * actually run them: the registered Settings and Keyboard Shortcuts bindings, and no hint on
+ * showfile items whose shortcuts only the desktop app binds.
+ */
 test("status menu displays hotkeys and opens keyboard shortcuts", async ({
   page,
-}) => {
+}, testInfo) => {
   await openApp(page);
 
   await page.locator('[title="Menu"]').click();
@@ -189,20 +194,27 @@ test("status menu displays hotkeys and opens keyboard shortcuts", async ({
     expect(Math.round(slot.width)).toBe(16);
     expect(Math.round(slot.height)).toBe(16);
   }
-  await expect(
-    page.getByRole("button", { name: /New Showfile.*⌘⇧N/u }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Open Showfile.*⌘O/u }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Save Showfile.*⌘S/u }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Settings.*⌘,/u }),
-  ).toBeVisible();
+  const applePlatform = await page.evaluate(() =>
+    /Mac|iPod|iPhone|iPad/.test(navigator.platform),
+  );
+  /** Reads the shortcut hint a status menu item shows beside its label. */
+  const hint = (name: string) =>
+    menu.getByRole("button", { name }).locator(".nf-menu-hint");
+  for (const name of ["New Showfile", "Open Showfile", "Save Showfile"]) {
+    await expect(menu.getByRole("button", { name })).toBeVisible();
+    await expect(hint(name)).toHaveCount(0);
+  }
+  await expect(menu.getByRole("button", { name: "User Guide" })).toBeVisible();
+  await expect(hint("Settings")).toHaveText(
+    formatShortcutHint("$mod+,", applePlatform),
+  );
+  await expect(hint("Keyboard Shortcuts")).toHaveText(
+    formatShortcutHint("Shift+?", applePlatform),
+  );
 
-  await page.getByRole("button", { name: /Keyboard Shortcuts.*⇧\?/u }).click();
+  await page.screenshot({ path: testInfo.outputPath("status-menu-hints.png") });
+
+  await menu.getByRole("button", { name: "Keyboard Shortcuts" }).click();
   await expect(page.locator('[data-dialog-kind="shortcuts"]')).toBeVisible();
 });
 
@@ -312,7 +324,7 @@ test("patch wizard creates and patches a fixture batch in one pass", async ({
   const readBatch = () =>
     page.evaluate((label) => {
       const stores = (window as any).appStores;
-      /** Normalizes a binding UID, received as a string or a byte map, to undashed hex. */
+      /** Normalizes a route UID, received as a string or a byte map, to undashed hex. */
       const uidHex = (uid: string | Record<string, number>) =>
         typeof uid === "string"
           ? uid.replaceAll("-", "")
@@ -324,7 +336,7 @@ test("patch wizard creates and patches a fixture batch in one pass", async ({
         .sort((a: any, b: any) => a.identifiers.id - b.identifiers.id)
         .map((fixture: any) => {
           const fixtureUid = uidHex(fixture.identifiers.uid);
-          const binding = stores.bindings
+          const route = stores.routes
             .get()
             ?.output.find(
               (candidate: any) =>
@@ -337,8 +349,8 @@ test("patch wizard creates and patches a fixture batch in one pass", async ({
             );
           return {
             label: fixture.identifiers.label as string,
-            address: binding
-              ? `${binding.target.data.universe?.start}.${binding.target.data.address}`
+            address: route
+              ? `${route.target.data.universe?.start}.${route.target.data.address}`
               : null,
           };
         });

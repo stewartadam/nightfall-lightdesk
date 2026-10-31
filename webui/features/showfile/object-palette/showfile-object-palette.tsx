@@ -65,6 +65,7 @@ import {
   fx,
   fxModules,
   groups,
+  macros,
   masters,
   requestSceneObjectNavigation,
   requestSequenceNavigation,
@@ -134,6 +135,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   const $timecodes = useStore(timecodes);
   const $timelines = useShallowStore(timelines);
   const $boards = useShallowStore(boards);
+  const $macros = useShallowStore(macros);
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
 
@@ -178,6 +180,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
       timecodes: $timecodes(),
       timelines: $timelines(),
       boards: $boards(),
+      macros: $macros(),
     }),
   );
 
@@ -512,7 +515,9 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
       <SearchPickerSurface
         ref={containerRef}
         class="max-w-2xl"
-        style={{ "max-height": "calc(100dvh - 96px)" }}
+        style={{
+          "max-height": "calc(var(--app-viewport-height, 100dvh) - 96px)",
+        }}
       >
         <SearchPickerInput
           ref={inputRef}

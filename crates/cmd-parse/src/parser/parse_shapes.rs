@@ -25,7 +25,7 @@ const CLIP_ACTION_TOKENS: &[TokenId] = &[
     TokenId::Go,
     TokenId::Back,
     TokenId::Goto,
-    TokenId::Rate,
+    TokenId::Speed,
 ];
 const FLOW_ACTION_TOKENS: &[TokenId] = &[
     TokenId::Start,
@@ -35,7 +35,8 @@ const FLOW_ACTION_TOKENS: &[TokenId] = &[
     TokenId::Rename,
 ];
 const TIMECODE_ACTION_TOKENS: &[TokenId] = &[TokenId::Start, TokenId::Pause, TokenId::Stop];
-const TIMELINE_ACTION_TOKENS: &[TokenId] = &[TokenId::Start, TokenId::Stop];
+/// Actions shared by objects that only start and stop, such as timelines and macros.
+const START_STOP_ACTION_TOKENS: &[TokenId] = &[TokenId::Start, TokenId::Stop];
 
 const SHARED_OBJECT_TYPE_TOKENS: &[TokenId] = &[
     TokenId::Blueprint,
@@ -67,6 +68,7 @@ pub enum InstanceCommandParseShapeId {
     Flow,
     Timecode,
     Timeline,
+    Macro,
 }
 
 /// Expected slot layout for one instance command parse shape.
@@ -122,7 +124,20 @@ const TIMELINE_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
     },
     ParseShapeSlotSpec {
         slot: SlotId::TimelineAction,
-        tokens: TIMELINE_ACTION_TOKENS,
+        tokens: START_STOP_ACTION_TOKENS,
+        placeholder: None,
+    },
+];
+
+const MACRO_PLAYBACK_SHAPE_SLOTS: &[ParseShapeSlotSpec] = &[
+    ParseShapeSlotSpec {
+        slot: SlotId::MacroIdentifier,
+        tokens: SIMPLE_SET_EXPR_TOKENS,
+        placeholder: Some(ValueKind::NumericDigit),
+    },
+    ParseShapeSlotSpec {
+        slot: SlotId::MacroAction,
+        tokens: START_STOP_ACTION_TOKENS,
         placeholder: None,
     },
 ];
@@ -141,6 +156,10 @@ const TIMECODE_PLAYBACK_SHAPE: InstanceCommandParseShape = InstanceCommandParseS
 
 const TIMELINE_PLAYBACK_SHAPE: InstanceCommandParseShape = InstanceCommandParseShape {
     slots: TIMELINE_PLAYBACK_SHAPE_SLOTS,
+};
+
+const MACRO_PLAYBACK_SHAPE: InstanceCommandParseShape = InstanceCommandParseShape {
+    slots: MACRO_PLAYBACK_SHAPE_SLOTS,
 };
 
 /// Named object-management parse shapes covered by parser surface tests.
@@ -221,6 +240,7 @@ pub fn playback_command_parse_shape(
         InstanceCommandParseShapeId::Flow => &FLOW_PLAYBACK_SHAPE,
         InstanceCommandParseShapeId::Timecode => &TIMECODE_PLAYBACK_SHAPE,
         InstanceCommandParseShapeId::Timeline => &TIMELINE_PLAYBACK_SHAPE,
+        InstanceCommandParseShapeId::Macro => &MACRO_PLAYBACK_SHAPE,
     }
 }
 

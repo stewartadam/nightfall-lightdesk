@@ -126,6 +126,56 @@ test("settings network interface list shows friendly names", async ({
     .toBe(true);
 });
 
+/**
+ * Verifies a disconnected interface stays selected and labelled unavailable, so the selector never
+ * looks like it fell back to System Default.
+ */
+test("settings network interface keeps a disconnected selection", async ({
+  page,
+}) => {
+  await page.goto("/?e2e=1");
+
+  await expect(page.locator("main#app")).toBeVisible();
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.networkInterfaceStatus),
+  );
+
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("tab", { name: "Network" }).click();
+  const select = dialog.getByLabel("Interface", { exact: true });
+
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => {
+        const stores = (window as any).appStores;
+        stores.availableNetworkInterfaces.set([
+          { name: "en0", friendly_name: "Wi-Fi", addresses: ["192.168.1.44"] },
+        ]);
+        stores.networkInterfaceStatus.set({
+          default_interface: {
+            name: "en0",
+            friendly_name: "Wi-Fi",
+            addresses: ["192.168.1.44"],
+          },
+          current_interface_mode: "SelectedInterface",
+          selected_interface_missing: true,
+        });
+        stores.ioSettings.set({
+          ...stores.ioSettings.get(),
+          network_interface: "en7",
+        });
+      });
+      return select.inputValue();
+    })
+    .toBe("en7");
+  await expect(select.locator("option:checked")).toHaveText(
+    "en7 (unavailable)",
+  );
+  await expect(dialog).toContainText("Configured interface unavailable: en7");
+});
+
 /** Verifies the stale input timeout control remains visible while signal-loss policy is Hold. */
 test("settings stale input timeout remains visible for hold policy", async ({
   page,

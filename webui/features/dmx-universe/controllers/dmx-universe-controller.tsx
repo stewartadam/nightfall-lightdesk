@@ -8,10 +8,6 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo } from "solid-js";
-import {
-  buildFixturePatchMapFromBindings,
-  type FixturePatchEntry,
-} from "../../../lib/binding-utils";
 import { fixtureValueTransitionColor } from "../../../lib/datagrid";
 import { fixtureValueSourceState } from "../../../lib/fixture-value-state";
 import { layerHasTransitioningAttribute } from "../../../lib/layer-transition-state";
@@ -19,13 +15,17 @@ import {
   networkDmxOutputsFromSettings,
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
+import {
+  buildFixturePatchMapFromRoutes,
+  type FixturePatchEntry,
+} from "../../../lib/route-utils";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import {
-  bindings,
   fixtures,
   layerStack,
   programmerSelection,
+  routes,
 } from "../../../state/appStores";
 import { DmxIoMode } from "../../../types";
 import { DmxUniverseView } from "../components/dmx-universe-view";
@@ -37,7 +37,7 @@ import {
   getAttributeName,
   normalizeFixtureJumpAttributeSearch,
 } from "../model/dmx-universe-model";
-import { outputTransportMatchesSelection } from "../model/output-binding-follow";
+import { outputTransportMatchesSelection } from "../model/output-route-follow";
 import { createDmxChannelNavigationController } from "./dmx-channel-navigation-controller";
 import { createDmxFixtureJumpController } from "./dmx-fixture-jump-controller";
 import { createDmxUniverseSelectionController } from "./dmx-universe-selection-controller";
@@ -50,7 +50,7 @@ export interface DmxUniverseControllerProps {
 /** Coordinates DMX universe state and projects it into the props-only view. */
 export function DmxUniverseController(_props: DmxUniverseControllerProps) {
   const $fixtures = useSharedStore(fixtures);
-  const $bindings = useStore(bindings);
+  const $routes = useStore(routes);
   const $layerStack = useStore(layerStack);
   const $programmerSelection = useStore(programmerSelection);
   const selection = createDmxUniverseSelectionController();
@@ -81,8 +81,8 @@ export function DmxUniverseController(_props: DmxUniverseControllerProps) {
 
   /** Projects fixture patches across console, network, and USB transports. */
   const patchData = createMemo(() =>
-    buildFixturePatchMapFromBindings(
-      $bindings(),
+    buildFixturePatchMapFromRoutes(
+      $routes(),
       $fixtures(),
       networkDmxOutputs(),
       usbDmxOutputs(),

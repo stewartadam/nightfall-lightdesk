@@ -50,7 +50,8 @@ export type RichTimeDisplayUnit =
   | "seconds"
   | "milliseconds"
   | "bpm"
-  | "hertz";
+  | "hertz"
+  | "beats";
 
 export type RichTimeCellData = {
   kind: "rich-time-cell";
@@ -154,6 +155,12 @@ export function formatDurationInputValue(
   }
 
   const ms = durationToMilliseconds(duration);
+  if (unit === "beats") {
+    // Beat-timed objects store one beat per duration second.
+    const beats = ms / 1000;
+    const beatsPrecision = Number.isInteger(beats) ? 0 : 3;
+    return `${trimTrailingZeros(beats.toFixed(beatsPrecision))}b`;
+  }
   if (unit === "milliseconds") {
     const value = precision === undefined ? Math.round(ms) : ms;
     return `${trimTrailingZeros(value.toFixed(precision ?? 0))}ms`;
@@ -177,12 +184,33 @@ export function formatDurationInputValue(
   return `${trimTrailingZeros(seconds.toFixed(secondsPrecision))}s`;
 }
 
+/**
+ * Parses a typed duration such as "2s", "250ms", "120bpm" or "4hz".
+ *
+ * With `beats` set the field counts beats: a bare number, "3b", "3 beats" or a fraction such as
+ * "3/4" is that many beats, stored as one duration second per beat, and clock units are refused.
+ */
 export function parseDurationInput(
   input: string,
-  options?: { minMs?: number },
+  options?: { minMs?: number; beats?: boolean },
 ): types.Duration | null {
   const trimmed = input.trim().toLowerCase();
   if (trimmed === "") return null;
+
+  if (options?.beats) {
+    const beatMatch = trimmed.match(
+      /^(\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(\d+(?:\.\d+)?))?\s*(b|beat|beats)?$/,
+    );
+    if (!beatMatch) return null;
+    const numerator = Number.parseFloat(beatMatch[1]);
+    const denominator =
+      beatMatch[2] === undefined ? 1 : Number.parseFloat(beatMatch[2]);
+    const beats = numerator / denominator;
+    if (!Number.isFinite(beats) || beats < 0) return null;
+    const ms = beats * 1000;
+    if (options.minMs !== undefined && ms < options.minMs) return null;
+    return millisecondsToDuration(ms);
+  }
 
   const match = trimmed.match(
     /^(\d+(?:\.\d+)?|\.\d+)\s*(ms|msec|msecs|millisecond|milliseconds|s|sec|secs|second|seconds|bpm|hz)?$/,

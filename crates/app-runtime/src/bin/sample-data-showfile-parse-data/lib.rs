@@ -39,7 +39,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 use nightfall_scene_objects::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
@@ -143,7 +143,7 @@ fn generate_json() -> Result<String, String> {
 /// Populate a compact world that exercises representative showfile domains.
 fn populate_parser_test_world(world: &mut World) -> Result<(), String> {
     let fixture_ref = add_fixture(world)?;
-    add_bindings(world, fixture_ref.fixture_uid);
+    add_routes(world, fixture_ref.fixture_uid);
     add_input_mappings(world);
     add_global_variables(world);
     add_scene_object(world)?;
@@ -260,29 +260,26 @@ fn parameter_metadata(
     }
 }
 
-/// Add input, output, and disabled input binding declarations.
-fn add_bindings(world: &mut World, fixture_uid: Uuid) {
+/// Add input, output, and disabled input route declarations.
+fn add_routes(world: &mut World, fixture_uid: Uuid) {
+    world.resource_mut::<InputRoutes>().routes.push(InputRoute {
+        source: InputSource::Transport {
+            transport: RouteTransport::Sacn,
+            universe: Some(DmxRange::single(1)),
+            address: Some(1),
+        },
+        target: InputTarget::Fixture {
+            uids: vec![fixture_uid],
+            element: Some(1),
+            param: None,
+        },
+        priority: 0,
+        clone: false,
+    });
     world
-        .resource_mut::<InputBindings>()
-        .bindings
-        .push(InputBinding {
-            source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
-                universe: Some(DmxRange::single(1)),
-                address: Some(1),
-            },
-            target: InputTarget::Fixture {
-                uids: vec![fixture_uid],
-                element: Some(1),
-                param: None,
-            },
-            priority: 0,
-            clone: false,
-        });
-    world
-        .resource_mut::<OutputBindings>()
-        .bindings
-        .push(OutputBinding {
+        .resource_mut::<OutputRoutes>()
+        .routes
+        .push(OutputRoute {
             source: OutputSource::Fixture {
                 uids: vec![fixture_uid],
                 element: Some(1),
@@ -296,11 +293,11 @@ fn add_bindings(world: &mut World, fixture_uid: Uuid) {
             clone: false,
         });
     world
-        .resource_mut::<DisabledBindings>()
-        .bindings
-        .push(DisabledBinding::Input {
+        .resource_mut::<DisabledRoutes>()
+        .routes
+        .push(DisabledRoute::Input {
             source: InputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: Some(DmxRange::single(1)),
                 address: Some(512),
             },
@@ -326,7 +323,7 @@ fn add_input_mappings(world: &mut World) {
             },
             behavior: nightfall_actions::ControlBehavior::Press,
             led: Default::default(),
-            action: control_level_action(1),
+            action: fader_level_action(1),
         }]);
 
     #[cfg(feature = "osc")]
@@ -341,7 +338,7 @@ fn add_input_mappings(world: &mut World) {
             release_value: None,
             range: None,
             behavior: nightfall_actions::ControlBehavior::Press,
-            action: control_level_action(2),
+            action: fader_level_action(2),
         }]);
 }
 
@@ -418,7 +415,7 @@ fn add_blueprint(world: &mut World) -> Result<(), String> {
         .map_err(|error| format!("failed to add parser blueprint: {error}"))
 }
 
-/// Replace the new-show default masters with fixture-inhibition and playback-rate masters that
+/// Replace the new-show default masters with fixture-inhibition and playback-speed masters that
 /// use distinct target scopes and fixed UIDs.
 fn add_masters(world: &mut World) -> Result<(), String> {
     let mut system_state: SystemState<(ResMut<DataProvider<Master>>,)> = SystemState::new(world);
@@ -446,7 +443,7 @@ fn add_masters(world: &mut World) -> Result<(), String> {
                 uid: uuid(PLAYBACK_MASTER_UID),
                 label: "Parser Playback Master".to_owned(),
             },
-            kind: MasterKind::PlaybackRate,
+            kind: MasterKind::PlaybackSpeed,
             target: MasterTarget::Instances(InstanceMasterTarget::Clips(vec![1])),
             mode: MasterMode::Toggle { active: true },
             level_percent: 125.0,
@@ -582,11 +579,12 @@ fn add_fx(world: &mut World, fixture_ref: FixtureRef) -> Result<(), String> {
                         duty_cycle: 1.0,
                     },
                     phase_range: (0.0, std::f32::consts::PI),
-                    rate: Duration::from_secs(2),
+                    cycle_length: Duration::from_secs(2),
                     width: Percentage::from(1.0),
                     is_relative: false,
                 },
             )]),
+            timebase: Default::default(),
         })
         .map_err(|error| format!("failed to add parser FX: {error}"))?;
     commands.spawn_instance(Clip {
@@ -677,6 +675,7 @@ fn add_step_fx(world: &mut World, fixture_ref: FixtureRef) {
             }),
             relative: None,
         }],
+        timebase: Default::default(),
     });
 }
 

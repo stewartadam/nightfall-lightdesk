@@ -37,6 +37,7 @@ export const BOARD_TARGET_TYPES = [
   ObjectType.Group,
   ObjectType.Blueprint,
   ObjectType.Master,
+  ObjectType.Macro,
 ] as const;
 
 export type BoardTargetType = (typeof BOARD_TARGET_TYPES)[number];
@@ -51,6 +52,7 @@ export const BOARD_TARGET_TYPE_LABELS: Record<
   [ObjectType.Group]: { one: "Group", many: "Groups" },
   [ObjectType.Blueprint]: { one: "Blueprint", many: "Blueprints" },
   [ObjectType.Master]: { one: "Master", many: "Masters" },
+  [ObjectType.Macro]: { one: "Macro", many: "Macros" },
 };
 
 /** Objects of every board target type, as the identifiers the board UI needs. */

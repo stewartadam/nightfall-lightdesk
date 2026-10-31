@@ -15,6 +15,10 @@ import {
   useContext,
 } from "solid-js";
 import {
+  $requestedSettings,
+  type SettingsTarget,
+} from "../../../state/settings-request";
+import {
   activeShellDialog,
   closeDiagnostics,
   openDiagnostics,
@@ -22,7 +26,8 @@ import {
 
 interface AppShellContextValue {
   isSettingsOpen: () => boolean;
-  openSettings: () => void;
+  /** Opens Settings, optionally on a given tab with one of its settings focused. */
+  openSettings: (target?: SettingsTarget) => void;
   closeSettings: () => void;
   isAboutOpen: () => boolean;
   openAbout: () => void;
@@ -47,6 +52,13 @@ interface AppShellContextValue {
   hideLayoutManager: () => void;
   dockviewApi: () => DockviewApi | undefined;
   setDockviewApi: (api: DockviewApi | undefined) => void;
+  /** Rebuilds the active workspace in the default arrangement; returns false when no workspace is mounted. */
+  resetActiveLayout: () => boolean;
+  /**
+   * Stores the callback resetActiveLayout runs; the workspace owner registers it on mount and
+   * clears it with undefined on unmount. The callback returns false when it couldn't reset.
+   */
+  registerLayoutResetHandler: (reset: (() => boolean) | undefined) => void;
 }
 
 const AppShellContext = createContext<AppShellContextValue>();
@@ -66,8 +78,9 @@ export const AppShellProvider: ParentComponent = (props) => {
   /** Returns whether the settings dialog is the active shell dialog. */
   const isSettingsOpen = () => activeDialog() === "settings";
 
-  /** Opens settings as the active shell dialog. */
-  const openSettings = () => {
+  /** Opens settings as the active shell dialog, on `target` when one is given. */
+  const openSettings = (target?: SettingsTarget) => {
+    if (target) $requestedSettings.set(target);
     setActiveDialog("settings");
   };
 
@@ -163,6 +176,18 @@ export const AppShellProvider: ParentComponent = (props) => {
     setDockviewApiSignal(api);
   };
 
+  // A callback rather than a value: the workspace owner supplies how to reset, the shell only triggers it.
+  let layoutResetHandler: (() => boolean) | undefined;
+  /** Records the workspace owner's callback for rebuilding the active workspace's default arrangement. */
+  const registerLayoutResetHandler = (reset: (() => boolean) | undefined) => {
+    layoutResetHandler = reset;
+  };
+
+  /** Rebuilds the active workspace's default arrangement, when a workspace owner is mounted. */
+  const resetActiveLayout = () => {
+    return layoutResetHandler?.() ?? false;
+  };
+
   return (
     <AppShellContext.Provider
       value={{
@@ -192,6 +217,8 @@ export const AppShellProvider: ParentComponent = (props) => {
         hideLayoutManager,
         dockviewApi,
         setDockviewApi,
+        resetActiveLayout,
+        registerLayoutResetHandler,
       }}
     >
       {props.children}

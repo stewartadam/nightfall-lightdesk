@@ -18,6 +18,11 @@ import {
   type ToastAction,
   type ToastLevel,
 } from "../lib/notification-queue";
+import {
+  type DismissablePromptId,
+  isPromptDismissed,
+  setPromptDismissed,
+} from "./dismissed-prompts";
 
 export type { ToastAction, ToastLevel } from "../lib/notification-queue";
 export type NotificationHistoryEntry = NotificationEntry;
@@ -26,6 +31,11 @@ export interface ToastPresentation {
   icon?: AppIcon;
   /** Hides the close button so the notification stays until one of its actions runs. */
   closable?: boolean;
+  /**
+   * Kind of prompt the toast is. The toast offers "Don't show this again", which turns that kind
+   * off on this device, and is not shown at all while it is off. Settings turns them back on.
+   */
+  dismissablePrompt?: DismissablePromptId;
 }
 
 export const notificationHistory = atom<NotificationHistoryEntry[]>([]);
@@ -49,6 +59,7 @@ export function runNotificationAction(id: number, index: number): void {
 /**
  * Queues typed feedback without synchronously creating DOM or publishing store updates, and
  * returns a function that closes it, for notices that become moot before anyone answers them.
+ * A prompt the operator turned off with "Don't show this again" is dropped instead.
  */
 export function pushToast(
   level: ToastLevel,
@@ -57,6 +68,11 @@ export function pushToast(
   actions: readonly ToastAction[] = [],
   presentation: ToastPresentation = {},
 ): () => void {
+  if (
+    presentation.dismissablePrompt &&
+    isPromptDismissed(presentation.dismissablePrompt)
+  )
+    return () => {};
   const id = notifications.push({
     level,
     message,
@@ -133,6 +149,24 @@ function createToastNode(
   return container;
 }
 
+/**
+ * Builds the "Don't show this again" checkbox for a prompt toast. Ticking it turns the prompt
+ * off at once, so it holds however the toast then closes; unticking turns it back on.
+ */
+function createDontShowAgainChoice(prompt: DismissablePromptId): HTMLElement {
+  const label = document.createElement("label");
+  label.className =
+    "toast-dont-show mt-3 flex w-fit cursor-pointer items-center gap-2 text-xs text-neutral-400";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.className = "nf-choice";
+  checkbox.addEventListener("change", () =>
+    setPromptDismissed(prompt, checkbox.checked),
+  );
+  label.append(checkbox, "Don't show this again");
+  return label;
+}
+
 /** Escapes untrusted text before inserting it into toast HTML. */
 function escapeHtml(text: string): string {
   const div = document.createElement("div");
@@ -180,8 +214,10 @@ function renderToast(
     closing = true;
     clearTimeout(timer);
     onClosing();
-    for (const button of node.querySelectorAll("button"))
-      button.disabled = true;
+    for (const control of node.querySelectorAll<
+      HTMLButtonElement | HTMLInputElement
+    >("button, input"))
+      control.disabled = true;
     toast.hideToast();
   }
   /** Restarts automatic dismissal after hover or focus leaves a nonpersistent notification. */
@@ -215,6 +251,15 @@ function renderToast(
       actionBar.append(button);
     });
     node.querySelector(".toast-content")?.append(actionBar);
+  }
+  if (entry.dismissablePrompt) {
+    node
+      .querySelector(".toast-content")
+      ?.append(
+        createDontShowAgainChoice(
+          entry.dismissablePrompt as DismissablePromptId,
+        ),
+      );
   }
   /** Updates counted feedback and realigns the bounded stack if its height changes. */
   function update(current: NotificationEntry) {

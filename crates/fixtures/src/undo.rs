@@ -41,35 +41,39 @@ pub struct FixtureSnapshot {
     pub parameters: Vec<ParameterSnapshot>,
     /// Fixture and fixture-element color path defaults owned by this fixture.
     pub color_path_defaults: Vec<ColorPathDefault>,
+    /// Every DMX route as it was before the fixture was deleted, restored with the fixture.
+    ///
+    /// `None` when the snapshot undoes a fixture update, which leaves routes alone.
+    pub routes: Option<DmxRoutesSnapshot>,
 }
 
-/// Snapshot of binding configuration for a fixture.
+/// Snapshot of route configuration for a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BindingSnapshot {
+pub struct FixtureRoutesSnapshot {
     /// Fixture ID this snapshot belongs to
     pub fixture_id: u32,
-    /// Output bindings tied to the fixture.
-    pub output_bindings: Vec<OutputBinding>,
+    /// Output routes tied to the fixture.
+    pub output_routes: Vec<OutputRoute>,
 }
 
-/// Command to restore binding configuration for a fixture.
+/// Command to restore route configuration for a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub struct RestoreBindingSnapshot(pub BindingSnapshot);
+pub struct RestoreFixtureRoutesSnapshot(pub FixtureRoutesSnapshot);
 
-/// Snapshot of all patch bindings (input, output, and disabled).
+/// Snapshot of all DMX routes (input, output, and disabled).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PatchBindingsSnapshot {
-    /// Input bindings.
-    pub input_bindings: Vec<InputBinding>,
-    /// Output bindings.
-    pub output_bindings: Vec<OutputBinding>,
-    /// Disabled bindings.
-    pub disabled_bindings: Vec<DisabledBinding>,
+pub struct DmxRoutesSnapshot {
+    /// Input routes.
+    pub input_routes: Vec<InputRoute>,
+    /// Output routes.
+    pub output_routes: Vec<OutputRoute>,
+    /// Disabled routes.
+    pub disabled_routes: Vec<DisabledRoute>,
 }
 
-/// Command to restore all patch bindings.
+/// Command to restore all DMX routes.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
-pub struct RestorePatchBindingsSnapshot(pub PatchBindingsSnapshot);
+pub struct RestoreDmxRoutesSnapshot(pub DmxRoutesSnapshot);
 
 /// Snapshot of parameter offset configuration for a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,9 +107,9 @@ pub struct RestoreColorPathDefaultsSnapshot(pub ColorPathDefaultsSnapshot);
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreFixtureSnapshot(pub FixtureSnapshot);
 
-impl EngineOperation for RestoreBindingSnapshot {}
+impl EngineOperation for RestoreFixtureRoutesSnapshot {}
 
-impl EngineOperation for RestorePatchBindingsSnapshot {}
+impl EngineOperation for RestoreDmxRoutesSnapshot {}
 
 impl EngineOperation for RestoreOffsetSnapshot {}
 
@@ -126,27 +130,25 @@ impl Undoable for RestoreFixtureSnapshot {
     }
 }
 
-impl Undoable for RestoreBindingSnapshot {
+impl Undoable for RestoreFixtureRoutesSnapshot {
     fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
-        // Capture current binding state before restoring the old one
-        let snapshot = snapshot_binding_state(ctx, self.0.fixture_id)?;
-        Some(Box::new(RestoreBindingSnapshot(snapshot)))
+        // Capture current route state before restoring the old one
+        let snapshot = snapshot_route_state(ctx, self.0.fixture_id)?;
+        Some(Box::new(RestoreFixtureRoutesSnapshot(snapshot)))
     }
 
     fn description(&self) -> String {
-        format!("Restore Fixture {} Bindings", self.0.fixture_id)
+        format!("Restore Fixture {} Routes", self.0.fixture_id)
     }
 }
 
-impl Undoable for RestorePatchBindingsSnapshot {
+impl Undoable for RestoreDmxRoutesSnapshot {
     fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
-        Some(Box::new(RestorePatchBindingsSnapshot(
-            snapshot_patch_bindings(ctx),
-        )))
+        Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
     }
 
     fn description(&self) -> String {
-        "Restore Patch Bindings".to_string()
+        "Restore DMX Routes".to_string()
     }
 }
 
@@ -318,9 +320,13 @@ impl Undoable for FixtureCommand {
                 }
             }
             FixtureCommand::DeleteFixture(id) => {
-                // Capture full fixture state before deletion
+                // Capture full fixture state before deletion, including the routes that
+                // deleting the fixture prunes
                 fixtures.inner.from_id(*id).ok().map(|fixture_ref| {
-                    let snapshot = snapshot_fixture(ctx, &fixture_ref);
+                    let snapshot = FixtureSnapshot {
+                        routes: Some(snapshot_dmx_routes(ctx)),
+                        ..snapshot_fixture(ctx, &fixture_ref)
+                    };
                     Box::new(RestoreFixtureSnapshot(snapshot)) as Box<dyn Undoable>
                 })
             }
@@ -356,14 +362,17 @@ impl Undoable for FixtureCommand {
                     updates: inverse_updates,
                 }))
             }
-            FixtureCommand::UpdateFixturePatch { id, .. } => snapshot_binding_state(ctx, *id)
-                .map(|snapshot| Box::new(RestoreBindingSnapshot(snapshot)) as Box<dyn Undoable>),
-            FixtureCommand::PatchBinding { .. } => Some(Box::new(RestorePatchBindingsSnapshot(
-                snapshot_patch_bindings(ctx),
-            ))),
-            FixtureCommand::RemovePatchBinding { .. } => Some(Box::new(
-                RestorePatchBindingsSnapshot(snapshot_patch_bindings(ctx)),
-            )),
+            FixtureCommand::UpdateFixturePatch { id, .. } => {
+                snapshot_route_state(ctx, *id).map(|snapshot| {
+                    Box::new(RestoreFixtureRoutesSnapshot(snapshot)) as Box<dyn Undoable>
+                })
+            }
+            FixtureCommand::AddDmxRoute { .. } => {
+                Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
+            }
+            FixtureCommand::RemoveDmxRoutes { .. } => {
+                Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
+            }
             FixtureCommand::UpdateFixtureParameterOffset { id, attribute, .. } => {
                 // Snapshot current offsets for all elements with this attribute before update
                 fixtures.inner.from_id(*id).ok().and_then(|fixture_ref| {
@@ -416,10 +425,10 @@ impl Undoable for FixtureCommand {
                 format!("Update {} Fixture Placements", updates.len())
             }
             FixtureCommand::UpdateFixturePatch { id, .. } => {
-                format!("Update Fixture {} Bindings", id)
+                format!("Update Fixture {} Routes", id)
             }
-            FixtureCommand::PatchBinding { .. } => "Patch Binding".to_string(),
-            FixtureCommand::RemovePatchBinding { .. } => "Remove Patch Binding".to_string(),
+            FixtureCommand::AddDmxRoute { .. } => "Add DMX Route".to_string(),
+            FixtureCommand::RemoveDmxRoutes { .. } => "Remove DMX Routes".to_string(),
             FixtureCommand::UpdateFixtureParameterOffset { id, .. } => {
                 format!("Update Fixture {} Parameter Offset", id)
             }
@@ -494,43 +503,44 @@ fn snapshot_fixture(ctx: &UndoContext, fixture: &Fixture) -> FixtureSnapshot {
             .into_iter()
             .filter(|default| default.fixture.fixture_uid == fixture.identifiers.uid)
             .collect(),
+        routes: None,
     }
 }
 
-fn output_binding_matches_fixture(binding: &OutputBinding, uid: uuid::Uuid) -> bool {
-    binding
+fn output_route_matches_fixture(route: &OutputRoute, uid: uuid::Uuid) -> bool {
+    route
         .source
         .fixture_uids()
         .is_some_and(|uids| uids.contains(&uid))
 }
 
-fn snapshot_binding_state(ctx: &UndoContext, fixture_id: u32) -> Option<BindingSnapshot> {
+fn snapshot_route_state(ctx: &UndoContext, fixture_id: u32) -> Option<FixtureRoutesSnapshot> {
     let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
     let fixture = fixtures.inner.from_id(fixture_id).ok()?;
-    let output_bindings = ctx.world.resource::<OutputBindings>();
+    let output_routes = ctx.world.resource::<OutputRoutes>();
 
-    let output_snapshot = output_bindings
-        .bindings
+    let output_snapshot = output_routes
+        .routes
         .iter()
-        .filter(|binding| output_binding_matches_fixture(binding, fixture.identifiers.uid))
+        .filter(|route| output_route_matches_fixture(route, fixture.identifiers.uid))
         .cloned()
         .collect();
 
-    Some(BindingSnapshot {
+    Some(FixtureRoutesSnapshot {
         fixture_id,
-        output_bindings: output_snapshot,
+        output_routes: output_snapshot,
     })
 }
 
-fn snapshot_patch_bindings(ctx: &UndoContext) -> PatchBindingsSnapshot {
-    let input_bindings = ctx.world.resource::<InputBindings>();
-    let output_bindings = ctx.world.resource::<OutputBindings>();
-    let disabled_bindings = ctx.world.resource::<DisabledBindings>();
+fn snapshot_dmx_routes(ctx: &UndoContext) -> DmxRoutesSnapshot {
+    let input_routes = ctx.world.resource::<InputRoutes>();
+    let output_routes = ctx.world.resource::<OutputRoutes>();
+    let disabled_routes = ctx.world.resource::<DisabledRoutes>();
 
-    PatchBindingsSnapshot {
-        input_bindings: input_bindings.bindings.clone(),
-        output_bindings: output_bindings.bindings.clone(),
-        disabled_bindings: disabled_bindings.bindings.clone(),
+    DmxRoutesSnapshot {
+        input_routes: input_routes.routes.clone(),
+        output_routes: output_routes.routes.clone(),
+        disabled_routes: disabled_routes.routes.clone(),
     }
 }
 
@@ -584,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn test_binding_snapshot_captures_fixture_bindings() {
+    fn test_route_snapshot_captures_fixture_routes() {
         let mut world = World::new();
 
         let fixture = create_test_fixture(1, 1);
@@ -594,9 +604,9 @@ mod tests {
         data_provider.inner.add(fixture).unwrap();
         world.insert_resource(data_provider);
 
-        world.insert_resource(OutputBindings {
-            bindings: vec![
-                OutputBinding {
+        world.insert_resource(OutputRoutes {
+            routes: vec![
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![fixture_uid],
                         element: None,
@@ -610,7 +620,7 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                OutputBinding {
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![Uuid::new_v4()],
                         element: None,
@@ -628,13 +638,13 @@ mod tests {
         });
 
         let ctx = UndoContext { world: &world };
-        let snapshot = snapshot_binding_state(&ctx, 1).expect("Snapshot should exist");
+        let snapshot = snapshot_route_state(&ctx, 1).expect("Snapshot should exist");
 
-        assert_eq!(snapshot.output_bindings.len(), 1);
+        assert_eq!(snapshot.output_routes.len(), 1);
 
-        let binding = &snapshot.output_bindings[0];
+        let route = &snapshot.output_routes[0];
         assert!(matches!(
-            binding.target,
+            route.target,
             OutputTarget::Transport {
                 ref target,
                 universe: Some(_),
@@ -679,6 +689,25 @@ mod tests {
         };
         data_provider.set_color_path_default(element_ref.clone(), Some(ColorPathId(2)));
         world.insert_resource(data_provider);
+        let output_route = OutputRoute {
+            source: OutputSource::Fixture {
+                uids: vec![fixture_uid],
+                element: None,
+                param: None,
+            },
+            target: OutputTarget::Transport {
+                target: "sacn".to_string(),
+                universe: Some(DmxRange::single(1)),
+                address: Some(1),
+            },
+            priority: 0,
+            clone: false,
+        };
+        world.insert_resource(InputRoutes::default());
+        world.insert_resource(OutputRoutes {
+            routes: vec![output_route.clone()],
+        });
+        world.insert_resource(DisabledRoutes::default());
 
         let ctx = UndoContext { world: &world };
         let inverse = FixtureCommand::DeleteFixture(1)
@@ -709,6 +738,12 @@ mod tests {
                 color_path_id: ColorPathId(2),
             }]
         );
+        let routes = restore
+            .0
+            .routes
+            .as_ref()
+            .expect("delete fixture inverse should capture the routes the delete prunes");
+        assert_eq!(routes.output_routes, vec![output_route]);
     }
 
     #[test]
@@ -848,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    fn test_update_fixture_patch_inverse_captures_bindings() {
+    fn test_update_fixture_patch_inverse_captures_routes() {
         let mut world = World::new();
 
         let fixture = create_test_fixture(1, 1);
@@ -858,9 +893,9 @@ mod tests {
         data_provider.inner.add(fixture).unwrap();
         world.insert_resource(data_provider);
 
-        world.insert_resource(OutputBindings {
-            bindings: vec![
-                OutputBinding {
+        world.insert_resource(OutputRoutes {
+            routes: vec![
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![fixture_uid],
                         element: None,
@@ -874,7 +909,7 @@ mod tests {
                     priority: 0,
                     clone: false,
                 },
-                OutputBinding {
+                OutputRoute {
                     source: OutputSource::Fixture {
                         uids: vec![Uuid::new_v4()],
                         element: None,
@@ -906,14 +941,14 @@ mod tests {
 
         let restore_cmd = inverse
             .as_any()
-            .downcast_ref::<RestoreBindingSnapshot>()
-            .expect("Should be RestoreBindingSnapshot");
+            .downcast_ref::<RestoreFixtureRoutesSnapshot>()
+            .expect("Should be RestoreFixtureRoutesSnapshot");
 
-        assert_eq!(restore_cmd.0.output_bindings.len(), 1);
+        assert_eq!(restore_cmd.0.output_routes.len(), 1);
     }
 
     #[test]
-    fn test_patch_binding_inverse_captures_all_bindings() {
+    fn test_dmx_route_inverse_captures_all_routes() {
         let mut world = World::new();
 
         let fixture = create_test_fixture(1, 1);
@@ -923,8 +958,8 @@ mod tests {
         data_provider.inner.add(fixture).unwrap();
         world.insert_resource(data_provider);
 
-        world.insert_resource(InputBindings {
-            bindings: vec![InputBinding {
+        world.insert_resource(InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Console {
                     universe: Some(DmxRange::single(1)),
                     address: Some(1),
@@ -935,8 +970,8 @@ mod tests {
             }],
         });
 
-        world.insert_resource(OutputBindings {
-            bindings: vec![OutputBinding {
+        world.insert_resource(OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
@@ -952,8 +987,8 @@ mod tests {
             }],
         });
 
-        world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Input {
+        world.insert_resource(DisabledRoutes {
+            routes: vec![DisabledRoute::Input {
                 source: InputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
@@ -966,12 +1001,12 @@ mod tests {
 
         let ctx = UndoContext { world: &world };
 
-        let command = FixtureCommand::PatchBinding {
-            source: BindingEndpoint::Console {
+        let command = FixtureCommand::AddDmxRoute {
+            source: RouteEndpoint::Console {
                 universe: Some(DmxRange::single(1)),
                 address: Some(1),
             },
-            target: BindingEndpoint::Disabled,
+            target: RouteEndpoint::Disabled,
             priority: 0,
             clone: false,
         };
@@ -979,16 +1014,16 @@ mod tests {
         let inverse = command.inverse(&ctx).expect("Should create inverse");
         let restore_cmd = inverse
             .as_any()
-            .downcast_ref::<RestorePatchBindingsSnapshot>()
-            .expect("Should be RestorePatchBindingsSnapshot");
+            .downcast_ref::<RestoreDmxRoutesSnapshot>()
+            .expect("Should be RestoreDmxRoutesSnapshot");
 
-        assert_eq!(restore_cmd.0.input_bindings.len(), 1);
-        assert_eq!(restore_cmd.0.output_bindings.len(), 1);
-        assert_eq!(restore_cmd.0.disabled_bindings.len(), 1);
+        assert_eq!(restore_cmd.0.input_routes.len(), 1);
+        assert_eq!(restore_cmd.0.output_routes.len(), 1);
+        assert_eq!(restore_cmd.0.disabled_routes.len(), 1);
     }
 
     #[test]
-    fn test_remove_patch_binding_inverse_captures_all_bindings() {
+    fn test_remove_dmx_route_inverse_captures_all_routes() {
         let mut world = World::new();
 
         let fixture = create_test_fixture(1, 1);
@@ -998,8 +1033,8 @@ mod tests {
         data_provider.inner.add(fixture).unwrap();
         world.insert_resource(data_provider);
 
-        world.insert_resource(InputBindings {
-            bindings: vec![InputBinding {
+        world.insert_resource(InputRoutes {
+            routes: vec![InputRoute {
                 source: InputSource::Console {
                     universe: Some(DmxRange::single(1)),
                     address: Some(1),
@@ -1010,8 +1045,8 @@ mod tests {
             }],
         });
 
-        world.insert_resource(OutputBindings {
-            bindings: vec![OutputBinding {
+        world.insert_resource(OutputRoutes {
+            routes: vec![OutputRoute {
                 source: OutputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
@@ -1027,8 +1062,8 @@ mod tests {
             }],
         });
 
-        world.insert_resource(DisabledBindings {
-            bindings: vec![DisabledBinding::Input {
+        world.insert_resource(DisabledRoutes {
+            routes: vec![DisabledRoute::Input {
                 source: InputSource::Fixture {
                     uids: vec![fixture_uid],
                     element: None,
@@ -1041,7 +1076,7 @@ mod tests {
 
         let ctx = UndoContext { world: &world };
 
-        let command = FixtureCommand::RemovePatchBinding {
+        let command = FixtureCommand::RemoveDmxRoutes {
             source: None,
             target: None,
             priority: None,
@@ -1051,11 +1086,11 @@ mod tests {
         let inverse = command.inverse(&ctx).expect("Should create inverse");
         let restore_cmd = inverse
             .as_any()
-            .downcast_ref::<RestorePatchBindingsSnapshot>()
-            .expect("Should be RestorePatchBindingsSnapshot");
+            .downcast_ref::<RestoreDmxRoutesSnapshot>()
+            .expect("Should be RestoreDmxRoutesSnapshot");
 
-        assert_eq!(restore_cmd.0.input_bindings.len(), 1);
-        assert_eq!(restore_cmd.0.output_bindings.len(), 1);
-        assert_eq!(restore_cmd.0.disabled_bindings.len(), 1);
+        assert_eq!(restore_cmd.0.input_routes.len(), 1);
+        assert_eq!(restore_cmd.0.output_routes.len(), 1);
+        assert_eq!(restore_cmd.0.disabled_routes.len(), 1);
     }
 }

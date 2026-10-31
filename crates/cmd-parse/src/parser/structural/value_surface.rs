@@ -695,7 +695,7 @@ pub(in crate::parser) fn slot_should_yield_to_clause_entry(
             child_clause_is_available(branch, &parent, ClauseId::FxAction)
                 && matches!(
                     token_id,
-                    Some(TokenId::Step | TokenId::Start | TokenId::Stop | TokenId::Rate)
+                    Some(TokenId::Step | TokenId::Start | TokenId::Stop | TokenId::Speed)
                 )
         }
         (ClauseId::Clear, SlotId::ClearTarget) => {
@@ -1114,6 +1114,7 @@ pub(in crate::parser) fn is_property_slot(slot: SlotId) -> bool {
             | SlotId::FlowAction
             | SlotId::TimecodeAction
             | SlotId::TimelineAction
+            | SlotId::MacroAction
             | SlotId::TempoAction
             | SlotId::LogFilterField
             | SlotId::RecallBlueprintKeyword
@@ -1152,6 +1153,7 @@ pub(in crate::parser) fn is_identifier_slot(slot: SlotId) -> bool {
             | SlotId::FlowIdentifier
             | SlotId::TimecodeIdentifier
             | SlotId::TimelineIdentifier
+            | SlotId::MacroIdentifier
             | SlotId::LogFilterValue
             | SlotId::LogFixtureIdentifier
             | SlotId::RecallCueRef

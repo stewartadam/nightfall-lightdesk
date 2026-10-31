@@ -72,10 +72,9 @@ jobs:
 
       - name: Install cargo-nextest for Rust tests
         if: inputs.rust-tests
-        # Prebuilt and checksum-verified; building it from source costs minutes on a cache miss.
-        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        uses: ./.github/actions/cargo-tools
         with:
-          tool: cargo-nextest@0.9.146
+          cargo-nextest: true
 
       # Skipping this step also skips the doctest, desktop shell and Clippy steps below.
       - name: Run Rust tests

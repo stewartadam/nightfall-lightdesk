@@ -6,35 +6,35 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type {
-  BindingConflictColumn,
-  UniverseKey,
-} from "../../../lib/binding-overlap";
 import {
   alwaysVisibleColumnMeta,
   columnVisibilityMeta,
   type VisibilityGridColumn,
 } from "../../../lib/datagrid-column-visibility";
 import type { FilterableGridColumn } from "../../../lib/datagrid-filtering";
+import type {
+  RouteConflictColumn,
+  UniverseKey,
+} from "../../../lib/route-overlap";
 import type * as types from "../../../types";
-import type { BindingRow } from "./bindings-model";
+import type { RouteRow } from "./routes-model";
 export type UniverseGroupRow = {
   rowKind: "universe";
   universe: UniverseKey;
-  bindingCounts: { input: number; output: number; disabled: number };
+  routeCounts: { input: number; output: number; disabled: number };
   inputOverlap: boolean;
   outputOverlap: boolean;
   isExpanded: boolean;
 };
 
-export type UniverseBindingRow = {
-  rowKind: "binding";
+export type UniverseRouteRow = {
+  rowKind: "route";
   universe: UniverseKey;
-  binding: BindingRow;
-  conflictColumns: Set<BindingConflictColumn>;
+  route: RouteRow;
+  conflictColumns: Set<RouteConflictColumn>;
 };
 
-export type UniverseDisplayRow = UniverseGroupRow | UniverseBindingRow;
+export type UniverseDisplayRow = UniverseGroupRow | UniverseRouteRow;
 
 export type ConflictTooltipState = {
   id: number;
@@ -60,12 +60,12 @@ export const DEFAULT_COLUMNS: FilterableGridColumn<
     filter: {
       value: (row) =>
         row.rowKind === "universe"
-          ? row.bindingCounts.disabled > 0
+          ? row.routeCounts.disabled > 0
             ? "Disabled"
             : ""
-          : row.binding.kind,
+          : row.route.kind,
     },
-    ...columnVisibilityMeta("Binding", "Type"),
+    ...columnVisibilityMeta("Route", "Type"),
   },
   {
     title: "Source",
@@ -74,10 +74,10 @@ export const DEFAULT_COLUMNS: FilterableGridColumn<
     filter: {
       value: (row) =>
         row.rowKind === "universe"
-          ? `In ${row.bindingCounts.input}`
-          : row.binding.source,
+          ? `In ${row.routeCounts.input}`
+          : row.route.source,
     },
-    ...columnVisibilityMeta("Binding", "Source"),
+    ...columnVisibilityMeta("Route", "Source"),
   },
   {
     title: "Target",
@@ -86,10 +86,10 @@ export const DEFAULT_COLUMNS: FilterableGridColumn<
     filter: {
       value: (row) =>
         row.rowKind === "universe"
-          ? `DMX ${row.bindingCounts.output}`
-          : row.binding.target,
+          ? `DMX ${row.routeCounts.output}`
+          : row.route.target,
     },
-    ...columnVisibilityMeta("Binding", "Target"),
+    ...columnVisibilityMeta("Route", "Target"),
   },
   {
     title: "Priority",
@@ -97,9 +97,9 @@ export const DEFAULT_COLUMNS: FilterableGridColumn<
     width: 90,
     filter: {
       kind: "number",
-      value: (row) => (row.rowKind === "binding" ? row.binding.priority : null),
+      value: (row) => (row.rowKind === "route" ? row.route.priority : null),
     },
-    ...columnVisibilityMeta("Binding", "Priority"),
+    ...columnVisibilityMeta("Route", "Priority"),
   },
   {
     title: "Clone",
@@ -107,9 +107,9 @@ export const DEFAULT_COLUMNS: FilterableGridColumn<
     width: 70,
     filter: {
       kind: "boolean",
-      value: (row) => row.rowKind === "binding" && row.binding.clone,
+      value: (row) => row.rowKind === "route" && row.route.clone,
     },
-    ...columnVisibilityMeta("Binding", "Clone"),
+    ...columnVisibilityMeta("Route", "Clone"),
   },
 ];
 
@@ -199,22 +199,4 @@ export function formatGroupWithChevron(
   label: string,
 ): string {
   return `${isExpanded ? "▼" : "▶"} ${label}`;
-}
-
-/** Returns whether a universe tab cell represents a patch conflict. */
-export function universeDisplayCellHasConflict(
-  row: UniverseDisplayRow,
-  columnId: string | undefined,
-): boolean {
-  if (row.rowKind === "binding") {
-    return (
-      (columnId === "source" || columnId === "target") &&
-      row.conflictColumns.has(columnId)
-    );
-  }
-
-  return (
-    (columnId === "source" && row.inputOverlap) ||
-    (columnId === "target" && row.outputOverlap)
-  );
 }

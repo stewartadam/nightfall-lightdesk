@@ -119,7 +119,7 @@ fn summarize(snapshot: &ShowfileSnapshot) -> String {
         format!("{} cues", snapshot.cues.len()),
         format!("{} clips", snapshot.clips.len()),
         format!("{} timelines", snapshot.timelines.len()),
-        format!("{} input bindings", snapshot.bindings.input.len()),
+        format!("{} input routes", snapshot.routes.input.len()),
         format!("{} MIDI mappings", snapshot.midi_mappings.len()),
         format!("{} OSC mappings", snapshot.osc_mappings.len()),
     ]

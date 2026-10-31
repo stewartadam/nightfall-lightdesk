@@ -20,7 +20,7 @@ use nightfall_fx::prelude::*;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::{BindingsSnapshot, ShowfileSnapshot, paths::*, stabilize_showfile_group_refs};
+use super::{RoutesSnapshot, ShowfileSnapshot, paths::*, stabilize_showfile_group_refs};
 
 const FULL_IMPORT_POLICIES: &[ShowfileImportPolicy] = &[
     ShowfileImportPolicy::Skip,
@@ -111,14 +111,11 @@ pub(super) fn merge_showfile_snapshots(
             options.fixtures,
         )?,
         variables: merge_variables(current.variables, incoming.variables, options.variables),
-        control_slots: merge_single(
-            current.control_slots,
-            incoming.control_slots,
-            options.settings,
-        ),
+        faders: merge_single(current.faders, incoming.faders, options.settings),
         settings: merge_single(current.settings, incoming.settings, options.settings),
         io_settings: merge_single(current.io_settings, incoming.io_settings, options.settings),
-        bindings: merge_bindings(current.bindings, incoming.bindings, options.bindings)?,
+        tempo: merge_single(current.tempo, incoming.tempo, options.settings),
+        routes: merge_routes(current.routes, incoming.routes, options.routes)?,
         #[cfg(feature = "midi")]
         midi_mappings: merge_plain_vec(
             "MIDI mappings",
@@ -196,6 +193,7 @@ pub(super) fn merge_showfile_snapshots(
         )?,
         clips: merge_identified_vec("clips", current.clips, incoming.clips, options.clips)?,
         boards: merge_identified_vec("boards", current.boards, incoming.boards, options.boards)?,
+        macros: merge_identified_vec("macros", current.macros, incoming.macros, options.macros)?,
     };
     for warning in stabilize_showfile_group_refs(&mut merged) {
         tracing::warn!("{}", warning);
@@ -210,7 +208,7 @@ pub(super) fn validate_showfile_import_options(
     validate_import_policy("fixtures", options.fixtures, FULL_IMPORT_POLICIES)?;
     validate_import_policy("variables", options.variables, FULL_IMPORT_POLICIES)?;
     validate_import_policy("settings", options.settings, REPLACE_ONLY_IMPORT_POLICIES)?;
-    validate_import_policy("bindings", options.bindings, LIST_IMPORT_POLICIES)?;
+    validate_import_policy("routes", options.routes, LIST_IMPORT_POLICIES)?;
     validate_import_policy("MIDI mappings", options.midi_mappings, LIST_IMPORT_POLICIES)?;
     validate_import_policy("OSC mappings", options.osc_mappings, LIST_IMPORT_POLICIES)?;
     validate_import_policy("scene objects", options.scene_objects, FULL_IMPORT_POLICIES)?;
@@ -232,6 +230,7 @@ pub(super) fn validate_showfile_import_options(
     validate_import_policy("timelines", options.timelines, FULL_IMPORT_POLICIES)?;
     validate_import_policy("clips", options.clips, FULL_IMPORT_POLICIES)?;
     validate_import_policy("boards", options.boards, FULL_IMPORT_POLICIES)?;
+    validate_import_policy("macros", options.macros, FULL_IMPORT_POLICIES)?;
     Ok(())
 }
 
@@ -900,17 +899,17 @@ fn merge_variables(
     }
 }
 
-/// Merge all binding collections under one import policy.
-fn merge_bindings(
-    current: BindingsSnapshot,
-    incoming: BindingsSnapshot,
+/// Merge all route collections under one import policy.
+fn merge_routes(
+    current: RoutesSnapshot,
+    incoming: RoutesSnapshot,
     policy: ShowfileImportPolicy,
-) -> Result<BindingsSnapshot, String> {
-    Ok(BindingsSnapshot {
-        input: merge_plain_vec("input bindings", current.input, incoming.input, policy)?,
-        output: merge_plain_vec("output bindings", current.output, incoming.output, policy)?,
+) -> Result<RoutesSnapshot, String> {
+    Ok(RoutesSnapshot {
+        input: merge_plain_vec("input routes", current.input, incoming.input, policy)?,
+        output: merge_plain_vec("output routes", current.output, incoming.output, policy)?,
         disabled: merge_plain_vec(
-            "disabled bindings",
+            "disabled routes",
             current.disabled,
             incoming.disabled,
             policy,

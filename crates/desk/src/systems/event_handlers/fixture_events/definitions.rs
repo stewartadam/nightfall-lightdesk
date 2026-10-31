@@ -96,7 +96,10 @@ fn rename_fixture(context: &mut FixtureCrudContext, command_id: CommandId, id: u
     succeed_fixture_command(&mut context.responder, command_id);
 }
 
-/// Deletes a fixture and despawns its parameter entities.
+/// Deletes a fixture, despawns its parameter entities, and drops it from every DMX route.
+///
+/// Routes that patch only this fixture are removed; routes shared with other fixtures keep
+/// the others.
 fn delete_fixture(context: &mut FixtureCrudContext, command_id: CommandId, fixture_id: u32) {
     tracing::debug!("Deleting fixture with ID: {}", fixture_id);
     let maybe_uid = context
@@ -131,6 +134,12 @@ fn delete_fixture(context: &mut FixtureCrudContext, command_id: CommandId, fixtu
             return;
         }
     }
+    retain_route_fixtures(
+        &mut context.input_routes,
+        &mut context.output_routes,
+        &mut context.disabled_routes,
+        |route_uid| *route_uid != uid,
+    );
     succeed_fixture_command(&mut context.responder, command_id);
 }
 

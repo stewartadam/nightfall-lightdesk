@@ -8,7 +8,16 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, Show } from "solid-js";
-import { Input } from "../../../components/ui/form-controls";
+import { SearchField } from "../../../components/ui/search-field";
+import {
+  matchesSearchTerms,
+  searchTerms,
+} from "../../../components/ui/search-match";
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "../../../components/ui/segmented-control";
+import { Button } from "../../../components/ui/visual-language/button";
 import DataGrid, {
   activeGridSelectionRow,
   createKeyedDataGridCellProvider,
@@ -27,7 +36,16 @@ import {
 import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
 import type { AvailableFixtureInfo } from "../../../types";
 import { LibraryFixturePreview } from "../../fixture-library";
+import { GdtfShareBrowser } from "../../gdtf-share";
 import { usePatchWizard } from "./wizard-context";
+
+/** Where the fixture picker lists definitions from. */
+type FixtureSource = "library" | "online";
+
+const FIXTURE_SOURCES: SegmentedControlOption<FixtureSource>[] = [
+  { value: "library", label: "In library" },
+  { value: "online", label: "GDTF Share" },
+];
 
 const FIXTURE_COLUMNS: GridColumn[] = [
   { id: "make", title: "Make", width: 140, minWidth: 96, maxWidth: 220 },
@@ -91,23 +109,28 @@ export function StepSelectFixture() {
     () => capabilities()?.fixture_library === "Native",
   );
 
+  /** Whether the engine can search GDTF Share and install fixtures from it. */
+  const gdtfShareAvailable = createMemo(() =>
+    Boolean(capabilities()?.gdtf_share),
+  );
+
+  /** Whether the list shows the library or GDTF Share. */
+  const [view, setView] = createSignal<FixtureSource>("library");
+
   /** Whether the runtime only offers compiled built-in profiles without file import. */
   const builtInProfilesOnly = createMemo(
     () => capabilities()?.fixture_library === "BuiltInOnly",
   );
 
+  /**
+   * Library fixtures matching every word of the filter in their make, model or mode names,
+   * GDTF Share searches match, so one query finds the same fixture on both tabs.
+   */
   const filteredFixtures = createMemo(() => {
-    const rawFixtures = $fixtureLibrary();
-    const filter = filterText().toLowerCase();
-
-    // Filter by search text
-    const filtered = filter
-      ? rawFixtures.filter(
-          (f) =>
-            f.make.toLowerCase().includes(filter) ||
-            f.model.toLowerCase().includes(filter),
-        )
-      : [...rawFixtures];
+    const terms = searchTerms(filterText());
+    const filtered = $fixtureLibrary().filter((f) =>
+      matchesSearchTerms(terms, [f.make, f.model, ...f.modes]),
+    );
 
     // Sort alphabetically by manufacturer, then model
     return filtered.sort((a, b) => {
@@ -162,113 +185,160 @@ export function StepSelectFixture() {
     });
   };
 
+  /** Picks the library copy of a GDTF Share fixture and returns to the library view on it. */
+  const useLibraryCopy = (fixture: AvailableFixtureInfo) => {
+    setView("library");
+    setFilterText(fixture.model);
+    handleFixtureSelect(fixture);
+  };
+
+  /** Switches between the library and GDTF Share, when the engine offers GDTF Share. */
+  const viewSwitch = () => (
+    <Show when={gdtfShareAvailable()}>
+      <SegmentedControl
+        label="Fixture source"
+        density="compact"
+        options={FIXTURE_SOURCES}
+        value={view()}
+        onChange={setView}
+        data-testid="patch-wizard-fixture-source"
+      />
+    </Show>
+  );
+
   return (
-    <div class="patch-wizard-picker">
-      {/* Fixture list */}
-      <div class="flex-1 flex flex-col min-w-0 min-h-0">
-        <div class="mb-3">
-          <Input
-            density="compact"
-            type="text"
-            aria-label="Filter fixtures"
-            placeholder="Filter by make/model..."
-            value={filterText()}
-            onInput={(e) => setFilterText((e.target as HTMLInputElement).value)}
-            class="w-full"
+    <Show
+      when={view() === "library"}
+      fallback={
+        <div class="h-full min-h-0">
+          <GdtfShareBrowser
+            query={filterText()}
+            onQueryChange={setFilterText}
+            onUse={useLibraryCopy}
+            useLabel="Use"
+            leading={viewSwitch()}
           />
         </div>
-
-        <section
-          aria-label="Fixture library"
-          class="flex-1 min-h-0 overflow-hidden border border-gray-700 rounded bg-neutral-900"
-        >
-          <Show
-            when={filteredFixtures().length > 0}
-            fallback={
-              <div class="p-4 text-gray-500 text-sm text-center">
-                <Show
-                  when={$fixtureLibrary().length === 0}
-                  fallback="No fixtures match your search"
-                >
-                  <Show
-                    when={canImportFixtures()}
-                    fallback="No fixture profiles are available."
-                  >
-                    No fixtures in library. Upload GDTF files to get started.
-                  </Show>
-                </Show>
-              </div>
-            }
-          >
-            <DataGrid
-              ariaLabel="Available fixtures"
-              readOnly
-              selectionMode="row"
-              columns={FIXTURE_COLUMNS}
-              rows={filteredFixtures().length}
-              cellProvider={fixtureProvider}
-              sortableColumns={FIXTURE_COLUMNS.map((column) => column.id!)}
-              freezeColumns={2}
-              gridSelection={selection()}
-              onGridSelectionChange={(next) => {
-                setReportedSelection(next);
-                const row = activeGridSelectionRow(next);
-                const fixture =
-                  row === undefined ? undefined : filteredFixtures()[row];
-                if (fixture) handleFixtureSelect(fixture);
-              }}
+      }
+    >
+      <div class="patch-wizard-picker">
+        {/* Fixture list */}
+        <div class="flex-1 flex flex-col min-w-0 min-h-0">
+          <div class="mb-3 flex items-center gap-2">
+            {viewSwitch()}
+            <SearchField
+              label="Filter fixtures"
+              placeholder="Filter by make, model or mode..."
+              density="compact"
+              value={filterText()}
+              onInput={setFilterText}
+              class="flex-1"
             />
-          </Show>
-        </section>
-        <Show when={builtInProfilesOnly()}>
-          <p class="mt-2 text-xs text-gray-500">
-            Only built-in profiles are available here. Importing GDTF files
-            requires the desktop app.
-          </p>
-        </Show>
-      </div>
+          </div>
 
-      {/* Preview panel */}
-      <div class="patch-wizard-preview">
-        <div class="text-sm text-gray-400 mb-2">Preview</div>
-        <div
-          aria-label="Fixture preview"
-          class="flex-1 min-h-0 border border-gray-700 rounded bg-neutral-900 overflow-hidden"
-          role="region"
-        >
-          <Show
-            when={selectedFixture()}
-            fallback={
-              <div class="h-full flex items-center justify-center text-gray-500 text-sm">
-                Select a fixture to preview
-              </div>
-            }
+          <section
+            aria-label="Fixture library"
+            class="flex-1 min-h-0 overflow-hidden border border-gray-700 rounded bg-neutral-900"
           >
-            {(fixture) => (
-              <LibraryFixturePreview
-                fill
-                make={fixture().make}
-                model={fixture().model}
-                mode={state().fixtureMode ?? undefined}
-                assetEtag={fixture().asset_etag}
+            <Show
+              when={filteredFixtures().length > 0}
+              fallback={
+                <div class="p-4 text-gray-500 text-sm text-center">
+                  <Show
+                    when={$fixtureLibrary().length === 0}
+                    fallback="No fixtures match your search"
+                  >
+                    <Show
+                      when={canImportFixtures()}
+                      fallback="No fixture profiles are available."
+                    >
+                      No fixtures in library. Upload GDTF files to get started.
+                    </Show>
+                  </Show>
+                  <Show when={gdtfShareAvailable()}>
+                    <div class="mt-3">
+                      <Button
+                        size="compact"
+                        onClick={() => setView("online")}
+                        data-testid="patch-wizard-search-online"
+                      >
+                        Search GDTF Share
+                      </Button>
+                    </div>
+                  </Show>
+                </div>
+              }
+            >
+              <DataGrid
+                ariaLabel="Available fixtures"
+                readOnly
+                selectionMode="row"
+                columns={FIXTURE_COLUMNS}
+                rows={filteredFixtures().length}
+                cellProvider={fixtureProvider}
+                sortableColumns={FIXTURE_COLUMNS.map((column) => column.id!)}
+                freezeColumns={2}
+                gridSelection={selection()}
+                onGridSelectionChange={(next) => {
+                  setReportedSelection(next);
+                  const row = activeGridSelectionRow(next);
+                  const fixture =
+                    row === undefined ? undefined : filteredFixtures()[row];
+                  if (fixture) handleFixtureSelect(fixture);
+                }}
               />
+            </Show>
+          </section>
+          <Show when={builtInProfilesOnly()}>
+            <p class="mt-2 text-xs text-gray-500">
+              Only built-in profiles are available here. Importing GDTF files
+              requires the desktop app.
+            </p>
+          </Show>
+        </div>
+
+        {/* Preview panel */}
+        <div class="patch-wizard-preview">
+          <div class="text-sm text-gray-400 mb-2">Preview</div>
+          <div
+            aria-label="Fixture preview"
+            class="flex-1 min-h-0 border border-gray-700 rounded bg-neutral-900 overflow-hidden"
+            role="region"
+          >
+            <Show
+              when={selectedFixture()}
+              fallback={
+                <div class="h-full flex items-center justify-center text-gray-500 text-sm">
+                  Select a fixture to preview
+                </div>
+              }
+            >
+              {(fixture) => (
+                <LibraryFixturePreview
+                  fill
+                  make={fixture().make}
+                  model={fixture().model}
+                  mode={state().fixtureMode ?? undefined}
+                  assetEtag={fixture().asset_etag}
+                />
+              )}
+            </Show>
+          </div>
+          <Show when={selectedFixture()}>
+            {(fixture) => (
+              <div class="mt-3 text-sm">
+                <div class="text-gray-100 font-medium">
+                  {fixture().make} {fixture().model}
+                </div>
+                <div class="text-gray-400">
+                  {fixture().modes.length} mode
+                  {fixture().modes.length !== 1 ? "s" : ""} available
+                </div>
+              </div>
             )}
           </Show>
         </div>
-        <Show when={selectedFixture()}>
-          {(fixture) => (
-            <div class="mt-3 text-sm">
-              <div class="text-gray-100 font-medium">
-                {fixture().make} {fixture().model}
-              </div>
-              <div class="text-gray-400">
-                {fixture().modes.length} mode
-                {fixture().modes.length !== 1 ? "s" : ""} available
-              </div>
-            </div>
-          )}
-        </Show>
       </div>
-    </div>
+    </Show>
   );
 }

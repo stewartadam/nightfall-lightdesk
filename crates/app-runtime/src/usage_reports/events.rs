@@ -43,7 +43,8 @@ impl Hardware {
             RefreshKind::nothing()
                 .with_cpu(CpuRefreshKind::nothing())
                 .with_memory(MemoryRefreshKind::nothing().with_ram()),
-        );
+        )
+        .ok();
         let os = match std::env::consts::OS {
             "macos" => "macOS",
             "windows" => "Windows",
@@ -52,19 +53,23 @@ impl Hardware {
         };
         Self {
             os: os.to_string(),
-            os_version: System::os_version().filter(|version| !version.is_empty()),
+            os_version: System::os_version()
+                .ok()
+                .filter(|version| !version.is_empty()),
             os_distribution: (std::env::consts::OS == "linux")
                 .then(System::distribution_id)
                 .filter(|id| !id.is_empty()),
             arch: std::env::consts::ARCH.to_string(),
             cpu_model: system
-                .cpus()
-                .first()
+                .as_ref()
+                .and_then(|system| system.cpus().first())
                 .map(|cpu| cpu.brand().trim().to_string())
                 .filter(|brand| !brand.is_empty()),
             cpu_threads: std::thread::available_parallelism().map_or(0, usize::from),
-            cpu_cores: System::physical_core_count(),
-            ram_gb: ram_bucket_gb(system.total_memory()),
+            cpu_cores: System::physical_core_count().ok(),
+            ram_gb: system
+                .as_ref()
+                .and_then(|system| ram_bucket_gb(system.total_memory())),
         }
     }
 }

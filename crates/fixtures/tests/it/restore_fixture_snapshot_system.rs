@@ -16,7 +16,9 @@ use nightfall_engine::prelude::{
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::events::handle_restore_fixture_snapshot;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::undo::{FixtureSnapshot, ParameterSnapshot, RestoreFixtureSnapshot};
+use nightfall_fixtures::undo::{
+    DmxRoutesSnapshot, FixtureSnapshot, ParameterSnapshot, RestoreFixtureSnapshot,
+};
 use uuid::Uuid;
 
 /// Installs the command lifecycle resources required by action handlers.
@@ -26,6 +28,19 @@ fn init_command_lifecycle(app: &mut App) {
     app.add_message::<CommandReply>();
     app.add_message::<FinishedCommand>();
     app.add_message::<CommandNoticeReply>();
+}
+
+/// Builds an app running only the fixture snapshot restore system and the resources it uses.
+fn restore_app() -> App {
+    let mut app = App::new();
+    init_command_lifecycle(&mut app);
+    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
+    app.add_systems(Update, handle_restore_fixture_snapshot);
+    app
 }
 
 /// Build a single-parameter fixture for restore system tests.
@@ -56,12 +71,7 @@ fn make_fixture(uid: Uuid) -> Fixture {
 /// RestoreFixtureSnapshot recreates runtime parameter entities for restored fixtures.
 #[test]
 fn restore_fixture_snapshot_spawns_parameter_entities() {
-    let mut app = App::new();
-    init_command_lifecycle(&mut app);
-    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
-    app.init_resource::<FixtureDataProviderExt>();
-    app.add_systems(Update, handle_restore_fixture_snapshot);
-
+    let mut app = restore_app();
     let fixture_uid = Uuid::new_v4();
     let fixture = make_fixture(fixture_uid);
     let parameter_values = ParameterValues {
@@ -81,6 +91,7 @@ fn restore_fixture_snapshot_spawns_parameter_entities() {
                     values: parameter_values.clone(),
                 }],
                 color_path_defaults: vec![],
+                routes: None,
             },
         )));
 
@@ -120,12 +131,7 @@ fn restore_fixture_snapshot_spawns_parameter_entities() {
 /// RestoreFixtureSnapshot restores fixture color path defaults owned by the fixture.
 #[test]
 fn restore_fixture_snapshot_restores_color_path_defaults() {
-    let mut app = App::new();
-    init_command_lifecycle(&mut app);
-    app.add_message::<EngineOperationEnvelope<RestoreFixtureSnapshot>>();
-    app.init_resource::<FixtureDataProviderExt>();
-    app.add_systems(Update, handle_restore_fixture_snapshot);
-
+    let mut app = restore_app();
     let fixture_uid = Uuid::new_v4();
     let fixture = make_fixture(fixture_uid);
     let element_ref = FixtureRef {
@@ -142,6 +148,7 @@ fn restore_fixture_snapshot_restores_color_path_defaults() {
                     fixture: element_ref.clone(),
                     color_path_id: ColorPathId(2),
                 }],
+                routes: None,
             },
         )));
 
@@ -152,4 +159,75 @@ fn restore_fixture_snapshot_restores_color_path_defaults() {
         data_provider.color_path_default_for_element(&element_ref),
         Some(ColorPathId(2))
     );
+}
+
+/// Builds a single-fixture output route to a sACN universe.
+fn output_route(uid: Uuid, universe: u16) -> OutputRoute {
+    OutputRoute {
+        source: OutputSource::Fixture {
+            uids: vec![uid],
+            element: None,
+            param: None,
+        },
+        target: OutputTarget::Transport {
+            target: "sacn".to_owned(),
+            universe: Some(DmxRange::single(universe)),
+            address: Some(1),
+        },
+        priority: 0,
+        clone: false,
+    }
+}
+
+/// A snapshot taken before a fixture delete puts the DMX routes back as they were, so an
+/// undone delete comes back patched.
+#[test]
+fn restore_fixture_snapshot_restores_routes_captured_at_delete() {
+    let mut app = restore_app();
+    let fixture_uid = Uuid::new_v4();
+    let other_uid = Uuid::new_v4();
+    app.world_mut().resource_mut::<OutputRoutes>().routes = vec![output_route(other_uid, 2)];
+    let captured = vec![output_route(fixture_uid, 1), output_route(other_uid, 2)];
+
+    app.world_mut()
+        .write_message(EngineOperationEnvelope::detached(RestoreFixtureSnapshot(
+            FixtureSnapshot {
+                fixture: make_fixture(fixture_uid),
+                parameters: vec![],
+                color_path_defaults: vec![],
+                routes: Some(DmxRoutesSnapshot {
+                    input_routes: vec![],
+                    output_routes: captured.clone(),
+                    disabled_routes: vec![],
+                }),
+            },
+        )));
+
+    app.update();
+
+    assert_eq!(app.world().resource::<OutputRoutes>().routes, captured);
+}
+
+/// A snapshot without routes, as taken when undoing a fixture update, leaves the live routes
+/// untouched.
+#[test]
+fn restore_fixture_snapshot_without_routes_keeps_live_routes() {
+    let mut app = restore_app();
+    let fixture_uid = Uuid::new_v4();
+    let live = vec![output_route(fixture_uid, 3)];
+    app.world_mut().resource_mut::<OutputRoutes>().routes = live.clone();
+
+    app.world_mut()
+        .write_message(EngineOperationEnvelope::detached(RestoreFixtureSnapshot(
+            FixtureSnapshot {
+                fixture: make_fixture(fixture_uid),
+                parameters: vec![],
+                color_path_defaults: vec![],
+                routes: None,
+            },
+        )));
+
+    app.update();
+
+    assert_eq!(app.world().resource::<OutputRoutes>().routes, live);
 }

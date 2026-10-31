@@ -6,7 +6,7 @@ Build modal dialogs with `Dialog`, and fill it with `DialogBody`, `DialogFooter`
 
 - **`task`** dialogs commit work, such as forms, wizards and confirmations. They show the header close button, put `DialogCancelButton` in the footer with one primary (or danger) default action last, and ignore clicks outside.
 - **`info`** dialogs have nothing to commit, such as About, Settings and Layouts. They show only the header close button, with no footer, and also close on Escape or a click outside.
-- **`required`** prompts need a choice, such as draft recovery. They have no close button, ignore Escape and clicks outside, and put the choices in the footer.
+- **`required`** prompts need a choice, such as draft recovery. They have no close button, ignore Escape and clicks outside, and put the choices in the footer. Pass `dismissOnEscape` when a blocking notice may hide something the user needs to read, such as the startup error dialog over the dev server's error overlay: Escape then calls `onDismiss`, with still no visible close button.
 
 The header close, `DialogCancelButton`, Escape and info outside clicks all call `onDismiss`. `onSubmit` is the default action Enter runs when focus has no Enter behavior of its own; a native form submit covers fields inside a `<form>`. A focused control marked `data-owns-dialog-keys` (such as `InlineRenameField`) keeps both Enter and Escape, so Escape discards its draft instead of closing the dialog. `busy` disables every way out and the default action together. Pass `label` when the accessible name differs from the visible title, `closeLabel` to name the close button, `headerActions` for other title-row controls, and width constraints such as `max-w-lg` through `class`.
 

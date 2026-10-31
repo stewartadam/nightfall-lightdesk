@@ -31,6 +31,9 @@ use nightfall_instances::{
     InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstanceOptions,
 };
 use nightfall_playback_planner::PlaybackReconstructionTiming;
+use nightfall_tempo::prelude::ShowTempo;
+
+use crate::launch_quantize::{ArmedLaunches, origin_follows_launch_quantize, quantized_action};
 
 /// Playback identity and control state used to resolve clip actions.
 type ClipPlaybackData = (
@@ -41,9 +44,9 @@ type ClipPlaybackData = (
     Option<&'static ReleaseMarker>,
 );
 
-/// Rate commands waiting for their target clip playback to materialize.
+/// Speed commands waiting for their target clip playback to materialize.
 #[derive(Default, Resource)]
-pub struct PendingClipPlaybackRates(HashMap<u32, f32>);
+pub struct PendingClipPlaybackSpeeds(HashMap<u32, f32>);
 
 /// Clip access and command lifecycle publishing used to apply clip configuration commands.
 #[derive(SystemParam)]
@@ -449,9 +452,9 @@ fn release_playback_by_id(
         }
 
         commands.entity(entity).insert(ReleaseMarker::default());
-        if let Some(controls) = controls.filter(|controls| controls.rate == 0.0) {
+        if let Some(controls) = controls.filter(|controls| controls.speed == 0.0) {
             let mut resumed_controls = controls.clone();
-            resumed_controls.rate = 1.0;
+            resumed_controls.speed = 1.0;
             commands.entity(entity).insert(resumed_controls);
         }
         return true;
@@ -520,23 +523,75 @@ pub fn handle_restore_clip_source(
 }
 
 /// Plans live clip ingress commands as concrete runtime actions.
+///
+/// While the show's launch quantize mode is on, live starts, Go presses and stops wait in
+/// [`ArmedLaunches`] for the next beat or bar; launches whose beat has arrived fire first, and a
+/// Launch Armed command fires everything still waiting.
 pub fn forward_clip_ingress_actions(
     mut commands: MessageReader<CommandEnvelope<ClipCommand>>,
     mut runtime_actions: MessageWriter<EngineOperationEnvelope<ClipOperation>>,
+    tempo: Option<Res<ShowTempo>>,
+    mut armed: ResMut<ArmedLaunches>,
+    materialized_clips: Query<&MaterializedClip>,
+    mut responder: CommandResponder,
 ) {
+    if !armed.is_empty() {
+        let beat_position = tempo
+            .as_ref()
+            .map_or(f64::INFINITY, |tempo| tempo.snapshot().beat_position);
+        let due = armed.bypass_change_detection().take_due(beat_position);
+        if !due.is_empty() {
+            armed.set_changed();
+            runtime_actions.write_batch(due);
+        }
+    }
+
     for envelope in commands.read() {
+        if matches!(envelope.command, ClipCommand::LaunchArmed) {
+            runtime_actions.write_batch(armed.take_all());
+            complete_clip_command(&mut responder, Some(envelope.command_id));
+            continue;
+        }
         let Some(action) = clip_action_from_command(&envelope.command) else {
             continue;
         };
-
-        runtime_actions.write(EngineOperationEnvelope::for_command(envelope, action));
+        let operation = EngineOperationEnvelope::for_command(envelope, action);
+        let quantized = quantized_action(&operation.operation)
+            .filter(|_| origin_follows_launch_quantize(&envelope.origin))
+            .map(|(_, clip_id)| clip_id.expand());
+        let target_beat = quantized
+            .as_ref()
+            .and_then(|_| tempo.as_ref().and_then(|tempo| tempo.launch_target_beat()));
+        match (target_beat, quantized) {
+            (Some(target_beat), Some(clip_ids)) => {
+                let clips_running = materialized_clips
+                    .iter()
+                    .any(|materialized| clip_ids.contains(&materialized.clip_id));
+                for command_id in armed.arm(target_beat, operation, clips_running) {
+                    complete_clip_command(&mut responder, command_id);
+                }
+            }
+            _ => {
+                runtime_actions.write(operation);
+            }
+        }
     }
 }
 
-/// Handles clip runtime commands that directly control attached playback rate.
-pub fn handle_clip_rate_commands(
+/// Reports a clip command as done without routing it, such as a launch a later press made
+/// pointless.
+fn complete_clip_command(responder: &mut CommandResponder, command_id: Option<CommandId>) {
+    if let Some(command_id) = command_id
+        && let Err(error) = responder.succeed(command_id)
+    {
+        tracing::error!(%command_id, %error, "clip_command_completion_failed");
+    }
+}
+
+/// Handles clip runtime commands that directly control attached playback speed.
+pub fn handle_clip_speed_commands(
     mut events: MessageReader<EngineOperationEnvelope<ClipOperation>>,
-    mut pending_rates: ResMut<PendingClipPlaybackRates>,
+    mut pending_speeds: ResMut<PendingClipPlaybackSpeeds>,
     instance_index: Res<InstanceIndex>,
     materialized_clips: Query<&MaterializedClip>,
     mut instances: Query<(
@@ -545,19 +600,19 @@ pub fn handle_clip_rate_commands(
         Option<&mut InstanceClock>,
     )>,
 ) {
-    let pending = std::mem::take(&mut pending_rates.0);
-    for (id, rate) in pending {
-        if !set_clip_playback_rate(
+    let pending = std::mem::take(&mut pending_speeds.0);
+    for (id, speed) in pending {
+        if !set_clip_playback_speed(
             id,
-            rate,
+            speed,
             &materialized_clips,
             &instance_index,
             &mut instances,
         ) {
             tracing::warn!(
                 clip_id = id,
-                rate,
-                "Dropping queued clip rate command because playback did not materialize"
+                speed,
+                "Dropping queued clip speed command because playback did not materialize"
             );
         }
     }
@@ -573,32 +628,32 @@ pub fn handle_clip_rate_commands(
         .collect::<HashSet<_>>();
 
     for event in event_batch {
-        let ClipOperation::SetRate { clip_id, rate } = &event.operation else {
+        let ClipOperation::SetSpeed { clip_id, speed } = &event.operation else {
             continue;
         };
 
         for id in clip_id.expand() {
-            if set_clip_playback_rate(
+            if set_clip_playback_speed(
                 id,
-                *rate,
+                *speed,
                 &materialized_clips,
                 &instance_index,
                 &mut instances,
             ) {
-                pending_rates.0.remove(&id);
+                pending_speeds.0.remove(&id);
             } else if start_batches.contains(&(event.undo_id, id)) {
-                pending_rates.0.insert(id, *rate);
+                pending_speeds.0.insert(id, *speed);
                 tracing::debug!(
                     clip_id = id,
-                    rate,
+                    speed,
                     undo_id = ?event.undo_id,
-                    "Clip rate command queued for same-batch playback materialization"
+                    "Clip speed command queued for same-batch playback materialization"
                 );
             } else {
                 tracing::warn!(
                     clip_id = id,
-                    rate,
-                    "Clip rate command ignored because clip has no active playback"
+                    speed,
+                    "Clip speed command ignored because clip has no active playback"
                 );
             }
         }
@@ -1029,9 +1084,9 @@ fn release_cross_domain_retarget_playback(
     if release_marker.is_none() {
         entity_commands.insert(ReleaseMarker::default());
     }
-    if let Some(controls) = controls.filter(|controls| controls.rate == 0.0) {
+    if let Some(controls) = controls.filter(|controls| controls.speed == 0.0) {
         let mut resumed_controls = controls.clone();
-        resumed_controls.rate = 1.0;
+        resumed_controls.speed = 1.0;
         entity_commands.insert(resumed_controls);
     }
 }
@@ -1071,10 +1126,10 @@ fn attached_instances_for_clip(
         .collect()
 }
 
-/// Applies a rate to all active instances attached to an clip.
-fn set_clip_playback_rate(
+/// Applies a speed to all active instances attached to an clip.
+fn set_clip_playback_speed(
     clip_id: u32,
-    rate: f32,
+    speed: f32,
     materialized_clips: &Query<&MaterializedClip>,
     instance_index: &InstanceIndex,
     instances: &mut Query<(
@@ -1088,9 +1143,9 @@ fn set_clip_playback_rate(
         .iter()
         .filter(|mexec| mexec.clip_id == clip_id)
     {
-        if set_attached_instance_rate(
+        if set_attached_instance_speed(
             materialized_clip.attached_instance,
-            rate,
+            speed,
             instance_index,
             instances,
         ) {
@@ -1099,17 +1154,17 @@ fn set_clip_playback_rate(
             tracing::warn!(
                 clip_id,
                 instance_id = ?materialized_clip.attached_instance,
-                "Clip rate command could not find attached playback"
+                "Clip speed command could not find attached playback"
             );
         }
     }
     applied
 }
 
-/// Applies a rate to a playback, falling back to a query scan if the index is stale.
-fn set_attached_instance_rate(
+/// Applies a speed to a playback, falling back to a query scan if the index is stale.
+fn set_attached_instance_speed(
     instance_id: InstanceId,
-    rate: f32,
+    speed: f32,
     instance_index: &InstanceIndex,
     instances: &mut Query<(
         &InstanceId,
@@ -1120,9 +1175,9 @@ fn set_attached_instance_rate(
     if let Some(entity) = instance_index.get(&instance_id)
         && let Ok((_id, mut controls, mut clock)) = instances.get_mut(entity)
     {
-        controls.set_rate(rate);
+        controls.set_speed(speed);
         if let Some(clock) = clock.as_deref_mut() {
-            clock.set_rate(controls.effective_rate());
+            clock.set_speed(controls.effective_speed());
         }
         return true;
     }
@@ -1131,9 +1186,9 @@ fn set_attached_instance_rate(
         if *candidate_id != instance_id {
             continue;
         }
-        controls.set_rate(rate);
+        controls.set_speed(speed);
         if let Some(clock) = clock.as_deref_mut() {
-            clock.set_rate(controls.effective_rate());
+            clock.set_speed(controls.effective_speed());
         }
         return true;
     }
@@ -1455,10 +1510,7 @@ mod tests {
     /// Verifies live ingress commands retain command and undo identity at the runtime boundary.
     #[test]
     fn live_clip_command_forwards_with_lifecycle_context() {
-        let mut app = App::new();
-        app.add_message::<CommandEnvelope<ClipCommand>>();
-        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
-        app.add_systems(Update, forward_clip_ingress_actions);
+        let mut app = setup_clip_forwarding_app();
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
 
@@ -1482,6 +1534,121 @@ mod tests {
         assert!(matches!(
             actions[0].operation,
             ClipOperation::Go(IdExpr::Single(7))
+        ));
+    }
+
+    /// Builds an app that forwards live clip commands, with command completion and armed
+    /// launches installed but no show tempo.
+    fn setup_clip_forwarding_app() -> App {
+        let mut app = App::new();
+        app.add_message::<CommandEnvelope<ClipCommand>>();
+        app.add_message::<EngineOperationEnvelope<ClipOperation>>();
+        app.add_message::<CommandResult>();
+        app.add_message::<CommandReply>();
+        app.add_message::<FinishedCommand>();
+        app.add_message::<CommandNoticeReply>();
+        app.init_resource::<CommandTracker>();
+        app.init_resource::<ArmedLaunches>();
+        app.add_systems(Update, forward_clip_ingress_actions);
+        app
+    }
+
+    /// Sends one live clip command to the forwarding app.
+    fn send_live_clip_command(app: &mut App, command: ClipCommand) {
+        app.world_mut().write_message(CommandEnvelope::with_context(
+            CommandId::new(),
+            UndoId::new(),
+            CommandOrigin::WebUi,
+            ReplyTarget::Detached,
+            command,
+        ));
+    }
+
+    /// Drains the clip operations the forwarding app produced.
+    fn forwarded_operations(app: &mut App) -> Vec<ClipOperation> {
+        app.world_mut()
+            .resource_mut::<Messages<EngineOperationEnvelope<ClipOperation>>>()
+            .drain()
+            .map(|envelope| envelope.operation)
+            .collect()
+    }
+
+    /// Verifies that with bar quantize on, a live start waits as an armed launch while a Go To
+    /// fires at once, a stop of the idle clip cancels the waiting start, and Launch Armed fires
+    /// a waiting start now.
+    #[test]
+    fn quantized_launches_wait_until_launched() {
+        let mut app = setup_clip_forwarding_app();
+        let mut tempo = ShowTempo::default();
+        tempo.apply(
+            &nightfall_tempo::TempoCommand::SetLaunchQuantize(nightfall_tempo::LaunchQuantize::Bar),
+            None,
+        );
+        tempo.advance();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        tempo.advance();
+        app.insert_resource(tempo);
+
+        send_live_clip_command(&mut app, ClipCommand::StartClip(IdExpr::Single(3)));
+        send_live_clip_command(
+            &mut app,
+            ClipCommand::GotoClip {
+                clip_id: IdExpr::Single(5),
+                position: 2,
+                timing: None,
+            },
+        );
+        app.update();
+        assert!(matches!(
+            forwarded_operations(&mut app).as_slice(),
+            [ClipOperation::Goto { .. }]
+        ));
+        assert_eq!(app.world().resource::<ArmedLaunches>().status().len(), 1);
+
+        send_live_clip_command(&mut app, ClipCommand::StopClip(IdExpr::Single(3)));
+        app.update();
+        assert!(forwarded_operations(&mut app).is_empty());
+        assert!(
+            app.world().resource::<ArmedLaunches>().is_empty(),
+            "stopping an idle clip only cancels its waiting start"
+        );
+
+        send_live_clip_command(&mut app, ClipCommand::StartClip(IdExpr::Single(3)));
+        send_live_clip_command(&mut app, ClipCommand::LaunchArmed);
+        app.update();
+        assert!(matches!(
+            forwarded_operations(&mut app).as_slice(),
+            [ClipOperation::Start(IdExpr::Single(3))]
+        ));
+        assert!(app.world().resource::<ArmedLaunches>().is_empty());
+    }
+
+    /// Verifies a clip start a timeline desk action evaluates fires at once even with launch
+    /// quantize on, so timeline playback stays on its own grid.
+    #[test]
+    fn timeline_desk_actions_skip_launch_quantize() {
+        let mut app = setup_clip_forwarding_app();
+        let mut tempo = ShowTempo::default();
+        tempo.apply(
+            &nightfall_tempo::TempoCommand::SetLaunchQuantize(nightfall_tempo::LaunchQuantize::Bar),
+            None,
+        );
+        tempo.advance();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        tempo.advance();
+        app.insert_resource(tempo);
+
+        app.world_mut().write_message(CommandEnvelope::with_context(
+            CommandId::new(),
+            UndoId::new(),
+            CommandOrigin::Remote(crate::launch_quantize::INTERNAL_DESK_ACTION_ORIGIN.to_owned()),
+            ReplyTarget::Detached,
+            ClipCommand::StartClip(IdExpr::Single(3)),
+        ));
+        app.update();
+        assert!(matches!(
+            forwarded_operations(&mut app).as_slice(),
+            [ClipOperation::Start(IdExpr::Single(3))]
         ));
     }
 
@@ -1628,7 +1795,7 @@ mod tests {
                 instance_id,
                 InstanceControls {
                     intensity_scale: 1.0,
-                    rate: 0.0,
+                    speed: 0.0,
                     ..Default::default()
                 },
             ))
@@ -1653,7 +1820,7 @@ mod tests {
             app.world()
                 .get::<InstanceControls>(playback)
                 .expect("controls should remain attached")
-                .rate,
+                .speed,
             1.0
         );
     }
@@ -1671,7 +1838,7 @@ mod tests {
                 instance_id,
                 InstanceControls {
                     intensity_scale: 1.0,
-                    rate: 0.0,
+                    speed: 0.0,
                     ..Default::default()
                 },
             ))
@@ -1694,7 +1861,7 @@ mod tests {
             app.world()
                 .get::<InstanceControls>(playback)
                 .expect("controls should remain attached")
-                .rate,
+                .speed,
             1.0
         );
     }
@@ -1730,14 +1897,14 @@ mod tests {
         assert_eq!(command_results.len(), 2);
     }
 
-    /// Verifies clip rate commands apply to the clip's active playback clock.
+    /// Verifies clip speed commands apply to the clip's active playback clock.
     #[test]
-    fn clip_rate_command_updates_attached_instance_rate() {
+    fn clip_speed_command_updates_attached_instance_speed() {
         let mut app = App::new();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
-        app.insert_resource(PendingClipPlaybackRates::default());
-        app.add_systems(Update, handle_clip_rate_commands);
+        app.insert_resource(PendingClipPlaybackSpeeds::default());
+        app.add_systems(Update, handle_clip_speed_commands);
 
         let instance_id = InstanceId::new();
         let playback = app
@@ -1759,9 +1926,9 @@ mod tests {
 
         submit_clip_command(
             &mut app,
-            ClipCommand::SetRate {
+            ClipCommand::SetSpeed {
                 clip_id: IdExpr::Single(7),
-                rate: 2.0,
+                speed: 2.0,
             },
         );
         app.update();
@@ -1770,24 +1937,24 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 2.0);
+        assert_eq!(controls.speed, 2.0);
         let mut clock = app
             .world_mut()
             .get_mut::<InstanceClock>(playback)
             .expect("playback clock should remain present");
-        assert_eq!(clock.rate, 2.0);
+        assert_eq!(clock.speed, 2.0);
         clock.advance_by_realtime_delta(std::time::Duration::from_millis(250));
         assert_eq!(clock.position, std::time::Duration::from_millis(500));
     }
 
-    /// Verifies clip rate commands wait for deferred playback materialization.
+    /// Verifies clip speed commands wait for deferred playback materialization.
     #[test]
-    fn clip_rate_command_applies_after_playback_materializes() {
+    fn clip_speed_command_applies_after_playback_materializes() {
         let mut app = App::new();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
-        app.insert_resource(PendingClipPlaybackRates::default());
-        app.add_systems(Update, handle_clip_rate_commands);
+        app.insert_resource(PendingClipPlaybackSpeeds::default());
+        app.add_systems(Update, handle_clip_speed_commands);
 
         let undo_id = Uuid::new_v4();
         app.world_mut()
@@ -1802,14 +1969,17 @@ mod tests {
                 OperationId::new(),
                 None,
                 Some(undo_id.into()),
-                ClipOperation::SetRate {
+                ClipOperation::SetSpeed {
                     clip_id: IdExpr::Single(7),
-                    rate: 2.0,
+                    speed: 2.0,
                 },
             ));
         app.update();
         assert_eq!(
-            app.world().resource::<PendingClipPlaybackRates>().0.get(&7),
+            app.world()
+                .resource::<PendingClipPlaybackSpeeds>()
+                .0
+                .get(&7),
             Some(&2.0)
         );
 
@@ -1835,7 +2005,7 @@ mod tests {
 
         assert!(
             app.world()
-                .resource::<PendingClipPlaybackRates>()
+                .resource::<PendingClipPlaybackSpeeds>()
                 .0
                 .is_empty()
         );
@@ -1843,34 +2013,34 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 2.0);
+        assert_eq!(controls.speed, 2.0);
         let clock = app
             .world()
             .get::<InstanceClock>(playback)
             .expect("playback clock should remain present");
-        assert_eq!(clock.rate, 2.0);
+        assert_eq!(clock.speed, 2.0);
     }
 
-    /// Verifies inactive standalone rate commands do not leak into future starts.
+    /// Verifies inactive standalone speed commands do not leak into future starts.
     #[test]
-    fn clip_rate_command_without_same_batch_start_is_not_persisted() {
+    fn clip_speed_command_without_same_batch_start_is_not_persisted() {
         let mut app = App::new();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
         app.insert_resource(InstanceIndex::default());
-        app.insert_resource(PendingClipPlaybackRates::default());
-        app.add_systems(Update, handle_clip_rate_commands);
+        app.insert_resource(PendingClipPlaybackSpeeds::default());
+        app.add_systems(Update, handle_clip_speed_commands);
 
         submit_clip_command(
             &mut app,
-            ClipCommand::SetRate {
+            ClipCommand::SetSpeed {
                 clip_id: IdExpr::Single(7),
-                rate: 2.0,
+                speed: 2.0,
             },
         );
         app.update();
         assert!(
             app.world()
-                .resource::<PendingClipPlaybackRates>()
+                .resource::<PendingClipPlaybackSpeeds>()
                 .0
                 .is_empty()
         );
@@ -1899,7 +2069,7 @@ mod tests {
             .world()
             .get::<InstanceControls>(playback)
             .expect("playback controls should remain present");
-        assert_eq!(controls.rate, 1.0);
+        assert_eq!(controls.speed, 1.0);
     }
 
     /// Verifies routed domain actions inherit command and undo context while receiving fresh operation identity.

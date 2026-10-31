@@ -11,15 +11,14 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
-  ALL_SELECTOR,
   DASHBOARD_BASE_URL,
   DashboardUnreachableError,
   fetchWorktrees,
   findWorktree,
   manageWorktree,
   resolveWorktreeServiceTargets,
+  SERVICE_TARGET_NAMES,
   summarizeWorktree,
-  WORKTREE_MANAGED_SERVICES,
 } from "./dashboard-client.mjs";
 
 const COMMAND_ACTIONS = { start: "start", stop: "stop", restart: "recycle" };
@@ -40,7 +39,7 @@ Commands:
 
 Options:
   -s, --service <name>   Service to target, repeatable or comma separated:
-                         ${[...WORKTREE_MANAGED_SERVICES, ALL_SELECTOR].join(", ")}
+                         ${SERVICE_TARGET_NAMES.join(", ")}
                          (default: backend)
       --no-wait          Return once the dashboard accepts start/restart
       --timeout <secs>   How long start/restart wait for services
@@ -111,14 +110,11 @@ export function parseCliArgs(argv) {
     .flatMap((value) => value.split(","))
     .map((service) => service.trim());
   const unknown = requested.filter(
-    (service) =>
-      service &&
-      service !== ALL_SELECTOR &&
-      !WORKTREE_MANAGED_SERVICES.includes(service),
+    (service) => service && !SERVICE_TARGET_NAMES.includes(service),
   );
   if (unknown.length > 0) {
     throw new Error(
-      `Unknown service "${unknown[0]}"; expected one of: ${[...WORKTREE_MANAGED_SERVICES, ALL_SELECTOR].join(", ")}`,
+      `Unknown service "${unknown[0]}"; expected one of: ${SERVICE_TARGET_NAMES.join(", ")}`,
     );
   }
 
@@ -146,9 +142,18 @@ function formatWorktreeList(summaries) {
     String(summary.nightfallPort ?? "-"),
     summary.backend,
     summary.ui,
-    summary.docs,
+    summary.docsUser,
+    summary.docsDev,
   ]);
-  const header = ["NAME", "BRANCH", "PORT", "BACKEND", "UI", "DOCS"];
+  const header = [
+    "NAME",
+    "BRANCH",
+    "PORT",
+    "BACKEND",
+    "UI",
+    "DOCS-USER",
+    "DOCS-DEV",
+  ];
   const widths = header.map((title, column) =>
     Math.max(title.length, ...rows.map((row) => row[column].length)),
   );
@@ -166,11 +171,12 @@ function formatWorktreeList(summaries) {
 function formatWorktreeStatus(summary) {
   return [
     `${summary.name} (${summary.branch ?? "detached"})`,
-    `  path:    ${summary.path}`,
-    `  backend: ${summary.backend} on port ${summary.nightfallPort ?? "-"}`,
-    `  ui:      ${summary.ui}${summary.webUiUrl ? ` at ${summary.webUiUrl}` : ""}`,
-    `  docs:    ${summary.docs}${summary.docsUrl ? ` at ${summary.docsUrl}` : ""}`,
-    `  wasm:    ${summary.wasm}`,
+    `  path:      ${summary.path}`,
+    `  backend:   ${summary.backend} on port ${summary.nightfallPort ?? "-"}`,
+    `  ui:        ${summary.ui}${summary.webUiUrl ? ` at ${summary.webUiUrl}` : ""}`,
+    `  docs-user: ${summary.docsUser}${summary.docsUserUrl ? ` at ${summary.docsUserUrl}` : ""}`,
+    `  docs-dev:  ${summary.docsDev}${summary.docsDevUrl ? ` at ${summary.docsDevUrl}` : ""}`,
+    `  wasm:      ${summary.wasm}`,
     `  art-net sender: ${summary.artnetSender}`,
     `  sACN sender:    ${summary.sacnSender}`,
   ].join("\n");
@@ -224,6 +230,8 @@ function formatManageResult(command, services, result) {
 function serviceSummaryKey(service) {
   if (service === "artnet-sender") return "artnetSender";
   if (service === "sacn-sender") return "sacnSender";
+  if (service === "docs-user") return "docsUser";
+  if (service === "docs-dev") return "docsDev";
   return service;
 }
 

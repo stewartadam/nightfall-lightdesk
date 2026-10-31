@@ -37,12 +37,18 @@ regenerate_workspace_hack() {
   cargo hakari manage-deps --yes
 }
 
-# Update dependencies for all modules in the project
+# Update a module's dependencies: `cargo upgrade` raises the version
+# requirements of direct dependencies in its manifests, then `cargo update`
+# moves every locked crate (including transitive ones that no manifest names)
+# to the newest release those requirements allow. Without the second step the
+# lockfile keeps stale transitive versions, which hakari then copies into the
+# workspace-hack as exact pins.
 update_dependencies() {
   local module="$1"
   echo "*** Updating dependencies for $module"
   pushd "$module" >/dev/null
     cargo upgrade --incompatible
+    cargo update
   popd >/dev/null
 }
 

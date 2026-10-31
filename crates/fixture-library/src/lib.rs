@@ -21,6 +21,7 @@ pub mod commands;
 pub mod converters;
 pub mod gdtf_metadata;
 pub mod gdtf_repair;
+pub mod gdtf_write;
 pub mod http_routes;
 pub mod manager;
 pub mod mesh;
@@ -60,6 +61,10 @@ pub enum FixtureLibraryError {
         /// Model name
         model: String,
     },
+
+    /// The library does not list this file as one that failed to load
+    #[error("{0} is not listed as a file that failed to load")]
+    UnloadableNotFound(String),
 
     /// Mode not found
     #[error("Mode '{mode}' not found for {make} {model}")]

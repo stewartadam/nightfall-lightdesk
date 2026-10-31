@@ -17,10 +17,10 @@ import {
   MANAGE_ACTIONS,
   manageWorktree,
   resolveWorktreeServiceTargets,
+  SERVICE_TARGET_NAMES,
   statusSummary,
   summarizeWorktree,
   uniqueNonEmptyStrings,
-  WORKTREE_MANAGED_SERVICES,
 } from "./dashboard-client.mjs";
 
 const SERVER_NAME = "nightfall-worktree-dashboard";
@@ -67,7 +67,7 @@ const TOOLS = [
   {
     name: "dashboard_worktree_manage",
     description:
-      "Start, stop, or recycle managed services for a specific worktree (backend/ui, the docs mdBook server, and sender examples). Start/recycle may trigger long recompiles; this call may take a while and will include startup failure details when available.",
+      "Start, stop, or recycle managed services for a specific worktree (backend/ui, the docs-user (user manual) and docs-dev (Developer Guide) mdBook servers, and sender examples). Start/recycle may trigger long recompiles; this call may take a while and will include startup failure details when available.",
     inputSchema: {
       type: "object",
       properties: {
@@ -85,11 +85,11 @@ const TOOLS = [
           type: "array",
           items: {
             type: "string",
-            enum: [...WORKTREE_MANAGED_SERVICES, ALL_SELECTOR],
+            enum: SERVICE_TARGET_NAMES,
           },
           minItems: 1,
           description:
-            "Service targets. Defaults to [backend, ui]. Use [all] to target backend, ui, wasm, sender, and docs services.",
+            "Service targets. Defaults to [backend, ui]. Use [docs] for both mdBook servers (docs-user and docs-dev), or [all] for every service.",
           default: ["backend", "ui"],
         },
       },
@@ -546,14 +546,10 @@ async function runTool(name, args) {
       throw new Error("services must contain at least one target");
     }
     if (
-      !serviceModes.every(
-        (service) =>
-          WORKTREE_MANAGED_SERVICES.includes(service) ||
-          service === ALL_SELECTOR,
-      )
+      !serviceModes.every((service) => SERVICE_TARGET_NAMES.includes(service))
     ) {
       throw new Error(
-        `services must contain only: ${[...WORKTREE_MANAGED_SERVICES, ALL_SELECTOR].join(", ")}`,
+        `services must contain only: ${SERVICE_TARGET_NAMES.join(", ")}`,
       );
     }
 

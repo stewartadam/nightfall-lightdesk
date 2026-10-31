@@ -782,7 +782,7 @@ test("keeps sample_data multi-clip layer workload responsive", async ({
     // Collapsed controls keep the sample clip cards clear of the grid's
     // scroll-edge indicators, which reject pointer input beneath them.
     window.localStorage.setItem(
-      "nightfall-clip-panel:controls-collapsed",
+      "nightfall-clip-panel:faders-collapsed",
       "true",
     );
   });

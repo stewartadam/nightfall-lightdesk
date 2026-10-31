@@ -19,7 +19,8 @@ const sharedPackaging = [
   /^about\.toml$/,
   /^config\/(notices\/|project-links\.json$)/,
   /^scripts\/.*notices/,
-  /^scripts\/(package-sample-audio|check-distribution-wasm)/,
+  /^scripts\/(package-sample-audio|check-distribution-wasm|cargo-tools\.mjs$)/,
+  /^\.github\/actions\/cargo-tools\//,
   /^scripts\/ci-scope/,
   /^\.github\/workflows\/(ci|wasm)\.yml$/,
   /^\.github\/actions\/wasm-assets\//,
@@ -57,7 +58,7 @@ const rustTests = [
   /^\.pre-commit-config\.yaml$/,
   /^scripts\/ci-scope/,
   /^\.github\/workflows\/(ci|native-validation)\.yml$/,
-  /^\.github\/actions\/rust-cache\//,
+  /^\.github\/actions\/(rust-cache|cargo-tools)\//,
   // Files outside crates/ that Rust code embeds with include_str! or include_bytes!.
   /^webui\/public\/nightfall-demo\.nightfall-show\//,
   /^webui\/assets\/models\/beat-this\/NOTICE\.md$/,
@@ -65,9 +66,57 @@ const rustTests = [
 ];
 const documentation = [
   /^docs\//,
+  /^\.github\/actions\/cargo-tools\//,
   /^scripts\/ci-scope/,
   /^\.github\/workflows\/ci\.yml$/,
 ];
+// Paths no WASM, native, WebUI or product-flow job reads: the manual, contributor prose, agent
+// and editor configuration, repository metadata, workflows outside PR validation, script tests,
+// and developer scripts that no build or test step executes. Every other path is an app input,
+// so a new file is validated in full until it is listed here.
+export const appIndependent = [
+  /^docs\//,
+  /^playwright\/(docs\.config\.ts|tests\/docs-[^/]+\.spec\.ts)$/,
+  /^(AGENTS|CLAUDE|CONTRIBUTING|README)\.md$/,
+  /^\.(agents|claude|vscode)\//,
+  /^\.github\/(ISSUE_TEMPLATE\/|(copilot-instructions|desktop-release-notes|pull_request_template)\.md$|dependabot\.yml$)/,
+  /^\.github\/workflows\/(README\.md|(desktop-updates|playwright-full|pr-commands|release-notes)\.yml)$/,
+  /^scripts\/(?!ci-scope)[^/]+\.node\.test\.mjs$/,
+  /^scripts\/(check-commit-signoff|claude-worktree-hook|fetch-gdtf-bench|gdtf-env|generate-app-icons|install-fx-module|release-notes|run-gdtf-tests|seed-data-dir-from-main)\.mjs$/,
+  /^scripts\/(profile-perf|test-desktop-updater|update-deps|verify_showfile_roundtrip)\.sh$/,
+];
+// The worktree dashboard: a developer tool whose service and page nothing in the native backend
+// or the Chromium product flows loads. Its page still shares WebUI components, so it keeps the
+// WASM packages and WebUI checks, which typecheck it, but skips the native job and product flows.
+export const dashboardSources = [
+  /^worktree-dashboard\//,
+  /^webui\/worktree-dashboard\.(html|tsx)$/,
+  /^webui\/e2e\/worktree-dashboard\.spec\.ts$/,
+];
+
+/** The manifest that pins the Cargo tools local setup and CI install. */
+export const cargoToolsManifest = "config/cargo-tools.json";
+// What each pinned Cargo tool validates when its version changes. A tool missing here, or a
+// manifest change selection can't compare, validates everything.
+const cargoToolScopes = {
+  mdbook: ["docs"],
+  "cargo-nextest": ["rust"],
+  "cargo-hakari": ["rust"],
+  "typeshare-cli": ["app"],
+  "cargo-about": ["app", "packaging"],
+};
+
+/**
+ * Name the tools whose pins differ between two revisions of the Cargo tools manifest, including
+ * tools added or removed.
+ */
+export function changedCargoTools(base, head) {
+  const before = JSON.parse(base);
+  const after = JSON.parse(head);
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((name) => before[name] !== after[name])
+    .sort();
+}
 
 /**
  * Reduce a Cargo.lock to the parts that can change a distribution: every external package
@@ -143,22 +192,33 @@ export function lockfileChangesOnlyWorkspaceEdges(base, head) {
  * change that only rewires workspace packages (`workspaceOnlyLockfile`) is left to the Rust
  * tests, because no workspace package compiles a different set of external packages.
  *
- * Browser previews build the demo for every same-repository PR once a preview target is
- * configured. Fork PRs never receive the deployment credential, so they never select one.
+ * The WASM packages, native backend, WebUI checks and Chromium product flows (`app`) run for every
+ * push and manual run, but only for PRs that change an app input: any path outside
+ * `appIndependent`. The native backend and product flows (`native`) further skip PRs whose app
+ * inputs are all `dashboardSources`. Rust tests always imply `native`, because the native job runs
+ * them, and `native` implies `app`.
  *
- * Draft PRs select only their preview, and reach selection only when opened: the workflow skips
- * source acquisition for later draft pushes, so CI validates nothing until the PR is marked
- * ready for review. The `/republish` PR command refreshes a draft's preview through a manual run
+ * Browser previews build the demo for every same-repository PR that changes an app input or the
+ * manual, once a preview target is configured. Fork PRs never receive the deployment credential,
+ * so they never select one.
+ *
+ * Draft PRs select only their preview, under the same path rule, and reach selection only when
+ * opened: the workflow skips source acquisition for later draft pushes, so CI validates nothing
+ * until the PR is marked ready for review. The `/republish` PR command refreshes a draft's preview through a manual run
  * whose preview PR number likewise selects only that PR's preview.
  *
  * Documentation builds only for PRs that touch the mdBook sources or the workflow that builds them.
  * A preview whose PR touches them also publishes the built books beside the demo, including on
  * draft and manual preview runs, which otherwise build nothing but the demo.
  *
+ * A change to the Cargo tools manifest validates what the changed pins affect (`cargoTools`):
+ * mdBook selects the documentation build, nextest and hakari the Rust tests, typeshare the app,
+ * and cargo-about the app and packaging. Without a base manifest to compare, every scope runs.
+ *
  * Rust tests, doctests and Clippy run for every push and manual run, but only for PRs that touch
  * Rust sources, their build and lint configuration, or files the Rust code embeds. Native
- * validation still builds the headless backend for every ready PR because the Chromium product flows
- * run against it.
+ * validation still builds the headless backend whenever `native` is selected because the Chromium
+ * product flows run against it.
  */
 export function selectScope({
   event,
@@ -171,10 +231,34 @@ export function selectScope({
   pullRequest = "",
   previewPr = "",
   workspaceOnlyLockfile = false,
+  cargoTools = null,
 }) {
-  /** Whether any changed path is an mdBook input. */
+  const tools = paths.includes(cargoToolsManifest) ? (cargoTools ?? ["*"]) : [];
+  /** Whether a changed tool pin validates the given scope. */
+  const toolsTouch = (scope) =>
+    tools.some((name) => cargoToolScopes[name]?.includes(scope) ?? true);
+  const filePaths = paths.filter((path) => path !== cargoToolsManifest);
+  /** Whether any changed path or tool pin is an mdBook input. */
   const touchesDocumentation = () =>
-    paths.some((path) => documentation.some((pattern) => pattern.test(path)));
+    toolsTouch("docs") ||
+    filePaths.some((path) =>
+      documentation.some((pattern) => pattern.test(path)),
+    );
+  /** Whether any changed path or tool pin can change what the app builds or runs. */
+  const touchesApp = () =>
+    toolsTouch("app") ||
+    filePaths.some(
+      (path) => !appIndependent.some((pattern) => pattern.test(path)),
+    );
+  /** Whether any changed path or tool pin can change the native backend or the product flows. */
+  const touchesNative = () =>
+    toolsTouch("app") ||
+    filePaths.some(
+      (path) =>
+        ![...appIndependent, ...dashboardSources].some((pattern) =>
+          pattern.test(path),
+        ),
+    );
   /**
    * Select nothing but the given PR's preview, when a preview target can receive it, plus the
    * documentation build that preview publishes when the PR changes the books.
@@ -187,6 +271,8 @@ export function selectScope({
     preview_pr: enabled ? pr : "",
     docs: enabled && touchesDocumentation(),
     rust: false,
+    native: false,
+    app: false,
   });
   if (event === "workflow_dispatch" && previewPr) {
     if (!/^[1-9][0-9]*$/.test(previewPr)) {
@@ -195,7 +281,12 @@ export function selectScope({
     return previewOnly(previewTarget, previewPr);
   }
   if (event === "pull_request" && draft) {
-    return previewOnly(previewTarget && sameRepository, pullRequest);
+    return previewOnly(
+      previewTarget &&
+        sameRepository &&
+        (touchesApp() || touchesDocumentation()),
+      pullRequest,
+    );
   }
   let desktopPackage = false;
   let browserPackage = false;
@@ -203,6 +294,8 @@ export function selectScope({
   let desktopCheck = false;
   let docs = false;
   let rust = event !== "pull_request";
+  let native = event !== "pull_request";
+  let app = event !== "pull_request";
   if (event === "workflow_dispatch") {
     if (!["all", "desktop", "browser"].includes(distribution)) {
       throw new Error(`Unknown distribution: ${distribution}`);
@@ -210,11 +303,18 @@ export function selectScope({
     desktopPackage = distribution !== "browser";
     browserPackage = distribution !== "desktop";
   } else if (event === "push") {
-    desktopPackage = ref === "refs/heads/main" || ref.startsWith("refs/tags/v");
+    // The release tag points at the main merge commit, so packaging main as well would build
+    // the same installers twice; only the tag's build ships.
+    desktopPackage = ref.startsWith("refs/tags/v");
     browserPackage = ref === "refs/heads/main";
   } else if (event === "pull_request") {
-    browserPreview = previewTarget && sameRepository;
-    for (const path of paths) {
+    app = touchesApp();
+    native = touchesNative();
+    docs = touchesDocumentation();
+    browserPreview = previewTarget && sameRepository && (app || docs);
+    rust = toolsTouch("rust");
+    desktopPackage = browserPackage = toolsTouch("packaging");
+    for (const path of filePaths) {
       const rewiresWorkspace = path === "Cargo.lock" && workspaceOnlyLockfile;
       if (
         !rewiresWorkspace &&
@@ -231,7 +331,8 @@ export function selectScope({
         desktopCheck = true;
       if (rustTests.some((pattern) => pattern.test(path))) rust = true;
     }
-    docs = touchesDocumentation();
+    native ||= rust;
+    app ||= native;
   } else {
     throw new Error(`Unsupported CI event: ${event}`);
   }
@@ -243,6 +344,8 @@ export function selectScope({
     preview_pr: browserPreview ? pullRequest : "",
     docs,
     rust,
+    native,
+    app,
   };
 }
 
@@ -274,6 +377,13 @@ if (
         readFileSync(".ci-base-Cargo.lock", "utf8"),
         readFileSync("Cargo.lock", "utf8"),
       ),
+    cargoTools:
+      existsSync(".ci-base-cargo-tools.json") && existsSync(cargoToolsManifest)
+        ? changedCargoTools(
+            readFileSync(".ci-base-cargo-tools.json", "utf8"),
+            readFileSync(cargoToolsManifest, "utf8"),
+          )
+        : null,
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,

@@ -1,0 +1,14 @@
+{
+  "id": "novation.launchpad-mini-mk3",
+  "name": "Novation Launchpad Mini MK3",
+  "ports": {
+    "match": ["lpminimk3 mi"],
+    "exclude": []
+  },
+  "feedback": false,
+  "hint": "Map the LPMiniMK3 MIDI port (MIDIIN2 on Windows), not DAW, with the Launchpad in Programmer mode (hold Session, then press the orange scene button). Nightfall keeps it in Programmer mode while feedback is on.",
+  "init": [[240, 0, 32, 41, 2, 13, 14, 1, 247]],
+  "release": [[240, 0, 32, 41, 2, 13, 14, 0, 247]],
+  "palette": "rgb-128",
+  "defaults": { "off": "Off", "on": "Green", "held": "Orange" }
+}

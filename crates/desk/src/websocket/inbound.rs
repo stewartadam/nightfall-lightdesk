@@ -283,15 +283,15 @@ pub fn deserialize_playback_command(
     Ok(())
 }
 
-/// Deserialize and dispatch ControlCommand from JSON.
-pub fn deserialize_control_command(
+/// Deserialize and dispatch FaderCommand from JSON.
+pub fn deserialize_fader_command(
     world: &mut World,
     json: Value,
     command_id: CommandId,
     undo_id: UndoId,
 ) -> Result<(), String> {
-    let command: crate::controls::ControlCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse ControlCommand: {}", e))?;
+    let command: crate::faders::FaderCommand =
+        serde_json::from_value(json).map_err(|e| format!("Failed to parse FaderCommand: {}", e))?;
 
     world
         .resource_mut::<PendingCommandBuffer>()
@@ -314,10 +314,10 @@ pub fn deserialize_master_update(world: &mut World, json: Value) -> Result<(), S
     Ok(())
 }
 
-/// Deserializes and dispatches an untracked control update from JSON.
-pub fn deserialize_control_update(world: &mut World, json: Value) -> Result<(), String> {
-    let update: crate::controls::ControlUpdate = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse ControlUpdate: {}", e))?;
+/// Deserializes and dispatches an untracked fader update from JSON.
+pub fn deserialize_fader_update(world: &mut World, json: Value) -> Result<(), String> {
+    let update: crate::faders::FaderUpdate =
+        serde_json::from_value(json).map_err(|e| format!("Failed to parse FaderUpdate: {}", e))?;
 
     world.write_message(update);
 

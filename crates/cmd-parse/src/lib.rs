@@ -6,7 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Parser for CLI commands.
+//! Lexer, parser, and autocomplete for the desk command language, such as `fixture 1 @ 50`.
+//!
+//! The grammar is described by a slot catalog, and one structural parser serves both strict
+//! parsing into an AST for execution and prefix parsing of incomplete input for completion and
+//! validation while the operator types. The crate also parses and formats the spatial selection
+//! and Step FX phase sub-languages. It has no engine dependencies, so the web UI runs the same
+//! code through the WASM bridge.
 
 use thiserror::Error;
 

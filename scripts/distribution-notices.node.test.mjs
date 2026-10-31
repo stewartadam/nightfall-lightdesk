@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { cargoToolVersion } from "./cargo-tools.mjs";
 import {
   collectRust,
   documentFor,
@@ -183,7 +184,7 @@ test("Rust placeholder attribution uses local originals or fails", () => {
   }
 });
 
-/** Preserve the entire custom Preline license and original artwork credit in both output formats. */
+/** Preserve the entire custom Preline license, original artwork credit and QLC+ copyright in both output formats. */
 test("distribution contains full Preline terms and upstream artwork copyright", () => {
   const pkg = JSON.parse(
     readFileSync(
@@ -200,6 +201,7 @@ test("distribution contains full Preline terms and upstream artwork copyright", 
   assert.match(text, /Redistributions must include this Fair Use License/);
   assert.match(text, /https:\/\/github.com\/htmlstreamofficial\/preline/);
   assert.match(text, /Copyright \(c\) 2023 Phosphor Icons/);
+  assert.match(text, /Copyright © Heikki Junnila, Massimo Callegari/);
   assert.ok(
     text.includes(
       readFileSync(
@@ -273,7 +275,8 @@ test("Cargo collection reads its output file and removes temporary reports", () 
   /** Emulate cargo-about's version and file-output contract without invoking Cargo. */
   const run = (command, args, options) => {
     assert.equal(command, "cargo");
-    if (args[1] === "--version") return "cargo-about 0.8.4\n";
+    if (args[1] === "--version")
+      return `cargo-about ${cargoToolVersion("cargo-about")}\n`;
     const outputIndex = args.indexOf("--output-file");
     assert.notEqual(outputIndex, -1);
     reportPath = args[outputIndex + 1];
@@ -322,7 +325,8 @@ test("Cargo collection cleans up failed and malformed reports", () => {
     let reportPath;
     /** Simulate a collector failure after it creates a partial output file. */
     const run = (_command, args) => {
-      if (args[1] === "--version") return "cargo-about 0.8.4";
+      if (args[1] === "--version")
+        return `cargo-about ${cargoToolVersion("cargo-about")}`;
       reportPath = args[args.indexOf("--output-file") + 1];
       writeFileSync(reportPath, "invalid JSON");
       if (!malformed) throw new Error("collector failed");

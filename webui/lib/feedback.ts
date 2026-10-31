@@ -6,16 +6,42 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { APP_VERSION } from "./app-metadata";
 import { type BugReportError, createBugReport } from "./bug-report";
+import { documentationUrl } from "./documentation-url";
 import { getLogger } from "./logger";
 import { collectSystemInfo } from "./system-info";
 import { isTauriRuntime } from "./tauri";
-import { invokeTauriMenuAction } from "./tauri-menu";
+import { invokeTauriMenuAction, TAURI_MENU_ACTIONS } from "./tauri-menu";
 
 const log = getLogger(import.meta.url);
 
 export const FEEDBACK_URL = __NIGHTFALL_PROJECT_LINKS__.feedback;
 export const BUG_REPORT_URL = __NIGHTFALL_PROJECT_LINKS__.bugReport;
+
+/**
+ * Opens the user guide for this app version. The desktop app asks the native shell, which fills
+ * in the same address and opens it in the system browser.
+ */
+export function openDocumentation(): void {
+  if (isTauriRuntime()) {
+    void invokeTauriMenuAction(TAURI_MENU_ACTIONS.documentation).catch(
+      (error: unknown) => {
+        log.error("Could not open the user guide", { error });
+      },
+    );
+    return;
+  }
+  window.open(documentationPageUrl(""), "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Builds the address of a page in the user guide for this app version, such as
+ * `user-guide/dmx-patching.html`. An empty page gives the guide's front page.
+ */
+export function documentationPageUrl(page: string): string {
+  return `${documentationUrl(__NIGHTFALL_PROJECT_LINKS__.documentation, APP_VERSION)}${page}`;
+}
 
 /** Opens an issue form with compact system information for bugs or a blank form for feedback. */
 export function openFeedbackPage(kind: "feedback" | "bug"): void {

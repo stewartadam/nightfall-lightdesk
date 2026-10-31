@@ -108,7 +108,7 @@ use manifest::{read_current_showfile_manifest_from_dir, write_showfile_manifest_
 pub(crate) use nightfall_showfile::ShowfileSaveState;
 pub(crate) use nightfall_showfile::validate_showfile_snapshot_json;
 use nightfall_showfile::{
-    BindingsSnapshot, ShowfileMetadata, ShowfileSnapshot, apply_showfile_snapshot,
+    RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, apply_showfile_snapshot,
     current_showfile_metadata, serialize_showfile_snapshot_json, snapshot_from_save_state,
     snapshot_from_world, stabilize_showfile_group_refs, validate_showfile_asset_versions,
 };

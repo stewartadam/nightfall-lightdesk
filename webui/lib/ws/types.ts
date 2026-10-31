@@ -110,10 +110,11 @@ export type AnyCommand =
   | types.FxCommand
   | types.FxModuleCommand
   | types.GroupCommand
+  | types.MacroCommand
   | types.ProgrammerCommand
   | types.SceneObjectCommand
   | types.SettingsCommand
-  | types.ControlCommand
+  | types.FaderCommand
   | types.StepFxCommand
   | types.TempoCommand
   | types.TimecodeCommand
@@ -124,6 +125,7 @@ export type AnyCommand =
 export type AnyWsMessage =
   | types.BoardWsMessage
   | types.CueWsMessage
+  | types.MacroWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
   | types.FixtureLibraryWsMessage

@@ -82,6 +82,7 @@ pub enum CommandAst<'i> {
     Clip(ClipCommandAst),
     Timecode(TimecodeCommandAst),
     Timeline(TimelineCommandAst),
+    Macro(MacroCommandAst),
     Tempo(TempoCommandAst<'i>),
     Channel(ChannelCommandAst<'i>),
     PatchAdd(PatchAddCommandAst<'i>),
@@ -115,6 +116,10 @@ pub struct TimecodeKeyword;
 /// Marker node for the `timeline` command keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimelineKeyword;
+
+/// Marker node for the `macro` command keyword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroKeyword;
 
 /// Marker node for direct DMX channel commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -492,7 +497,7 @@ pub enum PlaybackActionAst {
     Go,
     Back,
     Goto(u32),
-    Rate(f32),
+    Speed(f32),
 }
 
 /// Clip command targeting one or more clip ids.
@@ -558,6 +563,14 @@ pub enum TempoActionAst<'i> {
 pub struct TimelineCommandAst {
     pub _timeline: TimelineKeyword,
     pub timeline_id: SimpleIdentifierExpressionAst,
+    pub action: StartStopAst,
+}
+
+/// Macro start or stop command targeting one macro id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MacroCommandAst {
+    pub _macro: MacroKeyword,
+    pub macro_id: SimpleIdentifierExpressionAst,
     pub action: StartStopAst,
 }
 
@@ -679,9 +692,9 @@ pub struct FxModuleCommandAst {
     pub action: FxModuleActionAst,
 }
 
-/// Rate value for an FX speed update.
+/// Speed value for an FX speed update.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SetFxRateAst<'i> {
+pub struct SetFxSpeedAst<'i> {
     pub value: ValueAst<'i>,
 }
 
@@ -691,7 +704,7 @@ pub enum FxActionAst<'i> {
     CreateStep(CreateStepFxAst<'i>),
     Start,
     Stop,
-    SetRate(SetFxRateAst<'i>),
+    SetSpeed(SetFxSpeedAst<'i>),
 }
 
 /// FX command targeting one or more FX ids.
@@ -1359,7 +1372,7 @@ pub struct PatchAddCommandAst<'i> {
     pub clone: Option<PatchCloneAst>,
 }
 
-/// Patch command that removes bindings matching the supplied endpoint filters.
+/// Patch command that removes routes matching the supplied endpoint filters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RmPatchCommandAst<'i> {
     pub source: Option<PatchEndpointAst<'i>>,
@@ -1421,7 +1434,7 @@ pub struct FixtureParamAst<'i> {
     pub name: WordAst<'i>,
 }
 
-/// Endpoint marker for disabled bindings.
+/// Endpoint marker for disabled routes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DisabledEndpointAst;
 
@@ -1442,7 +1455,7 @@ pub struct AddressAst<'i> {
     pub value: IntegerAst<'i>,
 }
 
-/// Optional binding priority for patch commands.
+/// Optional route priority for patch commands.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatchPriorityAst<'i> {
     pub value: IntegerAst<'i>,

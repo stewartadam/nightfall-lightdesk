@@ -53,7 +53,7 @@ const ACTION_LABELS: Record<TimelineActionKind["type"], string> = {
   StopClip: "Stop clip",
   AdvanceSequence: "Advance sequence",
   BackSequence: "Back sequence",
-  SetClipRate: "Set clip rate",
+  SetClipSpeed: "Set clip speed",
   JumpToCue: "Jump to cue",
   DeskEval: "Desk eval",
   RegisteredAction: "Registered action",
@@ -70,8 +70,8 @@ function parseNonNegativeMs(value: string): number | undefined {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : undefined;
 }
 
-/** Parses a non-negative playback rate multiplier. */
-function parseRate(value: string): number | undefined {
+/** Parses a non-negative playback speed multiplier. */
+function parseSpeed(value: string): number | undefined {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : undefined;
 }
@@ -97,7 +97,7 @@ function actionTargetLabel(action: TimelineActionKind): string | undefined {
     case "AdvanceSequence":
     case "BackSequence":
       return action.data;
-    case "SetClipRate":
+    case "SetClipSpeed":
     case "JumpToCue":
       return action.data.uid;
     case "RegisteredAction":
@@ -107,9 +107,9 @@ function actionTargetLabel(action: TimelineActionKind): string | undefined {
   }
 }
 
-/** Returns the current clip rate from a SetClipRate action. */
-function clipRateValue(action: TimelineActionKind): number {
-  return action.type === "SetClipRate" ? action.data.rate : 1;
+/** Returns the current clip speed from a SetClipSpeed action. */
+function clipSpeedValue(action: TimelineActionKind): number {
+  return action.type === "SetClipSpeed" ? action.data.speed : 1;
 }
 
 /** Returns the current cue index from a JumpToCue action. */
@@ -258,15 +258,15 @@ export default function TimelineActionProperties(
     updateSelectedItem({ duration: msToDuration(nextMs) });
   };
 
-  /** Commits a new clip rate for SetClipRate actions. */
-  const updateClipRate = (action: TimelineActionKind, value: string) => {
-    if (action.type !== "SetClipRate") return;
-    const nextRate = parseRate(value);
-    if (nextRate === undefined) return;
+  /** Commits a new clip speed for SetClipSpeed actions. */
+  const updateClipSpeed = (action: TimelineActionKind, value: string) => {
+    if (action.type !== "SetClipSpeed") return;
+    const nextSpeed = parseSpeed(value);
+    if (nextSpeed === undefined) return;
     updateSelectedItem({
       action: timelineActionReference({
-        type: "SetClipRate",
-        data: { ...action.data, rate: nextRate },
+        type: "SetClipSpeed",
+        data: { ...action.data, speed: nextSpeed },
       }),
     });
   };
@@ -461,22 +461,22 @@ export default function TimelineActionProperties(
               <Match
                 when={
                   timelineActionKind(record().action.action).type ===
-                  "SetClipRate"
+                  "SetClipSpeed"
                 }
               >
                 <label class="block space-y-1">
-                  <span class="text-xs text-neutral-400">Clip rate</span>
+                  <span class="text-xs text-neutral-400">Clip speed</span>
                   <Input
                     density="compact"
-                    aria-label="Action clip rate"
+                    aria-label="Action clip speed"
                     type="number"
                     min="0"
                     step="0.01"
-                    value={clipRateValue(
+                    value={clipSpeedValue(
                       timelineActionKind(record().action.action),
                     )}
                     onChange={(event) =>
-                      updateClipRate(
+                      updateClipSpeed(
                         timelineActionKind(record().action.action),
                         event.currentTarget.value,
                       )

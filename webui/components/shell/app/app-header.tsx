@@ -15,9 +15,11 @@ import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import { onMount, Show } from "solid-js";
 import { MappingModeToggle } from "../../../features/io";
 import { useShowfileObjectPalette } from "../../../features/showfile";
+import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { currentShowfileName } from "../../../lib/showfile-loading";
+import { isTauriRuntime } from "../../../lib/tauri";
 import { compactViewport } from "../../../state/viewport";
 import { useCommandPalette } from "../../providers/command-registry";
 import { DropdownMenuItem } from "../../ui/dropdown-menu";
@@ -75,6 +77,16 @@ function HeaderActions() {
         <MappingModeToggle />
       </Tooltip>
       <HeaderNotificationHistory />
+      <Show when={!isTauriRuntime()}>
+        <Button
+          size="compact"
+          class="h-8"
+          onClick={openWelcomeGuide}
+          aria-label="Open Welcome Guide"
+        >
+          Guide
+        </Button>
+      </Show>
     </>
   );
 }

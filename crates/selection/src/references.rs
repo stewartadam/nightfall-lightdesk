@@ -48,8 +48,8 @@ pub enum ReferenceDomain {
     Flow,
     /// Masters scoped to a fixture selection.
     Master,
-    /// Output patch bindings.
-    PatchBinding,
+    /// Output DMX routes.
+    DmxRoute,
 }
 
 impl ReferenceDomain {
@@ -64,7 +64,7 @@ impl ReferenceDomain {
             ReferenceDomain::FxModule => "FX module",
             ReferenceDomain::Flow => "flow",
             ReferenceDomain::Master => "master",
-            ReferenceDomain::PatchBinding => "output binding",
+            ReferenceDomain::DmxRoute => "output route",
         }
     }
 }
@@ -75,7 +75,7 @@ impl ReferenceDomain {
 pub struct ReferenceOwner {
     /// Object family of the owner.
     pub domain: ReferenceDomain,
-    /// Stable identity of the owner: its UUID, or `output-binding-<index>` for patch bindings.
+    /// Stable identity of the owner: its UUID, or `output-route-<index>` for DMX routes.
     pub uid: String,
     /// User-facing numeric ID of the owner.
     pub id: u32,
@@ -94,20 +94,20 @@ impl ReferenceOwner {
         }
     }
 
-    /// Describes the output patch binding at `index` in the output binding list.
-    pub fn output_binding(index: usize) -> Self {
+    /// Describes the output DMX route at `index` in the output route list.
+    pub fn output_route(index: usize) -> Self {
         let display_index = index as u32 + 1;
         Self {
-            domain: ReferenceDomain::PatchBinding,
-            uid: format!("output-binding-{index}"),
+            domain: ReferenceDomain::DmxRoute,
+            uid: format!("output-route-{index}"),
             id: display_index,
-            label: format!("Output binding {display_index}"),
+            label: format!("Output route {display_index}"),
         }
     }
 
     /// Returns the short description used in dependency lists and delete-guard errors.
     pub fn description(&self) -> String {
-        if self.label.is_empty() || self.domain == ReferenceDomain::PatchBinding {
+        if self.label.is_empty() || self.domain == ReferenceDomain::DmxRoute {
             format!("{} {}", self.domain.noun(), self.id)
         } else {
             format!("{} {} ({})", self.domain.noun(), self.id, self.label)

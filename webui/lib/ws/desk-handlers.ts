@@ -7,6 +7,7 @@
  */
 
 import { pushToast } from "../../state/appStores";
+import { toastActionButtons } from "../../state/toast-actions";
 import type * as types from "../../types";
 import { decodeCorrelationId } from "../console-scrollback";
 import { renameSessionLayoutShowfile } from "../layoutStorage";
@@ -56,11 +57,20 @@ function handleUiNotification(notification: types.UiNotification) {
   switch (notification.type) {
     case "ShowToast": {
       const level = notification.data.level.toLowerCase();
-      pushToast(
+      const actions = toastActionButtons(notification.data.actions);
+      const toastLevel =
         level === "error" || level === "warning" || level === "success"
           ? level
-          : "info",
+          : "info";
+      // A problem the operator can act on stays until dismissed so it isn't missed mid-show.
+      const sticky =
+        actions.length > 0 &&
+        (toastLevel === "warning" || toastLevel === "error");
+      pushToast(
+        toastLevel,
         notification.data.message,
+        sticky ? -1 : undefined,
+        actions,
       );
       break;
     }

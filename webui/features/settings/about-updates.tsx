@@ -11,6 +11,7 @@ import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import { type Accessor, createMemo, createSignal, For, Show } from "solid-js";
 import { Alert } from "../../components/ui/alert";
 import { NativeSelect } from "../../components/ui/form-controls";
+import { ProgressBar } from "../../components/ui/progress-bar";
 import { SettingsRow } from "../../components/ui/settings-row";
 import { Button } from "../../components/ui/visual-language/button";
 import {
@@ -206,34 +207,17 @@ const ALERT_PHASES: ReadonlySet<DesktopUpdatePhase> = new Set([
   "installing",
 ]);
 
-/** Thin progress bar in the app's colors instead of the platform's native styling. */
-const PROGRESS_CLASS =
-  "h-1.5 w-full appearance-none overflow-hidden rounded-full bg-gray-700 [&::-webkit-progress-bar]:bg-gray-700 [&::-webkit-progress-value]:bg-blue-400 [&::-moz-progress-bar]:bg-blue-400";
-
 /** Download progress as a compact bar with the bytes received, for the update alert's action. */
 function DownloadProgressMeter(props: { update: DesktopUpdateState }) {
   const downloaded = () => props.update.progress?.downloadedBytes ?? 0;
   const total = () => props.update.progress?.totalBytes ?? null;
   return (
     <div class="flex w-36 flex-col items-end gap-1">
-      <Show
-        when={total()}
-        fallback={
-          <progress
-            class={PROGRESS_CLASS}
-            aria-label="Update download progress"
-          />
-        }
-      >
-        {(totalBytes) => (
-          <progress
-            class={PROGRESS_CLASS}
-            aria-label="Update download progress"
-            value={downloaded()}
-            max={totalBytes()}
-          />
-        )}
-      </Show>
+      <ProgressBar
+        label="Update download progress"
+        value={downloaded()}
+        max={total()}
+      />
       <span class="text-xs text-gray-400">
         {total() === null
           ? megabytes(downloaded())

@@ -62,11 +62,13 @@ jobs:
         with:
           key: desktop-web
           cache-on-failure: true
+      - uses: ./.github/actions/cargo-tools
+        with:
+          typeshare: true
+          cargo-about: true
       - name: Install shared build tools
         run: |
           pnpm install --frozen-lockfile
-          cargo install --locked typeshare-cli --version 1.13.3
-          cargo install --locked cargo-about --version 0.8.4
           pnpm run typeshare
       - name: Download shared release bridge
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -152,10 +154,11 @@ jobs:
         with:
           name: desktop-web-${{ github.sha }}
           path: webui/dist
+      - uses: ./.github/actions/cargo-tools
+        with:
+          cargo-about: true
       - name: Assemble target-specific distribution notices
-        run: |
-          cargo install --locked cargo-about --version 0.8.4
-          node scripts/distribution-notices.mjs ${{ matrix.target }}
+        run: node scripts/distribution-notices.mjs ${{ matrix.target }}
       - name: Build credential-free desktop installers
         id: tauri
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1

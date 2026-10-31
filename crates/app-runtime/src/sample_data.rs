@@ -62,7 +62,7 @@ pub fn populate_sample_entities(world: &mut World) {
     timeline_clips::add_timeline_clips(world);
     timelines::add_tc(world);
     input_mappings::add_midi_mappings(world);
-    world.insert_resource(Controls::from_slot_configs(
-        &[1, 2, 100, 102, 30].map(|id| ControlSlotConfig::assigned(ControlAssignment::Clip(id))),
+    world.insert_resource(Faders::from_configs(
+        &[1, 2, 100, 102, 30].map(|id| FaderConfig::assigned(FaderAssignment::Clip(id))),
     ));
 }

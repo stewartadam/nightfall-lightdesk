@@ -66,7 +66,7 @@ import {
 
 /** One action a mappable control can bind, with the label shown when choosing it. */
 export interface MappableChoice {
-  /** User-facing choice label, such as "Fader slot" or "Assigned master". */
+  /** User-facing choice label, such as "Fader 1" or "Assigned master". */
   label: string;
   /** Action bound when this choice is selected. */
   action: types.ActionReference;

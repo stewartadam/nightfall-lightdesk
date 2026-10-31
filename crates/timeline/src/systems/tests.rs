@@ -38,7 +38,7 @@ use nightfall_fx_module::instances::ActiveFxModuleLayer;
 use nightfall_fx_module::prelude::{ActiveFxModuleIds, ActiveFxModuleTimings, StoredFxModule};
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceDisplayKind, InstanceId,
-    InstanceKind, InstanceMetadata, InstanceOptions, InstancePosition, InstanceStatus,
+    InstanceKind, InstanceMetadata, InstanceOptions, InstancePosition, InstanceStatus, Timebase,
 };
 use nightfall_lookahead::LookaheadAssertions;
 use nightfall_playback_planner::{
@@ -51,7 +51,7 @@ use uuid::Uuid;
 
 use super::lookahead::{MaterializedLookaheadProvider, TimelineLookahead, TimelineLookaheadLayer};
 use super::{
-    PendingStoppedTimelineReleaseClocks, TimelinePausedPlaybackRates, cleanup_timeline_entities,
+    PendingStoppedTimelineReleaseClocks, TimelinePausedPlaybackSpeeds, cleanup_timeline_entities,
     detach_stopped_timeline_release_clocks, handle_timeline_seek_system,
     intervention_reconstruction_timing_from_evaluated_instance,
     populate_materialized_lookahead_assertions_system, process_actions_system,
@@ -248,7 +248,7 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
     app.add_message::<CommandEnvelope<TimecodeCommand>>();
     app.add_message::<CommandEnvelope<TimelineCommand>>();
     app.add_message::<EngineOperationEnvelope<TimelineOperation>>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.init_resource::<PendingStoppedTimelineReleaseClocks>();
     app.add_systems(
         Update,
@@ -281,14 +281,14 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
         ..Default::default()
     };
     clock.seek_to(Duration::from_secs(3));
-    clock.set_rate(0.0);
+    clock.set_speed(0.0);
     let playback_entity = app
         .world_mut()
         .spawn((
             InstanceId::new(),
             InstanceMetadata::new(InstanceKind::Sequence),
             InstanceControls {
-                rate: 0.0,
+                speed: 0.0,
                 ..Default::default()
             },
             ReleaseMarker::default(),
@@ -310,11 +310,11 @@ fn stop_timecode_detaches_releasing_timeline_instance_clock() {
         .expect("instance should keep a release clock");
     assert_eq!(clock.source, InstanceClockSource::Realtime);
     assert!(!clock.frozen, "release clock should continue after stop");
-    assert_eq!(clock.rate, 1.0);
+    assert_eq!(clock.speed, 1.0);
     let controls = playback_ref
         .get::<InstanceControls>()
         .expect("instance controls should remain present");
-    assert_eq!(controls.rate, 1.0);
+    assert_eq!(controls.speed, 1.0);
 }
 
 /// Verifies paused timeline release tails stay attached without a stop command.
@@ -444,6 +444,72 @@ fn keep_state_stop_keeps_releasing_timeline_instance_clock_attached() {
     );
 }
 
+/// Syncs one timeline-owned playback started 1 s into a 120 BPM timeline at 4 s and returns
+/// its clock position.
+fn timeline_owned_position_at_120_bpm(timebase: Option<Timebase>) -> Duration {
+    let mut app = App::new();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
+    app.add_systems(Update, sync_timeline_paused_instance_controls_system);
+
+    let timecode_id = 94;
+    let timeline_uid = Uuid::new_v4();
+    let timecode_uid = spawn_timecode(&mut app, timecode_id, Duration::from_secs(4));
+    let mut timeline = MaterializedTimeline::new(Timeline {
+        identifiers: Identifiers {
+            id: timecode_id,
+            uid: timeline_uid,
+            label: "beat-timed".to_owned(),
+        },
+        timecode_uid,
+        bpm: 120.0,
+        ..Default::default()
+    });
+    timeline.is_active = true;
+    app.world_mut().spawn(timeline);
+
+    let mut playback = app.world_mut().spawn((
+        InstanceId::new(),
+        InstanceControls::default(),
+        InstanceClock {
+            source: InstanceClockSource::Timeline {
+                timeline_uid,
+                started_at_timeline: Duration::from_secs(1),
+            },
+            ..Default::default()
+        },
+    ));
+    if let Some(timebase) = timebase {
+        playback.insert(timebase);
+    }
+    let playback_entity = playback.id();
+
+    app.update();
+
+    app.world()
+        .entity(playback_entity)
+        .get::<InstanceClock>()
+        .expect("playback keeps its clock")
+        .position
+}
+
+/// Verifies beat-timed timeline playback counts the timeline's beats, so 3 s at 120 BPM reads
+/// as 6 beats, while seconds-timed playback keeps reading seconds.
+#[test]
+fn timeline_owned_beat_timed_clock_follows_timeline_bpm() {
+    assert_eq!(
+        timeline_owned_position_at_120_bpm(Some(Timebase::Beats)),
+        Duration::from_secs(6)
+    );
+    assert_eq!(
+        timeline_owned_position_at_120_bpm(Some(Timebase::Seconds)),
+        Duration::from_secs(3)
+    );
+    assert_eq!(
+        timeline_owned_position_at_120_bpm(None),
+        Duration::from_secs(3)
+    );
+}
+
 /// Builds a cue with one resolved intensity assertion and a finite release fade.
 fn cue_with_release_duration(app: &mut App, cue_uid: Uuid, release_duration: Duration) -> Cue {
     let fixture_uid = Uuid::new_v4();
@@ -556,7 +622,7 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     app.init_resource::<UndoManager>();
     app.init_resource::<UndoRegistry>();
     app.init_resource::<TimelineCommandOrigins>();
-    app.init_resource::<TimelinePausedPlaybackRates>();
+    app.init_resource::<TimelinePausedPlaybackSpeeds>();
     app.init_resource::<PendingStoppedTimelineReleaseClocks>();
     app.init_resource::<TimelineLookaheadActionStatuses>();
     app.init_resource::<nightfall_compositor::prelude::FinalLayerOutput>();
@@ -577,14 +643,19 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
                 nightfall_clips::add_instances_to_index,
                 nightfall_undo::dispatcher::process_pending_commands,
                 ApplyDeferred,
-                nightfall_cues::events::handle_sequence_playback_actions,
-                nightfall_cues::materialized_sequence::release_materialized_sequences,
-                sync_timeline_paused_instance_controls_system,
-                nightfall_cues::materialized_sequence::advance_sequences,
-                ApplyDeferred,
-                nightfall_cues::materialized_sequence::release_materialized_sequences,
-                nightfall_cues::materialized_sequence::paint_materialized_sequences,
-                nightfall_cues::materialized_sequence::sync_sequence_playback_runtime_status,
+                (
+                    nightfall_cues::events::handle_sequence_playback_actions,
+                    nightfall_cues::materialized_sequence::release_materialized_sequences,
+                    nightfall_cues::materialized_sequence::sync_sequence_instance_timebase,
+                    ApplyDeferred,
+                    sync_timeline_paused_instance_controls_system,
+                    nightfall_cues::materialized_sequence::advance_sequences,
+                    ApplyDeferred,
+                    nightfall_cues::materialized_sequence::release_materialized_sequences,
+                    nightfall_cues::materialized_sequence::paint_materialized_sequences,
+                    nightfall_cues::materialized_sequence::sync_sequence_playback_runtime_status,
+                )
+                    .chain(),
             )
                 .chain(),
         );
@@ -617,6 +688,8 @@ fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
                     nightfall_cues::materialized_sequence::despawn_materialized_sequences,
                     ApplyDeferred,
                     detach_stopped_timeline_release_clocks,
+                    nightfall_cues::materialized_sequence::sync_sequence_instance_timebase,
+                    ApplyDeferred,
                     sync_timeline_paused_instance_controls_system,
                     nightfall_cues::materialized_sequence::advance_sequences,
                     ApplyDeferred,
@@ -1040,6 +1113,22 @@ fn setup_four_cue_auto_sequence_timeline_app(
     seek_mode: bool,
     stop_position: Option<Duration>,
 ) -> (App, Vec<Instance<Parameter>>, u32) {
+    setup_four_cue_auto_sequence_timeline_app_with_timebase(
+        seek_mode,
+        stop_position,
+        Timebase::Seconds,
+    )
+}
+
+/// Builds a timeline app with a four-cue auto-progressing sequence on a 120 BPM timeline.
+///
+/// Each cue waits 2 time units after the previous one, then fades in for 1 unit after a
+/// 0.5-unit delay; `timebase` decides whether those units are seconds or timeline beats.
+fn setup_four_cue_auto_sequence_timeline_app_with_timebase(
+    seek_mode: bool,
+    stop_position: Option<Duration>,
+    timebase: Timebase,
+) -> (App, Vec<Instance<Parameter>>, u32) {
     let mut app = setup_sequence_timeline_test_app(seek_mode);
 
     let mut fixture_refs = Vec::new();
@@ -1118,6 +1207,7 @@ fn setup_four_cue_auto_sequence_timeline_app(
                 uid: sequence_uid,
                 label: "four-cue-sequence".to_owned(),
             },
+            timebase,
             steps: cue_uids.into_iter().map(Into::into).collect(),
             release_cue: Cue {
                 identifiers: Identifiers {

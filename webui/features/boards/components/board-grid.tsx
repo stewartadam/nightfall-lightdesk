@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import {
   createEffect,
@@ -20,7 +21,9 @@ import {
 } from "solid-js";
 import { DropdownMenu } from "../../../components/ui/dropdown-menu";
 import { dragCarriesObject } from "../../../lib/object-drag";
+import { armedLaunches } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { ObjectType } from "../../../types";
 import { TempoPad } from "../../tempo";
 import { openAddMenu, openElementMenu } from "../controllers/board-menus";
 import type { BoardPanelController } from "../controllers/board-panel-controller";
@@ -127,12 +130,21 @@ function BoardButton(props: {
   caption?: string;
   onPress: () => void;
 }) {
+  const armed = useStore(armedLaunches);
+
+  /** Returns what a clip button's clip does when its armed launch fires, if it waits. */
+  const armedLaunch = () =>
+    props.item.target.object_type === ObjectType.Clip
+      ? armed()[props.item.id]?.action
+      : undefined;
+
   return (
     <button
       type="button"
       class="nf-board-button"
       data-state={props.item.state}
       data-board-button={props.item.label}
+      data-launch-armed={armedLaunch()}
       aria-pressed={props.item.state === "On"}
       onClick={() => props.onPress()}
     >

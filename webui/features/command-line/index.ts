@@ -7,4 +7,8 @@
  */
 
 export { NAV_COMMAND_LINE_WIDTH } from "./components/command-line-view";
+export {
+  CLEAR_PROGRAMMER_SHORTCUT,
+  typeIntoCommandLine,
+} from "./controllers/command-line-controller";
 export { default } from "./panels/command-line-panel";

@@ -1,0 +1,73 @@
+{
+  "note": "Architectural layer assignments for every Cargo workspace crate.",
+  "layers": {
+    "base": [
+      "open-fixture-library",
+      "nightfall",
+      "nightfall-beat-detection",
+      "nightfall-cmd-parse",
+      "nightfall-config",
+      "nightfall-coremidi-hotplug",
+      "nightfall-dmx",
+      "nightfall-engine-derive",
+      "nightfall-fixture-model",
+      "nightfall-io",
+      "nightfall-lookahead-projection",
+      "nightfall-instances",
+      "nightfall-playback-planner",
+      "nightfall-selection",
+      "nightfall-waveform",
+      "nightfall-workspace-hack"
+    ],
+    "engine-core": [
+      "nightfall-actions",
+      "nightfall-compositor",
+      "nightfall-engine",
+      "nightfall-clips",
+      "nightfall-fixtures",
+      "nightfall-framepace",
+      "nightfall-lookahead",
+      "nightfall-service-host",
+      "nightfall-tempo",
+      "nightfall-timecode",
+      "nightfall-undo",
+      "nightfall-websocket"
+    ],
+    "plugins": [
+      "nightfall-audio",
+      "nightfall-cues",
+      "nightfall-fixture-library",
+      "nightfall-flow",
+      "nightfall-fx",
+      "nightfall-fx-module",
+      "nightfall-gdtf-share",
+      "nightfall-input-artnet",
+      "nightfall-input-ltc",
+      "nightfall-input-midi",
+      "nightfall-input-osc",
+      "nightfall-input-sacn",
+      "nightfall-object-library",
+      "nightfall-output-artnet",
+      "nightfall-output-sacn",
+      "nightfall-output-usb",
+      "nightfall-programmer",
+      "nightfall-scene-objects",
+      "nightfall-timeline"
+    ],
+    "cross-plugin": [
+      "nightfall-boards",
+      "nightfall-desk",
+      "nightfall-desk-audio",
+      "nightfall-macros",
+      "nightfall-references",
+      "nightfall-showfile",
+      "nightfall-wasm-bridge"
+    ],
+    "hosts": [
+      "app-runtime",
+      "app-tauri",
+      "nightfall-browser-runtime",
+      "nightfall-cli"
+    ]
+  }
+}

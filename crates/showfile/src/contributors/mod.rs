@@ -20,6 +20,7 @@ mod desk_state;
 mod fixtures_patch;
 mod flows;
 mod fx;
+mod macros;
 mod scene_objects;
 mod snapshot_values;
 mod timecodes_timelines;
@@ -32,6 +33,7 @@ pub(super) use desk_state::{DeskStateLoadContributor, DeskStateSaveContributor};
 pub(super) use fixtures_patch::{FixturesPatchLoadContributor, FixturesPatchSaveContributor};
 pub(super) use flows::{FlowsLoadContributor, FlowsSaveContributor};
 pub(super) use fx::{FxLoadContributor, FxSaveContributor};
+pub(super) use macros::{MacrosLoadContributor, MacrosSaveContributor};
 pub(super) use scene_objects::{SceneObjectsLoadContributor, SceneObjectsSaveContributor};
 pub(super) use timecodes_timelines::{
     TimecodesTimelinesLoadContributor, TimecodesTimelinesSaveContributor,
@@ -49,6 +51,7 @@ pub(super) enum ShowfileContribution<'a> {
     Clips(clips::ClipsSnapshot<'a>),
     TimecodesTimelines(timecodes_timelines::TimecodesTimelinesSnapshot<'a>),
     Boards(boards::BoardsSnapshot<'a>),
+    Macros(macros::MacrosSnapshot<'a>),
 }
 
 /// Adds one domain-owned slice to a showfile save operation.
@@ -119,14 +122,15 @@ fn apply_save_contribution(
 ) {
     match contribution {
         ShowfileContribution::DeskState(contribution) => {
-            snapshot.control_slots = contribution.control_slots.into_owned();
+            snapshot.faders = contribution.faders.into_owned();
             snapshot.variables = contribution.variables.into_owned();
             snapshot.settings = contribution.settings.into_owned();
             snapshot.io_settings = contribution.io_settings.into_owned();
+            snapshot.tempo = contribution.tempo.into_owned();
         }
         ShowfileContribution::FixturesPatch(contribution) => {
             snapshot.fixtures = contribution.fixtures.into_owned();
-            snapshot.bindings = contribution.bindings.into_owned();
+            snapshot.routes = contribution.routes.into_owned();
             #[cfg(feature = "midi")]
             {
                 snapshot.midi_mappings = contribution.midi_mappings.into_owned();
@@ -169,6 +173,9 @@ fn apply_save_contribution(
         ShowfileContribution::Boards(contribution) => {
             snapshot.boards = contribution.boards.into_owned();
         }
+        ShowfileContribution::Macros(contribution) => {
+            snapshot.macros = contribution.macros.into_owned();
+        }
     }
 }
 
@@ -180,17 +187,18 @@ fn load_contribution_for_domain(
     match domain {
         ShowfileLoadDomain::DeskState => {
             ShowfileContribution::DeskState(Box::new(desk_state::DeskStateSnapshot {
-                control_slots: Cow::Borrowed(&snapshot.control_slots),
+                faders: Cow::Borrowed(&snapshot.faders),
                 variables: Cow::Borrowed(&snapshot.variables),
                 settings: Cow::Borrowed(&snapshot.settings),
                 io_settings: Cow::Borrowed(&snapshot.io_settings),
+                tempo: Cow::Borrowed(&snapshot.tempo),
             }))
         }
         ShowfileLoadDomain::FixturesPatch => {
             ShowfileContribution::FixturesPatch(fixtures_patch::FixturesPatchSnapshot {
                 fixtures: Cow::Borrowed(&snapshot.fixtures),
                 color_path_defaults: Cow::Borrowed(&snapshot.color_path_defaults),
-                bindings: Cow::Borrowed(&snapshot.bindings),
+                routes: Cow::Borrowed(&snapshot.routes),
                 #[cfg(feature = "midi")]
                 midi_mappings: Cow::Borrowed(&snapshot.midi_mappings),
                 #[cfg(feature = "midi")]
@@ -238,6 +246,9 @@ fn load_contribution_for_domain(
         ),
         ShowfileLoadDomain::Boards => ShowfileContribution::Boards(boards::BoardsSnapshot {
             boards: Cow::Borrowed(&snapshot.boards),
+        }),
+        ShowfileLoadDomain::Macros => ShowfileContribution::Macros(macros::MacrosSnapshot {
+            macros: Cow::Borrowed(&snapshot.macros),
         }),
     }
 }

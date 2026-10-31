@@ -28,6 +28,8 @@ export interface NotificationEntry {
   closable?: boolean;
   /** Renderer-specific icon identity, also used to distinguish duplicate messages. */
   icon?: unknown;
+  /** Kind of prompt the notification is, offered a "Don't show this again" choice. */
+  dismissablePrompt?: string;
 }
 
 export interface NotificationHandle {

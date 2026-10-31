@@ -18,7 +18,9 @@ import {
   applyExternalControlStateSnapshot,
   applyIoSettingsSnapshot,
   applyMidiControlTouched,
+  applyMidiDeviceDetected,
   applyMidiDeviceListSnapshot,
+  applyMidiDeviceProfilesSnapshot,
   applyMidiLastEventSnapshot,
   applyMidiMappingDiagnosticsSnapshot,
   applyMidiMappingsSnapshot,
@@ -79,6 +81,10 @@ export function registerSettingsSnapshotHandlers(
     applyMidiDeviceListSnapshot(message.data);
   });
 
+  registry.register("MidiDeviceProfiles", (message) => {
+    applyMidiDeviceProfilesSnapshot(message.data);
+  });
+
   registry.register("MidiMappings", (message) => {
     applyMidiMappingsSnapshot(message.data);
   });
@@ -121,6 +127,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("MidiControlTouched", (message) => {
     applyMidiControlTouched(message.data);
+  });
+
+  registry.register("MidiDeviceDetected", (message) => {
+    applyMidiDeviceDetected(message.data);
   });
 
   registry.register("OscControlTouched", (message) => {

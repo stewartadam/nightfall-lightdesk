@@ -33,7 +33,7 @@ pub(super) fn refreshed_step_fx_playback_metadata(
 /// Re-anchors a playback clock so a definition replacement preserves normalized cycle phase.
 fn reanchored_step_fx_clock(
     clock: Option<&InstanceClock>,
-    rate: f32,
+    speed: f32,
     old_step_fx: &StepFx,
     new_step_fx: &StepFx,
 ) -> InstanceClock {
@@ -44,13 +44,13 @@ fn reanchored_step_fx_clock(
     let Some(new_duration) = new_step_fx.cycle_duration() else {
         return clock;
     };
-    let rate = f64::from(rate);
-    if rate <= 0.0 || !rate.is_finite() {
+    let speed = f64::from(speed);
+    if speed <= 0.0 || !speed.is_finite() {
         return clock;
     }
     let old_seconds = old_duration.as_secs_f64();
-    let normalized = (clock.position.as_secs_f64() * rate / old_seconds).rem_euclid(1.0);
-    let new_position = Duration::from_secs_f64(normalized * new_duration.as_secs_f64() / rate);
+    let normalized = (clock.position.as_secs_f64() * speed / old_seconds).rem_euclid(1.0);
+    let new_position = Duration::from_secs_f64(normalized * new_duration.as_secs_f64() / speed);
     clock.seek_to(new_position);
     clock.discontinuity = InstanceClockDiscontinuity::Continuous;
     clock
@@ -76,19 +76,19 @@ fn reanchored_track_phase_offset(
 pub(super) fn reanchored_step_fx_runtime(
     clock: Option<&InstanceClock>,
     lane_phase_offsets: Option<&StepFxLanePhaseOffsets>,
-    rate: f32,
+    speed: f32,
     old_step_fx: &StepFx,
     new_step_fx: &StepFx,
 ) -> (InstanceClock, StepFxLanePhaseOffsets) {
     let old_clock = clock.cloned().unwrap_or_default();
-    let new_clock = reanchored_step_fx_clock(clock, rate, old_step_fx, new_step_fx);
-    let rate = f64::from(rate);
-    if rate <= 0.0 || !rate.is_finite() {
+    let new_clock = reanchored_step_fx_clock(clock, speed, old_step_fx, new_step_fx);
+    let speed = f64::from(speed);
+    if speed <= 0.0 || !speed.is_finite() {
         return (new_clock, lane_phase_offsets.cloned().unwrap_or_default());
     }
 
-    let old_elapsed = old_clock.position.as_secs_f64() * rate;
-    let new_elapsed = new_clock.position.as_secs_f64() * rate;
+    let old_elapsed = old_clock.position.as_secs_f64() * speed;
+    let new_elapsed = new_clock.position.as_secs_f64() * speed;
     let previous_offsets = lane_phase_offsets.cloned().unwrap_or_default();
     let offsets = new_step_fx
         .lanes

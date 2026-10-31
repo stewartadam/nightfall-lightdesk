@@ -10,8 +10,7 @@ import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-const CONTROLS_COLLAPSED_STORAGE_KEY =
-  "nightfall-clip-panel:controls-collapsed";
+const FADERS_COLLAPSED_STORAGE_KEY = "nightfall-clip-panel:faders-collapsed";
 
 test.setTimeout(60_000);
 
@@ -94,20 +93,19 @@ async function addPanel(
 async function expectMasterAssignedToControl(
   page: Page,
   masterId: number,
-  controlIndex: number,
+  faderIndex: number,
 ): Promise<void> {
   await expect
     .poll(() =>
       page.evaluate(
-        ({ controlIndex }) =>
+        ({ faderIndex }) =>
           (
-            (window as any).appStores.controls.get() as Array<{
+            (window as any).appStores.faders.get() as Array<{
               index: number;
               assigned_master_id?: number;
             }>
-          ).find((control) => control.index === controlIndex)
-            ?.assigned_master_id,
-        { controlIndex },
+          ).find((control) => control.index === faderIndex)?.assigned_master_id,
+        { faderIndex },
       ),
     )
     .toBe(masterId);
@@ -117,7 +115,7 @@ async function expectMasterAssignedToControl(
 async function dragMasterToControl(
   page: Page,
   masterId: number,
-  controlIndex: number,
+  faderIndex: number,
 ): Promise<void> {
   const mastersPanel = page.locator(".panel-Masters-assignment-e2e");
   const clipsPanel = page.locator(".panel-Clips-assignment-e2e");
@@ -125,12 +123,12 @@ async function dragMasterToControl(
     `[data-master-drag-handle-id="${masterId}"]`,
   );
   const dropZone = clipsPanel.locator(
-    `[data-clip-dropzone-index="${controlIndex}"]`,
+    `[data-clip-dropzone-index="${faderIndex}"]`,
   );
   await expect(dragHandle).toBeVisible();
   await expect(dropZone).toBeVisible();
   await dragHandle.dragTo(dropZone);
-  await expectMasterAssignedToControl(page, masterId, controlIndex);
+  await expectMasterAssignedToControl(page, masterId, faderIndex);
 }
 
 test("masters can be created and assigned to a control", async ({
@@ -140,7 +138,7 @@ test("masters can be created and assigned to a control", async ({
   await page.setViewportSize({ width: 1800, height: 1000 });
   await page.addInitScript((storageKey) => {
     window.localStorage.setItem(storageKey, "false");
-  }, CONTROLS_COLLAPSED_STORAGE_KEY);
+  }, FADERS_COLLAPSED_STORAGE_KEY);
 
   await loadTestApp(page, backendSlot.backendPort);
   await page.waitForTimeout(3_000);
@@ -212,7 +210,7 @@ test("masters can be created and assigned to a control", async ({
 
   const assignedControl = page
     .locator(".panel-Clips-assignment-e2e")
-    .locator('[data-control-index="2"]');
+    .locator('[data-fader-index="2"]');
   const assignedDropZone = assignedControl.locator(
     '[data-clip-dropzone-index="2"]',
   );
@@ -227,14 +225,14 @@ test("masters can be created and assigned to a control", async ({
   ).not.toHaveClass(/is-disabled/);
 });
 
-test("playback rate masters use control midpoint as normal speed", async ({
+test("playback speed masters use control midpoint as normal speed", async ({
   backendSlot,
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1000 });
   await page.addInitScript((storageKey) => {
     window.localStorage.setItem(storageKey, "false");
-  }, CONTROLS_COLLAPSED_STORAGE_KEY);
+  }, FADERS_COLLAPSED_STORAGE_KEY);
 
   await loadTestApp(page, backendSlot.backendPort);
   await page.waitForTimeout(3_000);
@@ -259,7 +257,7 @@ test("playback rate masters use control midpoint as normal speed", async ({
 
   const mastersPanel = page.locator(".panel-Masters-assignment-e2e");
   const initialMasterCount = await masterCount(page);
-  await mastersPanel.getByRole("button", { name: "New rate global" }).click();
+  await mastersPanel.getByRole("button", { name: "New speed global" }).click();
   await expect.poll(() => masterCount(page)).toBe(initialMasterCount + 1);
 
   const master = await newestMaster(page);
@@ -280,7 +278,7 @@ test("playback rate masters use control midpoint as normal speed", async ({
     .poll(() =>
       page.evaluate(() => {
         const control = (
-          (window as any).appStores.controls.get() as Array<{
+          (window as any).appStores.faders.get() as Array<{
             index: number;
             display_value: number;
           }>
@@ -292,6 +290,70 @@ test("playback rate masters use control midpoint as normal speed", async ({
 
   const assignedControl = page
     .locator(".panel-Clips-assignment-e2e")
-    .locator('[data-control-index="3"]');
+    .locator('[data-fader-index="3"]');
   await expect(assignedControl.getByText("100%")).toBeVisible();
+});
+
+/** Drags a speed master fader near ×½ and checks it settles on exactly 50% when released. */
+test("speed master fader settles on its detents", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  await loadTestApp(page, backendSlot.backendPort);
+  await addPanel(page, {
+    id: "panel-Masters-detents-e2e",
+    component: "MastersPanel",
+    title: "Masters",
+    position: { direction: "left" },
+  });
+  await page.evaluate(() =>
+    (window as any).appStores.dockApi
+      .get()
+      .getPanel("panel-Masters-detents-e2e")
+      .api.maximize(),
+  );
+
+  const mastersPanel = page.locator(".panel-Masters-detents-e2e");
+  const initialMasterCount = await masterCount(page);
+  await mastersPanel.getByRole("button", { name: "New speed global" }).click();
+  await expect.poll(() => masterCount(page)).toBe(initialMasterCount + 1);
+  const master = await newestMaster(page);
+  const masterRow = mastersPanel.locator(`[data-master-id="${master.id}"]`);
+  await expect(masterRow.locator(".noUi-marker-large")).toHaveCount(4);
+
+  const track = masterRow.locator(".noUi-base");
+  const box = await track.boundingBox();
+  if (!box) throw new Error("speed master track has no layout");
+  const handle = masterRow.getByRole("slider", {
+    name: `${master.label} level`,
+  });
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error("speed master handle has no layout");
+  await page.mouse.move(
+    handleBox.x + handleBox.width / 2,
+    handleBox.y + handleBox.height / 2,
+  );
+  await page.mouse.down();
+  // 26% of a 0-200% track is 52%, within the detent radius of 50%.
+  await page.mouse.move(box.x + box.width * 0.26, box.y + box.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (id) =>
+          (
+            Object.values((window as any).appStores.masters.get()) as any[]
+          ).find((candidate) => candidate.identifiers.id === id)?.level_percent,
+        master.id,
+      ),
+    )
+    .toBe(50);
+  await expect(handle).toHaveAttribute("aria-valuenow", "50.0");
+  await masterRow.screenshot({
+    path: testInfo.outputPath("speed-master-detents.png"),
+  });
 });

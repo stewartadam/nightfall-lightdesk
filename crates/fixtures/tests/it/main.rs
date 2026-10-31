@@ -9,11 +9,11 @@
 //! Integration tests, linked into one binary to avoid per-file link overhead.
 
 mod ast_conv;
-mod binding_resolution;
 mod compositor_pipeline_tests;
 mod compositor_system_tests;
 mod fixture_layout_dmx_order;
 mod manual_dmx_release_system;
 mod restore_fixture_snapshot_system;
+mod route_resolution;
 mod transport_holds_system;
 mod transport_input;

@@ -100,6 +100,9 @@ pub enum FixtureLibraryCommand {
 
     /// Delete fixtures from the library
     DeleteFixtures(Vec<FixtureLibraryEntry>),
+
+    /// Delete definition files the library found but could not load
+    DeleteUnloadableFiles(Vec<UnloadableFixtureFileId>),
 }
 
 impl IngressCommand for FixtureLibraryCommand {}
@@ -143,6 +146,9 @@ pub struct AvailableFixtureInfo {
     pub source_format: String,
     /// Deterministic content fingerprint of the fixture source file
     pub asset_etag: String,
+    /// Lowercase GDTF `FixtureTypeID`, shared by every revision of a GDTF fixture type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_fixture_type_id: Option<String>,
 }
 
 /// Response for ListAvailableFixtures command
@@ -151,6 +157,31 @@ pub struct AvailableFixtureInfo {
 pub struct ListAvailableFixturesResponse {
     /// List of available fixtures
     pub fixtures: Vec<AvailableFixtureInfo>,
+    /// Definition files in the library folders that could not be loaded.
+    pub unloadable: Vec<UnloadableFixtureFile>,
+}
+
+/// A fixture definition file the library found but could not load, such as a GDTF file
+/// with invalid XML.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct UnloadableFixtureFile {
+    /// File name inside its library folder.
+    pub file_name: String,
+    /// Whether the file is in the open show's package rather than the installed library.
+    pub in_showfile: bool,
+    /// Why loading failed, as the parser reported it.
+    pub error: String,
+}
+
+/// Identifies one unloadable definition file by its folder and file name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct UnloadableFixtureFileId {
+    /// File name inside its library folder.
+    pub file_name: String,
+    /// Whether the file is in the open show's package rather than the installed library.
+    pub in_showfile: bool,
 }
 
 /// Response for GetFixtureProfile command

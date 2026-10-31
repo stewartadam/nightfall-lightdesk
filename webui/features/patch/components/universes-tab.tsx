@@ -23,18 +23,10 @@ import {
 import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
-  type DataGridCellDecorationCallback,
-  drawConflictWarningIcon,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
-import { getBindingIdForAltFollow } from "../../../lib/binding-follow";
-import {
-  type BindingConflictColumn,
-  computeBindingOverlapAnalysis,
-  type UniverseKey,
-} from "../../../lib/binding-overlap";
 import type {
   CellClickedEventArgs,
   GridCell,
@@ -44,6 +36,7 @@ import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   applyElementBackground,
   CONFLICT_VALUE_TEXT_COLOR,
+  conflictWarningIndicators,
   makeSafeTextCell,
 } from "../../../lib/datagrid";
 import {
@@ -51,14 +44,20 @@ import {
   type VisibilityGridColumn,
 } from "../../../lib/datagrid-column-visibility";
 import { filterColumnsFromMetadata } from "../../../lib/datagrid-filtering";
-import { useSharedStore } from "../../../lib/use-shared-store";
-import { bindings, dmxUniverseList, fixtures } from "../../../state/appStores";
+import { getRouteIdForAltFollow } from "../../../lib/route-follow";
 import {
-  type BindingRow,
-  toDisabledBindingRow,
-  toInputBindingRow,
-  toOutputBindingRow,
-} from "../model/bindings-model";
+  computeRouteOverlapAnalysis,
+  type RouteConflictColumn,
+  type UniverseKey,
+} from "../../../lib/route-overlap";
+import { useSharedStore } from "../../../lib/use-shared-store";
+import { dmxUniverseList, fixtures, routes } from "../../../state/appStores";
+import {
+  type RouteRow,
+  toDisabledRouteRow,
+  toInputRouteRow,
+  toOutputRouteRow,
+} from "../model/routes-model";
 import {
   type ConflictTooltipState,
   collectUniversesFromInputSource,
@@ -68,20 +67,19 @@ import {
   DEFAULT_COLUMNS,
   formatGroupWithChevron,
   formatUniverseLabel,
-  type UniverseBindingRow,
   type UniverseDisplayRow,
   type UniverseGroupRow,
-  universeDisplayCellHasConflict,
+  type UniverseRouteRow,
 } from "../model/universes-model";
 
 export interface PatchUniversesTabProps {
   panelId: string;
-  onNavigateToBinding?: (bindingId: string) => void;
+  onNavigateToRoute?: (routeId: string) => void;
   onColumnVisibilityControlChange?: (control: JSX.Element | null) => void;
 }
 
 export default function PatchUniversesTab(props: PatchUniversesTabProps) {
-  const $bindings = useStore(bindings);
+  const $routes = useStore(routes);
   const $fixtures = useSharedStore(fixtures);
   const $dmxUniverseList = useStore(dmxUniverseList);
 
@@ -97,18 +95,18 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
   });
 
   const universeGroups = createMemo(() => {
-    const snapshot = $bindings();
+    const snapshot = $routes();
     const fixtureMap = $fixtures();
     const activeUniverses = $dmxUniverseList().map(
       (universe) => universe.universe_id,
     );
-    const overlapAnalysis = computeBindingOverlapAnalysis(
+    const overlapAnalysis = computeRouteOverlapAnalysis(
       snapshot,
       activeUniverses,
     );
     const universeIds = new Set<number>(overlapAnalysis.universeIds);
 
-    const byUniverse = new Map<UniverseKey, BindingRow[]>();
+    const byUniverse = new Map<UniverseKey, RouteRow[]>();
 
     const ensure = (key: UniverseKey) => {
       if (!byUniverse.has(key)) byUniverse.set(key, []);
@@ -116,7 +114,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     };
     const overlapsByUniverse = overlapAnalysis.overlapByUniverse;
 
-    const addToUniverses = (keys: Set<UniverseKey>, row: BindingRow) => {
+    const addToUniverses = (keys: Set<UniverseKey>, row: RouteRow) => {
       const specificUniverses = [...keys].filter((k) => k !== "*");
       if (specificUniverses.length > 0) {
         for (const key of specificUniverses) {
@@ -138,38 +136,38 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
       }
     };
 
-    snapshot.input.forEach((binding, index) => {
+    snapshot.input.forEach((route, index) => {
       const keys = new Set<UniverseKey>([
-        ...collectUniversesFromInputSource(binding.source),
-        ...collectUniversesFromInputTarget(binding.target),
+        ...collectUniversesFromInputSource(route.source),
+        ...collectUniversesFromInputTarget(route.target),
       ]);
 
       addToUniverses(
         keys,
-        toInputBindingRow(binding, fixtureMap, `input-${index}`),
+        toInputRouteRow(route, fixtureMap, `input-${index}`),
       );
     });
 
-    snapshot.output.forEach((binding, index) => {
+    snapshot.output.forEach((route, index) => {
       const keys = new Set<UniverseKey>([
-        ...collectUniversesFromOutputSource(binding.source),
-        ...collectUniversesFromOutputTarget(binding.target),
+        ...collectUniversesFromOutputSource(route.source),
+        ...collectUniversesFromOutputTarget(route.target),
       ]);
 
       addToUniverses(
         keys,
-        toOutputBindingRow(binding, fixtureMap, `output-${index}`),
+        toOutputRouteRow(route, fixtureMap, `output-${index}`),
       );
     });
 
-    snapshot.disabled.forEach((binding, index) => {
+    snapshot.disabled.forEach((route, index) => {
       const keys = new Set<UniverseKey>(
-        collectUniversesFromInputSource(binding.data.source),
+        collectUniversesFromInputSource(route.data.source),
       );
 
       addToUniverses(
         keys,
-        toDisabledBindingRow(binding, fixtureMap, `disabled-${index}`),
+        toDisabledRouteRow(route, fixtureMap, `disabled-${index}`),
       );
     });
 
@@ -189,21 +187,21 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
       keys,
       byUniverse,
       overlapsByUniverse,
-      conflictColumnsByBinding: overlapAnalysis.conflictColumnsByBinding,
+      conflictColumnsByRoute: overlapAnalysis.conflictColumnsByRoute,
     };
   });
 
   const rows = createMemo<UniverseDisplayRow[]>(() => {
-    const { keys, byUniverse, overlapsByUniverse, conflictColumnsByBinding } =
+    const { keys, byUniverse, overlapsByUniverse, conflictColumnsByRoute } =
       universeGroups();
     const exp = expanded();
     const rows: UniverseDisplayRow[] = [];
 
     for (const key of keys) {
-      const bindingsForUniverse = byUniverse.get(key) ?? [];
+      const routesForUniverse = byUniverse.get(key) ?? [];
       const isExpanded = exp.has(String(key));
 
-      const bindingCounts = bindingsForUniverse.reduce(
+      const routeCounts = routesForUniverse.reduce(
         (acc, row) => {
           if (row.kind.startsWith("Input")) acc.input += 1;
           else if (row.kind.startsWith("Output")) acc.output += 1;
@@ -221,24 +219,24 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
       rows.push({
         rowKind: "universe",
         universe: key,
-        bindingCounts,
+        routeCounts,
         inputOverlap: overlapFlags.inputOverlap,
         outputOverlap: overlapFlags.outputOverlap,
         isExpanded,
       });
 
       if (isExpanded) {
-        const sorted = [...bindingsForUniverse].sort(
+        const sorted = [...routesForUniverse].sort(
           (a, b) => a.priority - b.priority,
         );
-        for (const binding of sorted) {
+        for (const route of sorted) {
           rows.push({
-            rowKind: "binding",
+            rowKind: "route",
             universe: key,
-            binding,
+            route,
             conflictColumns:
-              conflictColumnsByBinding.get(binding.id) ??
-              new Set<BindingConflictColumn>(),
+              conflictColumnsByRoute.get(route.id) ??
+              new Set<RouteConflictColumn>(),
           });
         }
       }
@@ -254,7 +252,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     filteredRows: displayRows,
     setFilters: setTableFilters,
   } = createDataGridFilterState({
-    scope: `${props.panelId}:bindings-universe`,
+    scope: `${props.panelId}:routes-universe`,
     rows,
     columns: filterColumns,
   });
@@ -275,17 +273,17 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
   ): string | undefined => {
     const universeLabel = formatUniverseLabel(row.universe);
     if (columnId === "source" && row.inputOverlap) {
-      return `${universeLabel} has overlapping input bindings on at least one address.`;
+      return `${universeLabel} has overlapping input routes on at least one address.`;
     }
     if (columnId === "target" && row.outputOverlap) {
-      return `${universeLabel} has overlapping output bindings on at least one address.`;
+      return `${universeLabel} has overlapping output routes on at least one address.`;
     }
     return undefined;
   };
 
-  /** Describes an individual binding conflict warning in a universe row. */
-  const bindingConflictTooltipContent = (
-    row: UniverseBindingRow,
+  /** Describes an individual route conflict warning in a universe row. */
+  const routeConflictTooltipContent = (
+    row: UniverseRouteRow,
     columnId: string,
   ): string | undefined => {
     if (
@@ -295,13 +293,13 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
       return undefined;
     }
     const universeLabel = formatUniverseLabel(row.universe);
-    if (row.binding.kind.startsWith("Input")) {
-      return `This input binding overlaps another input route in ${universeLabel}.`;
+    if (row.route.kind.startsWith("Input")) {
+      return `This input route overlaps another input route in ${universeLabel}.`;
     }
-    if (row.binding.kind.startsWith("Output")) {
-      return `This output binding overlaps another output route in ${universeLabel}.`;
+    if (row.route.kind.startsWith("Output")) {
+      return `This output route overlaps another output route in ${universeLabel}.`;
     }
-    return `This binding overlaps another binding in ${universeLabel}.`;
+    return `This route overlaps another route in ${universeLabel}.`;
   };
 
   /** Returns the conflict tooltip content for one grid cell, when applicable. */
@@ -313,7 +311,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     if (rowData.rowKind === "universe") {
       return universeConflictTooltipContent(rowData, columnId);
     }
-    return bindingConflictTooltipContent(rowData, columnId);
+    return routeConflictTooltipContent(rowData, columnId);
   };
 
   /** Schedules a delayed tooltip for conflicted universe cells. */
@@ -341,7 +339,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
       rowKey: (row) =>
         row.rowKind === "universe"
           ? `universe:${String(row.universe)}`
-          : `binding:${String(row.universe)}:${row.binding.id}`,
+          : `route:${String(row.universe)}:${row.route.id}`,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row: item, column }): GridCell => {
         const colId = column.id;
@@ -359,7 +357,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
             return {
               kind: GridCellKind.Text,
               data: "",
-              displayData: item.bindingCounts.disabled > 0 ? "Disabled" : "",
+              displayData: item.routeCounts.disabled > 0 ? "Disabled" : "",
               allowOverlay: false,
               themeOverride: { textDark: "#b8b8b8" },
             };
@@ -368,8 +366,9 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
             return {
               kind: GridCellKind.Text,
               data: "",
-              displayData: `In - ${item.bindingCounts.input}`,
+              displayData: `In - ${item.routeCounts.input}`,
               allowOverlay: false,
+              stateIndicators: conflictWarningIndicators(item.inputOverlap),
               themeOverride: {
                 textDark: item.inputOverlap
                   ? CONFLICT_VALUE_TEXT_COLOR
@@ -381,8 +380,9 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
             return {
               kind: GridCellKind.Text,
               data: "",
-              displayData: `DMX - ${item.bindingCounts.output}`,
+              displayData: `DMX - ${item.routeCounts.output}`,
               allowOverlay: false,
+              stateIndicators: conflictWarningIndicators(item.outputOverlap),
               themeOverride: {
                 textDark: item.outputOverlap
                   ? CONFLICT_VALUE_TEXT_COLOR
@@ -393,7 +393,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
           return makeSafeTextCell("");
         }
 
-        const binding = item.binding;
+        const route = item.route;
         const isChild = true;
 
         let cell: GridCell;
@@ -402,36 +402,42 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
             cell = makeSafeTextCell("");
             break;
           case "type":
-            cell = makeSafeTextCell(binding.kind);
+            cell = makeSafeTextCell(route.kind);
             break;
           case "source":
             cell = {
-              ...makeSafeTextCell(binding.source),
+              ...makeSafeTextCell(route.source),
               themeOverride: item.conflictColumns.has("source")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
+              stateIndicators: conflictWarningIndicators(
+                item.conflictColumns.has("source"),
+              ),
             };
             break;
           case "target":
             cell = {
-              ...makeSafeTextCell(binding.target),
+              ...makeSafeTextCell(route.target),
               themeOverride: item.conflictColumns.has("target")
                 ? { textDark: CONFLICT_VALUE_TEXT_COLOR }
                 : undefined,
+              stateIndicators: conflictWarningIndicators(
+                item.conflictColumns.has("target"),
+              ),
             };
             break;
           case "priority":
             cell = {
               kind: GridCellKind.Number,
-              data: binding.priority,
-              displayData: String(binding.priority),
+              data: route.priority,
+              displayData: String(route.priority),
               allowOverlay: false,
             };
             break;
           case "clone":
             cell = {
               kind: GridCellKind.Boolean,
-              data: binding.clone,
+              data: route.clone,
               allowOverlay: false,
             };
             break;
@@ -445,48 +451,14 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     }),
   );
 
-  /** Draws conflict warning glyphs for universe summary and binding rows. */
-  const conflictCellDecorations = createMemo(() => {
-    const columns = displayColumns();
-    const rows = displayRows();
-    const drawDecorations: DataGridCellDecorationCallback = (args) => {
-      const row = rows[args.row];
-      if (!row) return;
-
-      if (universeDisplayCellHasConflict(row, String(columns[args.col]?.id))) {
-        drawConflictWarningIcon(args);
-      }
-    };
-
-    return drawDecorations;
-  });
-
-  /** Tracks universe conflicts that require decoration canvas redraws. */
-  const conflictDecorationInvalidateKey = createMemo(() =>
-    displayRows()
-      .flatMap((row) => {
-        if (row.rowKind === "binding") {
-          return Array.from(row.conflictColumns).map(
-            (column) => `${String(row.universe)}:${row.binding.id}:${column}`,
-          );
-        }
-
-        return [
-          row.inputOverlap ? `${String(row.universe)}:source` : undefined,
-          row.outputOverlap ? `${String(row.universe)}:target` : undefined,
-        ].filter((key): key is string => key !== undefined);
-      })
-      .join("|"),
-  );
-
-  /** Navigates from a grouped universe row to its binding detail row. */
-  const navigateToBindingRow = (rowData: UniverseDisplayRow): boolean => {
-    const bindingId = getBindingIdForAltFollow(rowData, true);
-    if (!bindingId || !props.onNavigateToBinding) {
+  /** Navigates from a grouped universe row to its route detail row. */
+  const navigateToRouteRow = (rowData: UniverseDisplayRow): boolean => {
+    const routeId = getRouteIdForAltFollow(rowData, true);
+    if (!routeId || !props.onNavigateToRoute) {
       return false;
     }
 
-    props.onNavigateToBinding(bindingId);
+    props.onNavigateToRoute(routeId);
     return true;
   };
 
@@ -498,7 +470,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     const altKey = (event as CellClickedEventArgs & { altKey?: boolean })
       .altKey;
 
-    if (altKey === true && navigateToBindingRow(rowData)) {
+    if (altKey === true && navigateToRouteRow(rowData)) {
       return;
     }
 
@@ -518,23 +490,23 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     });
   };
 
-  /** Opens right-click affordances for grouped universe binding rows. */
+  /** Opens right-click affordances for grouped universe route rows. */
   const handleCellContextMenu = (cell: Item, event: MouseEvent) => {
     const [, row] = cell;
     const rowData = displayRows()[row];
-    if (rowData?.rowKind !== "binding") {
+    if (rowData?.rowKind !== "route") {
       return;
     }
 
     event.preventDefault();
     const items: ContextMenuEntry[] = [
       {
-        id: "show-binding",
-        label: "Show binding",
+        id: "show-route",
+        label: "Show route",
         icon: ArrowsClockwiseIcon,
         shortcut: "Alt+Click",
-        disabled: props.onNavigateToBinding === undefined,
-        onSelect: () => navigateToBindingRow(rowData),
+        disabled: props.onNavigateToRoute === undefined,
+        onSelect: () => navigateToRouteRow(rowData),
       },
     ];
     openContextMenu({
@@ -580,8 +552,6 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
           freezeColumns={1}
           onCellClicked={handleCellClicked}
           onCellContextMenu={handleCellContextMenu}
-          cellDecorations={conflictCellDecorations()}
-          decorationInvalidateKey={conflictDecorationInvalidateKey()}
           onCellHovered={onCellHovered}
           onColumnResize={(column, newSize) => {
             setColumns((prev) =>
@@ -592,6 +562,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
           }}
         />
         <Tooltip
+          class="absolute top-0 left-0"
           content={() => conflictTooltip()?.content ?? ""}
           position="bottom"
           anchorRect={() => conflictTooltip()?.anchorRect}

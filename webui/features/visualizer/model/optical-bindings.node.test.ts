@@ -81,7 +81,9 @@ function element(
 }
 
 /** Summarizes bindings as `element:attribute` pairs for readable assertions. */
-function describe(bindings: readonly OpticalParameterBinding[] | undefined) {
+function bindingLabels(
+  bindings: readonly OpticalParameterBinding[] | undefined,
+) {
   return bindings?.map(
     ({ element, parameterIndex }) =>
       `${element.label}:${element.parameters[parameterIndex].functions?.[0].attribute}`,
@@ -119,11 +121,11 @@ test("beams resolve backend optical references to element parameters", () => {
     },
     [head, cellA],
   );
-  assert.deepEqual(describe(bindings.get("CellA")), [
+  assert.deepEqual(bindingLabels(bindings.get("CellA")), [
     "CellA:Zoom",
     "Head:Gobo1",
   ]);
-  assert.deepEqual(describe(bindings.get("CellB")), [
+  assert.deepEqual(bindingLabels(bindings.get("CellB")), [
     "Head:Zoom",
     "Head:Gobo1",
   ]);
@@ -146,7 +148,7 @@ test("optical binding skips unknown references", () => {
     },
     [cell],
   );
-  assert.deepEqual(describe(bindings.get("Cell")), ["Cell:Focus1"]);
+  assert.deepEqual(bindingLabels(bindings.get("Cell")), ["Cell:Focus1"]);
 });
 
 /** Without geometry, only parameters with backend-classified optical functions are bound. */
@@ -156,7 +158,7 @@ test("optical binding skips non-optical parameters", () => {
     parameter({ type: "Custom", data: { label: "Color1" } }, "Color1"),
     parameter({ type: "Focus" }, "Focus1", FOCUS),
   ]);
-  assert.deepEqual(describe(bindElementOpticalParameters([cell])), [
+  assert.deepEqual(bindingLabels(bindElementOpticalParameters([cell])), [
     "Cell:Focus1",
   ]);
 });

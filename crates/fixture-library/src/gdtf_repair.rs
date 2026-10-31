@@ -11,21 +11,21 @@
 //! A small share of published archives fail strict parsing over details
 //! that do not affect what Nightfall reads from them: NaN placeholders in
 //! optional numeric attributes, missing `Pretty` or `Offset` attributes,
-//! gamut points in the spec's `{x,y,Y}` list syntax, or laser geometries
-//! whose attributes the parser cannot read. When strict parsing fails, the
+//! gamut points written outside the spec's `{x,y,Y}` list syntax,
+//! vendor-specific wiring component types such as `VMXInput`, or laser
+//! geometries whose attributes the parser cannot read. When strict parsing fails, the
 //! archive's `description.xml` is rewritten to repair those faults and the
 //! archive is parsed again from memory. Archives that parse as published are
 //! never rewritten.
 
 use std::fs::File;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
-/// Name of the archive entry holding the fixture description.
-const DESCRIPTION_ENTRY: &str = "description.xml";
+use crate::gdtf_write::{DESCRIPTION_ENTRY, rebuild_archive};
 
 /// Archive entries a repaired archive is rebuilt with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,27 +98,9 @@ fn repaired_archive(path: &Path, contents: RepairedContents) -> Option<(Vec<u8>,
         return None;
     }
 
-    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let copied_entries = match contents {
-        RepairedContents::WithResources => source.len(),
-        RepairedContents::DescriptionOnly => 0,
-    };
-    for index in 0..copied_entries {
-        let entry = source.by_index_raw(index).ok()?;
-        if entry.name().is_ok_and(|name| name == DESCRIPTION_ENTRY) {
-            continue;
-        }
-        output.raw_copy_file(entry).ok()?;
-    }
-    output
-        .start_file(
-            DESCRIPTION_ENTRY,
-            zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated),
-        )
-        .ok()?;
-    output.write_all(repaired.as_bytes()).ok()?;
-    Some((output.finish().ok()?.into_inner(), repairs))
+    let copy_resources = matches!(contents, RepairedContents::WithResources);
+    let archive = rebuild_archive(&mut source, &repaired, copy_resources).ok()?;
+    Some((archive, repairs))
 }
 
 /// Rewrites a description to repair known faults, listing each distinct repair.
@@ -243,11 +225,26 @@ fn repair_element(start: &BytesStart, repairs: &mut Vec<String>) -> Option<Bytes
             }
             continue;
         }
-        let value = if name == "Gamut" && key == "Points" && value.contains('{') {
-            note(repairs, "rewrote gamut points list");
-            gamut_points_list(&value)
-        } else {
-            value
+        let value = match (name.as_str(), key.as_str()) {
+            ("Gamut", "Points") => {
+                let points = gamut_points_list(&value);
+                if points != value {
+                    note(repairs, "rewrote gamut points list");
+                }
+                points
+            }
+            ("WiringObject", "ComponentType")
+                if !WIRING_COMPONENT_TYPES.contains(&value.as_str()) =>
+            {
+                note(
+                    repairs,
+                    &format!(
+                        "imported WiringObject@ComponentType {value} as {PLACEHOLDER_COMPONENT_TYPE}"
+                    ),
+                );
+                PLACEHOLDER_COMPONENT_TYPE.to_string()
+            }
+            _ => value,
         };
         match key.as_str() {
             "Name" => element_name = Some(value.clone()),
@@ -283,18 +280,48 @@ fn is_nan(value: &str) -> bool {
     })
 }
 
-/// Converts GDTF's `{x,y,Y}{x,y,Y}` gamut syntax into a whitespace-separated point list.
+/// Rewrites a gamut point list into the spec's `{x,y,Y}{x,y,Y}` syntax the parser requires.
 ///
-/// Whitespace inside a point is removed, since the parser splits the list on it.
+/// Regroups the list's numbers into braced triples, so braced points with
+/// stray separators or whitespace and unbraced `x,y,Y` triples separated by
+/// whitespace both become canonical. Values already in canonical form, and
+/// lists whose number count is not a multiple of three, are returned
+/// unchanged so the parser reports them as published.
 fn gamut_points_list(value: &str) -> String {
-    value
-        .split(['{', '}'])
-        .map(|point| point.split_whitespace().collect::<String>())
-        .map(|point| point.trim_matches(',').to_string())
-        .filter(|point| !point.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+    let numbers: Vec<&str> = value
+        .split(|c: char| c == ',' || c == '{' || c == '}' || c.is_whitespace())
+        .filter(|number| !number.is_empty())
+        .collect();
+    if numbers.is_empty() || !numbers.len().is_multiple_of(3) {
+        return value.to_string();
+    }
+    numbers
+        .chunks(3)
+        .map(|point| format!("{{{}}}", point.join(",")))
+        .collect()
 }
+
+/// Wiring object component types the parser accepts.
+const WIRING_COMPONENT_TYPES: [&str; 9] = [
+    "Input",
+    "Output",
+    "PowerSource",
+    "Consumer",
+    "Fuse",
+    "NetworkProvider",
+    "NetworkInput",
+    "NetworkOutput",
+    "NetworkInOut",
+];
+
+/// Component type substituted for wiring component types outside the spec.
+///
+/// Manufacturers publish vendor types such as Martin's `VMXInput` and
+/// `VMXOutput` video-mapping connectors, and nothing else in the archive
+/// reliably states their role. Nightfall reads only a wiring object's
+/// position, never its component type, so every unknown type becomes this
+/// one, which takes no type-specific attributes.
+const PLACEHOLDER_COMPONENT_TYPE: &str = "Input";
 
 /// Records a repair once.
 fn note(repairs: &mut Vec<String>, repair: &str) {
@@ -305,6 +332,8 @@ fn note(repairs: &mut Vec<String>, repair: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
 
     /// Verifies well-formed descriptions need no repair.
@@ -422,13 +451,94 @@ mod tests {
         assert_eq!(reparsed, repaired);
     }
 
-    /// Verifies braced gamut points become a whitespace-separated list of triples.
+    /// Verifies stray separators between braced gamut points and unbraced
+    /// whitespace-separated triples both become the spec's braced list,
+    /// while canonical lists are left untouched.
     #[test]
-    fn rewrites_braced_gamut_points() {
+    fn rewrites_gamut_points_to_braced_list() {
+        let canonical = "{0.64,0.33,1}{0.3,0.6,1}{0.15,0.06,1}";
         assert_eq!(
             gamut_points_list("{0.64,0.33,1}{0.3,0.6,1},{0.15,0.06,1}"),
-            "0.64,0.33,1 0.3,0.6,1 0.15,0.06,1"
+            canonical
         );
+        assert_eq!(
+            gamut_points_list("0.64,0.33,1 0.3,0.6,1  0.15,0.06,1"),
+            canonical
+        );
+        assert_eq!(
+            gamut_points_list("0.64, 0.33, 1 0.3, 0.6, 1 0.15, 0.06, 1"),
+            canonical
+        );
+        assert_eq!(gamut_points_list(canonical), canonical);
+        assert_eq!(gamut_points_list("{0.64,0.33}"), "{0.64,0.33}");
+
+        let xml = format!(r#"<Gamut Name="G" Points="{canonical}"/>"#);
+        let (repaired, repairs) = repair_description(&xml).expect("well-formed");
+        assert_eq!(repaired, xml);
+        assert!(repairs.is_empty());
+    }
+
+    /// Verifies every wiring component type outside the spec becomes the
+    /// placeholder type, whatever its name, while spec types are left as
+    /// published.
+    #[test]
+    fn maps_vendor_wiring_component_types_to_placeholder() {
+        let xml = r#"<Geometries><WiringObject Name="In" ComponentType="VMXInput"/><WiringObject Name="Out" ComponentType="VMXOutput"/><WiringObject Name="Net" ComponentType="NetworkOutput"/><WiringObject Name="Odd" ComponentType="Mystery"/></Geometries>"#;
+        let (repaired, repairs) = repair_description(xml).expect("well-formed");
+        assert_eq!(
+            repaired,
+            r#"<Geometries><WiringObject Name="In" ComponentType="Input"/><WiringObject Name="Out" ComponentType="Input"/><WiringObject Name="Net" ComponentType="NetworkOutput"/><WiringObject Name="Odd" ComponentType="Input"/></Geometries>"#
+        );
+        assert_eq!(
+            repairs,
+            vec![
+                "imported WiringObject@ComponentType VMXInput as Input",
+                "imported WiringObject@ComponentType VMXOutput as Input",
+                "imported WiringObject@ComponentType Mystery as Input",
+            ]
+        );
+    }
+
+    /// Regression for Martin's VDO Sceptron archive on GDTF Share: a
+    /// `VMXInput` wiring object made strict parsing fail, and the repair pass
+    /// then broke its canonical braced gamut. The repaired archive must open
+    /// with the gamut intact.
+    #[test]
+    fn opens_archive_with_vendor_wiring_and_braced_gamut() {
+        let description = crate::testing::GdtfBuilder::new("Martin", "Sceptron")
+            .description_xml()
+            .replacen(
+                "<PhysicalDescriptions>\n",
+                "<PhysicalDescriptions>\n<Gamuts><Gamut Name=\"Calibrated\" Points=\"{0.681000,0.311000,27.385095}{0.190000,0.690000,65.450618}{0.141000,0.059000,7.164287}\"/></Gamuts>\n",
+                1,
+            )
+            .replacen(
+                "<Geometries>\n",
+                "<Geometries>\n<WiringObject Name=\"VMX In\" Model=\"\" Position=\"{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}\" ConnectorType=\"RJ45\" ComponentType=\"VMXInput\" SignalType=\"VMX\" PinCount=\"8\" SignalLayer=\"0\" Orientation=\"Left\" WireGroup=\"\"/>\n",
+                1,
+            );
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        archive
+            .start_file(DESCRIPTION_ENTRY, zip::write::SimpleFileOptions::default())
+            .expect("start entry");
+        archive
+            .write_all(description.as_bytes())
+            .expect("write description");
+        let bytes = archive.finish().expect("finish archive").into_inner();
+        assert!(gdtf::GdtfFile::new(Cursor::new(bytes.clone())).is_err());
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("sceptron.gdtf");
+        std::fs::write(&path, &bytes).expect("write archive");
+
+        let (parsed, repairs) = open_gdtf(&path).expect("repaired archive opens");
+        assert_eq!(
+            repairs,
+            vec!["imported WiringObject@ComponentType VMXInput as Input"]
+        );
+        let gamut = &parsed.description.fixture_types[0]
+            .physical_descriptions
+            .gamuts[0];
+        assert_eq!(gamut.points.len(), 3);
     }
 
     /// Verifies a laser becomes a plain geometry, keeping children but not protocols.
@@ -464,12 +574,12 @@ mod tests {
         assert!(repairs.is_empty());
     }
 
-    /// Verifies whitespace inside braced gamut points is removed so each point stays one token.
+    /// Verifies whitespace inside and between braced gamut points is removed.
     #[test]
     fn gamut_points_drop_inner_whitespace() {
         assert_eq!(
             gamut_points_list("{0.64, 0.33, 1} {0.3, 0.6, 1}"),
-            "0.64,0.33,1 0.3,0.6,1"
+            "{0.64,0.33,1}{0.3,0.6,1}"
         );
     }
 }

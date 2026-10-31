@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides Art-Net output
+//! Art-Net DMX output.
+//!
+//! Each render, the composed frames for every Art-Net output target are handed to a
+//! process-lifetime worker, which sends them on the shared schedule of DMX send times.
 
 #![warn(missing_docs)]
 

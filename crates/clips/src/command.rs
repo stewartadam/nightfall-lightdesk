@@ -68,12 +68,14 @@ pub enum ClipCommand {
     GoClip(IdExpr),
     /// Moves attached playback backward.
     BackClip(IdExpr),
-    /// Sets the rate multiplier for attached playback.
-    SetRate {
+    /// Fires every live launch waiting for the next beat or bar now.
+    LaunchArmed,
+    /// Sets the speed multiplier for attached playback.
+    SetSpeed {
         /// ID of the clip.
         clip_id: IdExpr,
-        /// Playback clock rate multiplier.
-        rate: f32,
+        /// Playback clock speed multiplier.
+        speed: f32,
     },
     /// Jumps sequence playback to a one-based cue position.
     GotoClip {
@@ -144,12 +146,12 @@ pub enum ClipOperation {
     Go(IdExpr),
     /// Moves a clip's attached playback backward.
     Back(IdExpr),
-    /// Sets the rate multiplier for attached playback.
-    SetRate {
-        /// Clip selection whose playback rate should change.
+    /// Sets the speed multiplier for attached playback.
+    SetSpeed {
+        /// Clip selection whose playback speed should change.
         clip_id: IdExpr,
-        /// Playback clock rate multiplier.
-        rate: f32,
+        /// Playback clock speed multiplier.
+        speed: f32,
     },
     /// Jumps sequence playback to a one-based cue position.
     Goto {
@@ -201,9 +203,9 @@ pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipOperation> 
         }),
         ClipCommand::GoClip(clip_id) => Some(ClipOperation::Go(clip_id.clone())),
         ClipCommand::BackClip(clip_id) => Some(ClipOperation::Back(clip_id.clone())),
-        ClipCommand::SetRate { clip_id, rate } => Some(ClipOperation::SetRate {
+        ClipCommand::SetSpeed { clip_id, speed } => Some(ClipOperation::SetSpeed {
             clip_id: clip_id.clone(),
-            rate: *rate,
+            speed: *speed,
         }),
         ClipCommand::GotoClip {
             clip_id,
@@ -225,7 +227,8 @@ pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipOperation> 
             timing: *timing,
             instance_options: *instance_options,
         }),
-        ClipCommand::AssignSource { .. }
+        ClipCommand::LaunchArmed
+        | ClipCommand::AssignSource { .. }
         | ClipCommand::AssignSourceById { .. }
         | ClipCommand::ClearSource(_)
         | ClipCommand::UpdateClipOptions { .. }

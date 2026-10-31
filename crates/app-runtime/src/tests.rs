@@ -37,7 +37,7 @@ use nightfall_cues::prelude::{
 use nightfall_desk::{
     prelude::{
         FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
-        ToastLevel, UiNotification, UiNotificationState, control_level_action,
+        ToastLevel, UiNotification, UiNotificationState, fader_level_action,
     },
     resources::log_config::{LogConfig, TracingTarget},
 };
@@ -52,7 +52,7 @@ use nightfall_engine::prelude::{
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     ConsoleDmxAddress, ConsoleDmxAddresses, Fixture, FixtureDataProviderExt, FixtureElement,
-    InputBindings, OutputBindings, OutputTarget, Parameter, ParameterValues,
+    InputRoutes, OutputRoutes, OutputTarget, Parameter, ParameterValues,
 };
 #[cfg(feature = "midi")]
 use nightfall_input_midi::prelude::*;
@@ -483,7 +483,7 @@ fn world_factory_empty_bootstrap_starts_initializing_without_showfile() {
 }
 
 /// Verifies blank and sample new shows both start with one always-on global intensity master and
-/// one always-on global rate master, each at 100% with the shared default UIDs, so neither
+/// one always-on global speed master, each at 100% with the shared default UIDs, so neither
 /// changes output until moved and merges between new shows match them up.
 #[test]
 fn world_factory_new_shows_start_with_global_masters() {
@@ -504,7 +504,7 @@ fn world_factory_new_shows_start_with_global_masters() {
         masters.sort_by_key(|master| master.identifiers.id);
 
         assert_eq!(masters.len(), 2, "{bootstrap:?} should add two masters");
-        let [intensity, rate] = &masters[..] else {
+        let [intensity, speed] = &masters[..] else {
             unreachable!()
         };
         assert_eq!(intensity.identifiers.id, 1);
@@ -517,17 +517,17 @@ fn world_factory_new_shows_start_with_global_masters() {
             intensity.target,
             MasterTarget::Fixtures(FixtureMasterTarget::All)
         );
-        assert_eq!(rate.identifiers.id, 2);
+        assert_eq!(speed.identifiers.id, 2);
         assert_eq!(
-            rate.identifiers.uid,
-            nightfall_desk::masters::DEFAULT_RATE_MASTER_UID
+            speed.identifiers.uid,
+            nightfall_desk::masters::DEFAULT_SPEED_MASTER_UID
         );
-        assert_eq!(rate.kind, MasterKind::PlaybackRate);
+        assert_eq!(speed.kind, MasterKind::PlaybackSpeed);
         assert_eq!(
-            rate.target,
+            speed.target,
             MasterTarget::Instances(InstanceMasterTarget::All)
         );
-        for master in [intensity, rate] {
+        for master in [intensity, speed] {
             assert_eq!(master.mode, MasterMode::AlwaysOn);
             assert_eq!(master.level_percent, 100.0);
         }
@@ -744,17 +744,17 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
 /// Verify sample faders reference the intended clips and survive the portable snapshot path.
 #[test]
 fn world_factory_sample_data_seeds_fader_assignments() {
-    use nightfall_desk::prelude::{ControlAssignment, ControlSlotConfig, Controls};
+    use nightfall_desk::prelude::{FaderAssignment, FaderConfig, Faders};
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
         .build(WorldBootstrap::SampleData {
             showfile_name: None,
         })
         .expect("sample world");
-    let assignments = app.world().resource::<Controls>().slot_configs();
+    let assignments = app.world().resource::<Faders>().fader_configs();
     assert_eq!(
         &assignments[..5],
-        &[1, 2, 100, 102, 30].map(|id| ControlSlotConfig::assigned(ControlAssignment::Clip(id)))
+        &[1, 2, 100, 102, 30].map(|id| FaderConfig::assigned(FaderAssignment::Clip(id)))
     );
     assert!(
         assignments[5..]
@@ -765,7 +765,7 @@ fn world_factory_sample_data_seeds_fader_assignments() {
     for id in [1, 2, 100, 102, 30] {
         assert!(snapshot.clips.iter().any(|clip| clip.identifiers.id == id));
     }
-    assert_eq!(snapshot.control_slots, assignments);
+    assert_eq!(snapshot.faders, assignments);
 }
 
 /// Verifies every seeded cue stores resolved fixture refs, since the cue editor only
@@ -845,7 +845,7 @@ fn world_factory_sample_timelines_drive_seeded_clips() {
         for (action, kind) in &actions {
             let (ActionKind::StartClip(uid)
             | ActionKind::StopClip(uid)
-            | ActionKind::SetClipRate { uid, .. }) = kind
+            | ActionKind::SetClipSpeed { uid, .. }) = kind
             else {
                 panic!("unexpected sample action {:?}", action.action);
             };
@@ -989,26 +989,26 @@ async fn sample_data_build_patches_every_fixture_to_console_only() {
     app.update();
     let world = app.world();
     let fixtures = world.resource::<FixtureDataProviderExt>();
-    let output = world.resource::<OutputBindings>();
+    let output = world.resource::<OutputRoutes>();
 
     let mut patched: Vec<Uuid> = Vec::new();
-    for binding in &output.bindings {
+    for route in &output.routes {
         assert!(
-            matches!(binding.target, OutputTarget::Console { .. }),
-            "sample show must not route output to a transport: {binding:?}"
+            matches!(route.target, OutputTarget::Console { .. }),
+            "sample show must not route output to a transport: {route:?}"
         );
-        patched.extend(binding.source.fixture_uids().expect("fixture source"));
+        patched.extend(route.source.fixture_uids().expect("fixture source"));
     }
     let mut every_fixture: Vec<_> = fixtures.inner.iter().map(|f| f.identifiers.uid).collect();
     patched.sort();
     every_fixture.sort();
     assert_eq!(patched, every_fixture);
 
-    let issues = nightfall_fixtures::binding_validation::validate_bindings(
+    let issues = nightfall_fixtures::route_validation::validate_routes(
         &Default::default(),
-        world.resource::<InputBindings>(),
+        world.resource::<InputRoutes>(),
         output,
-        world.resource::<nightfall_fixtures::prelude::DisabledBindings>(),
+        world.resource::<nightfall_fixtures::prelude::DisabledRoutes>(),
         fixtures,
     );
     assert!(issues.is_empty(), "{issues:?}");
@@ -1362,7 +1362,7 @@ fn sample_data_build_seeds_default_midi_mapping() {
                     channel: 0,
                     controller: 36,
                 }
-            && mapping.action == control_level_action(1)
+            && mapping.action == fader_level_action(1)
     }));
 }
 
@@ -1422,6 +1422,7 @@ fn bootstrap_world_with_fallback_uses_sample_data_after_showfile_error() {
         UiNotification::ShowToast {
             level: ToastLevel::Error,
             message,
+            ..
         } if message.contains("missing showfile")
             && message.contains("loaded sample data instead")
     ));
@@ -1808,15 +1809,15 @@ fn named_sample_show_is_standalone_and_recoverable() {
         )),
         "sample stage must use built-in primitives"
     );
-    assert_eq!(snapshot.bindings.output.len(), 15);
+    assert_eq!(snapshot.routes.output.len(), 15);
     assert!(
         snapshot
-            .bindings
+            .routes
             .output
             .iter()
-            .all(|binding| matches!(binding.target, OutputTarget::Console { .. }))
+            .all(|route| matches!(route.target, OutputTarget::Console { .. }))
     );
-    assert!(snapshot.bindings.disabled.is_empty());
+    assert!(snapshot.routes.disabled.is_empty());
 
     // Resolve every programmed selection against the generated inventory, including cue parts.
     let mut selections: Vec<_> = snapshot
@@ -1950,11 +1951,7 @@ fn named_sample_show_is_standalone_and_recoverable() {
         3
     );
     assert_eq!(
-        recovered
-            .world()
-            .resource::<OutputBindings>()
-            .bindings
-            .len(),
+        recovered.world().resource::<OutputRoutes>().routes.len(),
         15
     );
     for asset in crate::sample_data::SAMPLE_AUDIO {
@@ -2447,17 +2444,17 @@ async fn automation_eval_action_expands_and_completes() {
     assert_eq!(outcome, Some(CommandOutcome::succeeded()));
 }
 
-/// Verifies a mapped control Go starts the control's assigned clip like the UI Go button.
+/// Verifies a mapped fader Go starts the fader's assigned clip like the UI Go button.
 #[tokio::test]
 async fn automation_control_go_starts_assigned_clip() {
     use nightfall_actions::{ActionInvocation, ActionSurface};
     use nightfall_clips::MaterializedClip;
-    use nightfall_desk::prelude::control_go_action;
+    use nightfall_desk::prelude::fader_go_action;
 
     let mut app = sample_app();
     let outcome = run_action(
         &mut app,
-        ActionInvocation::trigger(control_go_action(1), ActionSurface::Midi),
+        ActionInvocation::trigger(fader_go_action(1), ActionSurface::Midi),
     );
     app.update();
 
@@ -2465,7 +2462,7 @@ async fn automation_control_go_starts_assigned_clip() {
     let mut clips = app.world_mut().query::<&MaterializedClip>();
     assert!(
         clips.iter(app.world()).any(|clip| clip.clip_id == 1),
-        "control 1's clip should be running after Go"
+        "fader 1's clip should be running after Go"
     );
 }
 
@@ -2526,3 +2523,5 @@ async fn automation_programmer_clear_completes() {
 
     assert_eq!(outcome, Some(CommandOutcome::succeeded()));
 }
+
+mod macros;

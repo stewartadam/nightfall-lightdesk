@@ -42,7 +42,7 @@ test("getDefaultTargetForAction picks first target in action family", () => {
     uid: "exec-1",
     label: "Exec 1",
   });
-  assert.deepEqual(getDefaultTargetForAction("SetClipRate", targets), {
+  assert.deepEqual(getDefaultTargetForAction("SetClipSpeed", targets), {
     uid: "exec-1",
     label: "Exec 1",
   });
@@ -75,16 +75,16 @@ test("buildActionKind clamps JumpToCue cue index to >= 1", () => {
   });
 });
 
-/** Verifies clip rate actions target clips and store normalized rates. */
-test("buildActionKind creates SetClipRate actions", () => {
-  assert.equal(getTargetsForAction("SetClipRate", buildTargets()).length, 1);
+/** Verifies clip speed actions target clips and store normalized speeds. */
+test("buildActionKind creates SetClipSpeed actions", () => {
+  assert.equal(getTargetsForAction("SetClipSpeed", buildTargets()).length, 1);
 
-  const action = buildActionKind("SetClipRate", "exec-1", 1, 2.5);
+  const action = buildActionKind("SetClipSpeed", "exec-1", 1, 2.5);
   assert.deepEqual(action, {
-    type: "SetClipRate",
+    type: "SetClipSpeed",
     data: {
       uid: "exec-1",
-      rate: 2.5,
+      speed: 2.5,
     },
   });
 });

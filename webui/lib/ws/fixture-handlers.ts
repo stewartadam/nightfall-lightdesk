@@ -7,11 +7,11 @@
  */
 
 import {
-  bindings,
-  bindingValidationSettings,
   fixtureGeometries,
   fixtures,
   groups,
+  routes,
+  routeValidationSettings,
 } from "../../state/appStores";
 import type * as types from "../../types";
 import { setAttributeMetadata } from "../attribute-metadata";
@@ -23,7 +23,7 @@ import type { AnyWsMessage } from "./types";
 
 const log = getLogger(import.meta.url);
 
-/** Registers fixture, patch binding, geometry, and group snapshot handlers. */
+/** Registers fixture, DMX route, geometry, and group snapshot handlers. */
 export function registerFixtureHandlers(
   registry: WsMessageHandlerRegistry<AnyWsMessage>,
 ): void {
@@ -55,19 +55,19 @@ export function registerFixtureHandlers(
     );
   });
 
-  registry.register("Bindings", (message) => {
+  registry.register("Routes", (message) => {
     setStoreAction(
-      bindings,
-      "Receive Bindings",
-      message.data as types.BindingsSnapshot,
+      routes,
+      "Receive Routes",
+      message.data as types.RoutesSnapshot,
     );
   });
 
-  registry.register("BindingValidationSettings", (message) => {
+  registry.register("RouteValidationSettings", (message) => {
     setStoreAction(
-      bindingValidationSettings,
-      "Receive BindingValidationSettings",
-      message.data as types.BindingValidationSettings,
+      routeValidationSettings,
+      "Receive RouteValidationSettings",
+      message.data as types.RouteValidationSettings,
     );
   });
 
@@ -106,7 +106,7 @@ function applyAxisUpdate<V extends { x: number; y: number; z: number }>(
 function handleFixtureCommand(command: types.FixtureCommand) {
   log.trace("Handling FixtureCommand:", command);
 
-  // Most fixture commands are handled via FixtureDefinitions/Bindings snapshots.
+  // Most fixture commands are handled via FixtureDefinitions/Routes snapshots.
   // Placement updates are handled directly as deltas to avoid full fixture re-sync churn.
   switch (command.type) {
     case "UpdateFixturePlacements": {
@@ -192,11 +192,9 @@ function handleFixtureCommand(command: types.FixtureCommand) {
 
     case "UpdateFixturePatch": {
       const { id } = command.data;
-      log.trace(
-        `Patch update for fixture ${id} - waiting for Bindings message`,
-      );
-      // Patch updates are handled via the "Bindings" message sent by send_bindings_on_change
-      // Don't try to manually update here - the backend will send the complete binding state
+      log.trace(`Patch update for fixture ${id} - waiting for Routes message`);
+      // Patch updates are handled via the "Routes" message sent by send_routes_on_change
+      // Don't try to manually update here - the backend will send the complete route state
       break;
     }
 

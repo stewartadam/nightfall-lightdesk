@@ -12,7 +12,7 @@ import type { AppIcon } from "../../ui/icon";
 /** Describes what invoked a UI action. */
 export interface UiActionExecutionContext {
   /** Surface that invoked the action. */
-  source: "palette" | "shortcut" | "keybinding" | "midi" | "osc";
+  source: "palette" | "menu" | "shortcut" | "keybinding" | "midi" | "osc";
   /** Originating DOM event, when the action was invoked from the browser. */
   event?: KeyboardEvent | MouseEvent;
 }
@@ -54,3 +54,6 @@ export function getCommandShortcutKeys(command: UiAction): string[] {
 }
 
 export const DEFAULT_CATEGORY = "General";
+
+/** Shortcut that opens the command palette, also shown as the palette's own hint. */
+export const OPEN_COMMAND_PALETTE_SHORTCUT = "$mod+Shift+p";

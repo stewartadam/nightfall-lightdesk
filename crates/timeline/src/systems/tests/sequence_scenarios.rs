@@ -2441,9 +2441,9 @@ fn seek_start_clip_duration_does_not_release_auto_progressing_sequence() {
     );
 }
 
-/// Verifies sequence seek reconstruction folds authored rate actions into the playback clock.
+/// Verifies sequence seek reconstruction folds authored speed actions into the playback clock.
 #[test]
-fn seek_timeline_sequence_reconstructs_authored_rate() {
+fn seek_timeline_sequence_reconstructs_authored_speed() {
     let (mut app, _parameter, timeline_id) = setup_sequence_timeline_app(true);
     {
         let mut timeline_query = app.world_mut().query::<&mut MaterializedTimeline>();
@@ -2455,13 +2455,13 @@ fn seek_timeline_sequence_reconstructs_authored_rate() {
             .and_then(|uid| Uuid::parse_str(uid).ok())
             .expect("helper timeline should start a clip");
         timeline.timeline.tracks[0].actions.push(Action {
-            id: "action-rate".to_owned(),
-            label: "Set sequence rate".to_owned(),
+            id: "action-speed".to_owned(),
+            label: "Set sequence speed".to_owned(),
             position: Duration::from_millis(600),
             duration: Duration::ZERO,
-            action: ActionKind::SetClipRate {
+            action: ActionKind::SetClipSpeed {
                 uid: clip_uid,
-                rate: 2.0,
+                speed: 2.0,
             }
             .to_reference(),
         });
@@ -2474,7 +2474,7 @@ fn seek_timeline_sequence_reconstructs_authored_rate() {
         .single(app.world())
         .expect("timeline sequence should reconstruct one instance clock");
     assert_eq!(clock.position, Duration::from_millis(2500));
-    assert_eq!(clock.rate, 2.0);
+    assert_eq!(clock.speed, 2.0);
 }
 
 /// Verifies paused timeline-owned sequence output and auto-progression remain frozen.
@@ -2814,6 +2814,73 @@ fn live_four_cue_auto_sequence_matches_seek_reconstruction() {
             &format!("live/seek parity at source position {source_position:?}"),
         );
     }
+}
+
+/// Verifies a beat-timed sequence on a 120 BPM timeline reaches each cue and fade twice as
+/// fast as its seconds-timed twin, both when seeking and when playing live, because its waits,
+/// delays and fades count timeline beats.
+#[test]
+fn beat_timed_four_cue_sequence_follows_timeline_beats() {
+    for (source_position, expected_position, expected_values, context) in [
+        (
+            Duration::from_secs(1),
+            1,
+            vec![127.5, 0.0, 0.0, 0.0],
+            "cue 1 fade halfway",
+        ),
+        (
+            Duration::from_millis(2100),
+            2,
+            vec![255.0, 0.0, 0.0, 0.0],
+            "cue 2 delay",
+        ),
+        (
+            Duration::from_secs(8),
+            4,
+            vec![127.5, 127.5, 127.5, 127.5],
+            "auto-end release halfway",
+        ),
+    ] {
+        // Two beats pass per timeline second at 120 BPM.
+        let timeline_position = Duration::from_millis(100).saturating_add(source_position / 2);
+
+        let (mut seek_app, seek_parameters, timeline_id) =
+            setup_four_cue_auto_sequence_timeline_app_with_timebase(true, None, Timebase::Beats);
+        seek_sequence_timeline(&mut seek_app, timeline_id, timeline_position);
+        let seek_snapshot = sequence_runtime_values_snapshot(&mut seek_app, &seek_parameters);
+        assert_eq!(
+            seek_snapshot.0, expected_position,
+            "{context}: seek position"
+        );
+        assert_eq!(
+            seek_snapshot.1, source_position,
+            "{context}: seek clock counts beats"
+        );
+        assert_values_close(&seek_snapshot.2, &expected_values, context);
+
+        let (mut live_app, live_parameters, _) =
+            setup_four_cue_auto_sequence_timeline_app_with_timebase(false, None, Timebase::Beats);
+        drive_four_cue_live_timeline_to(&mut live_app, timeline_position);
+        let live_snapshot = sequence_runtime_values_snapshot(&mut live_app, &live_parameters);
+        assert_eq!(
+            live_snapshot.0, expected_position,
+            "{context}: live position"
+        );
+        assert_values_close(
+            &live_snapshot.2,
+            &seek_snapshot.2,
+            &format!("{context}: live/seek parity"),
+        );
+    }
+
+    let (mut app, _parameters, timeline_id) =
+        setup_four_cue_auto_sequence_timeline_app_with_timebase(true, None, Timebase::Beats);
+    seek_sequence_timeline(&mut app, timeline_id, Duration::from_millis(4500));
+    assert_eq!(
+        materialized_sequence_count(&mut app),
+        0,
+        "the release tail ends after nine beats"
+    );
 }
 
 /// Verifies a paused four-cue timeline freezes output and autonomous cue progression.

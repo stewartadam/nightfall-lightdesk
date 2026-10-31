@@ -49,11 +49,13 @@ jobs:
           key: browser-demo-tools
           cache-targets: false
 
+      - uses: ./.github/actions/cargo-tools
+        with:
+          typeshare: true
+          cargo-about: true
+
       - name: Install JavaScript dependencies
-        run: |
-          pnpm install --frozen-lockfile
-          cargo install --locked typeshare-cli --version 1.13.3
-          cargo install --locked cargo-about --version 0.8.4
+        run: pnpm install --frozen-lockfile
 
       - name: Install browsers
         if: inputs.product-flows

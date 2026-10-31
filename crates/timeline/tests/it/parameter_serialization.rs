@@ -11,13 +11,13 @@ use uuid::Uuid;
 
 /// Keeps clip targets textual across CBOR publications and JSON edit commands.
 #[test]
-fn rate_master_target_round_trips_through_cbor_and_json() {
+fn clip_speed_target_round_trips_through_cbor_and_json() {
     let uid = Uuid::parse_str("50efca4267444a0bbed89a0f69930b9e").unwrap();
-    let parameter = ParameterType::RateMaster(uid);
+    let parameter = ParameterType::ClipSpeed(uid);
     let bytes = minicbor_serde::to_vec(&parameter).unwrap();
     let published: serde_json::Value = minicbor_serde::from_slice(&bytes).unwrap();
     assert_eq!(published["data"], uid.simple().to_string());
     let command_json = serde_json::to_string(&published).unwrap();
     let restored: ParameterType = serde_json::from_str(&command_json).unwrap();
-    assert!(matches!(restored, ParameterType::RateMaster(target) if target == uid));
+    assert!(matches!(restored, ParameterType::ClipSpeed(target) if target == uid));
 }

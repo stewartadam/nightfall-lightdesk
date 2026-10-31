@@ -24,6 +24,7 @@ use nightfall_input_midi::prelude::*;
 use nightfall_input_osc::prelude::*;
 use nightfall_io::IoRuntimeSettings;
 use nightfall_scene_objects::prelude::*;
+use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 
@@ -32,8 +33,9 @@ use crate::{
     contributors::{
         BoardsSaveContributor, ClipsSaveContributor, ColorPathsSaveContributor,
         CueStructureSaveContributor, DeskStateSaveContributor, FixturesPatchSaveContributor,
-        FlowsSaveContributor, FxSaveContributor, SceneObjectsSaveContributor,
-        ShowfileSaveContributor, TimecodesTimelinesSaveContributor, collect_save_contributions,
+        FlowsSaveContributor, FxSaveContributor, MacrosSaveContributor,
+        SceneObjectsSaveContributor, ShowfileSaveContributor, TimecodesTimelinesSaveContributor,
+        collect_save_contributions,
     },
 };
 
@@ -55,19 +57,21 @@ pub struct ShowfileSaveState<'w, 's> {
     timecode_data_provider: Res<'w, DataProvider<Timecode>>,
     timeline_data_provider: Res<'w, DataProvider<Timeline>>,
     board_data_provider: Res<'w, DataProvider<Board>>,
-    input_bindings: Res<'w, InputBindings>,
-    output_bindings: Res<'w, OutputBindings>,
-    disabled_bindings: Res<'w, DisabledBindings>,
+    macro_data_provider: Res<'w, DataProvider<Macro>>,
+    input_routes: Res<'w, InputRoutes>,
+    output_routes: Res<'w, OutputRoutes>,
+    disabled_routes: Res<'w, DisabledRoutes>,
     #[cfg(feature = "midi")]
     midi_mappings: Res<'w, MidiMappings>,
     #[cfg(feature = "osc")]
     osc_mappings: Res<'w, OscMappings>,
     clip_query: Query<'w, 's, &'static Clip>,
     global_variables: Res<'w, GlobalVariables>,
-    controls: Res<'w, Controls>,
+    faders: Res<'w, Faders>,
     /// Mutable desk settings allow the native save workflow to apply save-time UI state first.
     pub desk_settings: ResMut<'w, DeskSettings>,
     io_settings: Res<'w, IoRuntimeSettings>,
+    tempo: Option<Res<'w, ShowTempo>>,
 }
 
 /// Convert runtime resources into the canonical, flat showfile snapshot.
@@ -76,15 +80,16 @@ pub fn snapshot_from_save_state(
 ) -> ShowfileSnapshot {
     let desk_state_contributor = DeskStateSaveContributor::new(
         showfile_save_state.global_variables.as_ref(),
-        &showfile_save_state.controls,
+        &showfile_save_state.faders,
         &showfile_save_state.desk_settings,
         &showfile_save_state.io_settings,
+        showfile_save_state.tempo.as_deref(),
     );
     let fixtures_patch_contributor = FixturesPatchSaveContributor::new(
         &showfile_save_state.fixture_data_provider,
-        &showfile_save_state.input_bindings,
-        &showfile_save_state.output_bindings,
-        &showfile_save_state.disabled_bindings,
+        &showfile_save_state.input_routes,
+        &showfile_save_state.output_routes,
+        &showfile_save_state.disabled_routes,
         #[cfg(feature = "midi")]
         &showfile_save_state.midi_mappings,
         #[cfg(feature = "osc")]
@@ -115,6 +120,7 @@ pub fn snapshot_from_save_state(
         &showfile_save_state.timeline_data_provider,
     );
     let boards_contributor = BoardsSaveContributor::new(&showfile_save_state.board_data_provider);
+    let macros_contributor = MacrosSaveContributor::new(&showfile_save_state.macro_data_provider);
 
     collect_save_contributions(&[
         &desk_state_contributor as &dyn ShowfileSaveContributor,
@@ -127,6 +133,7 @@ pub fn snapshot_from_save_state(
         &clips_contributor,
         &timecodes_timelines_contributor,
         &boards_contributor,
+        &macros_contributor,
     ])
 }
 

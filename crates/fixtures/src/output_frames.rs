@@ -8,30 +8,30 @@
 
 //! Composes the DMX frames sent on the wire.
 //!
-//! Output bindings and input passthrough bindings resolve into an [`OutputRouting`] plan
+//! Output routes and input passthrough routes resolve into an [`OutputRouting`] plan
 //! keyed by concrete transport and on-the-wire universe. Every engine frame,
 //! [`compose_output_frames`] turns that plan into [`OutputDmxFrames`], the single source
 //! that output drivers transmit, the DMX universe panel reports, and metrics count.
 //!
 //! A wire frame is composed in this order, later sources overwriting earlier ones:
-//! 1. written channels of console universe windows routed by console→transport bindings
-//!    (with remapping), the highest-priority binding winning where windows overlap;
+//! 1. written channels of console universe windows routed by console→transport routes
+//!    (with remapping), the highest-priority route winning where windows overlap;
 //! 2. direct fixture→transport output buffer channels;
-//! 3. transport input windows routed by input passthrough bindings, highest-priority binding
+//! 3. transport input windows routed by input passthrough routes, highest-priority route
 //!    last so its window wins where windows overlap;
 //! 4. wire channels held by `ch <transport>:U.A` commands, which also produce a frame for a
 //!    universe nothing is routed to.
 //!
-//! Console space never reaches the wire unless a console→transport binding routes it.
+//! Console space never reaches the wire unless a console→transport route feeds it.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
 use nightfall_dmx::prelude::*;
-use nightfall_io::{ArtNetDelivery, BindingTransport, OutputTransport, SacnDelivery};
+use nightfall_io::{ArtNetDelivery, OutputTransport, RouteTransport, SacnDelivery};
 
-use crate::bindings::{ResolvedInputBindings, ResolvedInputDestination, ResolvedInputSource};
+use crate::routes::{ResolvedInputDestination, ResolvedInputRoutes, ResolvedInputSource};
 use crate::universe::{ConsoleDmxUniverses, InputDmxUniverses};
 
 /// Concrete output transport and on-the-wire universe identifying one output frame.
@@ -73,57 +73,57 @@ impl ChannelWindow {
     }
 }
 
-/// Console universe window routed onto a wire frame by a console→transport binding.
+/// Console universe window routed onto a wire frame by a console→transport route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConsoleWindowRoute {
+pub struct ConsoleWindowFeed {
     /// Console universe supplying the window.
     pub console_universe: u16,
     /// Source (console) and target (wire) addresses.
     pub window: ChannelWindow,
 }
 
-/// Transport input window routed onto a wire frame by an input passthrough binding.
+/// Transport input window routed onto a wire frame by an input passthrough route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InputWindowRoute {
+pub struct InputWindowFeed {
     /// Input transport supplying the window.
-    pub transport: BindingTransport,
+    pub transport: RouteTransport,
     /// Input universe supplying the window.
     pub universe: u16,
     /// Source (input) and target (wire) addresses.
     pub window: ChannelWindow,
 }
 
-/// Output-binding sources feeding one wire frame.
+/// Output-route sources feeding one wire frame.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct OutputBindingRoute {
-    /// Console windows routed by console→transport bindings, lowest precedence first so the
-    /// highest-priority (then earliest-authored) binding's window is overlaid last.
-    pub console_windows: Vec<ConsoleWindowRoute>,
-    /// Whether fixture→transport bindings write this frame's direct output buffer.
+pub struct OutputFrameFeed {
+    /// Console windows routed by console→transport routes, lowest precedence first so the
+    /// highest-priority (then earliest-authored) route's window is overlaid last.
+    pub console_windows: Vec<ConsoleWindowFeed>,
+    /// Whether fixture→transport routes write this frame's direct output buffer.
     pub direct: bool,
 }
 
 /// Routing plan describing which wire frames exist and what feeds them.
 ///
-/// Output-binding routes are replaced by output binding resolution and input routes by
-/// input binding resolution; both only change when bindings change.
+/// Output-route feeds are replaced by output route resolution and input feeds by
+/// input route resolution; both only change when routes change.
 #[derive(Resource, Debug, Default)]
 pub struct OutputRouting {
-    output_routes: HashMap<OutputFrameKey, OutputBindingRoute>,
-    input_routes: HashMap<OutputFrameKey, Vec<InputWindowRoute>>,
+    output_feeds: HashMap<OutputFrameKey, OutputFrameFeed>,
+    input_feeds: HashMap<OutputFrameKey, Vec<InputWindowFeed>>,
     ordered_keys: Vec<OutputFrameKey>,
 }
 
 impl OutputRouting {
-    /// Replaces the routes produced by output bindings.
-    pub fn set_output_routes(&mut self, routes: HashMap<OutputFrameKey, OutputBindingRoute>) {
-        self.output_routes = routes;
+    /// Replaces the feeds produced by output routes.
+    pub fn set_output_feeds(&mut self, feeds: HashMap<OutputFrameKey, OutputFrameFeed>) {
+        self.output_feeds = feeds;
         self.reorder();
     }
 
-    /// Replaces the routes produced by transport input passthrough bindings.
-    pub fn set_input_routes(&mut self, routes: HashMap<OutputFrameKey, Vec<InputWindowRoute>>) {
-        self.input_routes = routes;
+    /// Replaces the feeds produced by transport input passthrough routes.
+    pub fn set_input_feeds(&mut self, feeds: HashMap<OutputFrameKey, Vec<InputWindowFeed>>) {
+        self.input_feeds = feeds;
         self.reorder();
     }
 
@@ -132,34 +132,34 @@ impl OutputRouting {
         &self.ordered_keys
     }
 
-    /// Returns the output-binding route for one frame, if any.
-    pub fn output_route(&self, key: &OutputFrameKey) -> Option<&OutputBindingRoute> {
-        self.output_routes.get(key)
+    /// Returns the output-route feed for one frame, if any.
+    pub fn output_feed(&self, key: &OutputFrameKey) -> Option<&OutputFrameFeed> {
+        self.output_feeds.get(key)
     }
 
-    /// Returns whether any route feeds the frame.
+    /// Returns whether anything feeds the frame.
     pub fn contains(&self, key: &OutputFrameKey) -> bool {
-        self.output_routes.contains_key(key) || self.input_routes.contains_key(key)
+        self.output_feeds.contains_key(key) || self.input_feeds.contains_key(key)
     }
 
     /// Returns the input passthrough windows for one frame.
-    pub fn input_routes(&self, key: &OutputFrameKey) -> &[InputWindowRoute] {
-        self.input_routes.get(key).map(Vec::as_slice).unwrap_or(&[])
+    pub fn input_feeds(&self, key: &OutputFrameKey) -> &[InputWindowFeed] {
+        self.input_feeds.get(key).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    /// Clears every route.
+    /// Clears every feed.
     pub fn clear(&mut self) {
-        self.output_routes.clear();
-        self.input_routes.clear();
+        self.output_feeds.clear();
+        self.input_feeds.clear();
         self.ordered_keys.clear();
     }
 
     /// Recomputes the deterministic union of routed frame keys.
     fn reorder(&mut self) {
         let mut keys: Vec<OutputFrameKey> = self
-            .output_routes
+            .output_feeds
             .keys()
-            .chain(self.input_routes.keys())
+            .chain(self.input_feeds.keys())
             .cloned()
             .collect();
         keys.sort_by_cached_key(|(transport, universe)| {
@@ -216,7 +216,7 @@ impl OutputDmxFrames {
     }
 }
 
-/// Composes one wire frame from its routes; returns `None` when no source has data yet.
+/// Composes one wire frame from its feeds; returns `None` when no source has data yet.
 fn compose_frame(
     key: &OutputFrameKey,
     routing: &OutputRouting,
@@ -227,20 +227,20 @@ fn compose_frame(
     let mut channels = [0; MAX_CHANNELS_PER_UNIVERSE];
     let mut has_data = false;
 
-    if let Some(route) = routing.output_route(key) {
-        for console_window in &route.console_windows {
+    if let Some(feed) = routing.output_feed(key) {
+        for console_window in &feed.console_windows {
             has_data |= console.overlay_console_window(
                 console_window.console_universe,
                 console_window.window,
                 &mut channels,
             );
         }
-        if route.direct {
+        if feed.direct {
             has_data |= console.overlay_output_universe(transport, *universe, &mut channels);
         }
     }
 
-    for input_window in routing.input_routes(key) {
+    for input_window in routing.input_feeds(key) {
         if let Some(source) = inputs.active_universe(input_window.transport, input_window.universe)
         {
             input_window.window.overlay(source, &mut channels);
@@ -289,35 +289,35 @@ pub fn compose_output_frames(
     frames.set(composed);
 }
 
-/// Rebuilds input passthrough routes when resolved input bindings change.
+/// Rebuilds input passthrough feeds when resolved input routes change.
 pub fn update_input_routing(
-    resolved_input_bindings: Res<ResolvedInputBindings>,
+    resolved_input_routes: Res<ResolvedInputRoutes>,
     mut routing: ResMut<OutputRouting>,
 ) {
-    if !resolved_input_bindings.is_changed() {
+    if !resolved_input_routes.is_changed() {
         return;
     }
 
-    let mut routes: HashMap<OutputFrameKey, Vec<InputWindowRoute>> = HashMap::new();
-    for binding in resolved_input_bindings.iter_overlay_order() {
+    let mut feeds: HashMap<OutputFrameKey, Vec<InputWindowFeed>> = HashMap::new();
+    for route in resolved_input_routes.iter_overlay_order() {
         let ResolvedInputSource::Transport {
             transport,
             universe,
             address,
-        } = &binding.source
+        } = &route.source
         else {
             continue;
         };
-        let ResolvedInputDestination::Transport { target } = &binding.destination else {
+        let ResolvedInputDestination::Transport { target } = &route.destination else {
             continue;
         };
         if matches!(target.transport, OutputTransport::Disabled) {
             continue;
         }
-        routes
+        feeds
             .entry((target.transport.clone(), target.universe))
             .or_default()
-            .push(InputWindowRoute {
+            .push(InputWindowFeed {
                 transport: *transport,
                 universe: *universe,
                 window: ChannelWindow {
@@ -326,7 +326,7 @@ pub fn update_input_routing(
                 },
             });
     }
-    routing.set_input_routes(routes);
+    routing.set_input_feeds(feeds);
 }
 
 /// Orders transports as sACN, Art-Net, USB, then by delivery details.
@@ -375,7 +375,7 @@ mod tests {
     use web_time::Instant;
 
     use super::*;
-    use crate::bindings::{ResolvedInputBinding, ResolvedTransportTarget};
+    use crate::routes::{ResolvedInputRoute, ResolvedTransportTarget};
     use crate::universe::ConsoleChannelOrigin;
 
     /// Multicast sACN transport used across composition tests.
@@ -392,7 +392,7 @@ mod tests {
         app.init_resource::<OutputDmxFrames>();
         app.init_resource::<ConsoleDmxUniverses>();
         app.init_resource::<InputDmxUniverses>();
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.add_systems(
             Update,
             (update_input_routing, compose_output_frames).chain(),
@@ -416,17 +416,15 @@ mod tests {
         let mut app = compose_app();
         app.world_mut()
             .resource_mut::<ConsoleDmxUniverses>()
-            .set_value(1, 1, 42, ConsoleChannelOrigin::OutputBinding);
+            .set_value(1, 1, 42, ConsoleChannelOrigin::OutputRoute);
         let mut input = [0; MAX_CHANNELS_PER_UNIVERSE];
         input[1] = 9;
         app.world_mut()
             .resource_mut::<InputDmxUniverses>()
-            .set_universe(BindingTransport::ArtNet, 3, input, Instant::now());
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+            .set_universe(RouteTransport::ArtNet, 3, input, Instant::now());
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 3,
                 address: 1,
             },
@@ -434,7 +432,7 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: BindingTransport::Sacn,
+                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -458,18 +456,16 @@ mod tests {
         {
             let mut inputs = app.world_mut().resource_mut::<InputDmxUniverses>();
             inputs.set_universe(
-                BindingTransport::Sacn,
+                RouteTransport::Sacn,
                 10,
                 input,
                 now - std::time::Duration::from_secs(5),
             );
             inputs.release_stale(now, std::time::Duration::from_secs(2));
         }
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: 10,
                 address: 1,
             },
@@ -477,7 +473,7 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: BindingTransport::Sacn,
+                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -489,7 +485,7 @@ mod tests {
 
         app.world_mut()
             .resource_mut::<InputDmxUniverses>()
-            .set_universe(BindingTransport::Sacn, 10, input, Instant::now());
+            .set_universe(RouteTransport::Sacn, 10, input, Instant::now());
 
         let frame = composed(&mut app, &sacn(), 1).expect("resumed source is composed again");
         assert_eq!(frame[0], 123);
@@ -503,12 +499,12 @@ mod tests {
         let now = Instant::now();
         app.world_mut()
             .resource_mut::<ConsoleDmxUniverses>()
-            .set_output_values(&sacn(), 1, 1, &[7], ConsoleChannelOrigin::OutputBinding);
+            .set_output_values(&sacn(), 1, 1, &[7], ConsoleChannelOrigin::OutputRoute);
         app.world_mut()
             .resource_mut::<OutputRouting>()
-            .set_output_routes(HashMap::from([(
+            .set_output_feeds(HashMap::from([(
                 (sacn(), 1),
-                OutputBindingRoute {
+                OutputFrameFeed {
                     console_windows: Vec::new(),
                     direct: true,
                 },
@@ -517,12 +513,10 @@ mod tests {
         input[0] = 123;
         app.world_mut()
             .resource_mut::<InputDmxUniverses>()
-            .set_universe(BindingTransport::Sacn, 10, input, now);
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+            .set_universe(RouteTransport::Sacn, 10, input, now);
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: 10,
                 address: 1,
             },
@@ -530,7 +524,7 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: BindingTransport::Sacn,
+                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -556,15 +550,15 @@ mod tests {
         let mut app = compose_app();
         {
             let mut console = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
-            console.set_values(1, 1, &[1, 2, 3], ConsoleChannelOrigin::OutputBinding);
-            console.set_output_values(&sacn(), 10, 12, &[99], ConsoleChannelOrigin::OutputBinding);
+            console.set_values(1, 1, &[1, 2, 3], ConsoleChannelOrigin::OutputRoute);
+            console.set_output_values(&sacn(), 10, 12, &[99], ConsoleChannelOrigin::OutputRoute);
         }
         app.world_mut()
             .resource_mut::<OutputRouting>()
-            .set_output_routes(HashMap::from([(
+            .set_output_feeds(HashMap::from([(
                 (sacn(), 10),
-                OutputBindingRoute {
-                    console_windows: vec![ConsoleWindowRoute {
+                OutputFrameFeed {
+                    console_windows: vec![ConsoleWindowFeed {
                         console_universe: 1,
                         window: ChannelWindow {
                             source_address: 1,
@@ -592,16 +586,16 @@ mod tests {
         };
         {
             let mut console = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
-            console.set_output_values(&sacn(), 1, 1, &[5], ConsoleChannelOrigin::OutputBinding);
-            console.set_output_values(&unicast, 1, 2, &[6], ConsoleChannelOrigin::OutputBinding);
+            console.set_output_values(&sacn(), 1, 1, &[5], ConsoleChannelOrigin::OutputRoute);
+            console.set_output_values(&unicast, 1, 2, &[6], ConsoleChannelOrigin::OutputRoute);
         }
-        let direct = OutputBindingRoute {
+        let direct = OutputFrameFeed {
             console_windows: Vec::new(),
             direct: true,
         };
         app.world_mut()
             .resource_mut::<OutputRouting>()
-            .set_output_routes(HashMap::from([
+            .set_output_feeds(HashMap::from([
                 ((sacn(), 1), direct.clone()),
                 ((unicast.clone(), 1), direct),
             ]));
@@ -613,10 +607,10 @@ mod tests {
 
     /// Builds a resolved Art-Net-to-sACN passthrough from `source_universe` onto sACN
     /// universe 5, both windows starting at address 1.
-    fn artnet_to_sacn_passthrough(source_universe: u16, priority: i32) -> ResolvedInputBinding {
-        ResolvedInputBinding {
+    fn artnet_to_sacn_passthrough(source_universe: u16, priority: i32) -> ResolvedInputRoute {
+        ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: source_universe,
                 address: 1,
             },
@@ -624,7 +618,7 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: BindingTransport::Sacn,
+                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 5,
                     address: 1,
@@ -633,7 +627,7 @@ mod tests {
         }
     }
 
-    /// When two passthroughs write the same wire universe, the binding resolved with the
+    /// When two passthroughs write the same wire universe, the route resolved with the
     /// higher priority (listed first) is the one whose data reaches the frame.
     #[test]
     fn highest_priority_passthrough_wins_shared_wire_universe() {
@@ -643,11 +637,9 @@ mod tests {
             input[0] = value;
             app.world_mut()
                 .resource_mut::<InputDmxUniverses>()
-                .set_universe(BindingTransport::ArtNet, universe, input, Instant::now());
+                .set_universe(RouteTransport::ArtNet, universe, input, Instant::now());
         }
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![
             artnet_to_sacn_passthrough(1, 10),
             artnet_to_sacn_passthrough(2, 1),
         ];

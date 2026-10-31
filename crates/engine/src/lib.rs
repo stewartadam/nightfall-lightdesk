@@ -6,6 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Core of the Bevy app that every domain plugs into.
+//!
+//! [`EnginePlugin`] sets up the app states, the schedules and their ordering (including the
+//! `Render` schedule), and the protocol for commands and updates: tracked commands with an
+//! exact-once lifecycle, untracked high-frequency updates, and their dispatch to the domain that
+//! registered each payload. It also owns the transport-neutral client bridge that the websocket
+//! server and the browser demo both feed, full-state resyncs, the frame waker, object identity
+//! lookups and reverse reference indexes, show variables, and runtime capabilities.
+
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_state::app::StatesPlugin;
@@ -376,7 +385,7 @@ impl EngineIngressMeta for EngineCommand {
 /// This parses top-level command expressions using AST-based dispatch.
 /// The AST is converted to engine commands via registered domain-specific converters.
 pub fn parse_command_string(cmd_str: &str) -> Result<Vec<DynEnginePayload>, ParseError> {
-    // Parse AST and dispatch via registered converters in domain crates
+    // Parse AST and dispatch via registered converters in plugin crates
     let ast = nightfall_cmd_parse::generate_ast(cmd_str)
         .map_err(|e| ParseError::Failure(format!("Parsing command to AST failed: {}", e)))?;
 

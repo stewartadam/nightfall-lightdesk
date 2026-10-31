@@ -18,6 +18,8 @@ export interface ActionTargetNames {
   timeline: (uid: string) => string | undefined;
   /** Returns a display name for a cue UID, when known. */
   cue: (uid: string) => string | undefined;
+  /** Returns a display name for a macro UID, when known. */
+  macro: (uid: string) => string | undefined;
   /** Returns a display name for a panel ID, when known. */
   panel: (id: string) => string | undefined;
 }
@@ -122,10 +124,12 @@ export function formatArgument(
       return names.timeline(normalizeActionUid(value)) ?? "Unknown timeline";
     case "Cue":
       return names.cue(normalizeActionUid(value)) ?? "Unknown cue";
+    case "Macro":
+      return names.macro(normalizeActionUid(value)) ?? "Unknown macro";
     case "Panel":
       return names.panel(String(value)) ?? String(value);
-    case "Control":
-      return `Control ${value}`;
+    case "Fader":
+      return `Fader ${value}`;
     case "Integer":
     case "Number":
     case "Text":

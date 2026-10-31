@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Runtime lookahead contracts shared by playback domains and integration layers.
+//! Runtime lookahead contracts shared by playback plugins and cross-plugin crates.
 #![warn(missing_docs)]
 
 mod assertions;

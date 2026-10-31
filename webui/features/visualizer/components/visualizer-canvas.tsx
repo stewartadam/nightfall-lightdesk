@@ -38,7 +38,6 @@ import {
 import { openContextMenu } from "../../../components/providers/context-menu";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import {
-  removePatchBindingsForFixtureIds,
   sendDeleteFixture,
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
@@ -63,7 +62,6 @@ import {
 } from "../../../lib/visualizer-selection";
 import {
   activeSelectionSpanTargets,
-  bindings,
   dockApi,
   fixtures as fixturesStore,
   programmerSelection,
@@ -135,7 +133,6 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   );
   const $visualizerEditSelection = useStore(visualizerEditSelection);
   const $activeSelectionSpanTargets = useStore(activeSelectionSpanTargets);
-  const $bindings = useStore(bindings);
   const $dockApi = useStore(dockApi);
   const { openWizard: openFixtureWizard } = usePatchWizard();
   const { openWizard: openObjectWizard } = useObjectPatchWizard();
@@ -904,16 +901,8 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
       [],
     );
 
-    if (fixtureIds.length > 0) {
-      removePatchBindingsForFixtureIds(
-        fixtureIds,
-        $bindings(),
-        $fixturesStore(),
-        batchId,
-      );
-      for (const fixtureId of fixtureIds) {
-        sendDeleteFixture(fixtureId, batchId);
-      }
+    for (const fixtureId of fixtureIds) {
+      sendDeleteFixture(fixtureId, batchId);
     }
 
     for (const sceneObjectId of sceneObjectIds) {

@@ -6,6 +6,8 @@ Nightfall can run its actions from MIDI controllers, OSC senders, and your keybo
 
 MIDI and OSC bindings are saved in the showfile, so save the show to keep them. Keybindings belong to the browser you made them in.
 
+Some MIDI controllers light their buttons to show what each binding is doing. [Supported controllers](controller-profiles.md) lists the ones Nightfall knows and which have been tested.
+
 ## Mapping a control
 
 The quickest way to bind a controller is mapping mode:

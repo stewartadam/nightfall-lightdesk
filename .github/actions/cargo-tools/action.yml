@@ -1,0 +1,67 @@
+name: Cargo tools
+description: Install pinned Cargo tools from prebuilt release binaries instead of compiling them.
+
+inputs:
+  typeshare:
+    description: Install typeshare-cli, which generates the TypeScript shared types.
+    required: false
+    default: 'false'
+  cargo-about:
+    description: Install cargo-about, which collects Rust license notices for distributions.
+    required: false
+    default: 'false'
+  cargo-hakari:
+    description: Install cargo-hakari, which the workspace-hack pre-commit hook runs.
+    required: false
+    default: 'false'
+  cargo-nextest:
+    description: Install cargo-nextest, which runs the Rust tests.
+    required: false
+    default: 'false'
+  mdbook:
+    description: Install mdBook, which builds the user manual and the Developer Guide.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    # Versions come from config/cargo-tools.json, which local setup installs from too.
+    - name: Select pinned Cargo tools
+      id: select
+      shell: bash
+      env:
+        TYPESHARE: ${{ inputs.typeshare }}
+        CARGO_ABOUT: ${{ inputs.cargo-about }}
+        CARGO_HAKARI: ${{ inputs.cargo-hakari }}
+        CARGO_NEXTEST: ${{ inputs.cargo-nextest }}
+        MDBOOK: ${{ inputs.mdbook }}
+      run: |
+        selected=()
+        [[ "$TYPESHARE" == true ]] && selected+=(typeshare-cli)
+        [[ "$CARGO_ABOUT" == true ]] && selected+=(cargo-about)
+        [[ "$CARGO_HAKARI" == true ]] && selected+=(cargo-hakari)
+        [[ "$CARGO_NEXTEST" == true ]] && selected+=(cargo-nextest)
+        [[ "$MDBOOK" == true ]] && selected+=(mdbook)
+        if [[ ${#selected[@]} -eq 0 ]]; then
+          echo "::error::Select at least one Cargo tool to install"
+          exit 1
+        fi
+        tools=()
+        for name in "${selected[@]}"; do
+          # Windows jq ends lines with CRLF.
+          version=$(jq -er --arg name "$name" '.[$name]' config/cargo-tools.json | tr -d '\r') || {
+            echo "::error::$name is not pinned in config/cargo-tools.json"
+            exit 1
+          }
+          tools+=("$name@$version")
+        done
+        (IFS=,; echo "tools=${tools[*]}") >> "$GITHUB_OUTPUT"
+
+    # `cargo install` compiled each tool from source, 1-3 minutes per tool and job.
+    # install-action downloads release binaries, or uses cargo-binstall for tools without its
+    # own manifest.
+    - name: Install pinned Cargo tools
+      uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+      with:
+        tool: ${{ steps.select.outputs.tools }}

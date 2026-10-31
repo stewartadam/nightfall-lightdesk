@@ -95,8 +95,8 @@ pub(super) fn dispatch_triggered_action(
                 |id| ClipOperation::Back(IdExpr::Single(id)),
             );
         }
-        ActionKind::SetClipRate { uid, rate } => {
-            set_clip_rate(sinks, scan, &triggered, *uid, *rate);
+        ActionKind::SetClipSpeed { uid, speed } => {
+            set_clip_speed(sinks, scan, &triggered, *uid, *speed);
         }
         ActionKind::JumpToCue { uid, cue_index } => {
             tracing::debug!("Jumping to cue {} on clip {}", cue_index, uid);
@@ -177,6 +177,7 @@ fn evaluate_isolated_action(
                 None,
                 &sources.source_data.fixture_data_provider,
                 &sources.selection_resolver,
+                1.0,
             ),
         )]),
     };
@@ -343,8 +344,10 @@ fn stop_clip(
                 triggered.action.position,
                 scan.current_position,
                 &sources.source_data.cue_data_provider,
+                sources.source_data.sequence_data_provider.as_deref(),
                 &sources.source_data.fixture_data_provider,
                 &sources.selection_resolver,
+                scan.beats_per_second,
             )
         })
         .map(|timing| ClipOperation::StopAtTiming {
@@ -410,6 +413,7 @@ fn navigate_sequence(
                 &sources.source_data.fixture_data_provider,
                 &sources.selection_resolver,
                 navigation.intervention,
+                scan.beats_per_second,
             )
         })
         .map(|render_target| ClipOperation::RenderAt {
@@ -443,26 +447,26 @@ fn track_navigated_clip(
     );
 }
 
-/// Changes a clip's playback rate and tracks the clip as timeline-touched.
-fn set_clip_rate(
+/// Changes a clip's playback speed and tracks the clip as timeline-touched.
+fn set_clip_speed(
     sinks: &mut TimelineLiveActionSinks,
     scan: &mut TimelineActionScan,
     triggered: &TriggeredAction,
     clip_uid: Uuid,
-    rate: f32,
+    speed: f32,
 ) {
-    tracing::debug!("Setting clip {} playback rate to {}", clip_uid, rate);
+    tracing::debug!("Setting clip {} playback speed to {}", clip_uid, speed);
     let Some((entity, id)) =
-        resolve_clip_entity_and_id(scan.clip_snapshot, &clip_uid, "set-clip-rate")
+        resolve_clip_entity_and_id(scan.clip_snapshot, &clip_uid, "set-clip-speed")
     else {
         return;
     };
     write_timeline_clip_action(
         &mut sinks.ev_clip,
         &mut sinks.timeline_command_origins,
-        ClipOperation::SetRate {
+        ClipOperation::SetSpeed {
             clip_id: IdExpr::Single(id),
-            rate,
+            speed,
         },
     );
     track_navigated_clip(scan, triggered, entity);

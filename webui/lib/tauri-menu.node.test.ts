@@ -9,7 +9,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleTauriMenuAction, TAURI_MENU_ACTIONS } from "./tauri-menu";
+import {
+  handleTauriMenuAction,
+  TAURI_MENU_ACTIONS,
+  toTauriAccelerator,
+} from "./tauri-menu";
 
 /** Export opens its own dialog without invoking the current show's save action. */
 test("native Export Showfile dispatches independently of Save", () => {
@@ -19,6 +23,18 @@ test("native Export Showfile dispatches independently of Save", () => {
     saveShowfile: () => calls.push("save"),
   });
   assert.deepEqual(calls, ["export"]);
+});
+
+/** The native Help menu's Welcome Guide item opens the guide. */
+test("handleTauriMenuAction opens the welcome guide", () => {
+  const calls: string[] = [];
+
+  handleTauriMenuAction(TAURI_MENU_ACTIONS.welcomeGuide, {
+    openAbout: () => calls.push("about"),
+    openWelcomeGuide: () => calls.push("welcome-guide"),
+  });
+
+  assert.deepEqual(calls, ["welcome-guide"]);
 });
 
 /** Native menu actions reach the matching shell handler. */
@@ -218,4 +234,32 @@ test("native Report a Bug opens the issue form", () => {
     },
   });
   assert.equal(calls, 1);
+});
+
+/** Web-defined menu ids reach the web menu handler; unknown native ids reach nothing. */
+test("handleTauriMenuAction routes web menu ids to the web menu handler", () => {
+  const calls: string[] = [];
+  const handlers = { webMenuAction: (id: string) => calls.push(id) };
+  handleTauriMenuAction("web.layout.main", handlers);
+  handleTauriMenuAction("app.unknown", handlers);
+  assert.deepEqual(calls, ["web.layout.main"]);
+});
+
+/** Shortcuts with a command-style modifier become native accelerators in Tauri syntax. */
+test("toTauriAccelerator converts modified letter, digit and function keys", () => {
+  assert.equal(toTauriAccelerator("$mod+Shift+p"), "CmdOrCtrl+Shift+P");
+  assert.equal(toTauriAccelerator("$mod+p"), "CmdOrCtrl+P");
+  assert.equal(toTauriAccelerator("Control+KeyG"), "Ctrl+G");
+  assert.equal(toTauriAccelerator("Alt+Digit1"), "Alt+1");
+  assert.equal(toTauriAccelerator("$mod+F5"), "CmdOrCtrl+F5");
+});
+
+/** Keys a native menu would swallow from text fields, or cannot express, stay web-only. */
+test("toTauriAccelerator leaves unsafe or unsupported shortcuts web-only", () => {
+  assert.equal(toTauriAccelerator("Shift+?"), undefined);
+  assert.equal(toTauriAccelerator("Shift+`"), undefined);
+  assert.equal(toTauriAccelerator("n"), undefined);
+  assert.equal(toTauriAccelerator("$mod+k w"), undefined);
+  assert.equal(toTauriAccelerator("$mod+,"), undefined);
+  assert.equal(toTauriAccelerator("$mod+Hyper+p"), undefined);
 });

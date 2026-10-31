@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides cues and sequences
+//! DMX value types and the catalog of fixture attributes.
+//!
+//! An attribute names what a parameter controls, such as intensity or pan, and carries metadata
+//! such as its category, unit, and polarity. This crate also defines [`Percentage`], the
+//! channel and parameter DMX value types, and [`DmxValueResolution`] for 8-bit to 32-bit
+//! parameters. It has no engine dependencies, so the WASM bridge and the browser demo use it.
 #![warn(missing_docs)]
 
 #[cfg(not(target_arch = "wasm32"))]

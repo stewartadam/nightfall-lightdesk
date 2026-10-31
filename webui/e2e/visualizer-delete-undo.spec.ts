@@ -16,7 +16,7 @@ type DeleteTarget = {
   fixtureId: number;
   fixtureUid: string;
   fixtureSelectionUid: string;
-  bindingCount: number;
+  routeCount: number;
 };
 
 /** Opens the visualizer against a blank backend with one owned fixture. */
@@ -38,24 +38,22 @@ async function openOwnedVisualizerDeleteUndoApp(
   await page.waitForFunction(
     () =>
       typeof (window as any).appStores?.sendAndAwait === "function" &&
-      Boolean((window as any).appStores?.bindings?.get) &&
+      Boolean((window as any).appStores?.routes?.get) &&
       Boolean((window as any).appStores?.fixtures?.get),
   );
   await expect
     .poll(() =>
       page.evaluate(() => {
         const stores = (window as any).appStores;
-        const bindings = stores.bindings.get();
+        const routes = stores.routes.get();
         return {
-          bindings:
-            bindings.input.length +
-            bindings.output.length +
-            bindings.disabled.length,
+          routes:
+            routes.input.length + routes.output.length + routes.disabled.length,
           fixtures: Object.keys(stores.fixtures.get()).length,
         };
       }),
     )
-    .toEqual({ bindings: 0, fixtures: 0 });
+    .toEqual({ routes: 0, fixtures: 0 });
 
   const result = await page.evaluate(async (fixtureId) => {
     return (window as any).appStores.sendAndAwait({
@@ -112,14 +110,14 @@ test("visualizer delete can be undone in one step", async ({
     page,
     OWNED_VISUALIZER_FIXTURE_ID,
   );
-  expect(target.bindingCount).toBe(0);
+  expect(target.routeCount).toBe(0);
   try {
-    await createBackendOutputBinding(page, target.fixtureId);
+    await createBackendOutputRoute(page, target.fixtureId);
     await expect
-      .poll(() => bindingReferenceCount(page, target))
+      .poll(() => routeReferenceCount(page, target))
       .toBeGreaterThan(0);
-    target.bindingCount = await bindingReferenceCount(page, target);
-    expect(target.bindingCount).toBeGreaterThan(0);
+    target.routeCount = await routeReferenceCount(page, target);
+    expect(target.routeCount).toBeGreaterThan(0);
 
     await selectFixture(page, target.fixtureSelectionUid);
     await expect
@@ -143,7 +141,7 @@ test("visualizer delete can be undone in one step", async ({
     await dialog.getByRole("button", { name: "Delete" }).click();
 
     await expect.poll(() => fixtureExists(page, target.fixtureId)).toBe(false);
-    await expect.poll(() => bindingReferenceCount(page, target)).toBe(0);
+    await expect.poll(() => routeReferenceCount(page, target)).toBe(0);
     await expect.poll(() => selectedFixtureUids(page)).toEqual([]);
     await expectDeleteCommandsToShareBatch(page, target.fixtureId);
     await page.waitForTimeout(500);
@@ -152,8 +150,8 @@ test("visualizer delete can be undone in one step", async ({
 
     await expect.poll(() => fixtureExists(page, target.fixtureId)).toBe(true);
     await expect
-      .poll(() => bindingReferenceCount(page, target))
-      .toBe(target.bindingCount);
+      .poll(() => routeReferenceCount(page, target))
+      .toBe(target.routeCount);
     await expect
       .poll(() => selectedFixtureUids(page))
       .toContain(target.fixtureUid);
@@ -196,18 +194,16 @@ async function deleteOwnedVisualizerTarget(
     .poll(() =>
       page.evaluate(() => {
         const stores = (window as any).appStores;
-        const bindings = stores.bindings.get();
+        const routes = stores.routes.get();
         return {
-          bindings:
-            bindings.input.length +
-            bindings.output.length +
-            bindings.disabled.length,
+          routes:
+            routes.input.length + routes.output.length + routes.disabled.length,
           fixtures: Object.keys(stores.fixtures.get()).length,
           selection: stores.programmerSelection.get().length,
         };
       }),
     )
-    .toEqual({ bindings: 0, fixtures: 0, selection: 0 });
+    .toEqual({ routes: 0, fixtures: 0, selection: 0 });
 }
 
 /**
@@ -315,7 +311,7 @@ async function findFixtureDeleteTarget(
         16,
       )}-${uid.slice(16, 20)}-${uid.slice(20)}`;
 
-    /** Recursively tests structured binding data for a fixture reference. */
+    /** Recursively tests structured route data for a fixture reference. */
     const objectReferencesFixture = (
       value: unknown,
       uid: string,
@@ -344,16 +340,16 @@ async function findFixtureDeleteTarget(
       );
     };
 
-    /** Counts binding entries whose nested source or target data references a fixture. */
-    const countBindingsForFixture = (
-      bindings: any,
+    /** Counts route entries whose nested source or target data references a fixture. */
+    const countRoutesForFixture = (
+      routes: any,
       uid: string,
       id: number,
     ): number => {
       const entries = [
-        ...(bindings.input ?? []),
-        ...(bindings.output ?? []),
-        ...(bindings.disabled ?? []),
+        ...(routes.input ?? []),
+        ...(routes.output ?? []),
+        ...(routes.disabled ?? []),
       ];
       return entries.filter((entry) => objectReferencesFixture(entry, uid, id))
         .length;
@@ -378,8 +374,8 @@ async function findFixtureDeleteTarget(
       fixtureId: fixture.identifiers.id as number,
       fixtureUid: normalizedFixtureUid,
       fixtureSelectionUid: hyphenateUuid(normalizedFixtureUid),
-      bindingCount: countBindingsForFixture(
-        stores.bindings.get(),
+      routeCount: countRoutesForFixture(
+        stores.routes.get(),
         normalizedFixtureUid,
         fixture.identifiers.id as number,
       ),
@@ -388,9 +384,9 @@ async function findFixtureDeleteTarget(
 }
 
 /**
- * Creates a real backend output binding for the fixture under test.
+ * Creates a real backend output route for the fixture under test.
  */
-async function createBackendOutputBinding(
+async function createBackendOutputRoute(
   page: Page,
   fixtureId: number,
 ): Promise<void> {
@@ -484,9 +480,9 @@ async function fixtureExists(page: Page, fixtureId: number): Promise<boolean> {
 }
 
 /**
- * Counts patch bindings that reference a fixture UID.
+ * Counts DMX routes that reference a fixture UID.
  */
-async function bindingReferenceCount(
+async function routeReferenceCount(
   page: Page,
   target: DeleteTarget,
 ): Promise<number> {
@@ -520,7 +516,7 @@ async function bindingReferenceCount(
       return hex.join("");
     };
 
-    /** Recursively tests structured binding data for a fixture reference. */
+    /** Recursively tests structured route data for a fixture reference. */
     const objectReferencesFixture = (value: unknown): boolean => {
       if (!value || typeof value !== "object") {
         return false;
@@ -548,18 +544,19 @@ async function bindingReferenceCount(
       );
     };
 
-    const bindings = (window as any).appStores.bindings.get();
+    const routes = (window as any).appStores.routes.get();
     const entries = [
-      ...(bindings.input ?? []),
-      ...(bindings.output ?? []),
-      ...(bindings.disabled ?? []),
+      ...(routes.input ?? []),
+      ...(routes.output ?? []),
+      ...(routes.disabled ?? []),
     ];
     return entries.filter((entry) => objectReferencesFixture(entry)).length;
   }, target);
 }
 
 /**
- * Verifies visualizer delete sends related commands under one undo group.
+ * Verifies visualizer delete sends related commands under one undo group and leaves route
+ * cleanup to the engine's fixture delete instead of sending its own route removals.
  */
 async function expectDeleteCommandsToShareBatch(
   page: Page,
@@ -568,14 +565,14 @@ async function expectDeleteCommandsToShareBatch(
   const commands = await page.evaluate(() =>
     ((window as any).__visualizerDeleteCommands ?? []).filter(
       (envelope: any) =>
-        envelope?.command?.type === "RemovePatchBinding" ||
+        envelope?.command?.type === "RemoveDmxRoutes" ||
         envelope?.command?.type === "DeleteFixture" ||
         envelope?.command?.type === "ClearProgrammerSelection",
     ),
   );
 
-  const removeBinding = commands.find(
-    (envelope: any) => envelope.command.type === "RemovePatchBinding",
+  const removeRoute = commands.find(
+    (envelope: any) => envelope.command.type === "RemoveDmxRoutes",
   );
   const deleteFixture = commands.find(
     (envelope: any) =>
@@ -586,9 +583,8 @@ async function expectDeleteCommandsToShareBatch(
     (envelope: any) => envelope.command.type === "ClearProgrammerSelection",
   );
 
-  expect(removeBinding).toBeTruthy();
+  expect(removeRoute).toBeUndefined();
   expect(deleteFixture).toBeTruthy();
   expect(clearSelection).toBeTruthy();
-  expect(removeBinding.undo_id).toBe(deleteFixture.undo_id);
   expect(clearSelection.undo_id).toBe(deleteFixture.undo_id);
 }

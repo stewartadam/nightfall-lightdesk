@@ -519,9 +519,9 @@ test("status display shows byte-array owners and sequence cue part counts", asyn
               transition_elapsed: { secs: 0, nanos: 500_000_000 },
               bound_clip_id: 1,
               intensity_scale: 1,
-              rate: 1,
-              rate_master_scale: 1,
-              effective_rate: 1,
+              speed: 1,
+              speed_master_scale: 1,
+              effective_speed: 1,
               status: {
                 position: {
                   type: "Sequence",
@@ -554,8 +554,8 @@ test("status display shows byte-array owners and sequence cue part counts", asyn
     .toBe(true);
 });
 
-/** Verifies instance rate masters affect the visible value and rate sort order. */
-test("status display renders and sorts effective instance rates", async ({
+/** Verifies instance speed masters affect the visible value and speed sort order. */
+test("status display renders and sorts effective instance speeds", async ({
   backendSlot,
   page,
 }) => {
@@ -568,12 +568,12 @@ test("status display renders and sorts effective instance rates", async ({
   ).toBeVisible();
 
   await page.evaluate(() => {
-    /** Builds one minimal instance snapshot with a distinct effective rate. */
+    /** Builds one minimal instance snapshot with a distinct effective speed. */
     const instance = (
       instanceId: string,
       name: string,
-      rate: number,
-      rateMasterScale: number,
+      speed: number,
+      speedMasterScale: number,
     ) => ({
       instance_id: instanceId,
       kind: "Fx",
@@ -585,16 +585,16 @@ test("status display renders and sorts effective instance rates", async ({
       is_paused: false,
       owner_uids: [],
       intensity_scale: 1,
-      rate,
-      rate_master_scale: rateMasterScale,
-      effective_rate: rate * rateMasterScale,
+      speed,
+      speed_master_scale: speedMasterScale,
+      effective_speed: speed * speedMasterScale,
       status: { position: { type: "None" } },
     });
-    const authoredRateId = "11111111111141118111111111111111";
-    const masteredRateId = "22222222222242228222222222222222";
+    const authoredSpeedId = "11111111111141118111111111111111";
+    const masteredSpeedId = "22222222222242228222222222222222";
     (window as any).appStores.activeInstances.set({
-      [authoredRateId]: instance(authoredRateId, "Authored Fast", 1.5, 1),
-      [masteredRateId]: instance(masteredRateId, "Master Slowed", 1, 0.5),
+      [authoredSpeedId]: instance(authoredSpeedId, "Authored Fast", 1.5, 1),
+      [masteredSpeedId]: instance(masteredSpeedId, "Master Slowed", 1, 0.5),
     });
   });
 
@@ -608,12 +608,12 @@ test("status display renders and sorts effective instance rates", async ({
   const masteredRow = activeInstanceTable.getByRole("row", {
     name: /Master Slowed/,
   });
-  const rateHeader = activeInstanceTable.getByRole("columnheader", {
-    name: "Rate",
+  const speedHeader = activeInstanceTable.getByRole("columnheader", {
+    name: "Speed",
     exact: true,
   });
-  await rateHeader.click();
-  await expect(rateHeader).toHaveAttribute("aria-sort", "ascending");
+  await speedHeader.click();
+  await expect(speedHeader).toHaveAttribute("aria-sort", "ascending");
   await expect(masteredRow.getByText("0.50x", { exact: true })).toBeVisible();
   await expect(
     masteredRow.getByText("1.00x", { exact: true }),
@@ -627,14 +627,14 @@ test("status display renders and sorts effective instance rates", async ({
     const store = (window as any).appStores.activeInstances;
     const instanceId = "22222222222242228222222222222222";
     const snapshot = structuredClone(store.get());
-    snapshot[instanceId].rate_master_scale = 2;
-    snapshot[instanceId].effective_rate = 2;
+    snapshot[instanceId].speed_master_scale = 2;
+    snapshot[instanceId].effective_speed = 2;
     store.set(snapshot);
   });
   await expect(masteredRow.getByText("2.00x", { exact: true })).toBeVisible();
   await expect(instanceRows.first()).toContainText("Authored Fast");
   await expect(instanceRows.nth(1)).toContainText("Master Slowed");
-  await expect(rateHeader).toHaveAttribute("aria-sort", "ascending");
+  await expect(speedHeader).toHaveAttribute("aria-sort", "ascending");
 });
 
 /** Ensures constrained panel heights scroll instead of letting sections overlap. */

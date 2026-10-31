@@ -265,8 +265,8 @@ impl RecordedClipAction {
             ActionKind::BackSequence(_) => {
                 format!("Back Sequence {}", self.clip_label)
             }
-            ActionKind::SetClipRate { rate, .. } => {
-                format!("Set {} Rate {}", self.clip_label, rate)
+            ActionKind::SetClipSpeed { speed, .. } => {
+                format!("Set {} Speed {}", self.clip_label, speed)
             }
             ActionKind::JumpToCue { cue_index, .. } => {
                 format!("Jump {} to Cue {}", self.clip_label, cue_index)
@@ -371,11 +371,11 @@ fn recorded_actions_from_clip_action(
                 }
             }
         }
-        ClipOperation::SetRate { clip_id, rate } => {
+        ClipOperation::SetSpeed { clip_id, speed } => {
             for id in clip_id.expand() {
                 if let Some(action) = resolve_clip_action(
                     id,
-                    |uid| ActionKind::SetClipRate { uid, rate: *rate },
+                    |uid| ActionKind::SetClipSpeed { uid, speed: *speed },
                     clip_lookup,
                 ) {
                     actions.push(action);

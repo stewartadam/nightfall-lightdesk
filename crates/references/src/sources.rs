@@ -18,8 +18,8 @@ use nightfall::prelude::*;
 use nightfall_cues::prelude::{Cue, Sequence};
 use nightfall_desk::prelude::{Master, MasterTarget};
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::binding_resolution::output_transport_from_target_id;
-use nightfall_fixtures::prelude::{FixtureDataProviderExt, OutputBindings, OutputTarget};
+use nightfall_fixtures::prelude::{FixtureDataProviderExt, OutputRoutes, OutputTarget};
+use nightfall_fixtures::route_resolution::output_transport_from_target_id;
 use nightfall_flow::prelude::FlowDefinition;
 use nightfall_fx::prelude::{Fx, StepFx, StoredFxModule};
 use nightfall_io::{NetworkDmxOutputTargets, UsbDmxOutputTargets};
@@ -41,7 +41,7 @@ pub(crate) fn init_source_resources(app: &mut App) {
     app.init_resource::<DataProvider<FlowDefinition>>();
     app.init_resource::<DataProvider<Master>>();
     app.init_resource::<DataProvider<Blueprint>>();
-    app.init_resource::<OutputBindings>();
+    app.init_resource::<OutputRoutes>();
     app.init_resource::<NetworkDmxOutputTargets>();
     app.init_resource::<UsbDmxOutputTargets>();
 }
@@ -64,8 +64,8 @@ pub(crate) struct AuditCursor {
     lookup: ReferenceLookup,
     /// UID of every Step FX entity, to name the ones whose component was removed.
     step_fx_uids: HashMap<Entity, Uuid>,
-    /// Number of output bindings, to drop the audits of removed ones.
-    binding_count: usize,
+    /// Number of output routes, to drop the audits of removed ones.
+    route_count: usize,
     /// Identity and scope of every master, so level moves (stored every frame while a fader
     /// moves) do not re-audit the master.
     master_scopes: HashMap<Uuid, (Identifiers, MasterTarget)>,
@@ -94,7 +94,7 @@ pub struct ReferenceSources<'w, 's> {
     pub(crate) flows: Res<'w, DataProvider<FlowDefinition>>,
     pub(crate) masters: Res<'w, DataProvider<Master>>,
     blueprints: Res<'w, DataProvider<Blueprint>>,
-    output_bindings: Res<'w, OutputBindings>,
+    output_routes: Res<'w, OutputRoutes>,
     network_outputs: Res<'w, NetworkDmxOutputTargets>,
     usb_outputs: Res<'w, UsbDmxOutputTargets>,
 }
@@ -208,16 +208,16 @@ impl ReferenceSources<'_, '_> {
             }
             owners.insert(object_key(ReferenceDomain::StepFx, uid));
         }
-        if self.output_bindings.is_changed()
+        if self.output_routes.is_changed()
             || self.network_outputs.is_changed()
             || self.usb_outputs.is_changed()
         {
             lookups.extend(cursor.lookup.set_output_targets(self.output_targets()));
         }
-        if self.output_bindings.is_changed() {
-            let count = self.output_bindings.bindings.len();
-            owners.extend((0..count.max(cursor.binding_count)).map(binding_key));
-            cursor.binding_count = count;
+        if self.output_routes.is_changed() {
+            let count = self.output_routes.routes.len();
+            owners.extend((0..count.max(cursor.route_count)).map(route_key));
+            cursor.route_count = count;
         }
 
         owners.extend(book.readers(&lookups));
@@ -252,7 +252,7 @@ impl ReferenceSources<'_, '_> {
             .iter()
             .map(|(entity, step_fx)| (entity, step_fx.identifiers.uid))
             .collect();
-        cursor.binding_count = self.output_bindings.bindings.len();
+        cursor.route_count = self.output_routes.routes.len();
         cursor.master_scopes = self
             .masters
             .iter()
@@ -280,8 +280,8 @@ impl ReferenceSources<'_, '_> {
         audit_store(&self.fx_modules, ReferenceDomain::FxModule, &mut audit);
         audit_store(&self.flows, ReferenceDomain::Flow, &mut audit);
         audit_store(&self.masters, ReferenceDomain::Master, &mut audit);
-        for (index, binding) in self.output_bindings.bindings.iter().enumerate() {
-            audit(ReferenceOwner::output_binding(index), binding);
+        for (index, route) in self.output_routes.routes.iter().enumerate() {
+            audit(ReferenceOwner::output_route(index), route);
         }
         AuditUpdate { full: true, audits }
     }
@@ -307,13 +307,13 @@ impl ReferenceSources<'_, '_> {
         step_fx_entities: &HashMap<Uuid, Entity>,
         key: &OwnerKey,
     ) -> Option<OwnerReferences> {
-        if key.domain == ReferenceDomain::PatchBinding {
-            let index = key.uid.strip_prefix(BINDING_UID_PREFIX)?.parse().ok()?;
-            let binding = self.output_bindings.bindings.get(index)?;
+        if key.domain == ReferenceDomain::DmxRoute {
+            let index = key.uid.strip_prefix(ROUTE_UID_PREFIX)?.parse().ok()?;
+            let route = self.output_routes.routes.get(index)?;
             return Some(audit_owner(
                 lookup,
-                ReferenceOwner::output_binding(index),
-                binding,
+                ReferenceOwner::output_route(index),
+                route,
             ));
         }
         let uid = Uuid::parse_str(&key.uid).ok()?;
@@ -332,17 +332,17 @@ impl ReferenceSources<'_, '_> {
                     let owner = ReferenceOwner::object(key.domain, &step_fx.identifiers);
                     audit_owner(lookup, owner, step_fx)
                 }),
-            ReferenceDomain::PatchBinding => None,
+            ReferenceDomain::DmxRoute => None,
         }
     }
 
-    /// Returns the output transport target identifiers bindings name that resolve to a
+    /// Returns the output transport target identifiers routes name that resolve to a
     /// configured output.
     fn output_targets(&self) -> HashSet<String> {
-        self.output_bindings
-            .bindings
+        self.output_routes
+            .routes
             .iter()
-            .filter_map(|binding| match &binding.target {
+            .filter_map(|route| match &route.target {
                 OutputTarget::Transport { target, .. }
                     if output_transport_from_target_id(
                         target,
@@ -385,8 +385,8 @@ impl ReferenceSources<'_, '_> {
     }
 }
 
-/// Prefix of the owner UID [`ReferenceOwner::output_binding`] assigns, before the binding index.
-const BINDING_UID_PREFIX: &str = "output-binding-";
+/// Prefix of the owner UID [`ReferenceOwner::output_route`] assigns, before the route index.
+const ROUTE_UID_PREFIX: &str = "output-route-";
 
 /// Returns the changed item UIDs, or none when every item must be treated as changed.
 fn items(changes: DataChanges) -> Option<Vec<Uuid>> {
@@ -406,9 +406,9 @@ fn object_key(domain: ReferenceDomain, uid: Uuid) -> OwnerKey {
     OwnerKey::new(domain, &uid.simple().to_string())
 }
 
-/// Returns the book key of the output binding at `index`.
-fn binding_key(index: usize) -> OwnerKey {
-    OwnerKey::of(&ReferenceOwner::output_binding(index))
+/// Returns the book key of the output route at `index`.
+fn route_key(index: usize) -> OwnerKey {
+    OwnerKey::of(&ReferenceOwner::output_route(index))
 }
 
 /// Passes every object in `store` to `audit` as an owner in `domain`.

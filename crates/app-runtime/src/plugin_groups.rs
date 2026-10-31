@@ -19,6 +19,7 @@ use nightfall_fixtures::prelude::*;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
 use nightfall_fx_module::prelude::*;
+use nightfall_macros::prelude::*;
 use nightfall_programmer::prelude::*;
 use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::*;
@@ -66,6 +67,7 @@ impl PluginGroup for DeskPlugins {
             .add(ProgrammerPlugin)
             .add(CuePlugin)
             .add(BoardsPlugin)
+            .add(MacrosPlugin)
             .maybe_fixture_library()
             .maybe_object_library()
     }

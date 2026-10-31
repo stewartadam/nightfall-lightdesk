@@ -699,10 +699,12 @@ mod tests {
         assert!(devices.contains_key("device-b"));
     }
 
+    /// Retries a failing device open until it succeeds. The timeout is far above the time three
+    /// attempts take so a descheduled test thread cannot run out the clock between attempts.
     #[test]
     fn reconnect_with_timeout_retries_until_device_is_ready() {
         let mut init_attempts = 0;
-        let device = reconnect_with_timeout(Duration::from_millis(5), Duration::ZERO, || {
+        let device = reconnect_with_timeout(Duration::from_secs(5), Duration::ZERO, || {
             init_attempts += 1;
             (init_attempts == 3).then_some(OpenedUdmxDevice {
                 selector: "device-a".to_string(),

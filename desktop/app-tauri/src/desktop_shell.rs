@@ -21,7 +21,10 @@ use nightfall_desk::resources::log_config::LogConfig;
 use nightfall_engine::prelude::request_graceful_exit;
 use tauri::{
     Emitter, EventTarget, Manager, Runtime, WebviewWindow, WebviewWindowBuilder,
-    menu::{HELP_SUBMENU_ID, MenuItem, SubmenuBuilder, WINDOW_SUBMENU_ID},
+    menu::{
+        CheckMenuItem, HELP_SUBMENU_ID, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu,
+        SubmenuBuilder, WINDOW_SUBMENU_ID,
+    },
 };
 
 #[derive(serde::Deserialize)]
@@ -33,6 +36,13 @@ struct ProjectLinks {
     bug_report: String,
 }
 
+/// Fills the user guide address template with the guide folder for an app version. Pre-releases
+/// and builds share their stable version's guide, so `0.1.0-alpha.4` opens the `0.1.0` guide.
+fn documentation_url(template: &str, version: &semver::Version) -> String {
+    let guide = format!("{}.{}.{}", version.major, version.minor, version.patch);
+    template.replace("{version}", &guide)
+}
+
 /// Loads the bundled project links without depending on the working directory.
 fn project_links() -> Result<ProjectLinks, String> {
     serde_json::from_str(include_str!("../../../config/project-links.json"))
@@ -40,6 +50,7 @@ fn project_links() -> Result<ProjectLinks, String> {
 }
 
 const MENU_ID_APP_FEEDBACK: &str = "app.feedback";
+const MENU_ID_APP_WELCOME_GUIDE: &str = "app.welcome_guide";
 const MENU_ID_APP_REPORT_BUG: &str = "app.report_bug";
 const MENU_ID_APP_DIAGNOSTICS: &str = "app.diagnostics";
 const MENU_ACTION_EVENT: &str = "nightfall:menu-action";
@@ -58,6 +69,9 @@ const MENU_ID_EDIT_REDO: &str = "edit.redo";
 const MENU_ID_VIEW_COMMAND_PALETTE: &str = "view.command_palette";
 const MENU_ID_VIEW_OPEN_LOG: &str = "view.open_log";
 const MENU_ID_VIEW_KEYBOARD_SHORTCUTS: &str = "view.keyboard_shortcuts";
+const VIEW_SUBMENU_ID: &str = "view";
+/// Prefix of menu ids whose items the web UI defines and runs; see [`set_view_menu`].
+const WEB_MENU_ID_PREFIX: &str = "web.";
 
 #[tauri::command]
 /// Resolve and reveal the application data directory in the platform file explorer.
@@ -339,11 +353,14 @@ pub(super) fn build_edit_menu<R: Runtime>(
         .build()
 }
 
-/// Build the native View menu and its panel-navigation actions.
+/// Build the native View menu as it stands until the web UI supplies its entries.
+///
+/// The web UI replaces the contents through [`set_view_menu`] once it has registered its
+/// commands, panels and layouts; until then the menu still opens the command palette.
 pub(super) fn build_view_menu<R: Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> tauri::Result<tauri::menu::Submenu<R>> {
-    SubmenuBuilder::new(app, "View")
+    SubmenuBuilder::with_id(app, VIEW_SUBMENU_ID, "View")
         .item(&menu_item(
             app,
             MENU_ID_VIEW_COMMAND_PALETTE,
@@ -351,6 +368,121 @@ pub(super) fn build_view_menu<R: Runtime>(
             Some("CmdOrCtrl+Shift+P"),
         )?)
         .build()
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+/// One entry of a native menu whose contents and behavior the web UI defines.
+pub(super) enum WebMenuEntry {
+    /// An item the webview runs when chosen, identified by a `web.` menu id.
+    #[serde(rename_all = "camelCase")]
+    Item {
+        id: String,
+        label: String,
+        /// Native accelerator matching the item's web shortcut, in Tauri accelerator syntax.
+        accelerator: Option<String>,
+        /// Shows a check mark beside the item when set, such as on the active layout.
+        checked: Option<bool>,
+    },
+    Separator,
+    Submenu {
+        label: String,
+        items: Vec<WebMenuEntry>,
+    },
+}
+
+/// Check that every item id the web UI chose carries the `web.` prefix, so web-defined entries
+/// can never take over native actions such as quitting.
+fn validate_web_menu_entries(entries: &[WebMenuEntry]) -> Result<(), String> {
+    for entry in entries {
+        match entry {
+            WebMenuEntry::Item { id, .. } if !id.starts_with(WEB_MENU_ID_PREFIX) => {
+                return Err(format!(
+                    "web menu item id {id:?} must start with {WEB_MENU_ID_PREFIX:?}"
+                ));
+            }
+            WebMenuEntry::Submenu { items, .. } => validate_web_menu_entries(items)?,
+            WebMenuEntry::Item { .. } | WebMenuEntry::Separator => {}
+        }
+    }
+    Ok(())
+}
+
+/// Build native menu entries for web-defined entries, nesting submenus as given.
+fn build_web_menu_entries<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    entries: &[WebMenuEntry],
+) -> tauri::Result<Vec<MenuItemKind<R>>> {
+    entries
+        .iter()
+        .map(|entry| {
+            Ok(match entry {
+                WebMenuEntry::Item {
+                    id,
+                    label,
+                    accelerator,
+                    checked: Some(checked),
+                } => MenuItemKind::Check(CheckMenuItem::with_id(
+                    app,
+                    id,
+                    label,
+                    true,
+                    *checked,
+                    accelerator.as_deref(),
+                )?),
+                WebMenuEntry::Item {
+                    id,
+                    label,
+                    accelerator,
+                    checked: None,
+                } => MenuItemKind::MenuItem(MenuItem::with_id(
+                    app,
+                    id,
+                    label,
+                    true,
+                    accelerator.as_deref(),
+                )?),
+                WebMenuEntry::Separator => {
+                    MenuItemKind::Predefined(PredefinedMenuItem::separator(app)?)
+                }
+                WebMenuEntry::Submenu { label, items } => {
+                    let submenu = Submenu::new(app, label, true)?;
+                    for item in build_web_menu_entries(app, items)? {
+                        submenu.append(&item)?;
+                    }
+                    MenuItemKind::Submenu(submenu)
+                }
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+/// Replace the native View menu with entries the web UI derives from its commands, panels and
+/// layouts, so the menu offers what the UI can open and labels each item with its real shortcut.
+pub(super) fn set_view_menu<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    entries: Vec<WebMenuEntry>,
+) -> Result<(), String> {
+    validate_web_menu_entries(&entries)?;
+    let replace = || -> tauri::Result<()> {
+        let Some(view_menu) = app
+            .menu()
+            .and_then(|menu| menu.get(VIEW_SUBMENU_ID))
+            .and_then(|item| item.as_submenu().cloned())
+        else {
+            return Ok(());
+        };
+        let items = build_web_menu_entries(&app, &entries)?;
+        for existing in view_menu.items()? {
+            view_menu.remove(&existing)?;
+        }
+        for item in &items {
+            view_menu.append(item)?;
+        }
+        Ok(())
+    };
+    replace().map_err(|error| format!("failed to update the View menu: {error}"))
 }
 
 /// Build the native troubleshooting submenu for logs, bug reports, and diagnostics.
@@ -374,7 +506,7 @@ pub(super) fn build_troubleshooting_menu<R: Runtime>(
         .build()
 }
 
-/// Build the native Help menu with documentation, feedback, and troubleshooting.
+/// Build the native Help menu with the welcome guide, user guide, feedback, and troubleshooting.
 pub(super) fn build_help_menu<R: Runtime>(
     app: &tauri::AppHandle<R>,
     use_platform_id: bool,
@@ -387,8 +519,14 @@ pub(super) fn build_help_menu<R: Runtime>(
     }
     .item(&menu_item(
         app,
+        MENU_ID_APP_WELCOME_GUIDE,
+        "Welcome Guide",
+        None,
+    )?)
+    .item(&menu_item(
+        app,
         MENU_ID_APP_DOCUMENTATION,
-        "Documentation",
+        "User Guide",
         None,
     )?)
     .item(&menu_item(
@@ -403,11 +541,13 @@ pub(super) fn build_help_menu<R: Runtime>(
         builder = builder.separator();
     }
 
+    // The web UI binds this to a bare `?`, which a native accelerator would steal from
+    // text fields, so the item carries no accelerator rather than a key that differs.
     builder = builder.item(&menu_item(
         app,
         MENU_ID_VIEW_KEYBOARD_SHORTCUTS,
         "Keyboard Shortcuts",
-        Some("CmdOrCtrl+Shift+/"),
+        None,
     )?);
 
     if include_about {
@@ -668,13 +808,17 @@ pub(super) fn dispatch_menu_action<R: Runtime + 'static>(
             Ok(())
         }
         MENU_ID_WINDOW_CLOSE => close_focused_window(app).map_err(|error| error.to_string()),
-        MENU_ID_APP_DOCUMENTATION => open_url_in_browser(&project_links()?.documentation),
+        MENU_ID_APP_DOCUMENTATION => open_url_in_browser(&documentation_url(
+            &project_links()?.documentation,
+            &app.package_info().version,
+        )),
         MENU_ID_APP_FEEDBACK => open_url_in_browser(&project_links()?.feedback),
         MENU_ID_APP_QUIT => {
             app.exit(0);
             Ok(())
         }
         MENU_ID_APP_ABOUT
+        | MENU_ID_APP_WELCOME_GUIDE
         | MENU_ID_APP_REPORT_BUG
         | MENU_ID_APP_DIAGNOSTICS
         | MENU_ID_APP_SETTINGS
@@ -689,6 +833,9 @@ pub(super) fn dispatch_menu_action<R: Runtime + 'static>(
             emit_menu_action_to_focused_window(app, action_id).map_err(|error| error.to_string())
         }
         MENU_ID_VIEW_OPEN_LOG => open_log_file().map_err(|error| error.to_string()),
+        web_action if web_action.starts_with(WEB_MENU_ID_PREFIX) => {
+            emit_menu_action_to_focused_window(app, web_action).map_err(|error| error.to_string())
+        }
         _ => Ok(()),
     }
 }
@@ -755,6 +902,7 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
         .invoke_handler(tauri::generate_handler![
             open_data_dir,
             perform_menu_action,
+            set_view_menu,
             export_diagnostics,
             export_showfile,
             open_bug_report,
@@ -827,6 +975,24 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
         .build(tauri::generate_context!())
         .expect("Error building the tauri application")
         .run(move |_app, event| defer_exit_until_backend_stops(event, &backend_stopped));
+}
+
+#[cfg(test)]
+mod project_link_tests {
+    /// The Help menu opens the installed version's guide, with pre-releases sharing the stable guide.
+    #[test]
+    fn documentation_url_targets_the_stable_version_guide() {
+        let template = super::project_links().unwrap().documentation;
+        let version = |value: &str| semver::Version::parse(value).unwrap();
+        assert_eq!(
+            super::documentation_url(&template, &version("0.1.0-alpha.4")),
+            "https://nightfall.live/docs/0.1.0/"
+        );
+        assert_eq!(
+            super::documentation_url(&template, &version("1.2.3+build.7")),
+            "https://nightfall.live/docs/1.2.3/"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -959,5 +1125,58 @@ mod logging_tests {
         assert_eq!(logs[0]["level"], "WARN");
         assert_eq!(logs[0]["target"], "webview");
         assert_eq!(logs[0]["fields"]["message"], "browser warning");
+    }
+}
+
+#[cfg(test)]
+mod web_menu_tests {
+    use super::*;
+
+    /// Verifies the web UI's menu entries deserialize, nesting and optional fields included.
+    #[test]
+    fn web_menu_entries_deserialize_from_web_ui_shape() {
+        let entries: Vec<WebMenuEntry> = serde_json::from_str(
+            r#"[
+                {"kind": "item", "id": "web.object-palette", "label": "Object Palette...", "accelerator": "CmdOrCtrl+P"},
+                {"kind": "separator"},
+                {"kind": "submenu", "label": "Layout", "items": [
+                    {"kind": "item", "id": "web.layout.main", "label": "Main", "checked": true}
+                ]}
+            ]"#,
+        )
+        .expect("web menu entries deserialize");
+        assert!(matches!(
+            &entries[0],
+            WebMenuEntry::Item { accelerator: Some(accelerator), checked: None, .. }
+                if accelerator == "CmdOrCtrl+P"
+        ));
+        assert!(matches!(entries[1], WebMenuEntry::Separator));
+        let WebMenuEntry::Submenu { items, .. } = &entries[2] else {
+            panic!("expected a submenu");
+        };
+        assert!(matches!(
+            &items[0],
+            WebMenuEntry::Item {
+                checked: Some(true),
+                accelerator: None,
+                ..
+            }
+        ));
+        assert!(validate_web_menu_entries(&entries).is_ok());
+    }
+
+    /// Verifies web-defined items cannot reuse native menu ids, even inside submenus.
+    #[test]
+    fn web_menu_entries_reject_native_ids() {
+        let nested_quit = vec![WebMenuEntry::Submenu {
+            label: "Sneaky".to_string(),
+            items: vec![WebMenuEntry::Item {
+                id: MENU_ID_APP_QUIT.to_string(),
+                label: "Quit".to_string(),
+                accelerator: None,
+                checked: None,
+            }],
+        }];
+        assert!(validate_web_menu_entries(&nested_quit).is_err());
     }
 }

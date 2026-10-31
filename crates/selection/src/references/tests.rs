@@ -283,12 +283,12 @@ fn reports_missing_fixtures_inside_a_range() {
     );
 }
 
-/// Verifies output bindings report output targets that resolve to no configured output.
+/// Verifies output routes report output targets that resolve to no configured output.
 #[test]
 fn reports_missing_output_targets() {
     let mut lookup = ReferenceLookup::default();
     lookup.add_output_target("sacn");
-    let binding = |target: &str| TestSource {
+    let route = |target: &str| TestSource {
         output_targets: vec![("target.target".to_owned(), target.to_owned())],
         ..Default::default()
     };
@@ -296,8 +296,8 @@ fn reports_missing_output_targets() {
     let report = audit(
         &lookup,
         &[
-            (ReferenceOwner::output_binding(0), binding("sacn")),
-            (ReferenceOwner::output_binding(1), binding("removed-node")),
+            (ReferenceOwner::output_route(0), route("sacn")),
+            (ReferenceOwner::output_route(1), route("removed-node")),
         ],
     );
 
@@ -308,10 +308,10 @@ fn reports_missing_output_targets() {
         report.issues,
         vec![ReferenceIssue {
             source: ReferenceOwner {
-                domain: ReferenceDomain::PatchBinding,
-                uid: "output-binding-1".to_owned(),
+                domain: ReferenceDomain::DmxRoute,
+                uid: "output-route-1".to_owned(),
                 id: 2,
-                label: "Output binding 2".to_owned(),
+                label: "Output route 2".to_owned(),
             },
             path: "target.target".to_owned(),
             target: ReferenceTarget::OutputTarget {

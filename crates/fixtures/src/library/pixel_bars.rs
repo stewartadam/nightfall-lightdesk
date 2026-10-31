@@ -16,10 +16,20 @@ use uuid::Uuid;
 
 use crate::prelude::*;
 
-/// Creates an RGBW bar fixture with 12 elements.
+/// Creates an RGBW bar fixture that controls each of its 12 segments separately (48 channels).
+pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
+    create_rgbw_bar(id, make, model, 12)
+}
+
+/// Creates an RGBW bar fixture that drives the whole bar as one segment (4 channels).
+pub(super) fn create_rgbw_bar_single(id: u32, make: &str, model: &str) -> Fixture {
+    create_rgbw_bar(id, make, model, 1)
+}
+
+/// Creates an LED bar fixture with `segments` RGBW elements.
 ///
 /// Each element has VirtualIntensity, Red, Green, Blue, White parameters.
-pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
+fn create_rgbw_bar(id: u32, make: &str, model: &str, segments: usize) -> Fixture {
     let parameters = vec![
         ParameterMetadata {
             dmx_slots: Default::default(),
@@ -117,7 +127,7 @@ pub(super) fn create_rgbw_bar_12(id: u32, make: &str, model: &str) -> Fixture {
         make: make.to_owned(),
         model: model.to_owned(),
         mode: String::new(), // Built-in fixture, no library mode
-        elements: (1..=12)
+        elements: (1..=segments)
             .map(|i| FixtureElement {
                 label: format!("Pixel {}", i),
                 parameters: parameters.clone(),

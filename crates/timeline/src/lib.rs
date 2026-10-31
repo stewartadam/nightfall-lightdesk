@@ -6,7 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides timeline functionality
+//! Timelines: tracks of actions laid out against a timecode, with optional audio.
+//!
+//! [`TimelinePlugin`] stores timelines, plays them by firing each track's actions as their
+//! timecode passes, and seeks by rebuilding the cues, FX, flows, and FX modules that would be
+//! running at the new position. It also records actions live into a timeline, plays the
+//! timeline's audio, and queues beatgrid detection. The browser demo build leaves out native
+//! audio and the HTTP routes, and hands audio directives to the browser host instead.
 
 #![warn(missing_docs)]
 
@@ -151,7 +157,7 @@ impl Plugin for TimelinePlugin {
         app.init_resource::<recording::TimelineRecordingStates>();
         app.init_resource::<recording::TimelineRecordingSessions>();
         app.init_resource::<recording::TimelineCommandOrigins>();
-        app.init_resource::<systems::TimelinePausedPlaybackRates>();
+        app.init_resource::<systems::TimelinePausedPlaybackSpeeds>();
         app.init_resource::<systems::TimelineReconstructionDeferredFlush>();
         app.init_resource::<timeline::TimelineLookaheadActionStatuses>();
         app.init_resource::<timeline::TimelinePlannedCuesByAction>();

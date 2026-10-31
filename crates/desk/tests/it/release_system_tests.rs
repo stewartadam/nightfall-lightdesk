@@ -16,7 +16,7 @@ use nightfall_fixtures::prelude::{
     ConsoleChannelOrigin, ConsoleDmxUniverses, FixtureDataProviderExt,
 };
 use nightfall_instances::{PlaybackOperation, PlaybackScope};
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 
 /// Verifies releasing every parameter frees every console slot instead of leaving system-owned
 /// zeros, so released console universes stop being routed to transports.
@@ -33,13 +33,13 @@ fn test_release_all_frees_dmx_universes() {
     {
         let mut universes = app.world_mut().resource_mut::<ConsoleDmxUniverses>();
         universes.set_value(1, 1, 255, ConsoleChannelOrigin::ManualCommand);
-        universes.set_value(1, 2, 128, ConsoleChannelOrigin::OutputBinding);
+        universes.set_value(1, 2, 128, ConsoleChannelOrigin::OutputRoute);
         universes.set_value(
             2,
             1,
             64,
             ConsoleChannelOrigin::InputTransport {
-                transport: BindingTransport::Sacn,
+                transport: RouteTransport::Sacn,
                 universe: 4,
             },
         );

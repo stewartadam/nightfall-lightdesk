@@ -10,13 +10,15 @@ import { v4 as uuidv4 } from "uuid";
 import { findFixtureVersionConflictIds } from "../../../lib/asset-version";
 import { commandSucceeded } from "../../../lib/command-result";
 import {
+  computeFixtureChannelCount,
   createFixtureFromLibrary,
   createFixturesFromLibrary,
-  sendAddPatchBinding,
+  sendAddDmxRoute,
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import type * as types from "../../../types";
+import { layoutConsolePatch } from "../model/console-patch-allocation";
 import { buildSequentialFixturePlacementUpdates } from "../model/fixture-insert-placement";
 import type { PatchWizardState } from "../wizard/wizard-context";
 
@@ -34,7 +36,6 @@ export type PatchWizardCommandOptions = {
   libraryFixtureInfo: types.AvailableFixtureInfo;
   geometry: types.FixtureGeometry | null;
   baseFixtureId: number;
-  channelCount: number;
   forceUpdateExisting?: boolean;
 };
 
@@ -42,7 +43,7 @@ export type PatchWizardCommandOptions = {
  * Creates or morphs fixtures and applies the wizard's patch and placement commands.
  *
  * New fixtures are created by one atomic batch command, so a failure leaves the show
- * unchanged. The follow-up patch bindings and placements share one undo group.
+ * unchanged. The follow-up DMX routes and placements share one undo group.
  */
 export async function executePatchWizardCommands(
   options: PatchWizardCommandOptions,
@@ -123,16 +124,20 @@ export async function executePatchWizardCommands(
       universeId !== null &&
       startAddress !== null
     ) {
+      const placements = layoutConsolePatch(
+        { universe: universeId, address: startAddress },
+        Math.max(computeFixtureChannelCount(options.profileFixture), 1),
+        instances.length,
+      );
       instances.forEach(({ id }, index) => {
-        const absoluteAddress = startAddress + index * options.channelCount;
-        const universe = universeId + Math.floor((absoluteAddress - 1) / 512);
-        sendAddPatchBinding(
+        const { universe, address } = placements[index];
+        sendAddDmxRoute(
           { type: "Fixture", data: { ids: [id] } },
           {
             type: "Console",
             data: {
               universe: { start: universe, end: universe },
-              address: ((absoluteAddress - 1) % 512) + 1,
+              address,
             },
           },
           0,

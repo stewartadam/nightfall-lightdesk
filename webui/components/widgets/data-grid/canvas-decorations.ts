@@ -6,22 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-/** Draws a conflict warning glyph as a left-side cell decoration. */
-export function drawConflictWarningIcon(args: {
-  ctx: CanvasRenderingContext2D;
-  rect: { x: number; y: number; width: number; height: number };
-}) {
-  const { ctx: canvasCtx, rect } = args;
-
-  canvasCtx.save();
-  canvasCtx.font =
-    "14px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-  canvasCtx.textAlign = "center";
-  canvasCtx.textBaseline = "middle";
-  canvasCtx.fillText("⚠️", rect.x + 16, rect.y + rect.height / 2);
-  canvasCtx.restore();
-}
-
 /** Draws a compact play glyph as a left-side cell decoration. */
 export function drawActiveCuePlayIcon(args: {
   ctx: CanvasRenderingContext2D;

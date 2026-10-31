@@ -13,6 +13,8 @@ type DropdownOption =
   | {
       value: string;
       label: string;
+      /** Hex color shown as a swatch next to the label. */
+      swatch?: string;
     }
   | undefined
   | null;
@@ -29,6 +31,7 @@ export interface NormalizedDropdownOption {
   readonly key: string;
   readonly value: string | undefined | null;
   readonly label: string;
+  readonly swatch?: string;
 }
 
 export function isDropdownCell(cell: GridCell): cell is DropdownGridCell {
@@ -60,22 +63,33 @@ export function dropdownOptions(
       key: String(index),
       value: option.value,
       label: option.label,
+      ...(option.swatch === undefined ? {} : { swatch: option.swatch }),
     };
   });
 }
 
-export function dropdownDisplayValue(cell: DropdownGridCell): string {
-  const selected = dropdownOptions(cell).find(
+/** Returns the option matching a dropdown cell's current value, if any. */
+function dropdownSelectedOption(
+  cell: DropdownGridCell,
+): NormalizedDropdownOption | undefined {
+  return dropdownOptions(cell).find(
     (option) => option.value === cell.data.value,
   );
-  return selected?.label ?? cell.data.value ?? "";
+}
+
+export function dropdownDisplayValue(cell: DropdownGridCell): string {
+  return dropdownSelectedOption(cell)?.label ?? cell.data.value ?? "";
+}
+
+/** Returns the swatch color of a dropdown cell's selected option, if it has one. */
+export function dropdownDisplaySwatch(
+  cell: DropdownGridCell,
+): string | undefined {
+  return dropdownSelectedOption(cell)?.swatch;
 }
 
 export function dropdownSelectedKey(cell: DropdownGridCell): string {
-  return (
-    dropdownOptions(cell).find((option) => option.value === cell.data.value)
-      ?.key ?? ""
-  );
+  return dropdownSelectedOption(cell)?.key ?? "";
 }
 
 export function makeDropdownEditedCell(

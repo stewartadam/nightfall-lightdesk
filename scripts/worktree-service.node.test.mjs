@@ -89,8 +89,8 @@ test("wait and best-effort options parse", () => {
   assert.equal(parsed.bestEffort, true);
 });
 
-/** Verifies repeated and comma-separated services merge, and `all` expands. */
-test("services accept repeats, commas, and all", () => {
+/** Verifies repeated and comma-separated services merge, and the `all` and `docs` groups expand to their members. */
+test("services accept repeats, commas, and groups", () => {
   assert.deepEqual(
     parseCliArgs([
       "--worktree=/w/a",
@@ -104,7 +104,19 @@ test("services accept repeats, commas, and all", () => {
   );
   assert.deepEqual(
     parseCliArgs(["--worktree=/w/a", "stop", "-s", "all"]).services,
-    ["backend", "ui", "wasm", "artnet-sender", "sacn-sender", "docs"],
+    [
+      "backend",
+      "ui",
+      "wasm",
+      "artnet-sender",
+      "sacn-sender",
+      "docs-user",
+      "docs-dev",
+    ],
+  );
+  assert.deepEqual(
+    parseCliArgs(["--worktree=/w/a", "start", "-s", "docs-dev,docs"]).services,
+    ["docs-dev", "docs-user"],
   );
 });
 

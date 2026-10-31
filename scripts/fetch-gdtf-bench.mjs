@@ -10,8 +10,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultGdtfBenchDir, gdtfEnvironment } from "./gdtf-env.mjs";
 
 const manifestPath = fileURLToPath(
   new URL(
@@ -33,8 +34,9 @@ Downloads the curated GDTF bench archives listed in
 crates/fixture-library/tests/gdtf-bench/manifest.json from GDTF Share into
 NIGHTFALL_GDTF_BENCH_DIR, verifying each archive's pinned SHA-256.
 
-Environment:
+Environment (exported or set in the worktree .env):
   NIGHTFALL_GDTF_BENCH_DIR  Directory the bench archives are stored in
+                            (default: ${defaultGdtfBenchDir()})
   GDTF_SHARE_USER           GDTF Share account user name
   GDTF_SHARE_PASSWORD       GDTF Share account password
 
@@ -253,11 +255,15 @@ export async function fetchBench({ manifest, dir, login, log = () => {} }) {
 }
 
 /**
- * Reads a required environment variable or fails naming it.
+ * Reads a required setting or fails naming it and where it can be set.
  */
-function requireEnv(name) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} must be set`);
+function requireSetting(settings, name) {
+  const value = settings[name];
+  if (!value) {
+    throw new Error(
+      `${name} must be set, in the shell or in the worktree .env`,
+    );
+  }
   return value;
 }
 
@@ -272,13 +278,18 @@ async function main(argv) {
   if (argv.length > 0) throw new Error(`unexpected argument: ${argv[0]}`);
 
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const settings = await gdtfEnvironment(
+    dirname(dirname(fileURLToPath(import.meta.url))),
+  );
+  const dir = settings.NIGHTFALL_GDTF_BENCH_DIR;
+  process.stdout.write(`Bench directory: ${dir}\n`);
   await fetchBench({
     manifest,
-    dir: requireEnv("NIGHTFALL_GDTF_BENCH_DIR"),
+    dir,
     login: () =>
       loginToShare(
-        requireEnv("GDTF_SHARE_USER"),
-        requireEnv("GDTF_SHARE_PASSWORD"),
+        requireSetting(settings, "GDTF_SHARE_USER"),
+        requireSetting(settings, "GDTF_SHARE_PASSWORD"),
       ),
     log: (message) => process.stdout.write(`${message}\n`),
   });

@@ -127,3 +127,62 @@ export function formatShortcutLabel(
     )
     .join(" then ");
 }
+
+/** Typographic symbols Apple menus print for keys whose caps draw a glyph icon. */
+const GLYPH_SYMBOLS: Record<KeyGlyph, string> = {
+  command: "⌘",
+  control: "⌃",
+  option: "⌥",
+  shift: "⇧",
+  backspace: "⌫",
+  enter: "↵",
+  "arrow-up": "↑",
+  "arrow-down": "↓",
+  "arrow-left": "←",
+  "arrow-right": "→",
+};
+
+/** Order Apple menus print modifier symbols in: Control, Option, Shift, Command, then keys. */
+const APPLE_MODIFIER_ORDER: KeyGlyph[] = [
+  "control",
+  "option",
+  "shift",
+  "command",
+];
+
+/** Ranks a key cap by Apple's modifier order, placing every non-modifier key last. */
+function appleModifierRank(face: KeyCapFace): number {
+  const rank = face.glyph ? APPLE_MODIFIER_ORDER.indexOf(face.glyph) : -1;
+  return rank === -1 ? APPLE_MODIFIER_ORDER.length : rank;
+}
+
+/**
+ * Spells a shortcut out as the compact hint text a menu item shows beside its label.
+ *
+ * Apple platforms follow the native menu convention of run-together symbols in Control, Option, Shift,
+ * Command order, such as `⇧⌘P`;
+ * other platforms join key names with `+`, such as `Ctrl+Shift+P`. Chord steps are separated
+ * by a space.
+ */
+export function formatShortcutHint(
+  shortcut: string,
+  applePlatform: boolean = IS_APPLE_PLATFORM,
+): string {
+  return parseShortcut(shortcut)
+    .map((keys) => {
+      const faces = keys.map((key) => describeKey(key, applePlatform));
+      if (!applePlatform) return faces.map((face) => face.label).join("+");
+      return faces
+        .map((face, index) => ({ face, index }))
+        .sort(
+          (a, b) =>
+            appleModifierRank(a.face) - appleModifierRank(b.face) ||
+            a.index - b.index,
+        )
+        .map(({ face }) =>
+          face.glyph ? GLYPH_SYMBOLS[face.glyph] : face.label,
+        )
+        .join("");
+    })
+    .join(" ");
+}

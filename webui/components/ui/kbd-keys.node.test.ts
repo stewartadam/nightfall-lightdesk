@@ -8,7 +8,22 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { describeKey, formatShortcutLabel, parseShortcut } from "./kbd-keys";
+import {
+  describeKey,
+  formatShortcutHint,
+  formatShortcutLabel,
+  parseShortcut,
+} from "./kbd-keys";
+
+/** Verifies menu hints use ordered Apple symbols on macOS and `+`-joined key names elsewhere. */
+test("formatShortcutHint spells shortcuts the way native menus do", () => {
+  assert.equal(formatShortcutHint("Shift+?", true), "⇧?");
+  assert.equal(formatShortcutHint("Shift+?", false), "Shift+?");
+  assert.equal(formatShortcutHint("$mod+Shift+p", true), "⇧⌘P");
+  assert.equal(formatShortcutHint("Alt+Shift+Control+KeyM", true), "⌃⌥⇧M");
+  assert.equal(formatShortcutHint("$mod+,", false), "Ctrl+,");
+  assert.equal(formatShortcutHint("$mod+k w", true), "⌘K W");
+});
 
 /** Verifies the plain-text label uses the cap names, joins keys with `+` and chord steps with `then`. */
 test("formatShortcutLabel spells shortcuts with the key cap names", () => {

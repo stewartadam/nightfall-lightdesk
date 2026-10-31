@@ -15,6 +15,9 @@ import { compactViewport } from "../../../state/viewport";
 import { useAppShell } from "../../providers/app-shell";
 import { useUiAction } from "../command-palette";
 
+/** UI action ID of the command that opens the keyboard shortcuts reference. */
+export const SHOW_KEYBOARD_SHORTCUTS_ACTION_ID = "show-keyboard-shortcuts";
+
 /** Registers commands that store or manage named arrangements of the docked workspace. */
 function LayoutManagementCommands() {
   const { showLayoutManager } = useAppShell();
@@ -50,7 +53,7 @@ export default function LayoutCommands() {
   const compact = useStore(compactViewport);
 
   useUiAction({
-    id: "show-keyboard-shortcuts",
+    id: SHOW_KEYBOARD_SHORTCUTS_ACTION_ID,
     name: "Show Keyboard Shortcuts",
     description: "Show all available keyboard shortcuts",
     shortcut: "Shift+?",

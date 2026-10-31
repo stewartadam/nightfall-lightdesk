@@ -27,7 +27,7 @@ test("Patch segmented tabs switch views and preserve grouping", async ({
   });
   const views = panel.getByRole("tablist", { name: "Patch views" });
   const fixtures = views.getByRole("tab", { name: "Fixtures", exact: true });
-  const dmx = views.getByRole("tab", { name: "DMX I/O" });
+  const dmx = views.getByRole("tab", { name: "DMX Routes" });
   await expect(fixtures).toHaveAttribute("aria-selected", "true");
   await expect(
     panel.getByRole("button", { name: "Add fixture", exact: true }),
@@ -67,7 +67,7 @@ test("Patch segmented tabs switch views and preserve grouping", async ({
   await expect
     .poll(() =>
       page.evaluate(() =>
-        localStorage.getItem("nightfall-patch-panel:bindings-group-by"),
+        localStorage.getItem("nightfall-patch-panel:routes-group-by"),
       ),
     )
     .toBe("universe");

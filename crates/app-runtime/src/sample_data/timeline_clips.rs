@@ -270,6 +270,7 @@ fn add_pastel_rainbow(
             rainbow_lane(Attribute::Green, [0.25, 1.0, 1.0, 1.0, 0.25, 0.25]),
             rainbow_lane(Attribute::Blue, [0.25, 0.25, 0.25, 1.0, 1.0, 1.0]),
         ],
+        timebase: Default::default(),
     });
     world.spawn_instance(Clip {
         identifiers: clip_identifiers,
@@ -674,7 +675,7 @@ fn add_sparkles(world: &mut World) {
             duty_cycle: 1.0,
         },
         phase_range: (phase_start, phase_start + 2.0 * std::f32::consts::PI),
-        rate: Duration::from_secs(1),
+        cycle_length: Duration::from_secs(1),
         width: Percentage::from(1.0),
         is_relative: false,
     };
@@ -699,6 +700,7 @@ fn add_sparkles(world: &mut World) {
                 (Attribute::Green, waveform(0.0)),
                 (Attribute::Blue, waveform(5.534_360_4)),
             ]),
+            timebase: Default::default(),
         })
         .expect("sample data should not have duplicate IDs");
     world.spawn_instance(Clip {
@@ -899,6 +901,7 @@ fn add_wash_hat_run(world: &mut World) {
             ),
             snap_lane(Attribute::White, &[1.0]),
         ],
+        timebase: Default::default(),
     });
     world.spawn_instance(Clip {
         identifiers: Identifiers {

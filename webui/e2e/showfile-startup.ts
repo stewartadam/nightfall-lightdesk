@@ -347,9 +347,9 @@ const EMPTY_ARRAY_STORE_NAMES = [
   "attributeMetadata",
   "availableFxModules",
   "colorPathDefaults",
-  "controls",
   "dmxUniverseChannels",
   "dmxUniverseList",
+  "faders",
   "fixtureLibrary",
   "inputContributionTrace",
   "midiDevices",
@@ -370,7 +370,7 @@ const EMPTY_NULL_STORE_NAMES = [
   "objectProfile",
   "oscLastEvent",
   "oscListenerStatus",
-  "patchBindingNavigationRequest",
+  "dmxRouteNavigationRequest",
   "programmerResolvedSelection",
   "programmerSpatialSelection",
   "sceneObjectNavigationRequest",
@@ -442,7 +442,7 @@ export async function prepareStoreSeededTestApp(
       for (const name of nullStoreNames) {
         stores[name].set(null);
       }
-      stores.bindings.set({ disabled: [], input: [], output: [] });
+      stores.routes.set({ disabled: [], input: [], output: [] });
       stores.layerStack.set([]);
       stores.parameters.set(new Map());
     },
@@ -461,10 +461,10 @@ export async function prepareStoreSeededTestApp(
             arrays: Object.fromEntries(
               arrayStoreNames.map((name) => [name, stores[name].get().length]),
             ),
-            bindings:
-              stores.bindings.get().input.length +
-              stores.bindings.get().output.length +
-              stores.bindings.get().disabled.length,
+            routes:
+              stores.routes.get().input.length +
+              stores.routes.get().output.length +
+              stores.routes.get().disabled.length,
             layerStack: stores.layerStack.get().length,
             nulls: Object.fromEntries(
               nullStoreNames.map((name) => [name, stores[name].get() === null]),
@@ -489,7 +489,7 @@ export async function prepareStoreSeededTestApp(
       arrays: Object.fromEntries(
         EMPTY_ARRAY_STORE_NAMES.map((name) => [name, 0]),
       ),
-      bindings: 0,
+      routes: 0,
       layerStack: 0,
       nulls: Object.fromEntries(
         EMPTY_NULL_STORE_NAMES.map((name) => [name, true]),

@@ -59,14 +59,14 @@ type InsertActionPickerProps = {
     targetUid: string;
     targetLabel: string;
     cueIndex?: number;
-    rate?: number;
+    speed?: number;
   }) => void;
   /** Inserts a catalog action that the timeline does not plan with a built-in kind. */
   onInsertReference: (action: types.ActionReference, label: string) => void;
   onClose: () => void;
 };
 
-type PickerStep = "action" | "command" | "target" | "rate" | "registered";
+type PickerStep = "action" | "command" | "target" | "speed" | "registered";
 
 /** One selectable row: a built-in timeline action kind or a registered catalog action. */
 type ActionCommand = {
@@ -89,7 +89,7 @@ const BUILT_IN_ACTION_IDS = new Set([
   "clip.stop",
   "clip.go",
   "clip.back",
-  "clip.set-rate",
+  "clip.set-speed",
   "clip.goto",
   "desk.eval",
 ]);
@@ -233,7 +233,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
 
   /** Moves the highlighted action or target row, preserving disabled action skip behavior. */
   const moveSelection = (key: PaletteNavigationKey, pageSize = 1) => {
-    if (step() === "command" || step() === "rate" || step() === "registered")
+    if (step() === "command" || step() === "speed" || step() === "registered")
       return;
     const list = step() === "action" ? filteredActions() : filteredTargets();
     if (list.length === 0) return;
@@ -326,10 +326,10 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   const selectTarget = (target: ActionTargetOption) => {
     const action = selectedAction();
     if (!action) return;
-    if (action.requiresRate) {
+    if (action.requiresSpeed) {
       setPendingTarget(target);
       setTargetQuery("1");
-      setStep("rate");
+      setStep("speed");
       setSelectedIndex(0);
       focusSearchInput();
       return;
@@ -355,31 +355,31 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   };
 
   /**
-   * Returns the accepted range of the clip rate action's `rate` argument from the backend
-   * catalog, so inserted rates stay within what the backend stores.
+   * Returns the accepted range of the clip speed action's `speed` argument from the backend
+   * catalog, so inserted speeds stay within what the backend stores.
    */
-  const rateBounds = () => {
+  const speedBounds = () => {
     const kind = $catalog()
-      .find((entry) => entry.descriptor.id === "clip.set-rate")
+      .find((entry) => entry.descriptor.id === "clip.set-speed")
       ?.descriptor.parameters.find(
-        (parameter) => parameter.name === "rate",
+        (parameter) => parameter.name === "speed",
       )?.kind;
     return kind?.type === "Number" ? kind.data : { min: 0, max: Infinity };
   };
 
-  /** Inserts the selected clip target with the typed playback rate multiplier. */
-  const insertRateAction = () => {
+  /** Inserts the selected clip target with the typed playback speed multiplier. */
+  const insertSpeedAction = () => {
     const action = selectedAction();
     const target = pendingTarget();
     const typed = Number.parseFloat(targetQuery().trim());
     if (!action || !target || !Number.isFinite(typed)) return;
-    const { min, max } = rateBounds();
-    const rate = Math.min(max, Math.max(min, typed));
+    const { min, max } = speedBounds();
+    const speed = Math.min(max, Math.max(min, typed));
     props.onInsert({
       actionType: action.type,
       targetUid: target.uid,
-      targetLabel: `${target.label} @ ${rate}x`,
-      rate,
+      targetLabel: `${target.label} @ ${speed}x`,
+      speed,
     });
   };
 
@@ -401,8 +401,8 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
       return;
     }
 
-    if (step() === "rate") {
-      insertRateAction();
+    if (step() === "speed") {
+      insertSpeedAction();
       return;
     }
 
@@ -412,11 +412,11 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   };
 
   /**
-   * Steps back one picker stage on Escape (rate to target, any detail stage to
+   * Steps back one picker stage on Escape (speed to target, any detail stage to
    * the action list) and closes from the action list or on an outside press.
    */
   const dismiss = (reason: DismissReason) => {
-    if (reason === "escape" && step() === "rate") {
+    if (reason === "escape" && step() === "speed") {
       setStep("target");
       setTargetQuery("");
       setSelectedIndex(0);
@@ -479,7 +479,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   });
 
   createEffect(() => {
-    if (step() === "command" || step() === "rate" || step() === "registered")
+    if (step() === "command" || step() === "speed" || step() === "registered")
       return;
     const list = step() === "action" ? filteredActions() : filteredTargets();
     if (list.length === 0) {
@@ -542,8 +542,8 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
             ? "Insert action..."
             : step() === "command"
               ? "Desk command..."
-              : step() === "rate"
-                ? "Rate multiplier..."
+              : step() === "speed"
+                ? "Speed multiplier..."
                 : step() === "registered"
                   ? `Configure ${selectedCommand()?.label ?? "action"}...`
                   : `Select target for ${selectedAction()?.label ?? "action"}...`
@@ -562,7 +562,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
             when={
               step() === "target" ||
               step() === "command" ||
-              step() === "rate" ||
+              step() === "speed" ||
               step() === "registered"
             }
           >
@@ -570,7 +570,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
               size="compact"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
-                if (step() === "rate") {
+                if (step() === "speed") {
                   setStep("target");
                   setTargetQuery("");
                 } else {
@@ -636,7 +636,7 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
                 when={step() === "command"}
                 fallback={
                   <Show
-                    when={step() === "rate"}
+                    when={step() === "speed"}
                     fallback={
                       <Show
                         when={filteredTargets().length > 0}
@@ -698,9 +698,9 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
                           )
                         }
                         onMouseDown={(event) => event.preventDefault()}
-                        onClick={insertRateAction}
+                        onClick={insertSpeedAction}
                       >
-                        Set {pendingTarget()?.label ?? "clip"} Rate
+                        Set {pendingTarget()?.label ?? "clip"} Speed
                       </SearchPickerOption>
                     </div>
                   </Show>

@@ -1048,7 +1048,7 @@ mod tests {
         assert!(matches!(inbound, InboundWebsocketText::Command(_)));
 
         let inbound = serde_json::from_str::<InboundWebsocketText>(
-            r#"{"module":"ControlUpdate","update":{"type":"SetConsoleValue","data":{"control_id":1,"value":0.5}}}"#,
+            r#"{"module":"FaderUpdate","update":{"type":"SetConsoleValue","data":{"fader_index":1,"value":0.5}}}"#,
         )
         .expect("update envelope should parse as inbound websocket text");
         assert!(matches!(inbound, InboundWebsocketText::Update(_)));

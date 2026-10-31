@@ -25,7 +25,7 @@ use nightfall_instances::{PlaybackOperation, PlaybackScope};
 use crate::prelude::{
     ConsoleChannelOrigin, ConsoleDmxUniverses, DmxOperation, FixtureCommand, InputDmxUniverses,
     ManualDmxChannelState, Parameter, ParameterAssertion, ParameterAssertionSource,
-    ResolvedConsoleDestination, ResolvedInputBindings, ResolvedInputDestination,
+    ResolvedConsoleDestination, ResolvedInputDestination, ResolvedInputRoutes,
     ResolvedOutputDestinations,
 };
 use crate::universe::parameter_dmx_bytes;
@@ -110,19 +110,19 @@ pub fn spawn_assertion_layer_entities_in_world(world: &mut World) {
 /// Insert decoded fixture parameter assertions into a compositor layer.
 ///
 /// An assertion from a different source does not replace a parameter whose current owner is still
-/// driven by a binding with higher precedence; the owner keeps the parameter until its binding is
+/// driven by a route with higher precedence; the owner keeps the parameter until its route is
 /// removed or its source goes stale and the owner is cleared.
 pub(crate) fn apply_parameter_assertions(
     layer: &mut Layer,
     owners: &mut TransportInputAssertionOwners,
     assertions: Vec<ParameterAssertion>,
-    resolved_input_bindings: &ResolvedInputBindings,
+    resolved_input_routes: &ResolvedInputRoutes,
 ) {
     for assertion in assertions {
         let parameter: ParameterRef = assertion.parameter.into();
         if let Some(owner) = owners.absolute.get(parameter)
             && *owner != assertion.source
-            && parameter_owner_precedence(parameter, owner, resolved_input_bindings)
+            && parameter_owner_precedence(parameter, owner, resolved_input_routes)
                 .is_some_and(|owner_precedence| owner_precedence < assertion.precedence)
         {
             continue;
@@ -165,17 +165,17 @@ pub fn clear_stale_parameter_assertions(
     cleared
 }
 
-/// Remove transport input assertions whose resolved input binding target disappeared.
+/// Remove transport input assertions whose resolved input route target disappeared.
 pub fn clear_unbound_parameter_assertions(
     layer: &mut Layer,
     owners: &mut TransportInputAssertionOwners,
-    resolved_input_bindings: &ResolvedInputBindings,
+    resolved_input_routes: &ResolvedInputRoutes,
 ) -> usize {
     let unbound_parameters: Vec<_> = owners
         .absolute
         .iter()
         .filter_map(|(parameter, source)| {
-            (!resolved_input_binding_owns_parameter(parameter, source, resolved_input_bindings))
+            (!resolved_input_route_owns_parameter(parameter, source, resolved_input_routes))
                 .then_some(parameter)
         })
         .collect();
@@ -190,19 +190,19 @@ pub fn clear_unbound_parameter_assertions(
     cleared
 }
 
-/// Keep the transport input assertion layer aligned with resolved input bindings.
+/// Keep the transport input assertion layer aligned with resolved input routes.
 pub fn clear_unbound_transport_input_assertions(
-    resolved_input_bindings: Option<Res<ResolvedInputBindings>>,
+    resolved_input_routes: Option<Res<ResolvedInputRoutes>>,
     mut layer_query: Query<
         (&mut Layer, &mut TransportInputAssertionOwners),
         With<TransportInputLayer>,
     >,
 ) {
-    let Some(resolved_input_bindings) = resolved_input_bindings else {
+    let Some(resolved_input_routes) = resolved_input_routes else {
         return;
     };
 
-    if !resolved_input_bindings.is_changed() {
+    if !resolved_input_routes.is_changed() {
         return;
     }
 
@@ -210,30 +210,28 @@ pub fn clear_unbound_transport_input_assertions(
         return;
     };
 
-    clear_unbound_parameter_assertions(&mut layer, &mut owners, &resolved_input_bindings);
+    clear_unbound_parameter_assertions(&mut layer, &mut owners, &resolved_input_routes);
 }
 
-/// Return whether a resolved input binding can still drive the parameter assertion.
-fn resolved_input_binding_owns_parameter(
+/// Return whether a resolved input route can still drive the parameter assertion.
+fn resolved_input_route_owns_parameter(
     parameter: ParameterRef,
     source: &ParameterAssertionSource,
-    resolved_input_bindings: &ResolvedInputBindings,
+    resolved_input_routes: &ResolvedInputRoutes,
 ) -> bool {
-    parameter_owner_precedence(parameter, source, resolved_input_bindings).is_some()
+    parameter_owner_precedence(parameter, source, resolved_input_routes).is_some()
 }
 
-/// Return the precedence of the strongest binding through which `source` drives `parameter`, or
-/// `None` when no binding from that source reaches it anymore.
+/// Return the precedence of the strongest route through which `source` drives `parameter`, or
+/// `None` when no route from that source reaches it anymore.
 fn parameter_owner_precedence(
     parameter: ParameterRef,
     source: &ParameterAssertionSource,
-    resolved_input_bindings: &ResolvedInputBindings,
+    resolved_input_routes: &ResolvedInputRoutes,
 ) -> Option<usize> {
-    resolved_input_bindings.transport_source_precedence(
-        source.transport,
-        source.universe,
-        |binding| resolved_input_destination_contains_parameter(&binding.destination, parameter),
-    )
+    resolved_input_routes.transport_source_precedence(source.transport, source.universe, |route| {
+        resolved_input_destination_contains_parameter(&route.destination, parameter)
+    })
 }
 
 /// Return whether a resolved input destination contains the asserted parameter.
@@ -497,10 +495,10 @@ mod tests {
     use nightfall_dmx::prelude::{
         Attribute, DmxValueResolution, ParameterUnit, ParameterValuePolarity,
     };
-    use nightfall_io::BindingTransport;
+    use nightfall_io::RouteTransport;
 
     use super::*;
-    use crate::prelude::{ResolvedInputBinding, ResolvedInputSource, ResolvedInputTarget};
+    use crate::prelude::{ResolvedInputRoute, ResolvedInputSource, ResolvedInputTarget};
 
     /// Verifies manual DMX channel assertions decode signed pan/tilt around the midpoint.
     #[test]
@@ -528,7 +526,7 @@ mod tests {
         let removed_parameter =
             unsafe { Instance::<Parameter>::from_entity_unchecked(world.spawn_empty().id()) };
         let source = ParameterAssertionSource {
-            transport: BindingTransport::Sacn,
+            transport: RouteTransport::Sacn,
             universe: 1,
         };
         let mut layer = Layer::new(
@@ -544,10 +542,10 @@ mod tests {
             owners.absolute.insert(parameter, source);
         }
 
-        let resolved_input_bindings = ResolvedInputBindings {
-            bindings: vec![ResolvedInputBinding {
+        let resolved_input_routes = ResolvedInputRoutes {
+            routes: vec![ResolvedInputRoute {
                 source: ResolvedInputSource::Transport {
-                    transport: BindingTransport::Sacn,
+                    transport: RouteTransport::Sacn,
                     universe: 1,
                     address: 1,
                 },
@@ -562,7 +560,7 @@ mod tests {
         };
 
         let cleared =
-            clear_unbound_parameter_assertions(&mut layer, &mut owners, &resolved_input_bindings);
+            clear_unbound_parameter_assertions(&mut layer, &mut owners, &resolved_input_routes);
 
         assert_eq!(cleared, 1);
         assert!(layer.absolute.contains_key(kept_parameter));

@@ -223,10 +223,10 @@ impl AstConvert for DeskAstConverter {
                     ast::PlaybackActionAst::Back => {
                         Ok(vec![Box::new(ClipCommand::BackClip(id_expr))])
                     }
-                    ast::PlaybackActionAst::Rate(rate) => {
-                        Ok(vec![Box::new(ClipCommand::SetRate {
+                    ast::PlaybackActionAst::Speed(speed) => {
+                        Ok(vec![Box::new(ClipCommand::SetSpeed {
                             clip_id: id_expr,
-                            rate: *rate,
+                            speed: *speed,
                         })])
                     }
                     ast::PlaybackActionAst::Goto(position) => {

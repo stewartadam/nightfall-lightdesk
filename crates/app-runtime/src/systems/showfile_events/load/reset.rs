@@ -30,12 +30,13 @@ pub(super) fn reset_showfile_state(
     timecode_data_provider: &mut DataProvider<Timecode>,
     timeline_data_provider: &mut DataProvider<Timeline>,
     board_data_provider: &mut DataProvider<Board>,
+    macro_data_provider: &mut DataProvider<Macro>,
     active_fx_module_ids: Option<&mut ActiveFxModuleIds>,
-    input_bindings: &mut InputBindings,
-    output_bindings: &mut OutputBindings,
-    disabled_bindings: &mut DisabledBindings,
+    input_routes: &mut InputRoutes,
+    output_routes: &mut OutputRoutes,
+    disabled_routes: &mut DisabledRoutes,
     all_entities: &Query<Entity, ShowfileEntityFilter>,
-    resolved_input_bindings: Option<&mut ResolvedInputBindings>,
+    resolved_input_routes: Option<&mut ResolvedInputRoutes>,
     console_dmx_addresses: Option<&mut ConsoleDmxAddresses>,
     console_dmx_universes: Option<&mut ConsoleDmxUniverses>,
     input_dmx_universes: Option<&mut InputDmxUniverses>,
@@ -88,15 +89,16 @@ pub(super) fn reset_showfile_state(
     timecode_data_provider.clear();
     timeline_data_provider.clear();
     board_data_provider.clear();
+    macro_data_provider.clear();
     if let Some(active_fx_module_ids) = active_fx_module_ids {
         active_fx_module_ids.0.clear();
     }
 
-    input_bindings.bindings.clear();
-    output_bindings.bindings.clear();
-    disabled_bindings.bindings.clear();
-    if let Some(resolved_input_bindings) = resolved_input_bindings {
-        resolved_input_bindings.bindings.clear();
+    input_routes.routes.clear();
+    output_routes.routes.clear();
+    disabled_routes.routes.clear();
+    if let Some(resolved_input_routes) = resolved_input_routes {
+        resolved_input_routes.routes.clear();
     }
     if let Some(console_dmx_addresses) = console_dmx_addresses {
         console_dmx_addresses.clear();

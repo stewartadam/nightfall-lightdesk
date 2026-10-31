@@ -44,7 +44,7 @@
 }
 /* Fields size to their content instead of filling the row, up to a width that leaves room for the title. */
 .nf-settings-row-control
-> :is(select, input:not([type="checkbox"], [type="range"])) {
+  > :is(select, input:not([type="checkbox"], [type="range"])) {
   width: auto;
   max-width: 15rem;
 }
@@ -77,6 +77,6 @@
 }
 /* Indents a titled section's rows and footer beneath its title. */
 .nf-settings-section:has(> .nf-settings-section-title)
-> :not(.nf-settings-section-title) {
+  > :not(.nf-settings-section-title) {
   padding-left: 16px;
 }

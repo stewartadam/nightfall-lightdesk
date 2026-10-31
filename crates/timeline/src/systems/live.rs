@@ -309,6 +309,8 @@ struct TimelineActionScan<'a> {
     timeline_id: u32,
     /// Timeline playhead position the scan ends at.
     current_position: Duration,
+    /// Beats the timeline plays per second, which beat-timed sequences count in.
+    beats_per_second: f64,
     /// Clip lookup shared by every timeline scanned this frame.
     clip_snapshot: &'a ClipLookupSnapshot<'a>,
     /// Planner input for sequence navigation; empty when the scan crosses no navigation.
@@ -373,6 +375,7 @@ pub fn process_actions_system(
             timeline_uid,
             timeline_id,
             current_position,
+            beats_per_second: timeline.timeline.beats_per_second(),
             clip_snapshot: &clip_snapshot,
             active_clip_entities: active_clip_entities(
                 &sources.clip_state.exec_query,

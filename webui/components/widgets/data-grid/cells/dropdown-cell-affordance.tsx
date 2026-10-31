@@ -7,6 +7,7 @@
  */
 
 import { CaretUpDownIcon } from "@squidlab/phosphor-solid/caret-up-down";
+import { Show } from "solid-js";
 
 const GRID_DROPDOWN_AFFORDANCE_CLASSES =
   "relative flex h-full min-h-full w-full cursor-pointer items-center truncate border-0 bg-transparent px-2 pe-7 py-0 text-start text-sm leading-none text-white outline-hidden hover:bg-white/5 focus:bg-white/10";
@@ -15,6 +16,8 @@ const GRID_DROPDOWN_AFFORDANCE_CLASSES =
 export function DropdownCellAffordance(props: {
   text: string;
   align?: "left" | "right";
+  /** CSS color drawn as a swatch before the label. */
+  swatch?: string;
 }) {
   /** Returns the text alignment class for the affordance label. */
   const textAlignClass = () =>
@@ -25,6 +28,16 @@ export function DropdownCellAffordance(props: {
       class={GRID_DROPDOWN_AFFORDANCE_CLASSES}
       data-grid-dropdown-affordance="true"
     >
+      <Show when={props.swatch}>
+        {(swatch) => (
+          <span
+            class="me-2 block size-3 shrink-0 rounded-full border border-white/20"
+            style={{ "background-color": swatch() }}
+            data-testid="dropdown-cell-swatch"
+            aria-hidden
+          />
+        )}
+      </Show>
       <span class={`w-full truncate ${textAlignClass()}`}>{props.text}</span>
       <span class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-neutral-400">
         <CaretUpDownIcon class="size-3.5 shrink-0" aria-hidden />

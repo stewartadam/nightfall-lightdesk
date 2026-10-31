@@ -54,7 +54,7 @@ pub enum SlotId {
     FxModuleIdentifier,
     FxModuleAction,
     FxIdentifier,
-    /// FX action token slot (for verbs like `start`, `stop`, and `rate`) after an FX identifier.
+    /// FX action token slot (for verbs like `start`, `stop`, and `speed`) after an FX identifier.
     FxAction,
     /// Step FX creation token after a stored FX identifier.
     StoreFxAction,
@@ -108,6 +108,8 @@ pub enum SlotId {
     TimecodeAction,
     TimelineIdentifier,
     TimelineAction,
+    MacroIdentifier,
+    MacroAction,
     LogLevel,
     LogFilterField,
     LogFilterValue,
@@ -185,6 +187,9 @@ pub enum ClauseId {
     Timeline,
     TimelineIdentifier,
     TimelineAction,
+    Macro,
+    MacroIdentifier,
+    MacroAction,
     Rm,
     Rename,
     Store,
@@ -857,6 +862,7 @@ pub enum ClauseHookId {
     Flow,
     Timecode,
     Timeline,
+    Macro,
     Rm,
     Rename,
     Store,
@@ -888,6 +894,7 @@ const CLEAR_HEADS: &[TokenId] = &[TokenId::Clear];
 const FLOW_HEADS: &[TokenId] = &[TokenId::Flow];
 const TIMECODE_HEADS: &[TokenId] = &[TokenId::Timecode];
 const TIMELINE_HEADS: &[TokenId] = &[TokenId::Timeline];
+const MACRO_HEADS: &[TokenId] = &[TokenId::Macro];
 const RM_HEADS: &[TokenId] = &[TokenId::Rm];
 const RENAME_HEADS: &[TokenId] = &[TokenId::Rename];
 const STORE_HEADS: &[TokenId] = &[TokenId::Store];
@@ -1259,6 +1266,25 @@ const TIMELINE_ACTION_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
     cardinality: SlotCardinality::Required,
 }];
 
+const MACRO_CHILDREN: &[ClauseChildSpec] = &[
+    ClauseChildSpec {
+        clause: ClauseId::MacroIdentifier,
+        cardinality: ClauseCardinality::Optional,
+    },
+    ClauseChildSpec {
+        clause: ClauseId::MacroAction,
+        cardinality: ClauseCardinality::Optional,
+    },
+];
+const MACRO_IDENTIFIER_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
+    slot: SlotId::MacroIdentifier,
+    cardinality: SlotCardinality::Required,
+}];
+const MACRO_ACTION_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
+    slot: SlotId::MacroAction,
+    cardinality: SlotCardinality::Required,
+}];
+
 const RM_SLOTS: &[ClauseSlotSpec] = &[
     ClauseSlotSpec {
         slot: SlotId::RmObjectType,
@@ -1533,6 +1559,7 @@ const ROOT_CLAUSES: &[ClauseId] = &[
     ClauseId::Flow,
     ClauseId::Timecode,
     ClauseId::Timeline,
+    ClauseId::Macro,
     ClauseId::Rm,
     ClauseId::Rename,
     ClauseId::Store,
@@ -1939,6 +1966,33 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         parent: Some(ClauseId::Timeline),
         children: EMPTY_CHILDREN,
         slots: TIMELINE_ACTION_SLOTS,
+        rules: PROJECT_INITIAL_SLOT,
+        entry: ClauseEntryKind::Structural,
+    },
+    ClauseSchema {
+        id: ClauseId::Macro,
+        label: "Macro",
+        parent: None,
+        children: MACRO_CHILDREN,
+        slots: EMPTY_SLOTS,
+        rules: NO_RULES,
+        entry: ClauseEntryKind::RootCommandHead(MACRO_HEADS),
+    },
+    ClauseSchema {
+        id: ClauseId::MacroIdentifier,
+        label: "Identifier",
+        parent: Some(ClauseId::Macro),
+        children: EMPTY_CHILDREN,
+        slots: MACRO_IDENTIFIER_SLOTS,
+        rules: NO_RULES,
+        entry: ClauseEntryKind::Structural,
+    },
+    ClauseSchema {
+        id: ClauseId::MacroAction,
+        label: "Action",
+        parent: Some(ClauseId::Macro),
+        children: EMPTY_CHILDREN,
+        slots: MACRO_ACTION_SLOTS,
         rules: PROJECT_INITIAL_SLOT,
         entry: ClauseEntryKind::Structural,
     },
@@ -2390,6 +2444,7 @@ pub fn clause_hook_id(clause: ClauseId) -> Option<ClauseHookId> {
         ClauseId::Flow => ClauseHookId::Flow,
         ClauseId::Timecode => ClauseHookId::Timecode,
         ClauseId::Timeline => ClauseHookId::Timeline,
+        ClauseId::Macro => ClauseHookId::Macro,
         ClauseId::Rm => ClauseHookId::Rm,
         ClauseId::Rename => ClauseHookId::Rename,
         ClauseId::Store => ClauseHookId::Store,
@@ -2419,6 +2474,7 @@ pub fn clause_trace_label(clause: ClauseId) -> String {
             ClauseId::Flow => "FlowCommand".to_owned(),
             ClauseId::Timecode => "TimecodeCommand".to_owned(),
             ClauseId::Timeline => "TimelineCommand".to_owned(),
+            ClauseId::Macro => "MacroCommand".to_owned(),
             ClauseId::Clear => "ClearCommand".to_owned(),
             ClauseId::Release => "ReleaseCommand".to_owned(),
             ClauseId::Rm => "RmCommand".to_owned(),

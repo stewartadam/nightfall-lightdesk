@@ -1,0 +1,11 @@
+{
+  "id": "novation.launchpad-pro-mk3",
+  "name": "Novation Launchpad Pro MK3",
+  "ports": { "match": ["lppromk3 mi"], "exclude": ["midiin"] },
+  "feedback": false,
+  "hint": "Map the LPProMK3 MIDI port, not DIN or DAW. Nightfall switches the Launchpad to Programmer mode while feedback is on: grid pads are notes 11-88 and the buttons around the grid are controllers.",
+  "init": [[240, 0, 32, 41, 2, 14, 14, 1, 247]],
+  "release": [[240, 0, 32, 41, 2, 14, 14, 0, 247]],
+  "palette": "rgb-128",
+  "defaults": { "off": "Off", "on": "Green", "held": "Orange" }
+}

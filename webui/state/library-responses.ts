@@ -13,16 +13,25 @@ import {
   fixtureProfile,
   objectLibrary,
   objectProfile,
+  unloadableFixtureFiles,
 } from "./appStores";
 
-/** Applies the backend fixture-library listing to the fixture library store. */
+/**
+ * Applies the backend fixture-library listing: the loaded profiles to the fixture library
+ * store and the files that failed to load to their own store.
+ */
 export function applyAvailableFixturesResponse(
-  fixtures: types.AvailableFixtureInfo[],
+  response: types.ListAvailableFixturesResponse,
 ): void {
   setStoreAction(
     fixtureLibrary,
     "Receive ListAvailableFixturesResponse",
-    fixtures,
+    response.fixtures,
+  );
+  setStoreAction(
+    unloadableFixtureFiles,
+    "Receive ListAvailableFixturesResponse",
+    response.unloadable,
   );
 }
 

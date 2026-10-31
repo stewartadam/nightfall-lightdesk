@@ -243,7 +243,7 @@ fn release_channel_resumes_patched_fixture_output() {
     );
     assert_eq!(
         universes.get_origin(PATCHED_UNIVERSE, PATCHED_ADDRESS),
-        Some(ConsoleChannelOrigin::OutputBinding)
+        Some(ConsoleChannelOrigin::OutputRoute)
     );
 }
 

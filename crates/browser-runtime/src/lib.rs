@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Single-threaded browser host for the reduced Nightfall engine composition.
+//! The browser demo engine: a reduced Nightfall engine that runs in a web worker.
+//!
+//! [`BrowserEngine`] builds the engine from a sample showfile with its own hand-written plugin
+//! list, leaving out native-only crates such as the network transports. The worker calls
+//! [`BrowserEngine::tick`] at the engine's frame rate, queues client commands and updates
+//! for the next tick, and drains the encoded messages that a websocket would otherwise carry.
 
 #![warn(missing_docs)]
 
@@ -34,6 +39,7 @@ use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
 use nightfall_framepace::prelude::{FramepaceSettings, Limiter};
 use nightfall_fx::prelude::{FxPlugin, StoredFxModule};
+use nightfall_macros::prelude::MacrosPlugin;
 use nightfall_programmer::prelude::ProgrammerPlugin;
 use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
@@ -244,6 +250,7 @@ impl BrowserEngine {
         app.add_plugins(ProgrammerPlugin);
         app.add_plugins(CuePlugin);
         app.add_plugins(BoardsPlugin);
+        app.add_plugins(MacrosPlugin);
         app.add_plugins(TempoPlugin);
         app.add_plugins(FxPlugin);
         app.init_resource::<DataProvider<StoredFxModule>>();

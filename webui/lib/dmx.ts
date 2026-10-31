@@ -119,7 +119,7 @@ function parameterAttributeName(parameter: types.ParameterMetadata): string {
 /**
  * Returns the indices of the element parameters a layout selects: every parameter, or the
  * first one whose attribute matches `parameterName`, mirroring the engine resolving one
- * parameter per element for a binding's parameter filter.
+ * parameter per element for a route's parameter filter.
  */
 function selectedParameterIndices(
   element: types.FixtureElement,

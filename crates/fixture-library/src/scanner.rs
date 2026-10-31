@@ -10,8 +10,18 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::commands::UnloadableFixtureFile;
 use crate::gdtf_metadata::GdtfMetadata;
 use crate::{FixtureProfile, FixtureSource, Result};
+
+/// What one library folder held: the definitions that loaded and the ones that did not.
+#[derive(Debug, Default)]
+pub struct LibraryScan {
+    /// Fixture definitions that loaded.
+    pub profiles: Vec<FixtureProfile>,
+    /// Definition files that failed to load, by file name.
+    pub unloadable: Vec<UnloadableFixtureFile>,
+}
 
 /// Fixture file scanner
 pub struct FixtureScanner {
@@ -26,12 +36,14 @@ impl FixtureScanner {
         }
     }
 
-    /// Scan the library directory for fixture files
-    pub fn scan(&self) -> Result<Vec<FixtureProfile>> {
-        let mut profiles = Vec::new();
+    /// Scans the library directory, loading every fixture definition it holds and
+    /// recording each definition file that fails to load with the parser's error.
+    /// Files in other formats are skipped silently.
+    pub fn scan(&self) -> Result<LibraryScan> {
+        let mut scan = LibraryScan::default();
 
         if !self.library_path.exists() {
-            return Ok(profiles);
+            return Ok(scan);
         }
 
         for entry in std::fs::read_dir(&self.library_path)? {
@@ -50,7 +62,7 @@ impl FixtureScanner {
                         file_path = ?profile.file_path,
                         "Found fixture"
                     );
-                    profiles.push(profile)
+                    scan.profiles.push(profile)
                 }
                 Ok(None) => {} // Not a fixture file, skip silently
                 Err(e) => {
@@ -59,11 +71,15 @@ impl FixtureScanner {
                         error = %e,
                         "Failed to parse fixture file"
                     );
+                    scan.unloadable.push(UnloadableFixtureFile {
+                        file_name: entry.file_name().to_string_lossy().into_owned(),
+                        in_showfile: false,
+                        error: e.to_string(),
+                    });
                 }
             }
         }
-
-        Ok(profiles)
+        Ok(scan)
     }
 
     /// Try to parse a file as a fixture definition
@@ -172,11 +188,36 @@ mod tests {
 
         let ofl_path = library.path().join("test-maker@test-fixture.json");
         std::fs::write(&ofl_path, ofl_definition().to_string()).unwrap();
-        let profiles = scanner.scan().unwrap();
+        let LibraryScan {
+            profiles,
+            unloadable,
+        } = scanner.scan().unwrap();
+        assert!(unloadable.is_empty());
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].make, "Test Maker");
         assert_eq!(profiles[0].model, "Test Fixture");
         assert_eq!(profiles[0].file_path, ofl_path);
+    }
+
+    /// A scan reports each definition file that fails to load by name with its parse error,
+    /// while files in other formats stay unreported.
+    #[test]
+    fn scan_reports_files_that_fail_to_load() {
+        let library = tempfile::tempdir().unwrap();
+        std::fs::write(library.path().join("broken.gdtf"), b"not a zip").unwrap();
+        std::fs::write(library.path().join("broken.json"), "{").unwrap();
+        std::fs::write(library.path().join("notes.txt"), "not a fixture").unwrap();
+
+        let scan = FixtureScanner::new(library.path()).scan().unwrap();
+        assert!(scan.profiles.is_empty());
+        let mut names: Vec<_> = scan
+            .unloadable
+            .iter()
+            .map(|file| file.file_name.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, ["broken.gdtf", "broken.json"]);
+        assert!(scan.unloadable.iter().all(|file| !file.error.is_empty()));
     }
 
     /// Invalid JSON and OFL documents must remain errors instead of being skipped.

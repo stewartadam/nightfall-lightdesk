@@ -8,7 +8,7 @@ I/O Transports configures the physical transport targets used by patch routing. 
 
 **Network input** and **Network output** enable the respective network DMX directions. Add an output target with a unique ID, select its protocol and delivery mode, and enter an IP when that mode requires one. Review the validation/status cell before adding it. The interface summary helps identify the available network adapters.
 
-Art-Net and sACN targets are destinations for DMX data. Connect them to the appropriate console channels through [Patch](patch.md) bindings. A configured target does not by itself route every universe to it. Check send failures and output status when diagnosing a destination.
+Art-Net and sACN targets are destinations for DMX data. Connect them to the appropriate console channels through [Patch](patch.md) DMX routes. A configured target does not by itself route every universe to it. Check send failures and output status when diagnosing a destination.
 
 ## External control
 

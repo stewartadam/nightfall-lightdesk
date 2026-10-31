@@ -136,12 +136,15 @@ test("shows a fatal error when the workspace cannot load", async ({
   await expect(dialog.getByRole("button", { name: "Reload" })).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath("startup-failure.png") });
 
-  // Nothing usable is behind the dialog, so it cannot be dismissed.
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeVisible();
+  // Nothing usable is behind the dialog, so it offers no way to continue or close.
   await expect(
     dialog.getByRole("button", { name: "Continue Anyway" }),
   ).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Close" })).toHaveCount(0);
+
+  // Escape still hides it, so whatever it covered can be read.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 });
 
 /** An error during startup is shown over the splash, and the user can continue once it loads. */

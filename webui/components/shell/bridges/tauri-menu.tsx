@@ -7,6 +7,7 @@
  */
 
 import { onCleanup, onMount } from "solid-js";
+import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
@@ -20,6 +21,7 @@ import {
   invokeTauriMenuAction,
   registerTauriMenuListener,
   TAURI_MENU_ACTIONS,
+  TAURI_MENU_SHORTCUTS,
 } from "../../../lib/tauri-menu";
 import { useAppShell } from "../../providers/app-shell";
 import { useCommandPalette } from "../command-palette";
@@ -64,22 +66,7 @@ export default function TauriMenuBridge() {
 
   useKeyboardShortcut(
     {
-      key: "$mod+Shift+/",
-      handler: () => {
-        if (!isWindowsTauriRuntime()) {
-          return false;
-        }
-
-        showShortcutsPopup();
-      },
-      description: "Show keyboard shortcuts",
-    },
-    { global: true },
-  );
-
-  useKeyboardShortcut(
-    {
-      key: "$mod+n",
+      key: TAURI_MENU_SHORTCUTS.newWindow,
       handler: () => {
         if (!isWindowsTauriRuntime()) {
           return false;
@@ -94,7 +81,7 @@ export default function TauriMenuBridge() {
 
   useKeyboardShortcut(
     {
-      key: "$mod+Shift+w",
+      key: TAURI_MENU_SHORTCUTS.closeWindow,
       handler: () => {
         if (!isWindowsTauriRuntime()) {
           return false;
@@ -109,7 +96,7 @@ export default function TauriMenuBridge() {
 
   useKeyboardShortcut(
     {
-      key: "$mod+Shift+n",
+      key: TAURI_MENU_SHORTCUTS.newShowfile,
       handler: () => {
         if (!isWindowsTauriRuntime()) {
           return false;
@@ -124,7 +111,7 @@ export default function TauriMenuBridge() {
 
   useKeyboardShortcut(
     {
-      key: "$mod+o",
+      key: TAURI_MENU_SHORTCUTS.loadShowfile,
       handler: () => {
         if (!isWindowsTauriRuntime()) {
           return false;
@@ -139,7 +126,7 @@ export default function TauriMenuBridge() {
 
   useKeyboardShortcut(
     {
-      key: "$mod+s",
+      key: TAURI_MENU_SHORTCUTS.saveShowfile,
       handler: () => {
         if (!isWindowsTauriRuntime()) {
           return false;
@@ -158,6 +145,7 @@ export default function TauriMenuBridge() {
 
     void registerTauriMenuListener({
       openAbout,
+      openWelcomeGuide,
       openSettings,
       newShowfile: promptAndNewShowfile,
       openShowfile: showOpenShowfileModal,

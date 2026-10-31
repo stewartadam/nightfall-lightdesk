@@ -152,7 +152,7 @@ pub trait ActionAppExt {
     /// Registers a momentary action that lowers each press and release to one tracked command.
     ///
     /// `lower` receives `true` for the press edge and `false` for the release edge, so a
-    /// held control such as a slot button or MIDI pad drives one command per edge.
+    /// held control such as a fader button or MIDI pad drives one command per edge.
     ///
     /// # Panics
     ///

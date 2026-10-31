@@ -18,12 +18,12 @@ mod clip_command;
 #[path = "../support/common.rs"]
 mod common;
 mod cue_command;
+mod dmx_routes_command;
 mod fx_command;
 mod fx_module_command;
 mod grammar_rules;
 mod intent_planner;
 mod parser_ownership;
 mod parser_prefix_analysis;
-mod patch_bindings_command;
 mod spatial_selection;
 mod validation;

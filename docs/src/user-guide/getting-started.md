@@ -56,7 +56,7 @@ Open **Clips**, choose **Add clip**, and give it ID `1` and label `First playbac
 
 Clear the programmer before playback. The Programmer toolbar's **Clear programmer** button clears selection first and values on the next press; press it until the programmer values are gone. This is different from setting intensity to zero, which would leave a live instruction.
 
-Right-click the clip and choose **Start Clip**. Check **Status Display** for a running instance and look at the fixture output in **Fixtures**. Enter `clip 1 go` in the command input to advance to the next cue. For a dedicated Go button, drag the clip to an empty control slot in the Clips panel. You should see red and then blue. Stop the clip when finished using **Stop Clip** from its context menu. An active instance can also be stopped from Status Display.
+Right-click the clip and choose **Start Clip**. Check **Status Display** for a running instance and look at the fixture output in **Fixtures**. Enter `clip 1 go` in the command input to advance to the next cue. For a dedicated Go button, drag the clip to an empty fader in the Clips panel. You should see red and then blue. Stop the clip when finished using **Stop Clip** from its context menu. An active instance can also be stopped from Status Display.
 
 If the look does not change, check that the clip points to the intended sequence, that both cues contain the expected values, and that the programmer is clear. Stop other active playbacks while learning this sequence.
 

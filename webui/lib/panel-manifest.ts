@@ -30,6 +30,7 @@ import midiInputPanel from "../features/io/midi/definition";
 import oscInputPanel from "../features/io/osc/definition";
 import ioTransportsPanel from "../features/io/panels/transports.definition";
 import layerStackPanel from "../features/layers/panels/layer.definition";
+import macrosPanel from "../features/macros/panels/macro-list.definition";
 import mastersPanel from "../features/masters/definition";
 import objectLibraryPanel from "../features/object-library/library/object-library.definition";
 import patchEditorPanel from "../features/patch/panels/patch.definition";
@@ -73,6 +74,7 @@ export const PANEL_MODULES = [
   sequenceListPanel,
   sequenceEditorPanel,
   clipListPanel,
+  macrosPanel,
   statusDisplayPanel,
   tapPatternPanel,
   tempoPanel,

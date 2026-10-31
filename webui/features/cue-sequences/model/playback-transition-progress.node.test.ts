@@ -105,9 +105,9 @@ function playback(options: {
           },
     owner_uids: [],
     intensity_scale: 1,
-    rate: 1,
-    rate_master_scale: 1,
-    effective_rate: 1,
+    speed: 1,
+    speed_master_scale: 1,
+    effective_speed: 1,
     status: status({
       activationMs: options.activationMs,
       transitionElapsedMs: options.transitionElapsedMs,

@@ -36,13 +36,13 @@ pub fn forward_fx_module_runtime_notifications(
                 module_name,
                 error,
             } => {
-                ui_notifications.write(UiNotification::ShowToast {
-                    level: ToastLevel::Error,
-                    message: format!(
+                ui_notifications.write(UiNotification::toast(
+                    ToastLevel::Error,
+                    format!(
                         "FX module {} ({}) failed to initialize: {}",
                         fx_module_id, module_name, error
                     ),
-                });
+                ));
             }
         }
     }
@@ -84,6 +84,7 @@ mod tests {
                     UiNotification::ShowToast {
                         level: ToastLevel::Error,
                         message,
+                        ..
                     } if message.contains("FX module 7 (missing-sparkle) failed to initialize")
                         && message.contains("missing module")
                 )
@@ -98,19 +99,19 @@ pub fn forward_io_runtime_notifications(
     mut notifications: MessageReader<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>,
     mut ui_notifications: MessageWriter<UiNotification>,
 ) {
-    use nightfall_io::{BindingTransport, IoRuntimeNotification};
+    use nightfall_io::{IoRuntimeNotification, RouteTransport};
     for event in notifications.read() {
         match event.notification {
             IoRuntimeNotification::InputBindFailed { transport, port } => {
                 let protocol = match transport {
-                    BindingTransport::ArtNet => "Art-Net",
-                    BindingTransport::Sacn => "sACN",
-                    BindingTransport::Udmx => "uDMX",
+                    RouteTransport::ArtNet => "Art-Net",
+                    RouteTransport::Sacn => "sACN",
+                    RouteTransport::Udmx => "uDMX",
                 };
-                ui_notifications.write(UiNotification::ShowToast {
-                    level: ToastLevel::Warning,
-                    message: format!("{protocol} input could not bind UDP {port}; network input has been disabled."),
-                });
+                ui_notifications.write(UiNotification::toast(
+                    ToastLevel::Warning,
+                    format!("{protocol} input could not bind UDP {port}; network input has been disabled."),
+                ));
             }
         }
     }
@@ -119,7 +120,7 @@ pub fn forward_io_runtime_notifications(
 #[cfg(test)]
 mod io_notification_tests {
     use bevy_app::prelude::*;
-    use nightfall_io::{BindingTransport, IoRuntimeNotification};
+    use nightfall_io::{IoRuntimeNotification, RouteTransport};
 
     use super::*;
 
@@ -130,10 +131,7 @@ mod io_notification_tests {
         app.add_message::<NotificationEnvelope<IoRuntimeNotification>>();
         app.add_message::<UiNotification>();
         app.add_systems(Update, forward_io_runtime_notifications);
-        for (transport, port) in [
-            (BindingTransport::ArtNet, 6454),
-            (BindingTransport::Sacn, 5568),
-        ] {
+        for (transport, port) in [(RouteTransport::ArtNet, 6454), (RouteTransport::Sacn, 5568)] {
             app.world_mut()
                 .write_message(NotificationEnvelope::detached(
                     IoRuntimeNotification::InputBindFailed { transport, port },
@@ -150,7 +148,7 @@ mod io_notification_tests {
             "Art-Net input could not bind UDP 6454",
             "sACN input could not bind UDP 5568",
         ]) {
-            let UiNotification::ShowToast { level, message } = notification else {
+            let UiNotification::ShowToast { level, message, .. } = notification else {
                 panic!("expected a toast")
             };
             assert_eq!(*level, ToastLevel::Warning);

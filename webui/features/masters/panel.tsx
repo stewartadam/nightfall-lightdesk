@@ -23,6 +23,7 @@ import { Mappable } from "../io";
 import {
   masterHoldControl,
   masterLevelControl,
+  masterSpeedStepControls,
   masterToggleControl,
 } from "./model/control-actions";
 import {
@@ -49,6 +50,9 @@ import {
 } from "./services/master-commands";
 
 const MASTER_DRAG_TYPE = "application/x-master";
+
+/** Speed master levels a dragged fader settles on: ×¼, ×½, ×1 and ×2. */
+const SPEED_MASTER_DETENTS = [25, 50, 100, 200] as const;
 
 /** Renders the master/submaster management panel. */
 export default function MastersPanel(
@@ -150,29 +154,29 @@ export default function MastersPanel(
     );
   };
 
-  /** Creates a playback-rate master affecting all live instances. */
-  const createGlobalRateMaster = () => {
+  /** Creates a playback-speed master affecting all live instances. */
+  const createGlobalSpeedMaster = () => {
     sendMasterCommand(
       buildStoreMasterCommand(
         $masters(),
-        types.MasterKind.PlaybackRate,
+        types.MasterKind.PlaybackSpeed,
         allInstancesTarget(),
-        "Playback Rate Master",
+        "Playback Speed Master",
         newMasterUid(),
       ),
     );
   };
 
-  /** Creates a playback-rate master affecting selected clip instances. */
-  const createClipRateMaster = () => {
+  /** Creates a playback-speed master affecting selected clip instances. */
+  const createClipSpeedMaster = () => {
     const clipIds = selectedClipIds();
     if (clipIds.length === 0) return;
     sendMasterCommand(
       buildStoreMasterCommand(
         $masters(),
-        types.MasterKind.PlaybackRate,
+        types.MasterKind.PlaybackSpeed,
         clipPlaybackTarget(clipIds),
-        "Clip Rate Master",
+        "Clip Speed Master",
         newMasterUid(),
       ),
     );
@@ -224,8 +228,8 @@ export default function MastersPanel(
         >
           New group master
         </Button>
-        <Button size="compact" type="button" onClick={createGlobalRateMaster}>
-          New rate global
+        <Button size="compact" type="button" onClick={createGlobalSpeedMaster}>
+          New speed global
         </Button>
         <label class="flex w-48 shrink-0 flex-col gap-1 text-xs text-neutral-400">
           <span>Clips</span>
@@ -254,9 +258,9 @@ export default function MastersPanel(
           size="compact"
           type="button"
           disabled={selectedClipIds().length === 0}
-          onClick={createClipRateMaster}
+          onClick={createClipSpeedMaster}
         >
-          New clip rate
+          New clip speed
         </Button>
       </div>
 
@@ -340,7 +344,14 @@ export default function MastersPanel(
                     <Mappable
                       class="flex w-full"
                       label={`${master.identifiers.label} level`}
-                      choices={() => [levelControl(master)]}
+                      choices={() =>
+                        master.kind === types.MasterKind.PlaybackSpeed
+                          ? [
+                              levelControl(master),
+                              ...masterSpeedStepControls(master),
+                            ]
+                          : [levelControl(master)]
+                      }
                     >
                       <RangeSlider
                         value={master.level_percent}
@@ -348,6 +359,11 @@ export default function MastersPanel(
                         ariaLabel={`${master.identifiers.label} level`}
                         containerClass="w-full min-w-[260px]"
                         showPips={false}
+                        detents={
+                          master.kind === types.MasterKind.PlaybackSpeed
+                            ? SPEED_MASTER_DETENTS
+                            : undefined
+                        }
                         tooltips={false}
                         onChange={(value) =>
                           levelControl(master).handlers.drag(value)

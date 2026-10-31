@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! This crate provides uDMX USB output
+//! DMX output through uDMX USB interfaces.
+//!
+//! A process-lifetime worker writes the composed frame for each USB output target to its uDMX
+//! device.
 
 #![warn(missing_docs)]
 

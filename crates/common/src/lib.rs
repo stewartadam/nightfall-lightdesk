@@ -6,6 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Show data types shared across the engine, the browser demo, and the WASM bridge.
+//!
+//! This crate holds the plain show model that many crates need without depending on the
+//! engine: Blueprints, boards, macros, groups, value sources, transitions, color paths,
+//! variables, object stores and stored object queries, and spatial selection projection. It also
+//! tracks the process-wide data directory and the mounted show data directory that storage
+//! helpers read.
+
 use std::{
     path::PathBuf,
     sync::{OnceLock, RwLock},

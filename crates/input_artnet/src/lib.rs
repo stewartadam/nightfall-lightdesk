@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Art-Net input handling crate
+//! Art-Net input: DMX universes and timecode received over the network.
+//!
+//! A process-lifetime listener thread receives Art-Net packets. DMX frames feed the input routes
+//! that drive fixture parameters, and ArtTimeCode packets feed the timecodes that follow Art-Net.
+//! The crate also builds the `send-artnet`, `send-artnet-timecode`, `listen-artnet`, and
+//! `listen-scan` tools for testing without other hardware or software.
 
 #![warn(missing_docs)]
 
@@ -16,7 +21,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::prelude::*;
-use nightfall_io::{ArtNetRecentFramesByUniverse, BindingTransport};
+use nightfall_io::{ArtNetRecentFramesByUniverse, RouteTransport};
 use nightfall_timecode::prelude::{ExternalTimecodeFeeds, TimecodeSource};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -84,7 +89,7 @@ fn sync_artnet_input_binding(
 
     disable_network_input_after_bind_failure(
         NetworkInputBindStatus::Failed,
-        BindingTransport::ArtNet,
+        RouteTransport::ArtNet,
         6454,
         settings.as_mut(),
         notifications,
@@ -94,7 +99,7 @@ fn sync_artnet_input_binding(
 /// Disable network input and emit an IO observation after Art-Net listener binding fails.
 fn disable_network_input_after_bind_failure(
     status: NetworkInputBindStatus,
-    transport: BindingTransport,
+    transport: RouteTransport,
     port: u16,
     settings: &mut IoRuntimeSettings,
     mut notifications: MessageWriter<NotificationEnvelope<IoRuntimeNotification>>,
@@ -129,12 +134,7 @@ impl Plugin for InputArtnetPlugin {
         app.insert_resource(ArtnetEventReceiver(artnet_rx));
         app.insert_resource(ArtNetInputStartup::default());
         app.add_systems(Update, sync_artnet_input_binding.after(EventHandling));
-        app.add_systems(
-            Render,
-            artnet_event_system
-                .in_set(DmxInputSet::Ingress)
-                .in_set(LayerGeneration),
-        );
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
     }
 }
 
@@ -204,7 +204,7 @@ fn accept_frame(
         "Applying Art-Net frame"
     );
     Some(AcceptedDmxFrame {
-        transport: BindingTransport::ArtNet,
+        transport: RouteTransport::ArtNet,
         universe: frame.universe_id,
         data: frame.data,
         received_at: frame.received_at,
@@ -267,7 +267,7 @@ mod tests {
                  notifications: MessageWriter<NotificationEnvelope<IoRuntimeNotification>>| {
                     disable_network_input_after_bind_failure(
                         NetworkInputBindStatus::Failed,
-                        BindingTransport::ArtNet,
+                        RouteTransport::ArtNet,
                         6454,
                         settings.as_mut(),
                         notifications,
@@ -293,7 +293,7 @@ mod tests {
                 matches!(
                     notification.notification,
                     IoRuntimeNotification::InputBindFailed {
-                        transport: BindingTransport::ArtNet,
+                        transport: RouteTransport::ArtNet,
                         port: 6454
                     }
                 )
@@ -419,18 +419,16 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
         let local_source_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 40123);
         app.insert_resource(ArtNetRecentFramesByUniverse::new());
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -467,17 +465,15 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
         app.insert_resource(ArtNetRecentFramesByUniverse::new());
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -514,17 +510,15 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
         app.insert_resource(ArtNetRecentFramesByUniverse::new());
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -561,7 +555,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -582,11 +576,9 @@ mod tests {
         );
         app.insert_resource(identity);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -618,7 +610,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -639,11 +631,9 @@ mod tests {
         );
         app.insert_resource(identity);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -675,7 +665,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -707,11 +697,9 @@ mod tests {
         }
         app.insert_resource(identity);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -744,7 +732,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -763,11 +751,9 @@ mod tests {
         );
         app.insert_resource(identity);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -807,7 +793,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
 
         app.insert_resource(ArtnetEventReceiver(rx));
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -833,11 +819,9 @@ mod tests {
         );
         app.insert_resource(identity);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -870,7 +854,7 @@ mod tests {
 
         app.insert_resource(ArtnetEventReceiver(rx));
         app.insert_resource(InputUniverseVisibilityMode::AllDetected);
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -893,11 +877,9 @@ mod tests {
         );
         app.insert_resource(identity);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -920,7 +902,7 @@ mod tests {
         assert_eq!(universes.get_value(2, 1), Some(99));
         let input_universes = app.world().resource::<InputDmxUniverses>();
         assert_eq!(
-            input_universes.is_self_frame(BindingTransport::ArtNet, 2),
+            input_universes.is_self_frame(RouteTransport::ArtNet, 2),
             Some(true)
         );
     }
@@ -935,7 +917,7 @@ mod tests {
 
         app.insert_resource(ArtnetEventReceiver(rx));
         app.insert_resource(InputUniverseVisibilityMode::ExternalOnly);
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -946,11 +928,9 @@ mod tests {
         let mut frame = make_frame(2, &[(1, 99)]);
         frame.received_at = started_at + Duration::from_millis(100);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -983,7 +963,7 @@ mod tests {
 
         app.insert_resource(ArtnetEventReceiver(rx));
         app.insert_resource(InputUniverseVisibilityMode::AllDetected);
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
 
@@ -994,11 +974,9 @@ mod tests {
         let mut frame = make_frame(2, &[(1, 99)]);
         frame.received_at = started_at + Duration::from_millis(100);
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },
@@ -1036,7 +1014,7 @@ mod tests {
         app.insert_resource(ArtnetEventReceiver(rx));
         app.insert_resource(InputUniverseVisibilityMode::AllDetected);
 
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
         let input_layer = spawn_transport_input_layer(&mut app);
@@ -1057,11 +1035,9 @@ mod tests {
             ))
             .id();
 
-        app.world_mut()
-            .resource_mut::<ResolvedInputBindings>()
-            .bindings = vec![ResolvedInputBinding {
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
-                transport: BindingTransport::ArtNet,
+                transport: RouteTransport::ArtNet,
                 universe: 2,
                 address: 1,
             },

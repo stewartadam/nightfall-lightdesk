@@ -47,16 +47,12 @@ import {
 } from "../../../components/ui/toolbar-button";
 import Tooltip from "../../../components/ui/tooltip";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
-import {
-  removePatchBindingsForFixtureIds,
-  sendDeleteFixture,
-} from "../../../lib/fixture-service";
+import { sendDeleteFixture } from "../../../lib/fixture-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { deleteSceneObject } from "../../../lib/scene-object-service";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
-  bindings,
   fixtures,
   programmerSelection,
   sceneObjects,
@@ -114,7 +110,6 @@ export const VisualizerToolToolbar: Component = () => {
   );
   const $fixtures = useSharedStore(fixtures);
   const $sceneObjects = useSharedStore(sceneObjects);
-  const $bindings = useStore(bindings);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
 
   /** Selected fixture IDs. */
@@ -209,16 +204,8 @@ export const VisualizerToolToolbar: Component = () => {
       [],
     );
 
-    if (fixtureIds.length > 0) {
-      removePatchBindingsForFixtureIds(
-        fixtureIds,
-        $bindings(),
-        $fixtures(),
-        batchId,
-      );
-      for (const fixtureId of fixtureIds) {
-        sendDeleteFixture(fixtureId, batchId);
-      }
+    for (const fixtureId of fixtureIds) {
+      sendDeleteFixture(fixtureId, batchId);
     }
 
     for (const sceneObjectId of sceneObjectIds) {

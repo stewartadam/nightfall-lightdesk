@@ -25,21 +25,22 @@ use nightfall_input_osc::prelude::*;
 use nightfall_io::IoRuntimeSettings;
 use nightfall_scene_objects::prelude::*;
 use nightfall_selection::ReferenceSource;
+use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::CURRENT_SHOWFILE_VERSION;
 
-/// Serializable snapshot of input, output, and disabled patch bindings.
+/// Serializable snapshot of input, output, and disabled DMX routes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BindingsSnapshot {
-    /// Persisted input patch bindings.
-    pub input: Vec<InputBinding>,
-    /// Persisted output patch bindings.
-    pub output: Vec<OutputBinding>,
-    /// Bindings retained in the showfile but disabled at runtime.
-    pub disabled: Vec<DisabledBinding>,
+pub struct RoutesSnapshot {
+    /// Persisted input DMX routes.
+    pub input: Vec<InputRoute>,
+    /// Persisted output DMX routes.
+    pub output: Vec<OutputRoute>,
+    /// Routes retained in the showfile but disabled at runtime.
+    pub disabled: Vec<DisabledRoute>,
 }
 
 /// Versioned, serialized representation of all data stored in a showfile.
@@ -55,22 +56,25 @@ pub struct ShowfileSnapshot {
     /// Operator-facing desk settings.
     #[serde(default)]
     pub settings: DeskSettings,
-    /// Ordered control slot assignments and button modes, excluding levels and pickup state.
-    #[serde(default, rename = "controlSlots")]
-    pub control_slots: Vec<ControlSlotConfig>,
+    /// Ordered fader assignments and button modes, excluding levels and pickup state.
+    #[serde(default, rename = "faders")]
+    pub faders: Vec<FaderConfig>,
     /// Showfile-scoped input and output transport preferences.
     #[serde(default, rename = "ioSettings")]
     pub io_settings: IoRuntimeSettings,
-    /// Input, output, and disabled patch bindings.
-    pub bindings: BindingsSnapshot,
+    /// Show tempo and bar length, restored when the show opens.
+    #[serde(default)]
+    pub tempo: TempoSettings,
+    /// Input, output, and disabled DMX routes.
+    pub routes: RoutesSnapshot,
     /// MIDI action mappings when compiled with MIDI support.
     #[cfg(feature = "midi")]
     #[serde(default, rename = "midiMappings")]
     pub midi_mappings: Vec<MidiMapping>,
-    /// MIDI devices whose mapped controls are sent LED feedback, by input device name.
+    /// LED feedback choices for MIDI devices that differ from their controller profile.
     #[cfg(feature = "midi")]
     #[serde(default, rename = "midiFeedbackDevices")]
-    pub midi_feedback_devices: Vec<String>,
+    pub midi_feedback_devices: Vec<MidiFeedbackSetting>,
     /// OSC action mappings when compiled with OSC support.
     #[cfg(feature = "osc")]
     #[serde(default, rename = "oscMappings")]
@@ -114,6 +118,9 @@ pub struct ShowfileSnapshot {
     /// Operator-arranged button boards.
     #[serde(default)]
     pub boards: Vec<Board>,
+    /// Command-line macros.
+    #[serde(default)]
+    pub macros: Vec<Macro>,
 }
 
 impl ShowfileSnapshot {

@@ -156,10 +156,10 @@ fn forward_ui_notifications_broadcasts_show_toast() {
     app.insert_resource(ClientEventSink::new(tx));
     app.add_systems(Update, forward_ui_notifications);
 
-    app.world_mut().write_message(UiNotification::ShowToast {
-        level: crate::ui_notification::ToastLevel::Success,
-        message: "done".to_string(),
-    });
+    app.world_mut().write_message(UiNotification::toast(
+        crate::ui_notification::ToastLevel::Success,
+        "done",
+    ));
 
     app.update();
 
@@ -192,10 +192,10 @@ fn flush_pending_ui_notifications_broadcasts_and_drains_notifications() {
     let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
     let broadcaster = ClientEventSink::new(tx);
     let mut pending = UiNotificationState::default();
-    pending.push(UiNotification::ShowToast {
-        level: crate::ui_notification::ToastLevel::Error,
-        message: "startup failed".to_string(),
-    });
+    pending.push(UiNotification::toast(
+        crate::ui_notification::ToastLevel::Error,
+        "startup failed",
+    ));
 
     flush_pending_ui_notifications(Some(&mut pending), &broadcaster, &broadcaster);
 
@@ -254,10 +254,10 @@ fn resync_broadcasts_queued_toasts_and_replies_identity() {
     let requester = Audience::Client(ClientId(6));
     let resyncing = broadcaster.narrowed_to(std::sync::Arc::from([requester]));
     let mut state = UiNotificationState::default();
-    state.push(UiNotification::ShowToast {
-        level: crate::ui_notification::ToastLevel::Error,
-        message: "show load failed".to_string(),
-    });
+    state.push(UiNotification::toast(
+        crate::ui_notification::ToastLevel::Error,
+        "show load failed",
+    ));
     state.push(UiNotification::current_showfile_changed(Some(
         "Sample Tour".to_string(),
     )));

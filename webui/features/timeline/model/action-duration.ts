@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { durationToMs } from "../../../lib/duration";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import type * as types from "../../../types";
 import type { ActionTargetIndex } from "./action-targets";
 import {

@@ -100,8 +100,8 @@ test("lazy panels render after layout replacement and sample show creation", asy
   ).toBeVisible();
   await expect(
     page
-      .locator("[data-clip-controls-section]")
-      .getByRole("button", { name: "Controls", exact: true }),
+      .locator("[data-clip-faders-section]")
+      .getByRole("button", { name: "Faders", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Lo-fi", { exact: true })).toBeVisible();
   await expect(page.getByText("Rap", { exact: true })).toBeVisible();

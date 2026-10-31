@@ -43,7 +43,7 @@ selection can tell external dependency changes from workspace rewiring.
 | Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
 | `Cargo.lock` changes that only rewire workspace crates, without any crate reaching a different set of external crates | No | No | No |
 | Draft PR (any changes) | No | No | No |
-| Main push | No (packaging compiles only) | Yes | Yes |
+| Main push | No | No | Yes |
 | Develop push | No | No | No |
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
@@ -51,8 +51,20 @@ selection can tell external dependency changes from workspace rewiring.
 Draft PRs validate nothing. Opening one builds only its browser preview (see
 below); after that the source-acquisition job skips the draft, so every other job
 and the CI gate skip too, like PRs higher in a stack. Pushing to a draft costs no
-runner time, and marking it ready for review runs CI in full. All other non-tag
-events run native and WebUI validation. Ready PRs run the native job's
+runner time, and marking it ready for review runs CI in full. Pushes and manual
+dispatches run app validation: the two WASM packages, the native job, the WebUI
+TypeScript and Node tests, and the Chromium product flows. Ready PRs run it only
+when they change an app input, which is any path not listed in `appIndependent` in
+`scripts/ci-scope.mjs`. That list covers the manual, contributor and agent docs,
+editor and agent configuration, repository metadata, workflows outside PR
+validation, script tests, and developer scripts no build or test step runs (such
+as `scripts/update-deps.sh`). A PR touching only those runs the source checks and
+the gate, and the gate accepts the skipped app jobs. New files count as app inputs
+until they are listed; a script test fails if a listed script is referenced from
+anything app validation runs. PRs whose app inputs are all worktree dashboard
+files (`dashboardSources`) run the WASM packages and WebUI checks, which
+typecheck the dashboard page, but skip the native job and the Chromium product
+flows; the WASM packages come from cache unless their inputs changed. Ready PRs run the native job's
 Rust tests, doctests, desktop shell tests and Clippy only when they touch Rust inputs:
 `crates/`, `desktop/`, Cargo manifests and configuration, the toolchain, lint and hook
 configuration, the native workflow, and the files outside `crates/` that Rust embeds
@@ -71,9 +83,10 @@ frontend and resources using the normal configuration.
 The check and release packaging caches are separate.
 
 Desktop checks link test binaries but do not validate the release build or
-installers. Full main-branch and
-release builds remain the cross-platform packaging backstop. Use manual dispatch
-with `desktop`, `browser`, or `all` when an artifact is needed before merging.
+installers. Release-tag builds remain the cross-platform packaging backstop. Main
+pushes skip desktop packaging: the release tag points at the main merge commit, so
+packaging both would build the same installers twice. Use manual dispatch with
+`desktop`, `browser`, or `all` when an artifact is needed before merging or tagging.
 Lockfile selection remains conservative; an ordinary lockfile update selects
 both distributions. Release-note-only changes do not select packaging.
 
@@ -91,10 +104,10 @@ wall-time improvements and confirm Windows/Linux toolchain behavior.
 
 ## Browser previews
 
-Once a preview Worker is configured, every ready same-repository PR also builds the
-browser demo and deploys it as a Cloudflare Workers Preview named `pr-<number>`,
-independent of the table above. A draft PR builds its preview once, when it is
-opened, in a run that builds the two WASM packages and the demo, deploys the
+Once a preview Worker is configured, every ready same-repository PR that changes an
+app input or the manual also builds the browser demo and deploys it as a Cloudflare
+Workers Preview named `pr-<number>`, independent of the table above. A draft PR
+under the same rule builds its preview once, when it is opened, in a run that builds the two WASM packages and the demo, deploys the
 preview, and runs nothing else. Later draft pushes refresh the preview only when a
 maintainer comments `/republish`, which dispatches `ci.yml` on the PR branch with
 the `preview` input set to the PR number for another such preview-only run. These
@@ -177,9 +190,11 @@ Cargo dependency/configuration hashes; it can restore compatible caches from
 older lockfiles. Native profile environment variables apply to the whole job,
 including cache restore/save and all Cargo commands.
 
-Both `main` and `develop` pushes populate caches visible to PRs targeting those
-branches. A PR cache is scoped to that PR and does not warm unrelated PRs.
-Develop pushes run validation without desktop/demo packaging. Cache warming
+Only `main` and `develop` runs save caches, which PRs targeting those branches and
+release tags restore. PRs and tags never save: GitHub scopes their caches to the
+PR or tag itself, so the saves would only fill the repository's cache limit.
+Develop pushes run validation without desktop/demo packaging, so desktop
+packaging restores no compiled dependencies. Cache warming
 starts once this workflow reaches the base branch; the first run for a new
 compiler or profile can still be cold.
 

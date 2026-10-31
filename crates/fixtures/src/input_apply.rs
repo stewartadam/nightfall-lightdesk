@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Shared input frame application for transport-based bindings.
+//! Shared input frame application for transport-based routes.
 
 use std::collections::HashSet;
 
@@ -17,7 +17,7 @@ use nightfall_compositor::types::Layer;
 use nightfall_dmx::prelude::{MAX_CHANNELS_PER_UNIVERSE, ParameterDmxValue, ParameterValue};
 use nightfall_engine::prelude::{LayerGeneration, Render};
 use nightfall_fixture_model::prelude::*;
-use nightfall_io::BindingTransport;
+use nightfall_io::RouteTransport;
 use nightfall_io::{AcceptedDmxFrame, DmxInputSet};
 use web_time::Instant;
 
@@ -30,10 +30,10 @@ use crate::wire_layout::combine_dmx_bytes;
 pub struct TransportInputPlugin;
 
 impl Plugin for TransportInputPlugin {
-    /// Orders routing after adapter ingress and binding resolution, before compositing.
+    /// Orders routing after adapter ingress and route resolution, before compositing.
     fn build(&self, app: &mut App) {
         app.add_message::<AcceptedDmxFrame>();
-        app.init_resource::<ResolvedInputBindings>();
+        app.init_resource::<ResolvedInputRoutes>();
         app.init_resource::<InputDmxUniverses>();
         app.init_resource::<ConsoleDmxUniverses>();
         app.configure_sets(
@@ -54,7 +54,7 @@ impl Plugin for TransportInputPlugin {
 /// Fixture routing state needed to apply an accepted transport frame.
 #[derive(SystemParam)]
 struct TransportInputRouting<'w, 's> {
-    bindings: Res<'w, ResolvedInputBindings>,
+    routes: Res<'w, ResolvedInputRoutes>,
     input_universes: ResMut<'w, InputDmxUniverses>,
     console_universes: ResMut<'w, ConsoleDmxUniverses>,
     parameters: Query<'w, 's, InstanceRef<'static, Parameter>>,
@@ -77,7 +77,7 @@ fn apply_accepted_frames(
     let mut input_layer = routing.layers.single_mut().ok();
     for frame in frames.read() {
         let assertions = apply_transport_input_frame(
-            &routing.bindings,
+            &routing.routes,
             frame.transport,
             frame.universe,
             &frame.data,
@@ -88,7 +88,7 @@ fn apply_accepted_frames(
             &routing.parameters,
         );
         if let Some((layer, owners)) = input_layer.as_mut() {
-            apply_parameter_assertions(layer, owners, assertions, &routing.bindings);
+            apply_parameter_assertions(layer, owners, assertions, &routing.routes);
         }
     }
 }
@@ -102,18 +102,18 @@ pub struct ParameterAssertion {
     pub value: ParameterValue,
     /// Transport source that produced this assertion.
     pub source: ParameterAssertionSource,
-    /// Position of the asserting binding in [`ResolvedInputBindings`]; lower positions win.
+    /// Position of the asserting route in [`ResolvedInputRoutes`]; lower positions win.
     pub precedence: usize,
 }
 
-/// The resolved binding an input frame is currently being routed through.
+/// The resolved route an input frame is currently being routed through.
 #[derive(Debug, Clone, Copy)]
-struct RoutedBinding {
+struct MatchedInputRoute {
     /// Transport source that delivered the frame.
     source: ParameterAssertionSource,
-    /// First source channel the binding reads (1-based).
+    /// First source channel the route reads (1-based).
     source_address: u16,
-    /// Position of the binding in [`ResolvedInputBindings`]; lower positions win.
+    /// Position of the route in [`ResolvedInputRoutes`]; lower positions win.
     precedence: usize,
 }
 
@@ -121,15 +121,15 @@ struct RoutedBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParameterAssertionSource {
     /// Transport protocol that delivered the input frame.
-    pub transport: BindingTransport,
+    pub transport: RouteTransport,
     /// Input universe that delivered the input frame.
     pub universe: u16,
 }
 
 /// Applies one transport input frame to bound parameter targets and console input mapping.
 fn apply_transport_input_frame(
-    resolved_input_bindings: &ResolvedInputBindings,
-    transport: BindingTransport,
+    resolved_input_routes: &ResolvedInputRoutes,
+    transport: RouteTransport,
     universe_id: u16,
     data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
     received_at: Instant,
@@ -154,26 +154,26 @@ fn apply_transport_input_frame(
         universe: universe_id,
     };
 
-    for (precedence, binding) in resolved_input_bindings.bindings.iter().enumerate() {
+    for (precedence, route) in resolved_input_routes.routes.iter().enumerate() {
         let ResolvedInputSource::Transport {
-            transport: binding_transport,
+            transport: route_transport,
             universe,
             address,
-        } = &binding.source
+        } = &route.source
         else {
             continue;
         };
 
-        if *binding_transport != transport || *universe != universe_id {
+        if *route_transport != transport || *universe != universe_id {
             continue;
         }
-        let routed = RoutedBinding {
+        let routed = MatchedInputRoute {
             source,
             source_address: *address,
             precedence,
         };
 
-        match &binding.destination {
+        match &route.destination {
             ResolvedInputDestination::Fixture { targets } => {
                 apply_parameter_targets(
                     targets,
@@ -190,7 +190,7 @@ fn apply_transport_input_frame(
             } => {
                 apply_console_input_mapping(
                     universes,
-                    resolved_input_bindings,
+                    resolved_input_routes,
                     data,
                     routed,
                     console_target,
@@ -216,12 +216,12 @@ fn apply_transport_input_frame(
     assertions
 }
 
-/// Decodes each bound parameter once, retaining the first resolved binding for a target.
+/// Decodes each bound parameter once, retaining the first resolved route for a target.
 fn apply_parameter_targets(
     targets: &[ResolvedInputTarget],
     data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
     parameter_query: &Query<InstanceRef<Parameter>>,
-    routed: RoutedBinding,
+    routed: MatchedInputRoute,
     updated_targets: &mut HashSet<Entity>,
     assertions: &mut Vec<ParameterAssertion>,
 ) {
@@ -269,12 +269,12 @@ fn apply_transport_input_mapping(
 }
 
 /// Copies source transport DMX values into mapped console universe channels once per channel,
-/// leaving channels held by a different source through a stronger binding untouched.
+/// leaving channels held by a different source through a stronger route untouched.
 fn apply_console_input_mapping(
     universes: &mut ConsoleDmxUniverses,
-    resolved_input_bindings: &ResolvedInputBindings,
+    resolved_input_routes: &ResolvedInputRoutes,
     source_data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
-    routed: RoutedBinding,
+    routed: MatchedInputRoute,
     console_target: &ResolvedConsoleTarget,
     updated_console_channels: &mut HashSet<(u16, u16)>,
 ) {
@@ -295,9 +295,9 @@ fn apply_console_input_mapping(
     for offset in 0..len {
         let target_address = (target_start + offset + 1) as u16;
         if !updated_console_channels.insert((console_target.universe, target_address))
-            || console_channel_held_by_stronger_binding(
+            || console_channel_held_by_stronger_route(
                 universes,
-                resolved_input_bindings,
+                resolved_input_routes,
                 console_target.universe,
                 target_address,
                 routed,
@@ -315,13 +315,13 @@ fn apply_console_input_mapping(
 }
 
 /// Returns whether a console channel is owned by another input source that still maps onto it
-/// through a binding with higher precedence than `routed`.
-fn console_channel_held_by_stronger_binding(
+/// through a route with higher precedence than `routed`.
+fn console_channel_held_by_stronger_route(
     universes: &ConsoleDmxUniverses,
-    resolved_input_bindings: &ResolvedInputBindings,
+    resolved_input_routes: &ResolvedInputRoutes,
     console_universe: u16,
     address: u16,
-    routed: RoutedBinding,
+    routed: MatchedInputRoute,
 ) -> bool {
     let Some(ConsoleChannelOrigin::InputTransport {
         transport,
@@ -334,15 +334,15 @@ fn console_channel_held_by_stronger_binding(
         return false;
     }
 
-    resolved_input_bindings
-        .transport_source_precedence(transport, universe, |binding| {
+    resolved_input_routes
+        .transport_source_precedence(transport, universe, |route| {
             let (
                 ResolvedInputSource::Transport {
                     address: source_address,
                     ..
                 },
                 ResolvedInputDestination::Console { target, .. },
-            ) = (&binding.source, &binding.destination)
+            ) = (&route.source, &route.destination)
             else {
                 return false;
             };

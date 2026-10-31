@@ -10,4 +10,5 @@ export { PatchWizard } from "./patch-wizard";
 export {
   PatchWizardProvider,
   usePatchWizard,
+  type WizardStep as PatchWizardStep,
 } from "./wizard-context";

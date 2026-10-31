@@ -22,7 +22,7 @@ use crate::ast::{
     CreateStepFxAst, CurveNameAst, DelaysAst, FadesAst, FixturePlacementCommandAst, FxActionAst,
     FxAttributeStepsAst, FxCommandAst, FxKeyword, FxModuleActionAst, FxModuleCommandAst, FxStepAst,
     OffsetValueAst, ParameterValueMode, PlacementActionsAst, PositionActionAst, PositionValueAst,
-    RotationActionAst, RotationValueAst, SetAttributeAst, SetFxRateAst, StoreBlueprintCommandAst,
+    RotationActionAst, RotationValueAst, SetAttributeAst, SetFxSpeedAst, StoreBlueprintCommandAst,
     StoreClipCommandAst, StoreFixtureCommandAst, StoreFixtureOffsetCommandAst, StoreFlowCommandAst,
     StoreStepFxCommandAst, StoreTimecodeCommandAst, StoreTimelineCommandAst, TimingClauseAst,
     TimingDirectionAst, TimingsAst, TupleValueAst, ValueMarkerAst, ValueRangeAst,
@@ -40,18 +40,18 @@ use crate::ast::{
     FixtureTargetAst, FlowKeyword, GeneralCommandAst, GroupKeyword, GroupedExprAst, HelpCommandAst,
     IdentifierExpressionAst, IntegerAst, LoadCommandAst, LogCommandAst, LogCommandsAst,
     LogFilterCommandAst, LogFilterCommandsAst, LogFixtureCommandAst, LogLevelAst,
-    LogLevelCommandAst, NewShowfileCommandAst, ObjectTypeAst, OpTermAst, PatchAddCommandAst,
-    PatchCloneAst, PatchEndpointAst, PatchPriorityAst, PlaybackActionAst, QuitCommandAst, RangeAst,
-    RecallBlueprintCommandAst, RecallCueCommandAst, RedoCommandAst, ReleaseAttributeTargetAst,
-    ReleaseChannelKeyword, ReleaseCommandAst, ReleaseDmxChannelExpressionAst,
-    ReleaseDmxChannelGroupedAst, ReleaseDmxChannelOpTermAst, ReleaseDmxChannelRangeAst,
-    ReleaseDmxChannelRefAst, ReleaseDmxChannelSingleAst, ReleaseDmxChannelTermAst,
-    ReleaseDmxTargetAst, ReleaseFixtureTargetAst, ReleaseTargetAst, RenameCommandAst,
-    RenameCueCommandAst, RenameFlowAst, RmPatchCommandAst, SaveCommandAst, SelectionArgumentAst,
-    SelectionAst, SelectionCommandAst, SelectionTypeAst, SetCueColorPathCommandAst,
-    SetFixtureColorPathCommandAst, SetFpsCommandAst, SetObjectPropertyAst,
-    SetObjectPropertyCommandAst, SetObjectPropertyTargetAst, SetObjectTargetTypeAst,
-    SetOperatorAst, SetSpanFilterAst, SimpleGroupedExprAst, SimpleIdAst,
+    LogLevelCommandAst, MacroCommandAst, MacroKeyword, NewShowfileCommandAst, ObjectTypeAst,
+    OpTermAst, PatchAddCommandAst, PatchCloneAst, PatchEndpointAst, PatchPriorityAst,
+    PlaybackActionAst, QuitCommandAst, RangeAst, RecallBlueprintCommandAst, RecallCueCommandAst,
+    RedoCommandAst, ReleaseAttributeTargetAst, ReleaseChannelKeyword, ReleaseCommandAst,
+    ReleaseDmxChannelExpressionAst, ReleaseDmxChannelGroupedAst, ReleaseDmxChannelOpTermAst,
+    ReleaseDmxChannelRangeAst, ReleaseDmxChannelRefAst, ReleaseDmxChannelSingleAst,
+    ReleaseDmxChannelTermAst, ReleaseDmxTargetAst, ReleaseFixtureTargetAst, ReleaseTargetAst,
+    RenameCommandAst, RenameCueCommandAst, RenameFlowAst, RmPatchCommandAst, SaveCommandAst,
+    SelectionArgumentAst, SelectionAst, SelectionCommandAst, SelectionTypeAst,
+    SetCueColorPathCommandAst, SetFixtureColorPathCommandAst, SetFpsCommandAst,
+    SetObjectPropertyAst, SetObjectPropertyCommandAst, SetObjectPropertyTargetAst,
+    SetObjectTargetTypeAst, SetOperatorAst, SetSpanFilterAst, SimpleGroupedExprAst, SimpleIdAst,
     SimpleIdentifierExpressionAst, SimpleOpTermAst, SimpleRangeAst, SimpleTermAst, SingleIdAst,
     SleepCommandAst, SpanFieldNameAst, SpanFieldValueAst, StartStopAst, StoreColorPathCommandAst,
     StoreCueCommandAst, StoreCueModeAst, StoreCueTargetAst, StoreGroupCommandAst, TargetAst,
@@ -1105,7 +1105,7 @@ fn parse_patch_add_command<'i>(command_str: &'i str) -> Option<CommandAst<'i>> {
     patch::parse_patch_add_command_from_tokens(command_str, &tokens)
 }
 
-/// Parses an `rm patch` command that removes matching patch bindings.
+/// Parses an `rm patch` command that removes matching DMX routes.
 #[cfg(test)]
 fn parse_rm_patch_command<'i>(command_str: &'i str) -> Option<CommandAst<'i>> {
     let tokens = lex_command(command_str);
@@ -1791,6 +1791,7 @@ fn dispatch_structural_branch<'i>(
         StructuralAstDispatchKind::Flow => flow::materialize_flow_ast(ctx),
         StructuralAstDispatchKind::Timecode => transport::materialize_timecode_ast(ctx),
         StructuralAstDispatchKind::Timeline => transport::materialize_timeline_ast(ctx),
+        StructuralAstDispatchKind::Macro => transport::materialize_macro_ast(ctx),
         StructuralAstDispatchKind::Rm => patch::materialize_rm_patch_ast(ctx)
             .or_else(|| general::materialize_general_object_ast(ctx)),
         StructuralAstDispatchKind::Rename => general::materialize_general_object_ast(ctx),

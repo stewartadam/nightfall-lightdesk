@@ -33,6 +33,7 @@ pub(in crate::parser) fn continuation_kind_for_slot(
         | crate::slots::contracts::SlotId::FlowAction
         | crate::slots::contracts::SlotId::TimecodeAction
         | crate::slots::contracts::SlotId::TimelineAction
+        | crate::slots::contracts::SlotId::MacroAction
         | crate::slots::contracts::SlotId::TempoAction
         | crate::slots::contracts::SlotId::LogFilterField
         | crate::slots::contracts::SlotId::RecallBlueprintKeyword
@@ -48,6 +49,7 @@ pub(in crate::parser) fn continuation_kind_for_slot(
         | crate::slots::contracts::SlotId::FlowIdentifier
         | crate::slots::contracts::SlotId::TimecodeIdentifier
         | crate::slots::contracts::SlotId::TimelineIdentifier
+        | crate::slots::contracts::SlotId::MacroIdentifier
         | crate::slots::contracts::SlotId::ReleaseChannelExpr
         | crate::slots::contracts::SlotId::RecallCueRef
         | crate::slots::contracts::SlotId::RecallBlueprintIdentifier
@@ -131,6 +133,7 @@ pub(in crate::parser) fn keeps_identifier_continuation(slot: SlotId) -> bool {
             | SlotId::FlowIdentifier
             | SlotId::TimecodeIdentifier
             | SlotId::TimelineIdentifier
+            | SlotId::MacroIdentifier
             | SlotId::ChannelOverrideIdentifier
             | SlotId::ReleaseChannelExpr
             | SlotId::PatchSourceEndpoint
@@ -428,13 +431,13 @@ pub(in crate::parser) fn slot_requires_followup_value(
         }) || bezier_expression_in_progress(fills);
     }
     if slot == SlotId::ClipAction {
-        return fx_rate_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value)
+        return fx_speed_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value)
             || fills.last().is_some_and(|item| {
                 token_id_for_text(item.surface.as_str()) == Some(TokenId::Goto)
             });
     }
     if slot == SlotId::FxAction {
-        return fx_rate_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value);
+        return fx_speed_requires_followup(fills, decimal_value_prefix, is_complete_decimal_value);
     }
     if slot == SlotId::TempoAction {
         return tempo_action_requires_followup(fills);

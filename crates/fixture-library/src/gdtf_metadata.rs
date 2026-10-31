@@ -27,6 +27,10 @@ pub struct GdtfMetadata {
     pub model: String,
     /// Available DMX modes
     pub modes: Vec<String>,
+    /// Lowercase `FixtureTypeID`, shared by every revision of the fixture type; `None` when
+    /// the archive leaves it nil.
+    #[serde(default)]
+    pub fixture_type_id: Option<String>,
     /// File path for on-demand re-parsing
     pub file_path: std::path::PathBuf,
 }
@@ -47,6 +51,7 @@ impl GdtfMetadata {
             manufacturer,
             model,
             modes,
+            fixture_type_id: extract_fixture_type_id(&gdtf_file),
             file_path: path.to_path_buf(),
         })
     }
@@ -80,6 +85,17 @@ fn extract_fixture_info(gdtf: &gdtf::GdtfFile) -> (String, String) {
     ("Unknown".to_string(), "Unknown".to_string())
 }
 
+/// Extracts the fixture type id, which GDTF Share also lists, so library and online
+/// entries for one fixture type can be matched.
+fn extract_fixture_type_id(gdtf: &gdtf::GdtfFile) -> Option<String> {
+    gdtf.description
+        .fixture_types
+        .first()
+        .map(|fixture_type| fixture_type.fixture_type_id)
+        .filter(|id| !id.is_nil())
+        .map(|id| id.to_string())
+}
+
 /// Extract DMX mode names from GDTF file
 fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
     if let Some(fixture_type) = gdtf.description.fixture_types.first() {
@@ -107,5 +123,19 @@ mod tests {
             .mode(ModeSpec::new("Mode", "Body"))
             .write_metadata(dir.path());
         assert_eq!(metadata.model, "Pixel Line");
+    }
+
+    /// Reads the archive's `FixtureTypeID`, which GDTF Share lists for the same fixture type.
+    #[test]
+    fn reads_the_fixture_type_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Spot")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert_eq!(
+            metadata.fixture_type_id.as_deref(),
+            Some("00000000-0000-0000-0000-000000000001")
+        );
     }
 }

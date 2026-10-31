@@ -35,7 +35,7 @@ pub enum ObjectLookupError {
 /// UUID or structured failure returned by a domain lookup handler.
 pub type ObjectLookupResult = Result<Uuid, ObjectLookupError>;
 
-/// Routes references to domain-owned systems without depending on domain crates.
+/// Routes references to domain-owned systems without depending on plugin crates.
 #[derive(Resource, Default)]
 pub struct ObjectRegistry(HashMap<ObjectType, SystemId<In<ObjectRef>, ObjectLookupResult>>);
 

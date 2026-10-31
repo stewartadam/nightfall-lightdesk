@@ -22,7 +22,7 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
     // Collapsed controls keep the docked clip grid tall enough that its
     // cards are not covered by scroll-edge indicators, which reject clicks.
     window.localStorage.setItem(
-      "nightfall-clip-panel:controls-collapsed",
+      "nightfall-clip-panel:faders-collapsed",
       "true",
     );
   });

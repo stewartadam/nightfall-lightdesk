@@ -15,10 +15,14 @@ import {
 } from "../../../lib/fixture-service";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
+import {
+  formatConsolePatchSpan,
+  layoutConsolePatch,
+} from "../model/console-patch-allocation";
 import { usePatchWizard } from "./wizard-context";
 
 export function StepFinalize() {
-  const { state } = usePatchWizard();
+  const { state, baseFixtureId } = usePatchWizard();
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
   /** Tracks when the review step is summarizing a fixture morph. */
@@ -45,11 +49,23 @@ export function StepFinalize() {
     return count !== null ? count * state().quantity : null;
   });
 
-  const endAddress = createMemo(() => {
-    const start = state().startAddress;
-    const total = totalChannels();
-    if (start === null || total === null) return null;
-    return start + total - 1;
+  /**
+   * Console channels the new fixtures span, as `universe.start–universe.end`, laid out
+   * like the routes the wizard creates.
+   */
+  const patchSpan = createMemo(() => {
+    const { universeId, startAddress, quantity } = state();
+    if (universeId === null || startAddress === null) return null;
+    const footprint = channelCount() ?? 1;
+    return formatConsolePatchSpan(
+      layoutConsolePatch(
+        { universe: universeId, address: startAddress },
+        footprint,
+        quantity,
+      ),
+      footprint,
+      { qualified: true },
+    );
   });
 
   return (
@@ -78,6 +94,13 @@ export function StepFinalize() {
             <div class="text-gray-100">
               {state().quantity} fixture{state().quantity !== 1 ? "s" : ""}
             </div>
+            <Show when={!isMorphMode()}>
+              <div class="text-sm text-gray-400 mt-1">
+                {state().quantity > 1
+                  ? `IDs ${baseFixtureId()}–${baseFixtureId() + state().quantity - 1}`
+                  : `ID ${baseFixtureId()}`}
+              </div>
+            </Show>
           </div>
 
           {/* Patch info */}
@@ -87,7 +110,7 @@ export function StepFinalize() {
               <div class="bg-neutral-800 rounded-lg p-4">
                 <div class="text-sm text-gray-400 mb-1">Preserved</div>
                 <div class="text-gray-100">
-                  Fixture IDs, labels, patch bindings, and 3D placement
+                  Fixture IDs, labels, DMX routes, and 3D placement
                 </div>
               </div>
             }
@@ -100,25 +123,7 @@ export function StepFinalize() {
                   <div class="text-gray-100">Not assigned (DMX-less)</div>
                 }
               >
-                <div class="text-gray-100">
-                  {state().universeId}.{state().startAddress}
-                  <Show when={endAddress() !== null}>
-                    {(() => {
-                      const startAddr = state().startAddress ?? 0;
-                      const end = endAddress() ?? 0;
-                      const startUniverse = state().universeId ?? 0;
-                      const endUniverseOffset = Math.floor((end - 1) / 512);
-                      const endAddressInUniverse = ((end - 1) % 512) + 1;
-                      const endUniverse = startUniverse + endUniverseOffset;
-                      const spansMultiple = endUniverse > startUniverse;
-
-                      if (end === startAddr) return null;
-                      return spansMultiple
-                        ? `–${endUniverse}.${endAddressInUniverse}`
-                        : `–${startUniverse}.${endAddressInUniverse}`;
-                    })()}
-                  </Show>
-                </div>
+                <div class="text-gray-100">{patchSpan()}</div>
                 <Show
                   when={totalChannels() !== null && channelCount() !== null}
                 >

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal } from "solid-js";
+import { createEffect, createSignal, on } from "solid-js";
 import {
   type CommandSequenceProgress,
   CommandSequenceRunner,
@@ -43,6 +43,9 @@ import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
 
 const log = getLogger(import.meta.url);
+
+/** Clears the programmer from anywhere, including while a text input has focus. */
+export const CLEAR_PROGRAMMER_SHORTCUT = "Shift+Escape";
 const commandSequenceRunner = new CommandSequenceRunner(commandClient);
 
 /** Tail of the serial chain that keeps command-line submissions in submission order. */
@@ -51,6 +54,21 @@ let nextSubmissionId = 0;
 const [pendingSubmissions, setPendingSubmissions] = createSignal<
   readonly PendingCommandSubmission[]
 >([]);
+
+let nextTypedCommandId = 0;
+const [typedCommand, setTypedCommand] = createSignal<{
+  id: number;
+  text: string;
+}>();
+
+/**
+ * Types a command into the header command line, replacing what is there, and focuses it so the
+ * user can review the command and press Enter. The command is not submitted.
+ */
+export function typeIntoCommandLine(text: string): void {
+  nextTypedCommandId += 1;
+  setTypedCommand({ id: nextTypedCommandId, text });
+}
 
 /** Applies an update to one pending submission, ignoring submissions that already settled. */
 function updatePendingSubmission(
@@ -292,7 +310,7 @@ export function createCommandLineController(
 
     useKeyboardShortcut(
       {
-        key: "Shift+Escape",
+        key: CLEAR_PROGRAMMER_SHORTCUT,
         /** Clears the programmer even while an editable element has focus. */
         handler: () => clearProgrammer(),
         description: "Clear programmer",
@@ -348,6 +366,26 @@ export function createCommandLineController(
     history.setHistoryIndex(-1);
     analysis.onInputChange(element);
   };
+
+  if (options.variant === "nav") {
+    /** Fills the header input with each typed command as if the user typed it, cursor at the end. */
+    createEffect(
+      on(
+        typedCommand,
+        (request) => {
+          if (!request || !inputElement) return;
+          inputElement.value = request.text;
+          onInputChange(inputElement);
+          inputElement.focus();
+          inputElement.setSelectionRange(
+            request.text.length,
+            request.text.length,
+          );
+        },
+        { defer: true },
+      ),
+    );
+  }
 
   /** Opens history search when its panel-level shortcut is pressed. */
   const handlePanelKeyDown = (event: KeyboardEvent) => {

@@ -10,8 +10,8 @@ import { createMemo, createSignal } from "solid-js";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import {
   formatStepFxBeatCount,
+  type StepFxBeatUnit,
   type StepFxPositionUnit,
-  type StepFxSpeedUnit,
   stepFxCycleBeats,
 } from "../model/step-fx-editor-model";
 import type { StepFxEditorViewportState } from "../model/step-fx-editor-viewport";
@@ -73,7 +73,7 @@ export function createStepFxEditorViewController(
   const [liveStepUid, setLiveStepUid] = createSignal<string>();
   const [waveformDragTarget, setWaveformDragTarget] =
     createSignal<StepFxWaveformDragTarget>();
-  const [speedUnit, setSpeedUnit] = createSignal<StepFxSpeedUnit>("BPM");
+  const [beatUnit, setBeatUnit] = createSignal<StepFxBeatUnit>("BPM");
   const [positionUnit, setPositionUnit] =
     createSignal<StepFxPositionUnit>("percent");
 
@@ -120,8 +120,8 @@ export function createStepFxEditorViewController(
     setLiveStepUid,
     waveformDragTarget,
     setWaveformDragTarget,
-    speedUnit,
-    setSpeedUnit,
+    beatUnit,
+    setBeatUnit,
     positionUnit,
     setPositionUnit,
     issuesByPath,

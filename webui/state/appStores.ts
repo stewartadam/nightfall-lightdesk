@@ -202,6 +202,7 @@ export type SceneObjectMap = { [uid: string]: types.SceneObject };
 export type GroupMap = { [uid: string]: types.Group };
 export type MasterMap = { [uid: string]: types.Master };
 export type BoardMap = { [uid: string]: types.Board };
+export type MacroMap = { [uid: string]: types.Macro };
 /** Resolved buttons per board, keyed by board UID and then element UID. */
 export type BoardStatusMap = {
   [boardUid: string]: { [elementUid: string]: types.BoardItem[] };
@@ -224,7 +225,7 @@ export type BlueprintDependencyMap = { [uid: string]: string[] };
 
 /** Active instances indexed by instance_id (UUID string) */
 export type ActiveInstancesMap = { [instanceId: string]: types.InstanceInfo };
-export type ControlState = types.ControlSnapshot;
+export type FaderState = types.FaderSnapshot;
 export interface LayerNavigationRequest {
   layerIndex: number;
   fixtureUid: string;
@@ -235,8 +236,8 @@ export interface LayerObjectNavigationRequest {
   layerIndex: number;
   requestId: number;
 }
-export interface PatchBindingNavigationRequest {
-  bindingId: string;
+export interface DmxRouteNavigationRequest {
+  routeId: string;
   requestId: number;
 }
 export interface SequenceNavigationRequest {
@@ -287,6 +288,8 @@ export const sequences = deepMap<SequenceMap>({});
 export const colorPaths = deepMap<ColorPathMap>({});
 export const colorPathDefaults = atom<ColorPathDefaultList>([]);
 export const clips = deepMap<ClipMap>({});
+/** Live clip launches waiting for the next beat or bar, keyed by clip ID. */
+export const armedLaunches = atom<Record<number, types.ArmedLaunch>>({});
 export const fixtures = deepMap<FixtureMap>({});
 
 /** Scene objects (trusses, audience, stage elements, etc.) keyed by UID */
@@ -296,6 +299,8 @@ export const sceneObjects = deepMap<SceneObjectMap>({});
 export type FixtureGeometryMap = { [uid: string]: types.FixtureGeometry };
 export const fixtureGeometries = deepMap<FixtureGeometryMap>({});
 export const fixtureLibrary = atom<types.AvailableFixtureInfo[]>([]);
+/** Definition files in the fixture library folders that failed to load. */
+export const unloadableFixtureFiles = atom<types.UnloadableFixtureFile[]>([]);
 
 /** Canonical backend-provided attribute presentation metadata. */
 export const attributeMetadata = atom<types.AttributeMetadata[]>([]);
@@ -320,6 +325,9 @@ export const groups = deepMap<GroupMap>({});
 export const masters = deepMap<MasterMap>({});
 export const boards = atom<BoardMap>({});
 export const boardStates = atom<BoardStatusMap>({});
+export const macros = atom<MacroMap>({});
+/** Macro bodies running right now, with the statement each one is on. */
+export const macroRuns = atom<types.MacroRunStatus[]>([]);
 export const fx = deepMap<FxMap>({});
 export const stepFx = deepMap<StepFxMap>({});
 export const fxModules = deepMap<FxModuleMap>({});
@@ -380,16 +388,17 @@ export function getParametersImmediate(): ParameterOutputSnapshot {
 export function setParametersImmediate(map: ParameterOutputMap): void {
   parametersImmediateHolder.current = map;
 }
-export const bindings = atom<types.BindingsSnapshot>({
+export const routes = atom<types.RoutesSnapshot>({
   input: [],
   output: [],
   disabled: [],
 });
-export const bindingValidationSettings = atom<types.BindingValidationSettings>({
-  mode: "Strict" as types.BindingValidationMode,
+export const routeValidationSettings = atom<types.RouteValidationSettings>({
+  mode: "Strict" as types.RouteValidationMode,
 });
-export const patchBindingNavigationRequest =
-  atom<PatchBindingNavigationRequest | null>(null);
+export const dmxRouteNavigationRequest = atom<DmxRouteNavigationRequest | null>(
+  null,
+);
 export const programmerState = atom<ProgrammerRow[]>([]);
 
 /** Active fixture selection in the programmer (resolved UIDs) */
@@ -442,7 +451,8 @@ export const sceneObjectNavigationRequest =
 
 /** Active instances map (instance_id -> InstanceInfo) */
 export const activeInstances = deepMap<ActiveInstancesMap>({});
-export const controls = atom<ControlState[]>([]);
+/** Backend-owned fader bank snapshots, ordered by fader index. */
+export const faders = atom<FaderState[]>([]);
 export const engineMetrics = atom<EngineMetrics | null>(null);
 
 // Bindable action catalog published by backend domains
@@ -461,6 +471,8 @@ export const audioInputDevices = atom<types.AudioInputDevice[]>([]);
 
 // MIDI input state
 export const midiDevices = atom<types.MidiDevice[]>([]);
+/** Controller profiles of connected and mapped MIDI devices, one per device name. */
+export const midiDeviceProfiles = atom<types.MidiDeviceProfile[]>([]);
 export const midiMappings = atom<types.MidiMapping[]>([]);
 export const midiLastEvent = atom<types.MidiLastEvent | null>(null);
 /** MIDI mappings that cannot currently invoke their action, as diagnosed by the backend. */
@@ -477,6 +489,12 @@ export const oscListenerStatus = atom<types.OscListenerStatus | null>(null);
  * Unlike `midiLastEvent`, every batch is delivered, so mapping mode arms from these.
  */
 export const midiControlTouches = atom<types.MidiLastEvent[]>([]);
+/**
+ * MIDI devices the backend last announced as newly connected and not yet mapped by the show.
+ *
+ * Each announcement is a new value, so listeners see every one, even a repeat.
+ */
+export const midiDetectedDevices = atom<string[]>([]);
 /**
  * OSC messages the backend reported in one frame while mapping mode is active.
  *
@@ -520,6 +538,8 @@ export const inputContributionTrace = atom<types.OutboundInputContribution[]>(
 /** Last show tempo received from the engine, with its local receive time for extrapolation. */
 export interface ShowTempoState {
   snapshot: types.TempoSnapshot;
+  /** Whether live clip launches wait for the next beat or bar. */
+  launchQuantize: types.LaunchQuantize;
   receivedAtMs: number;
 }
 export const showTempo = atom<ShowTempoState | undefined>(undefined);
@@ -961,7 +981,7 @@ export function clearSelectionFlattenConfirmation(): void {
 }
 
 let nextLayerNavigationRequestId = 1;
-let nextPatchBindingNavigationRequestId = 1;
+let nextDmxRouteNavigationRequestId = 1;
 let nextSequenceNavigationRequestId = 1;
 let nextSceneObjectNavigationRequestId = 1;
 
@@ -997,23 +1017,23 @@ export function clearLayerObjectNavigationRequest(requestId: number): void {
   }
 }
 
-/** Requests one-shot navigation to a patch binding. */
-export function requestPatchBindingNavigation(bindingId: string): number {
-  const requestId = nextPatchBindingNavigationRequestId++;
-  setStoreAction(patchBindingNavigationRequest, "Request Patch Binding", {
-    bindingId,
+/** Requests one-shot navigation to a DMX route. */
+export function requestDmxRouteNavigation(routeId: string): number {
+  const requestId = nextDmxRouteNavigationRequestId++;
+  setStoreAction(dmxRouteNavigationRequest, "Request DMX Route Navigation", {
+    routeId,
     requestId,
   });
   return requestId;
 }
 
-/** Clears the patch binding navigation request only if the id still matches. */
-export function clearPatchBindingNavigationRequest(requestId: number): void {
-  const current = patchBindingNavigationRequest.get();
+/** Clears the DMX route navigation request only if the id still matches. */
+export function clearDmxRouteNavigationRequest(requestId: number): void {
+  const current = dmxRouteNavigationRequest.get();
   if (current?.requestId === requestId) {
     setStoreAction(
-      patchBindingNavigationRequest,
-      "Clear Patch Binding Navigation",
+      dmxRouteNavigationRequest,
+      "Clear DMX Route Navigation",
       null,
     );
   }
@@ -1106,6 +1126,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     fixtures,
     sceneObjects,
     fixtureLibrary,
+    unloadableFixtureFiles,
     attributeMetadata,
     fixtureGeometries,
     objectLibrary,
@@ -1114,6 +1135,8 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     masters,
     boards,
     boardStates,
+    macros,
+    macroRuns,
     fx,
     stepFx,
     fxModules,
@@ -1125,9 +1148,9 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     getFixtureById,
     getParametersImmediate,
     setParametersImmediate,
-    bindings,
-    bindingValidationSettings,
-    patchBindingNavigationRequest,
+    routes,
+    routeValidationSettings,
+    dmxRouteNavigationRequest,
     programmerState,
     selectionFlattenConfirmation,
     requestSelectionFlattenConfirmation,
@@ -1162,7 +1185,8 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     referenceListWatch,
     inputContributionTrace,
     activeInstances,
-    controls,
+    faders,
+    armedLaunches,
     showTempo,
     undoState,
     engineMetrics,
@@ -1180,6 +1204,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     actionInvocationFailures,
     audioInputDevices,
     midiDevices,
+    midiDeviceProfiles,
     midiMappings,
     midiLastEvent,
     midiMappingDiagnostics,
@@ -1189,6 +1214,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     oscLastEvent,
     oscListenerStatus,
     midiControlTouches,
+    midiDetectedDevices,
     oscControlTouches,
     controllerMappingMode,
     consoleScrollback,

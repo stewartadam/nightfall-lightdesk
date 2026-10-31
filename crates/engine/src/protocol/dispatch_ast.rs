@@ -44,7 +44,7 @@ pub enum DispatchError {
 
 /// Generic “common handler” that delegates to `T`’s implementation.
 ///
-/// Domain crates implement `AstConvert` for their marker type `T` (often the plugin type),
+/// Plugin crates implement `AstConvert` for their marker type `T` (often the plugin type),
 /// then register `T` once.
 pub trait AstConvert: 'static {
     fn convert(ast: &ast::CommandAst) -> Result<Vec<DynEnginePayload>, DispatchError>;
@@ -59,7 +59,7 @@ fn convert_typed<T: AstConvert>(
 
 /// Register a converter for `T` using the common typed adapter.
 ///
-/// Domain crates call: `register_converter::<MyDomainPlugin>();`
+/// Plugin crates call: `register_converter::<MyDomainPlugin>();`
 pub fn register_converter<T: AstConvert>() {
     let type_id = TypeId::of::<T>();
     let mut guard = CONVERTERS.write().expect("ast dispatch lock poisoned");

@@ -6,7 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! WASM bridge exposing engine command parsing, spatial selection, and projection helpers to the web UI
+//! Functions the web UI calls in WebAssembly, so it reuses the engine's own logic.
+//!
+//! The exports cover command-line completion, validation, and statement splitting; spatial
+//! selection parsing, formatting, and resolution; Step FX phase text; transition modes; sequence
+//! lookahead previews and durations; fixture channel evaluation for the visualizer; board
+//! placement rules; and output target names. Only the code these functions reach is compiled
+//! into the bridge.
 #![allow(clippy::missing_errors_doc)]
 
 use std::{collections::HashMap, time::Duration};

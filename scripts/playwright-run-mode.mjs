@@ -46,3 +46,13 @@ export function resolvePlaywrightViteMode({
   }
   return targetsEmbeddedDemo ? "dev" : "e2e";
 }
+
+/**
+ * Decides whether a test run must first rebuild the dev WASM packages. CI
+ * restores both packages from its own builds, and `preview` serves an
+ * already-built distribution with its WASM bundled in, so neither uses a
+ * fresh dev build.
+ */
+export function needsTestWasmBuild({ isTestRun, viteMode, ci }) {
+  return isTestRun && !ci && viteMode !== "preview";
+}

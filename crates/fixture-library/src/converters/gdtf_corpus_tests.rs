@@ -15,11 +15,17 @@
 //! not depend on previous runs; the per-stage report written to
 //! NIGHTFALL_GDTF_CORPUS_REPORT is informational only.
 //!
-//! Run with `NIGHTFALL_GDTF_CORPUS_DIR=<dirs> pnpm run gdtf:corpus`
+//! Every readable archive is also written back out: a description that
+//! cannot be read back, or reads back different, fails the corpus check, and
+//! source content the description model drops on write is reported per
+//! archive and summed in the report.
+//!
+//! Run with `pnpm run gdtf:corpus`, setting NIGHTFALL_GDTF_CORPUS_DIR=<dirs>
 //! (a platform path list; directories are searched recursively).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -28,6 +34,8 @@ use serde::Serialize;
 
 use super::gdtf::convert_gdtf_mode;
 use crate::GdtfMetadata;
+use crate::gdtf_repair::repair_description;
+use crate::gdtf_write::{lost_content, read_description_xml};
 use crate::testing::invariants::check_invariants;
 
 /// Wall-clock budget for importing every mode of one archive.
@@ -50,6 +58,8 @@ enum ArchiveOutcome {
         rejected: BTreeMap<String, String>,
         /// Modes whose converted result broke invariants (failures).
         violations: BTreeMap<String, Vec<String>>,
+        /// Result of writing the description back out.
+        round_trip: RoundTrip,
     },
     /// Import panicked (failure).
     Panicked {
@@ -64,12 +74,40 @@ enum ArchiveOutcome {
     NotChecked,
 }
 
+/// Result of serializing an archive's parsed description and reading it back.
+#[derive(Debug, Default, Serialize)]
+struct RoundTrip {
+    /// Why the written description failed to serialize or read back (failure).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    /// Whether the description read back differs from the one written (failure).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    changed: bool,
+    /// Element and attribute paths of the source description the write dropped.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    lost: Vec<String>,
+    /// Why the source description could not be analysed for dropped content (informational).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lost_error: Option<String>,
+}
+
+impl RoundTrip {
+    /// Returns whether the round trip fails the corpus check.
+    fn is_failure(&self) -> bool {
+        self.error.is_some() || self.changed
+    }
+}
+
 impl ArchiveOutcome {
     /// Returns whether this outcome fails the corpus check.
     fn is_failure(&self) -> bool {
         match self {
             Self::RejectedArchive { .. } | Self::NotChecked => false,
-            Self::Imported { violations, .. } => !violations.is_empty(),
+            Self::Imported {
+                violations,
+                round_trip,
+                ..
+            } => !violations.is_empty() || round_trip.is_failure(),
             Self::Panicked { .. } | Self::TimedOut => true,
         }
     }
@@ -83,6 +121,14 @@ struct CorpusReport {
     modes_accepted: usize,
     modes_rejected: usize,
     modes_with_violations: usize,
+    /// Archives whose description could not be written and read back unchanged.
+    round_trip_failures: usize,
+    /// Archives whose source description holds content the write drops.
+    lost_archives: usize,
+    /// Archives whose source description could not be analysed for dropped content.
+    lost_analysis_errors: usize,
+    /// Source paths dropped on write with the number of archives that lost them, most common first.
+    lost_content: Vec<(String, usize)>,
     panics: usize,
     timeouts: usize,
     /// Archives not started because an earlier archive timed out.
@@ -116,6 +162,11 @@ fn check_archive(path: &Path) -> ArchiveOutcome {
             };
         }
     };
+    let round_trip = std::panic::catch_unwind(|| round_trip(path, &gdtf.description))
+        .unwrap_or_else(|panic| RoundTrip {
+            error: Some(format!("panicked: {}", panic_message(panic.as_ref()))),
+            ..Default::default()
+        });
     for mode in &metadata.modes {
         match convert_gdtf_mode(&mut gdtf, &metadata, mode, 1) {
             Ok(converted) => {
@@ -141,7 +192,57 @@ fn check_archive(path: &Path) -> ArchiveOutcome {
         accepted,
         rejected,
         violations,
+        round_trip,
     }
+}
+
+/// Writes `description` out, reads it back, and lists source content the write drops.
+///
+/// Dropped content is measured on the description as imported: the source as
+/// published when it parses strictly, otherwise the repaired source, so
+/// content removed by repairs while opening the archive is not reported as lost.
+fn round_trip(path: &Path, description: &gdtf::Description) -> RoundTrip {
+    let written = match description.to_string() {
+        Ok(written) => written,
+        Err(error) => {
+            return RoundTrip {
+                error: Some(format!("serialize: {error}")),
+                ..Default::default()
+            };
+        }
+    };
+    let (changed, error) = match gdtf::Description::from_str(&written) {
+        Ok(reread) => (reread != *description, None),
+        Err(error) => (false, Some(format!("read back: {error}"))),
+    };
+    let (lost, lost_error) = match read_description_xml(path).and_then(|source| {
+        let imported = if gdtf::Description::from_str(&source).is_ok() {
+            source
+        } else {
+            repair_description(&source)
+                .map(|(repaired, _)| repaired)
+                .unwrap_or(source)
+        };
+        lost_content(&imported)
+    }) {
+        Ok(lost) => (lost, None),
+        Err(error) => (Vec::new(), Some(error)),
+    };
+    RoundTrip {
+        error,
+        changed,
+        lost,
+        lost_error,
+    }
+}
+
+/// Extracts the text of a panic payload, or an empty string for other payloads.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
+    panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&str>().map(|text| text.to_string()))
+        .unwrap_or_default()
 }
 
 /// Runs [`check_archive`] on a worker thread, converting panics and timeouts into outcomes.
@@ -150,11 +251,7 @@ fn check_archive_guarded(path: PathBuf) -> ArchiveOutcome {
     std::thread::spawn(move || {
         let outcome = std::panic::catch_unwind(|| check_archive(&path)).unwrap_or_else(|panic| {
             ArchiveOutcome::Panicked {
-                message: panic
-                    .downcast_ref::<String>()
-                    .cloned()
-                    .or_else(|| panic.downcast_ref::<&str>().map(|text| text.to_string()))
-                    .unwrap_or_default(),
+                message: panic_message(panic.as_ref()),
             }
         });
         let _ = sender.send(outcome);
@@ -257,6 +354,7 @@ fn gdtf_corpus() {
         ..Default::default()
     };
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
+    let mut lost: BTreeMap<String, usize> = BTreeMap::new();
     let mut failures = Vec::new();
     for (path, outcome) in results {
         let name = path
@@ -272,8 +370,15 @@ fn gdtf_corpus() {
                 accepted,
                 rejected,
                 violations,
+                round_trip,
             } => {
                 report.modes_accepted += accepted;
+                report.round_trip_failures += usize::from(round_trip.is_failure());
+                report.lost_archives += usize::from(!round_trip.lost.is_empty());
+                report.lost_analysis_errors += usize::from(round_trip.lost_error.is_some());
+                for path in &round_trip.lost {
+                    *lost.entry(path.clone()).or_default() += 1;
+                }
                 report.modes_rejected += rejected.len();
                 report.modes_with_violations += violations.len();
                 for error in rejected.values() {
@@ -293,18 +398,25 @@ fn gdtf_corpus() {
     report
         .rejection_reasons
         .sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    report.lost_content = lost.into_iter().collect();
+    report
+        .lost_content
+        .sort_by_key(|(_, count)| std::cmp::Reverse(*count));
 
     if let Some(path) = std::env::var_os("NIGHTFALL_GDTF_CORPUS_REPORT") {
         std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
             .expect("write corpus report");
     }
     println!(
-        "GDTF corpus: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} panics, {} timeouts, {} not checked after a timeout, {} unreadable paths skipped",
+        "GDTF corpus: {} archives, {} rejected archives, {} modes accepted, {} modes rejected, {} modes with violations, {} round-trip failures, {} archives losing content on write, {} archives not analysed for lost content, {} panics, {} timeouts, {} not checked after a timeout, {} unreadable paths skipped",
         report.archives,
         report.rejected_archives,
         report.modes_accepted,
         report.modes_rejected,
         report.modes_with_violations,
+        report.round_trip_failures,
+        report.lost_archives,
+        report.lost_analysis_errors,
         report.panics,
         report.timeouts,
         report.not_checked,

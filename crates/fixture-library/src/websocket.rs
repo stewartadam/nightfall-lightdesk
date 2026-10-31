@@ -22,7 +22,7 @@ use nightfall_fixtures::prelude::FixtureDataProviderExt;
 
 use crate::commands::{
     AvailableFixtureInfo, FixtureLibraryCommand, FixtureLibraryEntry, GetFixtureProfileResponse,
-    ListAvailableFixturesResponse,
+    ListAvailableFixturesResponse, UnloadableFixtureFileId,
 };
 use crate::manager::{FixtureLibraryManager, FixtureProfile, FixtureSource};
 use crate::watcher::FixtureLibraryEvent;
@@ -108,6 +108,9 @@ pub fn handle_fixture_library_commands(
             FixtureLibraryCommand::DeleteFixtures(entries) => {
                 delete_fixtures(&mut library, entries)
             }
+            FixtureLibraryCommand::DeleteUnloadableFiles(files) => {
+                delete_unloadable_files(&mut library, files, &broadcaster)
+            }
         };
         results.write(FixtureLibraryCommandResult::new(event.command_id, result));
     }
@@ -118,14 +121,21 @@ fn list_available_fixtures(
     library: &FixtureLibraryManager,
     broadcaster: &ClientEventSink,
 ) -> Result<ListAvailableFixturesResponse, CommandError> {
-    let fixtures = library
-        .list_fixtures()
-        .into_iter()
-        .map(available_fixture_info)
-        .collect();
-    let response = ListAvailableFixturesResponse { fixtures };
+    let response = available_fixtures(library);
     publish_available_fixtures(broadcaster, &response);
     Ok(response)
+}
+
+/// Lists every loaded profile alongside the library files that failed to load.
+fn available_fixtures(library: &FixtureLibraryManager) -> ListAvailableFixturesResponse {
+    ListAvailableFixturesResponse {
+        fixtures: library
+            .list_fixtures()
+            .into_iter()
+            .map(available_fixture_info)
+            .collect(),
+        unloadable: library.list_unloadable().to_vec(),
+    }
 }
 
 /// Builds and publishes one requested fixture profile and optional preview fixture.
@@ -222,6 +232,33 @@ fn delete_fixtures(
     .with_details(serde_json::json!({ "errors": errors })))
 }
 
+/// Deletes library files that failed to load, then publishes the listing without them. The
+/// file watcher covers only the installed library, so the listing is not left to a rescan.
+fn delete_unloadable_files(
+    library: &mut FixtureLibraryManager,
+    files: &[UnloadableFixtureFileId],
+    broadcaster: &ClientEventSink,
+) -> Result<FixtureLibraryCommandSuccess, CommandError> {
+    let errors = files
+        .iter()
+        .filter_map(|file| {
+            library
+                .delete_unloadable(file)
+                .err()
+                .map(|error| format!("{}: {error}", file.file_name))
+        })
+        .collect::<Vec<_>>();
+    publish_available_fixtures(broadcaster, &available_fixtures(library));
+    if errors.is_empty() {
+        return Ok(FixtureLibraryCommandSuccess::Applied);
+    }
+    Err(CommandError::new(
+        "fixture_library.delete_failed",
+        format!("Failed to delete some files: {}", errors.join(", ")),
+    )
+    .with_details(serde_json::json!({ "errors": errors })))
+}
+
 /// Converts the requested library revision once, then validates and commits every
 /// requested creation and update.
 fn create_fixtures_from_library(
@@ -265,12 +302,7 @@ pub fn send_available_fixtures_on_change(
         if !matches!(event, FixtureLibraryEvent::ScanCompleted { .. }) {
             continue;
         }
-        let fixtures = library
-            .list_fixtures()
-            .iter()
-            .map(|profile| available_fixture_info(profile))
-            .collect();
-        publish_available_fixtures(&broadcaster, &ListAvailableFixturesResponse { fixtures });
+        publish_available_fixtures(&broadcaster, &available_fixtures(&library));
     }
 }
 
@@ -286,6 +318,10 @@ fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
             FixtureSource::BuiltIn { .. } => BUILTIN_SOURCE_FORMAT.to_string(),
         },
         asset_etag: profile.revision.clone(),
+        gdtf_fixture_type_id: match &profile.source {
+            FixtureSource::Gdtf(metadata) => metadata.fixture_type_id.clone(),
+            FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
+        },
     }
 }
 

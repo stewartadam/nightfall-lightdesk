@@ -20,7 +20,12 @@ import { CellDecorationCanvas, CustomCellCanvas } from "./canvas-cells";
 import { resolveCellContent } from "./cell-renderer-registry";
 import type { DataGridCellKey } from "./model/cell-provider";
 import { canUseCellEditor } from "./model/cell-utils";
-import type { DataGridTableColumn } from "./model/column-model";
+import {
+  COORDINATE_AXIS_ACCENT_WIDTH,
+  type CoordinateAxis,
+  coordinateAxisForColumn,
+  type DataGridTableColumn,
+} from "./model/column-model";
 import { selectionOutline } from "./model/selection-outline";
 import type {
   DataGridCellDecorationCallback,
@@ -32,8 +37,6 @@ import type {
   DataGridRichCellExtension,
   EditingCell,
 } from "./model/types";
-
-type CoordinateAxis = "x" | "y" | "z";
 
 const COORDINATE_AXIS_COLORS: Record<CoordinateAxis, string> = {
   x: "rgba(239, 68, 68, 0.55)",
@@ -91,14 +94,6 @@ function renderValuesEqual(left: unknown, right: unknown): boolean {
         renderValuesEqual(leftRecord[key], rightRecord[key]),
     )
   );
-}
-
-/** Returns a coordinate axis for conventional X/Y/Z placement columns. */
-function coordinateAxisForColumn(columnId: string | undefined) {
-  if (columnId?.endsWith("_x")) return "x";
-  if (columnId?.endsWith("_y")) return "y";
-  if (columnId?.endsWith("_z")) return "z";
-  return undefined;
 }
 
 export interface BodyCellProps {
@@ -301,7 +296,7 @@ export function BodyCell(props: BodyCellProps) {
   const cellRings = () => {
     const axis = coordinateAxis();
     return axis
-      ? `inset -3px 0 0 0 ${COORDINATE_AXIS_COLORS[axis]}`
+      ? `inset -${COORDINATE_AXIS_ACCENT_WIDTH}px 0 0 0 ${COORDINATE_AXIS_COLORS[axis]}`
       : undefined;
   };
 
@@ -355,7 +350,9 @@ export function BodyCell(props: BodyCellProps) {
 
   /** Adds space so the right-side coordinate border does not overlap content. */
   const coordinatePaddingRight = () =>
-    coordinateAxis() && cellContentPadded() ? "calc(0.5rem + 3px)" : undefined;
+    coordinateAxis() && cellContentPadded()
+      ? `calc(0.5rem + ${COORDINATE_AXIS_ACCENT_WIDTH}px)`
+      : undefined;
 
   /** Renders the visible body content while preserving custom canvas DOM identity. */
   const renderedCellContent = () => {

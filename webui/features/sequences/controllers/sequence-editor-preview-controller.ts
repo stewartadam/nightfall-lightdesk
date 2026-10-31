@@ -8,9 +8,9 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
 import { previewSequence, stopPreviewInstance } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import { buildSequencePreviewPayload } from "../../../lib/sequence-preview-cue";
 import { activeInstances } from "../../../state/appStores";
 import type * as types from "../../../types";

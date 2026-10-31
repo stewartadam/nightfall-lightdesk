@@ -6,38 +6,36 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { BindingConflictColumn } from "../../../lib/binding-overlap";
-import { normalizeFixtureUid } from "../../../lib/binding-utils";
+import type { RouteConflictColumn } from "../../../lib/route-overlap";
+import { normalizeFixtureUid } from "../../../lib/route-utils";
 import type * as types from "../../../types";
-import type { BindingRow } from "./bindings-model";
+import type { RouteRow } from "./routes-model";
 export type FixtureGroupRow = {
   rowKind: "fixture";
   fixtureUid: string;
   fixtureLabel: string;
   disabled: boolean;
-  bindingCounts: { input: number; output: number; disabled: number };
+  routeCounts: { input: number; output: number; disabled: number };
   inputOverlap: boolean;
   outputOverlap: boolean;
-  bindingRows: BindingRow[];
+  routeRows: RouteRow[];
   isExpanded: boolean;
 };
 
-export type FixtureBindingRow = {
-  rowKind: "binding";
+export type FixtureRouteRow = {
+  rowKind: "route";
   fixtureUid: string;
-  binding: BindingRow;
-  conflictColumns: Set<BindingConflictColumn>;
+  route: RouteRow;
+  conflictColumns: Set<RouteConflictColumn>;
 };
 
-export type FixtureDisplayRow = FixtureGroupRow | FixtureBindingRow;
+export type FixtureDisplayRow = FixtureGroupRow | FixtureRouteRow;
 
 export type ConflictTooltipState = {
   id: number;
   content: string;
   anchorRect: DOMRect;
 };
-
-export const DISABLED_TEXT_COLOR = "#6b7280";
 
 export function stableUniverseKey(range?: types.DmxRange): string {
   if (!range) return "*";
@@ -57,7 +55,7 @@ export function stableOutputTargetKey(target: types.OutputTarget): string {
 }
 
 /**
- * Extracts normalized fixture UIDs from fixture-based input binding sources.
+ * Extracts normalized fixture UIDs from fixture-based input route sources.
  */
 export function fixtureUidsFromInputSource(
   source: types.InputSource,
@@ -67,7 +65,7 @@ export function fixtureUidsFromInputSource(
 }
 
 /**
- * Extracts normalized fixture UIDs from fixture-based input binding targets.
+ * Extracts normalized fixture UIDs from fixture-based input route targets.
  */
 export function fixtureUidsFromInputTarget(
   target: types.InputTarget,
@@ -77,7 +75,7 @@ export function fixtureUidsFromInputTarget(
 }
 
 /**
- * Extracts normalized fixture UIDs from fixture-based output binding sources,
+ * Extracts normalized fixture UIDs from fixture-based output route sources,
  * including additional DMX break sources.
  */
 export function fixtureUidsFromOutputSource(
@@ -89,18 +87,18 @@ export function fixtureUidsFromOutputSource(
   return new Set(source.data.uids.map((uid) => normalizeFixtureUid(uid)));
 }
 
-export function inputBindingTouchesFixture(
-  binding: types.InputBinding,
+export function inputRouteTouchesFixture(
+  route: types.InputRoute,
   fixtureUid: string,
 ): boolean {
-  const sourceUids = fixtureUidsFromInputSource(binding.source);
+  const sourceUids = fixtureUidsFromInputSource(route.source);
   if (sourceUids.has(fixtureUid)) return true;
-  const targetUids = fixtureUidsFromInputTarget(binding.target);
+  const targetUids = fixtureUidsFromInputTarget(route.target);
   return targetUids.has(fixtureUid);
 }
 
 /**
- * Returns the stable key of the output location where a binding sends a
+ * Returns the stable key of the output location where a route sends a
  * fixture's DMX, or null when it does not output that fixture (another
  * source or another fixture).
  *
@@ -110,29 +108,29 @@ export function inputBindingTouchesFixture(
  * to different addresses do not.
  */
 export function fixtureOutputOccupancyKey(
-  binding: types.OutputBinding,
+  route: types.OutputRoute,
   fixtureUid: string,
 ): string | null {
-  if (!fixtureUidsFromOutputSource(binding.source).has(fixtureUid)) {
+  if (!fixtureUidsFromOutputSource(route.source).has(fixtureUid)) {
     return null;
   }
-  return stableOutputTargetKey(binding.target);
+  return stableOutputTargetKey(route.target);
 }
 
-export function outputBindingTouchesFixture(
-  binding: types.OutputBinding,
+export function outputRouteTouchesFixture(
+  route: types.OutputRoute,
   fixtureUid: string,
 ): boolean {
-  const sourceUids = fixtureUidsFromOutputSource(binding.source);
+  const sourceUids = fixtureUidsFromOutputSource(route.source);
   return sourceUids.has(fixtureUid);
 }
 
 /** Returns whether a disabled input rule filters input from the fixture. */
-export function disabledBindingTouchesFixture(
-  binding: types.DisabledBinding,
+export function disabledRouteTouchesFixture(
+  route: types.DisabledRoute,
   fixtureUid: string,
 ): boolean {
-  return fixtureUidsFromInputSource(binding.data.source).has(fixtureUid);
+  return fixtureUidsFromInputSource(route.data.source).has(fixtureUid);
 }
 
 export function formatFixtureGroupLabel(fixture: types.Fixture): string {
@@ -146,22 +144,4 @@ export function formatGroupWithChevron(
   label: string,
 ): string {
   return `${isExpanded ? "▼" : "▶"} ${label}`;
-}
-
-/** Returns whether a fixtures tab cell represents a patch conflict. */
-export function fixtureDisplayCellHasConflict(
-  row: FixtureDisplayRow,
-  columnId: string | undefined,
-): boolean {
-  if (row.rowKind === "binding") {
-    return (
-      (columnId === "source" || columnId === "target") &&
-      row.conflictColumns.has(columnId)
-    );
-  }
-
-  return (
-    (columnId === "source" && row.inputOverlap) ||
-    (columnId === "target" && row.outputOverlap)
-  );
 }

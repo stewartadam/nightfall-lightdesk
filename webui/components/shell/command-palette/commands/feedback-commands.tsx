@@ -6,18 +6,26 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { BookOpenIcon } from "@squidlab/phosphor-solid/book-open";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { onMount } from "solid-js";
-import { openFeedbackPage } from "../../../../lib/feedback";
+import { openDocumentation, openFeedbackPage } from "../../../../lib/feedback";
 import { useAppShell } from "../../../providers/app-shell";
 import { useUiAction } from "../../../providers/command-registry";
 
-/** Makes project feedback and local diagnostics discoverable through shell search. */
+/** Makes the user guide, project feedback and local diagnostics discoverable through shell search. */
 export default function FeedbackCommands() {
   const { openDiagnostics } = useAppShell();
   /** Registers feedback actions for this mounted application shell. */
   onMount(() => {
+    useUiAction({
+      id: "app.documentation",
+      name: "Open User Guide",
+      description: "Read the user guide for this version of Nightfall",
+      icon: BookOpenIcon,
+      execute: openDocumentation,
+    });
     useUiAction({
       id: "app.feedback",
       name: "Give Feedback",

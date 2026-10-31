@@ -20,6 +20,16 @@ pub enum ToastLevel {
     Error,
 }
 
+/// Follow-up a toast offers as a button, resolved to a concrete UI destination by each client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum ToastAction {
+    /// Open Settings on the Network tab, where the DMX network interface is chosen.
+    OpenNetworkSettings,
+    /// Open the Transports panel, where External control and its interface are configured.
+    OpenExternalControlSettings,
+}
+
 /// Outbound observations requesting UI-only presentation behavior.
 #[derive(Debug, Clone, Serialize, Deserialize, Message)]
 #[typeshare::typeshare]
@@ -27,7 +37,13 @@ pub enum ToastLevel {
 #[serde(deny_unknown_fields)]
 pub enum UiNotification {
     /// Show a toast/notification in the UI
-    ShowToast { level: ToastLevel, message: String },
+    ShowToast {
+        level: ToastLevel,
+        message: String,
+        /// Buttons offered alongside the message, in display order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        actions: Vec<ToastAction>,
+    },
     /// Update the frontend's remembered current showfile name.
     CurrentShowfileChanged {
         name: Option<String>,
@@ -40,6 +56,28 @@ pub enum UiNotification {
 }
 
 impl UiNotification {
+    /// Builds a plain toast with no action buttons.
+    pub fn toast(level: ToastLevel, message: impl Into<String>) -> Self {
+        Self::ShowToast {
+            level,
+            message: message.into(),
+            actions: Vec::new(),
+        }
+    }
+
+    /// Builds a toast offering `actions` as buttons beside the message.
+    pub fn toast_with_actions(
+        level: ToastLevel,
+        message: impl Into<String>,
+        actions: Vec<ToastAction>,
+    ) -> Self {
+        Self::ShowToast {
+            level,
+            message: message.into(),
+            actions,
+        }
+    }
+
     /// Identifies a confirmed showfile change so clients can deduplicate resync replays.
     pub fn current_showfile_changed(name: Option<String>) -> Self {
         Self::CurrentShowfileChanged {

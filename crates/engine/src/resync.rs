@@ -30,7 +30,7 @@ pub struct ResyncRequested {
     pub audience: Audience,
 }
 
-/// Converts semantic resync commands into the event consumed across domain crates, addressed to
+/// Converts semantic resync commands into the event consumed across plugin crates, addressed to
 /// the client that sent each command.
 pub(crate) fn begin_resync(
     mut commands: MessageReader<CommandEnvelope<EngineCommand>>,

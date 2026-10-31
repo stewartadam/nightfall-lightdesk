@@ -85,7 +85,7 @@ fn bench_plan(c: &mut Criterion, action_counts: &[usize], resolver: &BenchResolv
 }
 
 /// Measures evaluating an existing plan into materializer-facing playback states, including
-/// rate-change replay for every active interval.
+/// speed-change replay for every active interval.
 fn bench_evaluate(c: &mut Criterion, action_counts: &[usize], resolver: &BenchResolver) {
     let mut group = c.benchmark_group("timeline_plan_evaluate");
 
@@ -105,7 +105,7 @@ fn bench_evaluate(c: &mut Criterion, action_counts: &[usize], resolver: &BenchRe
     group.finish();
 }
 
-/// Builds evenly spaced actions that cycle each clip through start, rate change, sequence go,
+/// Builds evenly spaced actions that cycle each clip through start, speed change, sequence go,
 /// stop and a fire-cue action, so plans mix active, releasing and completed intervals.
 fn timeline_actions(action_count: usize) -> Vec<TimelinePlanningAction> {
     (0..action_count)
@@ -114,9 +114,9 @@ fn timeline_actions(action_count: usize) -> Vec<TimelinePlanningAction> {
             let (action, duration) = match index % 5 {
                 0 => (ActionKind::StartClip(clip_uid), Duration::ZERO),
                 1 => (
-                    ActionKind::SetClipRate {
+                    ActionKind::SetClipSpeed {
                         uid: clip_uid,
-                        rate: 1.0 + (index % 3) as f32 * 0.25,
+                        speed: 1.0 + (index % 3) as f32 * 0.25,
                     },
                     Duration::ZERO,
                 ),

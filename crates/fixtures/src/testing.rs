@@ -16,10 +16,10 @@ use nightfall_fixture_model::parameter::{MergeStrategy, ParameterMetadata};
 use nightfall_io::OutputTransport;
 use uuid::Uuid;
 
-use crate::bindings::{OutputDestination, ResolvedOutputDestinations};
 use crate::data_provider_ext::FixtureDataProviderExt;
 use crate::fixture::{Fixture, FixtureElement};
 use crate::parameter::{Parameter, ParameterValues};
+use crate::routes::{OutputDestination, ResolvedOutputDestinations};
 
 /// Channels available to fixtures in one universe, leaving a partial fixture footprint unused.
 const USABLE_CHANNELS_PER_UNIVERSE: u16 = 510;

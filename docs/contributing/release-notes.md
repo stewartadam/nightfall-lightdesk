@@ -54,10 +54,11 @@ passes after adding prose, fails if the prose is removed, and passes with an
 explicit omission reason. This repository change alone does not update GitHub's
 ruleset settings.
 
-Existing unreleased PRs need their descriptions updated before the next tag if
-they lack valid notes. There is no automatic exemption for old or bot-authored
-PRs. Deleted or invalid notes on an included merged PR stop release preparation
-with the PR number, so repair that description and rerun preparation.
+Release preparation doesn't stop on an included merged PR whose notes are
+missing or invalid. It logs a warning with the PR number and treats the PR as
+`Notes: none`, so its change is left out of the generated notes. Check the
+warnings before publishing; to include that change, repair the description and
+rerun preparation, or add the entry when editing the draft release.
 
 ## Preparing a release
 

@@ -10,7 +10,9 @@
 //!
 //! This module provides:
 //! - Command deserializer for MidiCommand
-//! - Broadcasters for device list, mappings, and last event
+//! - Broadcasters for device list, newly detected devices, mappings, and last event
+
+use std::collections::BTreeSet;
 
 use bevy_ecs::prelude::*;
 use nightfall_actions::BindingDiagnostic;
@@ -19,7 +21,9 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::command::{MidiCommand, MidiLastEvent, MidiMapping};
+use crate::detected::DetectedMidiDevices;
 use crate::mapping::MidiMappings;
+use crate::profile::{self, MidiDeviceProfile};
 use crate::{LastMidiEvent, MidiControlTouches, MidiDevices, MidiMappingDiagnostics};
 
 /// MIDI device information sent to the UI
@@ -43,6 +47,8 @@ pub struct MidiDevice {
 enum MidiWsMessage<'a> {
     /// List of connected MIDI devices
     MidiDeviceList(&'a [MidiDevice]),
+    /// Controller profiles of connected and mapped devices, one per device name
+    MidiDeviceProfiles(&'a [MidiDeviceProfile]),
     /// Current MIDI mappings configuration
     MidiMappings(&'a [MidiMapping]),
     /// Last received MIDI event (for identification)
@@ -54,6 +60,9 @@ enum MidiWsMessage<'a> {
     /// Unlike `MidiLastEvent`, these are never dropped or coalesced across controls, so a
     /// mapping client reliably arms the control that was touched.
     MidiControlTouched(&'a [MidiLastEvent]),
+    /// Devices that connected while the engine runs and that the show does not map yet, so
+    /// clients can offer to set them up. Each device is announced once.
+    MidiDeviceDetected(&'a [String]),
 }
 
 /// Deserialize and dispatch MidiCommand from JSON
@@ -90,6 +99,7 @@ pub fn handle_resync_state(
     };
 
     send_device_list(&devices, &mappings, &broadcaster);
+    send_device_profiles(&profiled_device_names(&devices, &mappings), &broadcaster);
     send_mappings(&mappings, &broadcaster);
     send_diagnostics(&diagnostics, &broadcaster);
     if let Some(ref event) = last_event.0 {
@@ -104,8 +114,20 @@ pub fn send_midi_state(
     diagnostics: Res<MidiMappingDiagnostics>,
     last_event: Res<LastMidiEvent>,
     mut touches: ResMut<MidiControlTouches>,
+    mut detected: ResMut<DetectedMidiDevices>,
     broadcaster: Res<ClientEventSink>,
+    mut last_profiled_devices: Local<Vec<String>>,
 ) {
+    if detected.has_pending() {
+        let names = detected.take_unmapped(&mappings);
+        if !names.is_empty() {
+            broadcaster.publish(
+                DISCRIMINATOR_NON_DROPPABLE,
+                &MidiWsMessage::MidiDeviceDetected(&names),
+            );
+        }
+    }
+
     if !touches.0.is_empty() {
         broadcaster.publish(
             DISCRIMINATOR_NON_DROPPABLE,
@@ -117,6 +139,11 @@ pub fn send_midi_state(
     // Only send if resources have changed
     if devices.is_changed() || mappings.is_changed() {
         send_device_list(&devices, &mappings, &broadcaster);
+        let names = profiled_device_names(&devices, &mappings);
+        if *last_profiled_devices != names {
+            send_device_profiles(&names, &broadcaster);
+            *last_profiled_devices = names;
+        }
     }
 
     if mappings.is_changed() {
@@ -145,7 +172,7 @@ fn send_device_list(devices: &MidiDevices, mappings: &MidiMappings, broadcaster:
         .map(|(name, has_output)| MidiDevice {
             name: name.to_string(),
             has_output,
-            feedback: mappings.feedback_devices().contains(name),
+            feedback: mappings.feedback_devices().is_enabled(name),
         })
         .collect();
 
@@ -154,6 +181,40 @@ fn send_device_list(devices: &MidiDevices, mappings: &MidiMappings, broadcaster:
         &MidiWsMessage::MidiDeviceList(&device_list),
     );
     tracing::trace!("Sending MIDI device list to WebSocket clients");
+}
+
+/// Returns the connected or mapped devices that match a controller profile, in name order.
+fn profiled_device_names(devices: &MidiDevices, mappings: &MidiMappings) -> Vec<String> {
+    devices
+        .devices()
+        .map(|(name, _)| name)
+        .chain(
+            mappings
+                .mappings()
+                .iter()
+                .map(|mapping| mapping.device_name.as_str()),
+        )
+        .filter(|name| profile::for_device(name).is_some())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Send the controller profile of each named device to WebSocket clients, so LED colors can
+/// be named even for a controller that is not plugged in.
+fn send_device_profiles(names: &[String], broadcaster: &ClientEventSink) {
+    let profiles: Vec<MidiDeviceProfile> = names
+        .iter()
+        .filter_map(|device| {
+            profile::for_device(device).map(|profile| MidiDeviceProfile::new(device, profile))
+        })
+        .collect();
+
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &MidiWsMessage::MidiDeviceProfiles(&profiles),
+    );
 }
 
 /// Send mappings to WebSocket clients
