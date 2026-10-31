@@ -269,6 +269,141 @@ pub fn resolved_interpolation_space(path: &ColorPath) -> ColorInterpolationSpace
     path.interpolation_space
 }
 
+/// Samples an RGB color path at a parent fade ratio with all of the path's timing applied:
+/// each channel follows the timing of its attribute in `attributes` (red, green, blue order) or
+/// the path's in/out timing, then the midpoint brightness envelope scales the result. The path
+/// is sampled once when all three channels share a ratio, which is the case without
+/// per-attribute timing.
+pub fn sample_color_path_with_timing(
+    path: &ColorPath,
+    start: ColorPathRgb,
+    end: ColorPathRgb,
+    parent_ratio: f32,
+    attributes: &[Attribute; 3],
+) -> ColorPathRgb {
+    let [red, green, blue] = attributes
+        .each_ref()
+        .map(|attribute| color_path_channel_ratio(path, parent_ratio, attribute));
+    let sampled = if red == green && green == blue {
+        sample_color_path(path, start, end, red)
+    } else {
+        ColorPathRgb {
+            red: sample_color_path(path, start, end, red).red,
+            green: sample_color_path(path, start, end, green).green,
+            blue: sample_color_path(path, start, end, blue).blue,
+        }
+    };
+    sampled
+        .scaled(color_path_midpoint_brightness_multiplier(
+            path,
+            parent_ratio,
+        ))
+        .clamped()
+}
+
+/// Returns `count` (at least two) evenly spaced preview colors across a color path, with the
+/// path's timing applied to red, green and blue. The first and last samples are exactly `start`
+/// and `end`, so a delayed or dimmed path still shows its authored anchors.
+pub fn color_path_preview_samples(
+    path: &ColorPath,
+    start: ColorPathRgb,
+    end: ColorPathRgb,
+    count: usize,
+) -> Vec<ColorPathRgb> {
+    let count = count.max(2);
+    let attributes = [Attribute::Red, Attribute::Green, Attribute::Blue];
+    (0..count)
+        .map(|index| match index {
+            0 => start,
+            last if last == count - 1 => end,
+            _ => {
+                let progress = index as f32 / (count - 1) as f32;
+                sample_color_path_with_timing(path, start, end, progress, &attributes)
+            }
+        })
+        .collect()
+}
+
+/// Resolves path progress after applying path-level and attribute-level timing controls.
+pub fn color_path_channel_ratio(path: &ColorPath, parent_ratio: f32, attribute: &Attribute) -> f32 {
+    path.timing
+        .attributes
+        .get(attribute)
+        .map(|timing| {
+            timed_ratio(
+                parent_ratio,
+                timing.delay_percent,
+                timing.time_percent,
+                timing.curve,
+            )
+        })
+        .unwrap_or_else(|| color_path_global_ratio(path, parent_ratio))
+}
+
+/// Resolves path-level timing from in-color and out-color controls.
+fn color_path_global_ratio(path: &ColorPath, parent_ratio: f32) -> f32 {
+    match (&path.timing.in_color, &path.timing.out_color) {
+        (Some(in_color), Some(out_color)) => {
+            (timed_ratio_linear(parent_ratio, in_color.delay_percent, in_color.time_percent)
+                + timed_ratio_linear(
+                    parent_ratio,
+                    out_color.delay_percent,
+                    out_color.time_percent,
+                ))
+                / 2.0
+        }
+        (Some(in_color), None) => {
+            timed_ratio_linear(parent_ratio, in_color.delay_percent, in_color.time_percent)
+        }
+        (None, Some(out_color)) => timed_ratio_linear(
+            parent_ratio,
+            out_color.delay_percent,
+            out_color.time_percent,
+        ),
+        (None, None) => parent_ratio,
+    }
+}
+
+/// Resolves a linear timing ratio from fractional delay and duration controls.
+fn timed_ratio_linear(parent_ratio: f32, delay_percent: f32, time_percent: f32) -> f32 {
+    let parent_ratio = parent_ratio.clamp(0.0, 1.0);
+    let delay_percent = delay_percent.clamp(0.0, 1.0);
+    let time_percent = time_percent.max(0.0);
+
+    if parent_ratio < delay_percent {
+        return 0.0;
+    }
+    if time_percent <= f32::EPSILON {
+        return 1.0;
+    }
+
+    ((parent_ratio - delay_percent) / time_percent).clamp(0.0, 1.0)
+}
+
+/// Resolves the midpoint brightness envelope multiplier for a parent fade ratio.
+pub fn color_path_midpoint_brightness_multiplier(path: &ColorPath, parent_ratio: f32) -> f32 {
+    let midpoint_brightness = path.timing.brightness_percent.unwrap_or(1.0).max(0.0);
+    let interior_weight = 1.0 - ((parent_ratio.clamp(0.0, 1.0) * 2.0) - 1.0).abs();
+    1.0 + (midpoint_brightness - 1.0) * interior_weight
+}
+
+/// Maps a parent transition ratio through one fractional delay/fade timing control.
+fn timed_ratio(parent_ratio: f32, delay_percent: f32, time_percent: f32, curve: FadeCurve) -> f32 {
+    let parent_ratio = parent_ratio.clamp(0.0, 1.0);
+    let delay_percent = delay_percent.clamp(0.0, 1.0);
+    let time_percent = time_percent.max(0.0);
+
+    if parent_ratio < delay_percent {
+        return 0.0;
+    }
+    if time_percent <= f32::EPSILON {
+        return 1.0;
+    }
+
+    let ratio = ((parent_ratio - delay_percent) / time_percent).clamp(0.0, 1.0);
+    curve.evaluate_at(ratio)
+}
+
 /// Linearly interpolates two normalized RGB colors.
 fn lerp_rgb(start: ColorPathRgb, end: ColorPathRgb, t: f32) -> ColorPathRgb {
     ColorPathRgb {
@@ -526,5 +661,32 @@ mod tests {
         );
         assert!(sampled.red < 0.1, "expected little red on green midpoint");
         assert!(sampled.blue < 0.1, "expected little blue on green midpoint");
+    }
+
+    /// Verifies preview samples keep the authored anchors while interior samples get the
+    /// midpoint brightness, and that fewer than two samples are raised to two.
+    #[test]
+    fn preview_samples_keep_anchors_and_apply_midpoint_brightness() {
+        let mut path = path(ColorInterpolationSpace::Rgb);
+        path.timing.brightness_percent = Some(0.0);
+        let start = ColorPathRgb {
+            red: 1.0,
+            green: 0.0,
+            blue: 0.0,
+        };
+        let end = ColorPathRgb {
+            red: 0.0,
+            green: 0.0,
+            blue: 1.0,
+        };
+
+        let samples = color_path_preview_samples(&path, start, end, 3);
+        assert_eq!(samples.len(), 3);
+        assert_eq!(samples[0], start);
+        assert_eq!(samples[2], end);
+        assert_eq!(samples[1].red, 0.0, "midpoint should be fully dimmed");
+        assert_eq!(samples[1].blue, 0.0, "midpoint should be fully dimmed");
+
+        assert_eq!(color_path_preview_samples(&path, start, end, 0).len(), 2);
     }
 }
