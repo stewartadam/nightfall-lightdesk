@@ -11,7 +11,6 @@
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::FlowCommand;
 use crate::definition::FlowDefinition;
@@ -39,24 +38,6 @@ pub enum FlowWsMessage<'a> {
     FlowPortValueDelta(&'a FlowPortValueDelta),
     /// Trigger delta.
     FlowTriggerDelta(&'a FlowTriggerDelta),
-}
-
-/// Deserialize and dispatch FlowCommand from JSON.
-pub fn deserialize_flow_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FlowCommand = serde_json::from_str(&json.to_string())
-        .map_err(|e| format!("Failed to parse FlowCommand: {}", e))?;
-
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-
-    Ok(())
 }
 
 /// Forward flow commands to the UI for reactive handling.
@@ -129,51 +110,4 @@ pub fn handle_resync_state(
         DISCRIMINATOR_NON_DROPPABLE,
         &FlowWsMessage::FlowNodeTemplates(&templates),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use bevy_ecs::message::Messages;
-
-    use super::*;
-
-    /// Verifies deserialization preserves admitted command and undo context.
-    #[test]
-    fn deserialize_flow_command_writes_semantic_envelope() {
-        let mut world = World::new();
-        world.insert_resource(Messages::<CommandEnvelope<FlowCommand>>::default());
-        world.init_resource::<CommandTracker>();
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        world
-            .resource_mut::<CommandTracker>()
-            .register_context(
-                command_id,
-                undo_id,
-                CommandOrigin::WebUi,
-                ReplyTarget::Client(ClientId(4)),
-            )
-            .unwrap();
-        deserialize_flow_command(
-            &mut world,
-            serde_json::json!({
-                "type": "StopFlow",
-                "data": 7
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("flow command should deserialize");
-
-        let messages: Vec<_> = world
-            .resource_mut::<Messages<CommandEnvelope<FlowCommand>>>()
-            .drain()
-            .collect();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert_eq!(messages[0].reply_target, ReplyTarget::Client(ClientId(4)));
-        assert!(matches!(messages[0].command, FlowCommand::StopFlow(7)));
-    }
 }

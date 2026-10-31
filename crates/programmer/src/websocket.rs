@@ -22,11 +22,10 @@ use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_selection::filter_existing_selection;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use serde_with::DisplayFromStr;
 use uuid::Uuid;
 
-use crate::action_model::{ProgrammerOperation, UserCommand};
+use crate::action_model::ProgrammerOperation;
 use crate::events::ProgrammerCommand;
 use crate::prelude::Programmer;
 use crate::undo::RestoreProgrammerState;
@@ -100,52 +99,6 @@ enum ProgrammerWsMessage {
     ProgrammerSelection(Vec<String>),
     /// Current programmer spatial selection and its resolved index view.
     ProgrammerSpatialSelection(OutboundProgrammerSpatialSelection),
-}
-
-/// Deserialize and dispatch ProgrammerCommand from JSON.
-///
-/// This function is registered with the `CommandDeserializerRegistry` to handle
-/// incoming programmer commands from the UI. It deserializes the JSON payload into a
-/// `ProgrammerCommand` and sends it as a typed event for domain handlers.
-pub fn deserialize_programmer_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: ProgrammerCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse ProgrammerCommand: {}", e))?;
-
-    // Route through PendingCommandBuffer so planning + undo capture are applied
-    // consistently for websocket and CLI command ingress paths.
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserializes a high-level user command resubmitted after operator approval.
-pub fn deserialize_user_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: UserCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse UserCommand: {error}"))?;
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-    Ok(())
 }
 
 fn should_broadcast_programmer_update(command: &ProgrammerCommand) -> bool {

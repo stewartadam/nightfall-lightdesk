@@ -12,9 +12,8 @@ use bevy_ecs::prelude::*;
 use nightfall_actions::BindingDiagnostic;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
-use crate::command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
+use crate::command::{OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
 use crate::mapping::OscMappings;
 use crate::{LastOscEvent, OscControlTouches, OscMappingDiagnostics, OscRuntimeStatus, OscSources};
 
@@ -49,27 +48,6 @@ pub enum OscWsMessage<'a> {
     /// Unlike `OscLastEvent`, these are never dropped or coalesced to one message per frame,
     /// so a mapping client reliably arms the touched address with its press and release.
     OscControlTouched(&'a [OscLastEvent]),
-}
-
-/// Deserialize and dispatch `OscCommand` from JSON.
-pub fn deserialize_osc_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: OscCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse OscCommand: {e}"))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
 }
 
 /// Send OSC state on resync.
@@ -174,38 +152,4 @@ fn send_listener_status(status: &OscRuntimeStatus, broadcaster: &ClientEventSink
         DISCRIMINATOR_NON_DROPPABLE,
         &OscWsMessage::OscListenerStatus(&status.0),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verifies OSC commands queue through the pending buffer so undo can capture them.
-    #[test]
-    fn deserialize_osc_command_queues_for_undo_capture() {
-        let mut world = World::new();
-        world.init_resource::<PendingCommandBuffer>();
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_osc_command(
-            &mut world,
-            serde_json::json!({
-                "type": "DeleteMapping",
-                "data": "00000000000000000000000000000004"
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("osc command should deserialize");
-
-        let messages = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(
-            messages[0].payload.as_any().downcast_ref::<OscCommand>(),
-            Some(OscCommand::DeleteMapping(id)) if *id == uuid::Uuid::from_u128(4)
-        ));
-    }
 }

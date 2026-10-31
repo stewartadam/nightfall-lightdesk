@@ -19,7 +19,6 @@ use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::InstanceOptions;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 use crate::CueCommand;
@@ -248,54 +247,6 @@ pub fn sequence_lookahead_state_messages(
             }
         })
         .collect()
-}
-
-/// Deserialize and dispatch CueCommand from JSON.
-///
-/// This function is registered with the `CommandDeserializerRegistry` to handle
-/// incoming cue commands from the UI. It deserializes the JSON payload into a
-/// `CueCommand` and queues it through pending command dispatch so undo can
-/// capture an inverse before domain handlers mutate cue state.
-///
-pub fn deserialize_cue_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: CueCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse CueCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Deserializes and queues a cue preview command for semantic dispatch.
-pub fn deserialize_cue_preview_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: crate::events::CuePreviewCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse CuePreviewCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
 }
 
 /// Send cues to UI on DataProvider changes.
@@ -633,52 +584,6 @@ mod tests {
     fn cbor_payload_value<T: Serialize>(payload: &T) -> serde_json::Value {
         let encoded = minicbor_serde::to_vec(payload).expect("payload should encode as CBOR");
         minicbor_serde::from_slice(&encoded).expect("payload should decode as JSON value")
-    }
-
-    #[test]
-    /// Verifies websocket cue commands pass through undo-aware pending dispatch.
-    fn deserialize_cue_command_queues_pending_command_with_undo_id() {
-        let mut world = World::new();
-        world.insert_resource(PendingCommandBuffer::default());
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_cue_command(
-            &mut world,
-            serde_json::json!({
-                "type": "RenameCue",
-                "data": {
-                    "sequence_id": 1,
-                    "cue_id": 2,
-                    "new_sequence_id": 3,
-                    "new_cue_id": 4
-                }
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("cue command should deserialize");
-
-        let pending_commands = world
-            .resource_mut::<PendingCommandBuffer>()
-            .drain()
-            .into_iter()
-            .collect::<Vec<_>>();
-        assert_eq!(pending_commands.len(), 1);
-        assert_eq!(pending_commands[0].command_id, command_id);
-        assert_eq!(pending_commands[0].undo_id, undo_id);
-        assert!(matches!(
-            pending_commands[0]
-                .payload
-                .as_any()
-                .downcast_ref::<CueCommand>(),
-            Some(CueCommand::RenameCue {
-                sequence_id: 1,
-                cue_id: 2,
-                new_sequence_id: 3,
-                new_cue_id: 4,
-            })
-        ));
     }
 
     /// Verifies direct UUID fields in cue websocket payloads serialize as UI string keys.

@@ -16,36 +16,9 @@ use std::sync::atomic::AtomicU64;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::TimecodeCommand;
 use crate::components::TimecodeGenerator;
 use crate::timecode::{Timecode, TimecodeState};
-
-/// Deserialize and dispatch TimecodeCommand from JSON.
-///
-/// This function is registered with the `CommandDeserializerRegistry` to handle
-/// incoming timecode commands from the UI. It deserializes the JSON payload into a
-/// `TimecodeCommand` and sends it as a typed event for domain handlers.
-pub fn deserialize_timecode_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: TimecodeCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse TimecodeCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
 
 /// Wrapper for serializing timeline messages with WsOutbound-compatible format
 #[derive(Serialize)]
@@ -166,37 +139,6 @@ mod tests {
     use nightfall::prelude::Identifiers;
 
     use super::*;
-
-    #[test]
-    fn deserialize_timecode_command_queues_command_with_undo_identity() {
-        let mut world = World::new();
-        world.insert_resource(PendingCommandBuffer::default());
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_timecode_command(
-            &mut world,
-            serde_json::json!({
-                "type": "StopTimecode",
-                "data": 42
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("timecode command should deserialize");
-
-        let messages = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(
-            messages[0]
-                .payload
-                .as_any()
-                .downcast_ref::<TimecodeCommand>(),
-            Some(TimecodeCommand::StopTimecode(42))
-        ));
-    }
 
     #[test]
     fn collect_timecode_definitions_defaults_state_when_generator_missing() {

@@ -15,7 +15,6 @@
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::prelude::{Fixture, FixtureGeometry};
 
@@ -250,26 +249,7 @@ impl FixtureLibraryCommandResult {
 pub fn register_fixture_library_commands(app: &mut bevy_app::App) {
     register_ingress_command::<FixtureLibraryCommand>(app);
     app.add_message::<FixtureLibraryCommandResult>();
-    register_command_deserializer::<FixtureLibraryCommand>(
-        app,
-        deserialize_fixture_library_command,
-    );
-}
-
-/// Deserializes one fixture-library command into its semantic envelope.
-pub fn deserialize_fixture_library_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FixtureLibraryCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse FixtureLibraryCommand: {error}"))?;
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-    Ok(())
+    register_admitted_command::<FixtureLibraryCommand>(app);
 }
 
 /// Publishes terminal results after fixture mutations and deferred parameter spawns apply.
