@@ -2688,6 +2688,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
                     io_settings,
                     controller_mapping_mode: _,
                     macro_runs: _,
+                    armed_launches: _,
                 } = &mut showfile_load_state;
 
                 load_showfile_in_place(
@@ -2767,6 +2768,45 @@ fn loading_a_show_ends_controller_mapping_mode() {
     let mode = world.resource::<nightfall_actions::ControllerMappingMode>();
     assert!(!mode.is_active());
     assert_ne!(mode.state().show_generation, generation);
+}
+
+/// Verifies loading a show drops clip launches still waiting for their beat, so they cannot
+/// fire on whichever clip has the same ID in the new show, and keeps their commands for
+/// completion.
+#[test]
+fn loading_a_show_drops_armed_launches() {
+    let mut source_world = setup_world();
+    seed_world(&mut source_world);
+    let snapshot = collect_snapshot(&mut source_world);
+
+    let mut world = setup_world();
+    let command_id = CommandId::new();
+    let mut armed = nightfall_desk::launch_quantize::ArmedLaunches::default();
+    armed.arm(
+        4.0,
+        EngineOperationEnvelope::with_context(
+            OperationId::new(),
+            Some(command_id),
+            None,
+            nightfall_clips::ClipOperation::Start(nightfall::prelude::IdExpr::Single(3)),
+        ),
+        false,
+    );
+    world.insert_resource(armed);
+
+    world
+        .run_system_once(
+            move |mut state: ShowfileLoadState, mut commands: Commands| {
+                load_showfile_snapshot_from_state(snapshot.clone(), &mut state, &mut commands)
+            },
+        )
+        .expect("load system should run")
+        .expect("load should succeed");
+
+    let mut armed = world.resource_mut::<nightfall_desk::launch_quantize::ArmedLaunches>();
+    assert!(armed.is_empty());
+    assert!(armed.take_due(f64::INFINITY).is_empty());
+    assert_eq!(armed.take_dropped(), vec![Some(command_id)]);
 }
 
 #[test]

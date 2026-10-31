@@ -535,6 +535,11 @@ pub fn forward_clip_ingress_actions(
     materialized_clips: Query<&MaterializedClip>,
     mut responder: CommandResponder,
 ) {
+    if !armed.dropped_is_empty() {
+        for command_id in armed.take_dropped() {
+            complete_clip_command(&mut responder, command_id);
+        }
+    }
     if !armed.is_empty() {
         let beat_position = tempo
             .as_ref()

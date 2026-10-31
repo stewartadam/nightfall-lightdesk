@@ -82,6 +82,8 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
         Option<ResMut<'w, nightfall_actions::ControllerMappingMode>>,
     pub(in crate::systems::showfile_events) macro_runs:
         Option<ResMut<'w, nightfall_macros::prelude::MacroRuns>>,
+    pub(in crate::systems::showfile_events) armed_launches:
+        Option<ResMut<'w, nightfall_desk::launch_quantize::ArmedLaunches>>,
 }
 
 /// Replaces current runtime showfile state with a provided snapshot.
@@ -244,6 +246,7 @@ pub(super) fn load_showfile_snapshot_from_state(
         io_settings,
         controller_mapping_mode,
         macro_runs,
+        armed_launches,
     } = showfile_load_state;
 
     // A loaded show replaces every target a client may be about to bind, so mapping mode
@@ -256,6 +259,10 @@ pub(super) fn load_showfile_snapshot_from_state(
     }
     if let Some(runs) = macro_runs {
         runs.end_all_for_show_load();
+    }
+    // Armed launches address clips by ID, which the new show reuses for different clips.
+    if let Some(armed) = armed_launches {
+        armed.drop_all_for_show_load();
     }
 
     load_showfile_in_place(
