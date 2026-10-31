@@ -17,6 +17,7 @@ use super::view::{DraftInfo, FixtureDraftView};
 use crate::commands::{FixtureLibraryEntry, GetFixtureProfileResponse};
 
 /// Identifies one open fixture draft.
+#[typeshare::typeshare]
 pub type DraftId = u32;
 
 /// Commands that open, edit and save fixture drafts.
