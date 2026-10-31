@@ -499,7 +499,7 @@ fn save_writes_library_file_and_confirms_overwrite() {
         .resource_mut::<FixtureLibraryManager>();
     library.scan().unwrap();
     let profile = library
-        .find_fixture("Generic", "Generic RGBW")
+        .find_fixture("Generic", "RGBW")
         .expect("saved fixture is listed");
     assert_eq!(profile.mode_names(), ["4-channel"]);
 }
