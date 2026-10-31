@@ -2772,7 +2772,7 @@ fn loading_a_show_ends_controller_mapping_mode() {
 
 /// Verifies loading a show drops clip launches still waiting for their beat, so they cannot
 /// fire on whichever clip has the same ID in the new show, and keeps their commands for
-/// completion.
+/// reporting as failed.
 #[test]
 fn loading_a_show_drops_armed_launches() {
     let mut source_world = setup_world();

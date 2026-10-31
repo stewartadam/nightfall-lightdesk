@@ -260,12 +260,7 @@ pub(super) fn load_showfile_snapshot_from_state(
     if let Some(runs) = macro_runs {
         runs.end_all_for_show_load();
     }
-    // Armed launches address clips by ID, which the new show reuses for different clips.
-    if let Some(armed) = armed_launches {
-        armed.drop_all_for_show_load();
-    }
-
-    load_showfile_in_place(
+    let loaded = load_showfile_in_place(
         showfile_snapshot,
         fixture_data_provider.as_mut(),
         scene_object_provider.as_mut(),
@@ -306,7 +301,15 @@ pub(super) fn load_showfile_snapshot_from_state(
         desk_settings.as_mut(),
         io_settings.as_mut(),
         commands,
-    )
+    );
+    // Armed launches address clips by ID, which the new show reuses for different clips. A
+    // rejected load keeps the current show, so its launches stay armed.
+    if loaded.is_ok()
+        && let Some(armed) = armed_launches
+    {
+        armed.drop_all_for_show_load();
+    }
+    loaded
 }
 
 /// Loads showfile data into an existing world by running the load system once.

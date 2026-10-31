@@ -78,7 +78,7 @@ impl ArmedEntry {
 pub struct ArmedLaunches {
     /// Waiting operations, oldest first.
     entries: Vec<ArmedEntry>,
-    /// Commands of launches a show load dropped, still to be reported as done.
+    /// Commands of launches a show load dropped, still to be reported as failed.
     dropped: Vec<Option<CommandId>>,
 }
 
@@ -167,18 +167,13 @@ impl ArmedLaunches {
     ///
     /// Clip IDs are only meaningful within one show, so a launch armed before the load would
     /// otherwise start or stop whatever clip has the same ID in the new show. The dropped
-    /// commands are kept until [`Self::take_dropped`] reports them as done.
+    /// commands are kept until [`Self::take_dropped`] hands them over to be reported as failed.
     pub fn drop_all_for_show_load(&mut self) {
         self.dropped.extend(
             self.entries
                 .drain(..)
                 .map(|entry| entry.envelope.command_id),
         );
-    }
-
-    /// Returns whether no command of a dropped launch is left to report.
-    pub fn dropped_is_empty(&self) -> bool {
-        self.dropped.is_empty()
     }
 
     /// Removes and returns the commands of launches a show load dropped.
@@ -328,7 +323,7 @@ mod tests {
         assert!(armed.is_empty());
         assert!(armed.take_due(f64::INFINITY).is_empty());
         assert_eq!(armed.take_dropped(), vec![start_command]);
-        assert!(armed.dropped_is_empty());
+        assert!(armed.take_dropped().is_empty());
     }
 
     /// Verifies launching now hands back every waiting operation and leaves none armed.

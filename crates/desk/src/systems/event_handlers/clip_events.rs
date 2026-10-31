@@ -535,9 +535,20 @@ pub fn forward_clip_ingress_actions(
     materialized_clips: Query<&MaterializedClip>,
     mut responder: CommandResponder,
 ) {
-    if !armed.dropped_is_empty() {
-        for command_id in armed.take_dropped() {
-            complete_clip_command(&mut responder, command_id);
+    for command_id in armed
+        .bypass_change_detection()
+        .take_dropped()
+        .into_iter()
+        .flatten()
+    {
+        if let Err(error) = responder.fail(
+            command_id,
+            CommandError::new(
+                "clip.launch_dropped",
+                "The launch was waiting for its beat when another show was loaded",
+            ),
+        ) {
+            tracing::error!(%command_id, %error, "clip_command_failure_failed");
         }
     }
     if !armed.is_empty() {
