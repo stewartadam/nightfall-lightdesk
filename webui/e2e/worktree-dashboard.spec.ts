@@ -28,8 +28,8 @@ function managedServices() {
     wasm: EMPTY_SERVICE_STATE,
     "artnet-sender": EMPTY_SERVICE_STATE,
     "sacn-sender": EMPTY_SERVICE_STATE,
-    docs: EMPTY_SERVICE_STATE,
-    devguide: EMPTY_SERVICE_STATE,
+    "docs-user": EMPTY_SERVICE_STATE,
+    "docs-dev": EMPTY_SERVICE_STATE,
   };
 }
 
@@ -40,12 +40,12 @@ function observedProcesses() {
   return {
     backendPortOpen: false,
     webUiPortOpen: false,
-    docsPortOpen: false,
-    devguidePortOpen: false,
+    docsUserPortOpen: false,
+    docsDevPortOpen: false,
     backendPid: null,
     webUiPid: null,
-    docsPid: null,
-    devguidePid: null,
+    docsUserPid: null,
+    docsDevPid: null,
     artnetSenderRunning: false,
     sacnSenderRunning: false,
   };
@@ -76,10 +76,10 @@ function worktree({
     nightfallPort: port,
     webUiPort: port === null ? null : port + 1,
     webUiUrl: port === null ? null : `http://localhost:${port + 1}`,
-    docsPort: port === null ? null : port + 2,
-    docsUrl: port === null ? null : `http://localhost:${port + 2}`,
-    devguidePort: port === null ? null : port + 3,
-    devguideUrl: port === null ? null : `http://localhost:${port + 3}`,
+    docsUserPort: port === null ? null : port + 2,
+    docsUserUrl: port === null ? null : `http://localhost:${port + 2}`,
+    docsDevPort: port === null ? null : port + 3,
+    docsDevUrl: port === null ? null : `http://localhost:${port + 3}`,
     managed: managedServices(),
     observed: observedProcesses(),
   };
@@ -136,7 +136,7 @@ test("worktree dashboard groups uninitialized worktrees at the bottom", async ({
 });
 
 /**
- * Verifies the Docs column stacks the user manual and Developer Guide mdBook
+ * Verifies the Docs column stacks the user docs and developer docs mdBook
  * servers on separate lines, each with its own port and link, and that the
  * service menus target each book through the service API.
  */
@@ -152,25 +152,25 @@ test("worktree dashboard shows and manages the docs servers", async ({
     ...base,
     managed: {
       ...base.managed,
-      docs: {
+      "docs-user": {
         ...EMPTY_SERVICE_STATE,
         pid: 4242,
         running: true,
-        logPath: "/tmp/nightfall-worktree-dashboard/docs-preview-docs.log",
+        logPath: "/tmp/nightfall-worktree-dashboard/docs-preview-docs-user.log",
       },
-      devguide: {
+      "docs-dev": {
         ...EMPTY_SERVICE_STATE,
         pid: 4343,
         running: true,
-        logPath: "/tmp/nightfall-worktree-dashboard/docs-preview-devguide.log",
+        logPath: "/tmp/nightfall-worktree-dashboard/docs-preview-docs-dev.log",
       },
     },
     observed: {
       ...base.observed,
-      docsPortOpen: true,
-      docsPid: 4242,
-      devguidePortOpen: true,
-      devguidePid: 4343,
+      docsUserPortOpen: true,
+      docsUserPid: 4242,
+      docsDevPortOpen: true,
+      docsDevPid: 4343,
     },
   };
 
@@ -201,7 +201,7 @@ test("worktree dashboard shows and manages the docs servers", async ({
 
   await expect(page.getByRole("columnheader", { name: "Docs" })).toBeVisible();
   await expect(
-    page.getByRole("columnheader", { name: "Developer Guide" }),
+    page.getByRole("columnheader", { name: "Developer docs" }),
   ).toHaveCount(0);
   const row = page.locator("tbody tr", { hasText: "docs-preview" });
   const docsCell = row.locator("td").nth(3);
@@ -215,16 +215,16 @@ test("worktree dashboard shows and manages the docs servers", async ({
     (manualBox?.y ?? 0) + (manualBox?.height ?? 0),
   );
   await expect(
-    docsCell.getByRole("link", { name: "Open user manual" }),
+    docsCell.getByRole("link", { name: "Open user docs" }),
   ).toHaveAttribute("href", "http://localhost:3082");
   await expect(
-    docsCell.getByRole("button", { name: "Open user manual log file" }),
+    docsCell.getByRole("button", { name: "Open user docs log file" }),
   ).toBeEnabled();
   await expect(
-    docsCell.getByRole("link", { name: "Open developer guide" }),
+    docsCell.getByRole("link", { name: "Open developer docs" }),
   ).toHaveAttribute("href", "http://localhost:3083");
   await expect(
-    docsCell.getByRole("button", { name: "Open developer guide log file" }),
+    docsCell.getByRole("button", { name: "Open developer docs log file" }),
   ).toBeEnabled();
 
   await row.getByRole("button", { name: "Recycle..." }).click();
@@ -232,12 +232,12 @@ test("worktree dashboard shows and manages the docs servers", async ({
     path: test.info().outputPath("docs-recycle-menu.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Docs", exact: true }).click();
+  await page.getByRole("button", { name: "User docs", exact: true }).click();
   await expect.poll(() => actionRequests.length).toBe(1);
 
   await row.getByRole("button", { name: "Stop..." }).click();
   await page
-    .getByRole("button", { name: "Developer Guide", exact: true })
+    .getByRole("button", { name: "Developer docs", exact: true })
     .click();
   await expect.poll(() => actionRequests.length).toBe(2);
 
@@ -247,8 +247,8 @@ test("worktree dashboard shows and manages the docs servers", async ({
       url.searchParams.get("service"),
     ]),
   ).toEqual([
-    ["recycle", "docs"],
-    ["stop", "devguide"],
+    ["recycle", "docs-user"],
+    ["stop", "docs-dev"],
   ]);
 });
 

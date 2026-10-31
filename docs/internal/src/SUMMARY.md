@@ -14,6 +14,7 @@
 - [How the engine and the web UI talk](architecture/client-protocol.md)
 - [Web UI architecture](architecture/web-ui.md)
 - [Crate map](architecture/crate-map.md)
+- [Worktree tooling](architecture/worktree-tooling.md)
 
 # Engine internals
 
@@ -28,6 +29,7 @@
 # Working on Nightfall
 
 - [Writing style](contributing/writing-style.md)
+- [Working in worktrees](contributing/worktrees.md)
 - [CI builds](contributing/ci-builds.md)
 - [GDTF regression testing](contributing/gdtf-regression-testing.md)
 - [Distribution notices](contributing/distribution-notices.md)

@@ -48,8 +48,8 @@ import "./index.css";
 type ServiceName =
   | "backend"
   | "ui"
-  | "docs"
-  | "devguide"
+  | "docs-user"
+  | "docs-dev"
   | "artnet-sender"
   | "sacn-sender";
 type ServiceTarget = ServiceName | "wasm" | "both" | "senders";
@@ -88,20 +88,20 @@ interface WorktreeSummary {
   nightfallPort: number | null;
   webUiPort: number | null;
   webUiUrl: string | null;
-  docsPort: number | null;
-  docsUrl: string | null;
-  devguidePort: number | null;
-  devguideUrl: string | null;
+  docsUserPort: number | null;
+  docsUserUrl: string | null;
+  docsDevPort: number | null;
+  docsDevUrl: string | null;
   managed: Record<ServiceName, ManagedServiceState>;
   observed: {
     backendPortOpen: boolean;
     webUiPortOpen: boolean;
-    docsPortOpen: boolean;
-    devguidePortOpen: boolean;
+    docsUserPortOpen: boolean;
+    docsDevPortOpen: boolean;
     backendPid: number | null;
     webUiPid: number | null;
-    docsPid: number | null;
-    devguidePid: number | null;
+    docsUserPid: number | null;
+    docsDevPid: number | null;
     artnetSenderRunning: boolean;
     sacnSenderRunning: boolean;
   };
@@ -177,8 +177,8 @@ const WORKTREE_SERVICE_OPTIONS: Array<{ value: ServiceTarget; label: string }> =
 const DOCS_SERVICE_GROUP: ServiceTargetGroup = {
   key: "docs-services",
   options: [
-    { value: "docs", label: "Docs" },
-    { value: "devguide", label: "Developer Guide" },
+    { value: "docs-user", label: "User docs" },
+    { value: "docs-dev", label: "Developer docs" },
   ],
 };
 
@@ -397,8 +397,8 @@ function serviceLabel(service: ServiceTarget): string {
   if (service === "both") return "both";
   if (service === "senders") return "both senders";
   if (service === "ui") return "web ui";
-  if (service === "docs") return "docs";
-  if (service === "devguide") return "developer guide";
+  if (service === "docs-user") return "user docs";
+  if (service === "docs-dev") return "developer docs";
   if (service === "wasm") return "wasm";
   if (service === "artnet-sender") return "art-net sender";
   if (service === "sacn-sender") return "sacn sender";
@@ -459,15 +459,15 @@ function normalizeDashboardPayload(
       return {
         ...worktree,
         canRemove: Boolean(worktree.canRemove),
-        docsPort: worktree.docsPort ?? null,
-        docsUrl: worktree.docsUrl ?? null,
-        devguidePort: worktree.devguidePort ?? null,
-        devguideUrl: worktree.devguideUrl ?? null,
+        docsUserPort: worktree.docsUserPort ?? null,
+        docsUserUrl: worktree.docsUserUrl ?? null,
+        docsDevPort: worktree.docsDevPort ?? null,
+        docsDevUrl: worktree.docsDevUrl ?? null,
         managed: {
           backend: normalizeManagedServiceState(managed.backend),
           ui: normalizeManagedServiceState(managed.ui),
-          docs: normalizeManagedServiceState(managed.docs),
-          devguide: normalizeManagedServiceState(managed.devguide),
+          "docs-user": normalizeManagedServiceState(managed["docs-user"]),
+          "docs-dev": normalizeManagedServiceState(managed["docs-dev"]),
           "artnet-sender": normalizeManagedServiceState(
             managed["artnet-sender"],
           ),
@@ -482,13 +482,15 @@ function normalizeDashboardPayload(
               : null,
           webUiPid:
             typeof observed.webUiPid === "number" ? observed.webUiPid : null,
-          docsPortOpen: Boolean(observed.docsPortOpen),
-          docsPid:
-            typeof observed.docsPid === "number" ? observed.docsPid : null,
-          devguidePortOpen: Boolean(observed.devguidePortOpen),
-          devguidePid:
-            typeof observed.devguidePid === "number"
-              ? observed.devguidePid
+          docsUserPortOpen: Boolean(observed.docsUserPortOpen),
+          docsUserPid:
+            typeof observed.docsUserPid === "number"
+              ? observed.docsUserPid
+              : null,
+          docsDevPortOpen: Boolean(observed.docsDevPortOpen),
+          docsDevPid:
+            typeof observed.docsDevPid === "number"
+              ? observed.docsDevPid
               : null,
           artnetSenderRunning: Boolean(observed.artnetSenderRunning),
           sacnSenderRunning: Boolean(observed.sacnSenderRunning),
@@ -1240,31 +1242,31 @@ function WorktreeDashboardApp() {
                     <td>
                       <div class="space-y-2">
                         <BookServiceRow
-                          label="user manual"
-                          port={worktree.docsPort}
-                          url={worktree.docsUrl}
-                          isReachable={worktree.observed.docsPortOpen}
-                          managed={worktree.managed.docs}
-                          observedPid={worktree.observed.docsPid}
+                          label="user docs"
+                          port={worktree.docsUserPort}
+                          url={worktree.docsUserUrl}
+                          isReachable={worktree.observed.docsUserPortOpen}
+                          managed={worktree.managed["docs-user"]}
+                          observedPid={worktree.observed.docsUserPid}
                           logPending={isPendingOperation(
-                            actionKey(worktree.id, "open-log", "docs"),
+                            actionKey(worktree.id, "open-log", "docs-user"),
                           )}
                           onOpenLog={() =>
-                            void openServiceLog(worktree.id, "docs")
+                            void openServiceLog(worktree.id, "docs-user")
                           }
                         />
                         <BookServiceRow
-                          label="developer guide"
-                          port={worktree.devguidePort}
-                          url={worktree.devguideUrl}
-                          isReachable={worktree.observed.devguidePortOpen}
-                          managed={worktree.managed.devguide}
-                          observedPid={worktree.observed.devguidePid}
+                          label="developer docs"
+                          port={worktree.docsDevPort}
+                          url={worktree.docsDevUrl}
+                          isReachable={worktree.observed.docsDevPortOpen}
+                          managed={worktree.managed["docs-dev"]}
+                          observedPid={worktree.observed.docsDevPid}
                           logPending={isPendingOperation(
-                            actionKey(worktree.id, "open-log", "devguide"),
+                            actionKey(worktree.id, "open-log", "docs-dev"),
                           )}
                           onOpenLog={() =>
-                            void openServiceLog(worktree.id, "devguide")
+                            void openServiceLog(worktree.id, "docs-dev")
                           }
                         />
                       </div>

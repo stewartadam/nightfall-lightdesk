@@ -17,6 +17,7 @@ import { basename, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
+import { SERVICE_SELECTORS } from "./dashboard-client.mjs";
 import { removeWorktree } from "./worktree-remove.mjs";
 
 // Preserve launcher settings without inheriting the dashboard's dotenv file.
@@ -80,12 +81,17 @@ const SERVICE_DEFINITIONS = {
     cargo: true,
     args: ["run", "-p", "nightfall-input-sacn", "--bin", "send-sacn"],
   },
-  docs: mdbookServiceDefinition("docs", "docs"),
-  devguide: mdbookServiceDefinition("devguide", "docs/internal"),
+  "docs-user": mdbookServiceDefinition("docs-user", "docs"),
+  "docs-dev": mdbookServiceDefinition("docs-dev", "docs/internal"),
 };
 const SERVICES = Object.keys(SERVICE_DEFINITIONS);
 /** Offsets from NIGHTFALL_PORT for the services that listen on a port. */
-const SERVICE_PORT_OFFSETS = { backend: 0, ui: 1, docs: 2, devguide: 3 };
+const SERVICE_PORT_OFFSETS = {
+  backend: 0,
+  ui: 1,
+  "docs-user": 2,
+  "docs-dev": 3,
+};
 const COMPLETION_SCOPED_SERVICES = new Set(["wasm"]);
 
 mkdirSync(LOG_DIR, { recursive: true });
@@ -1060,17 +1066,21 @@ async function collectWorktreeState() {
       );
       const backendPort = servicePortFromEnv("backend", env.values);
       const webUiPort = servicePortFromEnv("ui", env.values);
-      const docsPort = servicePortFromEnv("docs", env.values);
-      const devguidePort = servicePortFromEnv("devguide", env.values);
-      const ports = [backendPort, webUiPort, docsPort, devguidePort];
+      const docsUserPort = servicePortFromEnv("docs-user", env.values);
+      const docsDevPort = servicePortFromEnv("docs-dev", env.values);
+      const ports = [backendPort, webUiPort, docsUserPort, docsDevPort];
       const portOpen = await Promise.all(
         ports.map((port) =>
           port ? probePortOpen(port) : Promise.resolve(false),
         ),
       );
-      const [backendPortOpen, webUiPortOpen, docsPortOpen, devguidePortOpen] =
-        portOpen;
-      const [backendPid, webUiPid, docsPid, devguidePid] = await Promise.all(
+      const [
+        backendPortOpen,
+        webUiPortOpen,
+        docsUserPortOpen,
+        docsDevPortOpen,
+      ] = portOpen;
+      const [backendPid, webUiPid, docsUserPid, docsDevPid] = await Promise.all(
         ports.map((port, index) =>
           port && portOpen[index] ? listenerPid(port) : Promise.resolve(null),
         ),
@@ -1093,10 +1103,10 @@ async function collectWorktreeState() {
         nightfallPort: backendPort,
         webUiPort,
         webUiUrl: webUiPort ? `http://localhost:${webUiPort}` : null,
-        docsPort,
-        docsUrl: docsPort ? `http://localhost:${docsPort}` : null,
-        devguidePort,
-        devguideUrl: devguidePort ? `http://localhost:${devguidePort}` : null,
+        docsUserPort,
+        docsUserUrl: docsUserPort ? `http://localhost:${docsUserPort}` : null,
+        docsDevPort,
+        docsDevUrl: docsDevPort ? `http://localhost:${docsDevPort}` : null,
         managed: Object.fromEntries(
           SERVICES.map((service) => [
             service,
@@ -1106,12 +1116,12 @@ async function collectWorktreeState() {
         observed: {
           backendPortOpen,
           webUiPortOpen,
-          docsPortOpen,
-          devguidePortOpen,
+          docsUserPortOpen,
+          docsDevPortOpen,
           backendPid,
           webUiPid,
-          docsPid,
-          devguidePid,
+          docsUserPid,
+          docsDevPid,
           artnetSenderRunning: record["artnet-sender"].running,
           sacnSenderRunning: record["sacn-sender"].running,
         },
@@ -1209,9 +1219,8 @@ function dashboardApiInfo() {
   ].join("\n");
 }
 
-/** Group selectors accepted alongside single service names. */
-const SERVICE_GROUPS = ["all", "both", "senders"];
-const SERVICE_TARGETS = [...SERVICES, ...SERVICE_GROUPS];
+/** Single service names and the group selectors shared with the clients. */
+const SERVICE_TARGETS = [...SERVICES, ...Object.keys(SERVICE_SELECTORS)];
 /** Services whose log the dashboard can open; WASM builds are one-shot. */
 const LOG_SERVICES = SERVICES.filter((service) => service !== "wasm");
 
@@ -1239,15 +1248,13 @@ function parseSampleData(searchParams) {
   return sampleData === "1" || sampleData.toLowerCase() === "true";
 }
 
+/**
+ * Runs `handler` for one service, or concurrently for each member of a group
+ * selector, and returns the results in member order.
+ */
 async function withTargetServices(serviceTarget, handler) {
-  if (serviceTarget === "all") {
-    return Promise.all(SERVICES.map(handler));
-  }
-  if (serviceTarget === "both") {
-    return Promise.all([handler("backend"), handler("ui")]);
-  }
-  if (serviceTarget === "senders") {
-    return Promise.all([handler("artnet-sender"), handler("sacn-sender")]);
+  if (Object.hasOwn(SERVICE_SELECTORS, serviceTarget)) {
+    return Promise.all(SERVICE_SELECTORS[serviceTarget].map(handler));
   }
   return [await handler(serviceTarget)];
 }
