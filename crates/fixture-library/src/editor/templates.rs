@@ -167,7 +167,9 @@ pub(super) fn template_state(template: DraftTemplate) -> Result<DraftState, Stri
     let mut edits = vec![DraftEdit::SetInfo(super::view::DraftInfo {
         name: name.to_string(),
         short_name: name.to_string(),
-        long_name: format!("{GENERIC_MANUFACTURER} {name}"),
+        // The library lists GDTF fixtures by long name beside the manufacturer,
+        // so repeating the manufacturer here would show it twice.
+        long_name: name.to_string(),
         manufacturer: GENERIC_MANUFACTURER.to_string(),
         description: String::new(),
     })];
