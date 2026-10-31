@@ -162,30 +162,8 @@ pub fn ordered_showfile_load_domains() -> Result<Vec<ShowfileLoadDomain>, String
 /// Applies a showfile snapshot to runtime resources in deterministic phase/domain order.
 pub fn apply_showfile_snapshot(
     mut showfile_snapshot: ShowfileSnapshot,
-    fixture_data_provider: &mut FixtureDataProviderExt,
-    scene_object_provider: &mut SceneObjectDataProvider,
-    cue_data_provider: &mut DataProvider<Cue>,
-    seq_data_provider: &mut DataProvider<Sequence>,
-    group_data_provider: &mut DataProvider<Group>,
-    master_data_provider: &mut DataProvider<Master>,
-    blueprint_data_provider: &mut DataProvider<Blueprint>,
-    color_path_data_provider: &mut DataProvider<ColorPath>,
-    fx_data_provider: &mut DataProvider<Fx>,
-    fx_module_data_provider: &mut DataProvider<StoredFxModule>,
-    flow_data_provider: &mut DataProvider<FlowDefinition>,
-    timecode_data_provider: &mut DataProvider<Timecode>,
-    timeline_data_provider: &mut DataProvider<Timeline>,
-    board_data_provider: &mut DataProvider<Board>,
-    macro_data_provider: &mut DataProvider<Macro>,
-    input_routes: &mut InputRoutes,
-    output_routes: &mut OutputRoutes,
-    disabled_routes: &mut DisabledRoutes,
-    #[cfg(feature = "midi")] midi_mappings: &mut MidiMappings,
-    #[cfg(feature = "osc")] osc_mappings: &mut OscMappings,
-    desk_settings: &mut DeskSettings,
-    io_settings: &mut IoRuntimeSettings,
+    state: &mut ShowfileApplyState<'_>,
     commands: &mut Commands,
-    global_variables: &GlobalVariables,
 ) -> Result<(), String> {
     validate_showfile_asset_versions(&showfile_snapshot)?;
     for warning in stabilize_showfile_group_refs(&mut showfile_snapshot) {
@@ -193,6 +171,33 @@ pub fn apply_showfile_snapshot(
     }
 
     let load_domains = ordered_showfile_load_domains()?;
+    let ShowfileApplyState {
+        fixture_data_provider,
+        scene_object_provider,
+        cue_data_provider,
+        seq_data_provider,
+        group_data_provider,
+        master_data_provider,
+        blueprint_data_provider,
+        color_path_data_provider,
+        fx_data_provider,
+        fx_module_data_provider,
+        flow_data_provider,
+        timecode_data_provider,
+        timeline_data_provider,
+        board_data_provider,
+        macro_data_provider,
+        input_routes,
+        output_routes,
+        disabled_routes,
+        #[cfg(feature = "midi")]
+        midi_mappings,
+        #[cfg(feature = "osc")]
+        osc_mappings,
+        global_variables,
+        desk_settings,
+        io_settings,
+    } = state;
     let mut desk_state_contributor =
         DeskStateLoadContributor::new(global_variables, desk_settings, io_settings);
     let mut fixtures_patch_contributor = FixturesPatchLoadContributor::new(
@@ -256,33 +261,58 @@ pub fn apply_showfile_snapshot(
 }
 
 /// Resource set required to apply canonical showfile domains to an initialized world.
+///
+/// Every field is public so hosts can clear the same resources before replacing a show.
 #[derive(SystemParam)]
 pub struct ShowfileApplyState<'w> {
-    fixture_data_provider: ResMut<'w, FixtureDataProviderExt>,
-    scene_object_provider: ResMut<'w, SceneObjectDataProvider>,
-    cue_data_provider: ResMut<'w, DataProvider<Cue>>,
-    seq_data_provider: ResMut<'w, DataProvider<Sequence>>,
-    group_data_provider: ResMut<'w, DataProvider<Group>>,
-    master_data_provider: ResMut<'w, DataProvider<Master>>,
-    blueprint_data_provider: ResMut<'w, DataProvider<Blueprint>>,
-    color_path_data_provider: ResMut<'w, DataProvider<ColorPath>>,
-    fx_data_provider: ResMut<'w, DataProvider<Fx>>,
-    fx_module_data_provider: ResMut<'w, DataProvider<StoredFxModule>>,
-    flow_data_provider: ResMut<'w, DataProvider<FlowDefinition>>,
-    timecode_data_provider: ResMut<'w, DataProvider<Timecode>>,
-    timeline_data_provider: ResMut<'w, DataProvider<Timeline>>,
-    board_data_provider: ResMut<'w, DataProvider<Board>>,
-    macro_data_provider: ResMut<'w, DataProvider<Macro>>,
-    input_routes: ResMut<'w, InputRoutes>,
-    output_routes: ResMut<'w, OutputRoutes>,
-    disabled_routes: ResMut<'w, DisabledRoutes>,
+    /// Patched fixtures and their fixture type definitions.
+    pub fixture_data_provider: ResMut<'w, FixtureDataProviderExt>,
+    /// Scene objects placed in the stage layout.
+    pub scene_object_provider: ResMut<'w, SceneObjectDataProvider>,
+    /// Recorded cues.
+    pub cue_data_provider: ResMut<'w, DataProvider<Cue>>,
+    /// Sequences that order cues.
+    pub seq_data_provider: ResMut<'w, DataProvider<Sequence>>,
+    /// Fixture groups.
+    pub group_data_provider: ResMut<'w, DataProvider<Group>>,
+    /// Masters and their faders.
+    pub master_data_provider: ResMut<'w, DataProvider<Master>>,
+    /// Blueprints.
+    pub blueprint_data_provider: ResMut<'w, DataProvider<Blueprint>>,
+    /// Color paths.
+    pub color_path_data_provider: ResMut<'w, DataProvider<ColorPath>>,
+    /// Effects.
+    pub fx_data_provider: ResMut<'w, DataProvider<Fx>>,
+    /// Effect modules stored with the show.
+    pub fx_module_data_provider: ResMut<'w, DataProvider<StoredFxModule>>,
+    /// Flow definitions.
+    pub flow_data_provider: ResMut<'w, DataProvider<FlowDefinition>>,
+    /// Timecode tracks.
+    pub timecode_data_provider: ResMut<'w, DataProvider<Timecode>>,
+    /// Timelines.
+    pub timeline_data_provider: ResMut<'w, DataProvider<Timeline>>,
+    /// Button boards.
+    pub board_data_provider: ResMut<'w, DataProvider<Board>>,
+    /// Macros.
+    pub macro_data_provider: ResMut<'w, DataProvider<Macro>>,
+    /// DMX input routes.
+    pub input_routes: ResMut<'w, InputRoutes>,
+    /// DMX output routes.
+    pub output_routes: ResMut<'w, OutputRoutes>,
+    /// Routes the show has switched off.
+    pub disabled_routes: ResMut<'w, DisabledRoutes>,
+    /// MIDI controller mappings.
     #[cfg(feature = "midi")]
-    midi_mappings: ResMut<'w, MidiMappings>,
+    pub midi_mappings: ResMut<'w, MidiMappings>,
+    /// OSC controller mappings.
     #[cfg(feature = "osc")]
-    osc_mappings: ResMut<'w, OscMappings>,
-    global_variables: Res<'w, GlobalVariables>,
-    desk_settings: ResMut<'w, DeskSettings>,
-    io_settings: ResMut<'w, IoRuntimeSettings>,
+    pub osc_mappings: ResMut<'w, OscMappings>,
+    /// Global variables, written through deferred commands.
+    pub global_variables: Res<'w, GlobalVariables>,
+    /// Desk settings saved with the show.
+    pub desk_settings: ResMut<'w, DeskSettings>,
+    /// Input and output runtime settings saved with the show.
+    pub io_settings: ResMut<'w, IoRuntimeSettings>,
 }
 
 /// Apply a canonical snapshot to an initialized world through one deferred ECS system.
@@ -299,35 +329,7 @@ pub fn apply_showfile_snapshot_to_world(
                 let snapshot = snapshot
                     .take()
                     .expect("showfile snapshot should be consumed exactly once");
-                apply_showfile_snapshot(
-                    snapshot,
-                    &mut state.fixture_data_provider,
-                    &mut state.scene_object_provider,
-                    &mut state.cue_data_provider,
-                    &mut state.seq_data_provider,
-                    &mut state.group_data_provider,
-                    &mut state.master_data_provider,
-                    &mut state.blueprint_data_provider,
-                    &mut state.color_path_data_provider,
-                    &mut state.fx_data_provider,
-                    &mut state.fx_module_data_provider,
-                    &mut state.flow_data_provider,
-                    &mut state.timecode_data_provider,
-                    &mut state.timeline_data_provider,
-                    &mut state.board_data_provider,
-                    &mut state.macro_data_provider,
-                    &mut state.input_routes,
-                    &mut state.output_routes,
-                    &mut state.disabled_routes,
-                    #[cfg(feature = "midi")]
-                    &mut state.midi_mappings,
-                    #[cfg(feature = "osc")]
-                    &mut state.osc_mappings,
-                    &mut state.desk_settings,
-                    &mut state.io_settings,
-                    &mut commands,
-                    &state.global_variables,
-                )
+                apply_showfile_snapshot(snapshot, &mut state, &mut commands)
             },
         )
         .map_err(|error| format!("failed to apply showfile snapshot: {error}"))?

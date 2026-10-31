@@ -10,15 +10,25 @@ use std::collections::HashMap;
 
 use bevy::ecs::system::RunSystemOnce;
 use nightfall_clips::Clip;
+use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_fixture_model::prelude::*;
+use nightfall_flow::prelude::*;
+use nightfall_fx::prelude::*;
+#[cfg(feature = "midi")]
+use nightfall_input_midi::prelude::*;
+#[cfg(feature = "osc")]
+use nightfall_input_osc::prelude::*;
 use nightfall_io::RouteTransport;
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePolicy};
 #[cfg(feature = "object-library")]
 use nightfall_object_library::manager::{decode_object_path, encode_showfile_object_path};
 #[cfg(feature = "object-library")]
 use nightfall_object_library::showfile::{SHOWFILE_OBJECT_SNAPSHOTS_DIR, scene_object_model_path};
+use nightfall_scene_objects::prelude::*;
 use nightfall_showfile::{CURRENT_SHOWFILE_VERSION, parse_showfile_snapshot_json};
+use nightfall_timecode::prelude::*;
+use nightfall_timeline::prelude::*;
 use uuid::Uuid;
 
 use super::*;
@@ -2441,64 +2451,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
         .run_system_once(
             move |mut showfile_load_state: ShowfileLoadState, mut commands: Commands| {
                 let snapshot = snapshot.take().expect("snapshot should be available");
-                let ShowfileLoadState {
-                    fixture_data_provider,
-                    scene_object_provider,
-                    cue_data_provider,
-                    seq_data_provider,
-                    group_data_provider,
-                    master_data_provider,
-                    blueprint_data_provider,
-                    color_path_data_provider,
-                    fx_data_provider,
-                    fx_module_data_provider,
-                    flow_data_provider,
-                    timecode_data_provider,
-                    timeline_data_provider,
-                    board_data_provider,
-                    macro_data_provider,
-                    active_fx_module_ids: _,
-                    input_routes,
-                    output_routes,
-                    disabled_routes,
-                    #[cfg(feature = "midi")]
-                    midi_mappings,
-                    #[cfg(feature = "osc")]
-                    osc_mappings,
-                    global_variables,
-                    desk_settings,
-                    io_settings,
-                    ..
-                } = &mut showfile_load_state;
-                apply_showfile_snapshot(
-                    snapshot,
-                    fixture_data_provider.as_mut(),
-                    scene_object_provider.as_mut(),
-                    cue_data_provider.as_mut(),
-                    seq_data_provider.as_mut(),
-                    group_data_provider.as_mut(),
-                    master_data_provider.as_mut(),
-                    blueprint_data_provider.as_mut(),
-                    color_path_data_provider.as_mut(),
-                    fx_data_provider.as_mut(),
-                    fx_module_data_provider.as_mut(),
-                    flow_data_provider.as_mut(),
-                    timecode_data_provider.as_mut(),
-                    timeline_data_provider.as_mut(),
-                    board_data_provider.as_mut(),
-                    macro_data_provider.as_mut(),
-                    input_routes.as_mut(),
-                    output_routes.as_mut(),
-                    disabled_routes.as_mut(),
-                    #[cfg(feature = "midi")]
-                    midi_mappings.as_mut(),
-                    #[cfg(feature = "osc")]
-                    osc_mappings.as_mut(),
-                    desk_settings.as_mut(),
-                    io_settings.as_mut(),
-                    &mut commands,
-                    global_variables.as_ref(),
-                )
+                apply_showfile_snapshot(snapshot, &mut showfile_load_state.apply, &mut commands)
             },
         )
         .expect("apply snapshot system should run")
@@ -2511,64 +2464,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
         .run_system_once(
             move |mut showfile_load_state: ShowfileLoadState, mut commands: Commands| {
                 let snapshot = snapshot.take().expect("snapshot should be available");
-                let ShowfileLoadState {
-                    fixture_data_provider,
-                    scene_object_provider,
-                    cue_data_provider,
-                    seq_data_provider,
-                    group_data_provider,
-                    master_data_provider,
-                    blueprint_data_provider,
-                    color_path_data_provider,
-                    fx_data_provider,
-                    fx_module_data_provider,
-                    flow_data_provider,
-                    timecode_data_provider,
-                    timeline_data_provider,
-                    board_data_provider,
-                    macro_data_provider,
-                    active_fx_module_ids: _,
-                    input_routes,
-                    output_routes,
-                    disabled_routes,
-                    #[cfg(feature = "midi")]
-                    midi_mappings,
-                    #[cfg(feature = "osc")]
-                    osc_mappings,
-                    global_variables,
-                    desk_settings,
-                    io_settings,
-                    ..
-                } = &mut showfile_load_state;
-                apply_showfile_snapshot(
-                    snapshot,
-                    fixture_data_provider.as_mut(),
-                    scene_object_provider.as_mut(),
-                    cue_data_provider.as_mut(),
-                    seq_data_provider.as_mut(),
-                    group_data_provider.as_mut(),
-                    master_data_provider.as_mut(),
-                    blueprint_data_provider.as_mut(),
-                    color_path_data_provider.as_mut(),
-                    fx_data_provider.as_mut(),
-                    fx_module_data_provider.as_mut(),
-                    flow_data_provider.as_mut(),
-                    timecode_data_provider.as_mut(),
-                    timeline_data_provider.as_mut(),
-                    board_data_provider.as_mut(),
-                    macro_data_provider.as_mut(),
-                    input_routes.as_mut(),
-                    output_routes.as_mut(),
-                    disabled_routes.as_mut(),
-                    #[cfg(feature = "midi")]
-                    midi_mappings.as_mut(),
-                    #[cfg(feature = "osc")]
-                    osc_mappings.as_mut(),
-                    desk_settings.as_mut(),
-                    io_settings.as_mut(),
-                    &mut commands,
-                    global_variables.as_ref(),
-                )
+                apply_showfile_snapshot(snapshot, &mut showfile_load_state.apply, &mut commands)
             },
         )
         .expect("apply snapshot system should run")
@@ -2647,91 +2543,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
         .run_system_once(
             move |mut showfile_load_state: ShowfileLoadState, mut commands: Commands| {
                 let snapshot = snapshot.take().expect("snapshot should be available");
-                let ShowfileLoadState {
-                    fixture_data_provider,
-                    scene_object_provider,
-                    cue_data_provider,
-                    seq_data_provider,
-                    group_data_provider,
-                    master_data_provider,
-                    blueprint_data_provider,
-                    color_path_data_provider,
-                    fx_data_provider,
-                    fx_module_data_provider,
-                    flow_data_provider,
-                    timecode_data_provider,
-                    timeline_data_provider,
-                    board_data_provider,
-                    macro_data_provider,
-                    active_fx_module_ids,
-                    input_routes,
-                    output_routes,
-                    disabled_routes,
-                    #[cfg(feature = "midi")]
-                    midi_mappings,
-                    #[cfg(feature = "osc")]
-                    osc_mappings,
-                    all_entities,
-                    resolved_input_routes,
-                    console_dmx_addresses,
-                    console_dmx_universes,
-                    input_dmx_universes,
-                    output_routing,
-                    instance_index,
-                    final_layer_attributed_assertions,
-                    pending_commands,
-                    scheduled_commands,
-                    undo_manager,
-                    programmer,
-                    global_variables,
-                    desk_settings,
-                    io_settings,
-                    controller_mapping_mode: _,
-                    macro_runs: _,
-                } = &mut showfile_load_state;
-
-                load_showfile_in_place(
-                    snapshot,
-                    fixture_data_provider.as_mut(),
-                    scene_object_provider.as_mut(),
-                    cue_data_provider.as_mut(),
-                    seq_data_provider.as_mut(),
-                    group_data_provider.as_mut(),
-                    master_data_provider.as_mut(),
-                    blueprint_data_provider.as_mut(),
-                    color_path_data_provider.as_mut(),
-                    fx_data_provider.as_mut(),
-                    fx_module_data_provider.as_mut(),
-                    flow_data_provider.as_mut(),
-                    timecode_data_provider.as_mut(),
-                    timeline_data_provider.as_mut(),
-                    board_data_provider.as_mut(),
-                    macro_data_provider.as_mut(),
-                    active_fx_module_ids.as_deref_mut(),
-                    input_routes.as_mut(),
-                    output_routes.as_mut(),
-                    disabled_routes.as_mut(),
-                    #[cfg(feature = "midi")]
-                    midi_mappings.as_mut(),
-                    #[cfg(feature = "osc")]
-                    osc_mappings.as_mut(),
-                    &*all_entities,
-                    resolved_input_routes.as_deref_mut(),
-                    console_dmx_addresses.as_deref_mut(),
-                    console_dmx_universes.as_deref_mut(),
-                    input_dmx_universes.as_deref_mut(),
-                    output_routing.as_deref_mut(),
-                    instance_index.as_deref_mut(),
-                    final_layer_attributed_assertions.as_deref_mut(),
-                    pending_commands.as_mut(),
-                    scheduled_commands.as_deref_mut(),
-                    undo_manager.as_deref_mut(),
-                    programmer.as_deref_mut(),
-                    global_variables.as_ref(),
-                    desk_settings.as_mut(),
-                    io_settings.as_mut(),
-                    &mut commands,
-                )
+                load_showfile_in_place(snapshot, &mut showfile_load_state, &mut commands)
             },
         )
         .expect("in-place load system should run")
