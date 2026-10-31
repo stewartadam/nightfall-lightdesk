@@ -150,8 +150,10 @@ pub(super) fn init_bevy_with_transport_policy(
     app.world_mut().resource_mut::<FramepaceSettings>().limiter =
         Limiter::Manual(engine_frame_interval(&IoRuntimeSettings::default()));
 
-    app.add_plugins(plugin_groups::CorePlugins {
+    app.add_plugins(plugin_groups::NativeShowPlugins {
         websocket_port: runtime_config.server_port,
+        log_config,
+        timeline_audio_enabled: runtime_config.timeline_audio_enabled,
     });
     systems::showfile_events::register_showfile_http_routes(
         &mut app
@@ -180,11 +182,6 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
-    app.add_plugins(plugin_groups::DeskPlugins { log_config });
-    app.add_plugins(plugin_groups::FxPlugins);
-    app.add_plugins(plugin_groups::TimecodePlugins {
-        timeline_audio_enabled: runtime_config.timeline_audio_enabled,
-    });
     app.add_plugins(plugin_groups::OutputPlugins {
         network_output_enabled: transport_policy.allow_network_output,
     });

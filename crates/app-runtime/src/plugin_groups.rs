@@ -10,97 +10,61 @@
 
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
-use nightfall_actions::ActionsPlugin;
-use nightfall_boards::prelude::*;
-use nightfall_cues::prelude::*;
-use nightfall_desk::{prelude::*, resources::log_config::LogConfig};
-use nightfall_engine::{EnginePlugin, prelude::ClientBridgePlugin};
-use nightfall_fixtures::prelude::*;
-use nightfall_flow::prelude::*;
-use nightfall_fx::prelude::*;
-use nightfall_fx_module::prelude::*;
-use nightfall_macros::prelude::*;
-use nightfall_programmer::prelude::*;
-use nightfall_references::ReferencesPlugin;
-use nightfall_scene_objects::prelude::*;
-use nightfall_tempo::prelude::*;
-use nightfall_timecode::prelude::*;
-use nightfall_timeline::prelude::*;
-use nightfall_undo::prelude::*;
-use nightfall_websocket::prelude::*;
+use nightfall_composition::ShowPlugins;
+use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_fixtures::prelude::FixtureCompositorPlugin;
+use nightfall_fx::prelude::FxPlugin;
+use nightfall_fx_module::prelude::FxModulePlugin;
+use nightfall_timeline::prelude::TimelinePlugin;
+use nightfall_websocket::prelude::WebsocketPlugin;
 
 use crate::feature_integration::FeatureIntegrationExt;
 
-/// Core infrastructure plugins that must be added together.
-pub struct CorePlugins {
+/// The shared [`ShowPlugins`] plus the native app's own: the HTTP and websocket server, FX
+/// modules, audio, and the fixture and object libraries.
+pub struct NativeShowPlugins {
     /// Port used by the backend HTTP and WebSocket server.
     pub websocket_port: u16,
-}
-
-impl PluginGroup for CorePlugins {
-    fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
-            .add(EnginePlugin)
-            .maybe_core_audio()
-            .add(UndoPlugin)
-            .add(ClientBridgePlugin)
-            .add(ActionsPlugin)
-            .add(FixturePlugin)
-            .add(SceneObjectPlugin)
-            .add(FixtureCompositorPlugin)
-            .add(WebsocketPlugin::new(self.websocket_port))
-    }
-}
-
-/// Desk and fixture management plugins.
-pub struct DeskPlugins {
+    /// Log filter handle the desk's log-level commands update.
     pub log_config: LogConfig,
-}
-
-impl PluginGroup for DeskPlugins {
-    fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
-            .add(DeskPlugin {
-                log_config: self.log_config,
-            })
-            .maybe_desk_audio()
-            .add(ProgrammerPlugin)
-            .add(CuePlugin)
-            .add(BoardsPlugin)
-            .add(MacrosPlugin)
-            .maybe_fixture_library()
-            .maybe_object_library()
-    }
-}
-
-/// Effects and flow plugins.
-pub struct FxPlugins;
-
-impl PluginGroup for FxPlugins {
-    fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
-            .add(TempoPlugin)
-            .add(FxPlugin)
-            .add(FxModulePlugin)
-            .add(FlowPlugin)
-            .add(ReferencesPlugin)
-    }
-}
-
-/// Timecode and timeline plugins.
-pub struct TimecodePlugins {
     /// Whether timeline audio output is enabled process-wide.
     pub timeline_audio_enabled: bool,
 }
 
-impl PluginGroup for TimecodePlugins {
+impl PluginGroup for NativeShowPlugins {
+    /// Builds the shared show plugins and inserts each native plugin after the one it needs.
     fn build(self) -> PluginGroupBuilder {
         let timeline = TimelinePlugin::new(self.timeline_audio_enabled);
         #[cfg(feature = "beat-detection")]
         let timeline = timeline.with_beatgrid_detector(crate::beat_detection_backend::DETECTOR);
-        PluginGroupBuilder::start::<Self>()
-            .add(TimecodePlugin)
-            .add(timeline)
+        ShowPlugins {
+            log_config: self.log_config,
+            timeline,
+        }
+        .build()
+        .add_after::<FixtureCompositorPlugin>(WebsocketPlugin::new(self.websocket_port))
+        .add_after::<FxPlugin>(FxModulePlugin)
+        .maybe_core_audio()
+        .maybe_desk_audio()
+        .maybe_fixture_library()
+        .maybe_object_library()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies every native plugin finds the shared plugin it is inserted after; a missing
+    /// target makes `add_after` panic while the group is built, under this feature set.
+    #[test]
+    fn native_show_plugins_resolve_every_insertion_point() {
+        NativeShowPlugins {
+            websocket_port: 0,
+            log_config: LogConfig::disconnected(),
+            timeline_audio_enabled: false,
+        }
+        .build();
     }
 }
 

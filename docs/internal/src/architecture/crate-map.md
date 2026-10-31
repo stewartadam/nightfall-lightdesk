@@ -19,7 +19,7 @@ config:
 flowchart TB
   accTitle: Crate layers, their crates, and allowed dependencies
   accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
-  hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli"]
+  hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli · composition"]
   crossPlugin["<b>Cross-plugin</b><br/>boards · desk · desk-audio · macros · references · showfile · wasm-bridge"]
   plugins["<b>Plugins</b><br/>audio · cues · fixture-library · flow · fx · fx-module · object-library · programmer <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
   engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · lookahead · service-host <br /> tempo · timecode · undo · websocket"]
@@ -144,8 +144,9 @@ Host crates assemble the others into programs.
 | Crate | WASM | Description |
 |-------|------|-------------|
 | `app-runtime` (`app-runtime`) | No | The native host library and the `nightfall-headless` binary: engine assembly, the session loop and showfile swaps, showfile storage, sample shows, logging, diagnostics, and error and usage reports. |
-| `browser-runtime` | Is the demo | The browser demo engine, with its own hand-written plugin list. |
+| `browser-runtime` | Is the demo | The browser demo engine, built from the shared show plugins plus a built-in fixture library. |
 | `cli` | No | `nightfall-cli`, an interactive terminal client that sends commands to the engine over a websocket. |
+| `composition` | Yes | `ShowPlugins`, the show plugin list and order that every host builds. |
 | `desktop/app-tauri` (`app-tauri`) | No | The Tauri desktop shell and the `nightfall-app` binary. It lives outside `crates/`, and plain `cargo` commands leave it out unless you pass `-p app-tauri`. |
 
 ## What the WASM bridge exports
