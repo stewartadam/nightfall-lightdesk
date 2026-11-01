@@ -35,7 +35,7 @@ To create a worktree for a new branch:
 1. Wait for the hooks to finish. The pre-start hooks write `.env`, run `pnpm install`, and generate the TypeScript types before `wt` switches to the worktree. The post-start hooks then copy the data directory, web UI assets, and demo audio, and build the backend and WASM bridge in the background.
 1. Check the hook output before you start services. A background `cargo build` may still be running.
 
-With the dashboard running (see below), you can also type a branch name in the dashboard page's new-worktree field and press <kbd>Enter</kbd>. The dashboard runs the same `wt switch`: a branch that exists locally or on `origin` is checked out, and any other name becomes a new branch from `origin/HEAD`. The worktree appears in the list once the pre-start hooks finish.
+With the dashboard running (see below), you can also type a branch name in the dashboard page's search box and press <kbd>Shift</kbd>+<kbd>Enter</kbd>, or choose **Create worktree** below the results. The button appears whenever no worktree has exactly that branch. The dashboard runs the same `wt switch`: a branch that exists locally or on `origin` is checked out, and any other name becomes a new branch from `origin/HEAD`. The worktree appears in the list once the pre-start hooks finish.
 
 `wt` reads these hooks from `.config/wt.toml`. They assume the tools from [Nightfall setup](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#nightfall-setup) are installed, including `pnpm run setup:tools` for mdBook.
 

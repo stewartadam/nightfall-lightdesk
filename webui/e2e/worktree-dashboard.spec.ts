@@ -533,14 +533,16 @@ test("worktree dashboard filters worktrees by branch and path", async ({
 });
 
 /**
- * Verifies typing a branch and pressing Enter asks the dashboard API to create its
- * worktree, reports where it was made, clears the field, and keeps the name after a
- * refusal so it can be corrected.
+ * Verifies the search box doubles as the new-worktree input: a create button follows
+ * the results for any typed branch that has no worktree yet, Shift+Enter in the box
+ * does the same, a refusal keeps the text for correction, and a created worktree then
+ * shows up in the filtered table with the button gone.
  */
-test("worktree dashboard creates a worktree from a branch name", async ({
+test("worktree dashboard creates a worktree for the searched branch", async ({
   page,
 }) => {
   const createRequests: URL[] = [];
+  let created = false;
   await page.route(
     (url) => url.pathname.endsWith("/worktree-api/worktrees"),
     async (route) => {
@@ -549,12 +551,12 @@ test("worktree dashboard creates a worktree from a branch name", async ({
         const url = new URL(request.url());
         createRequests.push(url);
         const branch = url.searchParams.get("branch");
-        const ok = branch === "feat/new-panel";
+        created = branch === "feat/new-panel";
         await route.fulfill({
-          status: ok ? 200 : 409,
+          status: created ? 200 : 409,
           contentType: "application/json",
           body: JSON.stringify(
-            ok
+            created
               ? {
                   ok: true,
                   action: "created",
@@ -565,7 +567,6 @@ test("worktree dashboard creates a worktree from a branch name", async ({
                 }
               : {
                   ok: false,
-                  action: "create",
                   reason: "failed",
                   message: `Invalid branch name ${branch}`,
                   details: [],
@@ -577,10 +578,21 @@ test("worktree dashboard creates a worktree from a branch name", async ({
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
-          generatedAt: new Date("2026-11-01T12:00:00Z").toISOString(),
+          generatedAt: new Date(
+            created ? "2026-11-01T12:00:10Z" : "2026-11-01T12:00:00Z",
+          ).toISOString(),
           dashboardPid: 12345,
           worktrees: [
             worktree({ branch: "develop", envExists: true, port: 3000 }),
+            ...(created
+              ? [
+                  worktree({
+                    branch: "feat/new-panel",
+                    envExists: true,
+                    port: 3010,
+                  }),
+                ]
+              : []),
           ],
         }),
       });
@@ -588,20 +600,31 @@ test("worktree dashboard creates a worktree from a branch name", async ({
   );
 
   await page.goto("/worktree-dashboard.html");
-  const field = page.getByRole("textbox", { name: "New worktree branch" });
-  const create = page.getByRole("button", { name: "Create" });
-  await expect(create).toBeDisabled();
+  const search = page.getByRole("searchbox", { name: "Search worktrees" });
+  const create = page.getByRole("button", { name: /^Create worktree/ });
+  await expect(page.locator("strong", { hasText: "develop" })).toBeVisible();
+  await expect(create).toHaveCount(0);
 
-  await field.fill("bad..name");
-  await field.press("Enter");
+  // A partial match still offers to create the typed branch; an exact one doesn't.
+  await search.fill("dev");
+  await expect(create).toHaveText(/Create worktree\s*dev$/);
+  await search.fill("develop");
+  await expect(create).toHaveCount(0);
+
+  await search.fill("bad..name");
+  await search.press("Shift+Enter");
   await expect(
     page.getByText("Failed to create bad..name: Invalid branch name bad..name"),
   ).toBeVisible();
-  await expect(field).toHaveValue("bad..name");
+  await expect(search).toHaveValue("bad..name");
 
-  await field.fill("feat/new-panel");
+  await search.fill("feat/new-panel");
+  await expect(
+    page.getByText('No worktrees match "feat/new-panel".'),
+  ).toBeVisible();
+  await expect(create).toBeVisible();
   await page.screenshot({
-    path: test.info().outputPath("worktree-create-input.png"),
+    path: test.info().outputPath("worktree-create-from-search.png"),
   });
   await create.click();
   await expect(
@@ -609,7 +632,10 @@ test("worktree dashboard creates a worktree from a branch name", async ({
       "Created feat/new-panel at /tmp/nightfall-worktrees/feat-new-panel",
     ),
   ).toBeVisible();
-  await expect(field).toHaveValue("");
+  await expect(
+    page.locator("strong", { hasText: "feat/new-panel" }),
+  ).toBeVisible();
+  await expect(create).toHaveCount(0);
   expect(createRequests.map((url) => url.searchParams.get("branch"))).toEqual([
     "bad..name",
     "feat/new-panel",

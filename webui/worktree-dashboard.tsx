@@ -36,8 +36,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "./components/ui/dropdown-menu";
-import { Input, InputGroup } from "./components/ui/form-controls";
 import type { AppIcon } from "./components/ui/icon";
+import { KbdShortcut } from "./components/ui/kbd";
 import { SearchField } from "./components/ui/search-field";
 import { matchesSearchTerms, searchTerms } from "./components/ui/search-match";
 import { Table, TableScroll } from "./components/ui/table";
@@ -546,7 +546,6 @@ function WorktreeDashboardApp() {
   let openActionMenuPanel: HTMLDivElement | undefined;
 
   const [searchQuery, setSearchQuery] = createSignal("");
-  const [newBranch, setNewBranch] = createSignal("");
   const [creatingBranch, setCreatingBranch] = createSignal<string | null>(null);
 
   const worktrees = createMemo(() => payload.worktrees);
@@ -565,6 +564,17 @@ function WorktreeDashboardApp() {
   const uninitializedWorktrees = createMemo(() =>
     visibleWorktrees().filter((worktree) => !worktree.envExists),
   );
+  /**
+   * The branch the create button offers: the trimmed search text, unless a worktree
+   * already has exactly that branch, or null when there is nothing to offer.
+   */
+  const branchToCreate = createMemo(() => {
+    const branch = searchQuery().trim();
+    if (!branch) return null;
+    return worktrees().some((worktree) => worktree.branch === branch)
+      ? null
+      : branch;
+  });
   /** Header status line: last refresh time, API PID, and how many worktrees the search shows. */
   const metadataText = createMemo(() => {
     if (!hasPayload()) {
@@ -937,14 +947,13 @@ function WorktreeDashboardApp() {
   }
 
   /**
-   * Creates a worktree for the typed branch through the dashboard API, which runs
-   * Worktrunk with the repository's hooks. Existing branches (local or on origin) are
-   * checked out; other names become new branches from origin's default branch. The
-   * field is cleared once the worktree exists, and kept for correction on a refusal.
+   * Creates a worktree for the branch typed in the search box through the dashboard
+   * API, which runs Worktrunk with the repository's hooks. Existing branches (local or
+   * on origin) are checked out; other names become new branches from origin's default
+   * branch. The search text stays, so the new worktree is what the table then shows.
    */
-  async function createWorktreeForBranch(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    const branch = newBranch().trim();
+  async function createWorktreeForBranch(): Promise<void> {
+    const branch = branchToCreate();
     if (!branch || creatingBranch()) return;
     setCreatingBranch(branch);
 
@@ -962,7 +971,6 @@ function WorktreeDashboardApp() {
       if (!result.ok) {
         throw new Error(result.message);
       }
-      setNewBranch("");
       pushToast(
         result.action === "existing" ? "info" : "success",
         result.path ? `${result.message} at ${result.path}` : result.message,
@@ -1165,7 +1173,15 @@ function WorktreeDashboardApp() {
             </Button>
           </p>
         </div>
-        <div class="mt-3 flex flex-col gap-2 md:mt-0 md:w-80">
+        {/* Shift+Enter in the search box creates a worktree for the typed branch. */}
+        <div
+          class="mt-3 md:mt-0 md:w-80"
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || !event.shiftKey) return;
+            event.preventDefault();
+            void createWorktreeForBranch();
+          }}
+        >
           <SearchField
             label="Search worktrees"
             placeholder="Search branch or path"
@@ -1178,36 +1194,6 @@ function WorktreeDashboardApp() {
             }}
             data-testid="worktree-search"
           />
-          <form
-            class="flex items-center gap-2"
-            onSubmit={(event) => void createWorktreeForBranch(event)}
-          >
-            <InputGroup class="min-w-0 flex-1 items-center">
-              <GitBranchIcon
-                class="mx-2 size-4 shrink-0 self-center text-neutral-400"
-                aria-hidden
-              />
-              <Input
-                aria-label="New worktree branch"
-                placeholder="Branch for new worktree"
-                autocomplete="off"
-                spellcheck={false}
-                value={newBranch()}
-                disabled={creatingBranch() !== null}
-                onInput={(event) => setNewBranch(event.currentTarget.value)}
-              />
-            </InputGroup>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!newBranch().trim() || creatingBranch() !== null}
-            >
-              <Show when={creatingBranch()} fallback="Create">
-                <ArrowsClockwiseIcon class="size-4 animate-spin" aria-hidden />
-                Creating
-              </Show>
-            </Button>
-          </form>
         </div>
       </header>
 
@@ -1654,9 +1640,37 @@ function WorktreeDashboardApp() {
             visibleWorktrees().length === 0
           }
         >
-          <div class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+          <div class="px-4 pt-3 text-sm text-slate-500 dark:text-slate-400">
             No worktrees match "{searchQuery().trim()}".
           </div>
+        </Show>
+        <Show when={hasPayload() && branchToCreate()}>
+          {(branch) => (
+            <div class="flex items-center gap-3 px-4 py-3">
+              <Button
+                variant="secondary"
+                size="compact"
+                disabled={creatingBranch() !== null}
+                onClick={() => void createWorktreeForBranch()}
+              >
+                <Show
+                  when={creatingBranch()}
+                  fallback={<GitBranchIcon class="size-4" aria-hidden />}
+                >
+                  <ArrowsClockwiseIcon
+                    class="size-4 animate-spin"
+                    aria-hidden
+                  />
+                </Show>
+                {creatingBranch() ? "Creating" : "Create worktree"}{" "}
+                <span class="font-mono">{branch()}</span>
+              </Button>
+              <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <KbdShortcut shortcut="Shift+Enter" size="compact" />
+                in the search box
+              </span>
+            </div>
+          )}
         </Show>
         <Show when={loading() && worktrees().length === 0}>
           <div class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
