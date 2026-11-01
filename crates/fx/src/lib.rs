@@ -74,8 +74,8 @@ impl Plugin for FxPlugin {
         tracing::debug!("Registering FxPlugin");
         app.init_resource::<DataProvider<fx::Fx>>();
 
-        register_ingress_command::<FxCommand>(app);
-        register_ingress_command::<events::StepFxCommand>(app);
+        register_client_command::<FxCommand>(app, Undo::Captured);
+        register_client_command::<events::StepFxCommand>(app, Undo::Captured);
         app.add_message::<events::FxPreviewUpdate>();
         app.add_message::<events::StepFxPreviewUpdate>();
         app.add_message::<events::StepFxCommandResult>();
@@ -83,9 +83,6 @@ impl Plugin for FxPlugin {
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FxAstConverter>();
-
-        register_buffered_command::<FxCommand>(app);
-        register_buffered_command::<events::StepFxCommand>(app);
 
         register_update_deserializer(
             app,

@@ -77,14 +77,13 @@ impl Plugin for FlowPlugin {
         app.init_resource::<nodes::FlowNodeRegistry>();
         app.add_message::<DomainInstanceReconstructionRequest>();
 
-        register_ingress_command::<FlowCommand>(app);
+        register_client_command::<FlowCommand>(app, Undo::Skipped);
         app.add_message::<events::FlowCommandResult>();
         register_engine_operation::<events::FlowPlaybackOperation>(app);
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FlowAstConverter>(
         );
-        register_admitted_command::<FlowCommand>(app);
 
         app.add_systems(
             Update,

@@ -40,8 +40,7 @@ pub struct BoardsPlugin;
 impl Plugin for BoardsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DataProvider<Board>>();
-        register_ingress_command::<command::BoardCommand>(app);
-        register_buffered_command::<command::BoardCommand>(app);
+        register_client_command::<command::BoardCommand>(app, Undo::Captured);
         app.world_mut()
             .resource_mut::<UndoRegistry>()
             .register::<command::BoardCommand>();

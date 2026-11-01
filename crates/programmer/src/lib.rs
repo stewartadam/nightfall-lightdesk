@@ -57,8 +57,8 @@ pub const PROGRAMMER_CLEAR_ACTION_ID: &str = "programmer.clear";
 impl Plugin for ProgrammerPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering ProgrammerPlugin");
-        register_ingress_command::<events::ProgrammerCommand>(app);
-        register_ingress_command::<UserCommand>(app);
+        register_client_command::<events::ProgrammerCommand>(app, Undo::Captured);
+        register_client_command::<UserCommand>(app, Undo::Captured);
         register_engine_operation::<ProgrammerOperation>(app);
         app.register_command_action::<serde::de::IgnoredAny, events::ProgrammerCommand, _>(
             ActionDescriptor::new(PROGRAMMER_CLEAR_ACTION_ID, "Clear programmer", "Programmer")
@@ -70,9 +70,6 @@ impl Plugin for ProgrammerPlugin {
         >();
         register_engine_operation::<undo::RestoreProgrammerState>(app);
         register_engine_operation::<undo::RemoveProgrammerInstructionByUuid>(app);
-
-        register_buffered_command::<events::ProgrammerCommand>(app);
-        register_buffered_command::<UserCommand>(app);
 
         app.add_systems(
             PostUpdate,

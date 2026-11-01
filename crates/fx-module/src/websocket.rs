@@ -124,13 +124,17 @@ mod tests {
             .resource_mut::<UndoRegistry>()
             .register::<FxModuleCommand>();
 
-        deserialize_buffered_command::<FxModuleCommand>(
-            &mut world,
+        let command = decode_client_command::<FxModuleCommand>(
             serde_json::json!({ "type": "DeleteFxModule", "data": 42 }),
-            CommandId::new(),
-            UndoId::new(),
         )
         .expect("module delete should deserialize");
+        submit_client_command(
+            &mut world,
+            CommandId::new(),
+            UndoId::new(),
+            command,
+            Undo::Captured,
+        );
         dispatcher::process_pending_commands(&mut world);
         world
             .resource_mut::<UndoManager>()

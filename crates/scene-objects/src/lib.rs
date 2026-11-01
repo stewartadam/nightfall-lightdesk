@@ -45,8 +45,7 @@ pub struct SceneObjectPlugin;
 impl Plugin for SceneObjectPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering SceneObjectPlugin");
-        register_ingress_command::<SceneObjectCommand>(app);
-        register_buffered_command::<SceneObjectCommand>(app);
+        register_client_command::<SceneObjectCommand>(app, Undo::Captured);
 
         // Initialize the scene object data provider
         app.init_resource::<websocket::SceneObjectDataProvider>();

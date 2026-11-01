@@ -50,14 +50,12 @@ pub struct TimecodePlugin;
 impl Plugin for TimecodePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering TimecodePlugin");
-        register_ingress_command::<TimecodeCommand>(app);
+        register_client_command::<TimecodeCommand>(app, Undo::Captured);
         app.add_message::<EngineOperationEnvelope<TimecodeOperation>>();
         app.add_message::<TimecodeEvent>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimecodeAstConverter,
         >();
-
-        register_buffered_command::<TimecodeCommand>(app);
 
         app.init_resource::<DataProvider<timecode::Timecode>>();
         app.init_resource::<external::ExternalTimecodeFeeds>();

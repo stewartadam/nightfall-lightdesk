@@ -163,11 +163,10 @@ impl Plugin for FixturePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering FixturePlugin");
         app.add_plugins(input_apply::TransportInputPlugin);
-        register_ingress_command::<FixtureCommand>(app);
+        register_client_command::<FixtureCommand>(app, Undo::Captured);
         register_engine_operation::<DmxOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FixtureAstConverter>(
         );
-        register_buffered_command::<FixtureCommand>(app);
         register_client_update_deserializer(
             app,
             parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE,

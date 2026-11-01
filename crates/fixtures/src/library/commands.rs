@@ -247,9 +247,8 @@ impl FixtureLibraryCommandResult {
 /// `CommandEnvelope<FixtureLibraryCommand>` handler, chained before
 /// [`finish_fixture_library_commands`].
 pub fn register_fixture_library_commands(app: &mut bevy_app::App) {
-    register_ingress_command::<FixtureLibraryCommand>(app);
+    register_client_command::<FixtureLibraryCommand>(app, Undo::Skipped);
     app.add_message::<FixtureLibraryCommandResult>();
-    register_admitted_command::<FixtureLibraryCommand>(app);
 }
 
 /// Publishes terminal results after fixture mutations and deferred parameter spawns apply.

@@ -140,12 +140,11 @@ impl Plugin for TimelinePlugin {
         }
         #[cfg(not(feature = "http"))]
         let _ = self.http_enabled;
-        register_ingress_command::<TimelineCommand>(app);
+        register_client_command::<TimelineCommand>(app, Undo::Captured);
         register_engine_operation::<TimelineOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimelineAstConverter,
         >();
-        register_buffered_command::<TimelineCommand>(app);
 
         app.init_resource::<DataProvider<Timeline>>();
         app.insert_resource(beatgrid_detection::BeatgridDetectionRuntime::new(

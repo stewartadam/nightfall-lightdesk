@@ -34,8 +34,7 @@ impl IngressCommand for ReferenceCommand {}
 
 /// Registers the reference command and its handler.
 pub(crate) fn register(app: &mut App) {
-    register_ingress_command::<ReferenceCommand>(app);
-    register_buffered_command::<ReferenceCommand>(app);
+    register_client_command::<ReferenceCommand>(app, Undo::Captured);
     app.add_systems(
         bevy_app::Update,
         handle_reference_commands.in_set(EventHandling),

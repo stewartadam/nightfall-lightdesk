@@ -87,8 +87,7 @@ impl Plugin for InputOscPlugin {
         app.add_message::<OscExternalEval>();
         app.add_message::<OscInput>();
 
-        register_ingress_command::<OscCommand>(app);
-        register_buffered_command::<OscCommand>(app);
+        register_client_command::<OscCommand>(app, Undo::Captured);
         register_binding_undo::<OscMappings, OscCommand>(app);
 
         app.add_systems(

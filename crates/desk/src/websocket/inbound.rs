@@ -18,11 +18,12 @@ pub fn deserialize_desk_command(
     undo_id: UndoId,
 ) -> Result<(), String> {
     let command = decode_client_command::<DeskCommand>(json)?;
-    if matches!(command, DeskCommand::Eval(_)) {
-        buffer_command(world, command_id, undo_id, command);
+    let undo = if matches!(command, DeskCommand::Eval(_)) {
+        Undo::Captured
     } else {
-        admit_command(world, command_id, undo_id, command);
-    }
+        Undo::Skipped
+    };
+    submit_client_command(world, command_id, undo_id, command, undo);
     Ok(())
 }
 

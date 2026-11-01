@@ -101,9 +101,8 @@ impl Plugin for InputMidiPlugin {
         app.init_resource::<MidiControlTouches>();
 
         // Register command type and deserializer
-        register_ingress_command::<MidiCommand>(app);
+        register_client_command::<MidiCommand>(app, Undo::Captured);
         app.add_message::<MidiInput>();
-        register_buffered_command::<MidiCommand>(app);
         register_binding_undo::<MidiMappings, MidiCommand>(app);
 
         // Add systems

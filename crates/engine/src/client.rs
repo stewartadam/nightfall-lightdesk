@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Shared websocket command deserializers.
+//! Client command registration and submission.
 //!
-//! Most domains decode a client payload straight into their command type and
-//! then either admit it as a tracked [`CommandEnvelope`] message or queue it
-//! on the [`PendingCommandBuffer`] for planning and undo capture. These
-//! helpers implement both routes once, so domains register them instead of
-//! writing their own deserializer.
+//! A client command either has its undo captured, so it queues on the
+//! [`PendingCommandBuffer`] where planning and undo capture run before typed
+//! dispatch, or skips undo and is written straight out as a tracked
+//! [`CommandEnvelope`] message. [`register_client_command`] wires a command
+//! type for one of the two, so domains don't write their own deserializer.
 use bevy_app::prelude::*;
 use bevy_ecs::message::Message;
 use bevy_ecs::prelude::*;
@@ -21,95 +21,61 @@ use serde_json::Value;
 
 use crate::prelude::*;
 
-/// Registers `T` so client payloads decode into `T` and are written as a
-/// tracked [`CommandEnvelope`] carrying the origin and reply target the
-/// [`CommandTracker`] admitted for that command.
-pub fn register_admitted_command<T>(app: &mut App)
+/// Whether a client command passes through undo capture before dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Undo {
+    /// Queue on the [`PendingCommandBuffer`], where planning and undo capture
+    /// run before the command is dispatched.
+    Captured,
+    /// Skip undo and write a [`CommandEnvelope`] immediately, carrying the
+    /// origin and reply target the [`CommandTracker`] admitted for it.
+    Skipped,
+}
+
+/// Registers `T` as a client command: adds its envelope message and ingress
+/// route, and decodes client payloads into `T` before submitting them with
+/// the given [`Undo`] behavior.
+pub fn register_client_command<T>(app: &mut App, undo: Undo)
 where
-    T: EnginePayload + EngineIngressMeta + Clone + DeserializeOwned,
+    T: IngressCommand + EnginePayload + EngineIngressMeta + Clone + DeserializeOwned,
     CommandEnvelope<T>: Message,
 {
-    register_command_deserializer::<T>(app, deserialize_admitted_command::<T>);
+    register_ingress_command::<T>(app);
+    let deserializer = match undo {
+        Undo::Captured => deserialize_undo_captured::<T>,
+        Undo::Skipped => deserialize_undo_skipped::<T>,
+    };
+    register_command_deserializer::<T>(app, deserializer);
 }
 
-/// Registers `T` so client payloads decode into `T` and queue on the
-/// [`PendingCommandBuffer`], where planning and undo capture run before
-/// typed dispatch.
-pub fn register_buffered_command<T>(app: &mut App)
-where
-    T: EnginePayload + EngineIngressMeta + Clone + DeserializeOwned,
-{
-    register_command_deserializer::<T>(app, deserialize_buffered_command::<T>);
-}
-
-/// Decodes `json` into `T` and writes it as a [`CommandEnvelope`] in the
-/// lifecycle context the [`CommandTracker`] admitted for `command_id`.
-pub fn deserialize_admitted_command<T>(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String>
-where
-    T: EngineIngressMeta + DeserializeOwned,
-    CommandEnvelope<T>: Message,
-{
-    admit_command(
-        world,
-        command_id,
-        undo_id,
-        decode_client_command::<T>(json)?,
-    );
-    Ok(())
-}
-
-/// Decodes `json` into `T` and queues it on the [`PendingCommandBuffer`]
-/// with its command and undo identity.
-pub fn deserialize_buffered_command<T>(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String>
-where
-    T: EnginePayload + EngineIngressMeta + DeserializeOwned,
-{
-    buffer_command(
-        world,
-        command_id,
-        undo_id,
-        decode_client_command::<T>(json)?,
-    );
-    Ok(())
-}
-
-/// Writes an already decoded command as a [`CommandEnvelope`] in the lifecycle
-/// context the [`CommandTracker`] admitted for `command_id`.
-pub fn admit_command<T>(world: &mut World, command_id: CommandId, undo_id: UndoId, command: T)
-where
-    CommandEnvelope<T>: Message,
-{
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-}
-
-/// Queues an already decoded command on the [`PendingCommandBuffer`] with its
-/// command and undo identity, so planning and undo capture run before dispatch.
-pub fn buffer_command<T: EnginePayload>(
+/// Submits an already decoded client command with the given [`Undo`] behavior.
+pub fn submit_client_command<T>(
     world: &mut World,
     command_id: CommandId,
     undo_id: UndoId,
     command: T,
-) {
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
+    undo: Undo,
+) where
+    T: EnginePayload,
+    CommandEnvelope<T>: Message,
+{
+    match undo {
+        Undo::Captured => {
+            world
+                .resource_mut::<PendingCommandBuffer>()
+                .push(PayloadEnvelope::with_context(
+                    command_id,
+                    undo_id,
+                    Box::new(command),
+                ))
+        }
+        Undo::Skipped => {
+            let envelope = world
+                .resource::<CommandTracker>()
+                .admitted_envelope(command_id, undo_id, command);
+            world.write_message(envelope);
+        }
+    }
 }
 
 /// Decodes a client payload into `T`, naming the command module in the error
@@ -119,6 +85,38 @@ pub fn decode_client_command<T: EngineIngressMeta + DeserializeOwned>(
 ) -> Result<T, String> {
     serde_json::from_value(json)
         .map_err(|error| format!("Failed to parse {}: {error}", T::COMMAND_MODULE))
+}
+
+/// Deserializer registered for [`Undo::Captured`] commands.
+fn deserialize_undo_captured<T>(
+    world: &mut World,
+    json: Value,
+    command_id: CommandId,
+    undo_id: UndoId,
+) -> Result<(), String>
+where
+    T: EnginePayload + EngineIngressMeta + DeserializeOwned,
+    CommandEnvelope<T>: Message,
+{
+    let command = decode_client_command::<T>(json)?;
+    submit_client_command(world, command_id, undo_id, command, Undo::Captured);
+    Ok(())
+}
+
+/// Deserializer registered for [`Undo::Skipped`] commands.
+fn deserialize_undo_skipped<T>(
+    world: &mut World,
+    json: Value,
+    command_id: CommandId,
+    undo_id: UndoId,
+) -> Result<(), String>
+where
+    T: EnginePayload + EngineIngressMeta + DeserializeOwned,
+    CommandEnvelope<T>: Message,
+{
+    let command = decode_client_command::<T>(json)?;
+    submit_client_command(world, command_id, undo_id, command, Undo::Skipped);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -143,15 +141,15 @@ mod tests {
         world
     }
 
-    /// Verifies an admitted command keeps the tracked command, undo and reply
+    /// Verifies a command that skips undo keeps the tracked command, undo and reply
     /// identity on the envelope it writes.
     #[test]
-    fn admitted_command_writes_tracked_envelope() {
+    fn undo_skipped_command_writes_tracked_envelope() {
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
         let mut world = tracked_world(command_id, undo_id);
 
-        deserialize_admitted_command::<EngineCommand>(
+        deserialize_undo_skipped::<EngineCommand>(
             &mut world,
             serde_json::to_value(EngineCommand::SetFps(30)).unwrap(),
             command_id,
@@ -170,15 +168,15 @@ mod tests {
         assert!(matches!(messages[0].command, EngineCommand::SetFps(30)));
     }
 
-    /// Verifies a buffered command queues once with its command and undo
+    /// Verifies a command with undo captured queues once with its command and undo
     /// identity instead of being written as a message.
     #[test]
-    fn buffered_command_queues_with_context() {
+    fn undo_captured_command_queues_with_context() {
         let command_id = CommandId::new();
         let undo_id = UndoId::new();
         let mut world = tracked_world(command_id, undo_id);
 
-        deserialize_buffered_command::<EngineCommand>(
+        deserialize_undo_captured::<EngineCommand>(
             &mut world,
             serde_json::to_value(EngineCommand::ResyncState).unwrap(),
             command_id,
@@ -207,7 +205,7 @@ mod tests {
         let undo_id = UndoId::new();
         let mut world = tracked_world(command_id, undo_id);
 
-        let error = deserialize_buffered_command::<EngineCommand>(
+        let error = deserialize_undo_captured::<EngineCommand>(
             &mut world,
             serde_json::json!({ "type": "NoSuchCommand" }),
             command_id,

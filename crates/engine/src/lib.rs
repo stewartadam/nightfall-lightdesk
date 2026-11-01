@@ -84,8 +84,7 @@ pub mod prelude {
     pub use crate::EnginePlugin;
     pub use crate::blueprint::{BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation};
     pub use crate::client::{
-        admit_command, buffer_command, decode_client_command, deserialize_admitted_command,
-        deserialize_buffered_command, register_admitted_command, register_buffered_command,
+        Undo, decode_client_command, register_client_command, submit_client_command,
     };
     pub use crate::client_bridge::{
         Audience, ClientBridgeHost, ClientBridgePlugin, ClientDisconnectReport, ClientDisconnected,
@@ -217,9 +216,8 @@ impl Plugin for EnginePlugin {
             broadcast_app_state_on_change.in_set(ClientFeedback),
         );
 
-        register_ingress_command::<EngineCommand>(app);
+        register_client_command::<EngineCommand>(app, Undo::Skipped);
         app.add_message::<ResyncRequested>();
-        register_admitted_command::<EngineCommand>(app);
         app.add_systems(Update, resync::begin_resync.in_set(InputHandling));
     }
 }

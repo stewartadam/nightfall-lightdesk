@@ -50,9 +50,7 @@ impl Plugin for UndoPlugin {
             "UndoPlugin requires EnginePlugin (provides CommandIngressRouter)"
         );
 
-        register_ingress_command::<UndoCommand>(app);
-
-        register_buffered_command::<UndoCommand>(app);
+        register_client_command::<UndoCommand>(app, Undo::Captured);
 
         // Initialize resources
         app.init_resource::<UndoManager>();
