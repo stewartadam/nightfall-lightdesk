@@ -607,7 +607,10 @@ test("worktree dashboard creates a worktree for the searched branch", async ({
 
   // A partial match still offers to create the typed branch; an exact one doesn't.
   await search.fill("dev");
-  await expect(create).toHaveText(/Create worktree\s*dev$/);
+  await expect(create).toHaveText("Create worktree");
+  await expect(page.getByTestId("worktree-create-hint")).toHaveText(
+    /in the search box creates\s*dev$/,
+  );
   await search.fill("develop");
   await expect(create).toHaveCount(0);
 

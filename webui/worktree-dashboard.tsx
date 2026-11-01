@@ -1640,13 +1640,13 @@ function WorktreeDashboardApp() {
             visibleWorktrees().length === 0
           }
         >
-          <div class="px-4 pt-3 text-sm text-slate-500 dark:text-slate-400">
+          <div class="px-4 pt-4 text-center text-sm text-slate-500 dark:text-slate-400">
             No worktrees match "{searchQuery().trim()}".
           </div>
         </Show>
         <Show when={hasPayload() && branchToCreate()}>
           {(branch) => (
-            <div class="flex items-center gap-3 px-4 py-3">
+            <div class="flex flex-col items-center gap-1.5 px-4 py-4">
               <Button
                 variant="secondary"
                 size="compact"
@@ -1662,12 +1662,17 @@ function WorktreeDashboardApp() {
                     aria-hidden
                   />
                 </Show>
-                {creatingBranch() ? "Creating" : "Create worktree"}{" "}
-                <span class="font-mono">{branch()}</span>
+                {creatingBranch() ? "Creating worktree" : "Create worktree"}
               </Button>
-              <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <span
+                class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
+                data-testid="worktree-create-hint"
+              >
                 <KbdShortcut shortcut="Shift+Enter" size="compact" />
-                in the search box
+                in the search box creates
+                <span class="font-mono text-slate-700 dark:text-slate-200">
+                  {branch()}
+                </span>
               </span>
             </div>
           )}
