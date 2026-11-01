@@ -8,7 +8,7 @@
 
 import { createEffect, onCleanup, onMount } from "solid-js";
 import { RangeSlider } from "../../../components/ui/range-slider";
-import { colorPathSamples } from "../../../lib/color-path-preview";
+import { colorPathSamples } from "../../../lib/color-path-sampling";
 import type * as types from "../../../types";
 import {
   percentInputFraction,
@@ -58,6 +58,10 @@ function paintColorPathGradientCanvas(
   if (!context) return;
 
   const samples = colorPathSamples(path, start, end, width);
+  if (samples.length === 0) {
+    context.clearRect(0, 0, width, height);
+    return;
+  }
   const image = context.createImageData(width, height);
   for (let x = 0; x < width; x++) {
     const color = samples[x] ?? end;

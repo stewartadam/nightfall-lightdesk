@@ -48,7 +48,9 @@ pub mod prelude {
     pub use crate::color_path::{
         ColorAttributeTiming, ColorInterpolationSpace, ColorPath, ColorPathDefault, ColorPathId,
         ColorPathRgb, ColorPathTiming, ColorPathTimingComponent, HueDirection, builtin_color_paths,
-        resolved_interpolation_space, sample_color_path,
+        color_path_channel_ratio, color_path_midpoint_brightness_multiplier,
+        color_path_preview_samples, resolved_interpolation_space, sample_color_path,
+        sample_color_path_with_timing,
     };
     pub use crate::command_types::{
         Axis, ElementSelectorExpr, FixtureRangeExpr, GridSize, GroupRefExpr, IdExpr,

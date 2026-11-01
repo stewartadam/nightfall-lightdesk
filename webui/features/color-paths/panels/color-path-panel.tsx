@@ -19,11 +19,11 @@ import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { RangeSlider } from "../../../components/ui/range-slider";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import {
-  colorPathRoutePoints,
   hexToRgb,
   resolvedInterpolationSpace,
   rgbToHex,
 } from "../../../lib/color-path-preview";
+import { colorPathRoutePoints } from "../../../lib/color-path-sampling";
 import {
   createDefaultColorPath,
   deleteColorPath,
