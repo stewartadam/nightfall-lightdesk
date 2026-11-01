@@ -14,7 +14,7 @@
 //! Profiles never create mappings.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{OnceLock, PoisonError, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -407,18 +407,26 @@ fn bundled() -> &'static [MidiProfile] {
 
 /// Returns the first bundled profile matching a device's input port name.
 ///
-/// Feedback looks devices up every frame, so each name's match is remembered.
+/// Feedback looks devices up for every mapping on every frame, so each name's match is
+/// remembered, and a name seen before is answered from that cache without allocating.
 pub(crate) fn for_device(device: &str) -> Option<&'static MidiProfile> {
-    static MATCHES: OnceLock<Mutex<HashMap<String, Option<usize>>>> = OnceLock::new();
+    static MATCHES: OnceLock<RwLock<HashMap<String, Option<usize>>>> = OnceLock::new();
     let profiles = bundled();
-    let mut matches = MATCHES
-        .get_or_init(Mutex::default)
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let index = *matches.entry(device.to_string()).or_insert_with(|| {
-        profiles
+    let matches = MATCHES.get_or_init(RwLock::default);
+    let cached = matches
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(device)
+        .copied();
+    let index = cached.unwrap_or_else(|| {
+        let index = profiles
             .iter()
-            .position(|profile| profile.ports.matches(device))
+            .position(|profile| profile.ports.matches(device));
+        matches
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(device.to_owned(), index);
+        index
     });
     index.map(|index| &profiles[index])
 }
