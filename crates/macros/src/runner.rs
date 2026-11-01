@@ -21,6 +21,7 @@
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_cmd_parse::split_command_statements;
+use nightfall_desk::launch_quantize::MACRO_STATEMENT_SURFACE;
 use nightfall_desk::prelude::DeskCommand;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
@@ -100,7 +101,8 @@ struct MacroRun {
     owner: CommandId,
     /// Undo group shared by every statement of the run.
     undo_id: UndoId,
-    /// Surface that started the run, inherited by its statements.
+    /// Origin given to the run's statements, naming the macro so that its clip launches skip
+    /// launch quantize.
     origin: CommandOrigin,
     /// Macros on the path from the outermost run to this one, including this macro.
     chain: Vec<Uuid>,
@@ -266,7 +268,10 @@ impl MacroRuns {
             settled: None,
             owner: envelope.command_id,
             undo_id: envelope.undo_id,
-            origin: envelope.origin.clone(),
+            origin: CommandOrigin::Automation {
+                surface: MACRO_STATEMENT_SURFACE.to_owned(),
+                source: Some(format!("Macro {}", definition.identifiers.id)),
+            },
             chain,
             failure: None,
         });

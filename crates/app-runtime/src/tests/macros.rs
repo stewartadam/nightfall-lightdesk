@@ -146,6 +146,14 @@ impl MacroHarness {
         self.app.world().resource::<MacroRuns>().is_running(uid)
     }
 
+    /// Lists the clip launches waiting for the next beat or bar.
+    fn armed_launches(&self) -> Vec<nightfall_desk::launch_quantize::ArmedLaunch> {
+        self.app
+            .world()
+            .resource::<nightfall_desk::launch_quantize::ArmedLaunches>()
+            .status()
+    }
+
     /// Returns the UID of the macro with this ID.
     fn macro_uid(&self, id: u32) -> uuid::Uuid {
         self.app
@@ -570,4 +578,42 @@ async fn undo_skips_the_release_body() {
     harness.run_for(Duration::from_millis(250));
 
     assert!(harness.has_clip(1) && harness.has_clip(2));
+}
+
+/// With bar launch quantize on, the clip launches a macro runs fire at once instead of each
+/// waiting for its own downbeat, while the same launch typed by the operator still waits.
+#[tokio::test]
+async fn macro_clip_launches_skip_launch_quantize() {
+    let mut harness = MacroHarness::new(&[(1, "clip 1 start\nclip 2 start", "")]);
+    let quantize = harness.submit(nightfall_tempo::TempoCommand::SetLaunchQuantize(
+        nightfall_tempo::LaunchQuantize::Bar,
+    ));
+    assert_eq!(harness.wait(quantize), CommandOutcome::succeeded());
+    harness.run_for(Duration::from_millis(50));
+
+    let started = harness.eval("macro 1 start");
+    for _ in 0..50 {
+        harness.step();
+        assert!(
+            harness.armed_launches().is_empty(),
+            "macro statements must not wait for the downbeat"
+        );
+        if harness.result(started).is_some() {
+            break;
+        }
+    }
+    assert_eq!(harness.result(started), Some(CommandOutcome::succeeded()));
+
+    harness.eval("clip 3 start");
+    harness.step();
+    harness.step();
+    assert_eq!(
+        harness
+            .armed_launches()
+            .iter()
+            .map(|launch| launch.clip_id)
+            .collect::<Vec<_>>(),
+        vec![3],
+        "an operator's launch still waits, so quantize was on"
+    );
 }
