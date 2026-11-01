@@ -150,10 +150,18 @@ pub(super) fn init_bevy_with_transport_policy(
     app.world_mut().resource_mut::<FramepaceSettings>().limiter =
         Limiter::Manual(engine_frame_interval(&IoRuntimeSettings::default()));
 
-    app.add_plugins(plugin_groups::NativeShowPlugins {
+    app.add_plugins(plugin_groups::NativePlugins {
         websocket_port: runtime_config.server_port,
         log_config,
         timeline_audio_enabled: runtime_config.timeline_audio_enabled,
+        outputs: plugin_groups::OutputPlugins {
+            network_output_enabled: transport_policy.allow_network_output,
+        },
+        inputs: plugin_groups::InputPlugins {
+            network_input_enabled: transport_policy.allow_network_input,
+            osc_bind_addr: runtime_config.osc_bind_addr,
+            midi_input_port: runtime_config.midi_input_port.clone(),
+        },
     });
     systems::showfile_events::register_showfile_http_routes(
         &mut app
@@ -182,14 +190,6 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
-    app.add_plugins(plugin_groups::OutputPlugins {
-        network_output_enabled: transport_policy.allow_network_output,
-    });
-    app.add_plugins(plugin_groups::InputPlugins {
-        network_input_enabled: transport_policy.allow_network_input,
-        osc_bind_addr: runtime_config.osc_bind_addr,
-        midi_input_port: runtime_config.midi_input_port.clone(),
-    });
 
     app.init_resource::<systems::showfile_events::ShowfileCleanSnapshotHash>();
     app.init_resource::<PeriodicDraftAutosaveTimer>();

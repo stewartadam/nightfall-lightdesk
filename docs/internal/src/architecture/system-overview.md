@@ -166,12 +166,14 @@ The engine reports what it supports to the UI as runtime capabilities, so the UI
 
 ### Both hosts share one show plugin list
 
-A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate owns the list of show plugins and their order as the `ShowPlugins` plugin group, and every host builds it. Each host then inserts its own plugins next to the shared ones it depends on.
+A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, undo, client bridge, actions, fixtures, scene objects, and the fixture compositor), `DeskPlugins` (desk, programmer, cues, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
 
-- The native hosts build `NativeShowPlugins`, which adds the websocket, FX module, audio, fixture library, and object library plugins to `ShowPlugins`. They add the input and output plugin groups and the systems that load, save, and swap showfiles separately.
-- The browser demo builds `ShowPlugins` with a timeline plugin variant that asks the browser to play bundled audio, and adds a built-in fixture library that serves the compiled-in profiles. It has no sockets, threads, file system, or WASM runtime of its own, so it leaves out the native plugins above and the showfile handling systems, such as draft autosave and showfile loading.
+Nesting a group flattens its plugins into the parent's list, so a host can insert its own plugins next to any shared plugin they depend on, or disable one, wherever that plugin's group sits.
 
-When you add a show domain plugin, add it to `ShowPlugins` and both hosts pick it up. A plugin that needs a native-only service belongs in `NativeShowPlugins`; report the missing feature through the runtime capabilities so the demo UI can hide it. The `check:browser-demo-dependencies` script confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime.
+- The native hosts build `NativePlugins`. It adds audio after the engine, the websocket server after the fixture compositor, desk audio after the desk, the fixture and object libraries after macros, and FX modules after FX, then appends the output and input groups. The systems that load, save, and swap showfiles are added separately.
+- The browser demo builds `ShowPlugins` with a timeline plugin variant that asks the browser to play bundled audio, and adds a built-in fixture library after the fixture plugin. It has no sockets, threads, file system, or WASM runtime of its own, so it leaves out the native plugins above and the showfile handling systems, such as draft autosave and showfile loading.
+
+When you add a show domain plugin, add it to its domain group and both hosts pick it up. A plugin that needs a native-only service belongs in `NativePlugins`, inserted after the plugin it depends on; report the missing feature through the runtime capabilities so the demo UI can hide it. The `check:browser-demo-dependencies` script confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime.
 
 ## Inputs and outputs
 
@@ -233,7 +235,7 @@ The browser demo reads its packaged demo showfile, in the same format, when it s
 | Concept | Where to look |
 |---------|---------------|
 | Native engine assembly | `crates/app-runtime/src/composition.rs` |
-| Shared show plugin list | `crates/composition/src/lib.rs` |
+| Shared show plugin groups | `crates/composition/src/lib.rs` |
 | Native plugin groups | `crates/app-runtime/src/plugin_groups.rs` |
 | Engine session loop and showfile swaps | `crates/app-runtime/src/session.rs`, `crates/app-runtime/src/swap_orchestrator.rs`, `crates/app-runtime/src/world_factory.rs` |
 | Headless entry point | `crates/app-runtime/src/main.rs` |

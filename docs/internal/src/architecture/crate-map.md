@@ -146,7 +146,7 @@ Host crates assemble the others into programs.
 | `app-runtime` (`app-runtime`) | No | The native host library and the `nightfall-headless` binary: engine assembly, the session loop and showfile swaps, showfile storage, sample shows, logging, diagnostics, and error and usage reports. |
 | `browser-runtime` | Is the demo | The browser demo engine, built from the shared show plugins plus a built-in fixture library. |
 | `cli` | No | `nightfall-cli`, an interactive terminal client that sends commands to the engine over a websocket. |
-| `composition` | Yes | `ShowPlugins`, the show plugin list and order that every host builds. |
+| `composition` | Yes | The shared show plugin groups by domain (core, desk, FX, timecode), nested in `ShowPlugins` for every host to build. |
 | `desktop/app-tauri` (`app-tauri`) | No | The Tauri desktop shell and the `nightfall-app` binary. It lives outside `crates/`, and plain `cargo` commands leave it out unless you pass `-p app-tauri`. |
 
 ## What the WASM bridge exports
