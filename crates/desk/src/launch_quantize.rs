@@ -78,6 +78,8 @@ impl ArmedEntry {
 pub struct ArmedLaunches {
     /// Waiting operations, oldest first.
     entries: Vec<ArmedEntry>,
+    /// Commands of launches a show load dropped, still to be reported as failed.
+    dropped: Vec<Option<CommandId>>,
 }
 
 /// Returns what a clip operation does as an armed launch and the clips it addresses, or `None`
@@ -159,6 +161,24 @@ impl ArmedLaunches {
     /// Removes and returns every waiting operation, oldest first, to fire at once.
     pub fn take_all(&mut self) -> Vec<EngineOperationEnvelope<ClipOperation>> {
         self.entries.drain(..).map(|entry| entry.envelope).collect()
+    }
+
+    /// Drops every waiting launch because a show load replaced the clips they address.
+    ///
+    /// Clip IDs are only meaningful within one show, so a launch armed before the load would
+    /// otherwise start or stop whatever clip has the same ID in the new show. The dropped
+    /// commands are kept until [`Self::take_dropped`] hands them over to be reported as failed.
+    pub fn drop_all_for_show_load(&mut self) {
+        self.dropped.extend(
+            self.entries
+                .drain(..)
+                .map(|entry| entry.envelope.command_id),
+        );
+    }
+
+    /// Removes and returns the commands of launches a show load dropped.
+    pub fn take_dropped(&mut self) -> Vec<Option<CommandId>> {
+        std::mem::take(&mut self.dropped)
     }
 
     /// Returns whether no launch is waiting.
@@ -288,6 +308,22 @@ mod tests {
             vec![start_command, stop_command]
         );
         assert!(armed.is_empty());
+    }
+
+    /// Verifies a show load drops every waiting launch without firing it and hands back each
+    /// dropped command exactly once.
+    #[test]
+    fn show_load_drops_waiting_launches() {
+        let mut armed = ArmedLaunches::default();
+        let start = commanded(ClipOperation::Start(IdExpr::Single(1)));
+        let start_command = start.command_id;
+        armed.arm(5.0, start, false);
+        armed.drop_all_for_show_load();
+
+        assert!(armed.is_empty());
+        assert!(armed.take_due(f64::INFINITY).is_empty());
+        assert_eq!(armed.take_dropped(), vec![start_command]);
+        assert!(armed.take_dropped().is_empty());
     }
 
     /// Verifies launching now hands back every waiting operation and leaves none armed.
