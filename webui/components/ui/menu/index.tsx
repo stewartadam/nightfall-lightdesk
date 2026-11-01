@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { ArrowSquareOutIcon } from "@squidlab/phosphor-solid/arrow-square-out";
 import { CheckIcon } from "@squidlab/phosphor-solid/check";
 import { type JSX, Show, splitProps } from "solid-js";
 import { Dynamic } from "solid-js/web";
@@ -25,6 +26,11 @@ export interface MenuItemProps
   danger?: boolean;
   shortcut?: string;
   trailing?: JSX.Element;
+  /**
+   * Marks an item that opens outside the app, such as a web page in the browser, with a trailing
+   * arrow-out icon after its label and any shortcut.
+   */
+  external?: boolean;
   /** Secondary line under the label that wraps instead of truncating. */
   description?: JSX.Element;
 }
@@ -40,6 +46,7 @@ export function MenuItem(props: MenuItemProps) {
     "danger",
     "shortcut",
     "trailing",
+    "external",
     "description",
   ]);
   return (
@@ -74,6 +81,11 @@ export function MenuItem(props: MenuItemProps) {
       <Show when={local.trailing}>
         <span class="nf-menu-hint" aria-hidden="true">
           {local.trailing}
+        </span>
+      </Show>
+      <Show when={local.external}>
+        <span class="nf-menu-hint nf-menu-external" aria-hidden="true">
+          <ArrowSquareOutIcon />
         </span>
       </Show>
     </button>

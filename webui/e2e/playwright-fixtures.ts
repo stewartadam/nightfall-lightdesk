@@ -217,10 +217,22 @@ export const frontendOnlyTest = playwrightTest.extend<
     await use(context);
   },
 
-  /** Use an empty origin-neutral browser state for the embedded runtime. */
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
-  storageState: async ({}, use) => {
-    await use({ cookies: [], origins: [] });
+  /**
+   * Starts the embedded runtime from fresh browser state, except that the first-launch guide
+   * invitation counts as answered, so its notification does not cover header controls.
+   */
+  storageState: async ({ workerSlot }, use) => {
+    await use({
+      cookies: [],
+      origins: [
+        {
+          origin: workerSlot.baseURL,
+          localStorage: [
+            { name: "nightfall.guide.v1.dismissed", value: "true" },
+          ],
+        },
+      ],
+    });
   },
 });
 

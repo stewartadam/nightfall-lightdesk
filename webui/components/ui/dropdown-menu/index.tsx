@@ -116,6 +116,8 @@ interface DropdownMenuItemProps {
   checked?: boolean;
   disabled?: boolean;
   danger?: boolean;
+  /** Marks an item that opens a page in the browser instead of acting inside the app. */
+  external?: boolean;
 }
 
 interface DropdownMenuSubmenuProps {
@@ -220,6 +222,7 @@ export function DropdownMenuItem(props: DropdownMenuItemProps) {
       checked={props.checked}
       disabled={props.disabled}
       danger={props.danger}
+      external={props.external}
       onClick={handleClick}
     >
       {props.children}
