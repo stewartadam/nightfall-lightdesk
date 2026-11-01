@@ -158,11 +158,16 @@ export default function AppMenu(props: {
       <DropdownMenuItem icon={GraduationCapIcon} onClick={openWelcomeGuide}>
         Welcome Guide
       </DropdownMenuItem>
-      <DropdownMenuItem icon={BookOpenIcon} onClick={openDocumentation}>
+      <DropdownMenuItem
+        icon={BookOpenIcon}
+        external
+        onClick={openDocumentation}
+      >
         User Guide
       </DropdownMenuItem>
       <DropdownMenuItem
         icon={QuestionIcon}
+        external
         onClick={() => openFeedbackPage("feedback")}
       >
         Give Feedback
@@ -184,6 +189,7 @@ export default function AppMenu(props: {
         </Show>
         <DropdownMenuItem
           icon={QuestionIcon}
+          external
           onClick={() => openFeedbackPage("bug")}
         >
           Report a Bug

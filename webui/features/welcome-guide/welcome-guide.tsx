@@ -34,6 +34,7 @@ import {
   openOrFocusPanelDefinition,
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
+import { testHooksEnabled } from "../../lib/test-mode";
 import {
   activeInstances,
   clips,
@@ -93,26 +94,51 @@ import "./welcome-guide.css";
 
 const log = getLogger(import.meta.url);
 
-/** Offers an unobtrusive invitation to the guide until the user opens or dismisses it. */
-export function GuideInvitation() {
-  const dismissed = useStore(guideDismissed);
-  const opened = useStore(guideOpen);
+/**
+ * Whether an end-to-end test asked to leave out the invitation. Most specs clear browser storage,
+ * which would otherwise bring the notification back over the workspace they are testing.
+ */
+function guideInvitationSkippedByTest(): boolean {
   return (
-    <Show when={!dismissed() && !opened()}>
-      <aside class="nf-guide-invitation" aria-label="Welcome to Nightfall">
-        <div>
-          <strong>New to Nightfall?</strong>
-          <p>Take a short orientation, then make your first lights.</p>
-        </div>
-        <Button size="compact" variant="primary" onClick={openWelcomeGuide}>
-          Take the tour
-        </Button>
-        <Button size="compact" onClick={closeWelcomeGuide}>
-          Explore on my own
-        </Button>
-      </aside>
-    </Show>
+    testHooksEnabled() &&
+    (window as { __nightfallSkipGuideInvitation?: boolean })
+      .__nightfallSkipGuideInvitation === true
   );
+}
+
+/**
+ * Invites a first-time user to the guide with a notification that has no close button, so it
+ * stays until they pick "Take the tour" or "Explore on my own". Either choice, or opening the
+ * guide from a menu, records the invitation as answered and withdraws it.
+ */
+export function GuideInvitation() {
+  if (guideInvitationSkippedByTest()) return null;
+  const dismissed = useStore(guideDismissed);
+  let invited = false;
+  let closeInvitation: (() => void) | undefined;
+
+  /** Shows the invitation once per page load while it is unanswered, and withdraws it once answered. */
+  createEffect(() => {
+    if (dismissed()) {
+      closeInvitation?.();
+      closeInvitation = undefined;
+      return;
+    }
+    if (invited) return;
+    invited = true;
+    closeInvitation = pushToast(
+      "info",
+      "Take a short orientation, then make your first lights.",
+      0,
+      [
+        { label: "Take the tour", onClick: openWelcomeGuide },
+        { label: "Explore on my own", onClick: closeWelcomeGuide },
+      ],
+      { title: "New to Nightfall?", closable: false },
+    );
+  });
+
+  return null;
 }
 
 /** The header command input, which steps teaching typed commands point at. */

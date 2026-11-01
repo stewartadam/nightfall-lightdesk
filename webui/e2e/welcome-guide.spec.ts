@@ -74,6 +74,18 @@ async function openSample(page: Page, offscreenCanvas = true) {
 }
 
 /**
+ * Opens the lesson library from the app menu's Welcome Guide item, which is how users reach the
+ * guide in every runtime.
+ */
+async function openWelcomeGuide(page: Page) {
+  await page.locator('[title="Menu"]').click();
+  await page
+    .locator('[data-menu-kind="dropdown"]')
+    .getByRole("button", { name: "Welcome Guide" })
+    .click();
+}
+
+/**
  * Starts a lesson from the open library and waits until it has switched to the Lesson layout
  * and shows its first step, so later clicks cannot land while the switch is still in progress.
  */
@@ -151,7 +163,7 @@ test("guide preserves divider grips at panel minimum widths", async ({
 }, testInfo) => {
   await openSample(page);
   await page.setViewportSize({ width: 1200, height: 1000 });
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const divider = page
     .locator(
       ".dv-dockview .dv-horizontal > .dv-sash-container > .dv-sash.dv-disabled",
@@ -186,7 +198,7 @@ test("guide resizes the whole app and leaves right-hand panels clickable", async
   await openSample(page);
   const app = page.locator(".nf-app-viewport");
   const original = await app.boundingBox();
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await expect
     .poll(async () => (await app.boundingBox())!.width)
@@ -254,7 +266,7 @@ test("guide leaves Status Display and Fixtures edge tabs reachable", async ({
   page,
 }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   // Narrower windows move some bottom tabs into the overflow menu, which is covered elsewhere.
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -303,7 +315,7 @@ test("floating lessons provide context, selectable commands and manual placement
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await reachStep(page, "Select lights");
@@ -418,7 +430,7 @@ test("guide accepts stored cue identity without its suggested label", async ({
   });
   await command.fill("fix 370>373 @ 100 red @ 100 green @ 0 blue @ 0");
   await command.press("Enter");
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await reachStep(page, "Store the red cue");
@@ -452,7 +464,7 @@ test("guide content waits for prerequisites and renders text after actions", asy
       text: "Text after the action callout.",
     });
   });
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await removeLessonPanel(page, "panel-Visualizer");
@@ -515,7 +527,7 @@ test("guide content waits for prerequisites and renders text after actions", asy
 /** Shows prerequisite shortcuts again when their panels become hidden, collapsed, or closed. */
 test("guide shortcuts follow panel visibility", async ({ page }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await reachStep(page, "Bring up the lights");
@@ -604,7 +616,7 @@ test("programmer columns fit selected sample fixtures", async ({
 /** Places Stop guidance above the timeline, centered on its target without covering the panel. */
 test("Stop guidance prefers above the timeline", async ({ page }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Welcome to Nightfall/);
   await guide.getByRole("button", { name: NEXT_STEP }).click();
@@ -653,7 +665,7 @@ test("welcome basics toggles a clip and opens properties", async ({
   page,
 }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Welcome to Nightfall/);
   await expect(page.locator(".nf-guide-highlight")).toBeVisible();
@@ -887,7 +899,7 @@ test("welcome saving explains unavailable disk storage", async ({
     const store = (window as any).appStores.runtimeCapabilities;
     store.set({ ...store.get(), disk_storage: false });
   });
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Welcome to Nightfall/);
   await reachStep(page, "Demo edits are temporary");
@@ -943,7 +955,7 @@ test("clip overwrite holds for Alt and advances the guide", async ({
         ([clip]) => clip.identifiers.id === 50,
       )[0],
   );
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await reachStep(page, /Create.*clip/);
@@ -992,7 +1004,7 @@ for (const platform of ["MacIntel", "Win32"]) {
     await openSample(page);
     if (platform === "Win32")
       await page.setViewportSize({ width: 1100, height: 1000 });
-    await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+    await openWelcomeGuide(page);
     const guide = page.getByTestId("welcome-guide");
     await openLesson(guide, /Your first lights/);
     await reachStep(page, "Find your way around");
@@ -1092,7 +1104,7 @@ test("lesson hot reload preserves the guide and Dockview layout", async ({
   test.skip(servesE2eBuild, REQUIRES_DEV_SERVER);
   // Worker CSS HMR currently throws in Vite's client (nightfall-lightdesk-bbg).
   await openSample(page, false);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await reachStep(page, "Bring up the lights");
@@ -1159,7 +1171,7 @@ test("lesson hot reload preserves the guide and Dockview layout", async ({
   });
   await page.screenshot({ path: testInfo.outputPath("guide-after-hmr.png") });
   await guide.getByRole("button", { name: "Exit welcome guide" }).click();
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   await expect(
     guide.getByRole("button", { name: /Updated lesson title/ }),
   ).toBeVisible();
@@ -1170,7 +1182,7 @@ test("sample setup waits for both panels and recognizes an existing workspace", 
   page,
 }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Welcome to Nightfall/);
   await removeLessonPanel(page, "panel-Visualizer");
@@ -1256,7 +1268,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   page,
 }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Welcome to Nightfall/);
   await expect(
@@ -1285,7 +1297,7 @@ test("sample timeline actions advance and pop-outs leave the guide undimmed", as
   await page
     .getByRole("button", { name: "Stop timeline", exact: true })
     .click();
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   await openLesson(guide, /Your first lights/);
   await expect(
     guide.getByRole("heading", { name: "Find your way around" }),
@@ -1356,7 +1368,7 @@ test("welcome guide teaches live selection and cue storage without blocking the 
   page,
 }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await expect(guide).toBeVisible();
   await openLesson(guide, /Your first lights/);
@@ -1447,7 +1459,7 @@ test("first lights builds its own Red and Blue sequence", async ({
       ),
     ),
   );
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await reachStep(page, "Store the red cue");
@@ -1751,42 +1763,34 @@ test("first lights builds its own Red and Blue sequence", async ({
     .toBe(0);
 });
 
-/** Keeps header actions equally tall and makes Guide return to the menu from active or closed lessons. */
-test("Guide always opens the lesson menu and matches header button height", async ({
+/** Makes the app menu's Welcome Guide item return to the lesson menu from active or closed lessons. */
+test("Welcome Guide menu item always opens the lesson menu", async ({
   page,
 }, testInfo) => {
   await openSample(page);
-  const button = page.getByRole("button", {
-    name: "Open Welcome Guide",
-    exact: true,
-  });
-  const search = page.getByRole("button", {
-    name: "Open command palette",
-    exact: true,
-  });
-  expect((await button.boundingBox())!.height).toBe(
-    (await search.boundingBox())!.height,
-  );
-  await button.click();
+  await expect(
+    page.getByRole("button", { name: "Open Welcome Guide", exact: true }),
+  ).toHaveCount(0);
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/i);
   await expect(guide.getByRole("button", { name: NEXT_STEP })).toBeVisible();
-  await button.click();
+  await openWelcomeGuide(page);
   await expect(
     guide.getByRole("button", { name: /Your first lights/i }),
   ).toBeVisible();
   await openLesson(guide, /Your first lights/i);
   await guide.getByRole("button", { name: "Exit welcome guide" }).click();
-  await button.click();
+  await openWelcomeGuide(page);
   await expect(
     guide.getByRole("button", { name: /Your first lights/i }),
   ).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("guide-header-menu.png") });
+  await page.screenshot({ path: testInfo.outputPath("guide-lesson-menu.png") });
 });
 
 /** Opens the lesson library and starts the named lesson from its first step. */
 async function startLesson(page: Page, lesson: RegExp) {
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, lesson);
   return guide;
@@ -1833,7 +1837,7 @@ test("lesson launch reveals the card after the layout transition", async ({
   page,
 }, testInfo) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await expect(
     guide.getByRole("button", { name: /Welcome to Nightfall/ }),
@@ -2124,7 +2128,7 @@ test("lessons use the Lesson layout through the save step", async ({
   await expect(
     activeLayout(page).locator('[data-component="ClipList"]'),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await expect(guide.getByTestId("guide-layout-notice")).toContainText(
     "Lesson layout",
@@ -2175,7 +2179,7 @@ test("finishing a lesson restores the user's layout and removes the Lesson layou
     name: /^Layout \d+: Lesson$/,
   });
   await page.getByRole("tab", { name: "Clips", exact: true }).click();
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Welcome to Nightfall/);
   await expect(lessonLayout).toHaveAttribute("aria-pressed", "true");
@@ -2202,7 +2206,7 @@ test("exiting a lesson restores the user's layout and removes the Lesson layout"
   const lessonLayout = page.getByRole("button", {
     name: /^Layout \d+: Lesson$/,
   });
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Welcome to Nightfall/);
   await expect(lessonLayout).toHaveAttribute("aria-pressed", "true");
@@ -2265,7 +2269,7 @@ test("collapsing Properties advances after the layout is reset", async ({
 /** Steps that ask for a typed command focus the command input, even without an explicit focus flag. */
 test("command steps focus the command input", async ({ page }) => {
   await openSample(page);
-  await page.getByRole("button", { name: "Open Welcome Guide" }).click();
+  await openWelcomeGuide(page);
   const guide = page.getByTestId("welcome-guide");
   await openLesson(guide, /Your first lights/);
   await reachStep(page, "Bring up the lights");
@@ -2287,40 +2291,57 @@ test("command steps focus the command input", async ({ page }) => {
   );
 });
 
-/** First launch shows the invitation; dismissing it hides it and the app menu still opens the guide. */
-test("first launch invites the user and Help reopens the guide", async ({
-  page,
-}, testInfo) => {
-  await page.addInitScript(() => {
-    if (!sessionStorage.getItem("nightfall.e2e.guideReset")) {
-      sessionStorage.setItem("nightfall.e2e.guideReset", "1");
-      localStorage.removeItem("nightfall.guide.v1.dismissed");
-    }
-  });
-  await openSample(page);
-  const invitation = page.getByRole("complementary", {
-    name: "Welcome to Nightfall",
-  });
-  await expect(invitation).toContainText("New to Nightfall?");
-  await page.screenshot({
-    path: testInfo.outputPath("guide-first-launch-invitation.png"),
-  });
-  await invitation.getByRole("button", { name: "Explore on my own" }).click();
-  await expect(invitation).toHaveCount(0);
-  await page.reload();
-  await waitForDockviewApp(page);
-  await expect(invitation).toHaveCount(0);
+/** Runs with the first-launch invitation that the other specs leave out. */
+test.describe("first launch", () => {
+  test.use({ guideInvitation: true });
 
-  await page.locator('[title="Menu"]').click();
-  const welcomeItem = page
-    .locator('[data-menu-kind="dropdown"]')
-    .getByRole("button", { name: "Welcome Guide" });
-  await expect(welcomeItem).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("guide-app-menu-entry.png"),
+  /**
+   * First launch shows the invitation as a notification without a close button; dismissing it keeps
+   * it away after a reload, and the app menu still opens the guide.
+   */
+  test("first launch invites the user and Help reopens the guide", async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem("nightfall.e2e.guideReset")) {
+        sessionStorage.setItem("nightfall.e2e.guideReset", "1");
+        localStorage.removeItem("nightfall.guide.v1.dismissed");
+      }
+    });
+    await openSample(page);
+    const invitation = page.locator('[data-component="Toast"]', {
+      hasText: "New to Nightfall?",
+    });
+    await expect(invitation).toBeVisible();
+    await expect(invitation.locator(".toast-close")).toHaveCount(0);
+    // Notifications stack below the header, so its controls stay clickable.
+    const header = (await page.locator(".nf-app-header").boundingBox())!;
+    await expect
+      .poll(async () => (await invitation.boundingBox())!.y)
+      .toBeGreaterThanOrEqual(header.y + header.height);
+    await expect(
+      invitation.getByRole("button", { name: "Take the tour" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("guide-first-launch-invitation.png"),
+    });
+    await invitation.getByRole("button", { name: "Explore on my own" }).click();
+    await expect(invitation).toHaveCount(0);
+    await page.reload();
+    await waitForDockviewApp(page);
+    await expect(invitation).toHaveCount(0);
+
+    await page.locator('[title="Menu"]').click();
+    const welcomeItem = page
+      .locator('[data-menu-kind="dropdown"]')
+      .getByRole("button", { name: "Welcome Guide" });
+    await expect(welcomeItem).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("guide-app-menu-entry.png"),
+    });
+    await welcomeItem.click();
+    await expect(page.getByTestId("welcome-guide")).toBeVisible();
   });
-  await welcomeItem.click();
-  await expect(page.getByTestId("welcome-guide")).toBeVisible();
 });
 
 /**
