@@ -144,7 +144,9 @@ pub mod prelude {
         ResolvedInputRoute, ResolvedInputRoutes, ResolvedInputSource, ResolvedInputTarget,
         ResolvedOutputDestinations, ResolvedTransportTarget, retain_route_fixtures,
     };
-    pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
+    pub use crate::selection::{
+        ResolvedSelectionCache, SelectionResolver, SpatialSelectionResolver,
+    };
     pub use crate::universe::{
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,
         InputDmxUniverses, InputUniverseStaleTimeout,

@@ -8,7 +8,6 @@
 
 //! Systems for step-based FX evaluation
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
@@ -21,7 +20,6 @@ use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstanceClockDiscontinuity, InstancePosition, InstanceStatus, Timebase,
 };
-use nightfall_selection::filter_existing_selection;
 
 use crate::events::PreviewStepFxDefinition;
 use crate::materialized_fx::MaterializedFx;
@@ -35,66 +33,6 @@ type StepFxEvaluationData = (
     Option<&'static mut StepFxLanePhaseOffsets>,
 );
 
-/// A step FX selection resolved against the rig, kept while its inputs are unchanged.
-struct CachedStepFxSelection {
-    /// Selection definition the entry was resolved from.
-    source: SpatialSelection,
-    /// Resolved selection filtered down to fixtures that exist.
-    resolved: ResolvedSelection,
-}
-
-/// Resolved step FX selections keyed by active FX entity.
-///
-/// Resolution depends only on the selection definition, the patched fixtures and the groups, so
-/// entries stay valid until the definition changes or either data provider changes.
-#[derive(Default)]
-pub struct StepFxSelectionCache {
-    entries: HashMap<Entity, CachedStepFxSelection>,
-}
-
-impl StepFxSelectionCache {
-    /// Returns the resolved selection for `entity`, resolving again only when `source` changed.
-    fn resolve(
-        &mut self,
-        entity: Entity,
-        source: &SpatialSelection,
-        selection_resolver: &SpatialSelectionResolver,
-        fixture_data_provider: &FixtureDataProviderExt,
-    ) -> &ResolvedSelection {
-        let entry = self
-            .entries
-            .entry(entity)
-            .and_modify(|cached| {
-                if cached.source != *source {
-                    *cached = resolve_step_fx_selection(
-                        source,
-                        selection_resolver,
-                        fixture_data_provider,
-                    );
-                }
-            })
-            .or_insert_with(|| {
-                resolve_step_fx_selection(source, selection_resolver, fixture_data_provider)
-            });
-        &entry.resolved
-    }
-}
-
-/// Resolves a step FX selection and drops fixtures that no longer exist.
-fn resolve_step_fx_selection(
-    source: &SpatialSelection,
-    selection_resolver: &SpatialSelectionResolver,
-    fixture_data_provider: &FixtureDataProviderExt,
-) -> CachedStepFxSelection {
-    CachedStepFxSelection {
-        source: source.clone(),
-        resolved: filter_existing_selection(
-            &selection_resolver.resolve(source).into_value(),
-            fixture_data_provider,
-        ),
-    }
-}
-
 /// Evaluates all active step-based FX and generates layers for compositor
 ///
 /// Resolved selections are cached per active FX and resolved again only when the FX selection,
@@ -104,19 +42,13 @@ pub fn evaluate_step_fx(
     preview_fx_query: Query<&PreviewStepFxDefinition>,
     mut active_fx_query: Query<StepFxEvaluationData, Without<ReleaseMarker>>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
-    group_data_provider: Res<DataProvider<Group>>,
     blueprint_data_provider: Res<DataProvider<Blueprint>>,
     parameter_query: Query<&Parameter>,
     selection_resolver: SpatialSelectionResolver,
-    mut selection_cache: Local<StepFxSelectionCache>,
+    mut selection_cache: Local<ResolvedSelectionCache<Entity>>,
     mut commands: Commands,
 ) {
-    if fixture_data_provider.is_changed() || group_data_provider.is_changed() {
-        selection_cache.entries.clear();
-    }
-    selection_cache
-        .entries
-        .retain(|entity, _| active_fx_query.contains(*entity));
+    selection_cache.retain(|entity| active_fx_query.contains(*entity));
 
     for (entity, active_fx, clock, mut lane_phase_offsets) in active_fx_query.iter_mut() {
         if !active_fx.is_playing {
@@ -149,12 +81,7 @@ pub fn evaluate_step_fx(
             continue;
         };
 
-        let selection = selection_cache.resolve(
-            entity,
-            &step_fx.selection,
-            &selection_resolver,
-            &fixture_data_provider,
-        );
+        let selection = selection_cache.resolve(entity, &step_fx.selection, &selection_resolver);
         if selection.is_empty() {
             tracing::warn!(
                 fx_id = step_fx.identifiers.id,

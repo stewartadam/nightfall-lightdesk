@@ -20,7 +20,6 @@ use nightfall_instances::{
     InstanceClock, InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstancePosition,
     InstanceStatus, Owner,
 };
-use nightfall_selection::filter_existing_selection;
 #[cfg(not(target_arch = "wasm32"))]
 use orx_parallel::*;
 use smart_default::SmartDefault;
@@ -43,41 +42,25 @@ impl HasIdentifiers for MaterializedFx {
 }
 
 impl MaterializedFx {
-    /// Creates a layer with fixture instructions from a materialized fx
-    pub fn to_layer(
-        &self,
-        selection_resolver: &SpatialSelectionResolver,
-        fixture_data_provider: &FixtureDataProviderExt,
-        parameter_query: &Query<&Parameter>,
-    ) -> Layer {
-        self.to_layer_at_elapsed(
-            selection_resolver,
-            fixture_data_provider,
-            parameter_query,
-            Duration::ZERO,
-        )
-    }
-
     /// Creates a layer with fixture instructions at a source-local elapsed time.
+    ///
+    /// `resolved_selection` is this FX's selection already resolved and filtered to existing
+    /// fixtures; callers rendering every frame keep it in a [`ResolvedSelectionCache`].
     pub fn to_layer_at_elapsed(
         &self,
-        selection_resolver: &SpatialSelectionResolver,
+        resolved_selection: &ResolvedSelection,
         fixture_data_provider: &FixtureDataProviderExt,
         parameter_query: &Query<&Parameter>,
         elapsed: Duration,
     ) -> Layer {
         let mut layer = Layer::new(self.identifiers().label.clone(), self.priority);
         layer.priority = self.priority;
-        let resolved_selection = filter_existing_selection(
-            &selection_resolver.resolve(&self.fx.selection).into_value(),
-            fixture_data_provider,
-        );
 
         let render_attribute = |(attribute, waveform): (&Attribute, &FxWaveform)| {
             let mut acc = (Vec::new(), Vec::new());
             let remaining = elapsed.as_micros() % waveform.cycle_length.as_micros();
             let ratio = remaining as f32 / waveform.cycle_length.as_micros() as f32;
-            let samples = waveform.sample(&resolved_selection, Percentage::from(ratio));
+            let samples = waveform.sample(resolved_selection, Percentage::from(ratio));
 
             for (selection_index, sampled_value) in
                 std::iter::zip(resolved_selection.iter_non_empty_indexes(), samples.iter())
@@ -239,6 +222,9 @@ pub fn spawn_reconstructed_fx_for_clip(
 }
 
 /// System that paints materialized fx to layers
+///
+/// Selections are resolved once per FX entity and reused across frames until the FX selection,
+/// the patched fixtures or the groups change.
 pub fn paint_materialized_fx(
     mut query: Query<(
         Entity,
@@ -249,8 +235,10 @@ pub fn paint_materialized_fx(
     selection_resolver: SpatialSelectionResolver,
     fixture_data_provider: Res<FixtureDataProviderExt>,
     parameter_query: Query<&Parameter>,
+    mut selection_cache: Local<ResolvedSelectionCache<Entity>>,
     mut commands: Commands,
 ) {
+    selection_cache.retain(|entity| query.contains(*entity));
     query
         .iter_mut()
         .for_each(|(entity, mfx, existing_layer, clock)| {
@@ -259,8 +247,10 @@ pub fn paint_materialized_fx(
                 object_type: ObjectType::Fx,
                 uid: mfx.identifiers().uid,
             });
+            let resolved_selection =
+                selection_cache.resolve(entity, &mfx.fx.selection, &selection_resolver);
             let mut new_layer = mfx.to_layer_at_elapsed(
-                &selection_resolver,
+                resolved_selection,
                 &fixture_data_provider,
                 &parameter_query,
                 elapsed,
@@ -427,10 +417,14 @@ mod tests {
             .get(&world)
             .expect("test system parameters should be available");
 
-        let layer = materialized_fx.to_layer(
-            &selection_resolver,
+        let mut selection_cache = ResolvedSelectionCache::default();
+        let resolved_selection =
+            selection_cache.resolve((), &materialized_fx.fx.selection, &selection_resolver);
+        let layer = materialized_fx.to_layer_at_elapsed(
+            resolved_selection,
             &fixture_data_provider,
             &parameter_query,
+            Duration::ZERO,
         );
 
         assert_eq!(layer.absolute.len(), 2);

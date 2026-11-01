@@ -266,6 +266,8 @@ pub struct FlowInstance {
     nodes: HashMap<FlowNodeId, FlowNodeInstance>,
     /// Last source-local evaluation position for deterministic time-based nodes.
     last_position: Duration,
+    /// Resolved selection inputs of waveform FX nodes, reused until the input or the rig changes.
+    waveform_resolved_selections: ResolvedSelectionCache<FlowNodeId>,
     /// Cached selections for waveform FX nodes to allow release.
     waveform_selections: HashMap<FlowNodeId, HashSet<FixtureRef>>,
     /// Cached attribute labels for waveform FX nodes to allow release.
@@ -290,6 +292,7 @@ impl FlowInstance {
             last_sent_triggers: HashMap::new(),
             nodes: HashMap::new(),
             last_position: Duration::ZERO,
+            waveform_resolved_selections: ResolvedSelectionCache::default(),
             waveform_selections: HashMap::new(),
             waveform_attributes: HashMap::new(),
             waveform_phases: HashMap::new(),
@@ -488,6 +491,9 @@ pub fn evaluate_flow_instances(
         let mut has_layer = false;
 
         let mut nodes = std::mem::take(&mut instance.nodes);
+        let mut waveform_resolved_selections =
+            std::mem::take(&mut instance.waveform_resolved_selections);
+        waveform_resolved_selections.retain(|node_id| node_lookup.contains_key(node_id));
         let mut waveform_selections = std::mem::take(&mut instance.waveform_selections);
         let mut waveform_attributes = std::mem::take(&mut instance.waveform_attributes);
         let mut waveform_phases = std::mem::take(&mut instance.waveform_phases);
@@ -562,6 +568,7 @@ pub fn evaluate_flow_instances(
                         &inputs,
                         &selection_resolver,
                         &fixture_data_provider,
+                        &mut waveform_resolved_selections,
                         &mut waveform_selections,
                         &mut waveform_attributes,
                         &mut waveform_phases,
@@ -608,6 +615,7 @@ pub fn evaluate_flow_instances(
             }
         }
         instance.nodes = nodes;
+        instance.waveform_resolved_selections = waveform_resolved_selections;
         instance.waveform_selections = waveform_selections;
         instance.waveform_attributes = waveform_attributes;
         instance.waveform_phases = waveform_phases;
