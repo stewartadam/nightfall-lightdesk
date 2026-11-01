@@ -15,8 +15,10 @@ import {
 } from "../../state/appStores";
 import type * as types from "../../types";
 import { setAttributeMetadata } from "../attribute-metadata";
+import { jsonValuesEqual } from "../json-equal";
 import { getLogger } from "../logger";
 import { setStoreAction } from "../nanostore-action";
+import { opaqueToSolidStores } from "../solid-opaque";
 import { arrayToUidMap } from "./handler-utils";
 import type { WsMessageHandlerRegistry } from "./message-registry";
 import type { AnyWsMessage } from "./types";
@@ -28,6 +30,10 @@ export function registerFixtureHandlers(
   registry: WsMessageHandlerRegistry<AnyWsMessage>,
 ): void {
   registry.register("FixtureDefinitions", (message) => {
+    const previous = fixtures.get();
+    for (const fixture of message.data) {
+      adoptDefinition(fixture, previous[fixture.identifiers.uid]);
+    }
     setStoreAction(
       fixtures,
       "Receive FixtureDefinitions",
@@ -74,6 +80,30 @@ export function registerFixtureHandlers(
   registry.register("FixtureCommand", (message) => {
     handleFixtureCommand(message.data as unknown as types.FixtureCommand);
   });
+}
+
+/**
+ * Keeps a fixture's profile definition (its elements) out of the deep Solid
+ * stores that mirror the fixture snapshot. The definition is most of the
+ * snapshot's size and only ever arrives whole, so stores hold each element by
+ * reference instead of walking and proxying it on every FixtureDefinitions.
+ *
+ * Elements equal to the ones already held keep their previous object, so a
+ * snapshot only replaces (and re-renders) the elements that actually changed.
+ */
+function adoptDefinition(
+  fixture: types.Fixture,
+  previous: types.Fixture | undefined,
+): void {
+  const elements = fixture.elements;
+  for (let index = 0; index < elements.length; index++) {
+    const held = previous?.elements[index];
+    if (held && jsonValuesEqual(held, elements[index])) {
+      elements[index] = held;
+    } else {
+      opaqueToSolidStores(elements[index]);
+    }
+  }
 }
 
 /** Placement vector update that sets either every component or a single axis. */
