@@ -20,17 +20,41 @@
   border: 0;
   background: transparent;
 }
-.nf-field-group > .nf-button {
+/*
+ * Buttons join the group's border whether they sit directly in the group or
+ * lead a wrapper holding just that one button, such as Mappable or Tooltip;
+ * the wrapper's position in the group decides which side gets the divider.
+ */
+.nf-field-group > .nf-button,
+.nf-field-group
+  > :where(:not(.nf-button):not(:has(> .nf-button ~ .nf-button)))
+  > .nf-button:where(:first-child) {
   border: 0;
   border-radius: 0;
 }
-.nf-field-group > .nf-button:first-child {
+.nf-field-group > .nf-button:first-child,
+.nf-field-group
+  > :where(:first-child:not(.nf-button):not(:has(> .nf-button ~ .nf-button)))
+  > .nf-button:where(:first-child) {
   border-right: 1px solid var(--line, #3d4645);
   border-radius: var(--nf-corner-radius, 6px) 0 0 var(--nf-corner-radius, 6px);
 }
-.nf-field-group > .nf-button:last-child {
+.nf-field-group > .nf-button:last-child,
+.nf-field-group
+  > :where(:last-child:not(.nf-button):not(:has(> .nf-button ~ .nf-button)))
+  > .nf-button:where(:first-child) {
   border-left: 1px solid var(--line, #3d4645);
   border-radius: 0 var(--nf-corner-radius, 6px) var(--nf-corner-radius, 6px) 0;
+}
+/* Two button segments side by side share the first one's divider. */
+.nf-field-group
+  > :where(.nf-button, :has(> .nf-button:first-child)):first-child
+  + .nf-button:last-child,
+.nf-field-group
+  > :where(.nf-button, :has(> .nf-button:first-child)):first-child
+  + :where(:last-child:not(.nf-button))
+  > .nf-button:where(:first-child) {
+  border-left: 0;
 }
 .nf-input-suffix {
   display: inline-flex;

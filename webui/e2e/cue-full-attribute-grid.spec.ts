@@ -174,7 +174,7 @@ async function storeOwnedFullAttributeData(
     await createFixture(
       targetFixtureId,
       "12-segment RGBW Bar",
-      "RGBW",
+      "Segments",
       "Owned Full Attribute RGBW Pixels",
     );
     await createFixture(

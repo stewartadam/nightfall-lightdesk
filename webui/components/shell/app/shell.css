@@ -37,7 +37,7 @@
   background: transparent;
   color: #ebeeed;
 }
-.nf-header-command-group > [data-command-programmer-clear] {
+.nf-header-command-group.nf-field-group [data-command-programmer-clear] {
   padding: 0;
   border-radius: 0 calc(var(--nf-corner-radius) - 1px)
     calc(var(--nf-corner-radius) - 1px) 0;

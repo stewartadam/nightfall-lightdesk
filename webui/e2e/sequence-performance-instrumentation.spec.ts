@@ -16,7 +16,7 @@ const SEQUENCE_PANEL_ID = "panel-SequenceList-performance-e2e";
 const INSTRUMENTATION_PANEL_ID = "panel-Instrumentation-sequence-performance";
 const REPRESENTATIVE_STORE_SCOPES = [
   "routes",
-  "dmx-universe-data",
+  "dmx-universe-list",
   "fixtures",
   "flows",
   "parameters",
@@ -110,6 +110,52 @@ function instrumentationPanel(page: Page) {
   );
 }
 
+/**
+ * Asserts that a Performance Metrics row whose scope contains the given text is visible, scrolling
+ * the virtualized grid to it. Scopes are listed alphabetically and every instrumented store adds
+ * rows, so a scope late in the alphabet sits below the grid's visible height, and rows recorded
+ * meanwhile can push it back out of view; each poll scrolls again before checking visibility.
+ */
+async function expectMetricsScopeVisible(
+  panel: ReturnType<typeof instrumentationPanel>,
+  scopeText: string,
+): Promise<void> {
+  const grid = panel
+    .getByRole("grid", { name: "Performance metrics" })
+    .locator('[data-grid-kind="tanstack"]');
+  const scopeCell = grid
+    .locator('[data-grid-column-key="scope"]')
+    .filter({ hasText: scopeText })
+    .first();
+  await expect(grid).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        await grid.evaluate(async (element, text) => {
+          /** Returns whether a scope cell containing the text is rendered in the grid window. */
+          const rendered = () =>
+            Array.from(
+              element.querySelectorAll('[data-grid-column-key="scope"]'),
+            ).some((cell) => cell.textContent?.includes(text));
+          const steps = 40;
+          for (let step = 0; step <= steps; step += 1) {
+            if (rendered()) return;
+            element.scrollTop = Math.round(
+              ((element.scrollHeight - element.clientHeight) * step) / steps,
+            );
+            element.dispatchEvent(new Event("scroll", { bubbles: true }));
+            await new Promise<void>((resolve) =>
+              requestAnimationFrame(() => resolve()),
+            );
+          }
+        }, scopeText);
+        return scopeCell.isVisible();
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
 /** Triggers a sequence store notification without depending on backend data. */
 async function notifySequenceStore(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -180,12 +226,10 @@ test("sequence store listener metrics include mounted panel identity", async ({
   await openInstrumentationPanel(page);
   const panel = instrumentationPanel(page);
   await panel.getByRole("button", { name: /Performance Metrics/ }).click();
-  await expect(
-    panel.getByText(
-      `sequences.panel.SequenceList.${SEQUENCE_PANEL_ID}.listener`,
-      { exact: false },
-    ),
-  ).toBeVisible();
+  await expectMetricsScopeVisible(
+    panel,
+    `sequences.panel.SequenceList.${SEQUENCE_PANEL_ID}.listener`,
+  );
 });
 
 test("broad store listener metrics are installed for follow-up audits", async ({

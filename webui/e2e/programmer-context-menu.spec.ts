@@ -215,7 +215,7 @@ async function createOwnedProgrammerFixture(
             id: fixtureId,
             make: "Generic",
             model: multiElement ? "12-segment RGBW Bar" : "Moving Head RGBW",
-            mode: multiElement ? "RGBW" : "Spot",
+            mode: multiElement ? "Segments" : "Spot",
             label: "Owned Programmer Context Fixture",
             update_existing_ids: [],
             update_existing_only: false,
