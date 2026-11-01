@@ -34,6 +34,7 @@ The following table lists who uses launch quantize and what each needs:
 - Timeline and flow playback never wait, so they keep to their own grid.
 - Held **Flash** and **Swop** buttons always act at once.
 - Macros ignore launch quantize. Starting a macro never waits for the beat, and the clip launches its statements run fire at once. A macro runs its statements one after another, so if each launch waited on its own, `clip 1 go` then `clip 2 go` would land on two different bars.
+- A macro's clip start, Go, or stop also drops any launch still waiting for the same clip, so the latest instruction wins. A Go can't advance a clip twice, and a waiting stop can't undo a start the macro just made. Timeline launches don't do this yet.
 - Other clip commands, such as Go To, fire at once.
 
 ### Waiting launches

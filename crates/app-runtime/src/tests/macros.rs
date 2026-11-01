@@ -617,3 +617,32 @@ async fn macro_clip_launches_skip_launch_quantize() {
         "an operator's launch still waits, so quantize was on"
     );
 }
+
+/// With bar launch quantize on, a macro's clip stop drops a start the operator armed for the
+/// same clip, so the clip does not come on at the downbeat after the macro stopped it.
+#[tokio::test]
+async fn macro_clip_stop_cancels_an_armed_operator_start() {
+    let mut harness = MacroHarness::new(&[(1, "clip 3 stop", "")]);
+    let quantize = harness.submit(nightfall_tempo::TempoCommand::SetLaunchQuantize(
+        nightfall_tempo::LaunchQuantize::Bar,
+    ));
+    assert_eq!(harness.wait(quantize), CommandOutcome::succeeded());
+    harness.run_for(Duration::from_millis(50));
+
+    let armed_start = harness.eval("clip 3 start");
+    harness.step();
+    harness.step();
+    assert_eq!(
+        harness.armed_launches().len(),
+        1,
+        "the operator's start waits"
+    );
+
+    let started = harness.eval("macro 1 start");
+    assert_eq!(harness.wait(started), CommandOutcome::succeeded());
+    assert!(
+        harness.armed_launches().is_empty(),
+        "the macro's stop drops the waiting start"
+    );
+    assert_eq!(harness.wait(armed_start), CommandOutcome::succeeded());
+}

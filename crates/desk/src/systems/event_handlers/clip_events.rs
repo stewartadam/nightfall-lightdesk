@@ -572,11 +572,21 @@ pub fn forward_clip_ingress_actions(
             continue;
         };
         let operation = EngineOperationEnvelope::for_command(envelope, action);
+        let macro_statement = responder.is_macro_statement(envelope.command_id);
+        if macro_statement
+            && !armed.is_empty()
+            && let Some((_, clip_id)) = quantized_action(&operation.operation)
+        {
+            let cancelled = armed.bypass_change_detection().cancel_for(clip_id);
+            if !cancelled.is_empty() {
+                armed.set_changed();
+            }
+            for command_id in cancelled {
+                complete_clip_command(&mut responder, command_id);
+            }
+        }
         let quantized = quantized_action(&operation.operation)
-            .filter(|_| {
-                origin_follows_launch_quantize(&envelope.origin)
-                    && !responder.is_macro_statement(envelope.command_id)
-            })
+            .filter(|_| origin_follows_launch_quantize(&envelope.origin) && !macro_statement)
             .map(|(_, clip_id)| clip_id.expand());
         let target_beat = quantized
             .as_ref()
