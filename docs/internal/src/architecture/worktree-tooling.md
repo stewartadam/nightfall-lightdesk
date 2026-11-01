@@ -48,7 +48,7 @@ Pre-start hooks block until they finish. Post-start hooks run in the background 
 
 The `[aliases]` table adds `wt done`, which removes landed branches through `scripts/worktree-done.mjs`, and `wt service`, which runs `worktree-dashboard/worktree-service.mjs` with the worktree path. Worktrunk reads aliases and hooks from the `wt.toml` of the worktree you run it in, so a change to them reaches a worktree only once its branch includes the change.
 
-Claude Code doesn't read `wt.toml`. Its `WorktreeCreate` and `WorktreeRemove` hooks in `.claude/settings.json` run `scripts/claude-worktree-hook.mjs`, which calls `wt switch --create` and `wt remove`, so the same project hooks run for agent worktrees.
+Claude Code doesn't read `wt.toml`. Its `WorktreeCreate` and `WorktreeRemove` hooks in `.claude/settings.json` run `scripts/claude-worktree-hook.mjs`, which calls `wt switch --create` and `wt remove`, so the same project hooks run for agent worktrees. The hook and the dashboard's create endpoint share `worktree-dashboard/worktree-create.mjs`, which checks out a branch that exists locally or on `origin` and creates any other name from `origin/HEAD`.
 
 ## How the dashboard tracks a service
 
@@ -92,6 +92,7 @@ The API listens on `127.0.0.1:4780` by default. `NIGHTFALL_WORKTREE_DASHBOARD_HO
 |---|---|---|
 | `GET /health` | None | Returns `{"ok": true}`. |
 | `GET /api/worktrees` | None | Returns a snapshot of every worktree with its ports, URLs, managed records, and observed ports. |
+| `POST /api/worktrees` | `branch` | Creates a worktree for the branch through `wt switch`, running the project hooks. Returns 400 for an empty name or one starting with `-`, and 409 with Worktrunk's error when it refuses. A branch that already has a worktree returns it with `action: "existing"`. |
 | `POST /api/worktrees/<id>/start` | `service`, `sample-data` | Starts services. Returns 400 when the worktree has no `.env`. |
 | `POST /api/worktrees/<id>/stop` | `service` | Stops services and clears their ports. |
 | `POST /api/worktrees/<id>/recycle` | `service`, `sample-data` | Stops and starts services. |
@@ -120,6 +121,7 @@ The dashboard page is a Solid app in `webui/worktree-dashboard.tsx`. The Vite de
 | `scripts/claude-worktree-hook.mjs` | Routes Claude Code worktrees through `wt`. |
 | `scripts/worktree-done.mjs` | The `wt done` alias. |
 | `worktree-dashboard/worktree-dashboard.mjs` | The dashboard API, service definitions, and process management. |
+| `worktree-dashboard/worktree-create.mjs` | Worktree creation for the API and the Claude Code hook. |
 | `worktree-dashboard/worktree-remove.mjs` | Worktree removal for the API. |
 | `worktree-dashboard/dashboard-client.mjs` | Shared client for the alias and the MCP server. |
 | `worktree-dashboard/worktree-service.mjs` | The `wt service` alias. |

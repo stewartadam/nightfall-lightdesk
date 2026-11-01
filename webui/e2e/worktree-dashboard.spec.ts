@@ -471,3 +471,151 @@ test("worktree dashboard cannot delete the primary worktree", async ({
   await page.getByRole("button", { name: "More actions" }).click();
   await expect(page.getByRole("button", { name: /^Delete/ })).toBeDisabled();
 });
+
+/**
+ * Verifies the search box narrows the table to worktrees whose branch or path holds
+ * every typed word, updates the header count, and explains an empty result.
+ */
+test("worktree dashboard filters worktrees by branch and path", async ({
+  page,
+}) => {
+  await page.route("**/worktree-api/worktrees", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        generatedAt: new Date("2026-11-01T12:00:00Z").toISOString(),
+        dashboardPid: 12345,
+        worktrees: [
+          worktree({ branch: "develop", envExists: true, port: 3000 }),
+          worktree({
+            branch: "feat/fixture-search",
+            envExists: true,
+            port: 3010,
+          }),
+          worktree({ branch: "fix/dmx-rate", envExists: false, port: null }),
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/worktree-dashboard.html");
+  const search = page.getByRole("searchbox", { name: "Search worktrees" });
+  const metadata = page.getByTestId("worktree-dashboard-metadata");
+  await expect(metadata).toContainText("3 Worktrees");
+
+  await search.fill("FIXTURE");
+  await expect(
+    page.locator("strong", { hasText: "feat/fixture-search" }),
+  ).toBeVisible();
+  await expect(page.locator("strong", { hasText: "develop" })).toHaveCount(0);
+  await expect(page.locator("strong", { hasText: "fix/dmx-rate" })).toHaveCount(
+    0,
+  );
+  await expect(metadata).toContainText("1 of 3 Worktrees");
+  await page.screenshot({
+    path: test.info().outputPath("worktree-search.png"),
+  });
+
+  // Paths match too: the uninitialized worktree's directory is fix-dmx-rate.
+  await search.fill("nightfall-worktrees/fix-dmx");
+  await expect(
+    page.locator("strong", { hasText: "fix/dmx-rate" }),
+  ).toBeVisible();
+  await expect(page.getByText("Uninitialized worktrees")).toBeVisible();
+
+  await search.fill("no-such-branch");
+  await expect(
+    page.getByText('No worktrees match "no-such-branch".'),
+  ).toBeVisible();
+
+  await search.press("Escape");
+  await expect(metadata).toContainText("3 Worktrees");
+});
+
+/**
+ * Verifies typing a branch and pressing Enter asks the dashboard API to create its
+ * worktree, reports where it was made, clears the field, and keeps the name after a
+ * refusal so it can be corrected.
+ */
+test("worktree dashboard creates a worktree from a branch name", async ({
+  page,
+}) => {
+  const createRequests: URL[] = [];
+  await page.route(
+    (url) => url.pathname.endsWith("/worktree-api/worktrees"),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        const url = new URL(request.url());
+        createRequests.push(url);
+        const branch = url.searchParams.get("branch");
+        const ok = branch === "feat/new-panel";
+        await route.fulfill({
+          status: ok ? 200 : 409,
+          contentType: "application/json",
+          body: JSON.stringify(
+            ok
+              ? {
+                  ok: true,
+                  action: "created",
+                  message: "Created feat/new-panel",
+                  branch,
+                  path: "/tmp/nightfall-worktrees/feat-new-panel",
+                  details: [],
+                }
+              : {
+                  ok: false,
+                  action: "create",
+                  reason: "failed",
+                  message: `Invalid branch name ${branch}`,
+                  details: [],
+                },
+          ),
+        });
+        return;
+      }
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          generatedAt: new Date("2026-11-01T12:00:00Z").toISOString(),
+          dashboardPid: 12345,
+          worktrees: [
+            worktree({ branch: "develop", envExists: true, port: 3000 }),
+          ],
+        }),
+      });
+    },
+  );
+
+  await page.goto("/worktree-dashboard.html");
+  const field = page.getByRole("textbox", { name: "New worktree branch" });
+  const create = page.getByRole("button", { name: "Create" });
+  await expect(create).toBeDisabled();
+
+  await field.fill("bad..name");
+  await field.press("Enter");
+  await expect(
+    page.getByText("Failed to create bad..name: Invalid branch name bad..name"),
+  ).toBeVisible();
+  await expect(field).toHaveValue("bad..name");
+
+  await field.fill("feat/new-panel");
+  await page.screenshot({
+    path: test.info().outputPath("worktree-create-input.png"),
+  });
+  await create.click();
+  await expect(
+    page.getByText(
+      "Created feat/new-panel at /tmp/nightfall-worktrees/feat-new-panel",
+    ),
+  ).toBeVisible();
+  await expect(field).toHaveValue("");
+  expect(createRequests.map((url) => url.searchParams.get("branch"))).toEqual([
+    "bad..name",
+    "feat/new-panel",
+  ]);
+  await page.waitForTimeout(600);
+  await page.screenshot({
+    path: test.info().outputPath("worktree-created-toast.png"),
+  });
+});

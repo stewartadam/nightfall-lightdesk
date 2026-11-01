@@ -14,8 +14,8 @@ import { DatabaseIcon } from "@squidlab/phosphor-solid/database";
 import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
+import { GitBranchIcon } from "@squidlab/phosphor-solid/git-branch";
 import { RepeatIcon } from "@squidlab/phosphor-solid/repeat";
-import { SignInIcon } from "@squidlab/phosphor-solid/sign-in";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { TerminalWindowIcon } from "@squidlab/phosphor-solid/terminal-window";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -36,8 +36,12 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "./components/ui/dropdown-menu";
+import { Input, InputGroup } from "./components/ui/form-controls";
 import type { AppIcon } from "./components/ui/icon";
+import { SearchField } from "./components/ui/search-field";
+import { matchesSearchTerms, searchTerms } from "./components/ui/search-match";
 import { Table, TableScroll } from "./components/ui/table";
+import { Button } from "./components/ui/visual-language/button";
 import { writeClipboardText } from "./lib/clipboard";
 import { TOAST_DURATION_MS } from "./lib/constants";
 import { getLogger } from "./lib/logger";
@@ -122,6 +126,19 @@ interface RemoveWorktreeResponse {
   details: string[];
   /** How many changed files or unmerged commits there are in all. */
   total: number;
+}
+
+/** Body of a worktree creation request, whether it succeeded or was refused. */
+interface CreateWorktreeResponse {
+  ok: boolean;
+  /** On success, whether a worktree was added or the branch already had one. */
+  action?: "created" | "existing";
+  reason?: "invalid" | "failed";
+  message: string;
+  branch?: string;
+  path?: string;
+  /** Worktrunk's output lines behind a failure. */
+  details: string[];
 }
 
 interface ActionMenuItem {
@@ -528,20 +545,35 @@ function WorktreeDashboardApp() {
     createSignal<HTMLButtonElement | null>(null);
   let openActionMenuPanel: HTMLDivElement | undefined;
 
+  const [searchQuery, setSearchQuery] = createSignal("");
+  const [newBranch, setNewBranch] = createSignal("");
+  const [creatingBranch, setCreatingBranch] = createSignal<string | null>(null);
+
   const worktrees = createMemo(() => payload.worktrees);
+  /** Worktrees whose branch name or path contains every word typed in the search box. */
+  const visibleWorktrees = createMemo(() => {
+    const terms = searchTerms(searchQuery());
+    return worktrees().filter((worktree) =>
+      matchesSearchTerms(terms, [worktree.branch ?? undefined, worktree.path]),
+    );
+  });
   /** Worktrees with per-worktree configuration can be managed by the dashboard services. */
   const initializedWorktrees = createMemo(() =>
-    worktrees().filter((worktree) => worktree.envExists),
+    visibleWorktrees().filter((worktree) => worktree.envExists),
   );
   /** Worktrees missing .env are visible for orientation but grouped after managed entries. */
   const uninitializedWorktrees = createMemo(() =>
-    worktrees().filter((worktree) => !worktree.envExists),
+    visibleWorktrees().filter((worktree) => !worktree.envExists),
   );
+  /** Header status line: last refresh time, API PID, and how many worktrees the search shows. */
   const metadataText = createMemo(() => {
     if (!hasPayload()) {
       return "Waiting for dashboard state...";
     }
-    return `Updated ${new Date(payload.generatedAt).toLocaleTimeString()} | API PID ${payload.dashboardPid} | ${payload.worktrees.length} Worktrees`;
+    const total = payload.worktrees.length;
+    const shown = visibleWorktrees().length;
+    const count = shown === total ? `${total}` : `${shown} of ${total}`;
+    return `Updated ${new Date(payload.generatedAt).toLocaleTimeString()} | API PID ${payload.dashboardPid} | ${count} Worktrees`;
   });
 
   function worktreeLabel(worktreeId: string): string {
@@ -905,6 +937,47 @@ function WorktreeDashboardApp() {
   }
 
   /**
+   * Creates a worktree for the typed branch through the dashboard API, which runs
+   * Worktrunk with the repository's hooks. Existing branches (local or on origin) are
+   * checked out; other names become new branches from origin's default branch. The
+   * field is cleared once the worktree exists, and kept for correction on a refusal.
+   */
+  async function createWorktreeForBranch(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const branch = newBranch().trim();
+    if (!branch || creatingBranch()) return;
+    setCreatingBranch(branch);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_PATH}/worktrees?branch=${encodeURIComponent(branch)}`,
+        { method: "POST" },
+      );
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        const body = await response.text();
+        throw new Error(body || `Request failed (${response.status})`);
+      }
+      const result = (await response.json()) as CreateWorktreeResponse;
+      if (!result.ok) {
+        throw new Error(result.message);
+      }
+      setNewBranch("");
+      pushToast(
+        result.action === "existing" ? "info" : "success",
+        result.path ? `${result.message} at ${result.path}` : result.message,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      pushToast("error", `Failed to create ${branch}: ${message}`);
+      log.error("Failed to create worktree:", { error, branch });
+    } finally {
+      setCreatingBranch(null);
+      await refresh({ silent: true });
+    }
+  }
+
+  /**
    * Collects the less frequent per-worktree actions behind a "..." button.
    * Delete turns into Force delete while Shift is held.
    */
@@ -1073,37 +1146,68 @@ function WorktreeDashboardApp() {
           <h1 class="mt-2 text-xl font-semibold text-slate-900 md:text-2xl dark:text-slate-100">
             nightfall multi-worktree dashboard
           </h1>
-          <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            {metadataText()}
+          <p class="mt-1 flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
+            <span data-testid="worktree-dashboard-metadata">
+              {metadataText()}
+            </span>
+            <Button
+              variant="subtle"
+              size="inline"
+              aria-label="Refresh"
+              tooltip="Refresh"
+              onClick={() => void refresh()}
+              disabled={loading()}
+            >
+              <ArrowsClockwiseIcon
+                class={`size-3.5 ${loading() ? "animate-spin" : ""}`}
+                aria-hidden
+              />
+            </Button>
           </p>
-          <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
-            <span class="inline-flex items-center gap-1.5">
-              <span class="size-2.5 rounded-full bg-emerald-500" />
-              Online
-            </span>
-            <span class="inline-flex items-center gap-1.5">
-              <span class="size-2.5 rounded-full bg-rose-500" />
-              Offline
-            </span>
-          </div>
         </div>
-        <div class="mt-3 flex items-center gap-2 md:mt-0">
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700"
-            onClick={() => void refresh()}
-            disabled={loading()}
+        <div class="mt-3 flex flex-col gap-2 md:mt-0 md:w-80">
+          <SearchField
+            label="Search worktrees"
+            placeholder="Search branch or path"
+            value={searchQuery()}
+            onInput={(query) => {
+              // A filtered-out row would leave its open service menu anchored to nothing.
+              setOpenActionMenu(null);
+              setOpenActionMenuAnchor(null);
+              setSearchQuery(query);
+            }}
+            data-testid="worktree-search"
+          />
+          <form
+            class="flex items-center gap-2"
+            onSubmit={(event) => void createWorktreeForBranch(event)}
           >
-            <ArrowsClockwiseIcon class="size-4 text-slate-500" aria-hidden />
-            Refresh
-          </button>
-          <a
-            href="/"
-            class="inline-flex items-center gap-2 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:border-slate-500 dark:bg-slate-700 dark:hover:bg-slate-600"
-          >
-            <SignInIcon class="size-4 text-white" aria-hidden />
-            Main UI
-          </a>
+            <InputGroup class="min-w-0 flex-1 items-center">
+              <GitBranchIcon
+                class="mx-2 size-4 shrink-0 self-center text-neutral-400"
+                aria-hidden
+              />
+              <Input
+                aria-label="New worktree branch"
+                placeholder="Branch for new worktree"
+                autocomplete="off"
+                spellcheck={false}
+                value={newBranch()}
+                disabled={creatingBranch() !== null}
+                onInput={(event) => setNewBranch(event.currentTarget.value)}
+              />
+            </InputGroup>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!newBranch().trim() || creatingBranch() !== null}
+            >
+              <Show when={creatingBranch()} fallback="Create">
+                <ArrowsClockwiseIcon class="size-4 animate-spin" aria-hidden />
+                Creating
+              </Show>
+            </Button>
+          </form>
         </div>
       </header>
 
@@ -1543,6 +1647,17 @@ function WorktreeDashboardApp() {
           </Table>
         </TableScroll>
 
+        <Show
+          when={
+            hasPayload() &&
+            worktrees().length > 0 &&
+            visibleWorktrees().length === 0
+          }
+        >
+          <div class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+            No worktrees match "{searchQuery().trim()}".
+          </div>
+        </Show>
         <Show when={loading() && worktrees().length === 0}>
           <div class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
             Loading worktrees...

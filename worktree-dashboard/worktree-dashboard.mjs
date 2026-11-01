@@ -18,6 +18,7 @@ import { loadEnvFile } from "node:process";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
 import { SERVICE_SELECTORS } from "./dashboard-client.mjs";
+import { createWorktree } from "./worktree-create.mjs";
 import { removeWorktree } from "./worktree-remove.mjs";
 
 // Preserve launcher settings without inheriting the dashboard's dotenv file.
@@ -1342,6 +1343,16 @@ const server = http.createServer(async (req, res) => {
         dashboardPid: process.pid,
         worktrees,
       });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/api/worktrees") {
+      const result = await createWorktree({
+        branch: url.searchParams.get("branch") ?? "",
+        root: DASHBOARD_ROOT,
+      });
+      const status = result.ok ? 200 : result.reason === "invalid" ? 400 : 409;
+      jsonResponse(res, status, result);
       return;
     }
 
