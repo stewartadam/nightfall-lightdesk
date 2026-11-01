@@ -58,9 +58,13 @@ test("narrow header collapses the command input to a Console button", async ({
   await expect(nav.getByRole("textbox", { name: "Command input" })).toHaveCount(
     0,
   );
-  await expect(
-    nav.getByRole("button", { name: "Clear programmer" }),
-  ).toBeVisible();
+  const clearProgrammer = nav.getByRole("button", { name: "Clear programmer" });
+  await expect(clearProgrammer).toBeVisible();
+  // The two wrapped buttons share one divider inside the group's border.
+  await expect(openConsole).toHaveCSS("border-right-width", "1px");
+  await expect(openConsole).toHaveCSS("border-top-width", "0px");
+  await expect(clearProgrammer).toHaveCSS("border-left-width", "0px");
+  await expect(clearProgrammer).toHaveCSS("border-top-width", "0px");
   const box = await nav.boundingBox();
   expect(box?.height ?? 0).toBeLessThan(48);
   await page

@@ -317,7 +317,7 @@ async function prepareOwnedTanStackBackend(
           id: fixtureId,
           make: "Generic",
           model: isMultiElement ? "12-segment RGBW Bar" : "Moving Head RGBW",
-          mode: isMultiElement ? "RGBW" : "Spot",
+          mode: isMultiElement ? "Segments" : "Spot",
           label: `Owned TanStack Fixture ${fixtureId}`,
           update_existing_ids: [fixtureId],
           update_existing_only: true,

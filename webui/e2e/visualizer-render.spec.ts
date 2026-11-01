@@ -2735,7 +2735,7 @@ test("generic sample bars render their complete segment layouts", async ({
         id: 800 + index,
         make: "Generic",
         model,
-        mode: index === 1 ? "RGB" : "RGBW",
+        mode: ["Segments", "RGB", "RGBW"][index],
         label: model,
         update_existing_ids: [],
         update_existing_only: false,

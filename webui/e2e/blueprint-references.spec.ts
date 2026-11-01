@@ -66,7 +66,7 @@ async function openOwnedBlueprintApp(
           id: 314,
           make: "Generic",
           model: "12-segment RGBW Bar",
-          mode: "RGBW",
+          mode: "Segments",
           label: "Blueprint Pixel Bar 314",
           update_existing_ids: [],
           update_existing_only: false,
