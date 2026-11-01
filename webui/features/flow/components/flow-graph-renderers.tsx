@@ -92,6 +92,39 @@ function FlowPortRow(props: {
       !props.isConnected,
   );
 
+  // The number editor reads these from slider and input events, which run outside any Solid
+  // owner. Written inline as conditional props, each read there would create a computation that
+  // is never disposed, so they are resolved once per change here instead.
+  /** Shows the port's live value from the flow context when it has one, else its default. */
+  const numberValue = createMemo(() => {
+    const portId = props.port.port_id;
+    if (!flowContext || portId === undefined)
+      return resolveNumberValue(props.port);
+    return (
+      (flowContext.getDisplayValue(
+        props.nodeId,
+        portId,
+        props.port.default_value,
+      )?.data as number) ?? resolveNumberValue(props.port)
+    );
+  });
+  /**
+   * Sends each edit through the flow context's debounced updates when the port has one;
+   * without it the editor only reports settled values through its commit handler.
+   */
+  const numberInput = createMemo(() => {
+    const portId = props.port.port_id;
+    if (!flowContext || portId === undefined) return undefined;
+    const nodeId = props.nodeId;
+    const isInt = props.port.port_type === "int";
+    return (value: number) => {
+      flowContext.updateValue(nodeId, portId, {
+        type: isInt ? "Int" : "Number",
+        data: isInt ? Math.round(value) : value,
+      });
+    };
+  });
+
   const isInput = () => props.port.direction === "input";
 
   const isGenerator = () => GENERATOR_NODE_KINDS.has(props.nodeKind);
@@ -197,34 +230,9 @@ function FlowPortRow(props: {
         </Show>
         <Show when={showNumberEditor()}>
           <NumberEditor
-            value={
-              flowContext && props.port.port_id !== undefined
-                ? ((flowContext.getDisplayValue(
-                    props.nodeId,
-                    props.port.port_id,
-                    props.port.default_value,
-                  )?.data as number) ?? resolveNumberValue(props.port))
-                : resolveNumberValue(props.port)
-            }
+            value={numberValue()}
             port={props.port}
-            onInput={
-              flowContext && props.port.port_id !== undefined
-                ? (value) => {
-                    const flowValue: types.FlowValue = {
-                      type: props.port.port_type === "int" ? "Int" : "Number",
-                      data:
-                        props.port.port_type === "int"
-                          ? Math.round(value)
-                          : value,
-                    };
-                    flowContext.updateValue(
-                      props.nodeId,
-                      props.port.port_id!,
-                      flowValue,
-                    );
-                  }
-                : undefined
-            }
+            onInput={numberInput()}
             onCommit={(value) => {
               if (flowContext && props.port.port_id !== undefined) {
                 // Flush any pending debounced update immediately

@@ -56,6 +56,18 @@ export function VerticalRangeSlider(
   let sliderApi: API | undefined;
   let isUserInteracting = false;
 
+  // noUiSlider calls back outside any Solid owner, where reading a prop whose JSX expression is
+  // conditional would create a computation that is never disposed, so those callbacks only read
+  // these memos, resolved in the component's owner.
+  /** Resolves the controlled value. */
+  const value = createMemo(() => props.value);
+  /** Resolves the caller's edit and drag callbacks. */
+  const callbacks = createMemo(() => ({
+    onChange: props.onChange,
+    onDragStart: props.onDragStart,
+    onDragEnd: props.onDragEnd,
+  }));
+
   /** Resolves the lower bound for the fader. */
   const min = () => props.min ?? 0;
 
@@ -108,26 +120,26 @@ export function VerticalRangeSlider(
     sliderApi.on("start", () => {
       isUserInteracting = true;
       sliderRef?.classList.add("is-dragging");
-      props.onDragStart?.();
+      callbacks().onDragStart?.();
     });
 
     sliderApi.on("end", () => {
       isUserInteracting = false;
       sliderRef?.classList.remove("is-dragging");
-      props.onDragEnd?.();
+      callbacks().onDragEnd?.();
     });
 
     /** Publishes pointer and keyboard edits; initialization and programmatic sets do not emit slide. */
     sliderApi.on("slide", (_, __, values) => {
       const newValue = values[0];
-      if (newValue !== props.value) {
-        props.onChange(newValue);
+      if (newValue !== value()) {
+        callbacks().onChange(newValue);
       }
     });
 
     /** Mirrors external values without echoing updates or disrupting an active drag. */
     createEffect(() => {
-      const currentValue = props.value;
+      const currentValue = value();
       if (!sliderApi || isUserInteracting) return;
       sliderApi.set([currentValue], false);
     });

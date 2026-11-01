@@ -9,6 +9,7 @@
 import noUiSlider, { type API, PipsMode } from "nouislider";
 import {
   createEffect,
+  createMemo,
   For,
   type JSX,
   on,
@@ -68,6 +69,12 @@ export type RangeSliderProps = RangeSliderOptions &
       }
   );
 
+/** Edit and commit callbacks that take handle values in noUiSlider order, whatever the slider's mode. */
+interface SliderCallbacks {
+  onChange: (next: number[]) => void;
+  onCommit?: (next: number[]) => void;
+}
+
 /** Shares noUiSlider handles, keyboard interaction, and numeric inputs across scalar and bounded-range controls. */
 export function RangeSlider(props: RangeSliderProps): JSX.Element {
   let containerRef!: HTMLDivElement;
@@ -76,20 +83,43 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
   let dragging = false;
   /** Handle values as of the last commit or external update, used to skip commits that change nothing. */
   let committed: number[] = [];
+  // noUiSlider calls back outside any Solid owner, where reading a prop whose JSX expression is
+  // conditional would create a computation that is never disposed. Everything those callbacks
+  // need is therefore resolved here, in the component's owner, and only read from memos there.
   /** Returns the controlled handle values in noUiSlider order. */
-  const values = () =>
-    props.mode === "range" ? [...props.value] : [props.value];
+  const values = createMemo(() =>
+    props.mode === "range" ? [...props.value] : [props.value],
+  );
   /** Resolves the lower bound for slider and input constraints. */
-  const min = () => props.min ?? 0;
+  const min = createMemo(() => props.min ?? 0);
   /** Resolves the upper bound for slider and input constraints. */
-  const max = () => props.max ?? 100;
+  const max = createMemo(() => props.max ?? 100);
   /** Resolves the increment used by dragging, keys, and numeric entry. */
-  const step = () => props.step ?? 1;
+  const step = createMemo(() => props.step ?? 1);
   /** Resolves the displayed unit. */
-  const suffix = () => props.suffix ?? "%";
+  const suffix = createMemo(() => props.suffix ?? "%");
+  /** Resolves the caller's value formatter, if any. */
+  const format = createMemo(() => props.format);
+  /** Resolves the values a released drag settles on. */
+  const detents = createMemo(() => props.detents);
+  /** Adapts the caller's edit and commit callbacks to handle values in noUiSlider order. */
+  const callbacks = createMemo((): SliderCallbacks => {
+    if (props.mode === "range") {
+      const { onChange, onCommit } = props;
+      return {
+        onChange: (next) => onChange([next[0], next[1]]),
+        onCommit: onCommit && ((next) => onCommit([next[0], next[1]])),
+      };
+    }
+    const { onChange, onCommit } = props;
+    return {
+      onChange: (next) => onChange(next[0]),
+      onCommit: onCommit && ((next) => onCommit(next[0])),
+    };
+  });
   /** Produces readable values while retaining fractional steps. */
   const formatValue = (value: number) =>
-    props.format?.(value) ?? `${Number(value.toFixed(4))}${suffix()}`;
+    format()?.(value) ?? `${Number(value.toFixed(4))}${suffix()}`;
   /** Names each handle and its matching numeric input for assistive technology. */
   const label = (index: number) =>
     (typeof props.handleLabels === "string"
@@ -105,11 +135,11 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
   };
   /** Moves each value within the detent radius of a detent onto it. */
   const snapToDetents = (next: number[]) => {
-    const detents = props.detents;
-    if (!detents?.length) return next;
+    const targets = detents();
+    if (!targets?.length) return next;
     const radius = (max() - min()) * DETENT_RADIUS;
     return next.map((value) => {
-      const nearest = detents.reduce((best, detent) =>
+      const nearest = targets.reduce((best, detent) =>
         Math.abs(detent - value) < Math.abs(best - value) ? detent : best,
       );
       return Math.abs(nearest - value) <= radius ? nearest : value;
@@ -120,8 +150,7 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     const next = settledValues();
     if (next.every((value, index) => value === committed[index])) return;
     committed = next;
-    if (props.mode === "range") props.onCommit?.([next[0], next[1]]);
-    else props.onCommit?.(next[0]);
+    callbacks().onCommit?.(next);
   };
   /** Commits numeric input through the slider's step, bounds, and handle-order constraints. */
   const commitInput = (index: number, input: HTMLInputElement) => {
@@ -175,10 +204,9 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     const emitChange: Parameters<API["on"]>[1] = (_, __, unencoded) => {
       if (syncing) return;
       const next = unencoded.map((value) => Number(value.toFixed(10)));
-      if (props.mode === "range") {
-        if (next[0] !== props.value[0] || next[1] !== props.value[1])
-          props.onChange([next[0], next[1]]);
-      } else if (next[0] !== props.value) props.onChange(next[0]);
+      const current = values();
+      if (next.some((value, index) => value !== current[index]))
+        callbacks().onChange(next);
     };
     sliderApi.on("slide", emitChange);
     sliderApi.on("set", emitChange);
