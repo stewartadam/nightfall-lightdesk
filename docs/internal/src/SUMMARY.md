@@ -24,6 +24,7 @@
 
 # Feature requirements
 
+- [Launch quantize](requirements/launch-quantize.md)
 - [Macros](requirements/macros.md)
 
 # Working on Nightfall

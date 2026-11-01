@@ -516,6 +516,9 @@ pub fn advance_macro_runs(
             finish(&mut responder, &run);
             continue;
         }
+        // Statements keep the starting surface's origin; the mark tells handlers such as launch
+        // quantize that a macro, not a person, issued them.
+        responder.mark_macro_statement(command_id);
         pending.push(PayloadEnvelope::with_context(
             command_id,
             run.undo_id,

@@ -81,7 +81,7 @@ The first undo returns group 1 to white at intensity 20, the operator's value. T
 The following items are deliberately left out of the first version:
 
 - Parameters passed into a macro when it starts.
-- Starting a macro on the next beat or bar.
+- Starting a macro on the next beat or bar. Macros ignore launch quantize, and the clip launches a macro runs fire at once. See [Launch quantize](launch-quantize.md).
 - Macros on fader slots.
 - Script languages other than the command line.
 - Recording a macro from the operator's actions.
