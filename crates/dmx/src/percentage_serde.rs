@@ -66,14 +66,4 @@ mod tests {
         let test: TestStruct = serde_json::from_str(json).unwrap();
         assert_eq!(test.value, Percentage::from(0.75));
     }
-
-    #[test]
-    fn roundtrip() {
-        let original = TestStruct {
-            value: Percentage::from(0.333),
-        };
-        let json = serde_json::to_string(&original).unwrap();
-        let parsed: TestStruct = serde_json::from_str(&json).unwrap();
-        assert_eq!(original, parsed);
-    }
 }

@@ -248,27 +248,6 @@ pub(crate) struct OutboundInputContribution {
     pub is_stale: bool,
 }
 
-/// Deserialize and dispatch FixtureCommand from JSON.
-pub fn deserialize_fixture_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FixtureCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse FixtureCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
 /// Handle a client's request for a parameter keyframe.
 ///
 /// A client sends this after it detects a gap in the parameter frame sequence

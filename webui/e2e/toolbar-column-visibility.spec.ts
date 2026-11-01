@@ -62,44 +62,44 @@ test.beforeEach(async ({ page }) => {
   await waitForDockviewApp(page);
 });
 
-test("scene objects column visibility control is right aligned", async ({
-  page,
-}, testInfo) => {
-  await openPanel(page, "Scene Objects");
-  await expectToolbarColumnVisibilityRightAligned(
-    page.getByRole("button", { name: "Add object" }),
-  );
+/** Panels whose toolbar carries a column visibility control, with an anchor inside that toolbar. */
+const TOOLBAR_PANELS: ReadonlyArray<{
+  panel: string;
+  anchor: (page: Page) => Locator;
+}> = [
+  {
+    panel: "Scene Objects",
+    anchor: (page) => page.getByRole("button", { name: "Add object" }),
+  },
+  {
+    panel: "MIDI Input",
+    anchor: (page) => page.getByText("MIDI Mappings", { exact: true }),
+  },
+  {
+    panel: "OSC Input",
+    anchor: (page) => page.getByText("OSC Mappings", { exact: true }),
+  },
+  {
+    panel: "Programmer",
+    anchor: (page) =>
+      page
+        .locator('[data-panel-id="panel-ProgrammerGrid"]')
+        .getByRole("button", { name: "Column visibility" }),
+  },
+];
 
-  await page.screenshot({
-    path: testInfo.outputPath("scene-objects-toolbar-column-visibility.png"),
-    fullPage: true,
+for (const { panel, anchor } of TOOLBAR_PANELS) {
+  /** Verifies the panel toolbar keeps its column visibility control at the right edge. */
+  test(`${panel} column visibility control is right aligned`, async ({
+    page,
+  }, testInfo) => {
+    await openPanel(page, panel);
+    await expectToolbarColumnVisibilityRightAligned(anchor(page));
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `${panel.toLowerCase().replaceAll(" ", "-")}-toolbar-column-visibility.png`,
+      ),
+      fullPage: true,
+    });
   });
-});
-
-test("MIDI mapping column visibility control is right aligned", async ({
-  page,
-}, testInfo) => {
-  await openPanel(page, "MIDI Input");
-  await expectToolbarColumnVisibilityRightAligned(
-    page.getByText("MIDI Mappings", { exact: true }),
-  );
-
-  await page.screenshot({
-    path: testInfo.outputPath("midi-toolbar-column-visibility.png"),
-    fullPage: true,
-  });
-});
-
-test("OSC mapping column visibility control is right aligned", async ({
-  page,
-}, testInfo) => {
-  await openPanel(page, "OSC Input");
-  await expectToolbarColumnVisibilityRightAligned(
-    page.getByText("OSC Mappings", { exact: true }),
-  );
-
-  await page.screenshot({
-    path: testInfo.outputPath("osc-toolbar-column-visibility.png"),
-    fullPage: true,
-  });
-});
+}

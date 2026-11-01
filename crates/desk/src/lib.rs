@@ -121,13 +121,13 @@ impl Plugin for DeskPlugin {
 
         register_ingress_command::<DeskCommand>(app);
         register_engine_operation::<EvalOperation>(app);
-        register_ingress_command::<ClipCommand>(app);
+        register_client_command::<ClipCommand>(app, Undo::Captured);
         register_engine_operation::<ClipOperation>(app);
-        register_ingress_command::<GroupCommand>(app);
+        register_client_command::<GroupCommand>(app, Undo::Captured);
         app.add_message::<EngineOperationEnvelope<GroupOperation>>();
-        register_ingress_command::<MasterCommand>(app);
+        register_client_command::<MasterCommand>(app, Undo::Captured);
         app.add_message::<masters::MasterUpdate>();
-        register_ingress_command::<BlueprintCommand>(app);
+        register_client_command::<BlueprintCommand>(app, Undo::Captured);
         app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
         app.add_message::<BlueprintDefinitionChange>();
         app.init_resource::<BlueprintReferenceIndex>();
@@ -142,13 +142,13 @@ impl Plugin for DeskPlugin {
                 .in_set(ClientFeedback)
                 .before(websocket::forward_ui_notifications),
         );
-        register_ingress_command::<SettingsCommand>(app);
+        register_client_command::<SettingsCommand>(app, Undo::Skipped);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
-        register_ingress_command::<InstanceCommand>(app);
+        register_client_command::<InstanceCommand>(app, Undo::Captured);
         register_engine_operation::<PlaybackOperation>(app);
         register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
-        register_ingress_command::<FaderCommand>(app);
+        register_client_command::<FaderCommand>(app, Undo::Captured);
         app.add_message::<FaderUpdate>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
@@ -156,22 +156,6 @@ impl Plugin for DeskPlugin {
         app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();
 
         register_command_deserializer::<DeskCommand>(app, websocket::deserialize_desk_command);
-        register_command_deserializer::<GroupCommand>(app, websocket::deserialize_group_command);
-        register_command_deserializer::<MasterCommand>(app, websocket::deserialize_master_command);
-        register_command_deserializer::<ClipCommand>(app, websocket::deserialize_clip_command);
-        register_command_deserializer::<BlueprintCommand>(
-            app,
-            websocket::deserialize_blueprint_command,
-        );
-        register_command_deserializer::<SettingsCommand>(
-            app,
-            websocket::deserialize_settings_command,
-        );
-        register_command_deserializer::<InstanceCommand>(
-            app,
-            websocket::deserialize_playback_command,
-        );
-        register_command_deserializer::<FaderCommand>(app, websocket::deserialize_fader_command);
         register_update_deserializer(app, "FaderUpdate", websocket::deserialize_fader_update);
         register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
 

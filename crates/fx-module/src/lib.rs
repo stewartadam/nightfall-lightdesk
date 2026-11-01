@@ -270,7 +270,7 @@ impl Plugin for FxModulePlugin {
         app.insert_non_send(instances::FxModuleRuntimeStates::default());
         app.insert_non_send(instances::PreviewFxModuleRuntimeStates::default());
 
-        register_ingress_command::<FxModuleCommand>(app);
+        register_client_command::<FxModuleCommand>(app, Undo::Captured);
         app.add_message::<FxModulePreviewUpdate>();
         register_engine_operation::<events::FxModulePlaybackOperation>(app);
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
@@ -279,10 +279,6 @@ impl Plugin for FxModulePlugin {
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::FxModuleAstConverter,
         >();
-        register_command_deserializer::<FxModuleCommand>(
-            app,
-            websocket::deserialize_fx_module_command,
-        );
         register_update_deserializer(
             app,
             "FxModulePreviewUpdate",

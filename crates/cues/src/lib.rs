@@ -99,10 +99,10 @@ impl Plugin for CuePlugin {
         tracing::debug!("Registering CuePlugin");
         register_engine_operation::<CueOperation>(app);
         register_engine_operation::<CueLifecycleOperation>(app);
-        register_ingress_command::<CueCommand>(app);
+        register_client_command::<CueCommand>(app, Undo::Captured);
         register_engine_operation::<SequencePlaybackOperation>(app);
         register_engine_operation::<undo::RestoreSequencePosition>(app);
-        register_ingress_command::<events::CuePreviewCommand>(app);
+        register_client_command::<events::CuePreviewCommand>(app, Undo::Captured);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::CueAstConverter>();
 
         app.init_resource::<DataProvider<cue::Cue>>();
@@ -127,12 +127,6 @@ impl Plugin for CuePlugin {
             registry.register_operation::<SequencePlaybackOperation>();
             registry.register_operation::<undo::RestoreSequencePosition>();
         }
-
-        register_command_deserializer::<CueCommand>(app, crate::websocket::deserialize_cue_command);
-        register_command_deserializer::<events::CuePreviewCommand>(
-            app,
-            crate::websocket::deserialize_cue_preview_command,
-        );
 
         app.add_systems(
             PostUpdate,

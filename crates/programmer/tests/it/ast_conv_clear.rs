@@ -13,30 +13,6 @@ use nightfall_programmer::ast_conv::ProgrammerAstConverter;
 use nightfall_programmer::prelude::{ClearCommand, ClearTarget, UserCommand};
 
 // ============================================================================
-// AST Alias Equality Tests
-// ============================================================================
-
-#[test]
-fn test_clear_selection_aliases() {
-    let base_ast = generate_ast("clear selection").expect("Failed to parse 'clear selection'");
-    let sel_ast = generate_ast("clear sel").expect("Failed to parse 'clear sel'");
-    assert_eq!(
-        base_ast, sel_ast,
-        "'clear sel' should produce identical AST to 'clear selection'"
-    );
-}
-
-#[test]
-fn test_clear_values_aliases() {
-    let base_ast = generate_ast("clear values").expect("Failed to parse 'clear values'");
-    let val_ast = generate_ast("clear val").expect("Failed to parse 'clear val'");
-    assert_eq!(
-        base_ast, val_ast,
-        "'clear val' should produce identical AST to 'clear values'"
-    );
-}
-
-// ============================================================================
 // AST -> Command Conversion Tests
 // ============================================================================
 

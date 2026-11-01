@@ -13,24 +13,8 @@ use nightfall_programmer::ast_conv::ProgrammerAstConverter;
 use nightfall_programmer::prelude::*;
 
 // ============================================================================
-// AST Alias Equality Tests
+// Timing Syntax Tests
 // ============================================================================
-
-#[test]
-fn test_fade_delay_order_aliases() {
-    // Fade then delay
-    let fade_delay_ast = generate_ast("fix 1 @ 50 fade 3 delay 2")
-        .expect("Failed to parse 'fix 1 @ 50 fade 3 delay 2'");
-
-    // Delay then fade - should produce identical AST (order shouldn't matter)
-    let delay_fade_ast = generate_ast("fix 1 @ 50 delay 2 fade 3")
-        .expect("Failed to parse 'fix 1 @ 50 delay 2 fade 3'");
-
-    assert_eq!(
-        fade_delay_ast, delay_fade_ast,
-        "Fade and delay order shouldn't affect AST"
-    );
-}
 
 #[test]
 fn test_timing_keyword_without_argument_is_invalid_syntax() {

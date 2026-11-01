@@ -14,7 +14,6 @@
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::TimelineCommand;
 use crate::recording::{TimelineRecordingSessions, TimelineRecordingStates};
@@ -48,32 +47,6 @@ enum TimelineWsMessage<'a> {
     BeatgridDetectionReady(&'a BeatgridDetectionReady),
     /// Beatgrid detection failure notification
     BeatgridDetectionFailed(&'a BeatgridDetectionFailed),
-}
-
-/// Deserialize and dispatch TimelineCommand from JSON.
-///
-/// This function is registered with the `CommandDeserializerRegistry` to handle
-/// incoming timeline commands from the UI. It deserializes the JSON payload into a
-/// `TimelineCommand` and queues it through pending command dispatch so undo can
-/// capture an inverse before domain handlers mutate timeline state.
-pub fn deserialize_timeline_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: TimelineCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse TimelineCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
 }
 
 /// Forward timeline commands to the UI for reactive handling.
@@ -301,45 +274,4 @@ pub fn handle_resync_state(
     send_timeline_recording_previews(&recording_sessions, &broadcaster);
     send_timeline_lookahead_item_statuses(&lookahead_statuses, &broadcaster);
     send_timeline_planned_cues(&planned_cues, &broadcaster);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    /// Verifies websocket timeline commands pass through undo-aware pending dispatch.
-    fn deserialize_timeline_command_queues_pending_command_with_undo_id() {
-        let mut world = World::new();
-        world.insert_resource(PendingCommandBuffer::default());
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_timeline_command(
-            &mut world,
-            serde_json::json!({
-                "type": "StopTimeline",
-                "data": 9
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("timeline command should deserialize");
-
-        let pending_commands = world
-            .resource_mut::<PendingCommandBuffer>()
-            .drain()
-            .into_iter()
-            .collect::<Vec<_>>();
-        assert_eq!(pending_commands.len(), 1);
-        assert_eq!(pending_commands[0].command_id, command_id);
-        assert_eq!(pending_commands[0].undo_id, undo_id);
-        assert!(matches!(
-            pending_commands[0]
-                .payload
-                .as_any()
-                .downcast_ref::<TimelineCommand>(),
-            Some(TimelineCommand::StopTimeline(9))
-        ));
-    }
 }

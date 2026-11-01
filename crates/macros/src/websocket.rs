@@ -12,9 +12,7 @@ use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
-use crate::command::MacroCommand;
 use crate::runner::{MacroRunStatus, MacroRuns};
 
 /// Macro messages sent to clients.
@@ -26,25 +24,6 @@ enum MacroWsMessage<'a> {
     MacroDefinitions(&'a [Macro]),
     /// Every running macro body and the statement it is on.
     MacroRunStates(&'a [MacroRunStatus]),
-}
-
-/// Deserializes a macro command from a client and queues it for undo capture and dispatch.
-pub fn deserialize_macro_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: MacroCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse MacroCommand: {error}"))?;
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-    Ok(())
 }
 
 /// Collects macro definitions in ID order.

@@ -36,42 +36,7 @@ async function openOwnedToolbarAlignmentApp(page: Page): Promise<void> {
   await waitForDockviewApp(page);
 }
 
-test("programmer column visibility control is right aligned", async ({
-  page,
-}, testInfo) => {
-  await openOwnedToolbarAlignmentApp(page);
-
-  await page.getByText("Programmer", { exact: true }).first().click();
-  const programmerPanel = page.locator(
-    '[data-panel-id="panel-ProgrammerGrid"]',
-  );
-  const columnButton = programmerPanel.getByRole("button", {
-    name: "Column visibility",
-  });
-  await expect(columnButton).toBeVisible();
-
-  const metrics = await columnButton.evaluate((button) => {
-    const toolbar = button.closest('[data-component="PanelToolbar"]');
-    if (!toolbar) {
-      throw new Error("Programmer toolbar not found");
-    }
-
-    const buttonRect = button.getBoundingClientRect();
-    const toolbarRect = toolbar.getBoundingClientRect();
-    return {
-      buttonRight: buttonRect.right,
-      toolbarRight: toolbarRect.right,
-    };
-  });
-
-  expect(metrics.toolbarRight - metrics.buttonRight).toBeLessThanOrEqual(12);
-
-  await page.screenshot({
-    path: testInfo.outputPath("programmer-column-visibility-alignment.png"),
-    fullPage: true,
-  });
-});
-
+/** Verifies the CRUD list column visibility control lines up with the top of its grid. */
 test("CRUD list column visibility control is aligned with grid header", async ({
   page,
 }, testInfo) => {

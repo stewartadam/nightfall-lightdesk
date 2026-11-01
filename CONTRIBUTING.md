@@ -618,12 +618,19 @@ Performance specs are opt-in because their timings depend on the machine. `optic
   NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1 pnpm run test:webui-playwright webui/e2e/visualizer-playback-perf.spec.ts
   ```
 
+- The wall-clock latency and jitter specs (`command-ack-latency`, `sequence-store-latency`, `timeline-playhead-jitter`, `perf-repro-observe` and `visualizer-beam-overlap-perf`) fail on fixed millisecond or FPS thresholds that depend on host load. They are skipped unless `NIGHTFALL_TIMING_PERF=1` is set:
+
+  ```sh
+  NIGHTFALL_TIMING_PERF=1 pnpm run test:webui-playwright webui/e2e/command-ack-latency.spec.ts
+  ```
+
 | Variable | Effect |
 | --- | --- |
 | `NIGHTFALL_OPTICS_ARTIFACTS=1` | Attach optics images and metrics for passing tests too. |
 | `NIGHTFALL_VISUALIZER_ANTIALIAS_SWEEP=1` | Run the full backend × DPR × quality matrix of the antialias motion test instead of DPR 2 with the Medium and High presets. |
 | `NIGHTFALL_GDTF_BENCH_DIR` | Directory holding the GDTF bench archives. `gdtf-bench-visual`, `gdtf-bench-evaluation` and `gdtf-bench-argo-perf` are skipped without it. |
 | `NIGHTFALL_GDTF_BENCH_SCREENSHOTS=1` | Compare the unlit `gdtf-bench-visual` captures with the reviewed per-platform baselines. |
+| `NIGHTFALL_TIMING_PERF=1` | Enable the wall-clock latency and jitter specs (`command-ack-latency`, `sequence-store-latency`, `timeline-playhead-jitter`, `perf-repro-observe`, `visualizer-beam-overlap-perf`). |
 | `NIGHTFALL_OPTICAL_PLAYBACK_PERF=1` | Enable `optical-playback-perf.spec.ts` (set by `pnpm run visualizer:perf`). |
 | `NIGHTFALL_VISUALIZER_PERF=1` | Enable `gdtf-bench-argo-perf.spec.ts`, together with `NIGHTFALL_GDTF_BENCH_DIR`. |
 | `NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1` | Enable `visualizer-playback-perf.spec.ts`. |

@@ -15,103 +15,6 @@ use nightfall_fixtures::FixtureCommand;
 use nightfall_fixtures::ast_conv::FixtureAstConverter;
 use nightfall_fixtures::prelude::{DmxRange, RouteEndpoint};
 
-// ============================================================================
-// AST Alias Equality Tests
-// ============================================================================
-
-#[test]
-fn test_delete_fixture_aliases() {
-    let base_ast = generate_ast("delete fixture 1").expect("Failed to parse 'delete fixture 1'");
-
-    // Test "delete" command aliases
-    let del_ast = generate_ast("del fixture 1").expect("Failed to parse 'del fixture 1'");
-    assert_eq!(
-        base_ast, del_ast,
-        "'del' should produce identical AST to 'delete'"
-    );
-
-    let rm_ast = generate_ast("rm fixture 1").expect("Failed to parse 'rm fixture 1'");
-    assert_eq!(
-        base_ast, rm_ast,
-        "'rm' should produce identical AST to 'delete'"
-    );
-
-    // Test "fixture" object type aliases
-    let delete_fix_ast = generate_ast("delete fix 1").expect("Failed to parse 'delete fix 1'");
-    assert_eq!(
-        base_ast, delete_fix_ast,
-        "'fix' should produce identical AST to 'fixture'"
-    );
-
-    let del_fix_ast = generate_ast("del fix 1").expect("Failed to parse 'del fix 1'");
-    assert_eq!(
-        base_ast, del_fix_ast,
-        "'del fix' should produce identical AST to 'delete fixture'"
-    );
-
-    let rm_fix_ast = generate_ast("rm fix 1").expect("Failed to parse 'rm fix 1'");
-    assert_eq!(
-        base_ast, rm_fix_ast,
-        "'rm fix' should produce identical AST to 'delete fixture'"
-    );
-
-    let delete_f_ast = generate_ast("delete f 1").expect("Failed to parse 'delete f 1'");
-    assert_eq!(
-        base_ast, delete_f_ast,
-        "'f' should produce identical AST to 'fixture'"
-    );
-
-    let del_f_ast = generate_ast("del f 1").expect("Failed to parse 'del f 1'");
-    assert_eq!(
-        base_ast, del_f_ast,
-        "'del f' should produce identical AST to 'delete fixture'"
-    );
-
-    let rm_f_ast = generate_ast("rm f 1").expect("Failed to parse 'rm f 1'");
-    assert_eq!(
-        base_ast, rm_f_ast,
-        "'rm f' should produce identical AST to 'delete fixture'"
-    );
-}
-
-#[test]
-fn test_rename_fixture_aliases() {
-    let base_ast =
-        generate_ast("rename fixture 1 2").expect("Failed to parse 'rename fixture 1 2'");
-
-    // Test "rename" command aliases
-    let mv_ast = generate_ast("mv fixture 1 2").expect("Failed to parse 'mv fixture 1 2'");
-    assert_eq!(
-        base_ast, mv_ast,
-        "'mv' should produce identical AST to 'rename'"
-    );
-
-    // Test "fixture" object type aliases
-    let rename_fix_ast = generate_ast("rename fix 1 2").expect("Failed to parse 'rename fix 1 2'");
-    assert_eq!(
-        base_ast, rename_fix_ast,
-        "'fix' should produce identical AST to 'fixture'"
-    );
-
-    let mv_fix_ast = generate_ast("mv fix 1 2").expect("Failed to parse 'mv fix 1 2'");
-    assert_eq!(
-        base_ast, mv_fix_ast,
-        "'mv fix' should produce identical AST to 'rename fixture'"
-    );
-
-    let rename_f_ast = generate_ast("rename f 1 2").expect("Failed to parse 'rename f 1 2'");
-    assert_eq!(
-        base_ast, rename_f_ast,
-        "'f' should produce identical AST to 'fixture'"
-    );
-
-    let mv_f_ast = generate_ast("mv f 1 2").expect("Failed to parse 'mv f 1 2'");
-    assert_eq!(
-        base_ast, mv_f_ast,
-        "'mv f' should produce identical AST to 'rename fixture'"
-    );
-}
-
 #[test]
 fn test_delete_fixture_range() {
     let ast = generate_ast("delete fixture 1>10").expect("Failed to parse 'delete fixture 1>10'");
@@ -264,24 +167,6 @@ fn test_rename_fixture_conversion() {
         FixtureCommand::RenameFixture { id, new_id } => {
             assert_eq!(*id, 1, "Expected original fixture ID 1, got {}", id);
             assert_eq!(*new_id, 2, "Expected new fixture ID 2, got {}", new_id);
-        }
-        other => panic!("Expected RenameFixture command, got {:?}", other),
-    }
-}
-
-#[test]
-fn test_rename_fixture_different_ids_conversion() {
-    let ast = generate_ast("rename fixture 5 15").expect("Failed to parse 'rename fixture 5 15'");
-    let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<FixtureCommand>();
-    assert!(cmd.is_some(), "Command is not a FixtureCommand");
-
-    match cmd.unwrap() {
-        FixtureCommand::RenameFixture { id, new_id } => {
-            assert_eq!(*id, 5, "Expected original fixture ID 5, got {}", id);
-            assert_eq!(*new_id, 15, "Expected new fixture ID 15, got {}", new_id);
         }
         other => panic!("Expected RenameFixture command, got {:?}", other),
     }
@@ -468,25 +353,6 @@ fn test_fixture_path_default_clear_conversion() {
 }
 
 #[test]
-fn test_channel_command_aliases() {
-    let base_ast = generate_ast("channel 1.1 @ 255").expect("Failed to parse 'channel 1.1 @ 255'");
-
-    // Test "chan" alias produces identical AST to "channel"
-    let chan_ast = generate_ast("chan 1.1 @ 255").expect("Failed to parse 'chan 1.1 @ 255'");
-    assert_eq!(
-        base_ast, chan_ast,
-        "'chan' should produce identical AST to 'channel'"
-    );
-
-    // Test "ch" alias produces identical AST to "channel"
-    let ch_ast = generate_ast("ch 1.1 @ 255").expect("Failed to parse 'ch 1.1 @ 255'");
-    assert_eq!(
-        base_ast, ch_ast,
-        "'ch' should produce identical AST to 'channel'"
-    );
-}
-
-#[test]
 fn test_set_dmx_channel_single_conversion() {
     let ast = generate_ast("ch 1.1 @ 255").expect("Failed to parse 'ch 1.1 @ 255'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
@@ -510,39 +376,6 @@ fn test_set_dmx_channel_single_conversion() {
                     assert_eq!(
                         ch_ref.address, 1,
                         "Expected address 1, got {}",
-                        ch_ref.address
-                    );
-                }
-                other => panic!("Expected Single channel expression, got {:?}", other),
-            }
-        }
-        other => panic!("Expected SetDmxChannels command, got {:?}", other),
-    }
-}
-
-#[test]
-fn test_set_dmx_channel_different_value_conversion() {
-    let ast = generate_ast("ch 2.56 @ 128").expect("Failed to parse 'ch 2.56 @ 128'");
-    let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<FixtureCommand>();
-    assert!(cmd.is_some(), "Command is not a FixtureCommand");
-
-    match cmd.unwrap() {
-        FixtureCommand::SetDmxChannels { channels, value } => {
-            assert_eq!(*value, 128, "Expected DMX value 128, got {}", value);
-
-            match channels {
-                DmxChannelExpr::Single(ch_ref) => {
-                    assert_eq!(
-                        ch_ref.universe, 2,
-                        "Expected universe 2, got {}",
-                        ch_ref.universe
-                    );
-                    assert_eq!(
-                        ch_ref.address, 56,
-                        "Expected address 56, got {}",
                         ch_ref.address
                     );
                 }

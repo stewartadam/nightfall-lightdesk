@@ -29,7 +29,6 @@ pub mod dispatcher;
 pub mod manager;
 pub mod systems;
 pub mod traits;
-pub mod websocket;
 
 pub mod prelude {
     pub use crate::UndoPlugin;
@@ -51,10 +50,7 @@ impl Plugin for UndoPlugin {
             "UndoPlugin requires EnginePlugin (provides CommandIngressRouter)"
         );
 
-        register_ingress_command::<UndoCommand>(app);
-
-        // Register WebSocket deserializer for UndoCommand
-        register_command_deserializer::<UndoCommand>(app, websocket::deserialize_undo_command);
+        register_client_command::<UndoCommand>(app, Undo::Captured);
 
         // Initialize resources
         app.init_resource::<UndoManager>();

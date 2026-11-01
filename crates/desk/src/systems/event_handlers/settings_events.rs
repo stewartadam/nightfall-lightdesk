@@ -768,37 +768,4 @@ mod command_tests {
                 if output.value == serde_json::json!({ "device-1": "Main Output" })
         ));
     }
-
-    /// Verifies WebSocket deserialization preserves semantic command context.
-    #[test]
-    fn deserialize_settings_command_writes_semantic_envelope() {
-        let mut world = World::new();
-        world.insert_resource(Messages::<CommandEnvelope<SettingsCommand>>::default());
-        world.init_resource::<CommandTracker>();
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-
-        crate::websocket::deserialize_settings_command(
-            &mut world,
-            serde_json::json!({
-                "type": "SetProgrammerAutoSelect",
-                "data": true
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("settings command should deserialize");
-
-        let messages = world
-            .resource_mut::<Messages<CommandEnvelope<SettingsCommand>>>()
-            .drain()
-            .collect::<Vec<_>>();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(
-            messages[0].command,
-            SettingsCommand::SetProgrammerAutoSelect(true)
-        ));
-    }
 }
