@@ -17,6 +17,7 @@ import {
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommandPalette } from "../../components/providers/command-registry";
 import { libraryDefinitionId } from "../../lib/fixture-service";
+import { useConditionalShallowStore } from "../../lib/use-shallow-store";
 import {
   activeInstances,
   clips,
@@ -41,21 +42,63 @@ import {
   guideCompletionToken,
 } from "./progress";
 
+/** Show snapshots the guide reads, each as a plain (unreconciled) accessor. */
+export type GuideShowState = {
+  fixtures: Accessor<GuideSnapshot["fixtures"]>;
+  selection: Accessor<GuideSnapshot["selection"]>;
+  editSelection: Accessor<readonly string[]>;
+  library: Accessor<Readonly<ReturnType<typeof fixtureLibrary.get>>>;
+  programmer: Accessor<GuideSnapshot["programmer"]>;
+  cues: Accessor<GuideSnapshot["cues"]>;
+  sequences: Accessor<GuideSnapshot["sequences"]>;
+  clips: Accessor<GuideSnapshot["clips"]>;
+  fx: Accessor<NonNullable<GuideSnapshot["fx"]>>;
+  stepFx: Accessor<NonNullable<GuideSnapshot["stepFx"]>>;
+  faders: Accessor<GuideSnapshot["faders"]>;
+  instances: Accessor<GuideSnapshot["instances"]>;
+  timelines: Accessor<GuideSnapshot["timelines"]>;
+  timecodes: Accessor<GuideSnapshot["timecodes"]>;
+};
+
+/**
+ * Subscribes once to every show snapshot the guide reads, and only while `enabled`.
+ *
+ * The guide only looks objects up in these snapshots and compares plain completion tokens, so
+ * it reads them shallowly rather than deep-reconciling each large snapshot (fixture definitions,
+ * cues) on every update. While the guide is closed it holds no subscriptions, so show loads and
+ * edits cost it nothing; reopening it refreshes every snapshot before its observations run.
+ */
+export function useGuideShowState(enabled: Accessor<boolean>): GuideShowState {
+  return {
+    fixtures: useConditionalShallowStore(fixtures, enabled),
+    selection: useConditionalShallowStore(programmerSelection, enabled),
+    editSelection: useConditionalShallowStore(visualizerEditSelection, enabled),
+    library: useConditionalShallowStore(fixtureLibrary, enabled),
+    programmer: useConditionalShallowStore(programmerState, enabled),
+    cues: useConditionalShallowStore(cues, enabled),
+    sequences: useConditionalShallowStore(sequences, enabled),
+    clips: useConditionalShallowStore(clips, enabled),
+    fx: useConditionalShallowStore(fx, enabled),
+    stepFx: useConditionalShallowStore(stepFx, enabled),
+    faders: useConditionalShallowStore(faders, enabled),
+    instances: useConditionalShallowStore(activeInstances, enabled),
+    timelines: useConditionalShallowStore(timelines, enabled),
+    timecodes: useConditionalShallowStore(timecodes, enabled),
+  };
+}
+
 /**
  * Reads the application state that observations compare against. Events a single observation
  * records while it is armed, such as a submitted command, are left out; the observation adds them.
  */
 export function useGuideSnapshot(
   workspace: Accessor<GuidePanelSnapshot>,
+  show: GuideShowState,
 ): Accessor<GuideSnapshot> {
   const { isOpen: commandPaletteOpen } = useCommandPalette();
   const { isSettingsOpen, isShortcutsPopupVisible } = useAppShell();
-  const fixtureMap = useStore(fixtures);
-  const selection = useStore(programmerSelection);
-  const editSelection = useStore(visualizerEditSelection);
   const patchView = useStore(patchPanelActiveTab);
   const wizard = usePatchWizard();
-  const library = useStore(fixtureLibrary);
   /** Summarizes the open Add fixture wizard, naming its chosen definition by library model. */
   const patchWizard = (): GuideSnapshot["patchWizard"] => {
     if (!wizard.isOpen() || wizard.state().morphFixtureIds.length > 0)
@@ -70,9 +113,10 @@ export function useGuideSnapshot(
     } = wizard.state();
     return {
       step: wizard.currentStep(),
-      model: library().find(
-        (entry) => libraryDefinitionId(entry) === fixtureDefinitionId,
-      )?.model,
+      model: show
+        .library()
+        .find((entry) => libraryDefinitionId(entry) === fixtureDefinitionId)
+        ?.model,
       mode: fixtureMode ?? undefined,
       quantity,
       firstFixtureId: wizard.baseFixtureId(),
@@ -80,16 +124,6 @@ export function useGuideSnapshot(
       startAddress: assignConsoleDmx ? startAddress : null,
     };
   };
-  const programmer = useStore(programmerState);
-  const cueMap = useStore(cues);
-  const sequenceMap = useStore(sequences);
-  const clipMap = useStore(clips);
-  const fxMap = useStore(fx);
-  const stepFxMap = useStore(stepFx);
-  const faderList = useStore(faders);
-  const instances = useStore(activeInstances);
-  const timelineMap = useStore(timelines);
-  const clocks = useStore(timecodes);
   /** Reads the active panel from the shared workspace snapshot. */
   const panel = () => workspace().activeComponent;
   /** Reads open panels and their visibility from the shared workspace snapshot. */
@@ -99,23 +133,23 @@ export function useGuideSnapshot(
     commandPaletteOpen: commandPaletteOpen(),
     settingsOpen: isSettingsOpen(),
     shortcutsOpen: isShortcutsPopupVisible(),
-    editSelection: editSelection(),
+    editSelection: show.editSelection(),
     patchView: patchView(),
     patchWizard: patchWizard(),
     panel: panel(),
     openPanels: openPanels(),
-    fixtures: fixtureMap(),
-    selection: selection(),
-    programmer: programmer(),
-    cues: cueMap(),
-    sequences: sequenceMap(),
-    clips: clipMap(),
-    fx: fxMap(),
-    stepFx: stepFxMap(),
-    faders: faderList(),
-    instances: instances(),
-    timelines: timelineMap(),
-    timecodes: clocks(),
+    fixtures: show.fixtures(),
+    selection: show.selection(),
+    programmer: show.programmer(),
+    cues: show.cues(),
+    sequences: show.sequences(),
+    clips: show.clips(),
+    fx: show.fx(),
+    stepFx: show.stepFx(),
+    faders: show.faders(),
+    instances: show.instances(),
+    timelines: show.timelines(),
+    timecodes: show.timecodes(),
   });
 }
 

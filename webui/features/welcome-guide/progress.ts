@@ -108,7 +108,7 @@ export interface GuideSnapshot {
     actionId: string;
   }[];
   /** Fixtures picked in Patch or the Visualizer for editing, separate from programmer selection. */
-  editSelection?: string[];
+  editSelection?: readonly string[];
   patchView?: PatchTab;
   /** The open Add fixture wizard's page and choices; absent while the wizard is closed. */
   patchWizard?: {
@@ -133,12 +133,12 @@ export interface GuideSnapshot {
   fx?: FxMap;
   stepFx?: StepFxMap;
   fixtures: FixtureMap;
-  selection: string[];
-  programmer: ProgrammerRow[];
+  selection: readonly string[];
+  programmer: readonly ProgrammerRow[];
   cues: CueMap;
   sequences: SequenceMap;
   clips: ClipMap;
-  faders: FaderSnapshot[];
+  faders: readonly FaderSnapshot[];
   instances: ActiveInstancesMap;
   timelines: TimelineMap;
   timecodes: TimecodeMap;
