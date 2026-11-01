@@ -102,6 +102,7 @@ telemetry = ["dep:sentry", "dep:reqwest", "dep:sysinfo"]
 async-channel.workspace = true
 criterion.workspace = true
 nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
+nightfall-tempo = { path = "../tempo" }
 
 [[bench]]
 name = "timeline_lookahead"

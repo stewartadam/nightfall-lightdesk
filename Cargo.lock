@@ -292,6 +292,7 @@ dependencies = [
  "nightfall-references",
  "nightfall-scene-objects",
  "nightfall-showfile",
+ "nightfall-tempo",
  "nightfall-timecode",
  "nightfall-timeline",
  "nightfall-undo",
