@@ -45,6 +45,14 @@ type StartupTiming = {
   fixtureCount: number;
   /** Panel component imports still loading when the dock was revealed. */
   pendingPanelLoadsAtReveal: number;
+  /** Largest worker-to-main websocket delivery lag the runtime reported since page load. */
+  maxDeliveryLagMs: number;
+  /** The same maximum just before the click, so a pre-open spike is not credited to the load. */
+  maxDeliveryLagBeforeOpenMs: number;
+  /** Delivery lag warnings the runtime logged after the click. */
+  deliveryLagWarnings: number;
+  /** Slowest main-thread websocket message dispatches after the click. */
+  slowestDispatches: { name: string; at: number; duration: number }[];
 };
 
 declare global {
@@ -54,6 +62,8 @@ declare global {
       clickAt?: number;
       marks: Record<string, number>;
       longTasks: { start: number; duration: number }[];
+      /** Main-thread websocket dispatch measures of at least one millisecond. */
+      dispatches: { name: string; start: number; duration: number }[];
       /** Panel component imports still loading when the dock was revealed. */
       pendingPanelLoadsAtReveal?: number;
     };
@@ -118,6 +128,7 @@ async function installStartupProbe(page: Page): Promise<void> {
     const state: NonNullable<Window["__startupTiming"]> = {
       marks: {},
       longTasks: [],
+      dispatches: [],
     };
     window.__startupTiming = state;
     new PerformanceObserver((list) => {
@@ -127,6 +138,18 @@ async function installStartupProbe(page: Page): Promise<void> {
           duration: entry.duration,
         });
     }).observe({ type: "longtask", buffered: true });
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntriesByType("measure"))
+        if (
+          entry.name.startsWith("nightfall:websocket-main.dispatch.") &&
+          entry.duration >= 1
+        )
+          state.dispatches.push({
+            name: entry.name.slice("nightfall:websocket-main.dispatch.".length),
+            start: entry.startTime,
+            duration: entry.duration,
+          });
+    }).observe({ type: "measure", buffered: true });
     document.addEventListener(
       "click",
       (event) => {
@@ -239,6 +262,12 @@ for (let run = 0; run < RUNS; run++) {
         recursive: true,
       });
       await installStartupProbe(page);
+      let clicked = false;
+      let deliveryLagWarnings = 0;
+      page.on("console", (message) => {
+        if (clicked && message.text().includes("delivery lag"))
+          deliveryLagWarnings++;
+      });
       await page.goto("/?startup:draftRecovery=false");
       const picker = page.getByRole("dialog", { name: "Open Showfile" });
       await expect(picker).toBeVisible({ timeout: 30_000 });
@@ -259,6 +288,13 @@ for (let run = 0; run < RUNS; run++) {
             path: testInfo.outputPath("startup.trace.json"),
           });
       }
+      const maxDeliveryLagBeforeOpenMs = await page.evaluate(() =>
+        Math.round(
+          (window as any).appStores?.wsStats?.get()?.main?.maxDeliveryLagMs ??
+            -1,
+        ),
+      );
+      clicked = true;
       await openStartupShowfileIfPrompted(page, {
         showfileName: SHOWFILE_NAME,
       });
@@ -300,40 +336,71 @@ for (let run = 0; run < RUNS; run++) {
           JSON.stringify(profile),
         );
       }
-      const result: StartupTiming = await page.evaluate(() => {
-        const state = window.__startupTiming!;
-        const clickAt = state.clickAt ?? 0;
-        const tasks = state.longTasks.filter((task) => task.start >= clickAt);
-        const marks = { ...state.marks };
-        const last = tasks.at(-1);
-        if (last) marks.lastLongTaskEnd = last.start + last.duration - clickAt;
-        marks.settled = Math.max(
-          marks.dockVisible ?? 0,
-          marks.fixturesLoaded ?? 0,
-          marks.lastLongTaskEnd ?? 0,
-        );
-        for (const key of Object.keys(marks))
-          marks[key] = Math.round(marks[key]);
-        const fixtures = (window as any).appStores?.fixtures?.get() ?? {};
-        const visibleAt = clickAt + (state.marks.dockVisible ?? 0);
-        const afterVisible = tasks.filter((task) => task.start >= visibleAt);
-        return {
-          marks,
-          blockedMs: Math.round(
-            tasks.reduce((sum, task) => sum + task.duration, 0),
-          ),
-          blockedAfterVisibleMs: Math.round(
-            afterVisible.reduce((sum, task) => sum + task.duration, 0),
-          ),
-          longestAfterVisibleMs: Math.round(
-            Math.max(0, ...afterVisible.map((task) => task.duration)),
-          ),
-          fixtureCount: Object.keys(fixtures).length,
-          pendingPanelLoadsAtReveal: state.pendingPanelLoadsAtReveal ?? -1,
-        };
-      });
+      // The worker publishes websocket stats once per second; wait for a publication that
+      // postdates the settled load so its maximum lag covers the whole load.
+      const settledAt = await page.evaluate(() => performance.now());
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () => (window as any).appStores?.wsStats?.get()?.timestamp ?? 0,
+            ),
+          { timeout: 10_000 },
+        )
+        .toBeGreaterThan(settledAt);
+      const result: StartupTiming = await page.evaluate(
+        ([warnings, beforeOpen]) => {
+          const state = window.__startupTiming!;
+          const clickAt = state.clickAt ?? 0;
+          const tasks = state.longTasks.filter((task) => task.start >= clickAt);
+          const marks = { ...state.marks };
+          const last = tasks.at(-1);
+          if (last)
+            marks.lastLongTaskEnd = last.start + last.duration - clickAt;
+          marks.settled = Math.max(
+            marks.dockVisible ?? 0,
+            marks.fixturesLoaded ?? 0,
+            marks.lastLongTaskEnd ?? 0,
+          );
+          for (const key of Object.keys(marks))
+            marks[key] = Math.round(marks[key]);
+          const fixtures = (window as any).appStores?.fixtures?.get() ?? {};
+          const visibleAt = clickAt + (state.marks.dockVisible ?? 0);
+          const afterVisible = tasks.filter((task) => task.start >= visibleAt);
+          return {
+            marks,
+            blockedMs: Math.round(
+              tasks.reduce((sum, task) => sum + task.duration, 0),
+            ),
+            blockedAfterVisibleMs: Math.round(
+              afterVisible.reduce((sum, task) => sum + task.duration, 0),
+            ),
+            longestAfterVisibleMs: Math.round(
+              Math.max(0, ...afterVisible.map((task) => task.duration)),
+            ),
+            fixtureCount: Object.keys(fixtures).length,
+            pendingPanelLoadsAtReveal: state.pendingPanelLoadsAtReveal ?? -1,
+            maxDeliveryLagMs: Math.round(
+              (window as any).appStores?.wsStats?.get()?.main
+                ?.maxDeliveryLagMs ?? -1,
+            ),
+            maxDeliveryLagBeforeOpenMs: beforeOpen,
+            deliveryLagWarnings: warnings,
+            slowestDispatches: state.dispatches
+              .filter((entry) => entry.start >= clickAt)
+              .sort((a, b) => b.duration - a.duration)
+              .slice(0, 8)
+              .map((entry) => ({
+                name: entry.name,
+                at: Math.round(entry.start - clickAt),
+                duration: Math.round(entry.duration),
+              })),
+          };
+        },
+        [deliveryLagWarnings, maxDeliveryLagBeforeOpenMs] as const,
+      );
       console.log(
-        `run ${run}: ${JSON.stringify(result.marks)} blocked=${result.blockedMs}ms afterVisible=${result.blockedAfterVisibleMs}ms longestAfterVisible=${result.longestAfterVisibleMs}ms fixtures=${result.fixtureCount} pendingPanelLoadsAtReveal=${result.pendingPanelLoadsAtReveal}`,
+        `run ${run}: ${JSON.stringify(result.marks)} blocked=${result.blockedMs}ms afterVisible=${result.blockedAfterVisibleMs}ms longestAfterVisible=${result.longestAfterVisibleMs}ms fixtures=${result.fixtureCount} pendingPanelLoadsAtReveal=${result.pendingPanelLoadsAtReveal} maxDeliveryLag=${result.maxDeliveryLagMs}ms (before open ${result.maxDeliveryLagBeforeOpenMs}ms) lagWarnings=${result.deliveryLagWarnings} slowestDispatches=${JSON.stringify(result.slowestDispatches)}`,
       );
       await page.screenshot({ path: testInfo.outputPath("settled.png") });
       await writeFile(
