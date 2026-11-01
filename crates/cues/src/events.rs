@@ -78,8 +78,11 @@ pub(crate) fn register_event_systems(app: &mut App) {
             crate::materialized_sequence::rematerialize_sequences_after_cue_definition_change
                 .after(cue_crud_events),
             sequence_crud_events,
-            crate::materialized_sequence::rematerialize_sequences_after_sequence_definition_change
+            sync_release_cue_rows
+                .after(cue_crud_events)
                 .after(sequence_crud_events),
+            crate::materialized_sequence::rematerialize_sequences_after_sequence_definition_change
+                .after(sync_release_cue_rows),
             crate::materialized_sequence::rematerialize_after_blueprint_definition_change
                 .after(DeskEventSet::BlueprintCrud)
                 .after(DeskEventSet::BlueprintActions),

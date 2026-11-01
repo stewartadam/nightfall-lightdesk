@@ -112,7 +112,7 @@ pub enum CueTriggerType {
 /// Delay, fade, and curve settings applied when values enter or leave a state.
 #[derive(Partial, Debug, Default, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
-#[partially(derive(Default, Serialize, Deserialize, Debug, Clone))]
+#[partially(derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq))]
 pub struct Transition {
     pub delay_in: TransitionMode,
     pub fade_in: TransitionMode,

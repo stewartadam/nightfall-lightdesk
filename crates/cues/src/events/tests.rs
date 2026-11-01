@@ -787,3 +787,72 @@ fn element_block_is_not_suppressed_by_whole_fixture_blueprint_row() {
         Some(1)
     );
 }
+
+/// Counts the sequence definition changes published since the messages were last cleared.
+fn sequence_definition_change_count(app: &App) -> usize {
+    app.world()
+        .resource::<Messages<SequenceDefinitionChange>>()
+        .iter_current_update_messages()
+        .count()
+}
+
+/// Verifies the backend derives release cue rows from a sequence's steps when a step cue is
+/// stored, publishes the updated sequence once, and leaves an up-to-date sequence alone.
+#[test]
+fn storing_a_step_cue_syncs_release_cue_rows() {
+    let mut app = cue_definition_storage_app();
+    app.add_systems(
+        Update,
+        sync_release_cue_rows
+            .after(cue_crud_events)
+            .after(sequence_crud_events),
+    );
+    let cue_uid = Uuid::from_u128(0x451);
+    let mut sequence = Sequence::default();
+    sequence.identifiers.id = 1;
+    sequence.identifiers.uid = Uuid::from_u128(0x450);
+    sequence.steps = vec![cue_uid.into()];
+    app.world_mut()
+        .resource_mut::<DataProvider<Sequence>>()
+        .add(sequence)
+        .expect("sequence should store");
+
+    let mut cue = Cue::default();
+    cue.identifiers.id = 1;
+    cue.identifiers.uid = cue_uid;
+    cue.instructions = vec![BoundCueInstruction {
+        selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![FixtureRef {
+            fixture_uid: Uuid::from_u128(0x452),
+            index: None,
+        }])),
+        cue_instruction: CueInstruction {
+            values: HashMap::from([(
+                Attribute::Intensity,
+                ValueSource::Inline(ParameterValue::AbsolutePercent { value: 1.0.into() }),
+            )]),
+            ..Default::default()
+        },
+    }];
+    submit_definition_command(&mut app, CueCommand::StoreCue(Box::new(cue)));
+
+    app.update();
+
+    let stored = app
+        .world()
+        .resource::<DataProvider<Sequence>>()
+        .from_id(1)
+        .expect("sequence should exist")
+        .clone();
+    assert_eq!(stored.release_cue.instructions.len(), 1);
+    assert!(
+        stored.release_cue.instructions[0]
+            .cue_instruction
+            .values
+            .contains_key(&Attribute::Intensity)
+    );
+    assert_eq!(sequence_definition_change_count(&app), 1);
+
+    app.update();
+
+    assert_eq!(sequence_definition_change_count(&app), 0);
+}
