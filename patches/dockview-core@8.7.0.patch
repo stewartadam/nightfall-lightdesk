@@ -1,0 +1,82 @@
+diff --git a/dist/package/main.cjs.js b/dist/package/main.cjs.js
+index 7853d342fb26ef44bab8b59c46b92e3e60b9474e..5e56dbdb5626788003e5c572e43793c3e5cf19c8 100644
+--- a/dist/package/main.cjs.js
++++ b/dist/package/main.cjs.js
+@@ -11426,14 +11426,34 @@ var DockviewGroupPanelModel = class extends CompositeDisposable {
+ 	}
+ 	invalidateHeaderSize() {
+ 		this._cachedHeaderSize = void 0;
++		this._cachedBorderSize = void 0;
++	}
++	/**
++	* Measure the group container's border widths per axis. A theme can frame
++	* each group with a CSS border, which the outer layout box includes. Reads
++	* computed style only, so it does not force layout.
++	*/
++	measureBorderSize() {
++		const style = getComputedStyle(this.container);
++		const px = (value) => parseFloat(value) || 0;
++		return {
++			width: px(style.borderLeftWidth) + px(style.borderRightWidth),
++			height: px(style.borderTopWidth) + px(style.borderBottomWidth)
++		};
+ 	}
+ 	contentDimensions() {
+ 		var _this$_cachedHeaderSi;
+ 		const horizontal = this.headerPosition === "top" || this.headerPosition === "bottom";
+ 		const headerSize = (_this$_cachedHeaderSi = this._cachedHeaderSize) !== null && _this$_cachedHeaderSi !== void 0 ? _this$_cachedHeaderSi : this._cachedHeaderSize = this.measureHeaderSize();
++		const border = this._cachedBorderSize ?? (this.container.isConnected ? this._cachedBorderSize = this.measureBorderSize() : {
++			width: 0,
++			height: 0
++		});
++		const width = Math.max(0, this._width - border.width);
++		const height = Math.max(0, this._height - border.height);
+ 		return {
+-			width: horizontal ? this._width : Math.max(0, this._width - headerSize),
+-			height: horizontal ? Math.max(0, this._height - headerSize) : this._height
++			width: horizontal ? width : Math.max(0, width - headerSize),
++			height: horizontal ? Math.max(0, height - headerSize) : height
+ 		};
+ 	}
+ 	_removePanel(panel, options) {
+diff --git a/dist/package/main.esm.mjs b/dist/package/main.esm.mjs
+index eb848d19070e131c6979b0809f2ce925ea8d6b3a..849c7f388a7cbaf458bf6d0e23e9c7a03986b861 100644
+--- a/dist/package/main.esm.mjs
++++ b/dist/package/main.esm.mjs
+@@ -11424,14 +11424,34 @@ var DockviewGroupPanelModel = class extends CompositeDisposable {
+ 	}
+ 	invalidateHeaderSize() {
+ 		this._cachedHeaderSize = void 0;
++		this._cachedBorderSize = void 0;
++	}
++	/**
++	* Measure the group container's border widths per axis. A theme can frame
++	* each group with a CSS border, which the outer layout box includes. Reads
++	* computed style only, so it does not force layout.
++	*/
++	measureBorderSize() {
++		const style = getComputedStyle(this.container);
++		const px = (value) => parseFloat(value) || 0;
++		return {
++			width: px(style.borderLeftWidth) + px(style.borderRightWidth),
++			height: px(style.borderTopWidth) + px(style.borderBottomWidth)
++		};
+ 	}
+ 	contentDimensions() {
+ 		var _this$_cachedHeaderSi;
+ 		const horizontal = this.headerPosition === "top" || this.headerPosition === "bottom";
+ 		const headerSize = (_this$_cachedHeaderSi = this._cachedHeaderSize) !== null && _this$_cachedHeaderSi !== void 0 ? _this$_cachedHeaderSi : this._cachedHeaderSize = this.measureHeaderSize();
++		const border = this._cachedBorderSize ?? (this.container.isConnected ? this._cachedBorderSize = this.measureBorderSize() : {
++			width: 0,
++			height: 0
++		});
++		const width = Math.max(0, this._width - border.width);
++		const height = Math.max(0, this._height - border.height);
+ 		return {
+-			width: horizontal ? this._width : Math.max(0, this._width - headerSize),
+-			height: horizontal ? Math.max(0, this._height - headerSize) : this._height
++			width: horizontal ? width : Math.max(0, width - headerSize),
++			height: horizontal ? Math.max(0, height - headerSize) : height
+ 		};
+ 	}
+ 	_removePanel(panel, options) {

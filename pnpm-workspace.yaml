@@ -4,3 +4,9 @@ allowBuilds:
 # Run package scripts in pnpm's POSIX shell on every platform, including Windows.
 shellEmulator: true
 minimumReleaseAge: 4320
+# Temporary: Dockview sizes group content from the outer box and ignores the
+# theme's 1px group border, so panels are 2px too large for a frame and lose a
+# right-edge scroll position. Drop this patch and the exact dockview pins in
+# package.json once Dockview ships the border-aware sizing fix.
+patchedDependencies:
+  dockview-core@8.7.0: patches/dockview-core@8.7.0.patch
