@@ -648,3 +648,59 @@ test("worktree dashboard creates a worktree for the searched branch", async ({
     path: test.info().outputPath("worktree-created-toast.png"),
   });
 });
+
+/**
+ * Verifies the page shows snapshots pushed over the API's event stream: the initial
+ * load lists one worktree, and a pushed snapshot adds another without a reload.
+ */
+test("worktree dashboard applies snapshots pushed over the event stream", async ({
+  page,
+}) => {
+  const develop = worktree({ branch: "develop", envExists: true, port: 3000 });
+  const pushed = worktree({
+    branch: "feat/pushed",
+    envExists: true,
+    port: 3010,
+  });
+  await page.route("**/worktree-api/worktrees", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        generatedAt: new Date("2026-11-01T12:00:00Z").toISOString(),
+        dashboardPid: 12345,
+        worktrees: [develop],
+      }),
+    });
+  });
+  let releaseEvents = () => {};
+  const eventsReleased = new Promise<void>((resolve) => {
+    releaseEvents = resolve;
+  });
+  await page.route("**/worktree-api/events", async (route) => {
+    await eventsReleased;
+    const snapshot = {
+      generatedAt: new Date("2026-11-01T12:00:05Z").toISOString(),
+      dashboardPid: 12345,
+      worktrees: [develop, pushed],
+    };
+    await route.fulfill({
+      contentType: "text/event-stream",
+      // A long retry keeps EventSource from reconnecting once this body ends.
+      body: `retry: 600000\n\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
+    });
+  });
+
+  await page.goto("/worktree-dashboard.html");
+  await expect(page.locator("strong", { hasText: "develop" })).toBeVisible();
+  await expect(page.locator("strong", { hasText: "feat/pushed" })).toHaveCount(
+    0,
+  );
+
+  releaseEvents();
+  await expect(
+    page.locator("strong", { hasText: "feat/pushed" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("worktree-dashboard-metadata")).toContainText(
+    "2 Worktrees",
+  );
+});

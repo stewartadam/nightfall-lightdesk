@@ -55,7 +55,7 @@ Claude Code doesn't read `wt.toml`. Its `WorktreeCreate` and `WorktreeRemove` ho
 The dashboard knows a service in two ways:
 
 - Managed: the dashboard spawned the process and holds its child handle, process ID, log path, exit code, and last error. It keeps this record in memory only.
-- Observed: something answers on the service's port. On every snapshot the dashboard probes the backend, web UI, and both book ports on `127.0.0.1` and `::1`, and looks up the listening process ID.
+- Observed: something answers on the service's port. On every snapshot the dashboard probes the backend, web UI, and both book ports on `127.0.0.1` and `::1`, and looks up the listening process ID. The lookup runs `lsof` or `ss`, so its result is cached per port until that process exits or the port closes.
 
 The status phrase combines the two:
 
@@ -69,6 +69,16 @@ The status phrase combines the two:
 The `wasm` service has no port. It's a one-off build, so its status is `completed` or `failed` from its exit code. The sender examples have no port either, so the dashboard reports them as observed while their managed process runs.
 
 Because the managed record lives in memory, restarting the dashboard forgets every process it started. On shutdown it stops them, so they don't outlive it as orphans. Services you start by hand appear as external processes.
+
+### Pushing changes
+
+`worktree-dashboard/state-stream.mjs` sends snapshots to the page over `GET /api/events`, and only when one differs from the last one sent. Snapshots are rebuilt when:
+
+- an API action finishes, or a managed process exits;
+- Git's metadata shows a worktree added or removed, or a branch switch (a watch on `HEAD` files under Git's common directory). The cached `git worktree list` is dropped then; if the watch can't start, the list isn't cached at all;
+- a timer fires. It runs only while a page is connected: every second while a managed service is starting and for 15 seconds after any change, and every 10 seconds otherwise, to catch services started or stopped outside the dashboard.
+
+Port probes are plain TCP connections, so a quiet timer check spawns no processes.
 
 ## Service lifecycle
 
@@ -92,6 +102,7 @@ The API listens on `127.0.0.1:4780` by default. `NIGHTFALL_WORKTREE_DASHBOARD_HO
 |---|---|---|
 | `GET /health` | None | Returns `{"ok": true}`. |
 | `GET /api/worktrees` | None | Returns a snapshot of every worktree with its ports, URLs, managed records, and observed ports. |
+| `GET /api/events` | None | A Server-Sent Events stream that sends the same snapshot as a `snapshot` event on connect and whenever it changes. |
 | `POST /api/worktrees` | `branch` | Creates a worktree for the branch through `wt switch`, running the project hooks. Returns 400 for an empty name or one starting with `-`, and 409 with Worktrunk's error when it refuses. A branch that already has a worktree returns it with `action: "existing"`. |
 | `POST /api/worktrees/<id>/start` | `service`, `sample-data` | Starts services. Returns 400 when the worktree has no `.env`. |
 | `POST /api/worktrees/<id>/stop` | `service` | Stops services and clears their ports. |
@@ -109,7 +120,7 @@ The API refuses to remove the primary worktree or the checkout running the dashb
 
 `worktree-dashboard/dashboard-client.mjs` is the one client library for code outside the browser. It resolves the dashboard address, expands group selectors into service names, sends actions, waits for startup, and reduces a snapshot to a summary with one status phrase per service. The `wt service` alias and the MCP server both use it, so add new API calls there instead of calling `fetch` in either one.
 
-The dashboard page is a Solid app in `webui/worktree-dashboard.tsx`. The Vite dev server proxies `/worktree-api` to the API's `/api`, so the page needs no cross-origin setup. It polls `GET /api/worktrees` every 2 seconds. It keeps its own types for the snapshot, so a new field in the API needs a matching type on the page.
+The dashboard page is a Solid app in `webui/worktree-dashboard.tsx`. The Vite dev server proxies `/worktree-api` to the API's `/api`, so the page needs no cross-origin setup. It loads `GET /api/worktrees` once, then follows `GET /api/events` and closes that stream while its tab is hidden. It keeps its own types for the snapshot, so a new field in the API needs a matching type on the page.
 
 ## In the code
 
@@ -121,6 +132,7 @@ The dashboard page is a Solid app in `webui/worktree-dashboard.tsx`. The Vite de
 | `scripts/claude-worktree-hook.mjs` | Routes Claude Code worktrees through `wt`. |
 | `scripts/worktree-done.mjs` | The `wt done` alias. |
 | `worktree-dashboard/worktree-dashboard.mjs` | The dashboard API, service definitions, and process management. |
+| `worktree-dashboard/state-stream.mjs` | The snapshot event stream for the page. |
 | `worktree-dashboard/worktree-create.mjs` | Worktree creation for the API and the Claude Code hook. |
 | `worktree-dashboard/worktree-remove.mjs` | Worktree removal for the API. |
 | `worktree-dashboard/dashboard-client.mjs` | Shared client for the alias and the MCP server. |

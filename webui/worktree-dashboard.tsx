@@ -178,7 +178,8 @@ const EMPTY_DASHBOARD_PAYLOAD: DashboardStatePayload = {
 };
 
 const API_BASE_PATH = "/worktree-api";
-const POLL_INTERVAL_MS = 2000;
+/** Pause before reopening an event stream the browser gave up on. */
+const EVENTS_REOPEN_DELAY_MS = 3000;
 const log = getLogger(import.meta.url);
 const ACTION_MENU_OFFSET_PX = 4;
 const ACTION_MENU_VIEWPORT_PADDING_PX = 8;
@@ -745,6 +746,24 @@ function WorktreeDashboardApp() {
     });
   });
 
+  /**
+   * Replaces the shown state with a snapshot from the API or its event stream.
+   * Snapshots older than the one shown are dropped, so a slow GET can't overwrite a
+   * newer pushed state (ISO timestamps compare in time order as strings).
+   */
+  function applyPayload(raw: DashboardStatePayload): void {
+    const next = normalizeDashboardPayload(raw);
+    if (hasPayload() && next.generatedAt < payload.generatedAt) return;
+    setSenderActionsSupported(hasSenderSupportInPayload(next));
+    setPayload("generatedAt", next.generatedAt);
+    setPayload("dashboardPid", next.dashboardPid);
+    setPayload(
+      "worktrees",
+      reconcile(next.worktrees, { key: "id", merge: true }),
+    );
+    setHasPayload(true);
+  }
+
   async function refresh(options: { silent?: boolean } = {}): Promise<void> {
     if (!options.silent) {
       setLoading(true);
@@ -758,17 +777,7 @@ function WorktreeDashboardApp() {
         throw new Error(`Failed to load worktrees (${response.status})`);
       }
 
-      const next = normalizeDashboardPayload(
-        (await response.json()) as DashboardStatePayload,
-      );
-      setSenderActionsSupported(hasSenderSupportInPayload(next));
-      setPayload("generatedAt", next.generatedAt);
-      setPayload("dashboardPid", next.dashboardPid);
-      setPayload(
-        "worktrees",
-        reconcile(next.worktrees, { key: "id", merge: true }),
-      );
-      setHasPayload(true);
+      applyPayload((await response.json()) as DashboardStatePayload);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!options.silent) {
@@ -1105,9 +1114,59 @@ function WorktreeDashboardApp() {
   onMount(() => {
     void refresh();
 
-    const pollTimer = window.setInterval(() => {
-      void refresh({ silent: true });
-    }, POLL_INTERVAL_MS);
+    let events: EventSource | null = null;
+    let reopenTimer: number | undefined;
+    /**
+     * Subscribes to the API's snapshot stream, which pushes the state whenever it
+     * changes. EventSource retries a dropped connection itself, but gives up for good
+     * on an error response, which the Vite proxy sends while the API is down; the
+     * stream is then reopened after a pause.
+     */
+    const openEvents = () => {
+      if (events) return;
+      const source = new EventSource(`${API_BASE_PATH}/events`);
+      events = source;
+      source.addEventListener(
+        "snapshot",
+        /** Shows each pushed snapshot. */
+        (event) => {
+          try {
+            applyPayload(JSON.parse(event.data) as DashboardStatePayload);
+          } catch (error) {
+            log.error("Ignoring malformed dashboard snapshot event:", error);
+          }
+        },
+      );
+      source.addEventListener(
+        "error",
+        /** Schedules a reopen once EventSource has stopped retrying on its own. */
+        () => {
+          if (source.readyState !== EventSource.CLOSED) {
+            log.debug("Dashboard event stream disconnected; reconnecting");
+            return;
+          }
+          log.debug("Dashboard event stream closed; reopening shortly");
+          closeEvents();
+          reopenTimer = window.setTimeout(openEvents, EVENTS_REOPEN_DELAY_MS);
+        },
+      );
+    };
+    /** Closes the stream so the API stops checking for changes nobody is watching. */
+    const closeEvents = () => {
+      window.clearTimeout(reopenTimer);
+      events?.close();
+      events = null;
+    };
+    /** Follows the page's visibility: a hidden tab gets no updates, a shown one catches up. */
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        closeEvents();
+      } else {
+        openEvents();
+      }
+    };
+    if (document.visibilityState !== "hidden") openEvents();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
@@ -1132,7 +1191,8 @@ function WorktreeDashboardApp() {
     window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
-      window.clearInterval(pollTimer);
+      closeEvents();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       document.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleModifierChange);
       window.removeEventListener("keyup", handleModifierChange);

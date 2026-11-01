@@ -53,7 +53,7 @@ You then manage services from the dashboard page, the terminal, or an agent.
 
 ### From the dashboard page
 
-Run `pnpm run dashboard:ui` in a second terminal. It opens `/worktree-dashboard.html` in a Vite dev server. The page lists every worktree with its branch, ports, and the state of each service, refreshes every 2 seconds, and has buttons to start, stop, and restart services and to open each service's log. The search box above the list filters it by branch name or path. Its **More actions** menu opens the worktree in VS Code, re-seeds its data directory from the main worktree, and deletes it.
+Run `pnpm run dashboard:ui` in a second terminal. It opens `/worktree-dashboard.html` in a Vite dev server. The page lists every worktree with its branch, ports, and the state of each service, updates as soon as anything changes, and has buttons to start, stop, and restart services and to open each service's log. The search box above the list filters it by branch name or path. Its **More actions** menu opens the worktree in VS Code, re-seeds its data directory from the main worktree, and deletes it.
 
 ### From a terminal
 
