@@ -689,3 +689,27 @@ fn layer_stack_is_packed_by_layout_slot_and_sent_only_when_changed() {
 /// Index of the second bench fixture's first parameter, so the test exercises a slot past zero.
 const BENCH_PARAMETER_COUNT_FOR_TEST: usize =
     nightfall_fixtures::testing::BENCH_FIXTURE_PARAMETERS.len();
+
+#[test]
+/// A client's resync sends the armed-launch snapshot only to that client, not to every
+/// connection.
+fn armed_launch_resync_replies_only_to_requester() {
+    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
+    let mut app = App::new();
+    app.add_message::<ResyncRequested>();
+    app.insert_resource(ClientEventSink::new(tx));
+    app.init_resource::<ArmedLaunches>();
+    app.add_systems(Update, send_armed_launches_on_resync);
+
+    let requester = Audience::Client(ClientId(7));
+    app.world_mut().write_message(ResyncRequested {
+        command_id: None,
+        audience: requester,
+    });
+    app.update();
+
+    let audiences: Vec<Audience> = std::iter::from_fn(|| rx.try_recv().ok())
+        .map(|frame| frame.audience)
+        .collect();
+    assert_eq!(audiences, vec![requester]);
+}

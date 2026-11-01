@@ -401,13 +401,9 @@ pub fn send_armed_launches_on_change(armed: Res<ArmedLaunches>, broadcaster: Res
     }
 }
 
-/// Send armed launches to a client that asked for a full resync.
-pub fn send_armed_launches_on_resync(
-    mut events: MessageReader<ResyncRequested>,
-    armed: Res<ArmedLaunches>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if events.read().next().is_some() {
+/// Send armed launches only to the clients that asked for a full resync this frame.
+pub fn send_armed_launches_on_resync(mut resync: ResyncReplies, armed: Res<ArmedLaunches>) {
+    if let Some(broadcaster) = resync.sink() {
         send_armed_launches(&armed, &broadcaster);
     }
 }
