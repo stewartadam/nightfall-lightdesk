@@ -107,6 +107,18 @@ const fn color(name: &'static str, pretty: &'static str, cie: [f64; 3]) -> Catal
     }
 }
 
+/// Lists the catalog for clients choosing a channel's attribute, in catalog order.
+pub(super) fn options() -> Vec<super::commands::DraftAttributeOption> {
+    CATALOG
+        .iter()
+        .map(|attribute| super::commands::DraftAttributeOption {
+            name: attribute.name.to_string(),
+            pretty: attribute.pretty.to_string(),
+            group: attribute.group.to_string(),
+        })
+        .collect()
+}
+
 /// Looks up an attribute in the catalog by its GDTF name.
 pub(super) fn find(name: &str) -> Option<&'static CatalogAttribute> {
     CATALOG.iter().find(|attribute| attribute.name == name)

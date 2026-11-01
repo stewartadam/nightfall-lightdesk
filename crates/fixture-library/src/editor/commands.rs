@@ -36,6 +36,8 @@ pub enum FixtureEditorCommand {
     },
     /// Returns every open draft.
     ListDrafts,
+    /// Returns the standard attributes a channel can be created for.
+    ListAttributes,
     /// Applies one edit to a draft and returns its updated view.
     ///
     /// Fails with `fixture_editor.stale_draft` when `base_version` is given
@@ -280,7 +282,7 @@ pub enum DraftEdit {
         /// Wheel to remove.
         wheel: u32,
     },
-    /// Replaces a wheel's slots; slots that stay at their position keep their images.
+    /// Replaces a wheel's slots; each slot names the existing slot whose optics it keeps.
     SetWheelSlots {
         /// Wheel to change.
         wheel: u32,
@@ -329,11 +331,27 @@ pub struct DraftSetFields {
 pub struct DraftSlotFields {
     /// Slot name, e.g. `Open` or `Red`.
     pub name: String,
-    /// Slot color as CIE 1931 x, y and luminance Y. When omitted, a slot
-    /// that already exists at this position keeps its color or filter and a
-    /// new slot is white.
+    /// Existing slot, counted from 0, whose color, filter and image this
+    /// slot keeps, so slots can be reordered or removed without their
+    /// optics shifting onto a neighbor. A new slot starts white.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<u32>,
+    /// Slot color as CIE 1931 x, y and luminance Y, replacing whatever
+    /// the slot kept from `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[f64; 3]>,
+}
+
+/// One standard GDTF attribute a channel can be created for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct DraftAttributeOption {
+    /// GDTF attribute name, e.g. `ColorAdd_R`.
+    pub name: String,
+    /// Short name shown on consoles, e.g. `R`.
+    pub pretty: String,
+    /// Feature group the attribute belongs to, e.g. `Color`.
+    pub group: String,
 }
 
 /// Preview of one draft mode, shaped like a library profile response.
@@ -366,6 +384,8 @@ pub enum FixtureEditorSuccess {
     Draft(Box<FixtureDraftView>),
     /// The command produced every open draft.
     Drafts(Vec<FixtureDraftView>),
+    /// The command produced the attribute catalog.
+    Attributes(Vec<DraftAttributeOption>),
     /// The command produced a preview.
     Preview(Box<DraftPreviewResponse>),
 }
@@ -413,6 +433,9 @@ pub(super) fn finish_fixture_editor_commands(
             }
             Ok(FixtureEditorSuccess::Drafts(views)) => {
                 responder.succeed_with_output(event.command_id, views)
+            }
+            Ok(FixtureEditorSuccess::Attributes(attributes)) => {
+                responder.succeed_with_output(event.command_id, attributes)
             }
             Ok(FixtureEditorSuccess::Preview(preview)) => {
                 responder.succeed_with_output(event.command_id, preview)

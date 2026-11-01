@@ -29,9 +29,9 @@ pub mod view;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 pub use commands::{
-    BodyShape, DraftEdit, DraftFunctionFields, DraftId, DraftPreviewResponse, DraftSetFields,
-    DraftSlotFields, DraftSource, DraftTemplate, FixtureEditorCommand, FixtureEditorCommandResult,
-    FixtureEditorSuccess,
+    BodyShape, DraftAttributeOption, DraftEdit, DraftFunctionFields, DraftId, DraftPreviewResponse,
+    DraftSetFields, DraftSlotFields, DraftSource, DraftTemplate, FixtureEditorCommand,
+    FixtureEditorCommandResult, FixtureEditorSuccess,
 };
 pub use draft::FixtureDrafts;
 use nightfall_engine::prelude::*;
