@@ -40,87 +40,129 @@ type RowKey = (RowScope, String, Vec<Attribute>);
 /// Identifies one fixture attribute's timing override across projections.
 type FixtureAttributeKey = (Uuid, Option<u32>, Attribute);
 
-/// Per-fixture timing overrides stored on the current release cue, consumed as rows claim them.
-#[derive(Default)]
+/// One row's per-fixture timing overrides on the stored release cue.
+struct StoredRow {
+    /// The row's identity.
+    key: RowKey,
+    /// The row's per-fixture overrides.
+    overrides: Vec<FixtureAttributeTransition>,
+}
+
+/// Per-fixture timing overrides stored on the current release cue.
+///
+/// A projected row takes the overrides of the stored row with the same identity, even when that
+/// row has none, so an override the operator cleared stays cleared. Only projected rows with no
+/// stored counterpart look up overrides by fixture and attribute, and only among stored rows no
+/// projected row matched.
 struct StoredTimings {
-    /// Each stored row's per-fixture overrides, in row order, by row identity.
-    by_row: HashMap<RowKey, VecDeque<Vec<FixtureAttributeTransition>>>,
-    /// Each stored override by fixture and attribute, for rows whose identity changed.
-    by_fixture_attribute: HashMap<FixtureAttributeKey, VecDeque<PartialTransition>>,
+    /// Every stored row, parent rows first and then each part's rows.
+    rows: Vec<StoredRow>,
 }
 
 impl StoredTimings {
-    /// Indexes the per-fixture timing overrides of every row on a stored release cue.
+    /// Collects the per-fixture timing overrides of every row on a stored release cue.
     fn from_release_cue(release_cue: &Cue) -> Self {
-        let mut timings = Self::default();
-        for instruction in &release_cue.instructions {
-            timings.add(RowScope::Parent, instruction);
-        }
-        for part in &release_cue.parts {
-            for instruction in &part.instructions {
-                timings.add(RowScope::Part(part.identifiers.id), instruction);
-            }
-        }
-        timings
-    }
-
-    /// Indexes one stored row's overrides by row identity and by fixture attribute.
-    fn add(&mut self, scope: RowScope, instruction: &BoundCueInstruction) {
-        let overrides = &instruction.cue_instruction.transitions_by_fixture_attribute;
-        self.by_row
-            .entry(row_key(scope, instruction))
-            .or_default()
-            .push_back(overrides.clone());
-        for entry in overrides {
-            for (attribute, transition) in &entry.transitions_by_attribute {
-                self.by_fixture_attribute
-                    .entry((
-                        entry.fixture.fixture_uid,
-                        entry.fixture.index,
-                        attribute.clone(),
-                    ))
-                    .or_default()
-                    .push_back(transition.clone());
-            }
-        }
-    }
-
-    /// Takes the overrides for a projected row: those of the next stored row with the same
-    /// identity, or else the stored overrides for its resolved fixtures and attributes.
-    fn take_for(
-        &mut self,
-        scope: RowScope,
-        instruction: &BoundCueInstruction,
-    ) -> Vec<FixtureAttributeTransition> {
-        let by_row = self
-            .by_row
-            .get_mut(&row_key(scope, instruction))
-            .and_then(VecDeque::pop_front)
-            .filter(|overrides| !overrides.is_empty());
-        if let Some(overrides) = by_row {
-            return overrides;
-        }
-
-        let attributes = row_attributes(instruction);
-        resolved_fixture_refs(instruction)
+        let parent = release_cue
+            .instructions
             .iter()
-            .filter_map(|fixture| {
-                let transitions_by_attribute: AttributeTransitions = attributes
+            .map(|instruction| (RowScope::Parent, instruction));
+        let parts = release_cue.parts.iter().flat_map(|part| {
+            part.instructions
+                .iter()
+                .map(|instruction| (RowScope::Part(part.identifiers.id), instruction))
+        });
+        Self {
+            rows: parent
+                .chain(parts)
+                .map(|(scope, instruction)| StoredRow {
+                    key: row_key(scope, instruction),
+                    overrides: instruction
+                        .cue_instruction
+                        .transitions_by_fixture_attribute
+                        .clone(),
+                })
+                .collect(),
+        }
+    }
+
+    /// Assigns stored overrides to projected rows, given as (scope, row) pairs in row order.
+    ///
+    /// Rows first claim the stored row with the same identity, in order. Rows left without one
+    /// then take the overrides of unclaimed stored rows for their resolved fixtures and
+    /// attributes, which carries timing over when a row's selection or attributes change.
+    fn assign<'a>(
+        self,
+        projected: impl IntoIterator<Item = (RowScope, &'a mut BoundCueInstruction)>,
+    ) {
+        let mut by_row: HashMap<RowKey, VecDeque<usize>> = HashMap::new();
+        for (index, row) in self.rows.iter().enumerate() {
+            by_row.entry(row.key.clone()).or_default().push_back(index);
+        }
+
+        let mut claimed = vec![false; self.rows.len()];
+        let mut unmatched = Vec::new();
+        for (scope, instruction) in projected {
+            let stored = by_row
+                .get_mut(&row_key(scope, instruction))
+                .and_then(VecDeque::pop_front);
+            match stored {
+                Some(index) => {
+                    claimed[index] = true;
+                    instruction.cue_instruction.transitions_by_fixture_attribute =
+                        self.rows[index].overrides.clone();
+                }
+                None => unmatched.push(instruction),
+            }
+        }
+
+        let mut by_fixture_attribute: HashMap<FixtureAttributeKey, VecDeque<PartialTransition>> =
+            HashMap::new();
+        for (row, _) in self
+            .rows
+            .iter()
+            .zip(&claimed)
+            .filter(|(_, claimed)| !**claimed)
+        {
+            for entry in &row.overrides {
+                for (attribute, transition) in &entry.transitions_by_attribute {
+                    by_fixture_attribute
+                        .entry((
+                            entry.fixture.fixture_uid,
+                            entry.fixture.index,
+                            attribute.clone(),
+                        ))
+                        .or_default()
+                        .push_back(transition.clone());
+                }
+            }
+        }
+
+        for instruction in unmatched {
+            let attributes = row_attributes(instruction);
+            instruction.cue_instruction.transitions_by_fixture_attribute =
+                resolved_fixture_refs(instruction)
                     .iter()
-                    .filter_map(|attribute| {
-                        let timing = self
-                            .by_fixture_attribute
-                            .get_mut(&(fixture.fixture_uid, fixture.index, attribute.clone()))?
-                            .pop_front()?;
-                        Some((attribute.clone(), timing))
+                    .filter_map(|fixture| {
+                        let transitions_by_attribute: AttributeTransitions = attributes
+                            .iter()
+                            .filter_map(|attribute| {
+                                let timing = by_fixture_attribute
+                                    .get_mut(&(
+                                        fixture.fixture_uid,
+                                        fixture.index,
+                                        attribute.clone(),
+                                    ))?
+                                    .pop_front()?;
+                                Some((attribute.clone(), timing))
+                            })
+                            .collect();
+                        (!transitions_by_attribute.is_empty()).then(|| FixtureAttributeTransition {
+                            fixture: fixture.clone(),
+                            transitions_by_attribute,
+                        })
                     })
                     .collect();
-                (!transitions_by_attribute.is_empty()).then(|| FixtureAttributeTransition {
-                    fixture: fixture.clone(),
-                    transitions_by_attribute,
-                })
-            })
-            .collect()
+        }
     }
 }
 
@@ -170,18 +212,17 @@ fn project_release_cue<C: Deref<Target = Cue>>(
         }
     }
 
-    let mut timings = StoredTimings::from_release_cue(stored);
-    for instruction in &mut release_cue.instructions {
-        instruction.cue_instruction.transitions_by_fixture_attribute =
-            timings.take_for(RowScope::Parent, instruction);
-    }
-    for part in &mut release_cue.parts {
+    let parent_rows = release_cue
+        .instructions
+        .iter_mut()
+        .map(|instruction| (RowScope::Parent, instruction));
+    let part_rows = release_cue.parts.iter_mut().flat_map(|part| {
         let scope = RowScope::Part(part.identifiers.id);
-        for instruction in &mut part.instructions {
-            instruction.cue_instruction.transitions_by_fixture_attribute =
-                timings.take_for(scope, instruction);
-        }
-    }
+        part.instructions
+            .iter_mut()
+            .map(move |instruction| (scope, instruction))
+    });
+    StoredTimings::from_release_cue(stored).assign(parent_rows.chain(part_rows));
 
     release_cue
 }
@@ -218,7 +259,7 @@ fn release_part(release_cue_uid: Uuid, stored: Option<&CuePart>, source: &CuePar
                 ),
                 label: source.identifiers.label.clone(),
             },
-            tracking_flags: source.tracking_flags.clone(),
+            tracking_flags: source.tracking_flags,
             ..Default::default()
         },
     }
@@ -409,6 +450,32 @@ mod tests {
 
         let empty = Cue::default();
         assert!(release_cue_rows_update(&sequence, |_| Some(&empty)).is_none());
+    }
+
+    /// Rows with the same identity keep their own overrides, so an override on one of them is not
+    /// copied onto the other and the stored rows stay current.
+    #[test]
+    fn matching_rows_keep_their_own_overrides() {
+        let fixture = Uuid::from_u128(0x44);
+        let mut step = Cue::default();
+        step.instructions = vec![red_row(&[fixture]), red_row(&[fixture])];
+
+        let mut overridden = red_row(&[fixture]);
+        overridden.cue_instruction.transitions_by_fixture_attribute =
+            vec![red_override(fixture, 4)];
+        let release_cue = Cue {
+            instructions: vec![overridden, red_row(&[fixture])],
+            ..Default::default()
+        };
+        let sequence = sequence_with(&step, release_cue);
+
+        assert!(release_cue_rows_update(&sequence, |_| Some(&step)).is_none());
+        let projected = project_release_cue(&sequence, |_| Some(&step));
+        assert_eq!(
+            fade_out_secs(red_override_for(&projected.instructions[0], fixture)),
+            Some(4)
+        );
+        assert!(red_override_for(&projected.instructions[1], fixture).is_none());
     }
 
     /// Step parts get a release part with a stable identity, and a stored part keeps its timing.
