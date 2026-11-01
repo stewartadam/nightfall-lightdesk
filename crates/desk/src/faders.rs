@@ -810,14 +810,20 @@ impl Faders {
     }
 }
 
+/// Clamps a fader level to the 0 to 100 percent range.
 fn clamp_percent(value: f32) -> f32 {
     value.clamp(0.0, 100.0)
 }
 
+/// Returns whether two fader levels are equal within [`FADER_EPSILON`], so float noise from
+/// hardware does not count as movement.
 fn is_same_value(left: f32, right: f32) -> bool {
     (left - right).abs() <= FADER_EPSILON
 }
 
+/// Returns whether a physical fader moving from `previous_hardware_value` to `hardware_value`
+/// reached or passed the console level, which is when it picks the level up instead of
+/// jumping it.
 fn crossed_console_value(
     previous_hardware_value: f32,
     hardware_value: f32,
@@ -831,6 +837,10 @@ fn crossed_console_value(
         || (previous_hardware_value > console_value && hardware_value < console_value)
 }
 
+/// Reads the live state a fader assigned to `clip_id` follows: the running playback's
+/// intensity and instance, or level zero when the clip is not running.
+///
+/// Returns `None` when the clip no longer exists, so the caller clears the fader.
 fn runtime_state_for_clip(
     clip_id: u32,
     clips: &Query<&Clip>,
@@ -901,6 +911,8 @@ pub(crate) fn master_contributes(master: &Master) -> bool {
     }
 }
 
+/// Reads the live state a fader assigned to `master_id` follows, its control position, or
+/// `None` when the master no longer exists.
 fn runtime_state_for_master(
     master_id: u32,
     masters: &DataProvider<Master>,
@@ -913,6 +925,10 @@ fn runtime_state_for_master(
     })
 }
 
+/// Moves a fader to `value` as the operator setting it directly, clamped to 0 to 100 percent.
+///
+/// The fader counts as grabbed at that level, so the next physical movement drives it without
+/// a pickup, and any pending console sync is cancelled. Returns the clamped level.
 fn set_fader_level(fader: &mut Fader, value: f32) -> f32 {
     let value = clamp_percent(value);
     fader.hardware_value = value;
@@ -925,6 +941,8 @@ fn set_fader_level(fader: &mut Fader, value: f32) -> f32 {
     value
 }
 
+/// Moves a master's fader to `value` like [`set_fader_level`] and returns the level percent
+/// the master takes from that control position, or `None` when the master no longer exists.
 fn set_master_fader_level(
     fader: &mut Fader,
     master_id: u32,
@@ -1771,6 +1789,11 @@ pub fn handle_fader_updates(
     }
 }
 
+/// Keeps every fader in step with what it is assigned to.
+///
+/// Faders whose clip or master was deleted are cleared. The others reconcile with their
+/// target's live level, and when a fader has a level queued for a newly attached playback,
+/// that level is sent to the playback as its intensity.
 pub fn sync_fader_state(
     mut faders: ResMut<Faders>,
     clips: Query<&Clip>,

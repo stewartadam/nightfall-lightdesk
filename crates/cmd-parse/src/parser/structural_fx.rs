@@ -19,6 +19,8 @@ use crate::parser::lexer::{LexerToken, LexerTokenKind};
 use crate::parser::structural::{normalized_value_for_fill, refresh_branch};
 use crate::slots::contracts::{ClauseId, SlotId};
 
+/// Lists the tokens that may follow a step FX definition's shaping position: the `width` and
+/// `ramp` keywords and the named ramp curves, offered as completions.
 pub(super) fn step_fx_shaping_expected_tokens() -> Vec<ExpectedToken> {
     vec![
         ExpectedToken::Token(TokenId::Width),
@@ -32,6 +34,10 @@ pub(super) fn step_fx_shaping_expected_tokens() -> Vec<ExpectedToken> {
     ]
 }
 
+/// Returns the speed value typed so far when an FX or clip action's fills start with the
+/// `speed` keyword, joining the fills after it (empty when only `speed` is typed yet).
+///
+/// Returns `None` for any other action, so callers can tell a speed action from the rest.
 pub(super) fn fx_speed_value_surface(fills: &[&ConsumedSemanticItem]) -> Option<String> {
     fills
         .first()
@@ -45,6 +51,12 @@ pub(super) fn fx_speed_value_surface(fills: &[&ConsumedSemanticItem]) -> Option<
         })
 }
 
+/// Fills the next token of a `speed` action value, which the lexer may split across tokens.
+///
+/// After `speed` alone it accepts a number or a leading `+` or `-`. While the value is an
+/// unfinished decimal it accepts more digits, and after a whole number it accepts the decimal
+/// point. Returns `None` when the action is not a speed action or the token cannot continue
+/// the value.
 pub(super) fn filled_value_for_fx_speed_followup(
     slot: SlotId,
     fills: &[&ConsumedSemanticItem],
@@ -99,6 +111,8 @@ pub(super) fn filled_value_for_fx_speed_followup(
     None
 }
 
+/// Returns whether a `speed` action still needs more of its value: nothing typed after
+/// `speed`, or a decimal that is not complete yet. Other actions never do.
 pub(super) fn fx_speed_requires_followup(
     fills: &[&ConsumedSemanticItem],
     decimal_value_prefix: fn(&str) -> bool,
@@ -112,6 +126,11 @@ pub(super) fn fx_speed_requires_followup(
             && !is_complete_decimal_value(value_surface.as_str()))
 }
 
+/// Enters the step definition clause once a step FX's duration is complete and followed by
+/// whitespace, so the parser offers step values next instead of more duration input.
+///
+/// Does nothing when the branch is not in the duration clause or already has a step
+/// definition.
 pub(super) fn promote_ready_step_fx_definition(
     context: &CommandPrefixContext,
     branch: &mut ParseBranchState<'_>,
