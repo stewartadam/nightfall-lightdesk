@@ -43,7 +43,7 @@ async function openEditorFromPalette(page: Page): Promise<Page> {
 
 /**
  * Sends one fixture-editor command through the editor's own engine
- * connection, standing in for editing controls the window does not have yet.
+ * connection, standing in for another client working on the same draft.
  */
 async function sendEditorCommand(editor: Page, command: unknown) {
   await editor.evaluate(async (payload) => {
@@ -83,7 +83,7 @@ test("fixture editor window starts, lists and discards drafts", async ({
   await editor.screenshot({ path: testInfo.outputPath("01-start-page.png") });
 
   await editor.getByTestId("fixture-starter-rgbw").click();
-  const summary = editor.getByTestId("fixture-draft-summary");
+  const summary = editor.getByTestId("fixture-draft-editor");
   await expect(
     summary.getByRole("heading", { name: "Generic RGBW" }),
   ).toBeVisible();
@@ -165,4 +165,144 @@ test("fixture editor window starts, lists and discards drafts", async ({
   await page.keyboard.press("Enter");
   await page.waitForTimeout(500);
   expect(reopened).toBe(false);
+});
+
+/** Adds a channel through the mode's add form. */
+async function addChannel(
+  editor: Page,
+  attribute: string,
+  resolution: "8-bit" | "16-bit",
+) {
+  const form = editor.getByTestId("add-channel-form");
+  await form.getByPlaceholder("e.g. Dimmer or ColorAdd_R").fill(attribute);
+  await form.getByLabel("Resolution").selectOption({ label: resolution });
+  await form.getByRole("button", { name: "Add channel" }).click();
+}
+
+/** Replaces a draft field's text and commits it with Enter. */
+async function commitField(
+  field: ReturnType<Page["getByLabel"]>,
+  value: string,
+) {
+  await field.fill(value);
+  await field.press("Enter");
+}
+
+/**
+ * Builds a fixture from a blank draft with the editing controls: channels,
+ * resolutions, a function and its named range, undo and redo, a color wheel
+ * and the fixture's names, then saves it to the library, and saves a second
+ * draft under the same name to confirm replacing the file.
+ */
+test("fixture editor builds and saves a fixture", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  await openApp(page, backendSlot.backendPort);
+  const editor = await openEditorFromPalette(page);
+  const draftEditor = editor.getByTestId("fixture-draft-editor");
+
+  await editor.getByTestId("fixture-starter-blank").click();
+  await expect(draftEditor).toBeVisible();
+  await expect(draftEditor).toContainText("No channels yet");
+
+  await addChannel(editor, "Dimmer", "16-bit");
+  await addChannel(editor, "ColorAdd_R", "8-bit");
+  const rows = editor.getByTestId("channel-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("1–2");
+  await expect(rows.nth(1)).toContainText("3");
+
+  // Dropping the dimmer to 8-bit moves the red channel up an address.
+  await rows
+    .nth(0)
+    .getByRole("combobox", { name: /^Resolution of/ })
+    .selectOption({ label: "8-bit" });
+  await expect(rows.nth(0).locator("td").first()).toHaveText("1");
+  await expect(rows.nth(1).locator("td").first()).toHaveText("2");
+  await editor.screenshot({ path: testInfo.outputPath("05-channels.png") });
+
+  await rows
+    .nth(0)
+    .getByRole("button", { name: /Dimmer/ })
+    .first()
+    .click();
+  const detail = editor.getByTestId("channel-detail");
+  await expect(detail).toBeVisible();
+  const card = detail.getByTestId("function-card").first();
+  await commitField(card.getByLabel("Function name"), "Intensity");
+  await expect(card.getByLabel("Function name")).toHaveValue("Intensity");
+
+  await card.getByRole("button", { name: "Add range" }).click();
+  const range = card.getByTestId("range-row");
+  await expect(range).toHaveCount(1);
+  await commitField(range.getByLabel("Range name"), "Full");
+  await expect(range.getByLabel("Range name")).toHaveValue("Full");
+  await editor.screenshot({
+    path: testInfo.outputPath("06-channel-detail.png"),
+  });
+
+  // Undo steps back one edit at a time, and redo reapplies it.
+  await draftEditor.getByRole("button", { name: "Undo" }).click();
+  await expect(range.getByLabel("Range name")).toHaveValue("Range 1");
+  await draftEditor.getByRole("button", { name: "Redo" }).click();
+  await expect(range.getByLabel("Range name")).toHaveValue("Full");
+
+  await editor.getByRole("tab", { name: "Wheels" }).click();
+  await editor.getByRole("button", { name: "Add wheel" }).click();
+  const wheel = editor.getByTestId("wheel-card");
+  await expect(wheel).toHaveCount(1);
+  await wheel.getByRole("button", { name: "Add slot" }).click();
+  await wheel.getByRole("button", { name: "Add slot" }).click();
+  const slots = wheel.getByTestId("wheel-slot");
+  await expect(slots).toHaveCount(2);
+  await commitField(slots.nth(1).getByLabel("Name of slot 2"), "Red");
+  await slots.nth(1).getByLabel("Color of Red").fill("#ff0000");
+  await expect(slots.nth(1).getByLabel("Color of Red")).toHaveValue("#ff0000");
+  await editor.screenshot({ path: testInfo.outputPath("07-wheels.png") });
+
+  await editor.getByRole("tab", { name: "Fixture" }).click();
+  await commitField(editor.getByLabel("Manufacturer", { exact: true }), "Acme");
+  await commitField(editor.getByLabel("Name", { exact: true }), "Test Par");
+  await expect(
+    draftEditor.getByRole("heading", { name: "Acme Test Par" }),
+  ).toBeVisible();
+  await editor.screenshot({ path: testInfo.outputPath("08-fixture-info.png") });
+
+  await draftEditor.getByRole("button", { name: "Save" }).click();
+  const saveDialog = editor.getByRole("dialog", {
+    name: "Save to fixture library",
+  });
+  await expect(saveDialog).toBeVisible();
+  await saveDialog.getByLabel("Revision note").fill("First version");
+  await editor.screenshot({ path: testInfo.outputPath("09-save.png") });
+  await saveDialog.getByRole("button", { name: "Save" }).click();
+  await expect(saveDialog).toBeHidden();
+  await expect(draftEditor).toContainText("saves to");
+  await expect(draftEditor).not.toContainText("Unsaved");
+
+  // A second draft saved under the same name asks before replacing the file.
+  await editor.getByRole("button", { name: "Back to the start page" }).click();
+  await editor.getByTestId("fixture-starter-dimmer").click();
+  await editor.getByRole("tab", { name: "Fixture" }).click();
+  await commitField(editor.getByLabel("Manufacturer", { exact: true }), "Acme");
+  await commitField(editor.getByLabel("Name", { exact: true }), "Test Par");
+  await expect(
+    draftEditor.getByRole("heading", { name: "Acme Test Par" }),
+  ).toBeVisible();
+  await draftEditor.getByRole("button", { name: "Save" }).click();
+  await saveDialog.getByRole("button", { name: "Save" }).click();
+  await expect(saveDialog.getByTestId("fixture-save-conflict")).toBeVisible();
+  await editor.screenshot({ path: testInfo.outputPath("10-replace.png") });
+  await saveDialog.getByRole("button", { name: "Replace file" }).click();
+  await expect(saveDialog).toBeHidden();
+
+  await editor.getByRole("button", { name: "Back to the start page" }).click();
+  await editor.getByLabel("Search library fixtures").fill("Acme Test Par");
+  await expect(
+    editor
+      .getByTestId("fixture-editor-library")
+      .getByRole("listitem")
+      .filter({ hasText: "Acme Test Par" }),
+  ).toHaveCount(1, { timeout: 15_000 });
 });

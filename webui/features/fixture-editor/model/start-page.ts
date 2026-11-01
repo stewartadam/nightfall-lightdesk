@@ -59,7 +59,7 @@ export const DRAFT_STARTERS: readonly DraftStarter[] = [
     id: "moving-head",
     label: "Moving Head",
     description:
-      "8 channels: 16-bit pan and tilt, dimmer, shutter, color wheel",
+      "7 channels: 16-bit pan and tilt, dimmer, shutter, color wheel",
     source: { type: "Template", data: types.DraftTemplate.MovingHead },
   },
 ];

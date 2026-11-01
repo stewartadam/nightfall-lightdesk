@@ -19,12 +19,19 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { fixtureDrafts } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { createDraftQueue, type DraftChange } from "../services/draft-queue";
 import {
   discardDraft,
+  editDraft,
+  listAttributes,
   openDraft,
+  redoDraft,
   refreshDrafts,
+  type SaveOptions,
+  saveDraft,
+  undoDraft,
 } from "../services/fixture-editor-client";
-import DraftSummary from "./draft-summary";
+import DraftEditor from "./draft-editor";
 import StartPage from "./start-page";
 
 const log = getLogger(import.meta.url);
@@ -45,6 +52,9 @@ export default function FixtureEditorWindow() {
   const [discardId, setDiscardId] = createSignal<types.DraftId | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [attributeOptions, setAttributeOptions] = createSignal<
+    types.DraftAttributeOption[]
+  >([]);
   /** Whether the engine connection is open, which every editor command needs. */
   const connected = () => connectionStatus() === EngineRuntimeStatus.Connected;
 
@@ -92,6 +102,59 @@ export default function FixtureEditorWindow() {
     } finally {
       setBusy(false);
     }
+  };
+
+  /** Loads the attribute catalog for the channel pickers once the connection opens. */
+  createEffect(
+    on(connected, (isConnected) => {
+      if (!isConnected || attributeOptions().length > 0) return;
+      listAttributes()
+        .then(setAttributeOptions)
+        .catch((cause: unknown) => {
+          log.warn("Could not load the attribute catalog", { error: cause });
+        });
+    }),
+  );
+
+  /** Sends this window's draft commands in order, against the right versions. */
+  const queue = createDraftQueue({
+    draft: (id) => draftById(id),
+    send: editDraft,
+  });
+
+  /**
+   * Applies one edit to the draft on screen, after any edit still in flight.
+   * The target draft is fixed when the user makes the edit, so going back or
+   * opening another draft meanwhile cannot redirect it. A refusal is shown
+   * above the page.
+   */
+  const edit = (change: DraftChange): Promise<boolean> => {
+    const seen = openView();
+    if (!seen) return Promise.resolve(false);
+    return queue.edit(seen, change).then(
+      (view) => {
+        if (view) setError(null);
+        return view !== undefined;
+      },
+      (cause: unknown) => {
+        log.warn("Fixture draft edit was refused", { error: cause });
+        setError(errorMessage(cause));
+        return false;
+      },
+    );
+  };
+
+  /** Undoes or redoes the open draft's last change, in turn with queued edits. */
+  const step = (command: typeof undoDraft) => {
+    const id = openId();
+    if (id !== null) void run(() => queue.command(id, command).then(() => {}));
+  };
+
+  /** Saves the open draft; failures reach the save dialog, which can ask to replace a file. */
+  const save = async (options: SaveOptions) => {
+    const id = openId();
+    if (id === null) return;
+    await queue.command(id, (draftId) => saveDraft(draftId, options));
   };
 
   /** Opens a new draft and shows it. */
@@ -165,10 +228,17 @@ export default function FixtureEditorWindow() {
             }
           >
             {(view) => (
-              <DraftSummary
-                draft={view()}
+              <DraftEditor
+                editing={{
+                  draft: view,
+                  attributeOptions,
+                  edit,
+                }}
                 busy={busy()}
                 onBack={() => setOpenId(null)}
+                onUndo={() => step(undoDraft)}
+                onRedo={() => step(redoDraft)}
+                onSave={save}
                 onDiscard={() => requestDiscard(view())}
               />
             )}
