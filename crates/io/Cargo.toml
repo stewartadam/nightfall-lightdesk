@@ -16,6 +16,7 @@ bevy_ecs = { workspace = true, optional = true }
 nightfall-dmx = { path = "../dmx" }
 web-time.workspace = true
 serde.workspace = true
+tracing.workspace = true
 typeshare.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -324,27 +324,6 @@ fn route_transport_from_target_id(target: &str) -> Option<RouteTransport> {
     }
 }
 
-/// Resolves a configured patch target ID to the concrete runtime output transport.
-fn output_transport_from_target_id(
-    target: &str,
-    network_outputs: &NetworkDmxOutputTargets,
-    usb_outputs: &UsbDmxOutputTargets,
-) -> Result<OutputTransport, String> {
-    if let Some(transport) = network_outputs
-        .get(target)
-        .and_then(NetworkDmxOutputTarget::output_transport)
-    {
-        return Ok(transport);
-    }
-    if let Some(transport) = usb_outputs
-        .get(target)
-        .map(UsbDmxOutputTarget::output_transport)
-    {
-        return Ok(transport);
-    }
-    Err(format!("Unknown output transport target '{target}'"))
-}
-
 /// Returns whether an output source targets only one fixture without element or parameter filters.
 fn is_simple_fixture_source(source: &OutputSource, uid: Uuid) -> bool {
     match source {
@@ -405,8 +384,13 @@ fn current_fixture_transport(
     {
         match &route.target {
             OutputTarget::Transport { target, .. } => {
-                return output_transport_from_target_id(target, network_outputs, usb_outputs)
-                    .map(|transport| Some((transport, Some(target.clone()))));
+                return nightfall_fixtures::route_resolution::output_transport_from_target_id(
+                    target,
+                    network_outputs,
+                    usb_outputs,
+                )
+                .map(|transport| Some((transport, Some(target.clone()))))
+                .ok_or_else(|| format!("Unknown output transport target '{target}'"));
             }
             OutputTarget::Console { .. } => {
                 return Err(

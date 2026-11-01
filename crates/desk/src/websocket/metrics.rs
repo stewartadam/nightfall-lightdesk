@@ -9,6 +9,7 @@
 //! Runtime metrics projection for websocket clients.
 
 use nightfall_engine::diagnostic_paths::*;
+use nightfall_io::NetworkStats;
 
 use super::*;
 

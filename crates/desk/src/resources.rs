@@ -10,7 +10,6 @@ use bevy_ecs::prelude::*;
 use bevy_platform::cell::SyncCell;
 
 pub mod log_config;
-pub mod network_stats;
 
 /// Wraps thread-unsafe (!Sync) resources in a SyncCell so that they can be used
 /// as resources, albeit with exclusively mutable access.

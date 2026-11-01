@@ -8,7 +8,6 @@ edition.workspace = true
 artnet_protocol.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
-nightfall-desk = { path = "../desk" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
