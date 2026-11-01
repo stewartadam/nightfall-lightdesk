@@ -743,13 +743,16 @@ fn rename_wheel(fixture_type: &mut FixtureType, wheel: u32, name: &str) -> Resul
     Ok(())
 }
 
-/// Replaces a wheel's slots, keeping media, facets and filters of slots that stay in place.
+/// Replaces a wheel's slots; each keeps the media, facets and filter of the existing slot it names.
 fn set_wheel_slots(wheel: &mut Wheel, slots: &[DraftSlotFields]) -> Result<(), String> {
-    let mut existing = std::mem::take(&mut wheel.slots).into_iter();
+    let existing = &wheel.slots;
     let mut updated = Vec::with_capacity(slots.len());
     for fields in slots {
-        let mut slot = match existing.next() {
-            Some(slot) => slot,
+        let mut slot = match fields.from {
+            Some(index) => existing
+                .get(index as usize)
+                .cloned()
+                .ok_or_else(|| format!("wheel slot {} does not exist", index + 1))?,
             None => fragment::<WheelSlot>(r#"<Slot Color="0.3127,0.3290,100"/>"#)?,
         };
         slot.name = Some(gdtf_name(&fields.name)?);

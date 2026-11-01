@@ -715,6 +715,7 @@ fn wheel_slots_are_checked() {
             wheel: 0,
             slots: vec![super::DraftSlotFields {
                 name: "Open".to_string(),
+                from: None,
                 color: None,
             }],
         },
@@ -723,4 +724,85 @@ fn wheel_slots_are_checked() {
         problem.severity == ProblemSeverity::Error
             && problem.message.contains("missing wheel slots")
     }));
+}
+
+/// The attribute catalog lists every standard attribute once, with the
+/// additive color emitters grouped under Color, and each one adds a clean channel.
+#[test]
+fn attribute_catalog_lists_addable_attributes() {
+    let mut editor = EditorApp::new();
+    let options: Vec<super::DraftAttributeOption> =
+        editor.output(FixtureEditorCommand::ListAttributes);
+    let names: Vec<&str> = options.iter().map(|option| option.name.as_str()).collect();
+    assert!(names.contains(&"Dimmer") && names.contains(&"Pan"));
+    let red = options
+        .iter()
+        .find(|option| option.name == "ColorAdd_R")
+        .expect("red emitter is listed");
+    assert_eq!((red.pretty.as_str(), red.group.as_str()), ("R", "Color"));
+    let mut unique = names.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), names.len(), "no attribute is listed twice");
+
+    let id = editor.open(DraftSource::Blank).draft_id;
+    for option in &options {
+        let view = editor.edit(
+            id,
+            DraftEdit::AddChannel {
+                mode: 0,
+                index: None,
+                attribute: option.name.clone(),
+                resolution: 1,
+            },
+        );
+        assert!(
+            view.attributes.contains(&option.name),
+            "{} is defined once a channel uses it",
+            option.name
+        );
+    }
+}
+
+/// Wheel slots keep the optics of the existing slot they name, so removing
+/// a slot leaves every other slot's color in place, and a missing slot is refused.
+#[test]
+fn wheel_slots_keep_the_slot_they_name() {
+    let mut editor = EditorApp::new();
+    let view = editor.open(DraftSource::Template(DraftTemplate::MovingHead));
+    let id = view.draft_id;
+    let before = view.wheels[0].slots.clone();
+    let kept: Vec<super::DraftSlotFields> = before
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(index, slot)| super::DraftSlotFields {
+            name: slot.name.clone(),
+            from: Some(index as u32),
+            color: None,
+        })
+        .collect();
+    let view = editor.edit(
+        id,
+        DraftEdit::SetWheelSlots {
+            wheel: 0,
+            slots: kept,
+        },
+    );
+    assert_eq!(view.wheels[0].slots, before[1..].to_vec());
+    assert_eq!(
+        editor.error_code(FixtureEditorCommand::EditDraft {
+            draft_id: id,
+            base_version: None,
+            edit: DraftEdit::SetWheelSlots {
+                wheel: 0,
+                slots: vec![super::DraftSlotFields {
+                    name: "Gone".to_string(),
+                    from: Some(42),
+                    color: None,
+                }],
+            },
+        }),
+        "fixture_editor.invalid_edit"
+    );
 }

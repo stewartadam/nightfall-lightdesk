@@ -54,6 +54,9 @@ fn apply_command(
         FixtureEditorCommand::ListDrafts => Ok(FixtureEditorSuccess::Drafts(
             drafts.iter().map(draft_view).collect(),
         )),
+        FixtureEditorCommand::ListAttributes => {
+            Ok(FixtureEditorSuccess::Attributes(super::catalog::options()))
+        }
         FixtureEditorCommand::EditDraft {
             draft_id,
             base_version,
