@@ -34,6 +34,10 @@ pub struct ActiveCommand {
     /// Whether the command is an undo or redo replaying captured inverses, which restore
     /// earlier state as it was rather than submit new edits.
     pub undo_replay: bool,
+    /// Whether a macro run issued the command as one of its statements. The command keeps the
+    /// origin of the surface that started the macro, so handlers that treat a person's input
+    /// differently from scripted input check this instead.
+    pub macro_statement: bool,
     /// Number of operation outcomes required before the command can finish.
     expected_completions: usize,
     /// Operation outcomes already received for this command.
@@ -147,6 +151,7 @@ impl CommandTracker {
                 reply_target,
                 started_at: Instant::now(),
                 undo_replay: false,
+                macro_statement: false,
                 expected_completions: 1,
                 received_completions: 0,
                 successful_completions: 0,
@@ -208,6 +213,20 @@ impl CommandTracker {
         if let Some(command) = self.active.get_mut(&command_id) {
             command.undo_replay = true;
         }
+    }
+
+    /// Marks an active command as a statement a macro run issued.
+    pub fn mark_macro_statement(&mut self, command_id: CommandId) {
+        if let Some(command) = self.active.get_mut(&command_id) {
+            command.macro_statement = true;
+        }
+    }
+
+    /// Returns whether an active command is a statement a macro run issued.
+    pub fn is_macro_statement(&self, command_id: CommandId) -> bool {
+        self.active
+            .get(&command_id)
+            .is_some_and(|command| command.macro_statement)
     }
 
     /// Returns whether an active command is an undo or redo replaying captured inverses.
@@ -438,6 +457,16 @@ impl CommandResponder<'_> {
     ) -> Result<(), CommandRegistrationError> {
         self.tracker
             .register_context(command_id, undo_id, origin, reply_target)
+    }
+
+    /// Marks an active command as a statement a macro run issued.
+    pub fn mark_macro_statement(&mut self, command_id: CommandId) {
+        self.tracker.mark_macro_statement(command_id);
+    }
+
+    /// Returns whether an active command is a statement a macro run issued.
+    pub fn is_macro_statement(&self, command_id: CommandId) -> bool {
+        self.tracker.is_macro_statement(command_id)
     }
 
     /// Returns whether a command is currently awaiting a terminal outcome.

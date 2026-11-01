@@ -21,7 +21,6 @@
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_cmd_parse::split_command_statements;
-use nightfall_desk::launch_quantize::MACRO_STATEMENT_SURFACE;
 use nightfall_desk::prelude::DeskCommand;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
@@ -101,8 +100,7 @@ struct MacroRun {
     owner: CommandId,
     /// Undo group shared by every statement of the run.
     undo_id: UndoId,
-    /// Origin given to the run's statements, naming the macro so that its clip launches skip
-    /// launch quantize.
+    /// Surface that started the run, inherited by its statements.
     origin: CommandOrigin,
     /// Macros on the path from the outermost run to this one, including this macro.
     chain: Vec<Uuid>,
@@ -268,10 +266,7 @@ impl MacroRuns {
             settled: None,
             owner: envelope.command_id,
             undo_id: envelope.undo_id,
-            origin: CommandOrigin::Automation {
-                surface: MACRO_STATEMENT_SURFACE.to_owned(),
-                source: Some(format!("Macro {}", definition.identifiers.id)),
-            },
+            origin: envelope.origin.clone(),
             chain,
             failure: None,
         });
@@ -521,6 +516,9 @@ pub fn advance_macro_runs(
             finish(&mut responder, &run);
             continue;
         }
+        // Statements keep the starting surface's origin; the mark tells handlers such as launch
+        // quantize that a macro, not a person, issued them.
+        responder.mark_macro_statement(command_id);
         pending.push(PayloadEnvelope::with_context(
             command_id,
             run.undo_id,

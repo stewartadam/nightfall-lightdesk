@@ -23,18 +23,15 @@ use serde::Serialize;
 /// timeline run, rather than a person.
 pub const INTERNAL_DESK_ACTION_ORIGIN: &str = "InternalDeskAction";
 
-/// Surface named by the origin of the statements a macro runs.
-pub const MACRO_STATEMENT_SURFACE: &str = "Macro";
-
 /// Returns whether a clip command from `origin` waits for launch quantize: anything a person
-/// sends, but not commands a timeline runs, which keep to the timeline's own grid, nor the
-/// statements of a macro, which run straight through so a macro's launches land together.
+/// sends, but not commands a timeline runs, which keep to the timeline's own grid.
+///
+/// Statements a macro runs keep the origin of the surface that started the macro, so the
+/// caller also checks [`CommandResponder::is_macro_statement`] to let them fire at once.
 pub fn origin_follows_launch_quantize(origin: &CommandOrigin) -> bool {
     match origin {
         CommandOrigin::Remote(name) => name != INTERNAL_DESK_ACTION_ORIGIN,
-        CommandOrigin::Automation { surface, .. } => {
-            surface != ActionSurface::Timeline.label() && surface != MACRO_STATEMENT_SURFACE
-        }
+        CommandOrigin::Automation { surface, .. } => surface != ActionSurface::Timeline.label(),
         CommandOrigin::WebUi | CommandOrigin::Cli => true,
     }
 }
@@ -332,8 +329,8 @@ mod tests {
         assert!(armed.take_dropped().is_empty());
     }
 
-    /// Verifies person-sent clip commands follow launch quantize while timeline actions and
-    /// macro statements fire at once.
+    /// Verifies person-sent clip commands follow launch quantize while timeline actions fire at
+    /// once.
     #[test]
     fn only_person_sent_commands_follow_launch_quantize() {
         assert!(origin_follows_launch_quantize(&CommandOrigin::WebUi));
@@ -345,12 +342,6 @@ mod tests {
             &CommandOrigin::Automation {
                 surface: ActionSurface::Timeline.label().to_owned(),
                 source: None,
-            }
-        ));
-        assert!(!origin_follows_launch_quantize(
-            &CommandOrigin::Automation {
-                surface: MACRO_STATEMENT_SURFACE.to_owned(),
-                source: Some("Macro 3".to_owned()),
             }
         ));
         assert!(!origin_follows_launch_quantize(&CommandOrigin::Remote(

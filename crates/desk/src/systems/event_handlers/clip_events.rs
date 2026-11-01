@@ -573,7 +573,10 @@ pub fn forward_clip_ingress_actions(
         };
         let operation = EngineOperationEnvelope::for_command(envelope, action);
         let quantized = quantized_action(&operation.operation)
-            .filter(|_| origin_follows_launch_quantize(&envelope.origin))
+            .filter(|_| {
+                origin_follows_launch_quantize(&envelope.origin)
+                    && !responder.is_macro_statement(envelope.command_id)
+            })
             .map(|(_, clip_id)| clip_id.expand());
         let target_beat = quantized
             .as_ref()
