@@ -30,12 +30,12 @@ use nightfall_desk::prelude::TelemetryState;
 use scrub::Scrubber;
 use sentry::{
     ClientOptions, Envelope, Transport,
-    integrations::tracing::EventFilter,
+    integrations::tracing::{BreadcrumbLayer, ErrorLayer},
     protocol::{Breadcrumb, Event, User},
     types::Dsn,
 };
 use tracing::{Level, Metadata, Subscriber, callsite::Identifier};
-use tracing_subscriber::{Layer, registry::LookupSpan};
+use tracing_subscriber::{Layer, layer::Context, registry::LookupSpan};
 
 use crate::telemetry_outbox::{Endpoint, Outbox, OutboxLimits, OutboxStore};
 
@@ -240,10 +240,47 @@ pub(crate) fn tracing_layer<S>() -> impl Layer<S>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
-    let recent = Mutex::new(HashMap::new());
-    sentry::integrations::tracing::layer()
-        .span_filter(|_| false)
-        .event_filter(move |metadata| classify_event(metadata, &recent, Instant::now()))
+    ReportLayer {
+        breadcrumbs: BreadcrumbLayer::new(),
+        reports: ErrorLayer::new(),
+        recent: Mutex::new(HashMap::new()),
+    }
+}
+
+/// How a log record contributes to error reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Capture {
+    /// The record is not sent anywhere.
+    Ignore,
+    /// The record is kept as context for the next report.
+    Breadcrumb,
+    /// The record becomes a report of its own.
+    Report,
+}
+
+/// Classifies each log record once and hands it to Sentry's breadcrumb or error layer, so the
+/// repeat window is consulted exactly once per record.
+struct ReportLayer {
+    /// Adds breadcrumbs that ride along with the next report.
+    breadcrumbs: BreadcrumbLayer,
+    /// Captures reports.
+    reports: ErrorLayer,
+    /// When each log statement last produced a report.
+    recent: Mutex<HashMap<Identifier, Instant>>,
+}
+
+impl<S> Layer<S> for ReportLayer
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
+    /// Routes the record to the breadcrumb or error layer as [`classify_event`] decides.
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: Context<'_, S>) {
+        match classify_event(event.metadata(), &self.recent, Instant::now()) {
+            Capture::Ignore => {}
+            Capture::Breadcrumb => self.breadcrumbs.on_event(event, ctx),
+            Capture::Report => self.reports.on_event(event, ctx),
+        }
+    }
 }
 
 /// Decides how a log record contributes to reports, given when each statement last reported.
@@ -251,28 +288,28 @@ fn classify_event(
     metadata: &Metadata<'_>,
     recent: &Mutex<HashMap<Identifier, Instant>>,
     now: Instant,
-) -> EventFilter {
+) -> Capture {
     if !reports_enabled() {
-        return EventFilter::Ignore;
+        return Capture::Ignore;
     }
     match *metadata.level() {
-        Level::ERROR if metadata.fields().field(PANIC_FIELD).is_some() => EventFilter::Breadcrumb,
+        Level::ERROR if metadata.fields().field(PANIC_FIELD).is_some() => Capture::Breadcrumb,
         Level::ERROR => {
             let Ok(mut recent) = recent.lock() else {
-                return EventFilter::Breadcrumb;
+                return Capture::Breadcrumb;
             };
             let callsite = metadata.callsite();
             if recent
                 .get(&callsite)
                 .is_some_and(|last| now.duration_since(*last) < REPEAT_WINDOW)
             {
-                return EventFilter::Breadcrumb;
+                return Capture::Breadcrumb;
             }
             recent.insert(callsite, now);
-            EventFilter::Event
+            Capture::Report
         }
-        Level::WARN => EventFilter::Breadcrumb,
-        _ => EventFilter::Ignore,
+        Level::WARN => Capture::Breadcrumb,
+        _ => Capture::Ignore,
     }
 }
 
@@ -312,18 +349,15 @@ mod tests {
             tracing::metadata::Kind::EVENT,
         );
         let now = Instant::now();
-        let classify = |at| classify_event(&metadata, &recent, at).bits();
+        let classify = |at| classify_event(&metadata, &recent, at);
 
         apply_consent(&state(false));
-        assert_eq!(classify(now), EventFilter::Ignore.bits());
+        assert_eq!(classify(now), Capture::Ignore);
 
         apply_consent(&state(true));
-        assert_eq!(classify(now), EventFilter::Event.bits());
-        assert_eq!(
-            classify(now + Duration::from_secs(5)),
-            EventFilter::Breadcrumb.bits()
-        );
-        assert_eq!(classify(now + REPEAT_WINDOW), EventFilter::Event.bits());
+        assert_eq!(classify(now), Capture::Report);
+        assert_eq!(classify(now + Duration::from_secs(5)), Capture::Breadcrumb);
+        assert_eq!(classify(now + REPEAT_WINDOW), Capture::Report);
         apply_consent(&state(false));
     }
 
