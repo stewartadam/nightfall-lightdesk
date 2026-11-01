@@ -386,15 +386,33 @@ fn test_generic_attributes() {
     }
 }
 
+/// Returns the attributes a single-instruction programmer command sets, in order.
+fn instruction_attributes(input: &str) -> Vec<Attribute> {
+    let ast = generate_ast(input).unwrap_or_else(|error| panic!("parse {input:?}: {error:?}"));
+    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
+    let Some(ProgrammerCommand::AddProgrammerInstruction { instruction, .. }) =
+        commands[0].as_any().downcast_ref::<ProgrammerCommand>()
+    else {
+        panic!("{input:?} should convert to a programmer instruction");
+    };
+    instruction.values.keys().cloned().collect()
+}
+
+/// Verifies quoted attribute names convert to the attribute they name: a quoted
+/// built-in name resolves to the built-in attribute, and any other quoted name,
+/// spaces included, becomes a custom attribute carrying that label.
 #[test]
 fn test_quoted_attributes() {
-    let pan_ast =
-        generate_ast(r#"fix 1 "Pan" @ 50"#).expect(r#"Failed to parse 'fix 1 "Pan" @ 50'"#);
-    let _commands = ProgrammerAstConverter::convert(&pan_ast).expect("Failed to convert AST");
-
-    let custom_ast = generate_ast(r#"fix 1 "My Custom Attr" @ 100"#)
-        .expect(r#"Failed to parse 'fix 1 "My Custom Attr" @ 100'"#);
-    let _commands = ProgrammerAstConverter::convert(&custom_ast).expect("Failed to convert AST");
+    assert_eq!(
+        instruction_attributes(r#"fix 1 "Pan" @ 50"#),
+        vec![Attribute::Pan]
+    );
+    assert_eq!(
+        instruction_attributes(r#"fix 1 "My Custom Attr" @ 100"#),
+        vec![Attribute::Custom {
+            label: "My Custom Attr".to_string()
+        }]
+    );
 }
 
 #[test]
