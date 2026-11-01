@@ -147,25 +147,6 @@ impl ArmedLaunches {
         cancelled
     }
 
-    /// Drops every launch waiting for the clips `clip_id` addresses, because a launch that
-    /// fires at once, such as a macro's, superseded it, and returns their commands to complete.
-    ///
-    /// The latest instruction for a clip wins, so a Go cannot advance it twice and a waiting
-    /// stop cannot undo a start that just happened.
-    pub fn cancel_for(&mut self, clip_id: &IdExpr) -> Vec<Option<CommandId>> {
-        let mut cancelled = Vec::new();
-        self.entries.retain(|entry| {
-            let cancels = entry
-                .waiting()
-                .is_some_and(|(_, waiting_id)| waiting_id == clip_id);
-            if cancels {
-                cancelled.push(entry.envelope.command_id);
-            }
-            !cancels
-        });
-        cancelled
-    }
-
     /// Removes and returns the operations whose beat has arrived at `beat_position`, oldest
     /// first.
     pub fn take_due(&mut self, beat_position: f64) -> Vec<EngineOperationEnvelope<ClipOperation>> {
@@ -346,28 +327,6 @@ mod tests {
         assert!(armed.take_due(f64::INFINITY).is_empty());
         assert_eq!(armed.take_dropped(), vec![start_command]);
         assert!(armed.take_dropped().is_empty());
-    }
-
-    /// Verifies a launch that fires at once drops every launch waiting for the same clip, of any
-    /// action, and leaves other clips armed.
-    #[test]
-    fn immediate_launch_cancels_waiting_launches_of_its_clip() {
-        let mut armed = ArmedLaunches::default();
-        let start = commanded(ClipOperation::Start(IdExpr::Single(1)));
-        let start_command = start.command_id;
-        armed.arm(5.0, start, false);
-        armed.arm(5.0, commanded(ClipOperation::Go(IdExpr::Single(2))), true);
-
-        assert_eq!(armed.cancel_for(&IdExpr::Single(1)), vec![start_command]);
-        assert_eq!(
-            armed
-                .status()
-                .iter()
-                .map(|launch| launch.clip_id)
-                .collect::<Vec<_>>(),
-            vec![2]
-        );
-        assert!(armed.cancel_for(&IdExpr::Single(3)).is_empty());
     }
 
     /// Verifies person-sent clip commands follow launch quantize while timeline actions fire at
