@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use typeshare::typeshare;
 
+use crate::fan::resolve_fan_duration;
+
 #[typeshare::typeshare]
 #[typeshare(serialized_as = "Record<String, PartialTransition>")]
 pub type AttributeTransitions = HashMap<Attribute, PartialTransition>;
@@ -37,37 +39,10 @@ impl TransitionMode {
         match self {
             TransitionMode::Fixed(duration) => *duration,
             TransitionMode::Interpolated { start, end } => {
-                if total <= 1 {
-                    *start
-                } else {
-                    let factor = offset as f32 / (total - 1).max(1) as f32;
-                    let interpolated =
-                        start.as_secs_f32() + factor * (end.as_secs_f32() - start.as_secs_f32());
-                    Duration::from_secs_f32(interpolated)
-                }
+                resolve_fan_duration(&[*start, *end], offset, total).unwrap_or_default()
             }
             TransitionMode::Manual(durations) => {
-                if durations.is_empty() {
-                    return Duration::from_millis(0);
-                }
-                if durations.len() == 1 || total <= 1 {
-                    return durations[0];
-                }
-
-                // Calculate the position in the range [0.0, 1.0]
-                // This matches resolve_fanned_value semantics in materialized_cue.rs
-                let t = offset as f32 / (total - 1).max(1) as f32;
-
-                // Map t to a position in the durations array (envelope interpolation)
-                let max_segment = durations.len() - 1;
-                let segment_position = t * max_segment as f32;
-                let segment_idx = (segment_position as usize).min(max_segment - 1);
-                let segment_t = segment_position - segment_idx as f32;
-
-                // Interpolate between adjacent waypoints
-                let start = durations[segment_idx].as_secs_f32();
-                let end = durations[segment_idx + 1].as_secs_f32();
-                Duration::from_secs_f32(start + segment_t * (end - start))
+                resolve_fan_duration(durations, offset, total).unwrap_or_default()
             }
         }
     }
@@ -614,8 +589,8 @@ mod tests {
         };
 
         assert_eq!(mode.resolve(0, 4), Duration::ZERO);
-        assert_eq!(mode.resolve(1, 4), Duration::from_secs_f32(2.0 / 3.0));
-        assert_eq!(mode.resolve(2, 4), Duration::from_secs_f32(4.0 / 3.0));
+        assert_eq!(mode.resolve(1, 4), Duration::from_nanos(666_666_667));
+        assert_eq!(mode.resolve(2, 4), Duration::from_nanos(1_333_333_333));
         assert_eq!(mode.resolve(3, 4), Duration::from_secs(2));
     }
 

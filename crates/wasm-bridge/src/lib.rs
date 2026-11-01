@@ -9,10 +9,10 @@
 //! Functions the web UI calls in WebAssembly, so it reuses the engine's own logic.
 //!
 //! The exports cover command-line completion, validation, and statement splitting; spatial
-//! selection parsing, formatting, and resolution; Step FX phase text; transition modes; sequence
-//! lookahead previews and durations; fixture channel evaluation for the visualizer; board
-//! placement rules; and output target names. Only the code these functions reach is compiled
-//! into the bridge.
+//! selection parsing, formatting, and resolution; Step FX phase text; transition modes and numeric
+//! fans; sequence lookahead previews and durations; fixture channel evaluation for the
+//! visualizer; color path previews; board placement rules; and output target names. Only the
+//! code these functions reach is compiled into the bridge.
 #![allow(clippy::missing_errors_doc)]
 
 use std::{collections::HashMap, time::Duration};
@@ -46,6 +46,7 @@ use wasm_bindgen::prelude::*;
 
 mod board_placement;
 mod color_path;
+mod fan;
 mod fixture_evaluation;
 
 pub use fixture_evaluation::{fixture_reading_stride, FixtureChannelEvaluator};

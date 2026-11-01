@@ -1002,8 +1002,8 @@ fn store_cue_replace_flattens_spatial_grid_timings_by_iteration_index() {
     assert_eq!(cue.instructions.len(), 16);
     for (expected, fixture_ids) in [
         (Duration::ZERO, [1, 5, 9, 13]),
-        (Duration::from_secs_f32(2.0 / 3.0), [2, 6, 10, 14]),
-        (Duration::from_secs_f32(4.0 / 3.0), [3, 7, 11, 15]),
+        (Duration::from_nanos(666_666_667), [2, 6, 10, 14]),
+        (Duration::from_nanos(1_333_333_333), [3, 7, 11, 15]),
         (Duration::from_secs(2), [4, 8, 12, 16]),
     ] {
         for fixture_id in fixture_ids {

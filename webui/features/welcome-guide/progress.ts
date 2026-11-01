@@ -8,7 +8,7 @@
 
 import { durationToMs } from "../../lib/duration";
 import type { PanelComponentName } from "../../lib/panel-definitions";
-import { resolveFanNumber } from "../../lib/value-fan";
+import { fanNumbers } from "../../lib/value-fan";
 import type {
   ActiveInstancesMap,
   ClipMap,
@@ -328,17 +328,19 @@ export function guideCompletionToken(
         : "";
     case "fixtures-placed": {
       const { x, y } = observation;
+      const expectedX =
+        x === undefined
+          ? undefined
+          : fanNumbers(x, observation.fixtureIds.length);
+      if (expectedX === null) return "";
       return observation.fixtureIds.every((id, index) => {
         const position = Object.values(state.fixtures).find(
           (fixture) => fixture.identifiers.id === id,
         )?.placement?.position;
         return (
           position !== undefined &&
-          (x === undefined ||
-            Math.abs(
-              position.x -
-                resolveFanNumber(x, index, observation.fixtureIds.length),
-            ) < 1e-3) &&
+          (expectedX === undefined ||
+            Math.abs(position.x - (expectedX[index] ?? Number.NaN)) < 1e-3) &&
           (y === undefined || position.y === y)
         );
       })

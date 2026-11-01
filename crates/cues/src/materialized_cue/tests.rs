@@ -1478,7 +1478,7 @@ fn test_resolve_fanned_value_two_values() {
     ];
 
     // First fixture (index 0 of 4) should be 0%
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.0).abs() < 0.001, "Expected 0%, got {}", val);
@@ -1487,7 +1487,7 @@ fn test_resolve_fanned_value_two_values() {
     }
 
     // Middle fixture (index 1 of 4) should be ~33%
-    let result = MaterializedCue::resolve_fanned_value(&values, 1, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 1, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!(
@@ -1498,7 +1498,7 @@ fn test_resolve_fanned_value_two_values() {
     }
 
     // Last fixture (index 3 of 4) should be 100%
-    let result = MaterializedCue::resolve_fanned_value(&values, 3, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 3, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 1.0).abs() < 0.001, "Expected 100%, got {}", val);
@@ -1515,21 +1515,21 @@ fn test_resolve_fanned_value_three_values() {
     ];
 
     // First fixture should be 0%
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 5);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 5);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.0).abs() < 0.001, "Expected 0%, got {}", val);
     }
 
     // Middle fixture (index 2 of 5, t=0.5) should be at the peak (100%)
-    let result = MaterializedCue::resolve_fanned_value(&values, 2, 5);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 2, 5);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 1.0).abs() < 0.001, "Expected 100%, got {}", val);
     }
 
     // Last fixture (index 4 of 5) should be 50%
-    let result = MaterializedCue::resolve_fanned_value(&values, 4, 5);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 4, 5);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.5).abs() < 0.001, "Expected 50%, got {}", val);
@@ -1541,13 +1541,13 @@ fn test_resolve_fanned_value_single_value() {
     // Single value should be returned for all fixtures
     let values = vec![ParameterValue::AbsolutePercent { value: 0.75.into() }];
 
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.75).abs() < 0.001, "Expected 75%, got {}", val);
     }
 
-    let result = MaterializedCue::resolve_fanned_value(&values, 3, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 3, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.75).abs() < 0.001, "Expected 75%, got {}", val);
@@ -1562,7 +1562,7 @@ fn test_resolve_fanned_value_single_fixture() {
         ParameterValue::AbsolutePercent { value: 1.0.into() },
     ];
 
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 1);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 1);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.0).abs() < 0.001, "Expected 0%, got {}", val);
@@ -2332,7 +2332,7 @@ fn exact_fan_waypoints_preserve_mixed_value_types() {
     ];
     for (index, expected) in values.iter().enumerate() {
         assert_eq!(
-            MaterializedCue::resolve_fanned_value(&values, index, values.len()),
+            nightfall::fan::resolve_fanned_parameter_value(&values, index, values.len()),
             *expected
         );
     }
