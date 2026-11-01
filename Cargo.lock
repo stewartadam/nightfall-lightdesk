@@ -6203,6 +6203,7 @@ dependencies = [
  "moonshine-kind",
  "nightfall",
  "nightfall-clips",
+ "nightfall-cmd-parse",
  "nightfall-cues",
  "nightfall-desk",
  "nightfall-engine",
