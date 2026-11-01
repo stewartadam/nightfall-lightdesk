@@ -2291,47 +2291,57 @@ test("command steps focus the command input", async ({ page }) => {
   );
 });
 
-/**
- * First launch shows the invitation as a notification without a close button; dismissing it keeps
- * it away after a reload, and the app menu still opens the guide.
- */
-test("first launch invites the user and Help reopens the guide", async ({
-  page,
-}, testInfo) => {
-  await page.addInitScript(() => {
-    if (!sessionStorage.getItem("nightfall.e2e.guideReset")) {
-      sessionStorage.setItem("nightfall.e2e.guideReset", "1");
-      localStorage.removeItem("nightfall.guide.v1.dismissed");
-    }
-  });
-  await openSample(page);
-  const invitation = page.locator('[data-component="Toast"]', {
-    hasText: "New to Nightfall?",
-  });
-  await expect(invitation).toBeVisible();
-  await expect(invitation.locator(".toast-close")).toHaveCount(0);
-  await expect(
-    invitation.getByRole("button", { name: "Take the tour" }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("guide-first-launch-invitation.png"),
-  });
-  await invitation.getByRole("button", { name: "Explore on my own" }).click();
-  await expect(invitation).toHaveCount(0);
-  await page.reload();
-  await waitForDockviewApp(page);
-  await expect(invitation).toHaveCount(0);
+/** Runs with the first-launch invitation that the other specs leave out. */
+test.describe("first launch", () => {
+  test.use({ guideInvitation: true });
 
-  await page.locator('[title="Menu"]').click();
-  const welcomeItem = page
-    .locator('[data-menu-kind="dropdown"]')
-    .getByRole("button", { name: "Welcome Guide" });
-  await expect(welcomeItem).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("guide-app-menu-entry.png"),
+  /**
+   * First launch shows the invitation as a notification without a close button; dismissing it keeps
+   * it away after a reload, and the app menu still opens the guide.
+   */
+  test("first launch invites the user and Help reopens the guide", async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem("nightfall.e2e.guideReset")) {
+        sessionStorage.setItem("nightfall.e2e.guideReset", "1");
+        localStorage.removeItem("nightfall.guide.v1.dismissed");
+      }
+    });
+    await openSample(page);
+    const invitation = page.locator('[data-component="Toast"]', {
+      hasText: "New to Nightfall?",
+    });
+    await expect(invitation).toBeVisible();
+    await expect(invitation.locator(".toast-close")).toHaveCount(0);
+    // Notifications stack below the header, so its controls stay clickable.
+    const header = (await page.locator(".nf-app-header").boundingBox())!;
+    await expect
+      .poll(async () => (await invitation.boundingBox())!.y)
+      .toBeGreaterThanOrEqual(header.y + header.height);
+    await expect(
+      invitation.getByRole("button", { name: "Take the tour" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("guide-first-launch-invitation.png"),
+    });
+    await invitation.getByRole("button", { name: "Explore on my own" }).click();
+    await expect(invitation).toHaveCount(0);
+    await page.reload();
+    await waitForDockviewApp(page);
+    await expect(invitation).toHaveCount(0);
+
+    await page.locator('[title="Menu"]').click();
+    const welcomeItem = page
+      .locator('[data-menu-kind="dropdown"]')
+      .getByRole("button", { name: "Welcome Guide" });
+    await expect(welcomeItem).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("guide-app-menu-entry.png"),
+    });
+    await welcomeItem.click();
+    await expect(page.getByTestId("welcome-guide")).toBeVisible();
   });
-  await welcomeItem.click();
-  await expect(page.getByTestId("welcome-guide")).toBeVisible();
 });
 
 /**

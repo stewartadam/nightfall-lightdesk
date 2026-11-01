@@ -201,7 +201,8 @@ function renderToast(
     gravity: "top",
     position: "right",
     className: "!bg-transparent !shadow-none !p-0",
-    offset: { x: 16, y: 16 },
+    // Starts the stack below the app header, so notifications never cover its controls.
+    offset: { x: 16, y: "var(--app-header-bottom, 16px)" },
     /** Disposes Solid icon roots and makes the physical toast slot available. */
     callback: () => {
       if (iconHost && entry.icon) renderIconComponent(iconHost, undefined, "");

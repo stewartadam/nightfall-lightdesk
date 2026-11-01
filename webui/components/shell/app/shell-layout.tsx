@@ -137,9 +137,17 @@ export default function AppShell() {
   /** Shares the app's actual bounds with dialogs mounted in providers or body portals. */
   onMount(() => {
     const root = document.documentElement;
-    /** Keeps overlay sizing aligned with the complete app, including its header and footer. */
+    const header = viewport.querySelector<HTMLElement>(".nf-app-header");
+    /**
+     * Keeps overlay sizing aligned with the complete app, including its header and footer, and
+     * records where the header ends so notifications stack below it instead of covering it.
+     */
     const measure = () => {
       const bounds = viewport.getBoundingClientRect();
+      root.style.setProperty(
+        "--app-header-bottom",
+        `${header?.getBoundingClientRect().bottom ?? bounds.top}px`,
+      );
       root.style.setProperty(
         "--app-viewport-right",
         `${window.innerWidth - bounds.right}px`,
@@ -152,12 +160,14 @@ export default function AppShell() {
     };
     const observer = new ResizeObserver(measure);
     observer.observe(viewport);
+    if (header) observer.observe(header);
     window.addEventListener("resize", measure);
     measure();
     onCleanup(() => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
       for (const property of [
+        "--app-header-bottom",
         "--app-viewport-right",
         "--app-viewport-bottom",
         "--app-viewport-height",

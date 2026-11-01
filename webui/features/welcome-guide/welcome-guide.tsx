@@ -34,6 +34,7 @@ import {
   openOrFocusPanelDefinition,
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
+import { testHooksEnabled } from "../../lib/test-mode";
 import {
   activeInstances,
   clips,
@@ -94,11 +95,24 @@ import "./welcome-guide.css";
 const log = getLogger(import.meta.url);
 
 /**
+ * Whether an end-to-end test asked to leave out the invitation. Most specs clear browser storage,
+ * which would otherwise bring the notification back over the workspace they are testing.
+ */
+function guideInvitationSkippedByTest(): boolean {
+  return (
+    testHooksEnabled() &&
+    (window as { __nightfallSkipGuideInvitation?: boolean })
+      .__nightfallSkipGuideInvitation === true
+  );
+}
+
+/**
  * Invites a first-time user to the guide with a notification that has no close button, so it
  * stays until they pick "Take the tour" or "Explore on my own". Either choice, or opening the
  * guide from a menu, records the invitation as answered and withdraws it.
  */
 export function GuideInvitation() {
+  if (guideInvitationSkippedByTest()) return null;
   const dismissed = useStore(guideDismissed);
   let invited = false;
   let closeInvitation: (() => void) | undefined;
