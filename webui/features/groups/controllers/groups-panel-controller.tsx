@@ -14,21 +14,7 @@ import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
-import type {
-  CrudListDataGridEditRequest,
-  CrudListDataGridSelectionRequest,
-} from "../../../components/widgets/crud/crud-list-data-grid";
-import {
-  createCrudPanelSearch,
-  createCrudPanelSearchQueryChangeEffect,
-} from "../../../components/widgets/crud/crud-panel-search";
-import type { CrudViewMode } from "../../../components/widgets/crud/crud-view-mode-toggle";
-import { createCrudGridClickSelection } from "../../../components/widgets/crud/model/crud-grid-click-selection";
-import { createCrudGridDragSelection } from "../../../components/widgets/crud/model/crud-grid-drag-selection";
-import {
-  changeCrudPanelViewMode,
-  loadCrudPanelViewMode,
-} from "../../../lib/crud-panel-view-mode";
+import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { useSharedStore } from "../../../lib/use-shared-store";
@@ -52,17 +38,18 @@ export interface GroupsPanelControllerProps {
 export function createGroupsPanelController(props: GroupsPanelControllerProps) {
   const $groups = useSharedStore(groups);
   const panelId = props.initialPanelId ?? props.id;
-  const search = createCrudPanelSearch({
-    componentId: panelId,
-    label: "Search groups",
+  const crud = createCrudListState<types.Group>({
+    panelId,
+    searchLabel: "Search groups",
+    viewModeKey: "groups-list",
+    orderedUids: (): readonly string[] => displayUids(),
+    otherDialogOpen: () => isCreateModalOpen() || isEditModalOpen(),
+    closeOtherDialogs: () => {
+      setIsCreateModalOpen(false);
+      setIsEditModalOpen(false);
+    },
   });
-
-  const [selectionMode, setSelectionMode] = createSignal(false);
-  const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
-    loadCrudPanelViewMode("groups-list"),
-  );
-  const [selectedGroupUids, setSelectedGroupUids] = createSignal<string[]>([]);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
+  const { search } = crud;
   const [isCreateModalOpen, setIsCreateModalOpen] = createSignal(false);
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
   const [createInitialId, setCreateInitialId] = createSignal(1);
@@ -72,22 +59,10 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
   const [editingGroupUid, setEditingGroupUid] = createSignal<string | null>(
     null,
   );
-  const [labelEditRequest, setLabelEditRequest] =
-    createSignal<CrudListDataGridEditRequest<types.Group>>();
-  const [listSelectionRequest, setListSelectionRequest] =
-    createSignal<CrudListDataGridSelectionRequest<types.Group>>();
-  const [editingCardLabelUid, setEditingCardLabelUid] = createSignal<
-    string | null
-  >(null);
 
-  /** Counts selected groups for toolbar and dialog state. */
-  const selectedCount = createMemo(() => selectedGroupUids().length);
-  /** Indexes selected group UIDs for constant-time presentation checks. */
-  const selectedUidSet = createMemo(() => new Set(selectedGroupUids()));
-  /** Resolves the sole selected group for the properties inspector. */
+  /** Resolves the group Properties edits: the sole selected one, if it still exists. */
   const propertiesGroup = createMemo(() => {
-    if (selectedCount() !== 1) return null;
-    const [groupUid] = selectedGroupUids();
+    const groupUid = crud.propertiesUid();
     return groupUid ? ($groups()[groupUid] ?? null) : null;
   });
 
@@ -116,6 +91,11 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
     ),
   );
 
+  /** UIDs of the groups currently shown, in display order, for range selection. */
+  const displayUids = createMemo(() =>
+    displayRows().map((group) => group.identifiers.uid),
+  );
+
   /** Selects and reveals a group requested by the showfile object palette. */
   useRevealObjectCapability(
     "panel-Groups",
@@ -126,11 +106,8 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       }
 
       /** Switches to list mode and reveals the requested group row. */
-      const selectGroup = () => {
-        setViewMode("list");
-        setSelectedGroupUids([request.uid]);
-        setListSelectionRequest({ row: group, requestId: request.requestId });
-      };
+      const selectGroup = () =>
+        crud.revealRow(group, request.uid, request.requestId);
 
       if (!displayRows().includes(group) && search.isFiltering()) {
         search.clear();
@@ -143,60 +120,6 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       accepts: (payload) => payload.type === "group",
     },
   );
-  const gridDragSelection = createCrudGridDragSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: () => displayRows().map((group) => group.identifiers.uid),
-    selectedIds: selectedGroupUids,
-    onSelectionChange: setSelectedGroupUids,
-  });
-  const gridClickSelection = createCrudGridClickSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: () => displayRows().map((group) => group.identifiers.uid),
-    selectedIds: selectedGroupUids,
-    onSelectionChange: setSelectedGroupUids,
-    multiSelectOnPlainClick: true,
-  });
-
-  /** Clears the current group selection across list and grid modes. */
-  const clearSelection = () => {
-    setSelectedGroupUids([]);
-  };
-  createCrudPanelSearchQueryChangeEffect(search, clearSelection);
-
-  /** Updates grid selection mode and clears stale selections on exit. */
-  const setSelectionModeEnabled = (enabled: boolean) => {
-    setSelectionMode(enabled);
-    if (!enabled) {
-      clearSelection();
-    }
-  };
-
-  /** Persists a new list/grid view mode and resets grid-only selection state. */
-  const setViewMode = (mode: CrudViewMode) => {
-    changeCrudPanelViewMode(
-      "groups-list",
-      viewMode(),
-      mode,
-      setViewModeSignal,
-      {
-        onEnterListMode: () => setSelectionModeEnabled(false),
-      },
-    );
-  };
-
-  /** Toggles one group within the local CRUD selection. */
-  const toggleSelection = (groupUid: string) => {
-    setSelectedGroupUids((current) => {
-      const next = new Set(current);
-      if (next.has(groupUid)) {
-        next.delete(groupUid);
-      } else {
-        next.add(groupUid);
-      }
-      return Array.from(next);
-    });
-  };
-
   /** Sends a complete group record to the backend store command. */
   const sendStoreGroup = (group: types.Group) => {
     const command: types.GroupCommand = {
@@ -237,17 +160,8 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
   };
 
   /** Requests inline editing for the selected group label cell. */
-  const requestGroupLabelEdit = (group: types.Group) => {
-    if (viewMode() !== "list") {
-      setEditingCardLabelUid(group.identifiers.uid);
-      return;
-    }
-    setLabelEditRequest({
-      row: group,
-      columnId: "label",
-      requestId: Date.now(),
-    });
-  };
+  const requestGroupLabelEdit = (group: types.Group) =>
+    crud.requestLabelEdit(group.identifiers.uid, () => group);
 
   /** Applies programmer selection semantics derived from keyboard modifiers. */
   const applyGroupSelection = (
@@ -283,16 +197,9 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
     commandClient.emit("ProgrammerCommand", command);
   };
 
-  /** Ensures a context-menu target is represented in local CRUD selection. */
-  const selectForContextMenu = (groupUid: string) => {
-    if (selectedUidSet().has(groupUid)) return;
-    setSelectedGroupUids([groupUid]);
-  };
-
   /** Opens contextual programmer and CRUD actions for a group. */
   const openGroupContextMenu = (group: types.Group, x: number, y: number) => {
-    const groupUid = group.identifiers.uid;
-    selectForContextMenu(groupUid);
+    crud.selectForContextMenu(group.identifiers.uid);
     openContextMenu({
       x,
       y,
@@ -325,7 +232,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
           label: "Edit Group",
           icon: PencilSimpleLineIcon,
           shortcut: "Enter",
-          disabled: selectedCount() !== 1,
+          disabled: crud.selectedCount() !== 1,
           onSelect: handleEditSelected,
         },
         {
@@ -338,13 +245,13 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
         {
           id: "delete-group",
           label:
-            selectedCount() > 1
-              ? `Delete ${selectedCount()} Groups`
+            crud.selectedCount() > 1
+              ? `Delete ${crud.selectedCount()} Groups`
               : "Delete Group",
           icon: TrashIcon,
           shortcut: "Delete",
           danger: true,
-          onSelect: handleDeleteSelected,
+          onSelect: crud.requestDelete,
         },
       ],
     });
@@ -357,13 +264,9 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
     openGroupContextMenu(group, event.clientX, event.clientY);
   };
 
-  /** Selects a grid card locally or applies it to the programmer. */
+  /** Applies a grid card to the programmer once grid selection has declined the click. */
   const handleGroupClick = (group: types.Group, event: MouseEvent) => {
-    if (isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen()) return;
-    if (selectionMode()) {
-      toggleSelection(group.identifiers.uid);
-      return;
-    }
+    if (crud.dialogOpen()) return;
     selectGroup(group, event);
   };
 
@@ -377,14 +280,14 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
       metaKey: boolean;
     },
   ) => {
-    if (isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen()) return;
+    if (crud.dialogOpen()) return;
     if (!modifiers.altKey) return;
     applyGroupSelection(group, modifiers);
   };
 
   /** Opens the create dialog with the first available group ID. */
   const handleCreate = () => {
-    if (isDeleteModalOpen() || isEditModalOpen()) return;
+    if (crud.isDeleteModalOpen() || isEditModalOpen()) return;
     const id = nextAvailableGroupId(allDisplayRows());
     setCreateInitialId(id);
     setCreateInitialLabel(`Group ${id}`);
@@ -400,8 +303,8 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
 
   /** Opens the entity editor for the sole selected group. */
   const handleEditSelected = () => {
-    if (isDeleteModalOpen() || isCreateModalOpen()) return;
-    const [groupUid] = selectedGroupUids();
+    if (crud.isDeleteModalOpen() || isCreateModalOpen()) return;
+    const [groupUid] = crud.selectedUids();
     if (!groupUid) return;
     const group = $groups()[groupUid];
     if (!group) return;
@@ -444,63 +347,15 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
 
     setIsEditModalOpen(false);
     setEditingGroupUid(null);
-    setSelectionModeEnabled(false);
-  };
-
-  /** Opens deletion confirmation when at least one group is selected. */
-  const handleDeleteSelected = () => {
-    if (isCreateModalOpen() || isEditModalOpen()) return;
-    if (selectedCount() === 0) return;
-    setIsDeleteModalOpen(true);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Deletes every selected group and resets local selection state. */
-  const confirmDeleteSelected = () => {
-    const groupMap = $groups();
-    for (const uid of selectedGroupUids()) {
-      const group = groupMap[uid];
-      if (!group) continue;
-      sendDeleteGroup(group.identifiers.id);
-    }
-    setSelectedGroupUids([]);
-    setIsDeleteModalOpen(false);
-    setSelectionModeEnabled(false);
-  };
-
-  /** Toggles multi-selection mode when the grid view can support it. */
-  const handleToggleSelectionMode = () => {
-    if (isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen()) return;
-    if (viewMode() === "list") return;
-    setSelectionModeEnabled(!selectionMode());
-  };
-
-  /** Cancels the highest-priority modal, filter, or selection state. */
-  const handleEscape = () => {
-    if (isDeleteModalOpen()) {
-      setIsDeleteModalOpen(false);
-      return true;
-    }
-    if (isEditModalOpen()) {
-      setIsEditModalOpen(false);
-      return true;
-    }
-    if (isCreateModalOpen()) {
-      setIsCreateModalOpen(false);
-      return true;
-    }
-    if (search.clear()) {
-      return true;
-    }
-    if (selectedCount() > 0) {
-      clearSelection();
-      return true;
-    }
-    if (selectionMode()) {
-      setSelectionModeEnabled(false);
-      return true;
-    }
-    return false;
-  };
+  const confirmDeleteSelected = () =>
+    crud.confirmDelete((uid) => {
+      const group = $groups()[uid];
+      if (group) sendDeleteGroup(group.identifiers.id);
+    });
 
   useKeyboardShortcut({
     key: "n",
@@ -510,7 +365,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
   });
   useKeyboardShortcut({
     key: "v",
-    handler: handleToggleSelectionMode,
+    handler: crud.handleToggleSelectionMode,
     description: "Toggle selection mode",
     componentId: panelId,
   });
@@ -522,40 +377,28 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
   });
   useKeyboardShortcut({
     key: "Delete",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected groups",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Backspace",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected groups",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Escape",
-    handler: handleEscape,
+    handler: crud.handleEscape,
     description: "Cancel or clear selection",
     componentId: panelId,
   });
 
-  /** Reports whether modal state should suppress panel interactions. */
-  const isInteractionBlocked = () =>
-    isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen();
-
   return {
     panelId,
-    search,
-    selectionMode,
-    viewMode,
-    selectedGroupUids,
-    setSelectedGroupUids,
-    selectedCount,
-    selectedUidSet,
+    crud,
     allDisplayRows,
     displayRows,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
     isCreateModalOpen,
     setIsCreateModalOpen,
     isEditModalOpen,
@@ -564,13 +407,6 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
     createInitialLabel,
     editInitialId,
     editInitialLabel,
-    labelEditRequest,
-    listSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
-    gridDragSelection,
-    gridClickSelection,
-    setViewMode,
     updateGroupLabel,
     openGroupContextMenu,
     handleContextMenu,
@@ -580,10 +416,7 @@ export function createGroupsPanelController(props: GroupsPanelControllerProps) {
     handleCreateSubmit,
     handleEditSelected,
     handleEditSubmit,
-    handleDeleteSelected,
     confirmDeleteSelected,
-    handleToggleSelectionMode,
-    isInteractionBlocked,
   };
 }
 

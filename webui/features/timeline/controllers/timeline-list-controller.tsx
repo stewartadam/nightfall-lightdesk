@@ -63,30 +63,12 @@ export function createTimelineListController(
     viewModeKey: "timeline-list",
     orderedUids: (): readonly string[] => timelineIds(),
     otherDialogOpen: () => isCreateModalOpen() || isEditModalOpen(),
+    closeOtherDialogs: () => {
+      setIsCreateModalOpen(false);
+      setIsEditModalOpen(false);
+    },
   });
-  const {
-    search,
-    selectionMode,
-    viewMode,
-    setViewMode,
-    setSelectionModeEnabled,
-    selectedCount,
-    select: selectTimelines,
-    clearSelection,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
-    labelEditRequest,
-    listSelectionRequest,
-    setListSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
-    handleToggleSelectionMode,
-    handleEscape,
-    gridDragSelection,
-    gridClickSelection,
-  } = crud;
-  const selectedTimelineUids = crud.selectedUids;
-  const selectedTimelineUidSet = crud.selectedUidSet;
+  const { search } = crud;
   const [isCreateModalOpen, setIsCreateModalOpen] = createSignal(false);
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
   const [createInitialId, setCreateInitialId] = createSignal(1);
@@ -122,22 +104,17 @@ export function createTimelineListController(
     indexTimelinesByUid(allTimelineList()),
   );
 
-  /** Resolves the sole selected timeline for editing and Properties. */
-  const selectedTimeline = createMemo(() => {
-    const [selectedUid] = selectedTimelineUids();
-    if (!selectedUid) return undefined;
-    return allTimelineList().find(
-      (timeline) =>
-        normalizeTimelineUid(timeline.identifiers.uid) === selectedUid,
-    );
-  });
+  /** Resolves the first selected timeline, which the toolbar actions act on. */
+  const selectedTimeline = createMemo(() =>
+    timelineListByUid().get(crud.selectedUids()[0] ?? ""),
+  );
 
   usePropertiesInspector(
     panelId,
     "Timeline",
     () => (
       <CrudLabelProperties
-        entry={selectedCount() === 1 ? selectedTimeline() : null}
+        entry={timelineListByUid().get(crud.propertiesUid() ?? "") ?? null}
         entityName="Timeline"
         getId={(timeline) => timeline.identifiers.id}
         getLabel={(timeline) => timeline.identifiers.label}
@@ -160,14 +137,11 @@ export function createTimelineListController(
 
       /** Reveals the requested timeline after any search reset settles. */
       const selectTimeline = () => {
-        const timelineUid = normalizeTimelineUid(timeline.identifiers.uid);
-        setViewMode("list");
-        setSelectionModeEnabled(false);
-        selectTimelines([timelineUid]);
-        setListSelectionRequest({
-          row: timeline,
-          requestId: request.requestId,
-        });
+        crud.revealRow(
+          timeline,
+          normalizeTimelineUid(timeline.identifiers.uid),
+          request.requestId,
+        );
       };
 
       if (!timelineList().includes(timeline) && search.isFiltering()) {
@@ -208,8 +182,8 @@ export function createTimelineListController(
   /** Requests inline editing for the selected timeline label cell. */
   const requestTimelineLabelEdit = (timeline: Timeline) =>
     crud.requestLabelEdit(
-      timeline,
       normalizeTimelineUid(timeline.identifiers.uid),
+      () => timeline,
     );
 
   /** Resolves an internal timecode that can safely mirror timeline edits. */
@@ -240,11 +214,8 @@ export function createTimelineListController(
   };
 
   /** Selects a timeline before opening its context menu. */
-  const selectForContextMenu = (timeline: Timeline) => {
-    const timelineUid = normalizeTimelineUid(timeline.identifiers.uid);
-    if (selectedTimelineUidSet().has(timelineUid)) return;
-    selectTimelines([timelineUid]);
-  };
+  const selectForContextMenu = (timeline: Timeline) =>
+    crud.selectForContextMenu(normalizeTimelineUid(timeline.identifiers.uid));
 
   /** Opens timeline row actions, including inline label rename. */
   const openTimelineContextMenu = (
@@ -274,13 +245,13 @@ export function createTimelineListController(
         {
           id: "delete-timeline",
           label:
-            selectedCount() > 1
-              ? `Delete ${selectedCount()} Timelines`
+            crud.selectedCount() > 1
+              ? `Delete ${crud.selectedCount()} Timelines`
               : "Delete Timeline",
           icon: TrashIcon,
           shortcut: "Delete",
           danger: true,
-          onSelect: handleDeleteSelected,
+          onSelect: crud.requestDelete,
         },
       ],
     });
@@ -288,26 +259,30 @@ export function createTimelineListController(
 
   /** Selects a timeline card or opens it when selection mode does not consume the click. */
   const handleTimelineClick = (timeline: Timeline, event: MouseEvent) => {
-    if (isCreateModalOpen() || isEditModalOpen() || isDeleteModalOpen()) return;
+    if (crud.dialogOpen()) return;
     const timelineUid = normalizeTimelineUid(timeline.identifiers.uid);
-    if (gridClickSelection.handleCardClick(timelineUid, event)) return;
+    if (crud.gridClickSelection.handleCardClick(timelineUid, event)) return;
     openTimeline(timeline);
   };
 
   /** Opens the sole selected timeline and exits selection mode. */
   const handleOpenSelected = () => {
-    if (selectedCount() !== 1 || isCreateModalOpen() || isEditModalOpen()) {
+    if (
+      crud.selectedCount() !== 1 ||
+      isCreateModalOpen() ||
+      isEditModalOpen()
+    ) {
       return;
     }
     const timeline = selectedTimeline();
     if (!timeline) return;
     openTimeline(timeline);
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Opens the timeline creation dialog with the next available identifier. */
   const handleCreate = () => {
-    if (isEditModalOpen() || isDeleteModalOpen()) return;
+    if (isEditModalOpen() || crud.isDeleteModalOpen()) return;
     setCreateInitialId(nextTimelineId(allTimelineList()));
     setIsCreateModalOpen(true);
   };
@@ -349,15 +324,15 @@ export function createTimelineListController(
 
     sendTimecodeCommand({ type: "StoreTimecode", data: timecode });
     sendTimelineCommand({ type: "StoreTimeline", data: timeline });
-    clearSelection();
+    crud.clearSelection();
     setIsCreateModalOpen(false);
     setTimeout(() => openTimeline(timeline), 100);
   };
 
   /** Opens the editor dialog for the sole selected timeline. */
   const handleEditSelected = () => {
-    if (isCreateModalOpen() || isDeleteModalOpen()) return;
-    if (selectedCount() !== 1) return;
+    if (isCreateModalOpen() || crud.isDeleteModalOpen()) return;
+    if (crud.selectedCount() !== 1) return;
     const timeline = selectedTimeline();
     if (!timeline) return;
 
@@ -365,7 +340,7 @@ export function createTimelineListController(
     setEditInitialId(timeline.identifiers.id);
     setEditInitialLabel(timeline.identifiers.label);
     setIsEditModalOpen(true);
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Applies timeline identity edits and mirrors safe linked-timecode fields. */
@@ -435,37 +410,19 @@ export function createTimelineListController(
     setEditingTimelineUid(null);
   };
 
-  /** Opens deletion confirmation when the current selection can be deleted. */
-  const handleDeleteSelected = () => {
-    if (isCreateModalOpen() || isEditModalOpen()) return;
-    if (selectedCount() === 0) return;
-    setIsDeleteModalOpen(true);
-  };
-
   /** Deletes each selected timeline after confirmation. */
-  const confirmDeleteSelected = () => {
-    const selected = selectedTimelineUids();
-    if (selected.length === 0) {
-      setIsDeleteModalOpen(false);
-      return;
-    }
-
-    for (const timelineUid of selected) {
+  const confirmDeleteSelected = () =>
+    crud.confirmDelete((timelineUid) => {
       const timeline = allTimelineList().find(
         (candidate) =>
           normalizeTimelineUid(candidate.identifiers.uid) === timelineUid,
       );
-      if (!timeline) continue;
+      if (!timeline) return;
       sendTimelineCommand({
         type: "DeleteTimeline",
         data: timeline.identifiers.id,
       });
-    }
-
-    clearSelection();
-    setSelectionModeEnabled(false);
-    setIsDeleteModalOpen(false);
-  };
+    });
 
   useKeyboardShortcut({
     key: "n",
@@ -475,7 +432,7 @@ export function createTimelineListController(
   });
   useKeyboardShortcut({
     key: "v",
-    handler: handleToggleSelectionMode,
+    handler: crud.handleToggleSelectionMode,
     description: "Toggle selection mode",
     componentId: panelId,
   });
@@ -493,49 +450,36 @@ export function createTimelineListController(
   });
   useKeyboardShortcut({
     key: "Delete",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected timelines",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Backspace",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected timelines",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Escape",
-    handler: handleEscape,
+    handler: crud.handleEscape,
     description: "Clear selected timelines",
     componentId: panelId,
   });
 
   return {
     panelId,
-    search,
-    selectionMode,
-    viewMode,
-    selectedTimelineUids,
+    crud,
     isCreateModalOpen,
     setIsCreateModalOpen,
     isEditModalOpen,
     setIsEditModalOpen,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
     createInitialId,
     editInitialId,
     editInitialLabel,
     setEditingTimelineUid,
-    labelEditRequest,
-    listSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
     allTimelineList,
     timelineList,
-    selectedCount,
-    selectedTimelineUidSet,
-    selectTimelines,
-    setViewMode,
     updateTimelineLabel,
     openTimeline,
     openTimelineContextMenu,
@@ -545,11 +489,7 @@ export function createTimelineListController(
     handleCreateSubmit,
     handleEditSelected,
     handleEditSubmit,
-    handleDeleteSelected,
     confirmDeleteSelected,
-    handleToggleSelectionMode,
-    gridDragSelection,
-    gridClickSelection,
   };
 }
 

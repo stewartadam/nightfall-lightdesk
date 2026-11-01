@@ -31,15 +31,18 @@ export interface CrudListStateOptions {
   /** Storage key that remembers the panel's grid or list presentation. */
   viewModeKey: string;
   /**
-   * UIDs of the rows currently shown, in display order. Read lazily, so it may refer to a memo
-   * the controller defines after creating the state from its `search`.
+   * UIDs of the rows currently shown, in display order. Only read after construction, so it may
+   * refer to a memo the controller defines after creating the state from its `search`.
    */
   orderedUids: Accessor<readonly string[]>;
   /**
    * Whether a panel-owned dialog other than the delete confirmation is open. While any dialog is
-   * open, Escape and the selection mode toggle step aside.
+   * open, the selection mode toggle and delete requests step aside. Only read after
+   * construction, like `orderedUids`.
    */
   otherDialogOpen?: Accessor<boolean>;
+  /** Closes the dialogs `otherDialogOpen` reports, when Escape reaches the panel behind them. */
+  closeOtherDialogs?: () => void;
 }
 
 /**
@@ -47,8 +50,11 @@ export interface CrudListStateOptions {
  * grid selection mode, the selected row UIDs, the row Properties shows, the delete confirmation,
  * inline label editing requests, the Escape chain, and grid click and drag selection.
  *
- * Feature controllers build their rows from `search`, pass their UIDs back through
- * `orderedUids`, and add the commands and dialogs specific to their objects.
+ * State is exposed read-only; every change goes through a named operation so the rules that tie
+ * the pieces together (list mode ends selection mode, ending selection mode clears the
+ * selection, a new search clears it too) hold in every panel. Feature controllers build their
+ * rows from `search`, pass their UIDs back through `orderedUids`, and add the commands and
+ * dialogs specific to their objects.
  */
 export function createCrudListState<T>(options: CrudListStateOptions) {
   const search = createCrudPanelSearch({
@@ -59,7 +65,7 @@ export function createCrudListState<T>(options: CrudListStateOptions) {
   const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
     loadCrudPanelViewMode(options.viewModeKey),
   );
-  const [selectedUids, setSelectedUids] = createSignal<string[]>([]);
+  const [selectedUids, setSelectedUids] = createSignal<readonly string[]>([]);
   const [inspectedUid, setInspectedUid] = createSignal<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
   const [labelEditRequest, setLabelEditRequest] =
@@ -86,20 +92,47 @@ export function createCrudListState<T>(options: CrudListStateOptions) {
   });
 
   /** Replaces the selection with `uids`. */
-  const select = (uids: string[]) => setSelectedUids(uids);
+  const select = (uids: readonly string[]) => setSelectedUids(uids);
 
   /** Clears the selection. */
   const clearSelection = () => setSelectedUids([]);
   createCrudPanelSearchQueryChangeEffect(search, clearSelection);
 
+  /** Selects only `uid` unless it already belongs to the selection, as a context menu does. */
+  const selectForContextMenu = (uid: string) => {
+    if (!selectedUidSet().has(uid)) select([uid]);
+  };
+
+  /** Shows `uid` in Properties while nothing is selected, without changing the selection. */
+  const inspect = (uid: string) => setInspectedUid(uid);
+
   /** Whether a dialog owns the keyboard, so list shortcuts and clicks step aside. */
   const dialogOpen = () =>
     isDeleteModalOpen() || (options.otherDialogOpen?.() ?? false);
+
+  /** Asks to confirm deleting the selection; ignored while a dialog is open or nothing is selected. */
+  const requestDelete = () => {
+    if (dialogOpen() || selectedCount() === 0) return;
+    setIsDeleteModalOpen(true);
+  };
+
+  /** Closes the delete confirmation without deleting anything. */
+  const closeDeleteConfirm = () => setIsDeleteModalOpen(false);
 
   /** Turns grid selection mode on or off, dropping the selection when it ends. */
   const setSelectionModeEnabled = (enabled: boolean) => {
     setSelectionMode(enabled);
     if (!enabled) clearSelection();
+  };
+
+  /**
+   * Runs `deleteRow` for every selected UID once the user confirms, then closes the
+   * confirmation and ends selection mode, which clears the selection.
+   */
+  const confirmDelete = (deleteRow: (uid: string) => void) => {
+    for (const uid of selectedUids()) deleteRow(uid);
+    setSelectionModeEnabled(false);
+    closeDeleteConfirm();
   };
 
   /** Persists and applies the grid or list presentation; list mode ends selection mode. */
@@ -122,11 +155,16 @@ export function createCrudListState<T>(options: CrudListStateOptions) {
   };
 
   /**
-   * Clears the search, then the selection, then selection mode, one per Escape press. Returns
-   * whether the press was consumed; an open dialog always consumes it.
+   * Closes an open dialog, or else clears the search, then the selection, then selection mode,
+   * one per Escape press. Returns whether the press was consumed. A dialog that holds focus
+   * handles its own Escape, so this only closes dialogs when focus sits behind them.
    */
   const handleEscape = () => {
-    if (dialogOpen()) return true;
+    if (dialogOpen()) {
+      closeDeleteConfirm();
+      options.closeOtherDialogs?.();
+      return true;
+    }
     if (search.clear()) return true;
     if (selectedCount() > 0) {
       clearSelection();
@@ -140,15 +178,31 @@ export function createCrudListState<T>(options: CrudListStateOptions) {
   };
 
   /**
-   * Starts inline label editing for `row`: on its card in grid presentation, or in the label
-   * cell of the list grid.
+   * Starts inline label editing for the row `uid`: on its card in grid presentation, or in the
+   * label cell of the list grid. `resolveRow` runs only in list presentation, so a panel can
+   * first expand a collapsed group that hides the row.
    */
-  const requestLabelEdit = (row: T, uid: string) => {
+  const requestLabelEdit = (uid: string, resolveRow: () => T | undefined) => {
     if (viewMode() !== "list") {
       setEditingCardLabelUid(uid);
       return;
     }
-    setLabelEditRequest({ row, columnId: "label", requestId: Date.now() });
+    const row = resolveRow();
+    if (row)
+      setLabelEditRequest({ row, columnId: "label", requestId: Date.now() });
+  };
+
+  /** Ends inline label editing on a card, after a commit or a cancel. */
+  const finishCardLabelEdit = () => setEditingCardLabelUid(null);
+
+  /**
+   * Shows `row` for a reveal request: switches to list presentation, selects only `uid`, and
+   * asks the list grid to scroll to and focus the row.
+   */
+  const revealRow = (row: T, uid: string, requestId: number) => {
+    setViewMode("list");
+    select([uid]);
+    setListSelectionRequest({ row, requestId });
   };
 
   /** Whether grid click and drag gestures select cards rather than act on them. */
@@ -170,28 +224,28 @@ export function createCrudListState<T>(options: CrudListStateOptions) {
   return {
     search,
     selectionMode,
-    setSelectionModeEnabled,
     viewMode,
-    setViewMode,
     selectedUids,
-    setSelectedUids,
     selectedCount,
     selectedUidSet,
-    select,
-    clearSelection,
-    inspectedUid,
-    setInspectedUid,
     propertiesUid,
     isDeleteModalOpen,
-    setIsDeleteModalOpen,
     dialogOpen,
     labelEditRequest,
-    setLabelEditRequest,
     listSelectionRequest,
-    setListSelectionRequest,
     editingCardLabelUid,
-    setEditingCardLabelUid,
+    setViewMode,
+    setSelectionModeEnabled,
+    select,
+    clearSelection,
+    selectForContextMenu,
+    inspect,
+    requestDelete,
+    closeDeleteConfirm,
+    confirmDelete,
     requestLabelEdit,
+    finishCardLabelEdit,
+    revealRow,
     handleToggleSelectionMode,
     handleEscape,
     gridDragSelection,

@@ -54,30 +54,7 @@ export function createCueListController(props: CueListControllerProps) {
     viewModeKey: "cue-list",
     orderedUids: (): readonly string[] => cueGridOrder(),
   });
-  const {
-    search,
-    selectionMode,
-    viewMode,
-    setViewMode,
-    setSelectionModeEnabled,
-    selectedCount,
-    clearSelection,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
-    labelEditRequest,
-    setLabelEditRequest,
-    listSelectionRequest,
-    setListSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
-    handleToggleSelectionMode,
-    handleEscape,
-    gridDragSelection,
-    gridClickSelection,
-  } = crud;
-  const selectedCueUids = crud.selectedUids;
-  const setSelectedCueUids = crud.setSelectedUids;
-  const selectedCueUidSet = crud.selectedUidSet;
+  const { search } = crud;
   const [activeCueListRow, setActiveCueListRow] =
     createSignal<CueListDisplayRow | null>(null);
   const [collapsedGroupKeys, setCollapsedGroupKeys] = createSignal<string[]>(
@@ -85,8 +62,7 @@ export function createCueListController(props: CueListControllerProps) {
   );
   /** Returns the single cue exposed to Properties, or null for other selections. */
   const propertiesCue = createMemo(() => {
-    if (selectedCount() !== 1) return null;
-    const [cueUid] = selectedCueUids();
+    const cueUid = crud.propertiesUid();
     return cueUid ? ($cues()[cueUid] ?? null) : null;
   });
 
@@ -119,33 +95,13 @@ export function createCueListController(props: CueListControllerProps) {
 
   /** Requests inline editing for a cue row label cell. */
   const requestCueLabelEdit = (cue: Cue) => {
-    if (viewMode() !== "list") {
-      setEditingCardLabelUid(cue.identifiers.uid.toString());
-      return;
-    }
-    setCollapsedGroupKeys([]);
-    const startEdit = () => {
-      const row = cueListRows().find(
+    const cueUid = cue.identifiers.uid.toString();
+    crud.requestLabelEdit(cueUid, () => {
+      setCollapsedGroupKeys([]);
+      return cueListRows().find(
         (candidate) =>
-          candidate.rowKind === "cue" &&
-          candidate.cueUid === cue.identifiers.uid.toString(),
+          candidate.rowKind === "cue" && candidate.cueUid === cueUid,
       );
-      if (!row) return;
-      setLabelEditRequest({ row, columnId: "label", requestId: Date.now() });
-    };
-    startEdit();
-  };
-
-  /** Toggles one cue UID within the current selection. */
-  const toggleSelection = (cueUid: string) => {
-    setSelectedCueUids((current) => {
-      const next = new Set(current);
-      if (next.has(cueUid)) {
-        next.delete(cueUid);
-      } else {
-        next.add(cueUid);
-      }
-      return Array.from(next);
     });
   };
 
@@ -185,19 +141,15 @@ export function createCueListController(props: CueListControllerProps) {
     });
   };
 
-  /** Opens or selects a cue card according to the current selection mode. */
+  /** Opens a cue card's editor once grid selection has declined the click. */
   const handleCueItemClick = (cueUid: string) => {
-    if (isDeleteModalOpen()) return;
-    if (selectionMode()) {
-      toggleSelection(cueUid);
-      return;
-    }
+    if (crud.isDeleteModalOpen()) return;
     openCueEditor(cueUid);
   };
 
   /** Publishes a cue drag payload for timeline insertion. */
   const handleDragStart = (event: DragEvent, cue: Cue) => {
-    if (selectionMode()) return;
+    if (crud.selectionMode()) return;
     if (!event.dataTransfer) return;
     event.dataTransfer.setData(
       TIMELINE_INSERT_DRAG_MIME,
@@ -231,16 +183,16 @@ export function createCueListController(props: CueListControllerProps) {
 
   /** Opens the sole selected cue for editing. */
   const handleEditSelected = () => {
-    if (isDeleteModalOpen()) return;
-    const [selectedCueUid] = selectedCueUids();
+    if (crud.isDeleteModalOpen()) return;
+    const [selectedCueUid] = crud.selectedUids();
     if (!selectedCueUid) return;
     openCueEditor(selectedCueUid);
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Applies Enter to the active group row or selected cue. */
   const handleEnter = () => {
-    if (viewMode() === "list") {
+    if (crud.viewMode() === "list") {
       const activeRow = activeCueListRow();
       if (activeRow?.rowKind === "group") {
         toggleGroupCollapsed(activeRow.groupKey);
@@ -250,23 +202,10 @@ export function createCueListController(props: CueListControllerProps) {
     handleEditSelected();
   };
 
-  /** Opens deletion confirmation when at least one cue is selected. */
-  const handleDeleteSelected = () => {
-    const selected = selectedCueUids();
-    if (selected.length === 0) return;
-    setIsDeleteModalOpen(true);
-  };
-
-  /** Selects a context-clicked cue unless it already belongs to the selection. */
-  const selectForContextMenu = (cueUid: string) => {
-    if (selectedCueUidSet().has(cueUid)) return;
-    setSelectedCueUids([cueUid]);
-  };
-
   /** Opens cue editing, renaming, and deletion context actions. */
   const openCueContextMenu = (cue: Cue, x: number, y: number) => {
     const cueUid = cue.identifiers.uid.toString();
-    selectForContextMenu(cueUid);
+    crud.selectForContextMenu(cueUid);
     openContextMenu({
       x,
       y,
@@ -288,13 +227,13 @@ export function createCueListController(props: CueListControllerProps) {
         {
           id: "delete-cue",
           label:
-            selectedCount() > 1
-              ? `Delete ${selectedCount()} Cues`
+            crud.selectedCount() > 1
+              ? `Delete ${crud.selectedCount()} Cues`
               : "Delete Cue",
           icon: TrashIcon,
           shortcut: "Delete",
           danger: true,
-          onSelect: handleDeleteSelected,
+          onSelect: crud.requestDelete,
         },
       ],
     });
@@ -321,7 +260,7 @@ export function createCueListController(props: CueListControllerProps) {
 
   /** Handles list-grid Enter before the global panel shortcut registry. */
   const handlePanelKeyDownCapture = (event: KeyboardEvent) => {
-    if (viewMode() !== "list") return;
+    if (crud.viewMode() !== "list") return;
     if (event.defaultPrevented) return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.key === "Enter") {
@@ -333,25 +272,18 @@ export function createCueListController(props: CueListControllerProps) {
 
   /** Deletes resolvable selected cues and reports unresolved ownership. */
   const confirmDeleteSelected = () => {
-    const selected = selectedCueUids();
-    if (selected.length === 0) {
-      setIsDeleteModalOpen(false);
-      return;
-    }
     const unresolved: string[] = [];
     let deletedCount = 0;
 
-    for (const cueUid of selected) {
+    crud.confirmDelete((cueUid) => {
       const target = resolveCueDeleteTarget(cueUid);
       if (!target) {
         unresolved.push(cueUid);
-        continue;
+        return;
       }
       deleteCue(target.sequenceId, target.cueId);
       deletedCount += 1;
-    }
-
-    clearSelection();
+    });
 
     if (deletedCount > 0) {
       pushToast("success", `Deleted ${deletedCount} cue(s)`);
@@ -363,8 +295,6 @@ export function createCueListController(props: CueListControllerProps) {
         `Could not resolve ${unresolved.length} cue(s) to a sequence for deletion`,
       );
     }
-
-    setIsDeleteModalOpen(false);
   };
 
   /** Checks a cue and its sequence context against the live toolbar search. */
@@ -422,15 +352,17 @@ export function createCueListController(props: CueListControllerProps) {
         return;
       }
 
+      /** Reveals the requested cue row once any group expansion or search reset has settled. */
       const selectCue = () => {
-        setViewMode("list");
         const row = cueListRows().find(
           (candidate): candidate is CueListCueRow =>
             candidate.rowKind === "cue" && candidate.cueUid === request.uid,
         );
-        if (!row) return;
-        setSelectedCueUids([request.uid]);
-        setListSelectionRequest({ row, requestId: request.requestId });
+        if (!row) {
+          crud.setViewMode("list");
+          return;
+        }
+        crud.revealRow(row, request.uid, request.requestId);
       };
 
       const row = cueListRows().find(
@@ -459,7 +391,7 @@ export function createCueListController(props: CueListControllerProps) {
 
   useKeyboardShortcut({
     key: "v",
-    handler: handleToggleSelectionMode,
+    handler: crud.handleToggleSelectionMode,
     description: "Toggle selection mode",
     componentId: panelId,
   });
@@ -471,19 +403,19 @@ export function createCueListController(props: CueListControllerProps) {
   });
   useKeyboardShortcut({
     key: "Delete",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected cues",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Backspace",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected cues",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Escape",
-    handler: handleEscape,
+    handler: crud.handleEscape,
     description: "Clear selection",
     componentId: panelId,
   });
@@ -509,37 +441,21 @@ export function createCueListController(props: CueListControllerProps) {
   return {
     panelId,
     cues: $cues,
-    search,
-    selectionMode,
-    viewMode,
-    selectedCount,
-    selectedCueUidSet,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
+    crud,
     activeCueListRow,
     setActiveCueListRow,
-    labelEditRequest,
-    listSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
     groupedData,
     cueGroups,
     cueListRows,
-    gridDragSelection,
-    gridClickSelection,
     setPanelRootRef,
-    setViewMode,
-    setSelectedCueUids,
     updateCueLabel,
     openCueEditor,
     handleCueItemClick,
     handleDragStart,
     handleEditSelected,
-    handleDeleteSelected,
     openCueContextMenu,
     openCueGroupContextMenu,
     confirmDeleteSelected,
-    handleToggleSelectionMode,
     toggleGroupCollapsed,
   };
 }
