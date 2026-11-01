@@ -22,8 +22,8 @@ const DEFAULT_FIXTURE_COUNTS: &[usize] = &[64, 512, 2_048];
 /// Registers the virtual dimmer benchmark group.
 ///
 /// `rgbw_vdim` patches LED fixtures that each carry a virtual intensity channel, so every frame
-/// looks up and scales their colour parameters. `spot` patches fixtures without one, isolating
-/// the per-frame scan over all parameters that runs even when no virtual dimmer exists.
+/// looks up and scales their colour parameters. `spot` patches fixtures without one, measuring
+/// the fixed per-frame cost the system adds to rigs that have no virtual dimmer.
 fn bench_vdim(c: &mut Criterion) {
     let fixture_counts = configured_counts(
         "NIGHTFALL_VDIM_BENCH_FIXTURE_COUNTS",

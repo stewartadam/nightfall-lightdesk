@@ -22,7 +22,7 @@ use web_time::Instant;
 
 use crate::output_frames::ChannelWindow;
 use crate::prelude::*;
-use crate::wire_layout::split_dmx_value;
+use crate::wire_layout::{DmxBytes, split_dmx_value};
 
 /// Default timeout before an input universe is treated as stale.
 pub const DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS: u32 = 2000;
@@ -498,6 +498,42 @@ impl ConsoleDmxUniverses {
         universe.origins[index] = Some(origin);
     }
 
+    /// Writes one parameter's bytes to its console addresses as output-route values.
+    ///
+    /// Channels a manual command owns keep their value until released. The universe is looked
+    /// up once for all bytes, since this runs for every patched parameter each frame. Addresses
+    /// are 1-indexed (DMX convention); invalid ones are skipped.
+    pub fn write_output_route_values(
+        &mut self,
+        universe_id: u16,
+        addresses: &[u16],
+        values: &[ChannelDmxValue],
+    ) {
+        let writes = addresses.iter().zip(values);
+        for (address, _) in writes
+            .clone()
+            .filter(|(address, _)| !is_valid_address(**address))
+        {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+        }
+        // Only create the universe when at least one byte will land in it.
+        if !writes
+            .clone()
+            .any(|(address, _)| is_valid_address(*address))
+        {
+            return;
+        }
+        let universe = self.universes.entry(universe_id).or_default();
+        for (address, value) in writes.filter(|(address, _)| is_valid_address(**address)) {
+            let index = (*address - 1) as usize;
+            if universe.origins[index] == Some(ConsoleChannelOrigin::ManualCommand) {
+                continue;
+            }
+            universe.values[index] = *value;
+            universe.origins[index] = Some(ConsoleChannelOrigin::OutputRoute);
+        }
+    }
+
     /// Frees a console DMX channel so nothing owns it, zeroing its value.
     ///
     /// A console universe left without any owned channel is removed so routes stop
@@ -635,7 +671,7 @@ pub fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
 }
 
 /// Encodes a parameter's current value as its DMX channel bytes, most significant first.
-pub(crate) fn parameter_dmx_bytes(parameter: &Parameter) -> Vec<ChannelDmxValue> {
+pub(crate) fn parameter_dmx_bytes(parameter: &Parameter) -> DmxBytes {
     split_dmx_value(
         parameter_to_dmx_value(parameter),
         parameter.metadata.resolution,
@@ -668,20 +704,11 @@ pub fn dmx_universes(
         let bytes = parameter_dmx_bytes(&parameter);
 
         if let Some(console_address) = console_address {
-            for (address, byte) in console_address.addresses.iter().zip(&bytes) {
-                // A manual write keeps owning its console slot until it is released.
-                if universes.get_origin(console_address.universe, *address)
-                    == Some(ConsoleChannelOrigin::ManualCommand)
-                {
-                    continue;
-                }
-                universes.set_value(
-                    console_address.universe,
-                    *address,
-                    *byte,
-                    ConsoleChannelOrigin::OutputRoute,
-                );
-            }
+            universes.write_output_route_values(
+                console_address.universe,
+                &console_address.addresses,
+                &bytes,
+            );
         }
 
         for destination in destinations {
@@ -693,7 +720,7 @@ pub fn dmx_universes(
                 );
             }
 
-            for (address, byte) in destination.addresses.iter().zip(&bytes) {
+            for (address, byte) in destination.addresses.iter().zip(bytes.iter()) {
                 universes.set_output_values(
                     &destination.transport,
                     destination.universe,
@@ -739,6 +766,31 @@ mod tests {
         assert_eq!(universes.get_value(1, 5), Some(55));
         assert!(!universes.has_universe(2));
         assert!(!universes.has_output_universe(&sacn, 3));
+    }
+
+    /// Output-route writes skip manually held and invalid channels, and an all-invalid write
+    /// leaves no universe behind.
+    #[test]
+    fn write_output_route_values_keeps_manual_channels() {
+        let mut universes = ConsoleDmxUniverses::default();
+        universes.set_value(1, 2, 99, ConsoleChannelOrigin::ManualCommand);
+
+        universes.write_output_route_values(1, &[1, 2, 0, 3], &[10, 20, 30, 40]);
+
+        assert_eq!(universes.get_value(1, 1), Some(10));
+        assert_eq!(
+            universes.get_origin(1, 1),
+            Some(ConsoleChannelOrigin::OutputRoute)
+        );
+        assert_eq!(universes.get_value(1, 2), Some(99));
+        assert_eq!(
+            universes.get_origin(1, 2),
+            Some(ConsoleChannelOrigin::ManualCommand)
+        );
+        assert_eq!(universes.get_value(1, 3), Some(40));
+
+        universes.write_output_route_values(4, &[0, 600], &[1, 2]);
+        assert!(!universes.has_universe(4));
     }
 
     #[test]

@@ -8,6 +8,8 @@
 
 //! Forward and reverse index between patched fixture element attributes and parameter entities.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
@@ -15,6 +17,9 @@ use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
 use crate::parameter::Parameter;
+
+/// Source of index revisions, shared by every index so revisions never repeat in a process.
+static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
 
 /// Where a parameter entity sits in the patched rig.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,12 +81,20 @@ impl ParameterIndex {
         self.by_parameter.is_empty()
     }
 
-    /// Returns a counter that advances on every mutation.
+    /// Returns a revision that changes on every mutation.
     ///
     /// The index is mutated through a lock rather than through Bevy change detection, so
     /// projections that cache derived layouts compare revisions to know when to rebuild.
+    /// Revisions are drawn from one process-wide counter, so a replacement index (a new show
+    /// or world) never repeats a revision an earlier index reported. Only a never-mutated
+    /// index reports 0, and every such index is empty.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Moves the index to a fresh process-wide revision.
+    fn advance_revision(&mut self) {
+        self.revision = NEXT_REVISION.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Indexes `parameter` as the control for `attribute` on `element`.
@@ -94,7 +107,7 @@ impl ParameterIndex {
         attribute: Attribute,
         parameter: Instance<Parameter>,
     ) {
-        self.revision += 1;
+        self.advance_revision();
         if let Some(previous) = self.by_parameter.remove(&parameter) {
             self.remove_from_element(&previous.element, &previous.attribute);
         }
@@ -112,7 +125,7 @@ impl ParameterIndex {
 
     /// Removes every parameter of the fixture identified by `fixture_uid`.
     pub fn remove_fixture(&mut self, fixture_uid: Uuid) {
-        self.revision += 1;
+        self.advance_revision();
         self.by_element
             .retain(|element, _| element.fixture_uid != fixture_uid);
         self.by_parameter

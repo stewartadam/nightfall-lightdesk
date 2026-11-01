@@ -355,3 +355,79 @@ fn virtual_intensity_above_full_is_capped_before_scaling_color_output() {
         "expected red DMX output to stay at authored color level"
     );
 }
+
+/// Virtual dimmers patched after the first frame start scaling their element's colors on the
+/// next frame, since the vdim pairing is rebuilt when the parameter index changes.
+#[test]
+fn virtual_intensity_patched_after_first_frame_scales_color() {
+    let mut app = App::new();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.add_systems(Update, apply_vdim);
+
+    let element_uid = Uuid::new_v4();
+    let element = FixtureRef {
+        fixture_uid: element_uid,
+        index: Some(1),
+    };
+    let red = spawn_parameter(app.world_mut(), param(Attribute::Red, MergeStrategy::HTP));
+    let vdim = spawn_parameter(
+        app.world_mut(),
+        param(Attribute::VirtualIntensity, MergeStrategy::HTP),
+    );
+    let set_values = |app: &mut App| {
+        let world = app.world_mut();
+        world
+            .get_mut::<Parameter>(red.entity())
+            .unwrap()
+            .values
+            .current_value = 200.0;
+        world
+            .get_mut::<Parameter>(vdim.entity())
+            .unwrap()
+            .values
+            .current_value = 127.5;
+    };
+    let red_value = |app: &App| {
+        app.world()
+            .get::<Parameter>(red.entity())
+            .unwrap()
+            .values
+            .current_value
+    };
+
+    set_values(&mut app);
+    app.update();
+    assert_eq!(
+        red_value(&app),
+        200.0,
+        "unpatched vdim must not scale anything"
+    );
+
+    {
+        let data_provider = app.world().resource::<FixtureDataProviderExt>();
+        data_provider.add_parameter(element.clone(), Attribute::Red, red);
+        data_provider.add_parameter(element, Attribute::VirtualIntensity, vdim);
+    }
+    set_values(&mut app);
+    app.update();
+    let expected = 200.0 * 0.5f32.powf(DEFAULT_GAMMA);
+    assert!(
+        (red_value(&app) - expected).abs() < 0.01,
+        "expected red {expected}, got {}",
+        red_value(&app)
+    );
+
+    app.world()
+        .resource::<FixtureDataProviderExt>()
+        .parameter_index
+        .write()
+        .unwrap()
+        .remove_fixture(element_uid);
+    set_values(&mut app);
+    app.update();
+    assert_eq!(
+        red_value(&app),
+        200.0,
+        "an unpatched vdim must stop scaling its former element"
+    );
+}
