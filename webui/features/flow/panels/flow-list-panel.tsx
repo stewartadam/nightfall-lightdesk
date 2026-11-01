@@ -11,7 +11,7 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import { EmptyState } from "../../../components/ui/empty-state";
@@ -24,29 +24,17 @@ import {
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
-import CrudListDataGrid, {
-  type CrudListDataGridEditRequest,
-  type CrudListDataGridSelectionRequest,
-} from "../../../components/widgets/crud/crud-list-data-grid";
-import CrudPanelSearch, {
-  createCrudPanelSearch,
-  createCrudPanelSearchQueryChangeEffect,
-} from "../../../components/widgets/crud/crud-panel-search";
+import CrudListDataGrid from "../../../components/widgets/crud/crud-list-data-grid";
+import CrudPanelSearch from "../../../components/widgets/crud/crud-panel-search";
 import {
   CRUD_CARD_CLASS,
   CRUD_GRID_DRAG_BOX_CLASS,
 } from "../../../components/widgets/crud/crud-panel-styles";
 import CrudViewModeToggle, {
-  type CrudViewMode,
   createCrudViewEntrance,
 } from "../../../components/widgets/crud/crud-view-mode-toggle";
-import { createCrudGridClickSelection } from "../../../components/widgets/crud/model/crud-grid-click-selection";
-import { createCrudGridDragSelection } from "../../../components/widgets/crud/model/crud-grid-drag-selection";
+import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
-import {
-  changeCrudPanelViewMode,
-  loadCrudPanelViewMode,
-} from "../../../lib/crud-panel-view-mode";
 import {
   createDefaultFlow,
   deleteFlow,
@@ -68,36 +56,21 @@ interface FlowListPanelProps extends BasePanelComponentProps {
  */
 export default function FlowListPanel(props: FlowListPanelProps) {
   let viewContent: HTMLDivElement | undefined;
-  createCrudViewEntrance(
-    () => viewMode(),
-    () => viewContent,
-  );
   const $flows = useStore(flows);
   const $dockApi = useStore(dockApi);
   const panelId = props.initialPanelId ?? props.id;
-  const search = createCrudPanelSearch({
-    componentId: panelId,
-    label: "Search flows",
+  const crud = createCrudListState<types.FlowDefinition>({
+    panelId,
+    searchLabel: "Search flows",
+    viewModeKey: "flow-list",
+    orderedUids: (): readonly string[] => flowUids(),
   });
-  const [selectionMode, setSelectionMode] = createSignal(false);
-  const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
-    loadCrudPanelViewMode("flow-list"),
-  );
-  const [selectedFlowUids, setSelectedFlowUids] = createSignal<string[]>([]);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
-  const [labelEditRequest, setLabelEditRequest] =
-    createSignal<CrudListDataGridEditRequest<types.FlowDefinition>>();
-  const [listSelectionRequest, setListSelectionRequest] =
-    createSignal<CrudListDataGridSelectionRequest<types.FlowDefinition>>();
-  const [editingCardLabelUid, setEditingCardLabelUid] = createSignal<
-    string | null
-  >(null);
+  const { search } = crud;
+  createCrudViewEntrance(crud.viewMode, () => viewContent);
 
-  const selectedCount = createMemo(() => selectedFlowUids().length);
-  const selectedFlowUidSet = createMemo(() => new Set(selectedFlowUids()));
+  /** Resolves the sole selected flow that Properties edits, if it still exists. */
   const propertiesFlow = createMemo(() => {
-    if (selectedCount() !== 1) return null;
-    const [flowUid] = selectedFlowUids();
+    const flowUid = crud.propertiesUid();
     return flowUid ? ($flows()[flowUid] ?? null) : null;
   });
 
@@ -129,50 +102,10 @@ export default function FlowListPanel(props: FlowListPanelProps) {
   };
 
   /** Requests inline editing for the selected flow label cell. */
-  const requestFlowLabelEdit = (flowEntry: types.FlowDefinition) => {
-    if (viewMode() !== "list") {
-      setEditingCardLabelUid(flowEntry.identifiers.uid);
-      return;
-    }
-    const startEdit = () =>
-      setLabelEditRequest({
-        row: flowEntry,
-        columnId: "label",
-        requestId: Date.now(),
-      });
-    startEdit();
-  };
+  const requestFlowLabelEdit = (flowEntry: types.FlowDefinition) =>
+    crud.requestLabelEdit(flowEntry.identifiers.uid, () => flowEntry);
 
-  const clearSelection = () => {
-    setSelectedFlowUids([]);
-  };
-  createCrudPanelSearchQueryChangeEffect(search, clearSelection);
-
-  const setSelectionModeEnabled = (enabled: boolean) => {
-    setSelectionMode(enabled);
-    if (!enabled) {
-      clearSelection();
-    }
-  };
-
-  const setViewMode = (mode: CrudViewMode) => {
-    changeCrudPanelViewMode("flow-list", viewMode(), mode, setViewModeSignal, {
-      onEnterListMode: () => setSelectionModeEnabled(false),
-    });
-  };
-
-  const toggleSelection = (flowUid: string) => {
-    setSelectedFlowUids((current) => {
-      const next = new Set(current);
-      if (next.has(flowUid)) {
-        next.delete(flowUid);
-      } else {
-        next.add(flowUid);
-      }
-      return Array.from(next);
-    });
-  };
-
+  /** Focuses the Flow Editor already showing `flowUid`, or opens a new one for it. */
   const openFlowEditor = (flowUid: string) => {
     const api = $dockApi();
     if (!api) return;
@@ -196,41 +129,28 @@ export default function FlowListPanel(props: FlowListPanelProps) {
     });
   };
 
+  /** Opens a card's flow once grid selection has declined the click. */
   const handleFlowItemClick = (flowUid: string) => {
-    if (isDeleteModalOpen()) return;
-    if (selectionMode()) {
-      toggleSelection(flowUid);
-      return;
-    }
-
+    if (crud.dialogOpen()) return;
     openFlowEditor(flowUid);
   };
 
+  /** Opens the first selected flow in the Flow Editor and leaves selection mode. */
   const handleEditSelected = () => {
-    if (isDeleteModalOpen()) return;
-    const [selectedFlowUid] = selectedFlowUids();
+    if (crud.dialogOpen()) return;
+    const [selectedFlowUid] = crud.selectedUids();
     if (!selectedFlowUid) return;
     openFlowEditor(selectedFlowUid);
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
   };
 
-  const handleDeleteSelected = () => {
-    const selected = selectedFlowUids();
-    if (selected.length === 0) return;
-    setIsDeleteModalOpen(true);
-  };
-
-  const selectForContextMenu = (flowUid: string) => {
-    if (selectedFlowUidSet().has(flowUid)) return;
-    setSelectedFlowUids([flowUid]);
-  };
-
+  /** Opens the row actions for `flowEntry`, selecting it first unless it is already selected. */
   const openFlowContextMenu = (
     flowEntry: ReturnType<typeof flowList>[number],
     x: number,
     y: number,
   ) => {
-    selectForContextMenu(flowEntry.identifiers.uid);
+    crud.selectForContextMenu(flowEntry.identifiers.uid);
     openContextMenu({
       x,
       y,
@@ -258,57 +178,26 @@ export default function FlowListPanel(props: FlowListPanelProps) {
         {
           id: "delete-flow",
           label:
-            selectedCount() > 1
-              ? `Delete ${selectedCount()} Flows`
+            crud.selectedCount() > 1
+              ? `Delete ${crud.selectedCount()} Flows`
               : "Delete Flow",
           icon: TrashIcon,
           shortcut: "Delete",
           danger: true,
-          onSelect: handleDeleteSelected,
+          onSelect: crud.requestDelete,
         },
       ],
     });
   };
 
-  const confirmDeleteSelected = () => {
-    const selected = selectedFlowUids();
-    if (selected.length === 0) {
-      setIsDeleteModalOpen(false);
-      return;
-    }
-    const flowMap = $flows();
-    for (const flowUid of selected) {
-      const flowEntry = flowMap[flowUid];
-      if (!flowEntry) continue;
-      deleteFlow(flowEntry.identifiers.id);
-    }
+  /** Deletes every selected flow after confirmation. */
+  const confirmDeleteSelected = () =>
+    crud.confirmDelete((flowUid) => {
+      const flowEntry = $flows()[flowUid];
+      if (flowEntry) deleteFlow(flowEntry.identifiers.id);
+    });
 
-    clearSelection();
-    setIsDeleteModalOpen(false);
-  };
-
-  const handleToggleSelectionMode = () => {
-    if (isDeleteModalOpen()) return;
-    if (viewMode() === "list") return;
-    setSelectionModeEnabled(!selectionMode());
-  };
-
-  const handleEscape = () => {
-    if (isDeleteModalOpen()) return true;
-    if (search.clear()) {
-      return true;
-    }
-    if (selectedCount() > 0) {
-      clearSelection();
-      return true;
-    }
-    if (selectionMode()) {
-      setSelectionModeEnabled(false);
-      return true;
-    }
-    return false;
-  };
-
+  /** Stores a new default flow under the first free ID, then opens it in the Flow Editor. */
   const handleCreate = () => {
     const flowMap = $flows();
     const existingIds = Object.values(flowMap).map(
@@ -352,14 +241,9 @@ export default function FlowListPanel(props: FlowListPanelProps) {
         return;
       }
 
-      const selectEntry = () => {
-        setViewMode("list");
-        setSelectedFlowUids([request.uid]);
-        setListSelectionRequest({
-          row: flowEntry,
-          requestId: request.requestId,
-        });
-      };
+      /** Switches to list mode and selects the requested flow row. */
+      const selectEntry = () =>
+        crud.revealRow(flowEntry, request.uid, request.requestId);
 
       if (!flowList().includes(flowEntry) && search.isFiltering()) {
         search.clear();
@@ -373,23 +257,14 @@ export default function FlowListPanel(props: FlowListPanelProps) {
     },
   );
 
-  const gridDragSelection = createCrudGridDragSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: () => flowList().map((flowEntry) => flowEntry.identifiers.uid),
-    selectedIds: selectedFlowUids,
-    onSelectionChange: setSelectedFlowUids,
-  });
-  const gridClickSelection = createCrudGridClickSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: () => flowList().map((flowEntry) => flowEntry.identifiers.uid),
-    selectedIds: selectedFlowUids,
-    onSelectionChange: setSelectedFlowUids,
-    multiSelectOnPlainClick: true,
-  });
+  /** UIDs of the flows currently shown, in display order, for range selection. */
+  const flowUids = createMemo(() =>
+    flowList().map((flowEntry) => flowEntry.identifiers.uid),
+  );
 
   useKeyboardShortcut({
     key: "v",
-    handler: handleToggleSelectionMode,
+    handler: crud.handleToggleSelectionMode,
     description: "Toggle selection mode",
     componentId: panelId,
   });
@@ -401,19 +276,19 @@ export default function FlowListPanel(props: FlowListPanelProps) {
   });
   useKeyboardShortcut({
     key: "Delete",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected flows",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Backspace",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected flows",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Escape",
-    handler: handleEscape,
+    handler: crud.handleEscape,
     description: "Clear selection",
     componentId: panelId,
   });
@@ -436,7 +311,7 @@ export default function FlowListPanel(props: FlowListPanelProps) {
               tooltip={"Edit selected flow (Enter)"}
               type="button"
               onClick={handleEditSelected}
-              disabled={selectedCount() !== 1}
+              disabled={crud.selectedCount() !== 1}
               label="Edit selected flow"
             >
               <PencilSimpleLineIcon class="size-4" aria-hidden />
@@ -444,28 +319,28 @@ export default function FlowListPanel(props: FlowListPanelProps) {
 
             <ToolbarButton
               variant="danger"
-              count={selectedCount()}
+              count={crud.selectedCount()}
               tooltip={
-                selectedCount() > 0
-                  ? `Delete selected flows (${selectedCount()})`
+                crud.selectedCount() > 0
+                  ? `Delete selected flows (${crud.selectedCount()})`
                   : "Delete selected flows (Delete/Backspace)"
               }
               type="button"
-              onClick={handleDeleteSelected}
-              disabled={selectedCount() === 0}
+              onClick={crud.requestDelete}
+              disabled={crud.selectedCount() === 0}
               label="Delete selected flows"
             >
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
 
-            <Show when={viewMode() === "grid"}>
+            <Show when={crud.viewMode() === "grid"}>
               <ToolbarSeparator />
 
               <ToggleToolbarButton
-                tooltip={`${selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
+                tooltip={`${crud.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
-                onClick={handleToggleSelectionMode}
-                pressed={selectionMode()}
+                onClick={crud.handleToggleSelectionMode}
+                pressed={crud.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
@@ -477,19 +352,19 @@ export default function FlowListPanel(props: FlowListPanelProps) {
           <>
             <CrudPanelSearch search={search} placeholder="Search flows" />
             <CrudViewModeToggle
-              viewMode={viewMode()}
-              onViewModeChange={setViewMode}
+              viewMode={crud.viewMode()}
+              onViewModeChange={crud.setViewMode}
             />
           </>
         }
       />
 
       <DeleteConfirmModal
-        isOpen={isDeleteModalOpen()}
+        isOpen={crud.isDeleteModalOpen()}
         title="Delete selected flows"
-        message={`Delete ${selectedCount()} selected flow(s)? This action cannot be undone.`}
+        message={`Delete ${crud.selectedCount()} selected flow(s)? This action cannot be undone.`}
         confirmLabel="Delete"
-        onCancel={() => setIsDeleteModalOpen(false)}
+        onCancel={crud.closeDeleteConfirm}
         onConfirm={confirmDeleteSelected}
       />
 
@@ -497,36 +372,36 @@ export default function FlowListPanel(props: FlowListPanelProps) {
         ref={viewContent}
         class="min-h-0 flex-1 overflow-auto"
         classList={{
-          "p-4": viewMode() === "grid",
-          relative: viewMode() === "grid",
-          "select-none": selectionMode() && viewMode() === "grid",
+          "p-4": crud.viewMode() === "grid",
+          relative: crud.viewMode() === "grid",
+          "select-none": crud.selectionMode() && crud.viewMode() === "grid",
         }}
-        onPointerDown={gridDragSelection.onPointerDown}
-        onPointerMove={gridDragSelection.onPointerMove}
-        onPointerUp={gridDragSelection.onPointerUp}
-        onPointerCancel={gridDragSelection.onPointerCancel}
+        onPointerDown={crud.gridDragSelection.onPointerDown}
+        onPointerMove={crud.gridDragSelection.onPointerMove}
+        onPointerUp={crud.gridDragSelection.onPointerUp}
+        onPointerCancel={crud.gridDragSelection.onPointerCancel}
         onClick={(event) => {
-          if (gridDragSelection.consumeSuppressedClick()) {
+          if (crud.gridDragSelection.consumeSuppressedClick()) {
             event.preventDefault();
             event.stopPropagation();
             return;
           }
-          gridClickSelection.handleBackgroundClick(event);
+          crud.gridClickSelection.handleBackgroundClick(event);
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") return;
         }}
       >
         <Show
-          when={viewMode() === "grid"}
+          when={crud.viewMode() === "grid"}
           fallback={
             <div class="h-full min-h-0">
               <CrudListDataGrid
                 panelId={panelId}
                 rows={flowList()}
                 rowKey={(flowEntry) => flowEntry.identifiers.uid}
-                editRequest={labelEditRequest()}
-                selectionRequest={listSelectionRequest()}
+                editRequest={crud.labelEditRequest()}
+                selectionRequest={crud.listSelectionRequest()}
                 columns={[
                   {
                     id: "id",
@@ -549,21 +424,21 @@ export default function FlowListPanel(props: FlowListPanelProps) {
                   },
                 ]}
                 isRowSelected={(flowEntry) =>
-                  selectedFlowUidSet().has(flowEntry.identifiers.uid)
+                  crud.selectedUidSet().has(flowEntry.identifiers.uid)
                 }
                 onSelectionChange={(rows) =>
-                  setSelectedFlowUids(
+                  crud.select(
                     rows.map((flowEntry) => flowEntry.identifiers.uid),
                   )
                 }
-                onDeleteRequested={handleDeleteSelected}
-                multiSelectOnPlainClick={selectionMode()}
+                onDeleteRequested={crud.requestDelete}
+                multiSelectOnPlainClick={crud.selectionMode()}
                 onRowClick={(flowEntry, modifiers) => {
-                  if (isDeleteModalOpen() || !modifiers.altKey) return;
+                  if (crud.isDeleteModalOpen() || !modifiers.altKey) return;
                   openFlowEditor(flowEntry.identifiers.uid);
                 }}
                 onRowContextMenu={(flowEntry, _modifiers, position) => {
-                  if (isDeleteModalOpen()) return;
+                  if (crud.isDeleteModalOpen()) return;
                   openFlowContextMenu(flowEntry, position.x, position.y);
                 }}
               />
@@ -590,19 +465,19 @@ export default function FlowListPanel(props: FlowListPanelProps) {
               <For each={flowList()}>
                 {(flowEntry) => {
                   const isSelected = () =>
-                    selectedFlowUidSet().has(flowEntry.identifiers.uid);
+                    crud.selectedUidSet().has(flowEntry.identifiers.uid);
                   return (
                     <button
                       type="button"
                       data-crud-select-id={flowEntry.identifiers.uid}
                       onClick={(event) => {
-                        if (gridDragSelection.consumeSuppressedClick()) {
+                        if (crud.gridDragSelection.consumeSuppressedClick()) {
                           event.preventDefault();
                           event.stopPropagation();
                           return;
                         }
                         if (
-                          gridClickSelection.handleCardClick(
+                          crud.gridClickSelection.handleCardClick(
                             flowEntry.identifiers.uid,
                             event,
                           )
@@ -628,7 +503,8 @@ export default function FlowListPanel(props: FlowListPanelProps) {
                         <span>{flowEntry.identifiers.id}:</span>
                         <Show
                           when={
-                            editingCardLabelUid() === flowEntry.identifiers.uid
+                            crud.editingCardLabelUid() ===
+                            flowEntry.identifiers.uid
                           }
                           fallback={
                             <span class="truncate">
@@ -640,7 +516,7 @@ export default function FlowListPanel(props: FlowListPanelProps) {
                             ariaLabel="Flow card label"
                             allowEmpty
                             value={flowEntry.identifiers.label}
-                            onClose={() => setEditingCardLabelUid(null)}
+                            onClose={crud.finishCardLabelEdit}
                             onCommit={(label) =>
                               updateFlowLabel(flowEntry, label)
                             }
@@ -658,7 +534,9 @@ export default function FlowListPanel(props: FlowListPanelProps) {
             </div>
           </Show>
         </Show>
-        <Show when={viewMode() === "grid" && gridDragSelection.dragBox()}>
+        <Show
+          when={crud.viewMode() === "grid" && crud.gridDragSelection.dragBox()}
+        >
           {(box) => (
             <div
               class={CRUD_GRID_DRAG_BOX_CLASS}

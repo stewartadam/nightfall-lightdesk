@@ -49,7 +49,7 @@ function BlueprintCard(props: BlueprintCardProps) {
   const controller = props.controller;
   const uid = props.blueprint.identifiers.uid;
   /** Reports whether this blueprint belongs to the current selection. */
-  const isSelected = () => controller.selectedUidSet().has(uid);
+  const isSelected = () => controller.crud.selectedUidSet().has(uid);
   /** Returns the current logical attributes contained by this Blueprint. */
   const attributeGroups = () =>
     controller.blueprintAttributeGroups(props.blueprint);
@@ -59,7 +59,7 @@ function BlueprintCard(props: BlueprintCardProps) {
     <button
       type="button"
       data-crud-select-id={uid}
-      draggable={!controller.selectionMode()}
+      draggable={!controller.crud.selectionMode()}
       onDragStart={(event) => {
         if (!event.dataTransfer) return;
         setObjectDragData(event.dataTransfer, ObjectType.Blueprint, uid);
@@ -73,12 +73,13 @@ function BlueprintCard(props: BlueprintCardProps) {
       data-selectable-surface
       data-selected={isSelected()}
       onClick={(event) => {
-        if (controller.gridDragSelection.consumeSuppressedClick()) {
+        if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
           event.preventDefault();
           event.stopPropagation();
           return;
         }
-        if (controller.gridClickSelection.handleCardClick(uid, event)) return;
+        if (controller.crud.gridClickSelection.handleCardClick(uid, event))
+          return;
         controller.handleBlueprintClick(uid);
       }}
       onContextMenu={(event) => {
@@ -96,7 +97,7 @@ function BlueprintCard(props: BlueprintCardProps) {
         <span class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
           <span>{props.blueprint.identifiers.id}:</span>
           <Show
-            when={controller.editingCardLabelUid() === uid}
+            when={controller.crud.editingCardLabelUid() === uid}
             fallback={
               <span class="truncate">{props.blueprint.identifiers.label}</span>
             }
@@ -105,7 +106,7 @@ function BlueprintCard(props: BlueprintCardProps) {
               ariaLabel="Blueprint card label"
               allowEmpty
               value={props.blueprint.identifiers.label}
-              onClose={() => controller.setEditingCardLabelUid(null)}
+              onClose={() => controller.crud.finishCardLabelEdit()}
               onCommit={(label) =>
                 controller.updateBlueprintLabel(props.blueprint, label)
               }
@@ -148,8 +149,8 @@ function BlueprintRowList(props: BlueprintsViewProps) {
         panelId={controller.panelId}
         rows={controller.displayRows()}
         rowKey={(blueprint) => blueprint.identifiers.uid}
-        editRequest={controller.labelEditRequest()}
-        selectionRequest={controller.listSelectionRequest()}
+        editRequest={controller.crud.labelEditRequest()}
+        selectionRequest={controller.crud.listSelectionRequest()}
         columns={[
           {
             id: "id",
@@ -186,32 +187,21 @@ function BlueprintRowList(props: BlueprintsViewProps) {
           },
         ]}
         isRowSelected={(blueprint) =>
-          controller.selectedUidSet().has(blueprint.identifiers.uid)
+          controller.crud.selectedUidSet().has(blueprint.identifiers.uid)
         }
         onSelectionChange={(rows) =>
-          controller.setSelectedBlueprintUids(
+          controller.crud.select(
             rows.map((blueprint) => blueprint.identifiers.uid),
           )
         }
-        onDeleteRequested={controller.handleDeleteSelected}
-        multiSelectOnPlainClick={controller.selectionMode()}
+        onDeleteRequested={controller.crud.requestDelete}
+        multiSelectOnPlainClick={controller.crud.selectionMode()}
         onRowClick={(blueprint, modifiers) => {
-          if (
-            controller.isDeleteModalOpen() ||
-            controller.isCreateModalOpen() ||
-            controller.isEditModalOpen() ||
-            !modifiers.altKey
-          )
-            return;
+          if (controller.crud.dialogOpen() || !modifiers.altKey) return;
           controller.recallBlueprint(blueprint);
         }}
         onRowContextMenu={(blueprint, _modifiers, position) => {
-          if (
-            controller.isDeleteModalOpen() ||
-            controller.isCreateModalOpen() ||
-            controller.isEditModalOpen()
-          )
-            return;
+          if (controller.crud.dialogOpen()) return;
           controller.openBlueprintContextMenu(
             blueprint,
             position.x,
@@ -227,7 +217,7 @@ function BlueprintRowList(props: BlueprintsViewProps) {
 export function BlueprintsView(props: BlueprintsViewProps) {
   let viewContent: HTMLDivElement | undefined;
   createCrudViewEntrance(
-    () => props.controller.viewMode(),
+    () => props.controller.crud.viewMode(),
     () => viewContent,
   );
   const controller = props.controller;
@@ -252,7 +242,7 @@ export function BlueprintsView(props: BlueprintsViewProps) {
               tooltip={"Edit selected blueprint (Enter)"}
               type="button"
               onClick={controller.handleEditSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Edit selected blueprint"
             >
               <PencilSimpleLineIcon class="size-4" aria-hidden />
@@ -261,7 +251,7 @@ export function BlueprintsView(props: BlueprintsViewProps) {
               tooltip={"Store programmer into selected Blueprint"}
               type="button"
               onClick={controller.handleStoreSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Store programmer into selected Blueprint"
             >
               <FloppyDiskIcon class="size-4" aria-hidden />
@@ -270,33 +260,33 @@ export function BlueprintsView(props: BlueprintsViewProps) {
               tooltip={"Duplicate selected Blueprint"}
               type="button"
               onClick={controller.handleDuplicateSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Duplicate selected Blueprint"
             >
               <CopySimpleIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <ToolbarButton
               variant="danger"
-              count={controller.selectedCount()}
+              count={controller.crud.selectedCount()}
               tooltip={
-                controller.selectedCount() > 0
-                  ? `Delete selected blueprints (${controller.selectedCount()})`
+                controller.crud.selectedCount() > 0
+                  ? `Delete selected blueprints (${controller.crud.selectedCount()})`
                   : "Delete selected blueprints (Delete/Backspace)"
               }
               type="button"
-              onClick={controller.handleDeleteSelected}
-              disabled={controller.selectedCount() === 0}
+              onClick={controller.crud.requestDelete}
+              disabled={controller.crud.selectedCount() === 0}
               label="Delete selected blueprints"
             >
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
-            <Show when={controller.viewMode() === "grid"}>
+            <Show when={controller.crud.viewMode() === "grid"}>
               <ToolbarSeparator />
               <ToggleToolbarButton
-                tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
+                tooltip={`${controller.crud.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
-                onClick={controller.handleToggleSelectionMode}
-                pressed={controller.selectionMode()}
+                onClick={controller.crud.handleToggleSelectionMode}
+                pressed={controller.crud.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
@@ -307,12 +297,12 @@ export function BlueprintsView(props: BlueprintsViewProps) {
         right={
           <>
             <CrudPanelSearch
-              search={controller.search}
+              search={controller.crud.search}
               placeholder="Search blueprints"
             />
             <CrudViewModeToggle
-              viewMode={controller.viewMode()}
-              onViewModeChange={controller.setViewMode}
+              viewMode={controller.crud.viewMode()}
+              onViewModeChange={controller.crud.setViewMode}
             />
           </>
         }
@@ -336,40 +326,41 @@ export function BlueprintsView(props: BlueprintsViewProps) {
         onSubmit={controller.handleEditSubmit}
       />
       <DeleteConfirmModal
-        isOpen={controller.isDeleteModalOpen()}
+        isOpen={controller.crud.isDeleteModalOpen()}
         title="Delete selected blueprints"
-        message={`Delete ${controller.selectedCount()} selected blueprint(s)? This action cannot be undone.`}
+        message={`Delete ${controller.crud.selectedCount()} selected blueprint(s)? This action cannot be undone.`}
         confirmLabel="Delete"
-        onCancel={() => controller.setIsDeleteModalOpen(false)}
+        onCancel={() => controller.crud.closeDeleteConfirm()}
         onConfirm={controller.confirmDeleteSelected}
       />
       <div
         ref={viewContent}
         class="min-h-0 flex-1 overflow-auto"
         classList={{
-          "p-4": controller.viewMode() === "grid",
-          relative: controller.viewMode() === "grid",
+          "p-4": controller.crud.viewMode() === "grid",
+          relative: controller.crud.viewMode() === "grid",
           "select-none":
-            controller.selectionMode() && controller.viewMode() === "grid",
+            controller.crud.selectionMode() &&
+            controller.crud.viewMode() === "grid",
         }}
-        onPointerDown={controller.gridDragSelection.onPointerDown}
-        onPointerMove={controller.gridDragSelection.onPointerMove}
-        onPointerUp={controller.gridDragSelection.onPointerUp}
-        onPointerCancel={controller.gridDragSelection.onPointerCancel}
+        onPointerDown={controller.crud.gridDragSelection.onPointerDown}
+        onPointerMove={controller.crud.gridDragSelection.onPointerMove}
+        onPointerUp={controller.crud.gridDragSelection.onPointerUp}
+        onPointerCancel={controller.crud.gridDragSelection.onPointerCancel}
         onClick={(event) => {
-          if (controller.gridDragSelection.consumeSuppressedClick()) {
+          if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
             event.preventDefault();
             event.stopPropagation();
             return;
           }
-          controller.gridClickSelection.handleBackgroundClick(event);
+          controller.crud.gridClickSelection.handleBackgroundClick(event);
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") return;
         }}
       >
         <Show
-          when={controller.viewMode() === "grid"}
+          when={controller.crud.viewMode() === "grid"}
           fallback={<BlueprintRowList controller={controller} />}
         >
           <Show
@@ -402,8 +393,8 @@ export function BlueprintsView(props: BlueprintsViewProps) {
         </Show>
         <Show
           when={
-            controller.viewMode() === "grid" &&
-            controller.gridDragSelection.dragBox()
+            controller.crud.viewMode() === "grid" &&
+            controller.crud.gridDragSelection.dragBox()
           }
         >
           {(box) => (

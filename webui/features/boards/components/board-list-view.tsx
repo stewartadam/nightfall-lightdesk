@@ -55,7 +55,8 @@ function BoardCard(props: BoardListViewProps & { board: Board }) {
   const uid = () => props.board.identifiers.uid;
   /** Whether selection mode currently includes this card. */
   const isSelected = () =>
-    controller.selectionMode() && controller.selectedBoardUidSet().has(uid());
+    controller.crud.selectionMode() &&
+    controller.crud.selectedUidSet().has(uid());
 
   return (
     <button
@@ -82,7 +83,7 @@ function BoardCard(props: BoardListViewProps & { board: Board }) {
         title={props.board.identifiers.label}
       >
         <Show
-          when={controller.editingCardLabelUid() === uid()}
+          when={controller.crud.editingCardLabelUid() === uid()}
           fallback={
             <span class="min-w-0 truncate">
               {boardDisplayName(props.board)}
@@ -93,7 +94,7 @@ function BoardCard(props: BoardListViewProps & { board: Board }) {
             ariaLabel="Board card label"
             allowEmpty
             value={props.board.identifiers.label}
-            onClose={() => controller.setEditingCardLabelUid(null)}
+            onClose={() => controller.crud.finishCardLabelEdit()}
             onCommit={(label) =>
               controller.updateBoardLabel(props.board, label)
             }
@@ -120,8 +121,8 @@ function BoardRowList(props: BoardListViewProps) {
         panelId={controller.panelId}
         rows={controller.boardList()}
         rowKey={(board) => board.identifiers.uid}
-        editRequest={controller.labelEditRequest()}
-        selectionRequest={controller.listSelectionRequest()}
+        editRequest={controller.crud.labelEditRequest()}
+        selectionRequest={controller.crud.listSelectionRequest()}
         columns={[
           {
             id: "id",
@@ -151,19 +152,19 @@ function BoardRowList(props: BoardListViewProps) {
           },
         ]}
         isRowSelected={(board) =>
-          controller.selectedBoardUidSet().has(board.identifiers.uid)
+          controller.crud.selectedUidSet().has(board.identifiers.uid)
         }
         onSelectionChange={(rows) =>
-          controller.selectBoards(rows.map((board) => board.identifiers.uid))
+          controller.crud.select(rows.map((board) => board.identifiers.uid))
         }
-        onDeleteRequested={controller.handleDeleteSelected}
-        multiSelectOnPlainClick={controller.selectionMode()}
+        onDeleteRequested={controller.crud.requestDelete}
+        multiSelectOnPlainClick={controller.crud.selectionMode()}
         onRowClick={(board, modifiers) => {
-          if (controller.dialogOpen() || !modifiers.altKey) return;
+          if (controller.crud.dialogOpen() || !modifiers.altKey) return;
           controller.openBoard(board);
         }}
         onRowContextMenu={(board, _modifiers, position) => {
-          if (controller.dialogOpen()) return;
+          if (controller.crud.dialogOpen()) return;
           controller.openBoardContextMenu(board, position.x, position.y);
         }}
       />
@@ -195,7 +196,7 @@ export function BoardListView(props: BoardListViewProps) {
               tooltip="Open selected board (Enter)"
               type="button"
               onClick={controller.handleOpenSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Open selected board"
             >
               <ArrowSquareOutIcon class="size-4" aria-hidden />
@@ -204,33 +205,33 @@ export function BoardListView(props: BoardListViewProps) {
               tooltip="Edit selected board (E)"
               type="button"
               onClick={controller.handleEditSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Edit selected board"
             >
               <PencilSimpleLineIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <ToolbarButton
               variant="danger"
-              count={controller.selectedCount()}
+              count={controller.crud.selectedCount()}
               tooltip={
-                controller.selectedCount() > 0
-                  ? `Delete selected boards (${controller.selectedCount()})`
+                controller.crud.selectedCount() > 0
+                  ? `Delete selected boards (${controller.crud.selectedCount()})`
                   : "Delete selected boards (Delete/Backspace)"
               }
               type="button"
-              onClick={controller.handleDeleteSelected}
-              disabled={controller.selectedCount() === 0}
+              onClick={controller.crud.requestDelete}
+              disabled={controller.crud.selectedCount() === 0}
               label="Delete selected boards"
             >
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
-            <Show when={controller.viewMode() === "grid"}>
+            <Show when={controller.crud.viewMode() === "grid"}>
               <ToolbarSeparator />
               <ToggleToolbarButton
-                tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
+                tooltip={`${controller.crud.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
-                onClick={controller.handleToggleSelectionMode}
-                pressed={controller.selectionMode()}
+                onClick={controller.crud.handleToggleSelectionMode}
+                pressed={controller.crud.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
@@ -241,12 +242,12 @@ export function BoardListView(props: BoardListViewProps) {
         right={
           <>
             <CrudPanelSearch
-              search={controller.search}
+              search={controller.crud.search}
               placeholder="Search boards"
             />
             <CrudViewModeToggle
-              viewMode={controller.viewMode()}
-              onViewModeChange={controller.setViewMode}
+              viewMode={controller.crud.viewMode()}
+              onViewModeChange={controller.crud.setViewMode}
             />
           </>
         }
@@ -264,38 +265,39 @@ export function BoardListView(props: BoardListViewProps) {
         onSubmit={controller.handleEditSubmit}
       />
       <DeleteConfirmModal
-        isOpen={controller.isDeleteModalOpen()}
+        isOpen={controller.crud.isDeleteModalOpen()}
         title="Delete selected boards"
-        message={`Delete ${controller.selectedCount()} selected board(s)? Open Board panels showing them close their board.`}
+        message={`Delete ${controller.crud.selectedCount()} selected board(s)? Open Board panels showing them close their board.`}
         confirmLabel="Delete"
-        onCancel={() => controller.setIsDeleteModalOpen(false)}
+        onCancel={() => controller.crud.closeDeleteConfirm()}
         onConfirm={controller.confirmDeleteSelected}
       />
 
       <CrudScrollArea
-        viewMode={controller.viewMode()}
+        viewMode={controller.crud.viewMode()}
         aria-label="Boards scroll area"
       >
         <div
           class="min-h-0 min-h-full"
           classList={{
-            "h-full": controller.viewMode() !== "grid",
-            "p-4": controller.viewMode() === "grid",
-            relative: controller.viewMode() === "grid",
+            "h-full": controller.crud.viewMode() !== "grid",
+            "p-4": controller.crud.viewMode() === "grid",
+            relative: controller.crud.viewMode() === "grid",
             "select-none":
-              controller.selectionMode() && controller.viewMode() === "grid",
+              controller.crud.selectionMode() &&
+              controller.crud.viewMode() === "grid",
           }}
-          onPointerDown={controller.gridDragSelection.onPointerDown}
-          onPointerMove={controller.gridDragSelection.onPointerMove}
-          onPointerUp={controller.gridDragSelection.onPointerUp}
-          onPointerCancel={controller.gridDragSelection.onPointerCancel}
+          onPointerDown={controller.crud.gridDragSelection.onPointerDown}
+          onPointerMove={controller.crud.gridDragSelection.onPointerMove}
+          onPointerUp={controller.crud.gridDragSelection.onPointerUp}
+          onPointerCancel={controller.crud.gridDragSelection.onPointerCancel}
           onClick={(event) => {
-            if (controller.gridDragSelection.consumeSuppressedClick()) {
+            if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
               event.preventDefault();
               event.stopPropagation();
               return;
             }
-            controller.gridClickSelection.handleBackgroundClick(event);
+            controller.crud.gridClickSelection.handleBackgroundClick(event);
           }}
           onKeyDown={(event) => {
             // Background clicks only clear selection; keyboard users use Escape (a panel shortcut).
@@ -313,7 +315,7 @@ export function BoardListView(props: BoardListViewProps) {
             }
           >
             <Show
-              when={controller.viewMode() === "grid"}
+              when={controller.crud.viewMode() === "grid"}
               fallback={<BoardRowList controller={controller} />}
             >
               <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
@@ -327,18 +329,18 @@ export function BoardListView(props: BoardListViewProps) {
           </Show>
           <Show
             when={
-              controller.viewMode() === "grid" &&
-              controller.gridDragSelection.dragBox()
+              controller.crud.viewMode() === "grid" &&
+              controller.crud.gridDragSelection.dragBox()
             }
           >
             <div
               class={CRUD_GRID_DRAG_BOX_CLASS}
               data-crud-drag-box=""
               style={{
-                left: `${controller.gridDragSelection.dragBox()?.left}px`,
-                top: `${controller.gridDragSelection.dragBox()?.top}px`,
-                width: `${controller.gridDragSelection.dragBox()?.width}px`,
-                height: `${controller.gridDragSelection.dragBox()?.height}px`,
+                left: `${controller.crud.gridDragSelection.dragBox()?.left}px`,
+                top: `${controller.crud.gridDragSelection.dragBox()?.top}px`,
+                width: `${controller.crud.gridDragSelection.dragBox()?.width}px`,
+                height: `${controller.crud.gridDragSelection.dragBox()?.height}px`,
               }}
             />
           </Show>

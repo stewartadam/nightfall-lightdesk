@@ -13,21 +13,7 @@ import { createMemo, createSignal } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
-import type {
-  CrudListDataGridEditRequest,
-  CrudListDataGridSelectionRequest,
-} from "../../../components/widgets/crud/crud-list-data-grid";
-import {
-  createCrudPanelSearch,
-  createCrudPanelSearchQueryChangeEffect,
-} from "../../../components/widgets/crud/crud-panel-search";
-import type { CrudViewMode } from "../../../components/widgets/crud/crud-view-mode-toggle";
-import { createCrudGridClickSelection } from "../../../components/widgets/crud/model/crud-grid-click-selection";
-import { createCrudGridDragSelection } from "../../../components/widgets/crud/model/crud-grid-drag-selection";
-import {
-  changeCrudPanelViewMode,
-  loadCrudPanelViewMode,
-} from "../../../lib/crud-panel-view-mode";
+import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { boards } from "../../../state/appStores";
@@ -58,27 +44,19 @@ export interface BoardListControllerOptions {
 export function createBoardListController(options: BoardListControllerOptions) {
   const $boards = useShallowStore(boards);
   const panelId = options.panelId;
-  const search = createCrudPanelSearch({
-    componentId: panelId,
-    label: "Search boards",
+  const crud = createCrudListState<Board>({
+    panelId,
+    searchLabel: "Search boards",
+    viewModeKey: VIEW_MODE_KEY,
+    orderedUids: (): readonly string[] => boardUids(),
+    otherDialogOpen: () => isEditModalOpen(),
+    closeOtherDialogs: () => closeEditor(),
   });
-  const [selectionMode, setSelectionMode] = createSignal(false);
-  const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
-    loadCrudPanelViewMode(VIEW_MODE_KEY),
-  );
-  const [selectedBoardUids, setSelectedBoardUids] = createSignal<string[]>([]);
+  const { search } = crud;
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
   const [editingBoardUid, setEditingBoardUid] = createSignal<string | null>(
     null,
   );
-  const [labelEditRequest, setLabelEditRequest] =
-    createSignal<CrudListDataGridEditRequest<Board>>();
-  const [listSelectionRequest, setListSelectionRequest] =
-    createSignal<CrudListDataGridSelectionRequest<Board>>();
-  const [editingCardLabelUid, setEditingCardLabelUid] = createSignal<
-    string | null
-  >(null);
 
   /** Lists every board in ID order before the search filter. */
   const allBoardList = createMemo(() => sortBoardsById($boards()));
@@ -94,45 +72,11 @@ export function createBoardListController(options: BoardListControllerOptions) {
   const boardUids = createMemo(() =>
     boardList().map((board) => board.identifiers.uid),
   );
-  /** Number of selected boards. */
-  const selectedCount = createMemo(() => selectedBoardUids().length);
-  /** Selected board UIDs indexed for constant-time checks while rendering. */
-  const selectedBoardUidSet = createMemo(() => new Set(selectedBoardUids()));
-
   /** Resolves the first selected board, which the editor dialog and Properties act on. */
   const selectedBoard = createMemo(() => {
-    const [uid] = selectedBoardUids();
+    const [uid] = crud.selectedUids();
     return uid ? $boards()[uid] : undefined;
   });
-
-  /** Replaces the selection with `uids`. */
-  const selectBoards = (uids: string[]) => setSelectedBoardUids(uids);
-
-  /** Clears the selection. */
-  const clearSelection = () => selectBoards([]);
-  createCrudPanelSearchQueryChangeEffect(search, clearSelection);
-
-  /** Turns grid selection mode on or off, dropping the selection when it ends. */
-  const setSelectionModeEnabled = (enabled: boolean) => {
-    setSelectionMode(enabled);
-    if (!enabled) clearSelection();
-  };
-
-  /** Persists and applies the grid or list presentation. */
-  const setViewMode = (mode: CrudViewMode) => {
-    changeCrudPanelViewMode(
-      VIEW_MODE_KEY,
-      viewMode(),
-      mode,
-      setViewModeSignal,
-      {
-        onEnterListMode: () => setSelectionModeEnabled(false),
-      },
-    );
-  };
-
-  /** Whether a dialog owns the keyboard, so list shortcuts and clicks step aside. */
-  const dialogOpen = () => isEditModalOpen() || isDeleteModalOpen();
 
   /** Renames a board, ignoring unchanged labels. */
   const updateBoardLabel = (board: Board, label: string) => {
@@ -145,7 +89,7 @@ export function createBoardListController(options: BoardListControllerOptions) {
     "Board",
     () => (
       <CrudLabelProperties
-        entry={selectedCount() === 1 ? selectedBoard() : null}
+        entry={$boards()[crud.propertiesUid() ?? ""] ?? null}
         entityName="Board"
         getId={(board) => board.identifiers.id}
         getLabel={(board) => board.identifiers.label}
@@ -163,10 +107,7 @@ export function createBoardListController(options: BoardListControllerOptions) {
       if (!board) return;
       /** Selects the requested board once any search reset has settled. */
       const reveal = () => {
-        setViewMode("list");
-        setSelectionModeEnabled(false);
-        selectBoards([board.identifiers.uid]);
-        setListSelectionRequest({ row: board, requestId: request.requestId });
+        crud.revealRow(board, board.identifiers.uid, request.requestId);
       };
       if (!boardList().includes(board) && search.isFiltering()) {
         search.clear();
@@ -182,22 +123,12 @@ export function createBoardListController(options: BoardListControllerOptions) {
   const openBoard = (board: Board) => openBoardPanel(board.identifiers.uid);
 
   /** Starts inline label editing for `board` in the current presentation. */
-  const requestBoardLabelEdit = (board: Board) => {
-    if (viewMode() !== "list") {
-      setEditingCardLabelUid(board.identifiers.uid);
-      return;
-    }
-    setLabelEditRequest({
-      row: board,
-      columnId: "label",
-      requestId: Date.now(),
-    });
-  };
+  const requestBoardLabelEdit = (board: Board) =>
+    crud.requestLabelEdit(board.identifiers.uid, () => board);
 
   /** Opens the row actions for `board`, selecting it first unless it is already selected. */
   const openBoardContextMenu = (board: Board, x: number, y: number) => {
-    if (!selectedBoardUidSet().has(board.identifiers.uid))
-      selectBoards([board.identifiers.uid]);
+    crud.selectForContextMenu(board.identifiers.uid);
     openContextMenu({
       x,
       y,
@@ -219,13 +150,13 @@ export function createBoardListController(options: BoardListControllerOptions) {
         {
           id: "delete-board",
           label:
-            selectedCount() > 1
-              ? `Delete ${selectedCount()} Boards`
+            crud.selectedCount() > 1
+              ? `Delete ${crud.selectedCount()} Boards`
               : "Delete Board",
           icon: TrashIcon,
           shortcut: "Delete",
           danger: true,
-          onSelect: handleDeleteSelected,
+          onSelect: crud.requestDelete,
         },
       ],
     });
@@ -233,8 +164,8 @@ export function createBoardListController(options: BoardListControllerOptions) {
 
   /** Selects a card in selection mode, otherwise opens its board. */
   const handleBoardClick = (board: Board, event: MouseEvent) => {
-    if (dialogOpen()) return;
-    if (gridClickSelection.handleCardClick(board.identifiers.uid, event))
+    if (crud.dialogOpen()) return;
+    if (crud.gridClickSelection.handleCardClick(board.identifiers.uid, event))
       return;
     openBoard(board);
   };
@@ -242,24 +173,24 @@ export function createBoardListController(options: BoardListControllerOptions) {
   /** Opens the one selected board and leaves selection mode. */
   const handleOpenSelected = () => {
     const board = selectedBoard();
-    if (selectedCount() !== 1 || dialogOpen() || !board) return;
+    if (crud.selectedCount() !== 1 || crud.dialogOpen() || !board) return;
     openBoard(board);
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Creates an empty board and opens it in a Board panel, ready to fill and name. */
   const handleCreate = () => {
-    if (dialogOpen()) return;
+    if (crud.dialogOpen()) return;
     void createBoardInPanel();
   };
 
   /** Opens the ID and label editor for the one selected board. */
   const handleEditSelected = () => {
     const board = selectedBoard();
-    if (selectedCount() !== 1 || dialogOpen() || !board) return;
+    if (crud.selectedCount() !== 1 || crud.dialogOpen() || !board) return;
     setEditingBoardUid(board.identifiers.uid);
     setIsEditModalOpen(true);
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Board being edited in the ID and label dialog, if it still exists. */
@@ -305,96 +236,39 @@ export function createBoardListController(options: BoardListControllerOptions) {
     closeEditor();
   };
 
-  /** Asks to confirm deleting the selected boards. */
-  const handleDeleteSelected = () => {
-    if (dialogOpen() || selectedCount() === 0) return;
-    setIsDeleteModalOpen(true);
-  };
-
   /** Deletes every selected board after confirmation; their open Board panels show the chooser. */
-  const confirmDeleteSelected = () => {
-    for (const uid of selectedBoardUids()) {
+  const confirmDeleteSelected = () =>
+    crud.confirmDelete((uid) => {
       const board = $boards()[uid];
       if (board)
         sendBoardCommand(buildDeleteBoardCommand(board.identifiers.id));
-    }
-    setSelectionModeEnabled(false);
-    setIsDeleteModalOpen(false);
-  };
-
-  /** Toggles grid selection mode; list mode always selects rows directly. */
-  const handleToggleSelectionMode = () => {
-    if (dialogOpen() || viewMode() === "list") return;
-    setSelectionModeEnabled(!selectionMode());
-  };
-
-  /** Clears the search, then the selection, then selection mode, one per Escape press. */
-  const handleEscape = () => {
-    if (dialogOpen()) return true;
-    if (search.clear()) return true;
-    if (selectedCount() > 0) {
-      clearSelection();
-      return true;
-    }
-    if (selectionMode()) {
-      setSelectionModeEnabled(false);
-      return true;
-    }
-    return false;
-  };
-
-  const gridDragSelection = createCrudGridDragSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: boardUids,
-    selectedIds: selectedBoardUids,
-    onSelectionChange: selectBoards,
-  });
-  const gridClickSelection = createCrudGridClickSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: boardUids,
-    selectedIds: selectedBoardUids,
-    onSelectionChange: selectBoards,
-    multiSelectOnPlainClick: true,
-  });
+    });
 
   for (const [key, handler, description] of [
     ["n", handleCreate, "Create board"],
-    ["v", handleToggleSelectionMode, "Toggle selection mode"],
+    ["v", crud.handleToggleSelectionMode, "Toggle selection mode"],
     ["Enter", handleOpenSelected, "Open selected board"],
     ["e", handleEditSelected, "Edit selected board"],
-    ["Delete", handleDeleteSelected, "Delete selected boards"],
-    ["Backspace", handleDeleteSelected, "Delete selected boards"],
+    ["Delete", crud.requestDelete, "Delete selected boards"],
+    ["Backspace", crud.requestDelete, "Delete selected boards"],
   ] as const) {
     useKeyboardShortcut({ key, handler, description, componentId: panelId });
   }
   useKeyboardShortcut({
     key: "Escape",
-    handler: handleEscape,
+    handler: crud.handleEscape,
     description: "Clear selected boards",
     componentId: panelId,
   });
 
   return {
     panelId,
-    search,
-    selectionMode,
-    viewMode,
-    setViewMode,
+    crud,
     isEditModalOpen,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
-    dialogOpen,
     editingBoard,
     closeEditor,
-    labelEditRequest,
-    listSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
     allBoardList,
     boardList,
-    selectedCount,
-    selectedBoardUidSet,
-    selectBoards,
     updateBoardLabel,
     openBoard,
     openBoardContextMenu,
@@ -403,11 +277,7 @@ export function createBoardListController(options: BoardListControllerOptions) {
     handleCreate,
     handleEditSelected,
     handleEditSubmit,
-    handleDeleteSelected,
     confirmDeleteSelected,
-    handleToggleSelectionMode,
-    gridDragSelection,
-    gridClickSelection,
   };
 }
 

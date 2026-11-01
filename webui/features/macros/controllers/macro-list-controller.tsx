@@ -14,21 +14,7 @@ import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createEffect, createMemo, createSignal } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
-import type {
-  CrudListDataGridEditRequest,
-  CrudListDataGridSelectionRequest,
-} from "../../../components/widgets/crud/crud-list-data-grid";
-import {
-  createCrudPanelSearch,
-  createCrudPanelSearchQueryChangeEffect,
-} from "../../../components/widgets/crud/crud-panel-search";
-import type { CrudViewMode } from "../../../components/widgets/crud/crud-view-mode-toggle";
-import { createCrudGridClickSelection } from "../../../components/widgets/crud/model/crud-grid-click-selection";
-import { createCrudGridDragSelection } from "../../../components/widgets/crud/model/crud-grid-drag-selection";
-import {
-  changeCrudPanelViewMode,
-  loadCrudPanelViewMode,
-} from "../../../lib/crud-panel-view-mode";
+import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { macroRuns, macros } from "../../../state/appStores";
@@ -65,30 +51,19 @@ export function createMacroListController(options: MacroListControllerOptions) {
   const $macros = useShallowStore(macros);
   const $macroRuns = useShallowStore(macroRuns);
   const panelId = options.panelId;
-  const search = createCrudPanelSearch({
-    componentId: panelId,
-    label: "Search macros",
+  const crud = createCrudListState<Macro>({
+    panelId,
+    searchLabel: "Search macros",
+    viewModeKey: VIEW_MODE_KEY,
+    orderedUids: (): readonly string[] => macroUids(),
+    otherDialogOpen: () => isEditModalOpen(),
+    closeOtherDialogs: () => closeEditor(),
   });
-  const [selectionMode, setSelectionMode] = createSignal(false);
-  const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
-    loadCrudPanelViewMode(VIEW_MODE_KEY),
-  );
-  const [selectedMacroUids, setSelectedMacroUids] = createSignal<string[]>([]);
-  const [inspectedMacroUid, setInspectedMacroUid] = createSignal<string | null>(
-    null,
-  );
+  const { search } = crud;
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
   const [editingMacroUid, setEditingMacroUid] = createSignal<string | null>(
     null,
   );
-  const [labelEditRequest, setLabelEditRequest] =
-    createSignal<CrudListDataGridEditRequest<Macro>>();
-  const [listSelectionRequest, setListSelectionRequest] =
-    createSignal<CrudListDataGridSelectionRequest<Macro>>();
-  const [editingCardLabelUid, setEditingCardLabelUid] = createSignal<
-    string | null
-  >(null);
 
   /** Lists every macro in ID order before the search filter. */
   const allMacroList = createMemo(() => sortMacrosById($macros()));
@@ -119,62 +94,18 @@ export function createMacroListController(options: MacroListControllerOptions) {
   const macroUids = createMemo(() =>
     macroList().map((macro) => macro.identifiers.uid),
   );
-  /** Number of selected macros. */
-  const selectedCount = createMemo(() => selectedMacroUids().length);
-  /** Selected macro UIDs indexed for constant-time checks while rendering. */
-  const selectedMacroUidSet = createMemo(() => new Set(selectedMacroUids()));
-
   /** Resolves the first selected macro, which toolbar actions act on. */
   const selectedMacro = createMemo(() => {
-    const [uid] = selectedMacroUids();
+    const [uid] = crud.selectedUids();
     return uid ? $macros()[uid] : undefined;
-  });
-
-  /**
-   * UID of the macro Properties edits: the one selected macro, nothing for several, or the
-   * macro last inspected from a card's settings button when nothing is selected.
-   */
-  const propertiesMacroUid = createMemo(() => {
-    if (selectedCount() === 1) return selectedMacroUids()[0] ?? null;
-    if (selectedCount() > 1) return null;
-    return inspectedMacroUid();
   });
 
   const propertiesInspector = usePropertiesInspector(
     panelId,
     "Macro",
-    () => <MacroProperties macroUid={propertiesMacroUid()} />,
+    () => <MacroProperties macroUid={crud.propertiesUid()} />,
     { priority: 10, autoActivate: true },
   );
-
-  /** Replaces the selection with `uids`. */
-  const selectMacros = (uids: string[]) => setSelectedMacroUids(uids);
-
-  /** Clears the selection. */
-  const clearSelection = () => selectMacros([]);
-  createCrudPanelSearchQueryChangeEffect(search, clearSelection);
-
-  /** Turns grid selection mode on or off, dropping the selection when it ends. */
-  const setSelectionModeEnabled = (enabled: boolean) => {
-    setSelectionMode(enabled);
-    if (!enabled) clearSelection();
-  };
-
-  /** Persists and applies the grid or list presentation. */
-  const setViewMode = (mode: CrudViewMode) => {
-    changeCrudPanelViewMode(
-      VIEW_MODE_KEY,
-      viewMode(),
-      mode,
-      setViewModeSignal,
-      {
-        onEnterListMode: () => setSelectionModeEnabled(false),
-      },
-    );
-  };
-
-  /** Whether a dialog owns the keyboard, so list shortcuts and clicks step aside. */
-  const dialogOpen = () => isEditModalOpen() || isDeleteModalOpen();
 
   /** Returns whether any body of `macro` is running now. */
   const isRunning = (macro: Macro) =>
@@ -182,7 +113,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
 
   /** Selected macros that still exist, in selection order. */
   const selectedMacros = createMemo(() =>
-    selectedMacroUids().flatMap((uid) => $macros()[uid] ?? []),
+    crud.selectedUids().flatMap((uid) => $macros()[uid] ?? []),
   );
   /** Whether any selected macro is idle, so Run has something to start. */
   const canRunSelected = createMemo(() =>
@@ -195,7 +126,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
 
   /** Starts every selected macro that isn't running. */
   const handleRunSelected = () => {
-    if (dialogOpen()) return;
+    if (crud.dialogOpen()) return;
     for (const macro of selectedMacros()) {
       if (!isRunning(macro)) {
         sendMacroCommand(buildStartMacroCommand(macro.identifiers.id));
@@ -205,7 +136,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
 
   /** Stops every selected macro that is running. */
   const handleStopSelected = () => {
-    if (dialogOpen()) return;
+    if (crud.dialogOpen()) return;
     for (const macro of selectedMacros()) {
       if (isRunning(macro)) {
         sendMacroCommand(buildStopMacroCommand(macro.identifiers.id));
@@ -235,7 +166,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
 
   /** Shows `macro` in Properties without changing the selection, bringing Properties into view. */
   const inspectMacro = (macro: Macro) => {
-    setInspectedMacroUid(macro.identifiers.uid);
+    crud.inspect(macro.identifiers.uid);
     propertiesInspector.reveal(panelId);
   };
 
@@ -247,10 +178,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
       if (!macro) return;
       /** Selects the requested macro once any search reset has settled. */
       const reveal = () => {
-        setViewMode("list");
-        setSelectionModeEnabled(false);
-        selectMacros([macro.identifiers.uid]);
-        setListSelectionRequest({ row: macro, requestId: request.requestId });
+        crud.revealRow(macro, macro.identifiers.uid, request.requestId);
         propertiesInspector.activate();
       };
       if (!macroList().includes(macro) && search.isFiltering()) {
@@ -264,22 +192,12 @@ export function createMacroListController(options: MacroListControllerOptions) {
   );
 
   /** Starts inline label editing for `macro` in the current presentation. */
-  const requestMacroLabelEdit = (macro: Macro) => {
-    if (viewMode() !== "list") {
-      setEditingCardLabelUid(macro.identifiers.uid);
-      return;
-    }
-    setLabelEditRequest({
-      row: macro,
-      columnId: "label",
-      requestId: Date.now(),
-    });
-  };
+  const requestMacroLabelEdit = (macro: Macro) =>
+    crud.requestLabelEdit(macro.identifiers.uid, () => macro);
 
   /** Opens the row actions for `macro`, selecting it first unless it is already selected. */
   const openMacroContextMenu = (macro: Macro, x: number, y: number) => {
-    if (!selectedMacroUidSet().has(macro.identifiers.uid))
-      selectMacros([macro.identifiers.uid]);
+    crud.selectForContextMenu(macro.identifiers.uid);
     const running = isRunning(macro);
     openContextMenu({
       x,
@@ -308,13 +226,13 @@ export function createMacroListController(options: MacroListControllerOptions) {
         {
           id: "delete-macro",
           label:
-            selectedCount() > 1
-              ? `Delete ${selectedCount()} Macros`
+            crud.selectedCount() > 1
+              ? `Delete ${crud.selectedCount()} Macros`
               : "Delete Macro",
           icon: TrashIcon,
           shortcut: "Delete",
           danger: true,
-          onSelect: handleDeleteSelected,
+          onSelect: crud.requestDelete,
         },
       ],
     });
@@ -322,8 +240,8 @@ export function createMacroListController(options: MacroListControllerOptions) {
 
   /** Selects a card in selection mode, otherwise runs or stops its macro. */
   const handleMacroClick = (macro: Macro, event: MouseEvent) => {
-    if (dialogOpen()) return;
-    if (gridClickSelection.handleCardClick(macro.identifiers.uid, event))
+    if (crud.dialogOpen()) return;
+    if (crud.gridClickSelection.handleCardClick(macro.identifiers.uid, event))
       return;
     toggleRun(macro);
   };
@@ -331,32 +249,32 @@ export function createMacroListController(options: MacroListControllerOptions) {
   /** Runs or stops the one selected macro. */
   const handleToggleSelected = () => {
     const macro = selectedMacro();
-    if (selectedCount() !== 1 || dialogOpen() || !macro) return;
+    if (crud.selectedCount() !== 1 || crud.dialogOpen() || !macro) return;
     toggleRun(macro);
   };
 
   /** Creates an empty macro under the next free ID and selects it, ready to type into. */
   const handleCreate = () => {
-    if (dialogOpen()) return;
+    if (crud.dialogOpen()) return;
     const pending = lastCreatedId === undefined ? [] : [lastCreatedId];
     const macro = createEmptyMacro(
       nextAvailableMacroId(allMacroList(), pending),
     );
     lastCreatedId = macro.identifiers.id;
     sendMacroCommand(buildStoreMacroCommand(macro));
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
     search.clear();
-    selectMacros([macro.identifiers.uid]);
+    crud.select([macro.identifiers.uid]);
     propertiesInspector.activate();
   };
 
   /** Opens the ID and label editor for the one selected macro. */
   const handleEditSelected = () => {
     const macro = selectedMacro();
-    if (selectedCount() !== 1 || dialogOpen() || !macro) return;
+    if (crud.selectedCount() !== 1 || crud.dialogOpen() || !macro) return;
     setEditingMacroUid(macro.identifiers.uid);
     setIsEditModalOpen(true);
-    setSelectionModeEnabled(false);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Macro being edited in the ID and label dialog, if it still exists. */
@@ -399,98 +317,41 @@ export function createMacroListController(options: MacroListControllerOptions) {
     closeEditor();
   };
 
-  /** Asks to confirm deleting the selected macros. */
-  const handleDeleteSelected = () => {
-    if (dialogOpen() || selectedCount() === 0) return;
-    setIsDeleteModalOpen(true);
-  };
-
   /** Deletes every selected macro after confirmation, stopping the ones that run. */
-  const confirmDeleteSelected = () => {
-    for (const uid of selectedMacroUids()) {
+  const confirmDeleteSelected = () =>
+    crud.confirmDelete((uid) => {
       const macro = $macros()[uid];
       if (macro)
         sendMacroCommand(buildDeleteMacroCommand(macro.identifiers.id));
-    }
-    setSelectionModeEnabled(false);
-    setIsDeleteModalOpen(false);
-  };
-
-  /** Toggles grid selection mode; list mode always selects rows directly. */
-  const handleToggleSelectionMode = () => {
-    if (dialogOpen() || viewMode() === "list") return;
-    setSelectionModeEnabled(!selectionMode());
-  };
-
-  /** Clears the search, then the selection, then selection mode, one per Escape press. */
-  const handleEscape = () => {
-    if (dialogOpen()) return true;
-    if (search.clear()) return true;
-    if (selectedCount() > 0) {
-      clearSelection();
-      return true;
-    }
-    if (selectionMode()) {
-      setSelectionModeEnabled(false);
-      return true;
-    }
-    return false;
-  };
-
-  const gridDragSelection = createCrudGridDragSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: macroUids,
-    selectedIds: selectedMacroUids,
-    onSelectionChange: selectMacros,
-  });
-  const gridClickSelection = createCrudGridClickSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: macroUids,
-    selectedIds: selectedMacroUids,
-    onSelectionChange: selectMacros,
-    multiSelectOnPlainClick: true,
-  });
+    });
 
   for (const [key, handler, description] of [
     ["n", handleCreate, "Create macro"],
-    ["v", handleToggleSelectionMode, "Toggle selection mode"],
+    ["v", crud.handleToggleSelectionMode, "Toggle selection mode"],
     ["Enter", handleToggleSelected, "Run or stop selected macro"],
     ["e", handleEditSelected, "Edit selected macro"],
-    ["Delete", handleDeleteSelected, "Delete selected macros"],
-    ["Backspace", handleDeleteSelected, "Delete selected macros"],
+    ["Delete", crud.requestDelete, "Delete selected macros"],
+    ["Backspace", crud.requestDelete, "Delete selected macros"],
   ] as const) {
     useKeyboardShortcut({ key, handler, description, componentId: panelId });
   }
   useKeyboardShortcut({
     key: "Escape",
-    handler: handleEscape,
+    handler: crud.handleEscape,
     description: "Clear selected macros",
     componentId: panelId,
   });
 
   return {
     panelId,
-    search,
-    selectionMode,
-    viewMode,
-    setViewMode,
+    crud,
     isEditModalOpen,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
-    dialogOpen,
     editingMacro,
     closeEditor,
-    labelEditRequest,
-    listSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
     allMacroList,
     macroList,
     macroRuns: $macroRuns,
-    selectedCount,
     selectedMacro,
-    selectedMacroUidSet,
-    selectMacros,
     isRunning,
     toggleRun,
     inspectMacro,
@@ -504,11 +365,7 @@ export function createMacroListController(options: MacroListControllerOptions) {
     handleCreate,
     handleEditSelected,
     handleEditSubmit,
-    handleDeleteSelected,
     confirmDeleteSelected,
-    handleToggleSelectionMode,
-    gridDragSelection,
-    gridClickSelection,
   };
 }
 

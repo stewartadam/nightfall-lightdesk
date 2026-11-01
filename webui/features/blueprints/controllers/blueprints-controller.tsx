@@ -20,21 +20,7 @@ import {
   useRevealObjectCapability,
 } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
-import type {
-  CrudListDataGridEditRequest,
-  CrudListDataGridSelectionRequest,
-} from "../../../components/widgets/crud/crud-list-data-grid";
-import {
-  createCrudPanelSearch,
-  createCrudPanelSearchQueryChangeEffect,
-} from "../../../components/widgets/crud/crud-panel-search";
-import type { CrudViewMode } from "../../../components/widgets/crud/crud-view-mode-toggle";
-import { createCrudGridClickSelection } from "../../../components/widgets/crud/model/crud-grid-click-selection";
-import { createCrudGridDragSelection } from "../../../components/widgets/crud/model/crud-grid-drag-selection";
-import {
-  changeCrudPanelViewMode,
-  loadCrudPanelViewMode,
-} from "../../../lib/crud-panel-view-mode";
+import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
@@ -71,19 +57,18 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
   const panelId = props.initialPanelId ?? props.id;
-  const search = createCrudPanelSearch({
-    componentId: panelId,
-    label: "Search blueprints",
+  const crud = createCrudListState<types.Blueprint>({
+    panelId,
+    searchLabel: "Search blueprints",
+    viewModeKey: "blueprints-list",
+    orderedUids: (): readonly string[] => displayUids(),
+    otherDialogOpen: () => isCreateModalOpen() || isEditModalOpen(),
+    closeOtherDialogs: () => {
+      setIsCreateModalOpen(false);
+      setIsEditModalOpen(false);
+    },
   });
-
-  const [selectionMode, setSelectionMode] = createSignal(false);
-  const [viewMode, setViewModeSignal] = createSignal<CrudViewMode>(
-    loadCrudPanelViewMode("blueprints-list"),
-  );
-  const [selectedBlueprintUids, setSelectedBlueprintUids] = createSignal<
-    string[]
-  >([]);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = createSignal(false);
+  const { search } = crud;
   const [isCreateModalOpen, setIsCreateModalOpen] = createSignal(false);
   const [isEditModalOpen, setIsEditModalOpen] = createSignal(false);
   const [createInitialId, setCreateInitialId] = createSignal(1);
@@ -93,22 +78,10 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
   const [editingBlueprintUid, setEditingBlueprintUid] = createSignal<
     string | null
   >(null);
-  const [labelEditRequest, setLabelEditRequest] =
-    createSignal<CrudListDataGridEditRequest<types.Blueprint>>();
-  const [listSelectionRequest, setListSelectionRequest] =
-    createSignal<CrudListDataGridSelectionRequest<types.Blueprint>>();
-  const [editingCardLabelUid, setEditingCardLabelUid] = createSignal<
-    string | null
-  >(null);
 
-  /** Returns the number of blueprints in the current selection. */
-  const selectedCount = createMemo(() => selectedBlueprintUids().length);
-  /** Indexes selected blueprint UIDs for constant-time presentation checks. */
-  const selectedUidSet = createMemo(() => new Set(selectedBlueprintUids()));
-  /** Returns the sole blueprint exposed to Properties, or null otherwise. */
+  /** Returns the sole selected blueprint exposed to Properties, or null otherwise. */
   const propertiesBlueprint = createMemo(() => {
-    if (selectedCount() !== 1) return null;
-    const [blueprintUid] = selectedBlueprintUids();
+    const blueprintUid = crud.propertiesUid();
     return blueprintUid ? ($blueprints()[blueprintUid] ?? null) : null;
   });
 
@@ -145,6 +118,11 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
     ),
   );
 
+  /** UIDs of the blueprints currently shown, in display order, for range selection. */
+  const displayUids = createMemo(() =>
+    displayRows().map((blueprint) => blueprint.identifiers.uid),
+  );
+
   /** Selects and reveals a blueprint requested by the showfile object palette. */
   useRevealObjectCapability(
     "panel-BlueprintsPanel",
@@ -155,14 +133,8 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       }
 
       /** Switches to list mode and selects the requested blueprint row. */
-      const selectBlueprint = () => {
-        setViewMode("list");
-        setSelectedBlueprintUids([request.uid]);
-        setListSelectionRequest({
-          row: blueprint,
-          requestId: request.requestId,
-        });
-      };
+      const selectBlueprint = () =>
+        crud.revealRow(blueprint, request.uid, request.requestId);
 
       if (!displayRows().includes(blueprint) && search.isFiltering()) {
         search.clear();
@@ -175,64 +147,6 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
       accepts: (payload) => payload.type === "blueprint",
     },
   );
-  /** Owns rectangular drag selection for blueprint cards. */
-  const gridDragSelection = createCrudGridDragSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: () =>
-      displayRows().map((blueprint) => blueprint.identifiers.uid),
-    selectedIds: selectedBlueprintUids,
-    onSelectionChange: setSelectedBlueprintUids,
-  });
-  /** Owns click and modifier selection semantics for blueprint cards. */
-  const gridClickSelection = createCrudGridClickSelection({
-    enabled: () => selectionMode() && viewMode() === "grid",
-    orderedIds: () =>
-      displayRows().map((blueprint) => blueprint.identifiers.uid),
-    selectedIds: selectedBlueprintUids,
-    onSelectionChange: setSelectedBlueprintUids,
-    multiSelectOnPlainClick: true,
-  });
-
-  /** Clears the current blueprint selection across list and grid modes. */
-  const clearSelection = () => {
-    setSelectedBlueprintUids([]);
-  };
-  createCrudPanelSearchQueryChangeEffect(search, clearSelection);
-
-  /** Toggles card selection mode and clears selection when leaving it. */
-  const setSelectionModeEnabled = (enabled: boolean) => {
-    setSelectionMode(enabled);
-    if (!enabled) {
-      clearSelection();
-    }
-  };
-
-  /** Persists and applies the blueprint presentation mode. */
-  const setViewMode = (mode: CrudViewMode) => {
-    changeCrudPanelViewMode(
-      "blueprints-list",
-      viewMode(),
-      mode,
-      setViewModeSignal,
-      {
-        onEnterListMode: () => setSelectionModeEnabled(false),
-      },
-    );
-  };
-
-  /** Toggles one blueprint UID within the current selection. */
-  const toggleSelection = (blueprintUid: string) => {
-    setSelectedBlueprintUids((current) => {
-      const next = new Set(current);
-      if (next.has(blueprintUid)) {
-        next.delete(blueprintUid);
-      } else {
-        next.add(blueprintUid);
-      }
-      return Array.from(next);
-    });
-  };
-
   /** Sends a complete blueprint store command to the backend. */
   const sendStoreBlueprint = (blueprint: types.Blueprint) => {
     const command: types.BlueprintCommand = {
@@ -273,20 +187,8 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
   };
 
   /** Requests inline editing for the selected blueprint label cell. */
-  const requestBlueprintLabelEdit = (blueprint: types.Blueprint) => {
-    if (viewMode() !== "list") {
-      setEditingCardLabelUid(blueprint.identifiers.uid);
-      return;
-    }
-    /** Publishes a fresh list-cell editing request. */
-    const startEdit = () =>
-      setLabelEditRequest({
-        row: blueprint,
-        columnId: "label",
-        requestId: Date.now(),
-      });
-    startEdit();
-  };
+  const requestBlueprintLabelEdit = (blueprint: types.Blueprint) =>
+    crud.requestLabelEdit(blueprint.identifiers.uid, () => blueprint);
 
   /** Recalls a blueprint through the shared desk command path. */
   const recallBlueprint = (blueprint: types.Blueprint, absolute = false) => {
@@ -375,23 +277,17 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
     });
   };
 
-  /** Recalls or selects a blueprint card according to interaction mode. */
+  /** Recalls a blueprint card once grid selection has declined the click. */
   const handleBlueprintClick = (blueprintUid: string) => {
-    if (isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen()) return;
+    if (crud.dialogOpen()) return;
     const blueprint = $blueprints()[blueprintUid];
     if (!blueprint) return;
-
-    if (selectionMode()) {
-      toggleSelection(blueprintUid);
-      return;
-    }
-
     recallBlueprint(blueprint);
   };
 
   /** Opens blueprint creation with the first available numeric ID. */
   const handleCreate = () => {
-    if (isDeleteModalOpen() || isEditModalOpen()) return;
+    if (crud.isDeleteModalOpen() || isEditModalOpen()) return;
     const id = nextBlueprintId(allDisplayRows());
     setCreateInitialId(id);
     setCreateInitialLabel(`Blueprint ${id}`);
@@ -424,8 +320,8 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
 
   /** Opens editing for the sole selected blueprint. */
   const handleEditSelected = () => {
-    if (isDeleteModalOpen() || isCreateModalOpen()) return;
-    const [blueprintUid] = selectedBlueprintUids();
+    if (crud.isDeleteModalOpen() || isCreateModalOpen()) return;
+    const [blueprintUid] = crud.selectedUids();
     if (!blueprintUid) return;
     const blueprint = $blueprints()[blueprintUid];
     if (!blueprint) return;
@@ -470,20 +366,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
 
     setIsEditModalOpen(false);
     setEditingBlueprintUid(null);
-    setSelectionModeEnabled(false);
-  };
-
-  /** Opens deletion confirmation when blueprints are selected. */
-  const handleDeleteSelected = () => {
-    if (isCreateModalOpen() || isEditModalOpen()) return;
-    if (selectedCount() === 0) return;
-    setIsDeleteModalOpen(true);
-  };
-
-  /** Selects a context-clicked blueprint unless it is already selected. */
-  const selectForContextMenu = (blueprintUid: string) => {
-    if (selectedUidSet().has(blueprintUid)) return;
-    setSelectedBlueprintUids([blueprintUid]);
+    crud.setSelectionModeEnabled(false);
   };
 
   /** Opens recall, create, edit, rename, and delete actions for a blueprint. */
@@ -492,7 +375,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
     x: number,
     y: number,
   ) => {
-    selectForContextMenu(blueprint.identifiers.uid);
+    crud.selectForContextMenu(blueprint.identifiers.uid);
     const dependents =
       $blueprintDependencies()[blueprint.identifiers.uid] ?? [];
     openContextMenu({
@@ -547,7 +430,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
           label: "Edit Blueprint",
           icon: PencilSimpleLineIcon,
           shortcut: "Enter",
-          disabled: selectedCount() !== 1,
+          disabled: crud.selectedCount() !== 1,
           onSelect: handleEditSelected,
         },
         {
@@ -560,65 +443,24 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
         {
           id: "delete-blueprint",
           label:
-            selectedCount() > 1
-              ? `Delete ${selectedCount()} Blueprints`
+            crud.selectedCount() > 1
+              ? `Delete ${crud.selectedCount()} Blueprints`
               : "Delete Blueprint",
           icon: TrashIcon,
           shortcut: "Delete",
           danger: true,
-          onSelect: handleDeleteSelected,
+          onSelect: crud.requestDelete,
         },
       ],
     });
   };
 
   /** Deletes all selected blueprints and resets interaction state. */
-  const confirmDeleteSelected = () => {
-    const blueprintMap = $blueprints();
-    for (const uid of selectedBlueprintUids()) {
-      const blueprint = blueprintMap[uid];
-      if (!blueprint) continue;
-      sendDeleteBlueprint(blueprint.identifiers.id);
-    }
-    setSelectedBlueprintUids([]);
-    setIsDeleteModalOpen(false);
-    setSelectionModeEnabled(false);
-  };
-
-  /** Toggles grid selection mode when no modal blocks interaction. */
-  const handleToggleSelectionMode = () => {
-    if (isDeleteModalOpen() || isCreateModalOpen() || isEditModalOpen()) return;
-    if (viewMode() === "list") return;
-    setSelectionModeEnabled(!selectionMode());
-  };
-
-  /** Closes or clears the highest-priority transient blueprint state. */
-  const handleEscape = () => {
-    if (isDeleteModalOpen()) {
-      setIsDeleteModalOpen(false);
-      return true;
-    }
-    if (isEditModalOpen()) {
-      setIsEditModalOpen(false);
-      return true;
-    }
-    if (isCreateModalOpen()) {
-      setIsCreateModalOpen(false);
-      return true;
-    }
-    if (search.clear()) {
-      return true;
-    }
-    if (selectedCount() > 0) {
-      clearSelection();
-      return true;
-    }
-    if (selectionMode()) {
-      setSelectionModeEnabled(false);
-      return true;
-    }
-    return false;
-  };
+  const confirmDeleteSelected = () =>
+    crud.confirmDelete((uid) => {
+      const blueprint = $blueprints()[uid];
+      if (blueprint) sendDeleteBlueprint(blueprint.identifiers.id);
+    });
 
   useKeyboardShortcut({
     key: "n",
@@ -628,7 +470,7 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
   });
   useKeyboardShortcut({
     key: "v",
-    handler: handleToggleSelectionMode,
+    handler: crud.handleToggleSelectionMode,
     description: "Toggle selection mode",
     componentId: panelId,
   });
@@ -640,34 +482,28 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
   });
   useKeyboardShortcut({
     key: "Delete",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected blueprints",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Backspace",
-    handler: handleDeleteSelected,
+    handler: crud.requestDelete,
     description: "Delete selected blueprints",
     componentId: panelId,
   });
   useKeyboardShortcut({
     key: "Escape",
-    handler: handleEscape,
+    handler: crud.handleEscape,
     description: "Cancel or clear selection",
     componentId: panelId,
   });
 
   return {
     panelId,
-    search,
+    crud,
     allDisplayRows,
     displayRows,
-    selectedCount,
-    selectedUidSet,
-    selectionMode,
-    viewMode,
-    isDeleteModalOpen,
-    setIsDeleteModalOpen,
     isCreateModalOpen,
     setIsCreateModalOpen,
     isEditModalOpen,
@@ -676,21 +512,11 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
     createInitialLabel,
     editInitialId,
     editInitialLabel,
-    labelEditRequest,
-    listSelectionRequest,
-    editingCardLabelUid,
-    setEditingCardLabelUid,
-    gridDragSelection,
-    gridClickSelection,
-    setViewMode,
-    setSelectedBlueprintUids,
     updateBlueprintLabel,
     handleCreate,
     handleCreateSubmit,
     handleEditSelected,
     handleEditSubmit,
-    handleDeleteSelected,
-    handleToggleSelectionMode,
     handleBlueprintClick,
     recallBlueprint,
     storeBlueprintFromProgrammer,

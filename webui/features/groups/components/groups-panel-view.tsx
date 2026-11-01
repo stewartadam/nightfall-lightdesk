@@ -47,13 +47,13 @@ function GroupCard(props: GroupCardProps) {
   const controller = props.controller;
   const uid = props.group.identifiers.uid;
   /** Reports whether this group belongs to the local CRUD selection. */
-  const isSelected = () => controller.selectedUidSet().has(uid);
+  const isSelected = () => controller.crud.selectedUidSet().has(uid);
 
   return (
     <button
       type="button"
       data-crud-select-id={uid}
-      draggable={!controller.selectionMode()}
+      draggable={!controller.crud.selectionMode()}
       onDragStart={(event) => {
         if (!event.dataTransfer) return;
         setObjectDragData(event.dataTransfer, types.ObjectType.Group, uid);
@@ -64,12 +64,12 @@ function GroupCard(props: GroupCardProps) {
       data-selectable-surface
       data-selected={isSelected()}
       onClick={(event) => {
-        if (controller.gridDragSelection.consumeSuppressedClick()) {
+        if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
           event.preventDefault();
           event.stopPropagation();
           return;
         }
-        if (controller.gridClickSelection.handleCardClick(uid, event)) {
+        if (controller.crud.gridClickSelection.handleCardClick(uid, event)) {
           return;
         }
         controller.handleGroupClick(props.group, event);
@@ -83,13 +83,14 @@ function GroupCard(props: GroupCardProps) {
       <Show
         when={
           props.group.identifiers.label ||
-          controller.editingCardLabelUid() === props.group.identifiers.uid
+          controller.crud.editingCardLabelUid() === props.group.identifiers.uid
         }
       >
         <div class="flex min-w-0 text-sm text-neutral-400">
           <Show
             when={
-              controller.editingCardLabelUid() === props.group.identifiers.uid
+              controller.crud.editingCardLabelUid() ===
+              props.group.identifiers.uid
             }
             fallback={
               <span class="truncate">{props.group.identifiers.label}</span>
@@ -99,7 +100,7 @@ function GroupCard(props: GroupCardProps) {
               ariaLabel="Group card label"
               allowEmpty
               value={props.group.identifiers.label}
-              onClose={() => controller.setEditingCardLabelUid(null)}
+              onClose={() => controller.crud.finishCardLabelEdit()}
               onCommit={(label) =>
                 controller.updateGroupLabel(props.group, label)
               }
@@ -120,8 +121,8 @@ function GroupRowList(props: GroupsPanelViewProps) {
         panelId={controller.panelId}
         rows={controller.displayRows()}
         rowKey={(group) => group.identifiers.uid}
-        editRequest={controller.labelEditRequest()}
-        selectionRequest={controller.listSelectionRequest()}
+        editRequest={controller.crud.labelEditRequest()}
+        selectionRequest={controller.crud.listSelectionRequest()}
         columns={[
           {
             id: "id",
@@ -138,18 +139,16 @@ function GroupRowList(props: GroupsPanelViewProps) {
           },
         ]}
         isRowSelected={(group) =>
-          controller.selectedUidSet().has(group.identifiers.uid)
+          controller.crud.selectedUidSet().has(group.identifiers.uid)
         }
         onSelectionChange={(rows) =>
-          controller.setSelectedGroupUids(
-            rows.map((group) => group.identifiers.uid),
-          )
+          controller.crud.select(rows.map((group) => group.identifiers.uid))
         }
-        onDeleteRequested={controller.handleDeleteSelected}
-        multiSelectOnPlainClick={controller.selectionMode()}
+        onDeleteRequested={controller.crud.requestDelete}
+        multiSelectOnPlainClick={controller.crud.selectionMode()}
         onRowClick={controller.handleGroupListRowClick}
         onRowContextMenu={(group, _modifiers, position) => {
-          if (controller.isInteractionBlocked()) return;
+          if (controller.crud.dialogOpen()) return;
           controller.openGroupContextMenu(group, position.x, position.y);
         }}
       />
@@ -177,33 +176,33 @@ export function GroupsPanelView(props: GroupsPanelViewProps) {
               tooltip={"Edit selected group (Enter)"}
               type="button"
               onClick={controller.handleEditSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Edit selected group"
             >
               <PencilSimpleLineIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <ToolbarButton
               variant="danger"
-              count={controller.selectedCount()}
+              count={controller.crud.selectedCount()}
               tooltip={
-                controller.selectedCount() > 0
-                  ? `Delete selected groups (${controller.selectedCount()})`
+                controller.crud.selectedCount() > 0
+                  ? `Delete selected groups (${controller.crud.selectedCount()})`
                   : "Delete selected groups (Delete/Backspace)"
               }
               type="button"
-              onClick={controller.handleDeleteSelected}
-              disabled={controller.selectedCount() === 0}
+              onClick={controller.crud.requestDelete}
+              disabled={controller.crud.selectedCount() === 0}
               label="Delete selected groups"
             >
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
-            <Show when={controller.viewMode() === "grid"}>
+            <Show when={controller.crud.viewMode() === "grid"}>
               <ToolbarSeparator />
               <ToggleToolbarButton
-                tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
+                tooltip={`${controller.crud.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
-                onClick={controller.handleToggleSelectionMode}
-                pressed={controller.selectionMode()}
+                onClick={controller.crud.handleToggleSelectionMode}
+                pressed={controller.crud.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
@@ -214,12 +213,12 @@ export function GroupsPanelView(props: GroupsPanelViewProps) {
         right={
           <>
             <CrudPanelSearch
-              search={controller.search}
+              search={controller.crud.search}
               placeholder="Search groups"
             />
             <CrudViewModeToggle
-              viewMode={controller.viewMode()}
-              onViewModeChange={controller.setViewMode}
+              viewMode={controller.crud.viewMode()}
+              onViewModeChange={controller.crud.setViewMode}
             />
           </>
         }
@@ -243,40 +242,41 @@ export function GroupsPanelView(props: GroupsPanelViewProps) {
         onSubmit={controller.handleEditSubmit}
       />
       <DeleteConfirmModal
-        isOpen={controller.isDeleteModalOpen()}
+        isOpen={controller.crud.isDeleteModalOpen()}
         title="Delete selected groups"
-        message={`Delete ${controller.selectedCount()} selected group(s)? This action cannot be undone.`}
+        message={`Delete ${controller.crud.selectedCount()} selected group(s)? This action cannot be undone.`}
         confirmLabel="Delete"
-        onCancel={() => controller.setIsDeleteModalOpen(false)}
+        onCancel={() => controller.crud.closeDeleteConfirm()}
         onConfirm={controller.confirmDeleteSelected}
       />
       <CrudScrollArea
-        viewMode={controller.viewMode()}
+        viewMode={controller.crud.viewMode()}
         aria-label="Groups scroll area"
         classList={{
-          "p-4": controller.viewMode() === "grid",
-          relative: controller.viewMode() === "grid",
+          "p-4": controller.crud.viewMode() === "grid",
+          relative: controller.crud.viewMode() === "grid",
           "select-none":
-            controller.selectionMode() && controller.viewMode() === "grid",
+            controller.crud.selectionMode() &&
+            controller.crud.viewMode() === "grid",
         }}
-        onPointerDown={controller.gridDragSelection.onPointerDown}
-        onPointerMove={controller.gridDragSelection.onPointerMove}
-        onPointerUp={controller.gridDragSelection.onPointerUp}
-        onPointerCancel={controller.gridDragSelection.onPointerCancel}
+        onPointerDown={controller.crud.gridDragSelection.onPointerDown}
+        onPointerMove={controller.crud.gridDragSelection.onPointerMove}
+        onPointerUp={controller.crud.gridDragSelection.onPointerUp}
+        onPointerCancel={controller.crud.gridDragSelection.onPointerCancel}
         onClick={(event) => {
-          if (controller.gridDragSelection.consumeSuppressedClick()) {
+          if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
             event.preventDefault();
             event.stopPropagation();
             return;
           }
-          controller.gridClickSelection.handleBackgroundClick(event);
+          controller.crud.gridClickSelection.handleBackgroundClick(event);
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") return;
         }}
       >
         <Show
-          when={controller.viewMode() === "grid"}
+          when={controller.crud.viewMode() === "grid"}
           fallback={<GroupRowList controller={controller} />}
         >
           <Show
@@ -304,8 +304,8 @@ export function GroupsPanelView(props: GroupsPanelViewProps) {
         </Show>
         <Show
           when={
-            controller.viewMode() === "grid" &&
-            controller.gridDragSelection.dragBox()
+            controller.crud.viewMode() === "grid" &&
+            controller.crud.gridDragSelection.dragBox()
           }
         >
           {(box) => (

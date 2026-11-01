@@ -60,19 +60,19 @@ function MacroCard(props: MacroListViewProps & { macro: Macro }) {
   /** UID of this card's macro, as keyed in the selection. */
   const uid = () => props.macro.identifiers.uid;
   /** Whether this card's macro is selected, in or out of selection mode. */
-  const isSelected = () => controller.selectedMacroUidSet().has(uid());
+  const isSelected = () => controller.crud.selectedUidSet().has(uid());
   /** Whether any body of this card's macro is running. */
   const running = () => controller.isRunning(props.macro);
 
   return (
     <div
       role="button"
-      tabIndex={controller.selectionMode() ? -1 : 0}
+      tabIndex={controller.crud.selectionMode() ? -1 : 0}
       aria-label={`Macro ${props.macro.identifiers.id}: ${macroDisplayName(props.macro)}, ${runStateLabel(controller, props.macro)}`}
       data-crud-select-id={uid()}
       data-macro-card={props.macro.identifiers.id}
       data-running={running() ? "" : undefined}
-      draggable={!controller.selectionMode()}
+      draggable={!controller.crud.selectionMode()}
       onDragStart={(event) => {
         if (!event.dataTransfer) return;
         setObjectDragData(event.dataTransfer, ObjectType.Macro, uid());
@@ -81,7 +81,7 @@ function MacroCard(props: MacroListViewProps & { macro: Macro }) {
       }}
       onClick={(event) => controller.handleMacroClick(props.macro, event)}
       onKeyDown={(event) => {
-        if (controller.selectionMode()) return;
+        if (controller.crud.selectionMode()) return;
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         controller.toggleRun(props.macro);
@@ -110,7 +110,7 @@ function MacroCard(props: MacroListViewProps & { macro: Macro }) {
             {props.macro.identifiers.id}:
           </span>
           <Show
-            when={controller.editingCardLabelUid() === uid()}
+            when={controller.crud.editingCardLabelUid() === uid()}
             fallback={
               <span class="min-w-0 truncate">
                 {macroDisplayName(props.macro)}
@@ -121,7 +121,7 @@ function MacroCard(props: MacroListViewProps & { macro: Macro }) {
               ariaLabel="Macro card label"
               allowEmpty
               value={props.macro.identifiers.label}
-              onClose={() => controller.setEditingCardLabelUid(null)}
+              onClose={() => controller.crud.finishCardLabelEdit()}
               onCommit={(label) =>
                 controller.updateMacroLabel(props.macro, label)
               }
@@ -166,8 +166,8 @@ function MacroRowList(props: MacroListViewProps) {
         panelId={controller.panelId}
         rows={controller.macroList()}
         rowKey={(macro) => macro.identifiers.uid}
-        editRequest={controller.labelEditRequest()}
-        selectionRequest={controller.listSelectionRequest()}
+        editRequest={controller.crud.labelEditRequest()}
+        selectionRequest={controller.crud.listSelectionRequest()}
         columns={[
           {
             id: "id",
@@ -198,19 +198,19 @@ function MacroRowList(props: MacroListViewProps) {
           },
         ]}
         isRowSelected={(macro) =>
-          controller.selectedMacroUidSet().has(macro.identifiers.uid)
+          controller.crud.selectedUidSet().has(macro.identifiers.uid)
         }
         onSelectionChange={(rows) =>
-          controller.selectMacros(rows.map((macro) => macro.identifiers.uid))
+          controller.crud.select(rows.map((macro) => macro.identifiers.uid))
         }
-        onDeleteRequested={controller.handleDeleteSelected}
-        multiSelectOnPlainClick={controller.selectionMode()}
+        onDeleteRequested={controller.crud.requestDelete}
+        multiSelectOnPlainClick={controller.crud.selectionMode()}
         onRowClick={(macro, modifiers) => {
-          if (controller.dialogOpen() || !modifiers.altKey) return;
+          if (controller.crud.dialogOpen() || !modifiers.altKey) return;
           controller.toggleRun(macro);
         }}
         onRowContextMenu={(macro, _modifiers, position) => {
-          if (controller.dialogOpen()) return;
+          if (controller.crud.dialogOpen()) return;
           controller.openMacroContextMenu(macro, position.x, position.y);
         }}
       />
@@ -242,22 +242,22 @@ export function MacroListView(props: MacroListViewProps) {
               tooltip="Edit selected macro (E)"
               type="button"
               onClick={controller.handleEditSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Edit selected macro"
             >
               <PencilSimpleLineIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <ToolbarButton
               variant="danger"
-              count={controller.selectedCount()}
+              count={controller.crud.selectedCount()}
               tooltip={
-                controller.selectedCount() > 0
-                  ? `Delete selected macros (${controller.selectedCount()})`
+                controller.crud.selectedCount() > 0
+                  ? `Delete selected macros (${controller.crud.selectedCount()})`
                   : "Delete selected macros (Delete/Backspace)"
               }
               type="button"
-              onClick={controller.handleDeleteSelected}
-              disabled={controller.selectedCount() === 0}
+              onClick={controller.crud.requestDelete}
+              disabled={controller.crud.selectedCount() === 0}
               label="Delete selected macros"
             >
               <TrashIcon class="size-4" aria-hidden />
@@ -269,13 +269,13 @@ export function MacroListView(props: MacroListViewProps) {
               onRun={controller.handleRunSelected}
               onStop={controller.handleStopSelected}
             />
-            <Show when={controller.viewMode() === "grid"}>
+            <Show when={controller.crud.viewMode() === "grid"}>
               <ToolbarSeparator />
               <ToggleToolbarButton
-                tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
+                tooltip={`${controller.crud.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
-                onClick={controller.handleToggleSelectionMode}
-                pressed={controller.selectionMode()}
+                onClick={controller.crud.handleToggleSelectionMode}
+                pressed={controller.crud.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
@@ -286,12 +286,12 @@ export function MacroListView(props: MacroListViewProps) {
         right={
           <>
             <CrudPanelSearch
-              search={controller.search}
+              search={controller.crud.search}
               placeholder="Search macros"
             />
             <CrudViewModeToggle
-              viewMode={controller.viewMode()}
-              onViewModeChange={controller.setViewMode}
+              viewMode={controller.crud.viewMode()}
+              onViewModeChange={controller.crud.setViewMode}
             />
           </>
         }
@@ -309,38 +309,39 @@ export function MacroListView(props: MacroListViewProps) {
         onSubmit={controller.handleEditSubmit}
       />
       <DeleteConfirmModal
-        isOpen={controller.isDeleteModalOpen()}
+        isOpen={controller.crud.isDeleteModalOpen()}
         title="Delete selected macros"
-        message={`Delete ${controller.selectedCount()} selected macro(s)? Running macros stop.`}
+        message={`Delete ${controller.crud.selectedCount()} selected macro(s)? Running macros stop.`}
         confirmLabel="Delete"
-        onCancel={() => controller.setIsDeleteModalOpen(false)}
+        onCancel={() => controller.crud.closeDeleteConfirm()}
         onConfirm={controller.confirmDeleteSelected}
       />
 
       <CrudScrollArea
-        viewMode={controller.viewMode()}
+        viewMode={controller.crud.viewMode()}
         aria-label="Macros scroll area"
       >
         <div
           class="min-h-0 min-h-full"
           classList={{
-            "h-full": controller.viewMode() !== "grid",
-            "p-4": controller.viewMode() === "grid",
-            relative: controller.viewMode() === "grid",
+            "h-full": controller.crud.viewMode() !== "grid",
+            "p-4": controller.crud.viewMode() === "grid",
+            relative: controller.crud.viewMode() === "grid",
             "select-none":
-              controller.selectionMode() && controller.viewMode() === "grid",
+              controller.crud.selectionMode() &&
+              controller.crud.viewMode() === "grid",
           }}
-          onPointerDown={controller.gridDragSelection.onPointerDown}
-          onPointerMove={controller.gridDragSelection.onPointerMove}
-          onPointerUp={controller.gridDragSelection.onPointerUp}
-          onPointerCancel={controller.gridDragSelection.onPointerCancel}
+          onPointerDown={controller.crud.gridDragSelection.onPointerDown}
+          onPointerMove={controller.crud.gridDragSelection.onPointerMove}
+          onPointerUp={controller.crud.gridDragSelection.onPointerUp}
+          onPointerCancel={controller.crud.gridDragSelection.onPointerCancel}
           onClick={(event) => {
-            if (controller.gridDragSelection.consumeSuppressedClick()) {
+            if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
               event.preventDefault();
               event.stopPropagation();
               return;
             }
-            controller.gridClickSelection.handleBackgroundClick(event);
+            controller.crud.gridClickSelection.handleBackgroundClick(event);
           }}
           onKeyDown={(event) => {
             // Background clicks only clear selection; keyboard users use Escape (a panel shortcut).
@@ -364,7 +365,7 @@ export function MacroListView(props: MacroListViewProps) {
             }
           >
             <Show
-              when={controller.viewMode() === "grid"}
+              when={controller.crud.viewMode() === "grid"}
               fallback={<MacroRowList controller={controller} />}
             >
               <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
@@ -378,8 +379,8 @@ export function MacroListView(props: MacroListViewProps) {
           </Show>
           <Show
             when={
-              controller.viewMode() === "grid" &&
-              controller.gridDragSelection.dragBox()
+              controller.crud.viewMode() === "grid" &&
+              controller.crud.gridDragSelection.dragBox()
             }
           >
             {(box) => (
