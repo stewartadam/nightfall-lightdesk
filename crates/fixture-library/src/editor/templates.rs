@@ -232,6 +232,7 @@ fn moving_head_wheel_and_shutter() -> Vec<DraftEdit> {
                 .iter()
                 .map(|(name, color)| DraftSlotFields {
                     name: (*name).to_string(),
+                    from: None,
                     color: Some(*color),
                 })
                 .collect(),
