@@ -31,6 +31,7 @@ use crate::fixture::Fixture;
 use crate::geometry::FixtureGeometry;
 use crate::parameter_state::{ParameterLayout, ParameterStateFrame, ParameterStateProjection};
 use crate::prelude::{BeamType, FixtureDataProviderExt, FixturePhysical};
+use crate::route_overlap::{RouteOverlapReport, route_overlap_report};
 use crate::route_validation::RouteValidationSettings;
 use crate::routes::{
     DisabledRoute, DisabledRoutes, InputRoute, InputRoutes, OutputRoute, OutputRoutes,
@@ -108,6 +109,8 @@ pub struct RoutesSnapshot {
     pub output: Vec<OutputRoute>,
     /// Disabled routes.
     pub disabled: Vec<DisabledRoute>,
+    /// Which routes and universes overlap, aligned with the route lists above.
+    pub overlap: RouteOverlapReport,
 }
 
 impl Default for BeamSpec {
@@ -477,6 +480,11 @@ pub fn send_routes(
         input: input_routes.routes.clone(),
         output: output_routes.routes.clone(),
         disabled: disabled_routes.routes.clone(),
+        overlap: route_overlap_report(
+            &input_routes.routes,
+            &output_routes.routes,
+            &disabled_routes.routes,
+        ),
     };
 
     broadcaster.publish(

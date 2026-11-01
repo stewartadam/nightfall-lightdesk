@@ -463,6 +463,37 @@ async function seedDmxRouteTableStores(page: Page) {
         },
       ],
       disabled: [],
+      overlap: {
+        input: [
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: true,
+            target_conflict: false,
+          },
+          {
+            universes: { universes: [2], all: false },
+            source_conflict: true,
+            target_conflict: false,
+          },
+        ],
+        output: [
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+        ],
+        disabled: [],
+        universes: [
+          { universe: 1, input_overlap: false, output_overlap: true },
+          { universe: 2, input_overlap: false, output_overlap: false },
+        ],
+      },
     });
   });
 }

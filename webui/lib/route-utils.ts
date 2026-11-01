@@ -14,6 +14,12 @@ import {
   outputTransportForOutputTargetId,
 } from "./network-dmx-output-targets";
 
+/** The input, output and disabled route lists of a routes snapshot. */
+export type RouteLists = Pick<
+  types.RoutesSnapshot,
+  "input" | "output" | "disabled"
+>;
+
 /**
  * One element's patch location. `transport` is `null` for console-space addresses
  * (console numbering); otherwise it is the output transport using wire numbering.
@@ -179,7 +185,7 @@ function fixtureOutputSelection(
  * console→transport passthrough windows remapping those console bytes onto the wire.
  */
 export function buildFixturePatchMapFromRoutes(
-  snapshot: types.RoutesSnapshot,
+  snapshot: RouteLists,
   fixtures: Record<string, types.Fixture>,
   networkDmxOutputs: types.NetworkDmxOutputTargets = defaultNetworkDmxOutputs(),
   usbDmxOutputs: types.UsbDmxOutputTargets = defaultUsbDmxOutputs(),
@@ -465,7 +471,7 @@ export type ConsoleFixtureSpan = {
  * parameter patched by several routes only counts where the winning route puts it.
  */
 export function collectConsoleFixtureSpans(
-  snapshot: types.RoutesSnapshot,
+  snapshot: RouteLists,
   fixtures: Record<string, types.Fixture>,
 ): ConsoleFixtureSpan[] {
   const spans = new Map<string, ConsoleFixtureSpan>();
@@ -505,7 +511,7 @@ export function collectConsoleFixtureSpans(
  * restarting at the base address per universe.
  */
 function resolveConsoleAddresses(
-  snapshot: types.RoutesSnapshot,
+  snapshot: RouteLists,
   fixtures: Record<string, types.Fixture>,
 ): Map<string, ConsoleParameterAddress> {
   const addresses = new Map<string, ConsoleParameterAddress>();

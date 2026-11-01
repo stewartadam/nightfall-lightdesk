@@ -442,7 +442,12 @@ export async function prepareStoreSeededTestApp(
       for (const name of nullStoreNames) {
         stores[name].set(null);
       }
-      stores.routes.set({ disabled: [], input: [], output: [] });
+      stores.routes.set({
+        disabled: [],
+        input: [],
+        output: [],
+        overlap: { input: [], output: [], disabled: [], universes: [] },
+      });
       stores.layerStack.set([]);
       stores.parameters.set(new Map());
     },

@@ -30,6 +30,7 @@ pub mod parameter_index;
 pub mod parameter_state;
 pub mod physical;
 pub mod placement;
+pub mod route_overlap;
 pub mod route_resolution;
 pub mod route_validation;
 pub mod routes;

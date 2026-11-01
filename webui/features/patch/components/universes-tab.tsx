@@ -60,10 +60,6 @@ import {
 } from "../model/routes-model";
 import {
   type ConflictTooltipState,
-  collectUniversesFromInputSource,
-  collectUniversesFromInputTarget,
-  collectUniversesFromOutputSource,
-  collectUniversesFromOutputTarget,
   DEFAULT_COLUMNS,
   formatGroupWithChevron,
   formatUniverseLabel,
@@ -115,32 +111,16 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     const overlapsByUniverse = overlapAnalysis.overlapByUniverse;
 
     const addToUniverses = (keys: Set<UniverseKey>, row: RouteRow) => {
-      const specificUniverses = [...keys].filter((k) => k !== "*");
-      if (specificUniverses.length > 0) {
-        for (const key of specificUniverses) {
-          ensure(key).push(row);
-        }
-        return;
-      }
-
-      if (keys.has("*")) {
-        ensure("*").push(row);
-        for (const u of universeIds) {
-          ensure(u).push(row);
-        }
-        return;
-      }
-
       for (const key of keys) {
         ensure(key).push(row);
       }
     };
 
+    const routeUniverses = (rowId: string) =>
+      overlapAnalysis.routeUniverses.get(rowId) ?? new Set<UniverseKey>();
+
     snapshot.input.forEach((route, index) => {
-      const keys = new Set<UniverseKey>([
-        ...collectUniversesFromInputSource(route.source),
-        ...collectUniversesFromInputTarget(route.target),
-      ]);
+      const keys = routeUniverses(`input-${index}`);
 
       addToUniverses(
         keys,
@@ -149,10 +129,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     });
 
     snapshot.output.forEach((route, index) => {
-      const keys = new Set<UniverseKey>([
-        ...collectUniversesFromOutputSource(route.source),
-        ...collectUniversesFromOutputTarget(route.target),
-      ]);
+      const keys = routeUniverses(`output-${index}`);
 
       addToUniverses(
         keys,
@@ -161,9 +138,7 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     });
 
     snapshot.disabled.forEach((route, index) => {
-      const keys = new Set<UniverseKey>(
-        collectUniversesFromInputSource(route.data.source),
-      );
+      const keys = routeUniverses(`disabled-${index}`);
 
       addToUniverses(
         keys,

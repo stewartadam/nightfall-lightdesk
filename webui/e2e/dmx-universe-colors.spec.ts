@@ -83,6 +83,20 @@ async function seedDmxUniverseColorState(page: Page) {
         },
       ],
       disabled: [],
+      overlap: {
+        input: [],
+        output: [
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: false,
+            target_conflict: false,
+          },
+        ],
+        disabled: [],
+        universes: [
+          { universe: 1, input_overlap: false, output_overlap: false },
+        ],
+      },
     });
 
     stores.layerStack.set([
@@ -294,6 +308,20 @@ async function seedDmxUniverseJumpState(page: Page) {
           },
         ],
         disabled: [],
+        overlap: {
+          input: [],
+          output: [1, 1, 2].map((universe) => ({
+            universes: { universes: [universe], all: false },
+            source_conflict: false,
+            target_conflict: false,
+          })),
+          disabled: [],
+          universes: [1, 2].map((universe) => ({
+            universe,
+            input_overlap: false,
+            output_overlap: false,
+          })),
+        },
       });
 
       const universeOneChannels = Array.from({ length: 512 }, () => 0);

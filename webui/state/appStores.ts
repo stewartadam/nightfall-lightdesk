@@ -392,6 +392,7 @@ export const routes = atom<types.RoutesSnapshot>({
   input: [],
   output: [],
   disabled: [],
+  overlap: { input: [], output: [], disabled: [], universes: [] },
 });
 export const routeValidationSettings = atom<types.RouteValidationSettings>({
   mode: "Strict" as types.RouteValidationMode,
