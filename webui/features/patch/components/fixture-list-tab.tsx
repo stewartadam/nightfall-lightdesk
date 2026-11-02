@@ -618,6 +618,7 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
           fanWaypoints,
         )
       : null;
+    if (fanWaypoints && !fanValues) return;
 
     for (const [targetIndex, { cell, columnId, value }] of targets.entries()) {
       const fixtureRow = rowData[cell[1]];

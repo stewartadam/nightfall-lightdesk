@@ -452,12 +452,14 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     const rowsToEdit = useSelection
       ? getRowsToEdit(selection(), col, row, rowData.length)
       : [row];
-    const targetValues = fanWaypoints
+    const fanValues = fanWaypoints
       ? fanNumbersByColumn(
           rowsToEdit.map((targetRow) => [col, targetRow] as const),
           fanWaypoints,
         )
-      : rowsToEdit.map(() => value);
+      : null;
+    if (fanWaypoints && !fanValues) return;
+    const targetValues = fanValues ?? rowsToEdit.map(() => value);
 
     if (columnId === "scale") {
       for (const [targetIndex, targetRow] of rowsToEdit.entries()) {
@@ -591,6 +593,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
           fanWaypoints,
         )
       : null;
+    if (fanWaypoints && !fanValues) return;
     for (const [editIndex, edit] of edits.entries()) {
       const fanValue = fanValues?.[editIndex];
       const newValue: GridCell =

@@ -325,77 +325,6 @@ impl MaterializedCue {
             .insert(parameter.instance(), transition);
     }
 
-    /// Resolves a fanned value for a specific fixture position.
-    /// Interpolates between waypoints based on fixture position in the selection.
-    pub(super) fn resolve_fanned_value(
-        values: &[ParameterValue],
-        fixture_index: usize,
-        total_fixtures: usize,
-    ) -> ParameterValue {
-        if values.is_empty() {
-            // Default to 0% absolute
-            return ParameterValue::AbsolutePercent { value: 0.0.into() };
-        }
-        if values.len() == 1 || total_fixtures <= 1 {
-            return values[0];
-        }
-
-        // Calculate the position in the range [0.0, 1.0]
-        if values.len() == total_fixtures {
-            return values[fixture_index];
-        }
-
-        let t = fixture_index as f32 / (total_fixtures - 1).max(1) as f32;
-
-        // Map t to a position in the values array
-        let max_segment = values.len() - 1;
-        let segment_position = t * max_segment as f32;
-        let segment_idx = (segment_position as usize).min(max_segment - 1);
-        let segment_t = segment_position - segment_idx as f32;
-
-        // Interpolate between values[segment_idx] and values[segment_idx + 1]
-        let start = &values[segment_idx];
-        let end = &values[segment_idx + 1];
-
-        // Extract percentages for interpolation
-        match (start, end) {
-            (
-                ParameterValue::AbsolutePercent { value: start_val },
-                ParameterValue::AbsolutePercent { value: end_val },
-            ) => {
-                // Use multiplication with 1.0f32 to extract the float value
-                let start_f = start_val.as_f32();
-                let end_f = end_val.as_f32();
-                let interpolated = start_f + segment_t * (end_f - start_f);
-                ParameterValue::AbsolutePercent {
-                    value: interpolated.into(),
-                }
-            }
-            (
-                ParameterValue::RelativePercent { offset: start_off },
-                ParameterValue::RelativePercent { offset: end_off },
-            ) => {
-                let start_f = start_off.as_f32();
-                let end_f = end_off.as_f32();
-                let interpolated = start_f + segment_t * (end_f - start_f);
-                ParameterValue::RelativePercent {
-                    offset: interpolated.into(),
-                }
-            }
-            (
-                ParameterValue::Absolute { value: start_val },
-                ParameterValue::Absolute { value: end_val },
-            ) => {
-                let interpolated = *start_val + segment_t * (*end_val - *start_val);
-                ParameterValue::Absolute {
-                    value: interpolated.round(),
-                }
-            }
-            // Mixed types: just use the start value
-            _ => *start,
-        }
-    }
-
     /// Processes a single value source and adds it to the materialized cue.
     fn process_values_for_fixture(
         &mut self,
@@ -462,7 +391,9 @@ impl MaterializedCue {
 
         let parameter_value = match source {
             ValueSource::Inline(value) => *value,
-            ValueSource::Fanned { values } => Self::resolve_fanned_value(values, offset, total),
+            ValueSource::Fanned { values } => {
+                nightfall::fan::resolve_fanned_parameter_value(values, offset, total)
+            }
             ValueSource::Release | ValueSource::HoldPosition => {
                 return;
             }

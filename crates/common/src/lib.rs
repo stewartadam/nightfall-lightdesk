@@ -26,6 +26,7 @@ pub mod command_types;
 pub mod constants;
 pub mod data;
 pub mod engine;
+pub mod fan;
 pub mod macros;
 pub mod object_query;
 pub mod partial_result;
@@ -59,6 +60,9 @@ pub mod prelude {
         SpatialClause, SpatialSelection, UnresolvedFixtureRef,
     };
     pub use crate::data::{FixtureRef, Group, HasIdentifiers, Identifiers, Priority, References};
+    pub use crate::fan::{
+        resolve_fan, resolve_fan_duration, resolve_fan_number, resolve_fanned_parameter_value,
+    };
     pub use crate::macros::Macro;
     pub use crate::object_query::{ObjectIdRange, ObjectQuery};
     pub use crate::partial_result::PartialResult;

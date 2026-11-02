@@ -7,12 +7,18 @@
  */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before } from "node:test";
 import {
+  fanNumbers,
   fanNumbersByColumn,
   parseNumericFanInput,
-  resolveFanNumber,
 } from "./value-fan";
+import { loadWasmBridge } from "./wasm-module";
+
+/** Loads the WASM bridge that resolves fans before any fan is spread. */
+before(async () => {
+  await loadWasmBridge();
+});
 
 /** Verifies numeric fans accept signed and decimal waypoints with surrounding spaces. */
 test("parseNumericFanInput parses numeric waypoints", () => {
@@ -31,17 +37,12 @@ test("parseNumericFanInput rejects non-fan input", () => {
 });
 
 /** Verifies fans spread from the first to the last waypoint across targets. */
-test("resolveFanNumber interpolates evenly across targets", () => {
-  assert.deepEqual(
-    [0, 1, 2, 3].map((offset) => resolveFanNumber([0, 3], offset, 4)),
-    [0, 1, 2, 3],
-  );
-  assert.deepEqual(
-    [0, 1, 2, 3, 4].map((offset) => resolveFanNumber([0, 4, 0], offset, 5)),
-    [0, 2, 4, 2, 0],
-  );
-  assert.equal(resolveFanNumber([2, 5], 0, 1), 2);
-  assert.equal(resolveFanNumber([0, 0.3], 1, 4), 0.1);
+test("fanNumbers interpolates evenly across targets", () => {
+  assert.deepEqual(fanNumbers([0, 3], 4), [0, 1, 2, 3]);
+  assert.deepEqual(fanNumbers([0, 4, 0], 5), [0, 2, 4, 2, 0]);
+  assert.deepEqual(fanNumbers([2, 5], 1), [2]);
+  assert.equal(fanNumbers([0, 0.3], 4)?.[1], 0.1);
+  assert.deepEqual(fanNumbers([0, 3], 0), []);
 });
 
 /** Verifies each column of a multi-column range fans independently in the given order. */

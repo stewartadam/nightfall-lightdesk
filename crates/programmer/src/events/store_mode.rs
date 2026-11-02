@@ -35,9 +35,13 @@ fn resolve_store_mode_instruction_fans(
         .into_iter()
         .map(|(attribute, source)| {
             let source = match source {
-                ValueSource::Fanned { values } => ValueSource::Inline(
-                    resolve_store_mode_fanned_value(&values, selection_index, selection_size),
-                ),
+                ValueSource::Fanned { values } => {
+                    ValueSource::Inline(nightfall::fan::resolve_fanned_parameter_value(
+                        &values,
+                        selection_index,
+                        selection_size,
+                    ))
+                }
                 source => source,
             };
             (attribute, source)
@@ -152,64 +156,6 @@ fn merge_instruction_list(
     }
 }
 
-/// Resolves a fanned value for the fixture or element offset being split.
-fn resolve_store_mode_fanned_value(
-    values: &[ParameterValue],
-    fixture_index: usize,
-    total_fixtures: usize,
-) -> ParameterValue {
-    if values.is_empty() {
-        return ParameterValue::AbsolutePercent { value: 0.0.into() };
-    }
-    if values.len() == 1 || total_fixtures <= 1 {
-        return values[0];
-    }
-
-    if values.len() == total_fixtures {
-        return values[fixture_index];
-    }
-
-    let t = fixture_index as f32 / (total_fixtures - 1).max(1) as f32;
-    let max_segment = values.len() - 1;
-    let segment_position = t * max_segment as f32;
-    let segment_idx = (segment_position as usize).min(max_segment - 1);
-    let segment_t = segment_position - segment_idx as f32;
-    let start = &values[segment_idx];
-    let end = &values[segment_idx + 1];
-
-    match (start, end) {
-        (
-            ParameterValue::AbsolutePercent { value: start_val },
-            ParameterValue::AbsolutePercent { value: end_val },
-        ) => {
-            let start_f = start_val.as_f32();
-            let end_f = end_val.as_f32();
-            ParameterValue::AbsolutePercent {
-                value: (start_f + segment_t * (end_f - start_f)).into(),
-            }
-        }
-        (
-            ParameterValue::RelativePercent {
-                offset: start_offset,
-            },
-            ParameterValue::RelativePercent { offset: end_offset },
-        ) => {
-            let start_f = start_offset.as_f32();
-            let end_f = end_offset.as_f32();
-            ParameterValue::RelativePercent {
-                offset: (start_f + segment_t * (end_f - start_f)).into(),
-            }
-        }
-        (
-            ParameterValue::Absolute { value: start_value },
-            ParameterValue::Absolute { value: end_value },
-        ) => ParameterValue::Absolute {
-            value: (*start_value + segment_t * (*end_value - *start_value)).round(),
-        },
-        _ => *start,
-    }
-}
-
 /// Resolves fanned transition modes for the fixture or element offset being split.
 fn resolve_store_mode_transition_modes(
     transition: &mut PartialTransition,
@@ -315,9 +261,13 @@ fn resolve_split_store_mode_instruction(
         .into_iter()
         .map(|(attribute, source)| {
             let source = match source {
-                ValueSource::Fanned { values } => ValueSource::Inline(
-                    resolve_store_mode_fanned_value(&values, fixture_index, total_fixtures),
-                ),
+                ValueSource::Fanned { values } => {
+                    ValueSource::Inline(nightfall::fan::resolve_fanned_parameter_value(
+                        &values,
+                        fixture_index,
+                        total_fixtures,
+                    ))
+                }
                 source => source,
             };
             (attribute, source)
@@ -1289,7 +1239,7 @@ mod programmer_override_tests {
         ];
         for (index, expected) in values.iter().enumerate() {
             assert_eq!(
-                resolve_store_mode_fanned_value(&values, index, values.len()),
+                nightfall::fan::resolve_fanned_parameter_value(&values, index, values.len()),
                 *expected
             );
         }
