@@ -35,20 +35,7 @@ import {
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
 import { testHooksEnabled } from "../../lib/test-mode";
-import {
-  activeInstances,
-  clips,
-  cues,
-  fixtures,
-  fx,
-  programmerSelection,
-  programmerState,
-  pushToast,
-  runtimeCapabilities,
-  sequences,
-  timecodes,
-  timelines,
-} from "../../state/appStores";
+import { pushToast, runtimeCapabilities } from "../../state/appStores";
 import { activeLayoutId, whenLayoutSettled } from "../../state/layout-switcher";
 import { patchPanelActiveTab, revealPatchFixtures } from "../patch";
 import { normalizeTimelineUid } from "../timeline";
@@ -89,7 +76,11 @@ import {
   startGuideLesson,
 } from "./state";
 import { useFloatingGuide } from "./use-floating-guide";
-import { useGuideProgress, useGuideSnapshot } from "./use-guide-progress";
+import {
+  useGuideProgress,
+  useGuideShowState,
+  useGuideSnapshot,
+} from "./use-guide-progress";
 import "./welcome-guide.css";
 
 const log = getLogger(import.meta.url);
@@ -158,16 +149,19 @@ export default function WelcomeGuide() {
   const index = useStore(guideStepIndex);
   const completed = useStore(guideCompleted);
   const capabilities = useStore(runtimeCapabilities);
-  const timelineMap = useStore(timelines);
-  const clipMap = useStore(clips);
-  const sequenceMap = useStore(sequences);
-  const cueMap = useStore(cues);
-  const fixtureMap = useStore(fixtures);
-  const fxMap = useStore(fx);
-  const instanceMap = useStore(activeInstances);
-  const clockMap = useStore(timecodes);
-  const programmerSelectionList = useStore(programmerSelection);
-  const programmerRows = useStore(programmerState);
+  const show = useGuideShowState(opened);
+  const {
+    timelines: timelineMap,
+    clips: clipMap,
+    sequences: sequenceMap,
+    cues: cueMap,
+    fixtures: fixtureMap,
+    fx: fxMap,
+    instances: instanceMap,
+    timecodes: clockMap,
+    selection: programmerSelectionList,
+    programmer: programmerRows,
+  } = show;
   /** Finds the generated sample timeline without relying on its session-specific UID. */
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
@@ -393,7 +387,7 @@ export default function WelcomeGuide() {
     }
     return undefined;
   });
-  const guideSnapshot = useGuideSnapshot(workspace);
+  const guideSnapshot = useGuideSnapshot(workspace, show);
   /**
    * Finds the part of a multi-part step the user is on, starting from `from`: the first part whose
    * `until` doesn't hold yet, or the last part.

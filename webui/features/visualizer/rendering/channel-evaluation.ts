@@ -149,6 +149,41 @@ export function attributeOutputKey(attribute: Attribute): string {
 }
 
 /**
+ * Live evaluators by their definition JSON and linking, so fixtures patched
+ * from one profile and mode share one evaluator instead of each parsing the
+ * same definition. Entries are weak: once no compiled fixture holds an
+ * evaluator it can be collected, and its entry is removed.
+ */
+const evaluatorsByDefinition = new Map<string, WeakRef<ChannelEvaluator>>();
+
+/** Removes an evaluator's entry once the evaluator has been collected. */
+const evaluatorEntryCleanup = new FinalizationRegistry<string>((key) => {
+  if (!evaluatorsByDefinition.get(key)?.deref()) {
+    evaluatorsByDefinition.delete(key);
+  }
+});
+
+/**
+ * Returns the evaluator for a definition, building it when no live one exists.
+ *
+ * Sharing is safe because an evaluation overwrites all of the evaluator's
+ * scratch state and JavaScript never runs two evaluations at once.
+ */
+function sharedEvaluator(
+  wasm: NonNullable<ReturnType<typeof loadedWasmBridge>>,
+  definition: string,
+  linked: boolean,
+): ChannelEvaluator {
+  const key = `${linked ? "linked" : "lone"}:${definition}`;
+  const live = evaluatorsByDefinition.get(key)?.deref();
+  if (live) return live;
+  const evaluator = new wasm.FixtureChannelEvaluator(definition, linked);
+  evaluatorsByDefinition.set(key, new WeakRef(evaluator));
+  evaluatorEntryCleanup.register(evaluator, key);
+  return evaluator;
+}
+
+/**
  * Builds the evaluator and buffers for a fixture's elements, or returns
  * undefined while the model is loading or when it rejects the metadata.
  *
@@ -164,10 +199,7 @@ function compile(
   if (!wasm || rejected.has(key)) return undefined;
   let evaluator: ChannelEvaluator;
   try {
-    evaluator = new wasm.FixtureChannelEvaluator(
-      JSON.stringify(elements),
-      linked,
-    );
+    evaluator = sharedEvaluator(wasm, JSON.stringify(elements), linked);
   } catch (error) {
     rejected.add(key);
     log.warn("Fixture metadata cannot be evaluated:", error);
