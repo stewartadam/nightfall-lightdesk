@@ -164,19 +164,16 @@ The following table compares the hosts. "Yes" for a native host means the defaul
 
 The engine reports what it supports to the UI as runtime capabilities, so the UI can hide features the current host lacks. For example, the demo reports that it has no persistence, no FX modules, and only built-in fixture profiles.
 
-### The browser demo has its own plugin list
+### Both hosts share one show plugin list
 
-A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The native hosts share one assembly: a set of plugin groups for the core, the desk, effects, timecode, inputs, and outputs, plus the systems that load, save, and swap showfiles. The browser demo can't use those groups as they are, because several plugins need sockets, threads, the file system, or a WASM runtime of their own. The browser runtime lists its plugins by hand instead.
+A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, undo, client bridge, actions, fixtures, scene objects, and the fixture compositor), `DeskPlugins` (desk, programmer, cues, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
 
-Today the browser list differs from the native groups in these ways:
+Nesting a group flattens its plugins into the parent's list, so a host can insert its own plugins next to any shared plugin they depend on, or disable one, wherever that plugin's group sits.
 
-- It leaves out the websocket, audio, input, output, fixture library, and object library plugins, and the FX module plugin. In place of the FX module plugin, it registers an empty store for FX modules.
-- It adds a built-in fixture library that serves the compiled-in profiles, and a timeline plugin variant that asks the browser to play bundled audio.
-- It has none of the showfile handling systems, such as draft autosave and showfile loading.
-- It adds the scene object plugin after the fixture compositor plugin. The native core group adds it before.
+- The native hosts build `NativePlugins`. It adds audio after the engine, the websocket server after the fixture compositor, desk audio after the desk, the fixture and object libraries after macros, and FX modules after FX, then appends the output and input groups. The systems that load, save, and swap showfiles are added separately.
+- The browser demo builds `ShowPlugins` with a timeline plugin variant that asks the browser to play bundled audio, and adds a built-in fixture library after the fixture plugin. It has no sockets, threads, file system, or WASM runtime of its own, so it leaves out the native plugins above and the showfile handling systems, such as draft autosave and showfile loading.
 
-> [!WARNING]
-> Nothing checks that the two lists stay in step. When you add a plugin to the native plugin groups, decide whether the browser demo needs it too, and either add it to the browser runtime or report the missing feature through the runtime capabilities. The `check:browser-demo-dependencies` script only confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime. It doesn't compare plugin lists.
+When you add a show domain plugin, add it to its domain group and both hosts pick it up. A plugin that needs a native-only service belongs in `NativePlugins`, inserted after the plugin it depends on; report the missing feature through the runtime capabilities so the demo UI can hide it. The `check:browser-demo-dependencies` script confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime.
 
 ## Inputs and outputs
 
@@ -238,12 +235,13 @@ The browser demo reads its packaged demo showfile, in the same format, when it s
 | Concept | Where to look |
 |---------|---------------|
 | Native engine assembly | `crates/app-runtime/src/composition.rs` |
+| Shared show plugin groups | `crates/composition/src/lib.rs` |
 | Native plugin groups | `crates/app-runtime/src/plugin_groups.rs` |
 | Engine session loop and showfile swaps | `crates/app-runtime/src/session.rs`, `crates/app-runtime/src/swap_orchestrator.rs`, `crates/app-runtime/src/world_factory.rs` |
 | Headless entry point | `crates/app-runtime/src/main.rs` |
 | Desktop shell | `desktop/app-tauri/src/desktop_shell.rs`, `desktop/app-tauri/src/updates.rs` |
 | Web UI served to other devices | `desktop/app-tauri/src/web_ui.rs`, `crates/websocket/src/web_ui.rs` |
-| Browser demo engine and its plugin list | `crates/browser-runtime/src/lib.rs` |
+| Browser demo engine | `crates/browser-runtime/src/lib.rs` |
 | Runtime capabilities | `crates/engine/src/runtime_capabilities.rs` |
 | Client bridge | `crates/engine/src/client_bridge.rs` |
 | Websocket host, client queues, origin check, and pairing | `crates/websocket/src/websocket.rs`, `crates/websocket/src/outbox.rs`, `crates/websocket/src/origin.rs`, `crates/websocket/src/pairing.rs` |

@@ -67,7 +67,8 @@
       "app-runtime",
       "app-tauri",
       "nightfall-browser-runtime",
-      "nightfall-cli"
+      "nightfall-cli",
+      "nightfall-composition"
     ]
   }
 }
