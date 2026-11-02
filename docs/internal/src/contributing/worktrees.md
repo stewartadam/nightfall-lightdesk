@@ -35,6 +35,8 @@ To create a worktree for a new branch:
 1. Wait for the hooks to finish. The pre-start hooks write `.env`, run `pnpm install`, and generate the TypeScript types before `wt` switches to the worktree. The post-start hooks then copy the data directory, web UI assets, and demo audio, and build the backend and WASM bridge in the background.
 1. Check the hook output before you start services. A background `cargo build` may still be running.
 
+With the dashboard running (see below), you can also type a branch name in the dashboard page's search box and press <kbd>Shift</kbd>+<kbd>Enter</kbd>, or choose **Create worktree** below the results. The button appears whenever no worktree has exactly that branch. The dashboard runs the same `wt switch`: a branch that exists locally or on `origin` is checked out, and any other name becomes a new branch from `origin/HEAD`. The worktree appears in the list once the pre-start hooks finish.
+
 `wt` reads these hooks from `.config/wt.toml`. They assume the tools from [Nightfall setup](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#nightfall-setup) are installed, including `pnpm run setup:tools` for mdBook.
 
 Claude Code creates worktrees for `claude --worktree`, desktop and Remote Control sessions, and isolated subagents. The `WorktreeCreate` and `WorktreeRemove` hooks in `.claude/settings.json` send those through `wt` too, so they get the same setup. Their branches are named `claude/<name>` and start from `origin/HEAD`.
@@ -51,7 +53,7 @@ You then manage services from the dashboard page, the terminal, or an agent.
 
 ### From the dashboard page
 
-Run `pnpm run dashboard:ui` in a second terminal. It opens `/worktree-dashboard.html` in a Vite dev server. The page lists every worktree with its branch, ports, and the state of each service, refreshes every 2 seconds, and has buttons to start, stop, and restart services and to open each service's log. Its **More actions** menu opens the worktree in VS Code, re-seeds its data directory from the main worktree, and deletes it.
+Run `pnpm run dashboard:ui` in a second terminal. It opens `/worktree-dashboard.html` in a Vite dev server. The page lists every worktree with its branch, ports, and the state of each service, updates as soon as anything changes, and has buttons to start, stop, and restart services and to open each service's log. The search box above the list filters it by branch name or path. Its **More actions** menu opens the worktree in VS Code, re-seeds its data directory from the main worktree, and deletes it.
 
 ### From a terminal
 

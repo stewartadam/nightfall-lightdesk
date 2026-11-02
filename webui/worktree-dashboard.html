@@ -13,6 +13,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>nightfall worktree launcher</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <!--
+      Fix Tailwind's cascade layer order before any stylesheet loads, as index.html does.
+      Built chunks can place component CSS that uses `@layer components` ahead of
+      index.css, which would otherwise rank that layer below Tailwind's preflight.
+    -->
+    <style>
+      @layer properties, theme, base, components, utilities;
+    </style>
     <link rel="stylesheet" href="index.css" />
   </head>
   <body class="min-h-screen bg-slate-100 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
