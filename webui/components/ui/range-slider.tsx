@@ -9,7 +9,6 @@
 import noUiSlider, { type API, PipsMode } from "nouislider";
 import {
   createEffect,
-  createMemo,
   For,
   type JSX,
   on,
@@ -17,6 +16,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { withTransientOwner } from "./transient-owner";
 import "./range-slider.css";
 
 interface RangeSliderOptions {
@@ -69,12 +69,6 @@ export type RangeSliderProps = RangeSliderOptions &
       }
   );
 
-/** Edit and commit callbacks that take handle values in noUiSlider order, whatever the slider's mode. */
-interface SliderCallbacks {
-  onChange: (next: number[]) => void;
-  onCommit?: (next: number[]) => void;
-}
-
 /** Shares noUiSlider handles, keyboard interaction, and numeric inputs across scalar and bounded-range controls. */
 export function RangeSlider(props: RangeSliderProps): JSX.Element {
   let containerRef!: HTMLDivElement;
@@ -83,43 +77,22 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
   let dragging = false;
   /** Handle values as of the last commit or external update, used to skip commits that change nothing. */
   let committed: number[] = [];
-  // noUiSlider calls back outside any Solid owner, where reading a prop whose JSX expression is
-  // conditional would create a computation that is never disposed. Everything those callbacks
-  // need is therefore resolved here, in the component's owner, and only read from memos there.
   /** Returns the controlled handle values in noUiSlider order. */
-  const values = createMemo(() =>
-    props.mode === "range" ? [...props.value] : [props.value],
-  );
+  const values = () =>
+    props.mode === "range" ? [...props.value] : [props.value];
   /** Resolves the lower bound for slider and input constraints. */
-  const min = createMemo(() => props.min ?? 0);
+  const min = () => props.min ?? 0;
   /** Resolves the upper bound for slider and input constraints. */
-  const max = createMemo(() => props.max ?? 100);
+  const max = () => props.max ?? 100;
   /** Resolves the increment used by dragging, keys, and numeric entry. */
-  const step = createMemo(() => props.step ?? 1);
+  const step = () => props.step ?? 1;
   /** Resolves the displayed unit. */
-  const suffix = createMemo(() => props.suffix ?? "%");
-  /** Resolves the caller's value formatter, if any. */
-  const format = createMemo(() => props.format);
-  /** Resolves the values a released drag settles on. */
-  const detents = createMemo(() => props.detents);
-  /** Adapts the caller's edit and commit callbacks to handle values in noUiSlider order. */
-  const callbacks = createMemo((): SliderCallbacks => {
-    if (props.mode === "range") {
-      const { onChange, onCommit } = props;
-      return {
-        onChange: (next) => onChange([next[0], next[1]]),
-        onCommit: onCommit && ((next) => onCommit([next[0], next[1]])),
-      };
-    }
-    const { onChange, onCommit } = props;
-    return {
-      onChange: (next) => onChange(next[0]),
-      onCommit: onCommit && ((next) => onCommit(next[0])),
-    };
-  });
-  /** Produces readable values while retaining fractional steps. */
-  const formatValue = (value: number) =>
-    format()?.(value) ?? `${Number(value.toFixed(4))}${suffix()}`;
+  const suffix = () => props.suffix ?? "%";
+  /** Produces readable values while retaining fractional steps; noUiSlider calls it directly. */
+  const formatValue = withTransientOwner(
+    (value: number) =>
+      props.format?.(value) ?? `${Number(value.toFixed(4))}${suffix()}`,
+  );
   /** Names each handle and its matching numeric input for assistive technology. */
   const label = (index: number) =>
     (typeof props.handleLabels === "string"
@@ -135,11 +108,11 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
   };
   /** Moves each value within the detent radius of a detent onto it. */
   const snapToDetents = (next: number[]) => {
-    const targets = detents();
-    if (!targets?.length) return next;
+    const detents = props.detents;
+    if (!detents?.length) return next;
     const radius = (max() - min()) * DETENT_RADIUS;
     return next.map((value) => {
-      const nearest = targets.reduce((best, detent) =>
+      const nearest = detents.reduce((best, detent) =>
         Math.abs(detent - value) < Math.abs(best - value) ? detent : best,
       );
       return Math.abs(nearest - value) <= radius ? nearest : value;
@@ -150,17 +123,20 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     const next = settledValues();
     if (next.every((value, index) => value === committed[index])) return;
     committed = next;
-    callbacks().onCommit?.(next);
+    if (props.mode === "range") props.onCommit?.([next[0], next[1]]);
+    else props.onCommit?.(next[0]);
   };
   /** Commits numeric input through the slider's step, bounds, and handle-order constraints. */
-  const commitInput = (index: number, input: HTMLInputElement) => {
-    const value = input.valueAsNumber;
-    if (Number.isFinite(value)) {
-      sliderApi?.setHandle(index, value, true);
-      emitCommit();
-    }
-    input.value = String(values()[index]);
-  };
+  const commitInput = withTransientOwner(
+    (index: number, input: HTMLInputElement) => {
+      const value = input.valueAsNumber;
+      if (Number.isFinite(value)) {
+        sliderApi?.setHandle(index, value, true);
+        emitCommit();
+      }
+      input.value = String(values()[index]);
+    },
+  );
 
   /** Initializes the shared slider and synchronizes externally controlled state after mounting. */
   onMount(() => {
@@ -204,24 +180,30 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     const emitChange: Parameters<API["on"]>[1] = (_, __, unencoded) => {
       if (syncing) return;
       const next = unencoded.map((value) => Number(value.toFixed(10)));
-      const current = values();
-      if (next.some((value, index) => value !== current[index]))
-        callbacks().onChange(next);
+      if (props.mode === "range") {
+        if (next[0] !== props.value[0] || next[1] !== props.value[1])
+          props.onChange([next[0], next[1]]);
+      } else if (next[0] !== props.value) props.onChange(next[0]);
     };
-    sliderApi.on("slide", emitChange);
-    sliderApi.on("set", emitChange);
-    sliderApi.on("change", () => {
-      if (syncing) return;
-      const settled = settledValues();
-      // Only a released pointer drag settles; keys, taps and typed values land exactly.
-      const snapped = dragging ? snapToDetents(settled) : settled;
-      if (snapped.some((value, index) => value !== settled[index])) {
-        syncing = true;
-        sliderApi?.set(snapped, false);
-        syncing = false;
-      }
-      emitCommit();
-    });
+    // noUiSlider calls these outside any Solid owner, and they read props, so each runs in a
+    // transient one (see withTransientOwner).
+    sliderApi.on("slide", withTransientOwner(emitChange));
+    sliderApi.on("set", withTransientOwner(emitChange));
+    sliderApi.on(
+      "change",
+      withTransientOwner(() => {
+        if (syncing) return;
+        const settled = settledValues();
+        // Only a released pointer drag settles; keys, taps and typed values land exactly.
+        const snapped = dragging ? snapToDetents(settled) : settled;
+        if (snapped.some((value, index) => value !== settled[index])) {
+          syncing = true;
+          sliderApi?.set(snapped, false);
+          syncing = false;
+        }
+        emitCommit();
+      }),
+    );
     committed = settledValues();
     /** Mirrors controlled values, leaving an active drag in place so delayed echoes cannot pull the handle back. */
     createEffect(() => {
@@ -306,9 +288,9 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
                   step={step()}
                   value={values()[index]}
                   onChange={(event) => commitInput(index, event.currentTarget)}
-                  onBlur={(event) => {
+                  onBlur={withTransientOwner((event) => {
                     event.currentTarget.value = String(values()[index]);
-                  }}
+                  })}
                   disabled={props.disabled}
                   class="border-0 bg-transparent px-2 py-1 text-right text-xs focus:outline-none disabled:cursor-not-allowed"
                 />
