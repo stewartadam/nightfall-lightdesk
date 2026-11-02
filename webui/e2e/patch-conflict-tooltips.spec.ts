@@ -223,6 +223,25 @@ async function seedDuplicateFixtureOutputRoutes(page: Page) {
         },
       ],
       disabled: [],
+      overlap: {
+        input: [],
+        output: [
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+        ],
+        disabled: [],
+        universes: [
+          { universe: 1, input_overlap: false, output_overlap: true },
+        ],
+      },
     });
   });
 }
@@ -277,6 +296,26 @@ async function seedDuplicateFixtureInputRoutes(page: Page) {
       ],
       output: [],
       disabled: [],
+      overlap: {
+        input: [
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: true,
+            target_conflict: false,
+          },
+          {
+            universes: { universes: [2], all: false },
+            source_conflict: true,
+            target_conflict: false,
+          },
+        ],
+        output: [],
+        disabled: [],
+        universes: [
+          { universe: 1, input_overlap: false, output_overlap: false },
+          { universe: 2, input_overlap: false, output_overlap: false },
+        ],
+      },
     });
   });
 }
@@ -331,6 +370,27 @@ async function seedDuplicateConsoleInputRoutes(page: Page) {
       ],
       output: [],
       disabled: [],
+      overlap: {
+        input: [
+          {
+            universes: { universes: [10, 50], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+          {
+            universes: { universes: [11, 50], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+        ],
+        output: [],
+        disabled: [],
+        universes: [
+          { universe: 10, input_overlap: false, output_overlap: false },
+          { universe: 11, input_overlap: false, output_overlap: false },
+          { universe: 50, input_overlap: true, output_overlap: false },
+        ],
+      },
     });
   });
 }
