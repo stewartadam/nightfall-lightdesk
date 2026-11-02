@@ -10,11 +10,19 @@ import "./lib/install-diagnostic-console";
 import "./lib/report-uncaught-errors";
 import "./lib/idle-callback";
 import { useStore } from "@nanostores/solid";
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  lazy,
+  onCleanup,
+  onMount,
+  Suspense,
+} from "solid-js";
 import { render } from "solid-js/web";
 import DiagnosticsRuntime from "./components/shell/runtime/diagnostics";
 import EngineConnection from "./components/shell/runtime/engine-connection";
 import { StartupController, StartupOverlaps } from "./components/shell/startup";
+import { isFixtureEditorWindow } from "./features/fixture-editor/services/editor-window";
 import NewShowfileNameModal from "./features/showfile/dialogs/new-showfile-name";
 import { APP_NAME, APP_TITLE } from "./lib/app-metadata";
 import {
@@ -62,7 +70,16 @@ function ignoreReportedLoadFailure(): void {}
 // Initialize URL-backed runtime settings before app components read them.
 initFeatureFlags();
 installTestHooks();
-document.title = isEmbeddedDemoRuntime() ? APP_NAME : APP_TITLE;
+document.title = isFixtureEditorWindow()
+  ? `Fixture Editor · ${APP_NAME}`
+  : isEmbeddedDemoRuntime()
+    ? APP_NAME
+    : APP_TITLE;
+
+/** Loads the fixture editor window's root only on pages that render it. */
+const FixtureEditorApp = lazy(
+  () => import("./components/shell/app/fixture-editor-app"),
+);
 
 type InteractiveShellMountProps = {
   active: boolean;
@@ -110,11 +127,11 @@ function InteractiveShellMount(props: InteractiveShellMountProps) {
   );
 }
 
-/** Renders the minimal startup app before loading the full interactive shell. */
-function App() {
+/** Applies local appearance to startup, panels, and overlays mounted on the document body. */
+function useDocumentAppearance(): void {
   const appearance = useStore(appearanceSettings);
 
-  /** Applies local appearance to startup, panels, and overlays mounted on the document body. */
+  /** Mirrors the appearance settings onto the document's CSS variables and data attributes. */
   createEffect(() => {
     document.documentElement.style.setProperty("--accent", appearance().accent);
     document.body.dataset.tabAlignment = appearance().tabAlignment;
@@ -126,6 +143,21 @@ function App() {
       appearance().gridlines ? "#ffffff18" : "transparent",
     );
   });
+}
+
+/** Renders the fixture editor window, which loads no workspace shell or startup flow. */
+function FixtureEditorRoot() {
+  useDocumentAppearance();
+  return (
+    <Suspense>
+      <FixtureEditorApp />
+    </Suspense>
+  );
+}
+
+/** Renders the minimal startup app before loading the full interactive shell. */
+function App() {
+  useDocumentAppearance();
   const lifecycle = useStore(appLifecycle);
   // The shell mount is latched, so readiness stays set when startup returns to the picker.
   const [interactiveShellReady, setInteractiveShellReady] = createSignal(false);
@@ -188,4 +220,7 @@ function App() {
 
 const appRoot = document.getElementById("app")!;
 appRoot.replaceChildren();
-render(() => <App />, appRoot);
+render(
+  () => (isFixtureEditorWindow() ? <FixtureEditorRoot /> : <App />),
+  appRoot,
+);
