@@ -16,6 +16,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { withTransientOwner } from "./transient-owner";
 import "./range-slider.css";
 
 interface RangeSliderOptions {
@@ -87,9 +88,11 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
   const step = () => props.step ?? 1;
   /** Resolves the displayed unit. */
   const suffix = () => props.suffix ?? "%";
-  /** Produces readable values while retaining fractional steps. */
-  const formatValue = (value: number) =>
-    props.format?.(value) ?? `${Number(value.toFixed(4))}${suffix()}`;
+  /** Produces readable values while retaining fractional steps; noUiSlider calls it directly. */
+  const formatValue = withTransientOwner(
+    (value: number) =>
+      props.format?.(value) ?? `${Number(value.toFixed(4))}${suffix()}`,
+  );
   /** Names each handle and its matching numeric input for assistive technology. */
   const label = (index: number) =>
     (typeof props.handleLabels === "string"
@@ -124,14 +127,16 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     else props.onCommit?.(next[0]);
   };
   /** Commits numeric input through the slider's step, bounds, and handle-order constraints. */
-  const commitInput = (index: number, input: HTMLInputElement) => {
-    const value = input.valueAsNumber;
-    if (Number.isFinite(value)) {
-      sliderApi?.setHandle(index, value, true);
-      emitCommit();
-    }
-    input.value = String(values()[index]);
-  };
+  const commitInput = withTransientOwner(
+    (index: number, input: HTMLInputElement) => {
+      const value = input.valueAsNumber;
+      if (Number.isFinite(value)) {
+        sliderApi?.setHandle(index, value, true);
+        emitCommit();
+      }
+      input.value = String(values()[index]);
+    },
+  );
 
   /** Initializes the shared slider and synchronizes externally controlled state after mounting. */
   onMount(() => {
@@ -180,20 +185,25 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
           props.onChange([next[0], next[1]]);
       } else if (next[0] !== props.value) props.onChange(next[0]);
     };
-    sliderApi.on("slide", emitChange);
-    sliderApi.on("set", emitChange);
-    sliderApi.on("change", () => {
-      if (syncing) return;
-      const settled = settledValues();
-      // Only a released pointer drag settles; keys, taps and typed values land exactly.
-      const snapped = dragging ? snapToDetents(settled) : settled;
-      if (snapped.some((value, index) => value !== settled[index])) {
-        syncing = true;
-        sliderApi?.set(snapped, false);
-        syncing = false;
-      }
-      emitCommit();
-    });
+    // noUiSlider calls these outside any Solid owner, and they read props, so each runs in a
+    // transient one (see withTransientOwner).
+    sliderApi.on("slide", withTransientOwner(emitChange));
+    sliderApi.on("set", withTransientOwner(emitChange));
+    sliderApi.on(
+      "change",
+      withTransientOwner(() => {
+        if (syncing) return;
+        const settled = settledValues();
+        // Only a released pointer drag settles; keys, taps and typed values land exactly.
+        const snapped = dragging ? snapToDetents(settled) : settled;
+        if (snapped.some((value, index) => value !== settled[index])) {
+          syncing = true;
+          sliderApi?.set(snapped, false);
+          syncing = false;
+        }
+        emitCommit();
+      }),
+    );
     committed = settledValues();
     /** Mirrors controlled values, leaving an active drag in place so delayed echoes cannot pull the handle back. */
     createEffect(() => {
@@ -278,9 +288,9 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
                   step={step()}
                   value={values()[index]}
                   onChange={(event) => commitInput(index, event.currentTarget)}
-                  onBlur={(event) => {
+                  onBlur={withTransientOwner((event) => {
                     event.currentTarget.value = String(values()[index]);
-                  }}
+                  })}
                   disabled={props.disabled}
                   class="border-0 bg-transparent px-2 py-1 text-right text-xs focus:outline-none disabled:cursor-not-allowed"
                 />

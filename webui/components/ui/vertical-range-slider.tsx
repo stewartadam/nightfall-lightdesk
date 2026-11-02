@@ -16,6 +16,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { withTransientOwner } from "./transient-owner";
 import "./range-slider.css";
 
 export interface VerticalRangeSliderProps {
@@ -105,25 +106,36 @@ export function VerticalRangeSlider(
       handleAttributes: [{ "aria-label": props.ariaLabel ?? "Value" }],
     });
 
-    sliderApi.on("start", () => {
-      isUserInteracting = true;
-      sliderRef?.classList.add("is-dragging");
-      props.onDragStart?.();
-    });
+    // noUiSlider calls these outside any Solid owner, and they read props, so each runs in a
+    // transient one (see withTransientOwner).
+    sliderApi.on(
+      "start",
+      withTransientOwner(() => {
+        isUserInteracting = true;
+        sliderRef?.classList.add("is-dragging");
+        props.onDragStart?.();
+      }),
+    );
 
-    sliderApi.on("end", () => {
-      isUserInteracting = false;
-      sliderRef?.classList.remove("is-dragging");
-      props.onDragEnd?.();
-    });
+    sliderApi.on(
+      "end",
+      withTransientOwner(() => {
+        isUserInteracting = false;
+        sliderRef?.classList.remove("is-dragging");
+        props.onDragEnd?.();
+      }),
+    );
 
     /** Publishes pointer and keyboard edits; initialization and programmatic sets do not emit slide. */
-    sliderApi.on("slide", (_, __, values) => {
-      const newValue = values[0];
-      if (newValue !== props.value) {
-        props.onChange(newValue);
-      }
-    });
+    sliderApi.on(
+      "slide",
+      withTransientOwner((_, __, values) => {
+        const newValue = values[0];
+        if (newValue !== props.value) {
+          props.onChange(newValue);
+        }
+      }),
+    );
 
     /** Mirrors external values without echoing updates or disrupting an active drag. */
     createEffect(() => {
