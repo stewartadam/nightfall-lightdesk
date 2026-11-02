@@ -47,39 +47,65 @@ pub fn gamma_correct(value: f32, gamma: f32) -> f32 {
     value.powf(gamma)
 }
 
+/// Each virtual dimmer parameter in the patch with the color parameters it scales.
+///
+/// The pairing only changes when the patch does, so it is rebuilt from the parameter index
+/// when the index moves to a new revision rather than every frame. Index revisions are unique
+/// across index instances, so a replaced index is never mistaken for the cached one.
+#[derive(Default)]
+pub struct VdimTargets {
+    /// Parameter index revision the pairs were built from.
+    revision: Option<u64>,
+    /// Virtual dimmer parameters, each with the color parameters on its element.
+    pairs: Vec<(Instance<Parameter>, Vec<Instance<Parameter>>)>,
+}
+
+impl VdimTargets {
+    /// Rebuilds the pairs when the patch changed since they were last built.
+    fn refresh(&mut self, data_provider: &FixtureDataProviderExt) {
+        let parameter_index = data_provider.parameter_index();
+        let revision = Some(parameter_index.revision());
+        if self.revision == revision {
+            return;
+        }
+        self.revision = revision;
+        self.pairs = parameter_index
+            .iter()
+            .filter(|(_, location)| location.attribute == Attribute::VirtualIntensity)
+            .map(|(vdim, location)| {
+                let targets = parameter_index
+                    .element_parameters(&location.element)
+                    .iter()
+                    .filter(|(attribute, _)| VDIM_AFFECTED_ATTRIBUTES.contains(attribute))
+                    .map(|(_, parameter)| *parameter)
+                    .collect();
+                (vdim, targets)
+            })
+            .collect();
+    }
+}
+
 /// System that applies virtual dimmer scaling to color channels.
 ///
 /// For each element with a VirtualIntensity parameter, scales all color
-/// channel values by the gamma-corrected vdim level.
+/// channel values by the gamma-corrected vdim level. Only the patched vdim parameters are
+/// visited, so rigs without virtual dimmers pay almost nothing.
 pub fn apply_vdim(
     mut param_query: Query<InstanceMut<Parameter>>,
     data_provider: Res<FixtureDataProviderExt>,
+    mut targets: Local<VdimTargets>,
 ) {
-    // Collect the color parameters to scale first because we'll mutably borrow params later.
-    // Each vdim parameter costs one reverse lookup plus a scan of its element's few parameters.
-    let parameter_index = data_provider.parameter_index();
-    let scaled_parameters: Vec<_> = param_query
-        .iter()
-        .filter(|p| p.metadata.attribute == Attribute::VirtualIntensity)
-        .filter_map(|p| {
-            let location = parameter_index.location(&p.instance())?;
-            let vdim_normalized = (p.values.current_value / p.metadata.max).clamp(0.0, 1.0);
-            let corrected = gamma_correct(vdim_normalized, DEFAULT_GAMMA);
-            Some((&location.element, corrected))
-        })
-        .flat_map(|(element, corrected_vdim)| {
-            parameter_index
-                .element_parameters(element)
-                .iter()
-                .filter(|(attribute, _)| VDIM_AFFECTED_ATTRIBUTES.contains(attribute))
-                .map(move |(_, parameter)| (*parameter, corrected_vdim))
-        })
-        .collect();
-
-    // Apply vdim to color channels on same element
-    for (parameter, corrected_vdim) in scaled_parameters {
-        if let Ok(mut param) = param_query.get_mut(parameter.entity()) {
-            param.values.current_value *= corrected_vdim;
+    targets.refresh(&data_provider);
+    for (vdim, color_parameters) in &targets.pairs {
+        let Ok(vdim) = param_query.get(vdim.entity()) else {
+            continue;
+        };
+        let vdim_normalized = (vdim.values.current_value / vdim.metadata.max).clamp(0.0, 1.0);
+        let corrected_vdim = gamma_correct(vdim_normalized, DEFAULT_GAMMA);
+        for parameter in color_parameters {
+            if let Ok(mut param) = param_query.get_mut(parameter.entity()) {
+                param.values.current_value *= corrected_vdim;
+            }
         }
     }
 }
