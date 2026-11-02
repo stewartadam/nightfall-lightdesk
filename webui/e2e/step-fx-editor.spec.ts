@@ -1462,14 +1462,16 @@ test("Step FX paste follows the last selected row", async ({
   if (await stopPreview.isVisible()) await stopPreview.click();
 });
 
-/** Exercises creation, sheet edits, preview, autosave, close guard, reopen, and deletion. */
-test("Step FX sheet editor completes the first-release authoring workflow", async ({
-  backendSlot,
-  page,
-}, testInfo) => {
-  test.setTimeout(120_000);
+/**
+ * Opens the seeded app, creates a Step FX from the Fx tab, and returns the editor it opens with the
+ * Fx tab. Grants clipboard access so authoring steps can copy and paste rows.
+ */
+async function createStepFxFromFxTab(
+  page: Page,
+  backendPort: number,
+): Promise<{ editor: Locator; fxTab: Locator }> {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await openStepFxEditorApp(page, backendSlot.backendPort);
+  await openStepFxEditorApp(page, backendPort);
 
   const fxTab = page.getByRole("tab", { name: "Fx" });
   await expect(fxTab).toBeVisible();
@@ -1479,6 +1481,22 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
 
   const editor = page.locator("[data-step-fx-editor]");
   await expect(editor).toBeVisible();
+  return { editor, fxTab };
+}
+
+/** Stops the editor's automatic preview so its playback does not outlive the test. */
+async function stopStepFxPreview(editor: Locator): Promise<void> {
+  const stopPreview = editor.getByRole("button", { name: "Stop preview" });
+  if (await stopPreview.isVisible()) await stopPreview.click();
+}
+
+/** Covers the new editor's attribute picker, toolbar layout, table splitter, and timing controls. */
+test("Step FX editor lays out its toolbars, splitter, and timing controls", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const { editor } = await createStepFxFromFxTab(page, backendSlot.backendPort);
   const attributeSearch = editor.getByRole("searchbox", {
     name: "Search attributes",
   });
@@ -1831,6 +1849,23 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     .toBe("Seconds");
   await editor.getByRole("button", { name: "Timing and scaling" }).click();
   await expect(timingMenu).toBeHidden();
+  await stopStepFxPreview(editor);
+});
+
+/** Covers step selection actions, waveform geometry, live preview, start position, and overrides. */
+test("Step FX editor previews steps and edits start positions", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const { editor } = await createStepFxFromFxTab(page, backendSlot.backendPort);
+  const actionToolbar = editor.getByRole("toolbar", {
+    name: "Step edit actions",
+  });
+  const stepToolbar = editor.getByRole("toolbar", { name: "Step bar" });
+  const splitterHandle = editor.getByRole("separator", {
+    name: "Resize Step FX table and waveform",
+  });
   await expect(editor.locator("[data-step-fx-sheet] tbody tr")).toHaveCount(2);
   await expect(
     editor.getByRole("button", { name: "Insert", exact: true }),
@@ -2305,6 +2340,32 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
   await overridesToggle.click();
   await expect(overridesToggle).toHaveAttribute("aria-expanded", "false");
   await expect(overridesContent).toHaveCount(0);
+  await stopStepFxPreview(editor);
+});
+
+/**
+ * Covers waveform segment selection, multi-fixture preview indexes, custom start positions, the
+ * show-all-playheads view, and switching between fixture and waveform scroll modes.
+ */
+test("Step FX editor previews multi-fixture selections", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const { editor } = await createStepFxFromFxTab(page, backendSlot.backendPort);
+  const waveform = editor.getByRole("group", {
+    name: "Step ramp waveform",
+  });
+  const playhead = waveform.locator("[data-step-fx-waveform-playhead]");
+  const startPositionTrigger = editor.getByRole("button", {
+    name: "Start position",
+  });
+  const showAllPlayheads = editor.getByLabel("Show all waveform playheads");
+  await editor.getByRole("button", { name: "Toggle selection mode" }).click();
+  await editor
+    .getByRole("checkbox", { name: "Select step 1", exact: true })
+    .check();
+  await expect.poll(() => stepFxPreviewStatus(page)).toBeTruthy();
   await waveform
     .locator('[data-step-fx-waveform-segment][data-step-index="1"]')
     .click();
@@ -2346,6 +2407,9 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     "Advanced start position expression",
   );
   await expect(advancedStartPosition).toHaveValue("0>360>0");
+  await expect
+    .poll(async () => (await storedStepFx(page))?.phase?.waypoints)
+    .toEqual([0, 1, 0]);
   await expect(startPositionTrigger).toContainText("Custom 0→100→0%");
   await expect(previewIndexes).toHaveText(["10°", "2180°", "3360°", "4180°"]);
   await advancedStartPosition.fill("0>360");
@@ -2441,6 +2505,35 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     waveformPlot.locator("[data-step-fx-waveform-cycle]"),
   ).toHaveCount(1);
   await previewIndexes.nth(0).click();
+  await stopStepFxPreview(editor);
+});
+
+/**
+ * Covers preview ordering for reversed and grouped selections, the preview index input for large
+ * selections, playhead sampling with its warning, and selection warnings for invalid groups.
+ */
+test("Step FX editor samples playheads and warns about invalid selections", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const { editor } = await createStepFxFromFxTab(page, backendSlot.backendPort);
+  const waveform = editor.getByRole("group", {
+    name: "Step ramp waveform",
+  });
+  const waveformPlot = waveform.locator("[data-step-fx-waveform-plot]");
+  const playhead = waveform.locator("[data-step-fx-waveform-playhead]");
+  const playheadLabels = waveform.locator(
+    "[data-step-fx-waveform-playhead-label]",
+  );
+  const selectedPlayhead = waveform.locator(
+    '[data-step-fx-waveform-playhead][data-selected="true"]',
+  );
+  const previewIndexes = editor
+    .getByRole("group", { name: "Waveform preview" })
+    .locator("[data-step-fx-preview-index]");
+  const showAllPlayheads = editor.getByLabel("Show all waveform playheads");
+  await expect.poll(() => stepFxPreviewStatus(page)).toBeTruthy();
 
   await setEditorSelection(page, editor, "Fixture 4>1");
   await expect(previewIndexes.nth(0)).toHaveAttribute(
@@ -2545,6 +2638,36 @@ test("Step FX sheet editor completes the first-release authoring workflow", asyn
     fullPage: true,
   });
   await focusStepFxEditor(page);
+  await stopStepFxPreview(editor);
+});
+
+/**
+ * Covers timing, direction, ramps, relative steps, autosave, the close guard, reopening, and
+ * deletion.
+ */
+test("Step FX sheet editor completes the first-release authoring workflow", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const { editor, fxTab } = await createStepFxFromFxTab(
+    page,
+    backendSlot.backendPort,
+  );
+  const directionGroup = editor.getByRole("radiogroup", {
+    name: "Step FX direction",
+  });
+  const waveform = editor.getByRole("group", {
+    name: "Step ramp waveform",
+  });
+  const playhead = waveform.locator("[data-step-fx-waveform-playhead]");
+  const previewIndexes = editor
+    .getByRole("group", { name: "Waveform preview" })
+    .locator("[data-step-fx-preview-index]");
+  await editor.getByRole("button", { name: "Toggle selection mode" }).click();
+  await editor
+    .getByRole("checkbox", { name: "Select step 1", exact: true })
+    .check();
 
   await setEditorSelection(page, editor, "Fixture 1>4");
   await expect(previewIndexes).toHaveCount(4);
