@@ -173,6 +173,7 @@ impl LayerStackCompositor {
                 parameter_query,
                 release_marker.is_some(),
                 compositing_context.copied().unwrap_or_default(),
+                nightfall_compositor::types::ParameterShard::ALL,
             );
         let same_priority = self
             .previous_priority

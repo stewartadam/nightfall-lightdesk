@@ -11,7 +11,7 @@ use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 
 use crate::stages::transition::SkippedAssertions;
-use crate::types::{AttributedAssertionsLayer, Layer};
+use crate::types::{AttributedAssertionsLayer, Layer, ParameterShard};
 
 /// Merges raw layer data for a materialized object into the attributed assertions layer.
 pub fn merge_layer_with_attribution(
@@ -24,23 +24,27 @@ pub fn merge_layer_with_attribution(
         upper_layer,
         object_ref,
         &SkippedAssertions::default(),
+        ParameterShard::ALL,
     );
 }
 
-/// Merges a layer's assertions into the attributed assertions layer, leaving out the assertions
-/// the layer skipped this frame so attribution matches the effective output.
+/// Merges a layer's assertions on the parameters of `shard` into the attributed assertions
+/// layer, leaving out the assertions the layer skipped this frame so attribution matches the
+/// effective output.
 pub fn merge_layer_with_attribution_skipping(
     assertions: &mut AttributedAssertionsLayer,
     upper_layer: &Layer,
     object_ref: ObjectRef,
     skipped: &SkippedAssertions,
+    shard: ParameterShard,
 ) {
     // Absolute values override one another
     upper_layer
         .absolute
-        .iter()
-        .filter(|(param, _)| !skipped.absolute.contains(param))
-        .for_each(|(param, (value, transition))| {
+        .for_each_in_shard(shard, |param, (value, transition)| {
+            if skipped.absolute.contains(&param) {
+                return;
+            }
             assertions
                 .absolute
                 .insert(param, (object_ref.clone(), (*value, transition.clone())));
@@ -49,9 +53,10 @@ pub fn merge_layer_with_attribution_skipping(
     // Relative values accumulate
     upper_layer
         .relative
-        .iter()
-        .filter(|(param, _)| !skipped.relative.contains(param))
-        .for_each(|(param, (value, transition))| {
+        .for_each_in_shard(shard, |param, (value, transition)| {
+            if skipped.relative.contains(&param) {
+                return;
+            }
             if let Some((_existing_object_ref, (existing_value, _existing_transition))) =
                 assertions.relative.get(param)
             {
@@ -365,6 +370,7 @@ mod tests {
             &upper_layer,
             upper.clone(),
             &skipped,
+            ParameterShard::ALL,
         );
 
         assert_eq!(composited.absolute.get(skipped_param).unwrap().0, lower);

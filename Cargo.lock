@@ -5448,6 +5448,7 @@ dependencies = [
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-workspace-hack",
+ "orx-parallel",
  "rustc-hash 2.1.3",
  "serde",
  "smart-default",

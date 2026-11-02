@@ -138,6 +138,108 @@ impl From<&ParameterRef> for ParameterRef {
     }
 }
 
+/// A contiguous range of parameter entity indices that is composited on its own.
+///
+/// Every compositor stage treats each parameter independently of the others, so compositing each
+/// shard through the whole layer stack and joining the results gives the same values as
+/// compositing every parameter at once. That lets shards run on separate threads.
+///
+/// Shards cover whole sparse pages of a [`ParameterMap`], so a shard visits its own entries
+/// through the map's page index without scanning the entries of other shards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParameterShard {
+    /// First sparse page of the shard.
+    first_page: u32,
+    /// Sparse page after the last page of the shard.
+    end_page: u32,
+    /// Number of shards in the split this shard belongs to, used for capacity hints.
+    count: u32,
+}
+
+impl ParameterShard {
+    /// The single shard that holds every parameter.
+    pub const ALL: Self = Self {
+        first_page: 0,
+        end_page: u32::MAX,
+        count: 1,
+    };
+
+    /// Splits the parameters of `parameters` into at most `count` shards of contiguous pages,
+    /// holding about the same number of parameters each, that together cover every parameter.
+    pub fn split<V>(parameters: &ParameterMap<V>, count: u32) -> Vec<Self> {
+        let count = count.max(1);
+        if count == 1 || parameters.is_empty() {
+            return vec![Self::ALL];
+        }
+        let mut per_page = Vec::<u32>::new();
+        for parameter in parameters.keys() {
+            let page = ParameterMap::<V>::page_of(parameter.any_instance());
+            if per_page.len() <= page {
+                per_page.resize(page + 1, 0);
+            }
+            per_page[page] += 1;
+        }
+        // A shard closes on the page that reaches its share of the parameters. A page never splits,
+        // so a page holding several shares closes only one shard and the split ends up with
+        // fewer, never empty, shards.
+        let total = parameters.len() as u64;
+        let mut shards = Vec::with_capacity(count as usize);
+        let mut first_page = 0;
+        let mut seen = 0u64;
+        for (page, page_count) in per_page.iter().enumerate() {
+            if *page_count == 0 {
+                continue;
+            }
+            seen += u64::from(*page_count);
+            let boundary = total * (shards.len() as u64 + 1) / u64::from(count);
+            if seen >= boundary && seen < total && shards.len() + 1 < count as usize {
+                shards.push(Self {
+                    first_page,
+                    end_page: page as u32 + 1,
+                    count,
+                });
+                first_page = page as u32 + 1;
+            }
+        }
+        shards.push(Self {
+            first_page,
+            end_page: u32::MAX,
+            count,
+        });
+        if shards.len() == 1 {
+            return vec![Self::ALL];
+        }
+        let count = shards.len() as u32;
+        for shard in &mut shards {
+            shard.count = count;
+        }
+        shards
+    }
+
+    /// Returns whether this shard holds every parameter.
+    pub fn is_all(self) -> bool {
+        self.first_page == 0 && self.end_page == u32::MAX
+    }
+
+    /// Returns whether this is the first shard of its split, which reports per-layer warnings on
+    /// behalf of all of them.
+    pub fn is_first(self) -> bool {
+        self.first_page == 0
+    }
+
+    /// Returns roughly how many of `len` parameters fall in this shard, for capacity hints.
+    pub fn share_of(self, len: usize) -> usize {
+        len.div_ceil(self.count as usize)
+    }
+
+    /// Returns whether `parameter` belongs to this shard.
+    #[inline]
+    pub fn contains(self, parameter: ParameterRef) -> bool {
+        let page = ParameterMap::<()>::page_of(parameter.any_instance()) as u32;
+        (self.first_page..self.end_page).contains(&page)
+    }
+}
+
 /// Parameter behavior required by compositor math.
 ///
 /// Implementations live with the component that owns parameter metadata and
@@ -277,6 +379,13 @@ impl<'q, 'w, 's, 'a, P: CompositorParameter> ParameterCompositingContextTable<'q
             contexts,
             parameters,
         }
+    }
+}
+
+impl<P: CompositorParameter> ParameterCompositingContextTable<'_, '_, '_, '_, P> {
+    /// Splits the snapshotted parameters into at most `count` shards of about equal size.
+    pub fn shards(&self, count: u32) -> Vec<ParameterShard> {
+        ParameterShard::split(&self.contexts, count)
     }
 }
 
@@ -423,6 +532,11 @@ impl<V> ParameterMap<V> {
     /// Whether the map has no parameter entries.
     pub fn is_empty(&self) -> bool {
         self.dense.is_empty()
+    }
+
+    /// Returns the sparse page that holds an instance's entity index.
+    fn page_of(instance: Instance<Any>) -> usize {
+        Self::page_position(instance).0
     }
 
     /// Split an instance's entity index into its sparse page and the offset within that page.
@@ -592,6 +706,52 @@ impl<V> ParameterMap<V> {
             .map(|(instance, value)| (ParameterRef::from_any_instance(*instance), value))
     }
 
+    /// Calls `f` with each parameter-value pair of the parameters in `shard`.
+    ///
+    /// The whole map is visited in insertion order. A narrower shard walks the sparse pages it
+    /// covers, in entity index order, so it never visits other shards' entries. Visiting through
+    /// a callback keeps both walks as tight as a plain loop over the entries.
+    #[inline]
+    pub fn for_each_in_shard(&self, shard: ParameterShard, mut f: impl FnMut(ParameterRef, &V)) {
+        if shard.is_all() {
+            for (instance, value) in &self.dense {
+                f(ParameterRef::from_any_instance(*instance), value);
+            }
+            return;
+        }
+        let mut visit = |slot: u32| {
+            let (instance, value) = &self.dense[slot as usize];
+            f(ParameterRef::from_any_instance(*instance), value);
+        };
+        let end = (shard.end_page as usize).min(self.sparse.len());
+        let first = (shard.first_page as usize).min(end);
+        for page in self.sparse[first..end].iter().flatten() {
+            for slot in page.iter().copied() {
+                if slot != EMPTY_PARAMETER_SLOT {
+                    visit(slot);
+                }
+            }
+        }
+        for (instance, slot) in &self.overflow {
+            if shard.contains(ParameterRef::from_any_instance(*instance)) {
+                visit(*slot);
+            }
+        }
+    }
+
+    /// Returns a copy of the entries for the parameters in `shard`, so state composited over the
+    /// whole map can be handed to a pass that works on one shard.
+    pub fn restricted_to(&self, shard: ParameterShard) -> Self
+    where
+        V: Clone,
+    {
+        let mut restricted = Self::with_capacity(shard.share_of(self.len()));
+        self.for_each_in_shard(shard, |parameter, value| {
+            restricted.insert(parameter, value.clone());
+        });
+        restricted
+    }
+
     /// Iterate over mutable parameter-value pairs.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (ParameterRef, &mut V)> + '_ {
         self.dense
@@ -705,6 +865,12 @@ impl ComputedLayer {
         all_params.into_iter()
     }
 
+    /// Moves every value of `other`, which holds a disjoint set of parameters, into this layer.
+    pub fn absorb(&mut self, other: Self) {
+        self.absolute.extend_map(other.absolute);
+        self.relative.extend_map(other.relative);
+    }
+
     /// Convert to effective values (absolute + relative)
     pub fn to_effective(&self) -> Self {
         let mut effective = self.clone();
@@ -747,6 +913,13 @@ impl AttributedAssertionsLayer {
             absolute: ParameterMap::with_capacity(absolute_capacity),
             relative: ParameterMap::with_capacity(relative_capacity),
         }
+    }
+
+    /// Moves every assertion of `other`, which holds a disjoint set of parameters, into this
+    /// layer.
+    pub fn absorb(&mut self, other: Self) {
+        self.absolute.extend_map(other.absolute);
+        self.relative.extend_map(other.relative);
     }
 }
 
@@ -927,6 +1100,44 @@ mod parameter_map_tests {
 
         assert_eq!(forward, backward);
         assert_ne!(forward, different);
+    }
+
+    /// Builds a map over `count` freshly spawned parameters, which fill sparse pages in order.
+    fn spawned_parameter_map(world: &mut World, count: usize) -> ParameterMap<()> {
+        (0..count)
+            .map(|_| (ParameterRef::from_entity(world.spawn_empty().id()), ()))
+            .collect_map()
+    }
+
+    /// A split covers every parameter exactly once, never yields an empty shard, and falls back
+    /// to the whole map when the parameters fit on fewer pages than requested shards.
+    #[test]
+    fn split_covers_every_parameter_without_empty_shards() {
+        let mut world = World::new();
+        let one_page = spawned_parameter_map(&mut world, 200);
+        assert_eq!(
+            ParameterShard::split(&one_page, 8),
+            vec![ParameterShard::ALL]
+        );
+
+        let mut world = World::new();
+        let parameters = spawned_parameter_map(&mut world, 1_000);
+        for count in [2, 3, 4, 8] {
+            let shards = ParameterShard::split(&parameters, count);
+            assert!(shards.len() > 1 && shards.len() <= count as usize);
+            let mut covered = 0;
+            for shard in &shards {
+                let mut in_shard = 0;
+                parameters.for_each_in_shard(*shard, |parameter, ()| {
+                    assert!(shard.contains(parameter));
+                    in_shard += 1;
+                });
+                assert!(in_shard > 0, "{shard:?} of {count} is empty");
+                assert_eq!(parameters.restricted_to(*shard).len(), in_shard);
+                covered += in_shard;
+            }
+            assert_eq!(covered, parameters.len());
+        }
     }
 
     /// Collects parameter-value pairs into a parameter map for tests.

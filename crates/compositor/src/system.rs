@@ -11,6 +11,8 @@ use std::{ops::Range, time::Duration};
 
 use bevy_ecs::{change_detection::Tick, entity::EntityHashMap, prelude::*, system::SystemParam};
 use moonshine_kind::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use orx_parallel::*;
 
 use crate::{
     pipeline::{CompositeStep, CompositedPrefix, CompositorPipeline, SettledRunTable},
@@ -75,6 +77,9 @@ pub struct CompositorRunState {
     settle_facts: EntityHashMap<(Tick, LayerSettleFacts)>,
     /// Tables of the runs of settled layers above the settled prefix on the last pass.
     settled_runs: Vec<SettledRun>,
+    /// Shard count requested on the last pass and the parameter shards it was split into, kept
+    /// until the parameter set changes.
+    shard_layout: Option<(u32, Vec<ParameterShard>)>,
 }
 
 /// Facts about a layer's assertions that decide when and how it can be cached once settled.
@@ -98,8 +103,10 @@ struct SettledRun {
 struct SettledPrefix {
     /// Identity and change ticks of each layer in the prefix, bottom first.
     layers: Vec<SettledPrefixLayer>,
-    /// Composite after the last layer of the prefix.
-    composited: CompositedPrefix,
+    /// Parameter shards the prefix was composited in.
+    shards: Vec<ParameterShard>,
+    /// Composite after the last layer of the prefix, one per entry of `shards`.
+    composited: Vec<CompositedPrefix>,
 }
 
 /// Identity and change ticks of one layer in a [`SettledPrefix`].
@@ -143,6 +150,134 @@ fn settled_run_ranges(tabulable: &[bool], settled_prefix_len: usize) -> Vec<Rang
         index += run_len.max(1);
     }
     ranges
+}
+
+/// Fewest layer assertions composited in one pass for which the pass is split across threads.
+///
+/// Waking the worker threads and joining their results costs more than compositing a small pass
+/// on one thread. In the compositor benchmarks a pass of about 32k assertions is still faster on
+/// one thread, and one of about 50k is faster split.
+#[cfg(not(target_arch = "wasm32"))]
+const MIN_PARALLEL_ASSERTIONS: usize = 40_000;
+
+/// Most parameter shards a pass is split into, however many cores the machine has.
+#[cfg(not(target_arch = "wasm32"))]
+const MAX_PARAMETER_SHARDS: usize = 8;
+
+#[cfg(test)]
+thread_local! {
+    /// Core count that replaces the machine's in tests on this thread, so tests can exercise
+    /// sharded passes on any runner.
+    static TEST_CORE_COUNT: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+}
+
+/// Returns how many parameter shards to composite a pass weighing `assertion_count` assertions in:
+/// one per available core for large passes, and one for small passes and on wasm.
+///
+/// A pass that follows a sharded one stays sharded down to three quarters of the threshold, so a stack whose
+/// work hovers around the threshold does not regroup its settled prefix every frame.
+fn parameter_shard_count(assertion_count: usize, was_sharded: bool) -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (assertion_count, was_sharded);
+        1
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        static AVAILABLE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+        let threshold = if was_sharded {
+            MIN_PARALLEL_ASSERTIONS / 4 * 3
+        } else {
+            MIN_PARALLEL_ASSERTIONS
+        };
+        if assertion_count < threshold {
+            return 1;
+        }
+        #[cfg(test)]
+        if let Some(cores) = TEST_CORE_COUNT.with(std::cell::Cell::get) {
+            return cores;
+        }
+        *AVAILABLE.get_or_init(|| {
+            std::thread::available_parallelism()
+                .map_or(1, |cores| cores.get().min(MAX_PARAMETER_SHARDS)) as u32
+        })
+    }
+}
+
+/// Output of compositing one parameter shard: the merged values, the attributed assertions, each
+/// layer's output layer, and the optional settled-prefix snapshot.
+type ShardComposite = (
+    ComputedLayer,
+    AttributedAssertionsLayer,
+    Vec<(Entity, ComputedLayer)>,
+    Option<CompositedPrefix>,
+);
+
+/// Joined composite of every parameter shard, keeping one settled-prefix snapshot per shard.
+type JoinedComposite = (
+    ComputedLayer,
+    AttributedAssertionsLayer,
+    Vec<(Entity, ComputedLayer)>,
+    Option<Vec<CompositedPrefix>>,
+);
+
+/// Joins the composites of disjoint parameter shards, in shard order, into one composite.
+///
+/// Every shard composites the same steps, so their output layers line up layer by layer, and
+/// every shard takes a snapshot or none does. Output layers are independent of each other, so
+/// with several shards they are joined in parallel.
+fn join_shards(shards: Vec<ShardComposite>) -> JoinedComposite {
+    let shard_count = shards.len();
+    if shard_count == 1 {
+        let (base, attributed, output_layers, snapshot) =
+            shards.into_iter().next().expect("one shard");
+        return (
+            base,
+            attributed,
+            output_layers,
+            snapshot.map(|snapshot| vec![snapshot]),
+        );
+    }
+    let mut base = ComputedLayer::default();
+    let mut attributed = AttributedAssertionsLayer::default();
+    let mut layer_parts: Vec<Vec<(Entity, ComputedLayer)>> = Vec::new();
+    let mut snapshots = Vec::with_capacity(shard_count);
+    for (shard_base, shard_attributed, shard_output_layers, shard_snapshot) in shards {
+        if snapshots.is_empty() {
+            base = shard_base;
+            attributed = shard_attributed;
+            layer_parts = shard_output_layers
+                .into_iter()
+                .map(|part| {
+                    let mut parts = Vec::with_capacity(shard_count);
+                    parts.push(part);
+                    parts
+                })
+                .collect();
+        } else {
+            base.absorb(shard_base);
+            attributed.absorb(shard_attributed);
+            for (parts, part) in layer_parts.iter_mut().zip(shard_output_layers) {
+                parts.push(part);
+            }
+        }
+        snapshots.push(shard_snapshot);
+    }
+
+    let join_layer = |parts: Vec<(Entity, ComputedLayer)>| {
+        let mut parts = parts.into_iter();
+        let (entity, mut output_layer) = parts.next().expect("every shard has every layer");
+        for (_, part) in parts {
+            output_layer.absorb(part);
+        }
+        (entity, output_layer)
+    };
+    #[cfg(target_arch = "wasm32")]
+    let output_layers = layer_parts.into_iter().map(join_layer).collect();
+    #[cfg(not(target_arch = "wasm32"))]
+    let output_layers = layer_parts.into_par().map(join_layer).collect();
+    let snapshots = snapshots.into_iter().collect::<Option<Vec<_>>>();
+    (base, attributed, output_layers, snapshots)
 }
 
 /// System that builds the layer stack and composites all layers into a single absolute layer.
@@ -257,17 +392,39 @@ pub fn compositor<P: CompositorParameter>(
         })
         .unzip();
     let settled_prefix_len = settled.iter().take_while(|settled| **settled).count();
-    let (reused_len, prefix) = match run_state.settled_prefix.take() {
-        Some(cached)
-            if !parameter_set_changed
-                && cached.layers.len() <= settled_prefix_len
-                && cached.layers[..] == layer_keys[..cached.layers.len()] =>
-        {
-            (cached.layers.len(), cached.composited)
-        }
-        _ => (0, CompositedPrefix::default()),
+    let cached_prefix = run_state.settled_prefix.take().filter(|cached| {
+        !parameter_set_changed
+            && cached.layers.len() <= settled_prefix_len
+            && cached.layers[..] == layer_keys[..cached.layers.len()]
+    });
+    let settled_run_ranges = settled_run_ranges(&tabulable, settled_prefix_len);
+    // Only the layers above a reusable prefix are composited this pass, so they decide whether
+    // the pass is large enough to split across threads. A settled run applies one precomputed op
+    // per parameter, so it weighs as much as its largest layer rather than all of its layers.
+    let layer_assertions = |index: usize| {
+        let layer = &layer_stack[index].2;
+        layer.absolute.len() + layer.relative.len()
     };
-    let snapshot_after = (settled_prefix_len > 0).then(|| settled_prefix_len - reused_len);
+    // A cached prefix is always resumed from, regrouped first if the shard layout changes.
+    let reused_len = cached_prefix
+        .as_ref()
+        .map_or(0, |cached| cached.layers.len());
+    let layer_work: usize = (reused_len..layer_count)
+        .filter(|index| !settled_run_ranges.iter().any(|run| run.contains(index)))
+        .map(layer_assertions)
+        .sum();
+    let run_work: usize = settled_run_ranges
+        .iter()
+        .map(|run| run.clone().map(layer_assertions).max().unwrap_or(0))
+        .sum();
+    if parameter_set_changed {
+        run_state.shard_layout = None;
+    }
+    let was_sharded = run_state
+        .shard_layout
+        .as_ref()
+        .is_some_and(|(_, shards)| shards.len() > 1);
+    let shard_count = parameter_shard_count(layer_work + run_work, was_sharded);
     let pipeline_layers: Vec<_> = layer_stack
         .into_iter()
         .map(
@@ -283,7 +440,6 @@ pub fn compositor<P: CompositorParameter>(
             },
         )
         .collect();
-    let settled_run_ranges = settled_run_ranges(&tabulable, settled_prefix_len);
     let mut previous_runs = std::mem::take(&mut run_state.settled_runs);
     if parameter_set_changed {
         previous_runs.clear();
@@ -292,8 +448,21 @@ pub fn compositor<P: CompositorParameter>(
 
     // Every layer reads the same parameters, so snapshot their compositing contexts once instead of
     // fetching each parameter component once per layer.
-    let (base_layer, attributed_assertions_layer, output_layers, snapshot, settled_runs) = {
+    let (base_layer, attributed_assertions_layer, output_layers, shards, snapshot, settled_runs) = {
         let parameter_contexts = ParameterCompositingContextTable::new(&param_query);
+        let shards = match run_state.shard_layout.take() {
+            Some((count, shards)) if count == shard_count => shards,
+            _ => parameter_contexts.shards(shard_count),
+        };
+        run_state.shard_layout = Some((shard_count, shards.clone()));
+        // A cached prefix holds one composite per shard; regroup it when the shard layout changed
+        // instead of compositing the prefix again.
+        let prefixes = match cached_prefix {
+            Some(cached) if cached.shards == shards => cached.composited,
+            Some(cached) => CompositedPrefix::reshard(cached.composited, &shards),
+            None => shards.iter().map(|_| CompositedPrefix::default()).collect(),
+        };
+        let snapshot_after = (settled_prefix_len > 0).then(|| settled_prefix_len - reused_len);
         let mut output_layers = Vec::new();
         let settled_runs: Vec<SettledRun> = settled_run_ranges
             .iter()
@@ -343,18 +512,45 @@ pub fn compositor<P: CompositorParameter>(
             }
         }
 
-        let (base, attributed, composed_output_layers, snapshot) =
+        // Shards composited on worker threads trace under this pass's span, as on this thread.
+        let pass_span = tracing::Span::current();
+        let compose = |(shard, prefix): (ParameterShard, CompositedPrefix)| {
+            let _pass_span = pass_span.enter();
             CompositorPipeline::compose_resuming(
                 prefix,
-                steps,
+                &steps,
                 snapshot_after,
                 &parameter_contexts,
-            );
+                shard,
+            )
+        };
+        let shard_inputs = shards.iter().copied().zip(prefixes);
+        #[cfg(target_arch = "wasm32")]
+        let composed: Vec<_> = shard_inputs.map(compose).collect();
+        #[cfg(not(target_arch = "wasm32"))]
+        let composed: Vec<_> = if shards.len() > 1 {
+            shard_inputs
+                .collect::<Vec<_>>()
+                .into_par()
+                .map(compose)
+                .collect()
+        } else {
+            shard_inputs.map(compose).collect()
+        };
+        let (base, attributed, composed_output_layers, snapshot) = join_shards(composed);
         output_layers.extend(composed_output_layers);
-        (base, attributed, output_layers, snapshot, settled_runs)
+        (
+            base,
+            attributed,
+            output_layers,
+            shards,
+            snapshot,
+            settled_runs,
+        )
     };
     run_state.settled_prefix = snapshot.map(|composited| SettledPrefix {
         layers: layer_keys[..settled_prefix_len].to_vec(),
+        shards,
         composited,
     });
     run_state.settled_runs = settled_runs;
@@ -629,5 +825,275 @@ mod tests {
                 .get(parameters[2]),
             Some(&250.0)
         );
+    }
+
+    /// Spawns `count` parameters that alternate between LTP and HTP merging. Several hundred
+    /// parameters span several sparse pages, so they can be split into several shards.
+    fn spawn_parameters(world: &mut World, count: usize) -> Vec<Instance<TestParameter>> {
+        (0..count)
+            .map(|index| {
+                let merge_mode = if index % 2 == 0 {
+                    TestMergeMode::Ltp
+                } else {
+                    TestMergeMode::Htp
+                };
+                let entity = world
+                    .spawn(TestParameter::new(merge_mode, Attribute::Red))
+                    .id();
+                unsafe { Instance::<TestParameter>::from_entity_unchecked(entity) }
+            })
+            .collect()
+    }
+
+    /// Builds a layer of `priority` asserting `value` with a one-second fade on the parameters
+    /// `include` picks, as absolute values or as relative offsets.
+    fn test_layer(
+        parameters: &[Instance<TestParameter>],
+        priority: i8,
+        value: f32,
+        relative: bool,
+        include: impl Fn(usize) -> bool,
+    ) -> Layer {
+        let mut layer = Layer::new(format!("layer {priority}"), Priority(priority));
+        for (index, parameter) in parameters.iter().enumerate() {
+            if !include(index) {
+                continue;
+            }
+            if relative {
+                layer.relative.insert(
+                    *parameter,
+                    (
+                        ParameterValue::Relative { offset: value },
+                        Some(one_second_fade()),
+                    ),
+                );
+            } else {
+                layer.absolute.insert(
+                    *parameter,
+                    (ParameterValue::Absolute { value }, Some(one_second_fade())),
+                );
+            }
+        }
+        layer
+    }
+
+    /// Compositing each parameter shard on its own and joining the results gives the same
+    /// composite, attribution, output layers and settled-prefix snapshot as compositing every
+    /// parameter at once, across a fading layer, a settled run with same-priority merges,
+    /// relative offsets and a releasing layer.
+    #[test]
+    fn sharded_composite_matches_whole_composite() {
+        let mut world = World::new();
+        let parameters = spawn_parameters(&mut world, 700);
+        let fading = test_layer(&parameters, 0, 100.0, false, |_| true);
+        let settled_even = test_layer(&parameters, 1, 150.0, false, |index| index % 2 == 0);
+        let settled_odd = test_layer(&parameters, 1, 90.0, false, |index| index % 3 != 0);
+        let relative = test_layer(&parameters, 2, 10.0, true, |index| index % 3 == 0);
+        let mut releasing = test_layer(&parameters, 3, 30.0, false, |index| index % 5 != 0);
+        for (_, (_, transition)) in releasing.absolute.iter_mut() {
+            if let Some(transition) = transition {
+                transition.release_position = Some(Duration::from_millis(200));
+            }
+        }
+        let context = |position_ms: u64| LayerCompositingContext {
+            position: Duration::from_millis(position_ms),
+            released_at: None,
+        };
+        let releasing_context = LayerCompositingContext {
+            position: Duration::from_millis(400),
+            released_at: Some(Duration::from_millis(200)),
+        };
+        let object_ref = |id: u32| ObjectRef::ById {
+            object_type: ObjectType::Cue,
+            id,
+        };
+        let entities: Vec<_> = (0..5).map(|_| world.spawn_empty().id()).collect();
+
+        let mut parameter_state = world.query::<InstanceMut<TestParameter>>();
+        let parameter_query = parameter_state.query_mut(&mut world);
+        let parameter_contexts = ParameterCompositingContextTable::new(&parameter_query);
+        let (run_table, _) = SettledRunTable::build(
+            [
+                (entities[1], object_ref(2), &settled_even, context(5_000)),
+                (entities[2], object_ref(3), &settled_odd, context(5_000)),
+            ],
+            Some(Priority(0)),
+            &parameter_contexts,
+        );
+        let steps = [
+            CompositeStep::Layer((
+                entities[0],
+                object_ref(1),
+                &fading,
+                false,
+                Some(context(250)),
+            )),
+            CompositeStep::SettledRun(&run_table),
+            CompositeStep::Layer((
+                entities[3],
+                object_ref(4),
+                &relative,
+                false,
+                Some(context(500)),
+            )),
+            CompositeStep::Layer((
+                entities[4],
+                object_ref(5),
+                &releasing,
+                true,
+                Some(releasing_context),
+            )),
+        ];
+        let compose = |shard| {
+            CompositorPipeline::compose_resuming(
+                CompositedPrefix::default(),
+                &steps,
+                Some(2),
+                &parameter_contexts,
+                shard,
+            )
+        };
+
+        let shards = parameter_contexts.shards(3);
+        assert_eq!(shards.len(), 3, "700 parameters span three sparse pages");
+        let (whole_base, whole_attributed, whole_output_layers, whole_snapshot) =
+            join_shards(vec![compose(ParameterShard::ALL)]);
+        let (base, attributed, output_layers, snapshot) =
+            join_shards(shards.iter().copied().map(compose).collect());
+
+        assert_eq!(base, whole_base);
+        assert_eq!(attributed, whole_attributed);
+        assert_eq!(output_layers, whole_output_layers);
+        let joined_snapshot = CompositedPrefix::reshard(
+            snapshot.expect("every shard snapshots"),
+            &[ParameterShard::ALL],
+        );
+        let whole_snapshot = whole_snapshot.expect("whole composite snapshots");
+        assert_eq!(joined_snapshot[0].base, whole_snapshot[0].base);
+        assert_eq!(joined_snapshot[0].attributed, whole_snapshot[0].attributed);
+        assert_eq!(
+            joined_snapshot[0].prev_priority,
+            whole_snapshot[0].prev_priority
+        );
+    }
+
+    /// Regrouping a settled prefix composited in one shard into several shards and back gives
+    /// each shard exactly its own parameters, and joins back into the original prefix.
+    #[test]
+    fn reshard_round_trips_prefix() {
+        let mut world = World::new();
+        let parameters = spawn_parameters(&mut world, 700);
+        let layer = test_layer(&parameters, 1, 120.0, false, |_| true);
+        let entity = world.spawn_empty().id();
+        let mut parameter_state = world.query::<InstanceMut<TestParameter>>();
+        let parameter_query = parameter_state.query_mut(&mut world);
+        let parameter_contexts = ParameterCompositingContextTable::new(&parameter_query);
+        let steps = [CompositeStep::Layer((
+            entity,
+            ObjectRef::ById {
+                object_type: ObjectType::Cue,
+                id: 1,
+            },
+            &layer,
+            false,
+            Some(LayerCompositingContext {
+                position: Duration::from_secs(5),
+                released_at: None,
+            }),
+        ))];
+        let (_, _, _, whole) = CompositorPipeline::compose_resuming(
+            CompositedPrefix::default(),
+            &steps,
+            Some(1),
+            &parameter_contexts,
+            ParameterShard::ALL,
+        );
+        let whole = whole.expect("snapshot after the only step");
+        let shards = parameter_contexts.shards(3);
+
+        let split = CompositedPrefix::reshard(vec![whole.clone()], &shards);
+        assert_eq!(split.len(), shards.len());
+        for (shard, prefix) in shards.iter().zip(&split) {
+            prefix
+                .base
+                .absolute
+                .for_each_in_shard(ParameterShard::ALL, |parameter, _| {
+                    assert!(
+                        shard.contains(parameter),
+                        "{parameter:?} is outside its shard"
+                    );
+                });
+            assert_eq!(prefix.prev_priority, whole.prev_priority);
+        }
+        let joined = CompositedPrefix::reshard(split, &[ParameterShard::ALL]);
+        assert_eq!(joined[0].base, whole.base);
+        assert_eq!(joined[0].attributed, whole.attributed);
+    }
+
+    /// The compositor output stays identical to a from-scratch composite while passes switch
+    /// between several shards and one, so a settled prefix is regrouped in both directions.
+    #[test]
+    fn shard_layout_changes_keep_output_identical() {
+        let mut world = World::new();
+        world.init_resource::<FinalLayerAttributedAssertions>();
+        world.init_resource::<FinalLayerOutput>();
+        init_removal_tracking(&mut world);
+        TEST_CORE_COUNT.with(|cores| cores.set(Some(4)));
+        let parameters = spawn_parameters(&mut world, 2048);
+        // Twenty fading layers over 2,048 parameters exceed the parallel threshold.
+        let lower: Vec<_> = (0..20)
+            .map(|index| {
+                spawn_fading_layer(
+                    &mut world,
+                    &parameters,
+                    index / 4,
+                    10.0 + f32::from(index),
+                    Duration::from_millis(100),
+                )
+            })
+            .collect();
+        let top = spawn_fading_layer(&mut world, &parameters, 6, 200.0, Duration::ZERO);
+        // The compositor must run on this thread to see the test's core count.
+        let mut schedule = Schedule::default();
+        schedule.set_executor(bevy_ecs::schedule::SingleThreadedExecutor::new());
+        schedule.add_systems(compositor::<TestParameter>);
+        let advance_top = |world: &mut World, position_ms: u64| {
+            world
+                .get_mut::<LayerCompositingContext>(top)
+                .expect("top layer context")
+                .position = Duration::from_millis(position_ms);
+        };
+
+        // Large pass, then the lower layers settle: the first settled pass is still large and
+        // snapshots its prefix per shard, and the next composites only the top layer.
+        schedule.run(&mut world);
+        assert_matches_from_scratch(&mut world);
+        for layer in &lower {
+            world
+                .get_mut::<LayerCompositingContext>(*layer)
+                .expect("lower layer context")
+                .position = Duration::from_secs(5);
+        }
+        for position_ms in [200, 300, 400] {
+            advance_top(&mut world, position_ms);
+            schedule.run(&mut world);
+            assert_matches_from_scratch(&mut world);
+        }
+
+        // Many fading layers above the settled prefix make the pass large again.
+        for index in 0..20_i16 {
+            spawn_fading_layer(
+                &mut world,
+                &parameters,
+                7,
+                50.0 + f32::from(index),
+                Duration::from_millis(100),
+            );
+        }
+        for position_ms in [500, 600] {
+            advance_top(&mut world, position_ms);
+            schedule.run(&mut world);
+            assert_matches_from_scratch(&mut world);
+        }
     }
 }
