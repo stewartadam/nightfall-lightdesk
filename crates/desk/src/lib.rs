@@ -40,7 +40,6 @@ use crate::{
 
 pub mod ast_conv;
 pub mod automation_actions;
-pub mod blueprint_command;
 mod clips;
 pub mod desk_command;
 pub mod faders;
@@ -48,12 +47,10 @@ pub mod group_command;
 pub mod instances;
 pub mod launch_quantize;
 pub mod masters;
-pub mod object_crud;
 mod panel_layouts;
 pub mod resources;
 pub mod settings;
 pub mod systems;
-pub mod ui_notification;
 pub mod undo;
 pub mod websocket;
 
@@ -89,9 +86,6 @@ pub mod prelude {
     pub use crate::systems::vdim::{
         DEFAULT_GAMMA, VDIM_AFFECTED_ATTRIBUTES, apply_vdim, gamma_correct,
     };
-    pub use crate::ui_notification::{
-        ToastAction, ToastLevel, UiNotification, UiNotificationState,
-    };
 }
 
 /// Plugin for adding desk functionality to the app
@@ -119,8 +113,7 @@ impl Plugin for DeskPlugin {
 
         automation_actions::register_desk_actions(app);
 
-        register_ingress_command::<DeskCommand>(app);
-        register_engine_operation::<EvalOperation>(app);
+        register_client_command::<DeskCommand>(app, Undo::Skipped);
         register_client_command::<ClipCommand>(app, Undo::Captured);
         register_engine_operation::<ClipOperation>(app);
         register_client_command::<GroupCommand>(app, Undo::Captured);
@@ -134,13 +127,12 @@ impl Plugin for DeskPlugin {
         app.init_resource::<GroupReferenceIndex>();
         app.init_resource::<websocket::LayerStackPublication>();
         app.add_message::<OperationResult<(), CommandError>>();
-        app.add_message::<UiNotification>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
         app.add_systems(
             PostUpdate,
             event_handlers::forward_io_runtime_notifications
                 .in_set(ClientFeedback)
-                .before(websocket::forward_ui_notifications),
+                .before(nightfall_engine::ui_notification::forward_ui_notifications),
         );
         register_client_command::<SettingsCommand>(app, Undo::Skipped);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
@@ -155,7 +147,6 @@ impl Plugin for DeskPlugin {
         #[cfg(feature = "fx-module-host")]
         app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();
 
-        register_command_deserializer::<DeskCommand>(app, websocket::deserialize_desk_command);
         register_update_deserializer(app, "FaderUpdate", websocket::deserialize_fader_update);
         register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
 
@@ -178,9 +169,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<Faders>();
         app.init_resource::<HeldButtonEffects>();
         app.init_resource::<NetworkInterfaceState>();
-        app.init_resource::<UiNotificationState>();
         app.init_resource::<FramePaceStats>();
-        app.init_resource::<DelayedCommandQueue>();
         app.insert_resource(self.log_config.clone());
         websocket::register_websocket_performance_diagnostics(app);
 
@@ -197,20 +186,6 @@ impl Plugin for DeskPlugin {
         // Register event dispatchers for undo helper commands
         register_engine_operation::<RestoreClipSource>(app);
 
-        // Process scheduled commands before the undo system processes pending commands
-        // This ensures commands that have reached their scheduled time are moved to
-        // PendingCommandBuffer before undo processing
-        app.add_systems(
-            Update,
-            systems::scheduled_commands::process_scheduled_commands.in_set(PendingCommandExpansion),
-        );
-        app.add_systems(
-            Update,
-            systems::event_handlers::desk_events::expand_pending_eval_commands
-                .after(systems::scheduled_commands::process_scheduled_commands)
-                .in_set(DeskEventSet::EvalExpansion)
-                .in_set(PendingCommandExpansion),
-        );
         app.add_message::<ClientDisconnected>();
         app.add_systems(
             Update,
@@ -219,7 +194,7 @@ impl Plugin for DeskPlugin {
                 faders::end_released_flashes,
             )
                 .chain()
-                .after(systems::event_handlers::desk_events::expand_pending_eval_commands)
+                .after(DeskEventSet::EvalExpansion)
                 .in_set(PendingCommandExpansion),
         );
 
@@ -261,7 +236,7 @@ impl Plugin for DeskPlugin {
                 event_handlers::clip_events::handle_restore_clip_source,
                 event_handlers::fixture_events::crud_events,
                 event_handlers::group_events::crud_events,
-                event_handlers::group_events::action_events,
+                event_handlers::group_events::action_events.in_set(DeskEventSet::GroupActions),
                 event_handlers::blueprint_events::crud_events.in_set(DeskEventSet::BlueprintCrud),
                 event_handlers::blueprint_events::action_events
                     .in_set(DeskEventSet::BlueprintActions),
@@ -276,7 +251,6 @@ impl Plugin for DeskPlugin {
                 faders::handle_fader_updates,
                 #[cfg(feature = "fx-module-host")]
                 event_handlers::forward_fx_module_runtime_notifications,
-                event_handlers::desk_events::handle_eval,
                 systems::stale_inputs::clear_stale_input_channels,
             )
                 .in_set(EventHandling),
@@ -391,7 +365,6 @@ impl Plugin for DeskPlugin {
                 websocket::forward_clip_commands,
                 websocket::forward_blueprint_commands,
                 websocket::forward_desk_commands,
-                websocket::forward_ui_notifications,
                 // These read removals, which only last two updates.
                 websocket::send_clips_on_change,
                 websocket::send_instances_on_change,
@@ -425,7 +398,9 @@ impl Plugin for DeskPlugin {
                 websocket::handle_resync_state,
                 websocket::send_armed_launches_on_resync,
             )
-                .in_set(ResyncHandling),
+                .in_set(ResyncHandling)
+                // The showfile identity follows the desk snapshot it describes.
+                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
         );
     }
 }

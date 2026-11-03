@@ -278,7 +278,7 @@ fn decode_command_result_value(value: &serde_json::Value) -> Option<(Uuid, Resul
     Some((command_id, result))
 }
 
-/// Create a DeskCommand::Eval JSON envelope for the given command string.
+/// Create an EngineCommand::Eval JSON envelope for the given command string.
 ///
 /// The server will parse the command string and dispatch it to the appropriate module
 /// (Programmer, Cues, Timecode, etc.) based on the AST.
@@ -290,7 +290,7 @@ fn create_eval_command_json(
     let envelope = json!({
         "command_id": command_id.to_string(),
         "undo_id": undo_id.to_string(),
-        "module": "DeskCommand",
+        "module": "EngineCommand",
         "command": {
             "type": "Eval",
             "data": command_str

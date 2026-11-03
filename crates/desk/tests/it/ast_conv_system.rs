@@ -173,11 +173,11 @@ fn test_sleep_seconds_conversion() {
     let commands = DeskAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<DeskCommand>();
-    assert!(cmd.is_some(), "Command is not a DeskCommand");
+    let cmd = commands[0].as_any().downcast_ref::<EngineCommand>();
+    assert!(cmd.is_some(), "Command is not an EngineCommand");
 
     match cmd.unwrap() {
-        DeskCommand::Sleep(duration) => {
+        EngineCommand::Sleep(duration) => {
             assert_eq!(
                 *duration,
                 Duration::from_secs(5),
@@ -195,11 +195,11 @@ fn test_sleep_milliseconds_conversion() {
     let commands = DeskAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<DeskCommand>();
-    assert!(cmd.is_some(), "Command is not a DeskCommand");
+    let cmd = commands[0].as_any().downcast_ref::<EngineCommand>();
+    assert!(cmd.is_some(), "Command is not an EngineCommand");
 
     match cmd.unwrap() {
-        DeskCommand::Sleep(duration) => {
+        EngineCommand::Sleep(duration) => {
             assert_eq!(
                 *duration,
                 Duration::from_millis(1500),
@@ -217,11 +217,11 @@ fn test_sleep_bpm_conversion() {
     let commands = DeskAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<DeskCommand>();
-    assert!(cmd.is_some(), "Command is not a DeskCommand");
+    let cmd = commands[0].as_any().downcast_ref::<EngineCommand>();
+    assert!(cmd.is_some(), "Command is not an EngineCommand");
 
     match cmd.unwrap() {
-        DeskCommand::Sleep(duration) => {
+        EngineCommand::Sleep(duration) => {
             assert_eq!(
                 *duration,
                 Duration::from_secs(1),
@@ -239,11 +239,11 @@ fn test_sleep_hz_conversion() {
     let commands = DeskAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<DeskCommand>();
-    assert!(cmd.is_some(), "Command is not a DeskCommand");
+    let cmd = commands[0].as_any().downcast_ref::<EngineCommand>();
+    assert!(cmd.is_some(), "Command is not an EngineCommand");
 
     match cmd.unwrap() {
-        DeskCommand::Sleep(duration) => {
+        EngineCommand::Sleep(duration) => {
             assert_eq!(
                 *duration,
                 Duration::from_millis(500),

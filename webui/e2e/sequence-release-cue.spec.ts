@@ -373,7 +373,7 @@ async function evalCommand(page: Page, command: string) {
   const result = await page.evaluate(async (commandText) => {
     const stores = (window as any).appStores;
     return stores.sendAndAwait({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: commandText },
     });
   }, command);

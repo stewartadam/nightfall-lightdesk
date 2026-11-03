@@ -12,7 +12,8 @@
 //! on objects stored in DataProvider (Blueprint, Group).
 
 use nightfall::data::HasIdentifiers;
-use nightfall_engine::prelude::*;
+
+use crate::prelude::*;
 
 /// Trait for objects that support CRUD operations through the command type `C`
 ///

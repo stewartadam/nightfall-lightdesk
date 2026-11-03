@@ -33,7 +33,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::clips::{Clip, ClipCommand};
-use crate::desk_command::DeskCommand;
 use crate::faders::{FaderCommand, FaderUpdate, Faders, clip_live_state, master_contributes};
 use crate::masters::{
     Master, MasterCommand, MasterKind, MasterMode, MasterUpdate, clamp_master_level,
@@ -660,7 +659,7 @@ fn invoke_desk_eval(
     let command_id = submit_command(
         world,
         invocation,
-        DeskCommand::Eval(arguments.command.clone()),
+        EngineCommand::Eval(arguments.command.clone()),
     )?;
     world.write_message(ExternalCommandInvocation {
         invocation_id: invocation.invocation_id,
@@ -826,8 +825,8 @@ mod tests {
             panic!("eval invocation should queue one desk command");
         };
         assert!(matches!(
-            envelope.payload.as_any().downcast_ref::<DeskCommand>(),
-            Some(DeskCommand::Eval(value)) if value == "clip 1 go"
+            envelope.payload.as_any().downcast_ref::<EngineCommand>(),
+            Some(EngineCommand::Eval(value)) if value == "clip 1 go"
         ));
         assert!(
             app.world()

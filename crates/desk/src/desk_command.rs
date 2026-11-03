@@ -6,8 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::time::Duration;
-
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
@@ -259,12 +257,6 @@ pub enum DeskCommand {
 
     /// Clear transport input assertions whose source universes are stale.
     ReleaseStaleInputs,
-
-    /// Parse a command and generate domain-owned commands.
-    Eval(String),
-
-    /// Sleep for a duration before processing subsequent commands
-    Sleep(Duration),
 }
 
 impl IngressCommand for DeskCommand {}
@@ -298,9 +290,7 @@ impl DeskCommand {
             | Self::TraceFixture { .. }
             | Self::SetTracingFilter { .. }
             | Self::ClearTracingFilter
-            | Self::ReleaseStaleInputs
-            | Self::Eval(_)
-            | Self::Sleep(_) => false,
+            | Self::ReleaseStaleInputs => false,
         }
     }
 }

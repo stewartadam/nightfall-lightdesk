@@ -102,9 +102,7 @@ impl Plugin for ProgrammerPlugin {
         app.add_systems(
             Update,
             events::plan_pending_user_commands
-                .after(
-                    nightfall_desk::systems::event_handlers::desk_events::expand_pending_eval_commands,
-                )
+                .after(DeskEventSet::EvalExpansion)
                 .in_set(PendingCommandExpansion),
         );
 
@@ -125,14 +123,10 @@ impl Plugin for ProgrammerPlugin {
                     events::rebuild_programmer_blueprint_reference_index
                         .after(events::handle_blueprint_events)
                         .after(events::handle_programmer_events)
-                        .before(
-                            nightfall_desk::systems::event_handlers::blueprint_events::crud_events,
-                        ),
+                        .before(DeskEventSet::BlueprintCrud),
                     events::resume_store_object_workflows
-                        .after(nightfall_desk::systems::event_handlers::group_events::action_events)
-                        .after(
-                            nightfall_desk::systems::event_handlers::blueprint_events::action_events,
-                        ),
+                        .after(DeskEventSet::GroupActions)
+                        .after(DeskEventSet::BlueprintActions),
                     events::handle_undo_events,
                     events::handle_remove_instruction_events,
                 )

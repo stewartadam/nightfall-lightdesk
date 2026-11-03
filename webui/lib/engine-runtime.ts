@@ -512,7 +512,7 @@ export class EngineRuntimeCommandDisconnectedError extends Error {
 }
 
 /**
- * Returns the console statement carried by a desk `Eval` command envelope, so typed
+ * Returns the console statement carried by an `EngineCommand::Eval` envelope, so typed
  * statements sent from panels echo in console scrollback like ones typed at the command line.
  */
 function evalStatementOf(data: object): string | undefined {
@@ -797,7 +797,7 @@ export const engineRuntime = {
   /**
    * Stamps command and undo identity onto a command envelope, registers the optional result
    * waiter, and posts the envelope to the worker. Console scrollback tracks the operator text,
-   * or the statement of a desk `Eval` command when no text is given. Throws when the runtime
+   * or the statement of an `EngineCommand::Eval` when no text is given. Throws when the runtime
    * is disconnected or the payload cannot be serialized, after recording a console send error.
    */
   postCommand(

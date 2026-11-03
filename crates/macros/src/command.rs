@@ -10,7 +10,7 @@
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
-use nightfall_desk::object_crud::{ObjectCrud, apply_object_crud_command};
+use nightfall_engine::object_crud::{ObjectCrud, apply_object_crud_command};
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};

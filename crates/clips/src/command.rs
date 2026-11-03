@@ -8,6 +8,7 @@
 
 use nightfall::engine::{EngineIngressMeta, EngineOperation, EnginePayload, IngressCommand};
 use nightfall::prelude::IdExpr;
+use nightfall_engine::object_crud::ObjectCrud;
 use nightfall_instances::InstanceOptions;
 use nightfall_playback_planner::PlaybackReconstructionTiming;
 use serde::{Deserialize, Serialize};
@@ -235,6 +236,42 @@ pub fn clip_action_from_command(command: &ClipCommand) -> Option<ClipOperation> 
         | ClipCommand::StoreClip(_)
         | ClipCommand::RenameClip { .. }
         | ClipCommand::DeleteClip(_) => None,
+    }
+}
+
+impl ObjectCrud<ClipCommand> for Clip {
+    /// Returns the stable object kind used in clip CRUD diagnostics.
+    fn type_name() -> &'static str {
+        "clip"
+    }
+
+    /// Extracts a persistent clip from a store command.
+    fn extract_store(command: &ClipCommand) -> Option<Self> {
+        match command {
+            ClipCommand::StoreClip(clip) => Some(clip.clone()),
+            _ => None,
+        }
+    }
+
+    /// Extracts existing and replacement IDs from a rename command.
+    fn extract_rename(command: &ClipCommand) -> Option<(u32, u32)> {
+        match command {
+            ClipCommand::RenameClip { id, new_id } => Some((*id, *new_id)),
+            _ => None,
+        }
+    }
+
+    /// Extracts the target ID from a delete command.
+    fn extract_delete(command: &ClipCommand) -> Option<u32> {
+        match command {
+            ClipCommand::DeleteClip(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// Replaces the clip's console-facing numeric ID.
+    fn set_id(&mut self, new_id: u32) {
+        self.identifiers.id = new_id;
     }
 }
 

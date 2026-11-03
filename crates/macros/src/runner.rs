@@ -8,7 +8,7 @@
 
 //! Runs macro bodies one statement at a time through the desk command path.
 //!
-//! Each statement is submitted as its own tracked `DeskCommand::Eval`, and the next one waits
+//! Each statement is submitted as its own tracked `EngineCommand::Eval`, and the next one waits
 //! for its terminal result, so `sleep` and nested macros pause the run like they pause the
 //! console. The command that started a run stays open until the run ends and reports how it
 //! ended, so the console, a MIDI pad and a parent macro all see the same result.
@@ -21,7 +21,6 @@
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_cmd_parse::split_command_statements;
-use nightfall_desk::prelude::DeskCommand;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 use uuid::Uuid;
@@ -522,7 +521,7 @@ pub fn advance_macro_runs(
         pending.push(PayloadEnvelope::with_context(
             command_id,
             run.undo_id,
-            Box::new(DeskCommand::Eval(statement.text.clone())),
+            Box::new(EngineCommand::Eval(statement.text.clone())),
         ));
         run.in_flight = Some(command_id);
         index += 1;

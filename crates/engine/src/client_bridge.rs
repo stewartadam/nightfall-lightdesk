@@ -782,7 +782,7 @@ mod command_json_envelope_tests {
         let command_id = CommandId::new();
         let envelope: CommandJsonEnvelope = serde_json::from_value(serde_json::json!({
             "command_id": command_id.to_string(),
-            "module": "DeskCommand",
+            "module": "EngineCommand",
             "command": { "type": "Eval", "data": "store cue 1.1" }
         }))
         .unwrap();

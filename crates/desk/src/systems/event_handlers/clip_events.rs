@@ -258,7 +258,7 @@ pub fn crud_events(
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
-        use crate::object_crud::ObjectCrud;
+        use nightfall_engine::object_crud::ObjectCrud;
 
         // Handle Store
         if let Some(clip) = Clip::extract_store(&event.command) {
@@ -1660,7 +1660,7 @@ mod tests {
         app.world_mut().write_message(CommandEnvelope::with_context(
             CommandId::new(),
             UndoId::new(),
-            CommandOrigin::Remote(crate::launch_quantize::INTERNAL_DESK_ACTION_ORIGIN.to_owned()),
+            CommandOrigin::Remote(INTERNAL_ACTION_ORIGIN.to_owned()),
             ReplyTarget::Detached,
             ClipCommand::StartClip(IdExpr::Single(3)),
         ));

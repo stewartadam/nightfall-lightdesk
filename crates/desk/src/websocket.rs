@@ -52,7 +52,7 @@ use web_time::Instant;
 
 use crate::launch_quantize::{ArmedLaunch, ArmedLaunches};
 use crate::prelude::*;
-use crate::{BlueprintCommand, DeskCommand, GroupCommand, UiNotification};
+use crate::{BlueprintCommand, DeskCommand, GroupCommand};
 
 mod desk_state;
 mod diagnostics;
@@ -69,7 +69,6 @@ pub use diagnostics::{
     LAYER_STACK_BROADCAST_MS, LAYER_STACK_BUILD_MS, LAYER_STACK_TRANSITION_BUILD_MS,
     register_websocket_performance_diagnostics,
 };
-use inbound::flush_pending_ui_notifications;
 pub use inbound::*;
 pub use instances::*;
 pub use layers::{LayerSnapshotData, LayerStackPublication, send_layer_stack};

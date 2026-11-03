@@ -211,8 +211,6 @@ pub(super) enum DeskWsMessage<'a> {
     AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
     /// A desk command
     DeskCommand(&'a DeskCommand),
-    /// UI-only notification
-    UiNotification(&'a UiNotification),
     /// An clip command
     ClipCommand(&'a ClipCommand),
     /// Layer stack with computed values (sorted by priority)

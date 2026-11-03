@@ -7,89 +7,9 @@
  */
 
 use bevy_ecs::prelude::*;
-use nightfall_cmd_parse::split_command_statements;
 use nightfall_engine::prelude::*;
-use web_time::Instant;
 
-use crate::launch_quantize::INTERNAL_DESK_ACTION_ORIGIN;
 use crate::prelude::*;
-
-fn parse_debug_panic_worker_command(input: &str) -> Option<&str> {
-    let mut tokens = input.split_whitespace();
-    match (
-        tokens.next(),
-        tokens.next(),
-        tokens.next(),
-        tokens.next(),
-        tokens.next(),
-    ) {
-        (Some(cmd), Some(action), Some(scope), Some(target), None)
-            if cmd.eq_ignore_ascii_case("debug")
-                && action.eq_ignore_ascii_case("panic")
-                && scope.eq_ignore_ascii_case("worker") =>
-        {
-            Some(target)
-        }
-        _ => None,
-    }
-}
-
-/// Handles eval requests by parsing command text into domain-owned commands.
-///
-/// This processes one `DeskCommand::Eval` statement and delegates its parsed domain work.
-/// Terminal success comes from the delegated handler; this wrapper only resolves parse,
-/// validation, debug-injection, and asynchronous sleep outcomes itself.
-pub fn handle_eval(
-    mut scheduled: ResMut<DelayedCommandQueue>,
-    mut events: MessageReader<CommandEnvelope<DeskCommand>>,
-    mut actions: MessageReader<EngineOperationEnvelope<EvalOperation>>,
-    mut responder: CommandResponder,
-) {
-    let mut evals = events.read().cloned().collect::<Vec<_>>();
-    for event in actions.read() {
-        let EvalOperation(command) = &event.operation;
-        let command_id: CommandId = event.operation_id.0.into();
-        let undo_id = event
-            .undo_id
-            .unwrap_or_else(|| UndoId::from(event.operation_id.0));
-        let origin = CommandOrigin::Remote(INTERNAL_DESK_ACTION_ORIGIN.to_owned());
-        // Registered so the commands the eval produces keep this origin, which tells clip
-        // launches from a timeline apart from a person's.
-        if !responder.is_active(command_id)
-            && let Err(error) = responder.register_context(
-                command_id,
-                undo_id,
-                origin.clone(),
-                ReplyTarget::Detached,
-            )
-        {
-            tracing::warn!(%command_id, %error, "desk_action_eval_registration_failed");
-        }
-        evals.push(CommandEnvelope::with_context(
-            command_id,
-            undo_id,
-            origin,
-            ReplyTarget::Detached,
-            DeskCommand::Eval(command.clone()),
-        ));
-    }
-
-    for event in &evals {
-        tracing::debug!(?event, "Received eval event");
-        let DeskCommand::Eval(command) = &event.command else {
-            continue;
-        };
-        for command in prepare_eval_commands(
-            event.command_id,
-            event.undo_id,
-            command,
-            &mut scheduled,
-            &mut responder,
-        ) {
-            scheduled.schedule_now(command);
-        }
-    }
-}
 
 /// Fails every showfile storage command when the runtime has no disk storage.
 ///
@@ -116,171 +36,6 @@ pub fn reject_disk_storage_commands(
     }
 }
 
-/// Expands queued eval wrappers before command dispatch closes for the current update.
-///
-/// WebSocket ingress reaches the pending buffer during `InputHandling`. Expanding there
-/// allows parsed domain commands to pass through planning, undo capture, and typed
-/// dispatch in the same update instead of waiting for a second engine frame.
-pub fn expand_pending_eval_commands(
-    mut pending: ResMut<PendingCommandBuffer>,
-    mut scheduled: ResMut<DelayedCommandQueue>,
-    mut responder: CommandResponder,
-) {
-    let queued = pending.drain();
-    for envelope in queued {
-        let eval = envelope
-            .payload
-            .as_any()
-            .downcast_ref::<DeskCommand>()
-            .and_then(|command| match command {
-                DeskCommand::Eval(command) => Some(command.clone()),
-                _ => None,
-            });
-        let Some(eval) = eval else {
-            pending.push(envelope);
-            continue;
-        };
-
-        for command in prepare_eval_commands(
-            envelope.command_id,
-            envelope.undo_id,
-            &eval,
-            &mut scheduled,
-            &mut responder,
-        ) {
-            pending.push(command);
-        }
-    }
-}
-
-/// Parses one eval wrapper and prepares domain commands under its lifecycle identity.
-fn prepare_eval_commands(
-    command_id: CommandId,
-    undo_id: UndoId,
-    command: &str,
-    scheduled: &mut DelayedCommandQueue,
-    responder: &mut CommandResponder,
-) -> Vec<PayloadEnvelope> {
-    tracing::debug!("Received eval command: {}", command);
-    let statements = split_command_statements(command);
-    let [command_str] = statements.as_slice() else {
-        let message = if statements.is_empty() {
-            "Eval requires one command statement"
-        } else {
-            "Submit semicolon-separated statements as independent awaited commands"
-        };
-        fail_eval(responder, command_id, "desk.eval.statement_count", message);
-        return Vec::new();
-    };
-
-    #[cfg(all(not(target_arch = "wasm32"), any(feature = "debug", debug_assertions)))]
-    if let Some(target_name) = parse_debug_panic_worker_command(command_str) {
-        let Some(target) = parse_debug_panic_target(target_name) else {
-            let valid = debug_panic_target_names().join(", ");
-            fail_eval(
-                responder,
-                command_id,
-                "desk.eval.invalid_debug_target",
-                format!(
-                    "Invalid debug panic worker target '{target_name}'. Valid targets: {valid}"
-                ),
-            );
-            return Vec::new();
-        };
-
-        request_debug_worker_panic(target);
-        tracing::warn!(target = target_name, "Queued debug worker panic injection");
-        if responder.is_active(command_id)
-            && let Err(error) = responder.succeed(command_id)
-        {
-            tracing::error!(%error, "debug_panic_command_completion_failed");
-        }
-        return Vec::new();
-    }
-    #[cfg(any(target_arch = "wasm32", not(any(feature = "debug", debug_assertions))))]
-    if parse_debug_panic_worker_command(command_str).is_some() {
-        fail_eval(
-            responder,
-            command_id,
-            "desk.eval.debug_unavailable",
-            "debug panic worker requires a debug build (`--features debug`)",
-        );
-        return Vec::new();
-    }
-
-    let parsed_commands = match parse_command_string(command_str) {
-        Ok(parsed_commands) if !parsed_commands.is_empty() => parsed_commands,
-        Ok(_) => {
-            fail_eval(
-                responder,
-                command_id,
-                "desk.eval.empty",
-                "Command produced no executable work",
-            );
-            return Vec::new();
-        }
-        Err(error) => {
-            tracing::warn!(%error);
-            fail_eval(
-                responder,
-                command_id,
-                "desk.eval.parse_failed",
-                error.to_string(),
-            );
-            return Vec::new();
-        }
-    };
-
-    if parsed_commands.len() == 1
-        && let Some(DeskCommand::Sleep(duration)) =
-            parsed_commands[0].as_any().downcast_ref::<DeskCommand>()
-    {
-        if responder.is_active(command_id) {
-            scheduled.schedule_completion(Instant::now() + *duration, command_id);
-        }
-        return Vec::new();
-    }
-
-    if responder.is_active(command_id)
-        && let Err(error) = responder.expect_completions(command_id, parsed_commands.len())
-    {
-        tracing::error!(%command_id, %error, "eval_success_expectation_failed");
-        fail_eval(
-            responder,
-            command_id,
-            "desk.eval.tracking_failed",
-            "Unable to track all operations produced by the command",
-        );
-        return Vec::new();
-    }
-
-    parsed_commands
-        .into_iter()
-        .map(|payload| PayloadEnvelope {
-            command_id,
-            undo_id,
-            payload,
-        })
-        .collect()
-}
-
-/// Reports a structured terminal failure for one evaluated command.
-fn fail_eval(
-    responder: &mut CommandResponder,
-    command_id: CommandId,
-    code: &'static str,
-    message: impl Into<String>,
-) {
-    let message = message.into();
-    if !responder.is_active(command_id) {
-        tracing::warn!(%command_id, code, %message, "detached_eval_failed");
-        return;
-    }
-    if let Err(error) = responder.fail(command_id, CommandError::new(code, message)) {
-        tracing::error!(%error, "eval_command_failure_failed");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Once;
@@ -288,6 +43,7 @@ mod tests {
     use std::time::Duration;
 
     use bevy_app::{App, Update};
+    use nightfall_engine::eval::{expand_pending_eval_commands, handle_eval};
 
     use super::*;
 
@@ -309,6 +65,7 @@ mod tests {
     fn eval_app() -> App {
         let mut app = App::new();
         app.add_message::<CommandEnvelope<DeskCommand>>();
+        app.add_message::<CommandEnvelope<EngineCommand>>();
         app.add_message::<EngineOperationEnvelope<EvalOperation>>();
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
@@ -338,7 +95,7 @@ mod tests {
             command_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::ClientBroadcast,
-            DeskCommand::Eval(command.to_string()),
+            EngineCommand::Eval(command.to_string()),
         ));
         command_id
     }
@@ -360,7 +117,7 @@ mod tests {
             .push(PayloadEnvelope::with_context(
                 command_id,
                 command_id,
-                Box::new(DeskCommand::Eval(command.to_string())),
+                Box::new(EngineCommand::Eval(command.to_string())),
             ));
         command_id
     }
@@ -567,7 +324,7 @@ mod tests {
         let mut app = eval_app();
         app.add_systems(
             Update,
-            crate::systems::scheduled_commands::process_scheduled_commands.after(handle_eval),
+            nightfall_engine::eval::process_scheduled_commands.after(handle_eval),
         );
         let command_id = submit_eval(&mut app, "sleep 20ms");
 
@@ -591,22 +348,6 @@ mod tests {
             .expect("elapsed sleep should finish the command");
         assert_eq!(result.command_id, command_id);
         assert!(matches!(result.outcome, CommandOutcome::Succeeded { .. }));
-    }
-
-    #[test]
-    fn parse_debug_panic_worker_command_matches_expected_shape() {
-        assert_eq!(
-            super::parse_debug_panic_worker_command("debug panic worker bevy_main"),
-            Some("bevy_main")
-        );
-        assert_eq!(
-            super::parse_debug_panic_worker_command("debug panic worker"),
-            None
-        );
-        assert_eq!(
-            super::parse_debug_panic_worker_command("debug panic system bevy_main"),
-            None
-        );
     }
 
     /// Creates a focused app that runs the disk storage guard under the given capabilities.

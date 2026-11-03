@@ -8,6 +8,7 @@ edition.workspace = true
 bevy_ecs.workspace = true
 nightfall-actions = { path = "../actions" }
 nightfall = { path = "../common" }
+nightfall-engine = { path = "../engine" }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-undo = { path = "../undo" }

@@ -43,7 +43,7 @@ pub enum GroupOperation {
 
 impl EngineOperation for GroupOperation {}
 
-impl crate::object_crud::ObjectCrud<GroupCommand> for Group {
+impl nightfall_engine::object_crud::ObjectCrud<GroupCommand> for Group {
     fn type_name() -> &'static str {
         "group"
     }

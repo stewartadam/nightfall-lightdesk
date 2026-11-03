@@ -45,8 +45,6 @@ pub(crate) fn handle_resync_state(
     materialized_clips: Query<&MaterializedClip>,
     fader_params: ResyncFaderParams,
     undo_manager: Res<UndoManager>,
-    mut pending_ui_notifications: Option<ResMut<UiNotificationState>>,
-    every_client: Res<ClientEventSink>,
 ) {
     let Some(broadcaster) = resync.sink() else {
         return;
@@ -91,11 +89,6 @@ pub(crate) fn handle_resync_state(
     // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
     layer_stack_publication.invalidate();
     send_undo_state(undo_manager, &broadcaster);
-    flush_pending_ui_notifications(
-        pending_ui_notifications.as_deref_mut(),
-        &every_client,
-        &broadcaster,
-    );
 }
 
 /// State the layer stack snapshot is built from and change-checked against.

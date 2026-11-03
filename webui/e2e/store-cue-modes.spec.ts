@@ -335,7 +335,7 @@ async function evalCommand(page: Page, command: string): Promise<void> {
       throw new Error("appStores.sendAndAwait did not initialize");
     }
     return stores.sendAndAwait({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: commandText },
     });
   }, command);

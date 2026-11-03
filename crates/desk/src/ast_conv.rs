@@ -153,7 +153,7 @@ impl AstConvert for DeskAstConverter {
                             DispatchError::ConversionFailed(format!("duration conversion: {}", e))
                         })?;
                     let duration = std::time::Duration::from_secs_f32(duration_secs);
-                    Ok(vec![Box::new(DeskCommand::Sleep(duration))])
+                    Ok(vec![Box::new(EngineCommand::Sleep(duration))])
                 }
                 ast::GeneralCommandAst::SetFps(setfps_ast) => {
                     let fps_str = setfps_ast.fps.0;

@@ -269,9 +269,9 @@ pub struct OscListenerStatus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bevy_ecs::prelude::Message)]
 #[typeshare::typeshare]
 pub struct OscExternalEval {
-    /// Correlation ID shared with the `DeskCommand::Eval` dispatch and final result.
+    /// Correlation ID shared with the `EngineCommand::Eval` dispatch and final result.
     pub correlation_id: Uuid,
-    /// Command string dispatched through `DeskCommand::Eval`.
+    /// Command string dispatched through `EngineCommand::Eval`.
     pub command: String,
     /// Human-readable source label shown in CommandLine.
     pub source: String,

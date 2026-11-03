@@ -21,11 +21,9 @@ use bevy_ecs::prelude::*;
 use nightfall_audio::{
     AudioController, AudioPlugin, available_output_devices, default_output_device,
 };
-use nightfall_desk::prelude::{
-    AvailableAudioDevices, DeskPlugin, DeskSettings, ToastLevel, UiNotification,
-};
+use nightfall_desk::prelude::{AvailableAudioDevices, DeskPlugin, DeskSettings};
 use nightfall_desk::systems::event_handlers;
-use nightfall_engine::prelude::EventHandling;
+use nightfall_engine::prelude::{EventHandling, ToastLevel, UiNotification};
 
 const AUDIO_DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 

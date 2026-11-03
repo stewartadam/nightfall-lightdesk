@@ -7,11 +7,9 @@
  */
 
 use bevy_ecs::prelude::*;
-use nightfall_engine::prelude::NotificationEnvelope;
+use nightfall_engine::prelude::{NotificationEnvelope, ToastLevel, UiNotification};
 #[cfg(feature = "fx-module-host")]
 use nightfall_fx_module::prelude::FxModuleRuntimeNotification;
-
-use crate::prelude::{ToastLevel, UiNotification};
 
 pub mod blueprint_events;
 pub mod clip_events;

@@ -52,3 +52,39 @@ pub enum BlueprintOperation {
 }
 
 impl EngineOperation for BlueprintOperation {}
+
+impl ObjectCrud<BlueprintCommand> for Blueprint {
+    /// Returns the stable object kind used in blueprint CRUD diagnostics.
+    fn type_name() -> &'static str {
+        "blueprint"
+    }
+
+    /// Extracts a persistent blueprint from a store command.
+    fn extract_store(command: &BlueprintCommand) -> Option<Self> {
+        match command {
+            BlueprintCommand::StoreBlueprint(blueprint) => Some(blueprint.clone()),
+            _ => None,
+        }
+    }
+
+    /// Extracts existing and replacement IDs from a rename command.
+    fn extract_rename(command: &BlueprintCommand) -> Option<(u32, u32)> {
+        match command {
+            BlueprintCommand::RenameBlueprint { id, new_id } => Some((*id, *new_id)),
+            _ => None,
+        }
+    }
+
+    /// Extracts the target ID from a delete command.
+    fn extract_delete(command: &BlueprintCommand) -> Option<u32> {
+        match command {
+            BlueprintCommand::DeleteBlueprint(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// Replaces the blueprint's console-facing numeric ID.
+    fn set_id(&mut self, new_id: u32) {
+        self.identifiers.id = new_id;
+    }
+}

@@ -19,10 +19,6 @@ use nightfall_clips::ClipOperation;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 
-/// Origin of clip commands evaluated from desk command actions that engine systems such as a
-/// timeline run, rather than a person.
-pub const INTERNAL_DESK_ACTION_ORIGIN: &str = "InternalDeskAction";
-
 /// Returns whether a clip command from `origin` waits for launch quantize: anything a person
 /// sends, but not commands a timeline runs, which keep to the timeline's own grid.
 ///
@@ -30,7 +26,7 @@ pub const INTERNAL_DESK_ACTION_ORIGIN: &str = "InternalDeskAction";
 /// caller also checks [`CommandResponder::is_macro_statement`] to let them fire at once.
 pub fn origin_follows_launch_quantize(origin: &CommandOrigin) -> bool {
     match origin {
-        CommandOrigin::Remote(name) => name != INTERNAL_DESK_ACTION_ORIGIN,
+        CommandOrigin::Remote(name) => name != INTERNAL_ACTION_ORIGIN,
         CommandOrigin::Automation { surface, .. } => surface != ActionSurface::Timeline.label(),
         CommandOrigin::WebUi | CommandOrigin::Cli => true,
     }
@@ -345,7 +341,7 @@ mod tests {
             }
         ));
         assert!(!origin_follows_launch_quantize(&CommandOrigin::Remote(
-            INTERNAL_DESK_ACTION_ORIGIN.to_owned()
+            INTERNAL_ACTION_ORIGIN.to_owned()
         )));
     }
 

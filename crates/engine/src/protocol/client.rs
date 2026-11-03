@@ -15,7 +15,7 @@ use nightfall_dmx::prelude::AttributeMetadata;
 use serde::Serialize;
 
 use super::results::{CommandNotice, CommandResult};
-use crate::{AppState, runtime_capabilities::RuntimeCapabilities};
+use crate::{AppState, runtime_capabilities::RuntimeCapabilities, ui_notification::UiNotification};
 
 /// Wrapper for serializing engine-level client messages.
 ///
@@ -37,6 +37,8 @@ pub enum EngineClientMessage<'a> {
     CommandResult(&'a CommandResult),
     /// Non-terminal operator feedback for an active command.
     CommandNotice(&'a CommandNotice),
+    /// Toast or other UI-only notification raised by any plugin.
+    UiNotification(&'a UiNotification),
     /// Notification that all resync handlers published their current state.
     ResyncComplete,
     /// Notification that a showfile change replaced the backend world while the

@@ -103,19 +103,23 @@ async function captureWorkerSends(
       };
       if (envelope?.type === "submit") {
         globalWindow.__nightfallWorkerSends?.push(envelope.data);
-        const blockedDeskCommands = new Set([
-          "DiscardDraftShowfile",
-          "Eval",
-          "LoadDraftShowfile",
-          "LoadNamedShowfile",
-          "LoadShowfile",
-          "LoadShowfileRevision",
-          "NewNamedShowfile",
-          "NewShowfile",
-        ]);
+        const blockedCommands: Record<string, Set<string>> = {
+          DeskCommand: new Set([
+            "DiscardDraftShowfile",
+            "LoadDraftShowfile",
+            "LoadNamedShowfile",
+            "LoadShowfile",
+            "LoadShowfileRevision",
+            "NewNamedShowfile",
+            "NewShowfile",
+          ]),
+          EngineCommand: new Set(["Eval"]),
+        };
         if (
-          envelope.data?.module === "DeskCommand" &&
-          blockedDeskCommands.has(envelope.data.command?.type ?? "")
+          envelope.data &&
+          blockedCommands[envelope.data.module ?? ""]?.has(
+            envelope.data.command?.type ?? "",
+          )
         ) {
           if (deferredCommands.has(envelope.data.command?.type ?? "")) {
             return;

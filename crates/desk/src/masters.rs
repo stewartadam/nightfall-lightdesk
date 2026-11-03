@@ -306,7 +306,7 @@ pub enum MasterUpdate {
     },
 }
 
-impl crate::object_crud::ObjectCrud<MasterCommand> for Master {
+impl nightfall_engine::object_crud::ObjectCrud<MasterCommand> for Master {
     fn type_name() -> &'static str {
         "master"
     }
@@ -352,7 +352,7 @@ pub fn handle_master_commands(
         let mut command = event.command.clone();
         stabilize_master_group_refs(&mut command, &selection_resolver);
 
-        if let Some(result) = crate::object_crud::apply_object_crud_command::<Master, _>(
+        if let Some(result) = nightfall_engine::object_crud::apply_object_crud_command::<Master, _>(
             &command,
             &mut master_data_provider,
         ) {
